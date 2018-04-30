@@ -30,9 +30,9 @@ let vertexBuffer = Buffer(descriptor: vertexBufferDescriptor, bytes: renderData.
 renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
 ```
 
-That will automatically get allocated with the correct flags and disposed without any GPU overhead (if you're curious how, take a look at the Metal and Vulkan backends). Dependency ordering is determined by the order render passes are added to the `FrameGraph`.
+That will automatically get allocated with the correct flags and disposed without any GPU overhead (if you're curious how, take a look at the Metal and Vulkan backends, and in particular ResourceRegistry.swift). Dependency ordering is determined by the order that render passes are added to the `FrameGraph`.
 
-This is significantly simpler than the two-stage setup and resource handles used in e.g. Frostbite's design. You treat resources as simple objects, creating them when you need them and letting them be deallocated once you're done.
+This method is significantly simpler than the two-stage setup and resource handles used in e.g. Frostbite's design. You treat resources as simple objects, creating them when you need them and letting them be deallocated once you're done.
 
 Persistent resources are a little trickier. To create them, you pass `.persistent` as a flag in the `Buffer` or `Texture` constructor, and you make sure that the `usageHint` in the descriptor matches how it's going to be used. If you make or dispose persistent resources frequently the code will still work, but you'll be losing out on a lot of the benefits and incurring a large overhead.
 
