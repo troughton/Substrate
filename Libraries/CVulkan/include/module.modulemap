@@ -1,0 +1,4 @@
+module CVulkan {
+    umbrella header "../CVulkan.h"
+    export *
+}

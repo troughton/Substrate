@@ -1,0 +1,58 @@
+{
+    "version": 1,
+    "sdk": "%{TOOLCHAIN_BIN_DIR}/swift",
+    "toolchain-bin-dir": "%{TOOLCHAIN_BIN_DIR}",
+    "target": "x86_64-unknown-windows-msvc",
+    "dynamic-library-extension": "lib",
+    "extra-cc-flags": [
+        "-ILibraries/CVulkan/",
+        "-ILibraries/CoreFoundation/include",
+        "-IWindowsLibraries/libdispatch/include",
+        "-Wno-expansion-to-defined",
+        "-Wno-ignored-attributes",
+        "-Wno-nonportable-include-path",
+        "-Wno-pragma-pack",
+        "-Wno-ignored-pragma-intrinsic",
+        "-D_CRT_SECURE_NO_WARNINGS",
+        "-DDEPLOYMENT_RUNTIME_SWIFT",
+        "-DDEPLOYMENT_TARGET_WINDOWS",
+        "-DDEPLOYMENT_ENABLE_LIBDISPATCH",
+        %{BUILD_CONFIGURATION}
+        "-nostdlib",
+        "-D_DLL",
+        "-D_ENABLE_ATOMIC_ALIGNMENT_FIX",
+        "-fno-pic",
+        "-fms-compatibility-version=1900"
+    ],
+    "extra-swiftc-flags": [
+        "-static-stdlib",
+        "-use-ld=lld",
+        "-ILibraries/CVulkan/",
+        "-ILibraries/CoreFoundation/include",
+        "-IWindowsLibraries/libdispatch/include",
+        "-ILibraries/CSDL2",
+        "-IModuleMaps/Windows",
+        "-DDEPLOYMENT_RUNTIME_SWIFT",
+        "-DDEPLOYMENT_TARGET_WINDOWS",
+        "-DDEPLOYMENT_ENABLE_LIBDISPATCH",
+        "-DNOSIMD",
+        "-DSDL_WINDOWING",
+        "-DUSE_DISPATCH_STATIC_LIB",
+        "-D_CRT_SECURE_NO_WARNINGS",
+
+        "-LLibraries/CSDL2/lib/x64",
+        "-LWindowsLibraries/libdispatch",
+        "-L%{VULKAN_SDK_PATH}/Lib",
+        "-lvulkan-1",
+
+        "-lshell32.lib",
+        "-lole32.lib",
+        
+        "-Xlinker",
+        "/NODEFAULTLIB:libcmt",
+
+        "-Xlinker",
+        "/OPT:ICF"
+    ],
+    "extra-cpp-flags": []
+}

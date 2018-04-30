@@ -1,0 +1,5 @@
+module CSDL2 [system] {
+    header "CSDL2.h"
+    link "SDL2"
+    export *
+}

@@ -1,0 +1,95 @@
+
+version: 0
+case-sensitive: false
+roots:
+  - name: "%{WINDOWS_KIT_INCLUDE}/shared"
+    type: directory
+    contents:
+      - name: DriverSpecs.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/shared/driverspecs.h"
+      - name: SpecStrings.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/shared/specstrings.h"
+      - name: wtypesbase.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/shared/WTypesbase.h"
+  - name: "%{WINDOWS_KIT_INCLUDE}/um"
+    type: directory
+    contents:
+      - name: commctrl.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/CommCtrl.h"
+      - name: docobj.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/DocObj.h"
+      - name: exdisp.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/ExDisp.h"
+      - name: isguids.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/IsGuids.h"
+      - name: knownfolders.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/KnownFolders.h"
+      - name: oaidl.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/OAIdl.h"
+      - name: objidl.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/ObjIdl.h"
+      - name: objidlbase.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/ObjIdlbase.h"
+      - name: ocidl.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/OCIdl.h"
+      - name: ole2.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/Ole2.h"
+      - name: oleauto.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/OleAuto.h"
+      - name: propidl.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/PropIdl.h"
+      - name: propidlbase.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/PropIdlBase.h"
+      - name: psapi.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/Psapi.h"
+      - name: shldisp.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/ShlDisp.h"
+      - name: shlguid.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/ShlGuid.h"
+      - name: shlobj_core.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/ShlObj_core.h"
+      - name: shobjidl.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/ShObjIdl.h"
+      - name: shobjidl_core.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/ShObjIdl_core.h"
+      - name: unknwn.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/Unknwn.h"
+      - name: unknwnbase.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/Unknwnbase.h"
+      - name: winbase.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/WinBase.h"
+      - name: windows.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/Windows.h"
+      - name: winnls.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/WinNls.h"
+      - name: winuser.h
+        type: file
+        external-contents: "%{WINDOWS_KIT_INCLUDE}/um/WinUser.h"
+

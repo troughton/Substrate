@@ -1,0 +1,10 @@
+.DS_Store
+/.build
+/.vs
+/.vscode
+InterdimensionalLlama.xcodeproj
+*.xcuserstate
+xcuserdata/
+/Package.resolved
+*.spv
+Config/windows_build.config
