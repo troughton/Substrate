@@ -8,6 +8,8 @@ The Metal backend has received the most attention, and should be _reasonably_ op
 
 It does _not_ handle cross-compilation of shaders. For that, you'll want to use other tools; in our case, we've been writing our shaders once for each of Vulkan and Metal.
 
+[This demo](https://www.youtube.com/watch?v=Nlr7m4rq37A) (which is not at all representative of the game or artstyle) is an example of something that was made using this framework.
+
 ## What's the motivation?
 
 Recently there's been an interest in render-graph based APIs for rendering, making it simpler to compose together multiple render passes and build frames. To my knowledge, the origin of this is [in the Frostbite engine, as described by this talk](https://www.ea.com/frostbite/news/framegraph-extensible-rendering-architecture-in-frostbite), although many [others](http://themaister.net/blog/2017/08/15/render-graphs-and-vulkan-a-deep-dive/) have had their input since.
