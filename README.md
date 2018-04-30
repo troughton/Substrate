@@ -239,6 +239,10 @@ I think Swift's a great language, and it's what we wanted to use when making our
 
 Interesting question. So, in theory, there's nothing that prevents render passes from being _recorded_ in parallel, even though the current implementation of the resource usage tracking isn't thread safe. As for executing the render passes in the backend: the current paradigm is to iterate through a list of commands that need to be executed, where resources are materialised late and disposed early. If render passes are executed out of order, we need to somehow make sure that the resources are available for each pass when it needs them while simultaneously keeping the advantage of limited resource lifetimes. This isn't at all impossible, but it's significant engineering effort and isn't a high priority for us.
 
+## Why are you doing something in a particular way?
+
+It's probably the first thing we thought of, although in some cases there's a very precise (and probably poorly documented) reason why something is the way it is. We're by no means experts; the very first graphics code I wrote for Windows was getting ImGui to show using this API and Vulkan!
+
 ## What about (some other question here)?
 
 Feel free to post an issue. If it's of the form 'make this work for me' we're likely to close and ignore it; however, if you're genuinely curious about getting something to work with this we'd be more than happy to help.
