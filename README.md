@@ -10,7 +10,7 @@ It does _not_ handle cross-compilation of shaders. For that, you'll want to use 
 
 ## What's the motivation?
 
-Recently there's been an interest in render-graph based APIs for rendering, making it simpler to compose together multiple render passes and build frames. To my knowledge, the origin of this is [this talk about FrameGraphs in Frostbite](https://www.ea.com/frostbite/news/framegraph-extensible-rendering-architecture-in-frostbite), although many others have had their input since.
+Recently there's been an interest in render-graph based APIs for rendering, making it simpler to compose together multiple render passes and build frames. To my knowledge, the origin of this is [in the Frostbite engine, as described by this talk](https://www.ea.com/frostbite/news/framegraph-extensible-rendering-architecture-in-frostbite), although many others have had their input since.
 
 A key contribution of render graphs is that per-frame resource management is done automatically; rather than manually managing buffers and buffer pools, you can just request a new buffer each frame. Originally, our implementation was fairly closely based on the described design; however, we decided to take things one step further.
 
