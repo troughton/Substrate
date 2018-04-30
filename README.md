@@ -33,15 +33,17 @@ That will automatically get allocated with the correct flags and disposed withou
 
 This is significantly simpler than the two-stage setup and resource handles used in e.g. Frostbite's design. You treat resources as simple objects, creating them when you need them and letting them be deallocated once you're done.
 
-Persistent resources are a little trickier. To create them, you pass `.persistent` as a flag in the `Buffer` or `Texture` constructor, and you make sure that the `usageHint` in the descriptor matches how it's going to be used.
+Persistent resources are a little trickier. To create them, you pass `.persistent` as a flag in the `Buffer` or `Texture` constructor, and you make sure that the `usageHint` in the descriptor matches how it's going to be used. If you make or dispose persistent resources frequently the code will still work, but you'll be losing out on a lot of the benefits and incurring a large overhead.
 
-## How practical is this for me to use?
+## How practical is this to use in my personal projects?
 
 Honestly? Probably not very, although it'll work if you're determined and willing to look around the code base. Almost all of the documentation is contained within my and the other authors' heads, and there are a few edge cases or hidden functionality. 
 
 We do plan to release a more full-featured example project, including [Dear ImGui](https://github.com/ocornut/imgui) and a debug drawing tool. The problem is that the rest of the code is fairly tightly intertwined with our engine, and we're not open sourcing our full engine.
 
 While we'd like to properly document this project, it's a fairly low priority for us; we understand it, and we're the primary users, so that's enough for us in making our game.
+
+With all that said, this is open source so others can use it! We'd welcome input to make it better or easier to use. 
 
 ## What does a Render Pass look like?
 
