@@ -231,7 +231,7 @@ I've also included our overlays for Foundation for Windows. If this is interesti
 
 ## Why Swift? Why not Rust or C++?
 
-I think Swift's a great language, and it's what we wanted to use when making our engine. I'm not familiar enough with Rust to make a judgement, although I'm sure it's a great language; as for C++ or C, we didn't need to maintain compatibility with other code so there was no reason for us not to use a more modern and ergonomic language.
+I think Swift's a great language, and it's what we wanted to use when making our engine. The decision was more or less as simple as that. I'm not familiar enough with Rust to make a judgement, although I'm sure it's a great language; as for C++ or C, we didn't need to maintain compatibility with other code so there was no reason for us not to use a more modern and ergonomic language.
 
 ## What about multithreading?
 
