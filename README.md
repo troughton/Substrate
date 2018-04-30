@@ -2,7 +2,7 @@
 
 ## What is this?
 
-This is the base rendering system for a game I'm working on with a few other people called Interdimensional Llama. More specifically, it's a platform-agnostic abstraction over a rendering API, combined with backends for Metal and Vulkan. Its design is heavily inspired by Metal; in fact, it started off as a direct overlay over Metal, and gradually diverged.
+This is the base rendering system for a game I'm working on with a few other people called Interdimensional Llama. More specifically, it's a platform-agnostic abstraction over a rendering API, combined with backends for Metal and Vulkan. Its design is heavily inspired by Metal; in fact, it started off as a direct overlay over Metal, and gradually diverged. As such, [Apple's Metal documentation](https://developer.apple.com/documentation/metal) is probably the best general reference for RenderAPI, since it's what we referred to.
 
 The Metal backend has received the most attention, and should be _reasonably_ optimised and stable. The Vulkan backend works for our use cases but could have a few bugs and inefficiencies.
 
