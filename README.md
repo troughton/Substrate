@@ -8,7 +8,7 @@ This is the base rendering system for a game I'm working on with a few other peo
 
 The Metal backend has received the most attention, and should be _reasonably_ optimised and stable. The Vulkan backend works for our use cases but could have a few bugs and inefficiencies.
 
-It does _not_ handle cross-compilation of shaders. For that, you'll want to use other tools; in our case, we've been writing our shaders once for each of Vulkan and Metal.
+This project does _not_ handle cross-compilation of shaders. For that, you'll want to use other tools; in our case, we've been writing our shaders once for each of Vulkan and Metal.
 
 [This demo](https://www.youtube.com/watch?v=Nlr7m4rq37A) (which is not at all representative of the game or art style) is an example of something that was made using this framework.
 
