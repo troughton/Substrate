@@ -249,4 +249,4 @@ Feel free to post an issue. If it's of the form 'make this work for me' we're li
 
 ## License
 
-See the MIT license in [LICENSE](LICENSE). Other licenses may apply to included libraries.
+See the MIT license in [LICENSE](LICENSE.md). Other licenses may apply to included libraries.
