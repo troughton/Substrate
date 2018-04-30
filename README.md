@@ -131,13 +131,11 @@ final class DebugDrawPass : DrawRenderPass {
     let renderData : DebugDraw.RenderData
     let viewUniforms : ViewRenderUniforms
 
-    let motionVectorsEnabled : Bool
     let outputTexture: Texture
 
-    init(renderData: DebugDraw.RenderData, outputTexture: Texture, viewUniforms: ViewRenderUniforms, motionVectorsEnabled: Bool) {
+    init(renderData: DebugDraw.RenderData, outputTexture: Texture, viewUniforms: ViewRenderUniforms) {
         self.renderData = renderData
         self.viewUniforms = viewUniforms
-        self.motionVectorsEnabled = motionVectorsEnabled
 
         var renderTargetDesc = RenderTargetDescriptor(identifierType: ScreenRenderTargetIndex.self)
         renderTargetDesc[ScreenRenderTargetIndex.display] = RenderTargetColourAttachmentDescriptor(texture: outputTexture)
@@ -154,10 +152,7 @@ final class DebugDrawPass : DrawRenderPass {
         let vertexBuffer = Buffer(descriptor: BufferDescriptor(length: MemoryLayout<DebugDraw.DebugDrawVertex>.size * self.renderData.vertexBuffer.count), bytes: self.renderData.vertexBuffer.buffer)
         let indexBuffer = Buffer(descriptor: BufferDescriptor(length: MemoryLayout<UInt16>.size * self.renderData.indexBuffer.count), bytes: self.renderData.indexBuffer.buffer)
 
-        var pipelineDescriptor = DebugDrawPass.pipelineDescriptor
-        pipelineDescriptor.functionConstants = AnyFunctionConstants(FunctionConstants(motionVectorsEnabled: self.motionVectorsEnabled)) // Function constants are also known as 'specialisation constants' in Vulkan.
-
-        renderCommandEncoder.setRenderPipelineState(pipelineDescriptor)
+        renderCommandEncoder.setRenderPipelineState(DebugDrawPass.pipelineDescriptor)
         renderCommandEncoder.setCullMode(.none)
         renderCommandEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
         renderCommandEncoder.setValue(self.viewUniforms, key: "drawVertexUniforms")
