@@ -44,11 +44,9 @@ With regards to the backends, take a look at the [Vulkan](Sources/FrameGraph/Bac
 
 ## How practical is this to use in my personal projects?
 
-Honestly? Probably not very, although it'll work if you're determined and willing to look around the code base. Almost all of the documentation is contained within my and the other authors' heads, and there are a few edge cases or hidden functionality. 
+Honestly? Probably not very, although it'll work if you're determined and willing to look around the code base. Almost all of the documentation is contained within my and the other authors' heads, and there are a few edge cases or hidden functionality. While we'd like to properly document this project, it's a fairly low priority for us; we understand it, and we're the primary users, so that's enough for us in making our game. Long-term, however, we'd definitely like for this code-base to live up to the standards of a high-quality open source project. 
 
-We do plan to release a more full-featured example project, including [Dear ImGui](https://github.com/ocornut/imgui) and a debug drawing tool. The problem is that the rest of the code is fairly tightly intertwined with our engine, and we're not open sourcing our full engine.
-
-While we'd like to properly document this project, it's a fairly low priority for us; we understand it, and we're the primary users, so that's enough for us in making our game.
+We do plan to release a more full-featured example project, including a [Dear ImGui](https://github.com/ocornut/imgui) render pass and a debug drawing tool. The problem is that the rest of the code is fairly tightly intertwined with our engine, and we're not wanting to open source our full engine - as such, it might be a while before we have time to release it.
 
 With all that said, this is open source so others can use it! We'd welcome input to make it better or easier to use. 
 
