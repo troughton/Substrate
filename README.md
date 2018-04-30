@@ -187,7 +187,7 @@ final class DebugDrawPass : DrawRenderPass {
         }
     }
 }
-
+```
 
 Every frame, you'd call something like this:
 
