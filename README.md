@@ -8,7 +8,7 @@ The Metal backend has received the most attention, and should be _reasonably_ op
 
 It does _not_ handle cross-compilation of shaders. For that, you'll want to use other tools; in our case, we've been writing our shaders once for each of Vulkan and Metal.
 
-[This demo](https://www.youtube.com/watch?v=Nlr7m4rq37A) (which is not at all representative of the game or artstyle) is an example of something that was made using this framework.
+[This demo](https://www.youtube.com/watch?v=Nlr7m4rq37A) (which is not at all representative of the game or art style) is an example of something that was made using this framework.
 
 ## What's the motivation?
 
