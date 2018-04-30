@@ -36,6 +36,12 @@ This method is significantly simpler than the two-stage setup and resource handl
 
 Persistent resources are a little trickier. To create them, you pass `.persistent` as a flag in the `Buffer` or `Texture` constructor, and you make sure that the `usageHint` in the descriptor matches how it's going to be used. If you make or dispose persistent resources frequently the code will still work, but you'll be losing out on a lot of the benefits and incurring a large overhead.
 
+## Where can I see how it works?
+
+A good place to start would be the main render pass execution in [CommandRecorder.swift](Sources/FrameGraph/FrameGraph/CommandRecorder.swift).
+
+With regards to the backends, take a look at the [Vulkan](Sources/FrameGraph/Backends/Vulkan/VkRenderer/FrameGraphBackend.swift) and [Metal](Sources/FrameGraph/Backends/MetalRenderer/FrameGraphBackend.swift) backends.
+
 ## How practical is this to use in my personal projects?
 
 Honestly? Probably not very, although it'll work if you're determined and willing to look around the code base. Almost all of the documentation is contained within my and the other authors' heads, and there are a few edge cases or hidden functionality. 
