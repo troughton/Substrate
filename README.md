@@ -57,10 +57,6 @@ Here's an example of a draw render pass from our engine to draw debug shapes (wi
 ```swift
 final class DebugDrawPass : DrawRenderPass {
 
-    struct FunctionConstants : RenderAPI.FunctionConstants {
-        var motionVectorsEnabled : Bool
-    }
-
     static let pointLineVertexDescriptor : VertexDescriptor = {
         var descriptor = VertexDescriptor()
 
@@ -194,7 +190,7 @@ final class DebugDrawPass : DrawRenderPass {
 Every frame, you'd call something like this:
 
 ```swift
-let debugDrawPass = DebugDrawPass(outputTexture: texture, renderData: debugDrawData, viewUniforms: viewUniforms, motionVectorsEnabled: renderSettings.temporalAAEnabled)
+let debugDrawPass = DebugDrawPass(outputTexture: texture, renderData: debugDrawData, viewUniforms: viewUniforms)
 FrameGraph.addPass(debugDrawPass)
 
 ```
