@@ -25,7 +25,8 @@ In practice, this has some really neat effects. For example, our engine uses clu
 Another thing a deferred setup means is that per-frame resources can be handled extremely easily. Want a buffer with some data in it? 
 
 ```swift
-let vertexBuffer = Buffer(descriptor: BufferDescriptor(length: renderData.vertexBuffer.count * MemoryLayout<ImDrawVert>.size, usageHint: .vertexBuffer), bytes: renderData.vertexBuffer.baseAddress!)
+let vertexBufferDescriptor = BufferDescriptor(length: renderData.vertexBuffer.count * MemoryLayout<ImDrawVert>.size)
+let vertexBuffer = Buffer(descriptor: vertexBufferDescriptor, bytes: renderData.vertexBuffer.baseAddress!)
 renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
 ```
 
