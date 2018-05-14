@@ -25,7 +25,6 @@ final class MetalArgumentBuffer {
     
     func encodeArguments(from buffer: ArgumentBuffer, argumentBufferPath: ResourceBindingPath, encoder: MTLArgumentEncoder, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         encoder.setArgumentBuffer(self.buffer, offset: self.offset)
-        
         for (bindingPath, binding) in buffer.bindings {
 
             let bindingIndex = MetalResourceBindingPath(bindingPath).bindIndex

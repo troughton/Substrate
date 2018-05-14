@@ -690,7 +690,7 @@ extension VkPrimitiveTopology {
 }
 
 extension VkAttachmentDescription {
-    public init(pixelFormat: PixelFormat, renderTargetDescriptor: RenderTargetColourAttachmentDescriptor, actions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
+    public init(pixelFormat: PixelFormat, renderTargetDescriptor: RenderTargetColorAttachmentDescriptor, actions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
         self.init()
         self.flags = 0
         self.format = VkFormat(pixelFormat: pixelFormat)

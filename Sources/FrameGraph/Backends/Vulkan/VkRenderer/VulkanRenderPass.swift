@@ -35,12 +35,12 @@ class VulkanRenderPass {
             assert(descriptor.descriptor.stencilAttachment == nil, "Stencil attachments without depth are currently unimplemented.")
         }
         
-        for (i, (colourAttachment, actions)) in zip(descriptor.descriptor.colorAttachments, descriptor.colourActions).enumerated() {
-            guard let colourAttachment = colourAttachment else { continue }
-            var attachmentDescription = VkAttachmentDescription(pixelFormat: colourAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: colourAttachment, actions: actions)
-            attachmentDescription.initialLayout = descriptor.initialLayouts[ObjectIdentifier(colourAttachment.texture)] ?? VK_IMAGE_LAYOUT_UNDEFINED
-            attachmentDescription.finalLayout = descriptor.finalLayouts[ObjectIdentifier(colourAttachment.texture)] ?? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR // FIXME: is this generally correct?
-            attachmentIndices[.colour(i)] = attachments.count
+        for (i, (colorAttachment, actions)) in zip(descriptor.descriptor.colorAttachments, descriptor.colorActions).enumerated() {
+            guard let colorAttachment = colorAttachment else { continue }
+            var attachmentDescription = VkAttachmentDescription(pixelFormat: colorAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: colorAttachment, actions: actions)
+            attachmentDescription.initialLayout = descriptor.initialLayouts[ObjectIdentifier(colorAttachment.texture)] ?? VK_IMAGE_LAYOUT_UNDEFINED
+            attachmentDescription.finalLayout = descriptor.finalLayouts[ObjectIdentifier(colorAttachment.texture)] ?? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR // FIXME: is this generally correct?
+            attachmentIndices[.color(i)] = attachments.count
             attachments.append(attachmentDescription)
         }
         
@@ -61,10 +61,10 @@ class VulkanRenderPass {
                 attachmentReferences.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[.depthStencil]!), layout: layout))
             }
             
-            for (i, colourAttachment) in subpass.descriptor.colorAttachments.enumerated() {
-                if colourAttachment != nil {
-                    let layout = subpass.inputAttachments.contains(.colour(i)) ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-                    attachmentReferences.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[.colour(i)]!), layout: layout))
+            for (i, colorAttachment) in subpass.descriptor.colorAttachments.enumerated() {
+                if colorAttachment != nil {
+                    let layout = subpass.inputAttachments.contains(.color(i)) ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                    attachmentReferences.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[.color(i)]!), layout: layout))
                 } else {
                     attachmentReferences.append(VkAttachmentReference(attachment: VK_ATTACHMENT_UNUSED, layout: VK_IMAGE_LAYOUT_GENERAL))
                 }
@@ -76,8 +76,8 @@ class VulkanRenderPass {
                 switch inputAttachment {
                 case .depthStencil:
                     layout = subpass.descriptor.depthAttachment != nil ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
-                case .colour(let colourIndex):
-                    layout = subpass.descriptor.colorAttachments[colourIndex] != nil ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                case .color(let colorIndex):
+                    layout = subpass.descriptor.colorAttachments[colorIndex] != nil ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                 }
                 attachmentReferences.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[inputAttachment]!), layout: layout))
             }

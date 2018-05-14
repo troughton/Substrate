@@ -193,7 +193,7 @@ public final class MetalFrameGraph : FrameGraphBackend {
                     continue resourceLoop // no active usages for this resource.
                 }
                 previousUsage = usage
-            } while !previousUsage.renderPass.isActive
+            } while !previousUsage.renderPass.isActive || previousUsage.type == .argumentBufferUnused
 
             let firstUsage = previousUsage
             
@@ -296,7 +296,7 @@ public final class MetalFrameGraph : FrameGraphBackend {
                     }
                 }
                 
-                commands.append(ResourceCommand(command: .updateFence(id: fenceId, afterStages: MTLRenderStages(passStages.last)), index: passCommandIndex - 1, order: .after))
+                commands.append(ResourceCommand(command: .updateFence(id: fenceId, afterStages: MTLRenderStages(passStages.last)), index: passCommandIndex - 1, order: .after)) // - 1 because of upperBound
                 commands.append(ResourceCommand(command: .waitForFence(id: fenceId, beforeStages: MTLRenderStages(dependentStages.first)), index: dependentCommandIndex, order: .before))
                 fenceId += 1
                 

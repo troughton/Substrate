@@ -90,6 +90,19 @@ public struct MetalResourceBindingPath {
         return argBufferIndex == MetalResourceBindingPath.argumentBufferNone ? nil : argBufferIndex
     }
     
+    public var type : MTLArgumentType {
+        if self.value & MetalResourceBindingPath.bufferTypeFlag != 0 {
+            return .buffer
+        }
+        if self.value & MetalResourceBindingPath.textureTypeFlag != 0 {
+            return .texture
+        }
+        if self.value & MetalResourceBindingPath.samplerTypeFlag != 0 {
+            return .sampler
+        }
+        fatalError()
+    }
+    
     public var index : Int {
         get {
             return Int(self.value.bits(in: MetalResourceBindingPath.indexRange))

@@ -273,7 +273,7 @@ final class StateCaches {
         }
         
         for arg in argumentArray {
-            if arg.index == mtlPath.index {
+            if arg.index == mtlPath.index, arg.type == mtlPath.type {
                 return ArgumentReflection(arg, bindingPath: mtlPath)
             }
         }

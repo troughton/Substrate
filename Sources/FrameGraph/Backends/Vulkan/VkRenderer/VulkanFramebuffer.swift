@@ -11,7 +11,7 @@ import CVkRenderer
 public enum AttachmentIndex {
     case depth
     case stencil
-    case colour(Int)
+    case color(Int)
 }
 
 public class VulkanFramebuffer {
@@ -47,7 +47,7 @@ public class VulkanFramebuffer {
             guard let attachment = attachment else { continue }
             
             let image = resourceRegistry[attachment.texture]!
-            attachments.append((.colour(i), image.viewForAttachment(descriptor: attachment)))
+            attachments.append((.color(i), image.viewForAttachment(descriptor: attachment)))
         }
         
         self.attachments = attachments

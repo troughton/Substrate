@@ -104,7 +104,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
             depthStencilState = dsState
         }
         
-        let colourBlendState = ColorBlendStateCreateInfo(descriptor: self.descriptor, renderTargetDescriptor: renderTargetDescriptor)
+        let colorBlendState = ColorBlendStateCreateInfo(descriptor: self.descriptor, renderTargetDescriptor: renderTargetDescriptor)
         
         let dynamicState = DynamicStateCreateInfo.default
         
@@ -116,7 +116,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         var tesselationState = VkPipelineTessellationStateCreateInfo()
         tesselationState.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO
         
-        var states = (vertexInputState, inputAssemblyState, rasterisationState, multisampleState, depthStencilState, colourBlendState, dynamicState, tesselationState, viewportState)
+        var states = (vertexInputState, inputAssemblyState, rasterisationState, multisampleState, depthStencilState, colorBlendState, dynamicState, tesselationState, viewportState)
         withExtendedLifetime(states) {
             stages.withUnsafeBufferPointer { stages in
                 var pipelineInfo = VkGraphicsPipelineCreateInfo()
@@ -321,9 +321,9 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
                 clearValues.append(VkClearValue(depthStencil: VkClearDepthStencilValue(depth: Float(clearDepth), stencil: clearStencil)))
             }
             
-            for colourAttachment in renderTarget.descriptor.colorAttachments {
-                if let clearColour = colourAttachment?.clearColour {
-                    clearValues.append(VkClearValue(color: VkClearColorValue(float32: (Float(clearColour.red), Float(clearColour.green), Float(clearColour.blue), Float(clearColour.alpha)))))
+            for colorAttachment in renderTarget.descriptor.colorAttachments {
+                if let clearColor = colorAttachment?.clearColor {
+                    clearValues.append(VkClearValue(color: VkClearColorValue(float32: (Float(clearColor.red), Float(clearColor.green), Float(clearColor.blue), Float(clearColor.alpha)))))
                 } else {
                     clearValues.append(VkClearValue())
                 }

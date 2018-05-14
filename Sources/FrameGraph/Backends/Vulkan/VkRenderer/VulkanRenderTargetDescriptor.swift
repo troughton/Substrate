@@ -17,7 +17,7 @@ enum MergeResult {
 
 enum RenderTargetAttachmentIndex : Hashable {
     case depthStencil
-    case colour(Int)
+    case color(Int)
 }
 
 final class VulkanSubpass {
@@ -37,7 +37,7 @@ final class VulkanSubpass {
             if case .depthStencil = attachmentIndex, self.descriptor.depthAttachment != nil || self.descriptor.stencilAttachment != nil {
                 return
             }
-            if case .colour(let index) = attachmentIndex, self.descriptor.colorAttachments[index] != nil {
+            if case .color(let index) = attachmentIndex, self.descriptor.colorAttachments[index] != nil {
                 return
             }
 
@@ -56,7 +56,7 @@ final class VulkanRenderTargetDescriptor {
     var descriptor : RenderTargetDescriptor
     var renderPasses = [RenderPassRecord]()
     
-    var colourActions : [(VkAttachmentLoadOp, VkAttachmentStoreOp)] = []
+    var colorActions : [(VkAttachmentLoadOp, VkAttachmentStoreOp)] = []
 
     var depthActions : (VkAttachmentLoadOp, VkAttachmentStoreOp) = (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE)
     
@@ -208,7 +208,7 @@ final class VulkanRenderTargetDescriptor {
         // Ideally, we should use a semaphore or event (as appropriate) rather than a barrier; we should therefore handle this in the resource commands.
         //
         // For any usages within our render pass:
-        // Add it as a colour/depth attachment (as appropriate) to the subpasses that use it.
+        // Add it as a color/depth attachment (as appropriate) to the subpasses that use it.
         // Add it as an input attachment to subpasses that use it.
         // For any subpasses in between, add it as a preserved attachment.
         //
@@ -283,9 +283,9 @@ final class VulkanRenderTargetDescriptor {
     
     func finalise(resourceUsages: ResourceUsages) {
         // Compute load and store actions for all attachments.
-        self.colourActions = self.descriptor.colorAttachments.enumerated().map { (i, attachment) in
+        self.colorActions = self.descriptor.colorAttachments.enumerated().map { (i, attachment) in
             guard let attachment = attachment else { return (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE) }
-            return self.loadAndStoreActions(for: attachment, attachmentIndex: .colour(i), resourceUsages: resourceUsages)
+            return self.loadAndStoreActions(for: attachment, attachmentIndex: .color(i), resourceUsages: resourceUsages)
         }
         
         if let depthAttachment = self.descriptor.depthAttachment {
