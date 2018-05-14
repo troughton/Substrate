@@ -229,9 +229,9 @@ Swift on Windows is a very early work in progress, and while I can promise you t
 
 I've also included our overlays for Foundation for Windows. If this is interesting to you, make use of it however you please.
 
-## Why Swift? Why not Rust or C++?
+## Why Swift? 
 
-I think Swift's a great language, and it's what we wanted to use when making our engine. The decision was more or less as simple as that. I'm not familiar enough with Rust to make a judgement, although I'm sure it's a great language; as for C++ or C, we didn't need to maintain compatibility with other code so there was no reason for us not to use a more modern and ergonomic language.
+I think Swift's a great language, and it's what we wanted to use when making our engine. In particular, the use case this was built for doesn't require much interoperability with existing C++ code, which enabled us to use a more modern and ergonomic language.
 
 ## What about multithreading?
 
