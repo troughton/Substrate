@@ -384,7 +384,15 @@ public class ResourceBindingEncoder : CommandEncoder {
         }
         defer { self.needsUpdateBindings = false }
         
-        let lastUsageIndex = self.lastGPUCommandIndex
+        let lastUsageIsNextCommand = self.lastGPUCommandIndex == self.nextCommandOffset // If it's the next command, we need to extend the usage out.
+        
+        var usageNodesToUpdate = [ResourceUsageNodePtr]() // nodes to update the upper bound on to the last usage index.
+        
+        func updateUsageNodes(lastIndex: Int) {
+            for usageNode in usageNodesToUpdate {
+                usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...lastIndex)
+            }
+        }
         
         if self.pipelineStateChanged || endingEncoding {
             defer { self.pipelineStateChanged = false }
@@ -394,16 +402,16 @@ public class ResourceBindingEncoder : CommandEncoder {
             
             for (path, (_, usageNode)) in self.boundResources {
                 if endingEncoding || !RenderBackend.bindingIsActive(at: path) {
-                    usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...lastUsageIndex)
+                    usageNodesToUpdate.append(usageNode)
                 }
             }
-            
         }
         
         if endingEncoding {
             // We shouldn't bind anything if we're ending encoding; doing so could mean we bind invalid resources
             // and then are unable to materialise them within the backends' resource registries since their lifetime
             // has already expired.
+            updateUsageNodes(lastIndex: self.lastGPUCommandIndex)
             return
         }
         
@@ -489,7 +497,7 @@ public class ResourceBindingEncoder : CommandEncoder {
             let node = self.resourceUsages.resourceUsageNode(for: identifier, encoder: self, usageType: reflection.usageType, stages: reflection.stages, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset)
             
             if let (_, currentlyBoundNode) = self.boundResources.removeValue(forKey: reflection.bindingPath) {
-                currentlyBoundNode.pointee.element.commandRangeInPass = Range(currentlyBoundNode.pointee.element.commandRangeInPass.lowerBound...lastUsageIndex)
+                usageNodesToUpdate.append(currentlyBoundNode)
             }
             
             self.boundResources[reflection.bindingPath] = (argsPtr, node)
@@ -539,7 +547,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                 let node = self.resourceUsages.resourceUsageNode(for: identifier, encoder: self, usageType: reflection.usageType, stages: reflection.stages, inArgumentBuffer: true, firstCommandOffset: firstCommandOffset)
                 
                 if let (_, currentlyBoundNode) = self.boundResources.removeValue(forKey: bindingPath) {
-                    currentlyBoundNode.pointee.element.commandRangeInPass = Range(currentlyBoundNode.pointee.element.commandRangeInPass.lowerBound...lastUsageIndex)
+                    usageNodesToUpdate.append(currentlyBoundNode)
                 }
                 
                 self.boundResources[bindingPath] = (nil, node)
@@ -556,6 +564,9 @@ public class ResourceBindingEncoder : CommandEncoder {
         
         self.pendingArgumentBuffers.removeAll(keepingCapacity: true)
         self.pendingArgumentBuffers.append(contentsOf: unusedArgumentBuffers)
+
+        self.lastGPUCommandIndex = lastUsageIsNextCommand ? self.nextCommandOffset : self.lastGPUCommandIndex
+        updateUsageNodes(lastIndex: self.lastGPUCommandIndex)
     }
     
     public func endEncoding() {
@@ -566,6 +577,7 @@ public class ResourceBindingEncoder : CommandEncoder {
 extension ResourceBindingEncoder {
     
     public func setValue<T>(_ value: T, key: FunctionArgumentKey) {
+        assert(!(T.self is AnyObject.Type), "setValue should only be used with value types.")
         var value = value
         withUnsafeBytes(of: &value) { bytes in
             self.setBytes(bytes.baseAddress!, length: bytes.count, key: key)
@@ -582,7 +594,7 @@ extension ResourceBindingEncoder {
 public final class RenderCommandEncoder : ResourceBindingEncoder {
     
     enum Attachment : Hashable {
-        case color(Int)
+        case colour(Int)
         case depth
         case stencil
     }
@@ -595,7 +607,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
     var renderPipelineDescriptor : RenderPipelineDescriptor? = nil
     var depthStencilDescriptor : DepthStencilDescriptor? = nil
     
-    var gpuCommandsStartIndexColor : Int? = nil
+    var gpuCommandsStartIndexColour : Int? = nil
     var gpuCommandsStartIndexDepthStencil : Int? = nil
 
     init(commandRecorder: FrameGraphCommandRecorder, resourceUsages: ResourceUsages, renderPass: DrawRenderPass, passRecord: RenderPassRecord) {
@@ -610,7 +622,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
             
             if attachment.wantsClear {
                 let usageNode = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: 0)
-                self.renderTargetAttachmentUsages[.color(i)] = usageNode
+                self.renderTargetAttachmentUsages[.colour(i)] = usageNode
             }
         }
         
@@ -633,11 +645,11 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
         }
     }
     
-    func updateColorAttachmentUsages() {
-        guard let gpuCommandsStartIndex = self.gpuCommandsStartIndexColor else {
+    func updateColourAttachmentUsages() {
+        guard let gpuCommandsStartIndex = self.gpuCommandsStartIndexColour else {
             return
         }
-        self.gpuCommandsStartIndexColor = nil
+        self.gpuCommandsStartIndexColour = nil
         
         guard let renderPipelineDescriptor = self.renderPipelineDescriptor else {
             assertionFailure("No render pipeline descriptor bound.")
@@ -653,15 +665,15 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
             
             let type : ResourceUsageType = renderPipelineDescriptor.blendStates[i] != nil ? .readWriteRenderTarget : .writeOnlyRenderTarget
             
-            if let usageNode = self.renderTargetAttachmentUsages[.color(i)] {
+            if let usageNode = self.renderTargetAttachmentUsages[.colour(i)] {
                 usageNode.pointee.element.type = type == .readWriteRenderTarget ? type : usageNode.pointee.element.type
-                usageNode.pointee.element.commandRangeInPass = usageNode.pointee.element.commandRangeInPass.lowerBound..<self.lastGPUCommandIndex // extend the usage's timeline
+                usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
                 continue
             }
             
             let usageNode = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: type, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
-            usageNode.pointee.element.commandRangeInPass = gpuCommandsStartIndex..<self.lastGPUCommandIndex
-            self.renderTargetAttachmentUsages[.color(i)] = usageNode
+            usageNode.pointee.element.commandRangeInPass = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
+            self.renderTargetAttachmentUsages[.colour(i)] = usageNode
         }
     }
     
@@ -680,12 +692,12 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
             
             if let usageNode = self.renderTargetAttachmentUsages[.depth] {
                 usageNode.pointee.element.type = type == .readWriteRenderTarget ? type : usageNode.pointee.element.type
-                usageNode.pointee.element.commandRangeInPass = usageNode.pointee.element.commandRangeInPass.lowerBound..<self.lastGPUCommandIndex // extend the usage's timeline
+                usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
                 break depthCheck
             }
             
             let usageNode = self.resourceUsages.resourceUsageNode(for: depthAttachment.texture.handle, encoder: self, usageType: type, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
-            usageNode.pointee.element.commandRangeInPass = gpuCommandsStartIndex..<self.lastGPUCommandIndex
+            usageNode.pointee.element.commandRangeInPass = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
             self.renderTargetAttachmentUsages[.depth] = usageNode
         }
         
@@ -704,12 +716,12 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
             
             if let usageNode = self.renderTargetAttachmentUsages[.stencil] {
                 usageNode.pointee.element.type = type == .readWriteRenderTarget ? type : usageNode.pointee.element.type
-                usageNode.pointee.element.commandRangeInPass = usageNode.pointee.element.commandRangeInPass.lowerBound..<self.lastGPUCommandIndex // extend the usage's timeline
+                usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
                 break stencilCheck
             }
             
             let usageNode = self.resourceUsages.resourceUsageNode(for: stencilAttachment.texture.handle, encoder: self, usageType: type, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
-            usageNode.pointee.element.commandRangeInPass = gpuCommandsStartIndex..<self.lastGPUCommandIndex
+            usageNode.pointee.element.commandRangeInPass = Range(gpuCommandsStartIndex..<self.lastGPUCommandIndex)
             self.renderTargetAttachmentUsages[.stencil] = usageNode
         }
     }
@@ -731,7 +743,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
         commandRecorder.unmanagedReferences.append(box)
         commandRecorder << FrameGraphCommand.setRenderPipelineState(box)
         
-        self.updateColorAttachmentUsages()
+        self.updateColourAttachmentUsages()
     }
     
     public func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int) {
@@ -795,20 +807,21 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
     }
     
     public func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
-        self.updateResourceUsages()
-        self.gpuCommandsStartIndexColor = self.gpuCommandsStartIndexColor ?? self.nextCommandOffset
-        self.gpuCommandsStartIndexDepthStencil = self.gpuCommandsStartIndexDepthStencil ?? self.nextCommandOffset
         self.lastGPUCommandIndex = self.nextCommandOffset
+        self.updateResourceUsages()
+        
+        self.gpuCommandsStartIndexColour = self.gpuCommandsStartIndexColour ?? self.nextCommandOffset
+        self.gpuCommandsStartIndexDepthStencil = self.gpuCommandsStartIndexDepthStencil ?? self.nextCommandOffset
         
         (commandRecorder << (primitiveType, UInt32(vertexStart), UInt32(vertexCount), UInt32(instanceCount), UInt32(baseInstance))) << FrameGraphCommand.drawPrimitives
     }
     
     public func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int = 1, baseVertex: Int = 0, baseInstance: Int = 0) {
-        self.updateResourceUsages()
-        self.gpuCommandsStartIndexColor = self.gpuCommandsStartIndexColor ?? self.nextCommandOffset
-        self.gpuCommandsStartIndexDepthStencil = self.gpuCommandsStartIndexDepthStencil ?? self.nextCommandOffset
         self.lastGPUCommandIndex = self.nextCommandOffset
+        self.updateResourceUsages()
         
+        self.gpuCommandsStartIndexColour = self.gpuCommandsStartIndexColour ?? self.nextCommandOffset
+        self.gpuCommandsStartIndexDepthStencil = self.gpuCommandsStartIndexDepthStencil ?? self.nextCommandOffset
         self.resourceUsages.addResourceUsage(for: indexBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .indexBuffer, stages: .vertex, inArgumentBuffer: false)
         
         (commandRecorder << (primitiveType, UInt32(indexCount), indexType, indexBuffer.handle, UInt32(indexBufferOffset), UInt32(instanceCount), Int32(baseVertex), UInt32(baseInstance))) << FrameGraphCommand.drawIndexedPrimitives
@@ -820,10 +833,10 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
         if endingEncoding {
             for usageNode in self.boundVertexBuffers {
                 guard let usageNode = usageNode else { continue }
-                usageNode.pointee.element.commandRangeInPass = usageNode.pointee.element.commandRangeInPass.lowerBound..<self.lastGPUCommandIndex
+                usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex)
             }
             
-            self.updateColorAttachmentUsages()
+            self.updateColourAttachmentUsages()
             self.updateDepthStencilAttachmentUsages()
         }
     }
@@ -866,15 +879,15 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
     }
     
     public func dispatchThreadgroups(_ threadgroupsPerGrid: Size, threadsPerThreadgroup: Size) {
-        self.updateResourceUsages()
         self.lastGPUCommandIndex = self.nextCommandOffset
+        self.updateResourceUsages()
         
         (commandRecorder << (threadgroupsPerGrid, threadsPerThreadgroup)) << FrameGraphCommand.dispatchThreadgroups
     }
     
     public func dispatchThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size) {
-        self.updateResourceUsages()
         self.lastGPUCommandIndex = self.nextCommandOffset
+        self.updateResourceUsages()
         
         self.resourceUsages.addResourceUsage(for: indirectBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .indirectBuffer, stages: .vertex, inArgumentBuffer: false)
         
