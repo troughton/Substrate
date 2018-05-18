@@ -243,7 +243,7 @@ It's probably the first thing we thought of, although in some cases there's a ve
 
 ## What about (some other question here)?
 
-Feel free to post an issue. If it's of the form 'make this work for me' we're likely to close and ignore it; however, if you're genuinely curious about getting something to work with this we'd be more than happy to help.
+Feel free to post an issue. If you're genuinely curious about getting something to work with this we'd be more than happy to help.
 
 ## License
 
