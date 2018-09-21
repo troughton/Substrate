@@ -5,11 +5,11 @@
 //  Created by Thomas Roughton on 23/12/17.
 //
 
-import RenderAPI
-import FrameGraph
+import SwiftFrameGraph
 import Metal
 
 public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
+    
     public let maxInflightFrames : Int
     
     let device : MTLDevice
@@ -17,15 +17,34 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
     let stateCaches : StateCaches
     let frameGraph : MetalFrameGraph
     
-    public init(numInflightFrames: Int) {
+    public init(numInflightFrames: Int, libraryPath: String? = nil) {
         self.device = MTLCreateSystemDefaultDevice()!
         self.resourceRegistry = ResourceRegistry(device: self.device, numInflightFrames: numInflightFrames)
-        self.stateCaches = StateCaches(device: self.device)
+        self.stateCaches = StateCaches(device: self.device, libraryPath: libraryPath)
         self.frameGraph = MetalFrameGraph(device: device, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
         
         self.maxInflightFrames = numInflightFrames
         
-        RenderBackend.backend = self
+//        RenderBackend.backend = self
+        
+        RenderBackend._cachedBackend = _CachedRenderBackend(
+            registerWindowTexture: { [self] (texture, context) in
+                self.registerWindowTexture(texture: texture, context: context)
+            },
+            materialisePersistentTexture: { [self] texture in self.materialisePersistentTexture(texture) },
+            materialisePersistentBuffer: { [self] buffer in self.materialisePersistentBuffer(buffer) },
+            bufferContents: { [self] (buffer, range) in self.bufferContents(for: buffer, range: range) },
+            bufferDidModifyRange: { [self] (buffer, range) in self.buffer(buffer, didModifyRange: range) },
+            replaceTextureRegion: { [self] (texture, region, mipmapLevel, bytes, bytesPerRow) in self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow) },
+            renderPipelineReflection: { [self] (pipeline, renderTarget) in self.renderPipelineReflection(descriptor: pipeline, renderTarget: renderTarget) },
+            computePipelineReflection: { [self] (pipeline) in self.computePipelineReflection(descriptor: pipeline) },
+            disposeTexture: { [self] texture in self.dispose(texture: texture) },
+            disposeBuffer: { [self] buffer in self.dispose(buffer: buffer) },
+            disposeArgumentBuffer: { [self] argumentBuffer in self.dispose(argumentBuffer: argumentBuffer) },
+            isDepth24Stencil8PixelFormatSupported: { [self] in self.isDepth24Stencil8PixelFormatSupported },
+            threadExecutionWidth: { [self] in self.threadExecutionWidth },
+            renderDevice: { [self] in self.renderDevice },
+            maxInflightFrames: { [self] in self.maxInflightFrames })
     }
     
     public var renderDevice: Any {
@@ -49,11 +68,11 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
     }
     
     public func dispose(texture: Texture) {
-        self.resourceRegistry.disposeTexture(texture)
+        self.resourceRegistry.disposeTexture(texture, readFence: nil, writeFences: nil)
     }
     
     public func dispose(buffer: Buffer) {
-        self.resourceRegistry.disposeBuffer(buffer)
+        self.resourceRegistry.disposeBuffer(buffer, readFence: nil, writeFences: nil)
     }
     
     public func dispose(argumentBuffer: ArgumentBuffer) {
@@ -68,6 +87,10 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
     
     public var isDepth24Stencil8PixelFormatSupported: Bool {
         return self.device.isDepth24Stencil8PixelFormatSupported
+    }
+    
+    public var threadExecutionWidth: Int {
+        return self.stateCaches.currentThreadExecutionWidth
     }
     
     public func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
@@ -86,28 +109,12 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
         resourceRegistry.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
     }
     
-    public func setReflectionRenderPipeline(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) {
-        self.stateCaches.setReflectionRenderPipeline(descriptor: descriptor, renderTarget: renderTarget)
+    public func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection {
+        return self.stateCaches.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
     }
     
-    public func setReflectionComputePipeline(descriptor: ComputePipelineDescriptor) {
-        self.stateCaches.setReflectionComputePipeline(descriptor: descriptor)
-    }
-    
-    public func bindingPath(argumentName: String, arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath? {
-        return self.stateCaches.bindingPath(argumentName: argumentName, arrayIndex: arrayIndex, argumentBufferPath: argumentBufferPath)
-    }
-    
-    public func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String) -> ResourceBindingPath? {
-        return self.stateCaches.bindingPath(argumentName: argumentName, arrayIndex: 0, argumentBufferPath: nil)
-    }
-    
-    public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
-        return self.stateCaches.argumentReflection(at: path)
-    }
-    
-    public func bindingIsActive(at path: ResourceBindingPath) -> Bool {
-        return self.argumentReflection(at: path)?.isActive ?? false
+    public func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection {
+        return self.stateCaches.computePipelineReflection(descriptor: descriptor)
     }
     
 }

@@ -13,11 +13,8 @@ let package = Package(
     dependencies: [
     ],
     targets: [
-        .target(name: "FrameGraph", dependencies: ["Utilities", "RenderAPI"],
+        .target(name: "SwiftFrameGraph", dependencies: ["Utilities"],
                 path: "Sources/FrameGraph/FrameGraph"),
-        
-        .target(name: "RenderAPI", dependencies: ["Utilities"],
-                path: "Sources/RenderAPI"),
         
         .target(name: "Utilities", dependencies: []),
         ],
@@ -41,7 +38,7 @@ package.targets.append(contentsOf: [
 
 #endif
 
-let baseRenderDependencies : [Target.Dependency] = ["RenderAPI", "FrameGraph"]
+let baseRenderDependencies : [Target.Dependency] = ["SwiftFrameGraph"]
 let basePath = "Sources/FrameGraph/Backends/"
 
 for api in supportedRenderAPIs {

@@ -83,6 +83,8 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
     
     public var isDepth24Stencil8PixelFormatSupported: Bool = false // TODO: query device capabilities for this
     
+    public var threadExecutionWidth : Int = 32 // TODO: Actually retrieve this from the device.
+
     public var renderDevice: Any {
         return self.device
     }
@@ -105,6 +107,14 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
 
     public func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String) -> ResourceBindingPath? {
         return self.frameGraph.stateCaches.bindingPath(argumentBuffer: argumentBuffer, argumentName: argumentName)
+    }
+
+    public func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath {
+        let newParentPath = VulkanResourceBindingPath(newArgumentBufferPath)
+        
+        var modifiedPath = VulkanResourceBindingPath(pathInOriginalArgumentBuffer)
+        modifiedPath.set = newParentPath.set
+        return ResourceBindingPath(modifiedPath)
     }
     
     public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {

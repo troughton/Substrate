@@ -33,19 +33,20 @@ public struct VertexAttributeDescriptor : Hashable {
 public struct VertexDescriptor : Hashable {
     
     public init() {
+        self._hashValue =  CachedValue(constructor: self.calculateHashValue)
     }
     
-    private var _hashValue : Int = 0
+    private var _hashValue : CachedValue<Int>! = nil
     
     public var layouts = [VertexBufferLayoutDescriptor](repeating: VertexBufferLayoutDescriptor(), count: 8) {
         didSet {
-            self._hashValue = self.calculateHashValue()
+            self._hashValue.reset()
         }
     }
     
     public var attributes = [VertexAttributeDescriptor](repeating: VertexAttributeDescriptor(), count: 16) {
         didSet {
-            self._hashValue = self.calculateHashValue()
+            self._hashValue.reset()
         }
     }
     
@@ -54,7 +55,7 @@ public struct VertexDescriptor : Hashable {
     }
     
     public var hashValue: Int {
-        return _hashValue
+        return _hashValue.value
     }
     
     public static func ==(lhs: VertexDescriptor, rhs: VertexDescriptor) -> Bool {

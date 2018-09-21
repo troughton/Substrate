@@ -15,6 +15,8 @@ import Metal
 // When a resource is first disposed, we give it an index and make it aliasable.
 // Any resource with an index higher than that cannot be used while a resource with a lower index is still in use.
 
+// FIXME: aliasing resources need to have fences between the use of any resources they alias with.
+
 class MetalHeap {
     struct AliasingInfo {
         var aliasesThrough : Int
@@ -34,8 +36,8 @@ class MetalHeap {
     let heap : MTLHeap
     let framePurgeability : MTLPurgeableState
     
-    private var buffers = [MTLBuffer]()
-    private var textures = [MTLTexture]()
+    private var buffers = [MTLBufferReference]()
+    private var textures = [MTLTextureReference]()
     
     public init(heap: MTLHeap, framePurgeability: MTLPurgeableState) {
         self.heap = heap
@@ -46,11 +48,12 @@ class MetalHeap {
         self.heap.setPurgeableState(framePurgeability)
     }
     
-    private func bufferWithLength(_ length: Int, resourceOptions: MTLResourceOptions) -> MTLBuffer? {
+    private func bufferWithLength(_ length: Int, resourceOptions: MTLResourceOptions) -> MTLBufferReference? {
         var bestIndex = -1
         var bestLength = Int.max
         
-        for (i, buffer) in self.buffers.enumerated() {
+        for (i, bufferRef) in self.buffers.enumerated() {
+            let buffer = bufferRef.buffer
             if !self.canUseResource(buffer) {
                 continue
             }
@@ -69,8 +72,10 @@ class MetalHeap {
         }
     }
     
-    private func textureFittingDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTexture? {
-        for (i, texture) in self.textures.enumerated() {
+    private func textureFittingDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTextureReference? {
+        for (i, textureRef) in self.textures.enumerated() {
+            let texture = textureRef.texture
+            
             if !self.canUseResource(texture) {
                 continue
             }
@@ -139,41 +144,41 @@ class MetalHeap {
         }
     }
     
-    public func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor, size: Int, alignment: Int) -> MTLTexture? {
+    public func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor, size: Int, alignment: Int) -> MTLTextureReference? {
         var texture = self.textureFittingDescriptor(descriptor)
         if texture == nil, self.nextAliasingIndex < self.aliasingRange.aliasedFrom, self.heap.maxAvailableSize(alignment: alignment) >= size {
-            texture = self.heap.makeTexture(descriptor: descriptor)
+            texture = MTLTextureReference(texture: self.heap.makeTexture(descriptor: descriptor))
         }
         if let texture = texture {
-            self.useResource(texture)
+            self.useResource(texture.texture)
         }
         
         return texture
     }
     
-    public func depositTexture(_ texture: MTLTexture) {
+    public func depositTexture(_ texture: MTLTextureReference) {
         self.textures.append(texture)
-        self.depositResource(texture)
+        self.depositResource(texture.texture)
     }
     
-    public func collectBufferWithLength(_ length: Int, options: MTLResourceOptions, size: Int, alignment: Int) -> MTLBuffer? {
+    public func collectBufferWithLength(_ length: Int, options: MTLResourceOptions, size: Int, alignment: Int) -> MTLBufferReference? {
         var buffer = self.bufferWithLength(length, resourceOptions: options)
         if buffer == nil, self.nextAliasingIndex < self.aliasingRange.aliasedFrom, self.heap.maxAvailableSize(alignment: alignment) >= size {
-            buffer = self.heap.makeBuffer(length: length, options: options)
+            buffer = MTLBufferReference(buffer: self.heap.makeBuffer(length: length, options: options), offset: 0)
         }
         if let buffer = buffer {
-            self.useResource(buffer)
+            self.useResource(buffer.buffer)
         }
         return buffer
     }
     
-    public func depositBuffer(_ buffer: MTLBuffer) {
+    public func depositBuffer(_ buffer: MTLBufferReference) {
         self.buffers.append(buffer)
-        self.depositResource(buffer)
+        self.depositResource(buffer.buffer)
     }
 }
 
-public class HeapResourceAllocator : BufferAllocator, TextureAllocator {
+class HeapResourceAllocator : BufferAllocator, TextureAllocator {
     
     let device : MTLDevice
     let descriptor : MTLHeapDescriptor
@@ -192,7 +197,7 @@ public class HeapResourceAllocator : BufferAllocator, TextureAllocator {
         assert(descriptor.storageMode == .private)
     }
     
-    public func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTexture {
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTextureReference {
         
         let sizeAndAlign = self.device.heapTextureSizeAndAlign(descriptor: descriptor)
         
@@ -209,16 +214,16 @@ public class HeapResourceAllocator : BufferAllocator, TextureAllocator {
         return heap.collectTextureWithDescriptor(descriptor, size: sizeAndAlign.size, alignment: sizeAndAlign.align)!
     }
     
-    public func depositTexture(_ texture: MTLTexture) {
-        self.heaps.first(where: { $0.heap === texture.heap })!.depositTexture(texture)
+    func depositTexture(_ texture: MTLTextureReference) {
+        self.heaps.first(where: { $0.heap === texture.texture.heap })!.depositTexture(texture)
     }
     
     func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> MTLBufferReference {
         let sizeAndAlign = self.device.heapBufferSizeAndAlign(length: length, options: options)
         
         for heap in self.heaps {
-            if let buffer = heap.collectBufferWithLength(length, options: options, size: sizeAndAlign.size, alignment: sizeAndAlign.align) {
-                return MTLBufferReference(buffer: buffer, offset: 0)
+            if let bufferRef = heap.collectBufferWithLength(length, options: options, size: sizeAndAlign.size, alignment: sizeAndAlign.align) {
+                return bufferRef
             }
         }
         
@@ -228,11 +233,11 @@ public class HeapResourceAllocator : BufferAllocator, TextureAllocator {
         let heap = MetalHeap(heap: mtlHeap, framePurgeability: self.framePurgeability)
         self.heaps.append(heap)
         
-        return MTLBufferReference(buffer: heap.collectBufferWithLength(length, options: options, size: sizeAndAlign.size, alignment: sizeAndAlign.align)!, offset: 0)
+        return heap.collectBufferWithLength(length, options: options, size: sizeAndAlign.size, alignment: sizeAndAlign.align)!
     }
     
     func depositBuffer(_ buffer: MTLBufferReference) {
-        self.heaps.first(where: { $0.heap === buffer.buffer.heap })!.depositBuffer(buffer.buffer)
+        self.heaps.first(where: { $0.heap === buffer.buffer.heap })!.depositBuffer(buffer)
     }
     
     public func cycleFrames() {
@@ -248,3 +253,55 @@ public class HeapResourceAllocator : BufferAllocator, TextureAllocator {
     }
 }
 
+class MultiFrameHeapResourceAllocator : BufferAllocator, TextureAllocator {
+    let device : MTLDevice
+    let descriptor : MTLHeapDescriptor
+    
+    private let heapSize : Int
+    private let framePurgeability : MTLPurgeableState
+    
+    let frameCount : Int
+    
+    let heaps : [HeapResourceAllocator]
+    var currentFrameIndex = 0
+    
+    public init(device: MTLDevice, defaultDescriptor descriptor: MTLHeapDescriptor, framePurgeability: MTLPurgeableState, numFrames: Int) {
+        self.device = device
+        self.descriptor = descriptor
+        self.heapSize = descriptor.size
+        self.framePurgeability = framePurgeability
+        
+        self.frameCount = numFrames
+        self.heaps = (0..<numFrames).map { _ in HeapResourceAllocator(device: device, defaultDescriptor: descriptor, framePurgeability: framePurgeability) }
+        
+        assert(descriptor.storageMode == .private)
+    }
+    
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTextureReference {
+        return self.heaps[currentFrameIndex].collectTextureWithDescriptor(descriptor)
+    }
+    
+    func depositTexture(_ texture: MTLTextureReference) {
+        self.heaps[currentFrameIndex].depositTexture(texture)
+    }
+    
+    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> MTLBufferReference {
+        return self.heaps[currentFrameIndex].collectBufferWithLength(length, options: options)
+    }
+    
+    func depositBuffer(_ buffer: MTLBufferReference) {
+        self.heaps[currentFrameIndex].depositBuffer(buffer)
+    }
+    
+    public func cycleFrames() {
+        self.heaps[currentFrameIndex].cycleFrames()
+        
+        self.currentFrameIndex = (self.currentFrameIndex &+ 1) % self.frameCount
+    }
+    
+    public var totalAllocatedSize : Int {
+        var total = 0
+        for heap in self.heaps { total += heap.totalAllocatedSize }
+        return total
+    }
+}

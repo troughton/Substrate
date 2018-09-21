@@ -147,18 +147,18 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     continue resourceLoop // no active usages for this resource
                 }
                 previousUsage = usage
-            } while !previousUsage.renderPass.isActive
+            } while !previousUsage.renderPass.isActive || (previousUsage.stages == .cpuBeforeRender && previousUsage.type != .unusedArgumentBuffer)
             
             let materialiseIndex = previousUsage.commandRange.lowerBound
             
-            while previousUsage.type == .argumentBufferUnused {
+            while previousUsage.type == .unusedArgumentBuffer || previousUsage.type == .unusedRenderTarget {
                 previousUsage = usageIterator.next()!
             }
 
             let firstUsage = previousUsage
             
             while let usage = usageIterator.next()  {
-                if !usage.renderPass.isActive || usage.type == .argumentBufferUnused { continue }
+                if !usage.renderPass.isActive || usage.stages == .cpuBeforeRender { continue }
                 defer { previousUsage = usage }
 
                 if !previousUsage.isWrite && !usage.isWrite { continue }
@@ -358,7 +358,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     bufferUsage.formUnion(VkBufferUsageFlagBits(buffer.descriptor.usageHint))
                 }
 
-                for usage in usages where usage.renderPass.isActive {
+                for usage in usages where usage.renderPass.isActive, usage.stages != .cpuBeforeRender {
                     switch usage.renderPass.pass.passType {
                     case .draw:
                         queueFamilies.formUnion(.graphics)
@@ -392,9 +392,9 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                         bufferUsage.formUnion(.indexBuffer)
                     case .indirectBuffer:
                         bufferUsage.formUnion(.indirectBuffer)
-                    case .readWriteRenderTarget, .writeOnlyRenderTarget, .sampler, .inputAttachment:
+                    case .readWriteRenderTarget, .writeOnlyRenderTarget, .unusedRenderTarget, .sampler, .inputAttachment:
                         fatalError()
-                    case .argumentBufferUnused:
+                    case .unusedArgumentBuffer:
                         break
                     }
                 }
@@ -408,10 +408,10 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                 if !historyBufferCreationFrame && !buffer.flags.contains(.persistent) {
                     commands.append(ResourceCommand(type: .disposeBuffer(buffer), index: lastUsage.commandRange.upperBound - 1, order: .after))
                 } else {
-                    if isModified {
-                    let sourceMask = lastUsage.type.shaderStageMask(isDepthOrStencil: false, stages: lastUsage.stages)
+                    if isModified { // FIXME: what if we're reading from something that the next frame will modify?
+                        let sourceMask = lastUsage.type.shaderStageMask(isDepthOrStencil: false, stages: lastUsage.stages)
                     
-                    commands.append(ResourceCommand(type: .storeResource(buffer, finalLayout: nil, afterStages: sourceMask), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                        commands.append(ResourceCommand(type: .storeResource(buffer, finalLayout: nil, afterStages: sourceMask), index: lastUsage.commandRange.upperBound - 1, order: .after))
                     }
                 }
                 
@@ -429,7 +429,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                 
                 var previousUsage : ResourceUsage? = nil
                 
-                for usage in usages where usage.renderPass.isActive {
+                for usage in usages where usage.renderPass.isActive, usage.stages != .cpuBeforeRender {
                     defer { previousUsage = usage }
                     
                     switch usage.renderPass.pass.passType {
@@ -451,6 +451,12 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                         textureUsage.formUnion(.storage)
                     case .inputAttachment:
                         textureUsage.formUnion(.inputAttachment)
+                    case .unusedRenderTarget:
+                        if isDepthStencil {
+                            textureUsage.formUnion(.depthStencilAttachment)
+                        } else {
+                            textureUsage.formUnion(.colorAttachment)
+                        }
                     case .readWriteRenderTarget, .writeOnlyRenderTarget:
                         isModified = true
                         if isDepthStencil {
@@ -468,7 +474,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                         textureUsage.formUnion([.transferSource, .transferDestination])
                     case .vertexBuffer, .indexBuffer, .indirectBuffer, .constantBuffer, .sampler:
                         fatalError()
-                    case .argumentBufferUnused:
+                    case .unusedArgumentBuffer:
                         break
                     }
                     

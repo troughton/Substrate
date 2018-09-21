@@ -6,6 +6,8 @@
 //
 //
 
+import CwlSignal
+
 import SwiftMath
 
 public protocol InputManager {

@@ -9,18 +9,36 @@
 import Utilities
 
 public protocol RenderTargetAttachmentDescriptor {
+    /*!
+     @property texture
+     @abstract The Texture object for this attachment.
+     */
     var texture: Texture { get set }
     
-    /// The mipmap level to be used for rendering.
+    /*!
+     @property level
+     @abstract The mipmap level of the texture to be used for rendering.  Default is zero.
+     */
     var level: Int { get set }
     
-    /// The slice of the texture to be used for rendering.
+    
+    /*!
+     @property slice
+     @abstract The slice of the texture to be used for rendering.  Default is zero.
+     */
     var slice: Int { get set }
     
-    /// The depth plane of the texture to be used for rendering.
+    
+    /*!
+     @property depthPlane
+     @abstract The depth plane of the texture to be used for rendering.  Default is zero.
+     */
     var depthPlane: Int { get set }
     
-    /// Whether this attachment wants to be cleared before being used for rendering.
+    /*!
+     @property wantsClear
+     @abstract Whether this attachment wants to be cleared before being used for rendering.
+     */
     var wantsClear : Bool { get }
 }
 
@@ -30,15 +48,30 @@ public struct RenderTargetColorAttachmentDescriptor : RenderTargetAttachmentDesc
         self.texture = texture
     }
     
+    /*!
+     @property texture
+     @abstract The Texture object for this attachment.
+     */
     public var texture: Texture
     
-    /// The mipmap level to be used for rendering.
+    /*!
+     @property level
+     @abstract The mipmap level of the texture to be used for rendering.  Default is zero.
+     */
     public var level: Int = 0
     
-    /// The slice of the texture to be used for rendering.
+    
+    /*!
+     @property slice
+     @abstract The slice of the texture to be used for rendering.  Default is zero.
+     */
     public var slice: Int = 0
     
-    /// The depth plane of the texture to be used for rendering.
+    
+    /*!
+     @property depthPlane
+     @abstract The depth plane of the texture to be used for rendering.  Default is zero.
+     */
     public var depthPlane: Int = 0
     
     public var clearColor : ClearColor? = nil
@@ -54,15 +87,30 @@ public struct RenderTargetDepthAttachmentDescriptor : RenderTargetAttachmentDesc
         self.texture = texture
     }
     
+    /*!
+     @property texture
+     @abstract The Texture object for this attachment.
+     */
     public var texture: Texture
-
-    /// The mipmap level to be used for rendering.
+    
+    /*!
+     @property level
+     @abstract The mipmap level of the texture to be used for rendering.  Default is zero.
+     */
     public var level: Int = 0
-
-    /// The slice of the texture to be used for rendering.
+    
+    
+    /*!
+     @property slice
+     @abstract The slice of the texture to be used for rendering.  Default is zero.
+     */
     public var slice: Int = 0
     
-    /// The depth plane of the texture to be used for rendering.
+    
+    /*!
+     @property depthPlane
+     @abstract The depth plane of the texture to be used for rendering.  Default is zero.
+     */
     public var depthPlane: Int = 0
     
     public var clearDepth : Double? = nil
@@ -78,15 +126,30 @@ public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDe
         self.texture = texture
     }
     
+    /*!
+     @property texture
+     @abstract The Texture object for this attachment.
+     */
     public var texture: Texture
     
-    /// The mipmap level to be used for rendering.
+    /*!
+     @property level
+     @abstract The mipmap level of the texture to be used for rendering.  Default is zero.
+     */
     public var level: Int = 0
     
-    /// The slice of the texture to be used for rendering.
+    
+    /*!
+     @property slice
+     @abstract The slice of the texture to be used for rendering.  Default is zero.
+     */
     public var slice: Int = 0
-
-    /// The depth plane of the texture to be used for rendering.
+    
+    
+    /*!
+     @property depthPlane
+     @abstract The depth plane of the texture to be used for rendering.  Default is zero.
+     */
     public var depthPlane: Int = 0
     
     public var clearStencil : UInt32? = nil
@@ -96,8 +159,9 @@ public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDe
     }
 }
 
-/**
- A render target descriptor describes a collection of attachments to be used in a DrawRenderPass.
+/*!
+ @class RenderTargetDescriptor
+ @abstract RenderTargetDescriptor represents a collection of attachments to be used to create a concrete render command encoder
  */
 public struct RenderTargetDescriptor : Hashable {
     
@@ -111,11 +175,16 @@ public struct RenderTargetDescriptor : Hashable {
     
     public var stencilAttachment : RenderTargetStencilAttachmentDescriptor? = nil
     
-
-    /// Buffer into which samples passing the depth and stencil tests are counted.
+    /*!
+     @property visibilityResultBuffer:
+     @abstract Buffer into which samples passing the depth and stencil tests are counted.
+     */
     public var visibilityResultBuffer: Buffer? = nil
     
-    /// The number of active layers
+    /*!
+     @property renderTargetArrayLength:
+     @abstract The number of active layers
+     */
     public var renderTargetArrayLength: Int = 0
     
     public subscript<I : RenderTargetIdentifier>(attachment: I) -> RenderTargetColorAttachmentDescriptor? {

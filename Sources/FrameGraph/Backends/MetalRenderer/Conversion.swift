@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 24/12/17.
 //
 
-import RenderAPI
+import SwiftFrameGraph
 import Metal
 
 //MARK: From Metal
@@ -74,26 +74,28 @@ extension ArgumentReflection {
             usageType = .sampler
         default:
             type = .buffer
-            usageType = ResourceUsageType(member.pointerType()!.access)
+            usageType = ResourceUsageType(member.pointerType()?.access ?? .readOnly) // It might be POD, in which case the usage is read only.
         }
         
         self.init(isActive: argumentBuffer.isActive, type: type, bindingPath: ResourceBindingPath(bindingPath), usageType: usageType, stages: RenderStages(bindingPath.stages))
     }
     
-    init(array: MTLArrayType, argumentBuffer: MTLArgument, bindingPath: MetalResourceBindingPath) {
+    init?(array: MTLArrayType, argumentBuffer: MTLArgument, bindingPath: MetalResourceBindingPath) {
         let type : ResourceType
         let usageType : ResourceUsageType
         
         switch array.elementType {
         case .texture:
             type = .texture
-            usageType = ResourceUsageType(array.elementTextureReferenceType()!.access)
+            guard let textureReferenceType = array.elementTextureReferenceType() else { return nil }
+            usageType = ResourceUsageType(textureReferenceType.access)
         case .sampler:
             type = .sampler
             usageType = .sampler
         default:
             type = .buffer
-            usageType = ResourceUsageType(array.elementPointerType()!.access)
+            guard let elementPointerType = array.elementPointerType() else { return nil }
+            usageType = ResourceUsageType(elementPointerType.access)
         }
         
         self.init(isActive: argumentBuffer.isActive, type: type, bindingPath: ResourceBindingPath(bindingPath), usageType: usageType, stages: RenderStages(bindingPath.stages))
@@ -148,6 +150,12 @@ extension MTLCPUCacheMode {
 
 extension MTLCullMode {
     init(_ mode: CullMode) {
+        self.init(rawValue: mode.rawValue)!
+    }
+}
+
+extension MTLTriangleFillMode {
+    init(_ mode: TriangleFillMode) {
         self.init(rawValue: mode.rawValue)!
     }
 }
@@ -332,7 +340,7 @@ extension MTLTextureUsage {
 
 extension MTLViewport {
     init(_ viewport: Viewport) {
-        self.init(originX: viewport.originX, originY: viewport.originY, width: viewport.width, height: viewport.height, znear: viewport.znear, zfar: viewport.zfar)
+        self.init(originX: viewport.originX, originY: viewport.originY, width: viewport.width, height: viewport.height, znear: viewport.zNear, zfar: viewport.zFar)
     }
 }
 

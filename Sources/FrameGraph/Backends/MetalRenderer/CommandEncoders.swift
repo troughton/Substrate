@@ -5,8 +5,7 @@
 //  Created by Thomas Roughton on 25/12/17.
 //
 
-import RenderAPI
-import FrameGraph
+import SwiftFrameGraph
 import Metal
 
 final class EncoderManager {
@@ -125,6 +124,9 @@ extension MTLRenderCommandEncoder {
     
     func executeCommand(_ command: FrameGraphCommand, state: MTLRenderCommandEncoderState, renderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         switch command {
+        case .clearRenderTargets:
+            break
+            
         case .insertDebugSignpost(let cString):
             self.insertDebugSignpost(String(cString: cString))
             
@@ -167,8 +169,26 @@ extension MTLRenderCommandEncoder {
             let mtlBindingPath = MetalResourceBindingPath(bindingPath)
             let stages = mtlBindingPath.stages
             
-            let argumentBuffer = args.pointee.argumentBuffer.takeUnretainedValue()
+            let argumentBuffer = args.pointee.argumentBuffer
             let mtlArgumentBuffer = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, bindingPath: bindingPath, encoder: { () -> MTLArgumentEncoder in
+                let functionName = stages.contains(.vertex) ? state.pipelineDescriptor!.vertexFunction : state.pipelineDescriptor!.fragmentFunction
+                return stateCaches.argumentEncoder(atIndex: mtlBindingPath.bindIndex, functionName: functionName!, functionConstants: state.pipelineDescriptor!.functionConstants)
+            }, stateCaches: stateCaches)
+            
+            if stages.contains(.vertex) {
+                self.setVertexBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
+            }
+            if stages.contains(.fragment) {
+                self.setFragmentBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
+            }
+            
+        case .setArgumentBufferArray(let args):
+            let bindingPath = args.pointee.bindingPath
+            let mtlBindingPath = MetalResourceBindingPath(bindingPath)
+            let stages = mtlBindingPath.stages
+            
+            let argumentBuffer = args.pointee.argumentBuffer
+            let mtlArgumentBuffer = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer, bindingPath: bindingPath, encoder: { () -> MTLArgumentEncoder in
                 let functionName = stages.contains(.vertex) ? state.pipelineDescriptor!.vertexFunction : state.pipelineDescriptor!.fragmentFunction
                 return stateCaches.argumentEncoder(atIndex: mtlBindingPath.bindIndex, functionName: functionName!, functionConstants: state.pipelineDescriptor!.functionConstants)
             }, stateCaches: stateCaches)
@@ -232,7 +252,7 @@ extension MTLRenderCommandEncoder {
                 self.setFragmentSamplerState(state, index: mtlBindingPath.bindIndex)
             }
             
-        case .setRenderPipelineState(let descriptorPtr):
+        case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
             state.pipelineDescriptor = descriptor
             self.setRenderPipelineState(stateCaches[descriptor, renderTarget: renderTarget])
@@ -254,7 +274,10 @@ extension MTLRenderCommandEncoder {
         case .setCullMode(let cullMode):
             self.setCullMode(MTLCullMode(cullMode))
             
-        case .setDepthStencilState(let descriptorPtr):
+        case .setTriangleFillMode(let fillMode):
+            self.setTriangleFillMode(MTLTriangleFillMode(fillMode))
+            
+        case .setDepthStencilDescriptor(let descriptorPtr):
             let state : MTLDepthStencilState?
             if let descriptor = descriptorPtr.takeUnretainedValue().value {
                 state = stateCaches[descriptor]
@@ -314,8 +337,19 @@ extension MTLComputeCommandEncoder {
             let bindingPath = args.pointee.bindingPath
             let mtlBindingPath = MetalResourceBindingPath(bindingPath)
             
-            let argumentBuffer = args.pointee.argumentBuffer.takeUnretainedValue()
+            let argumentBuffer = args.pointee.argumentBuffer
             let mtlArgumentBuffer = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, bindingPath: bindingPath, encoder: { () -> MTLArgumentEncoder in
+                return stateCaches.argumentEncoder(atIndex: mtlBindingPath.bindIndex, functionName: state.pipelineDescriptor!.function, functionConstants: state.pipelineDescriptor!.functionConstants)
+            }, stateCaches: stateCaches)
+            
+            self.setBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
+            
+        case .setArgumentBufferArray(let args):
+            let bindingPath = args.pointee.bindingPath
+            let mtlBindingPath = MetalResourceBindingPath(bindingPath)
+            
+            let argumentBuffer = args.pointee.argumentBuffer
+            let mtlArgumentBuffer = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer, bindingPath: bindingPath, encoder: { () -> MTLArgumentEncoder in
                 return stateCaches.argumentEncoder(atIndex: mtlBindingPath.bindIndex, functionName: state.pipelineDescriptor!.function, functionConstants: state.pipelineDescriptor!.functionConstants)
             }, stateCaches: stateCaches)
             
@@ -347,6 +381,9 @@ extension MTLComputeCommandEncoder {
             let state = stateCaches[args.pointee.descriptor]
             self.setSamplerState(state, index: mtlBindingPath.bindIndex)
             
+        case .dispatchThreads(let args):
+            self.dispatchThreads(MTLSize(args.pointee.threads), threadsPerThreadgroup: MTLSize(args.pointee.threadsPerThreadgroup))
+            
         case .dispatchThreadgroups(let args):
             self.dispatchThreadgroups(MTLSize(args.pointee.threadgroupsPerGrid), threadsPerThreadgroup: MTLSize(args.pointee.threadsPerThreadgroup))
             
@@ -354,10 +391,10 @@ extension MTLComputeCommandEncoder {
             let indirectBuffer = resourceRegistry[buffer: args.pointee.indirectBuffer]!
             self.dispatchThreadgroups(indirectBuffer: indirectBuffer.buffer, indirectBufferOffset: Int(args.pointee.indirectBufferOffset) + indirectBuffer.offset, threadsPerThreadgroup: MTLSize(args.pointee.threadsPerThreadgroup))
             
-        case .setComputePipelineState(let descriptorPtr):
-            let descriptor = descriptorPtr.takeUnretainedValue().value
-            state.pipelineDescriptor = descriptor
-            self.setComputePipelineState(stateCaches[descriptor])
+        case .setComputePipelineDescriptor(let descriptorPtr):
+            let descriptor = descriptorPtr.takeUnretainedValue()
+            state.pipelineDescriptor = descriptor.pipelineDescriptor
+            self.setComputePipelineState(stateCaches[descriptor.pipelineDescriptor, descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth])
             
         case .setStageInRegion(let regionPtr):
             self.setStageInRegion(MTLRegion(regionPtr.pointee))

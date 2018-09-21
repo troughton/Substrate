@@ -10,16 +10,27 @@ import Utilities
 
 public struct BlendDescriptor : Hashable {
     
+    /*! Defaults to BlendFactorOne */
     public var sourceRGBBlendFactor: BlendFactor = .one
     
+    
+    /*! Defaults to BlendFactorZero */
     public var destinationRGBBlendFactor: BlendFactor = .zero
     
+    
+    /*! Defaults to BlendOperationAdd */
     public var rgbBlendOperation: BlendOperation = .add
     
+    
+    /*! Defaults to BlendFactorOne */
     public var sourceAlphaBlendFactor: BlendFactor = .one
     
+    
+    /*! Defaults to BlendFactorZero */
     public var destinationAlphaBlendFactor: BlendFactor = .zero
     
+    
+    /*! Defaults to BlendOperationAdd */
     public var alphaBlendOperation: BlendOperation = .add
     
     public init() {
@@ -88,7 +99,6 @@ public struct RenderPipelineDescriptor : Hashable {
 public struct ComputePipelineDescriptor : Hashable {
     public var function : String
     public var functionConstants : AnyFunctionConstants? = nil
-    public var threadgroupSizeIsMultipleOfThreadExecutionWidth : Bool = false
     
     public init(function: String) {
         self.function = function

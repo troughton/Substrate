@@ -6,8 +6,6 @@
 //  Copyright © 2017 Team Llama. All rights reserved.
 //
 
-import RenderAPI
-
 public struct BufferView : Encodable {
     public var buffer : Buffer
     public var offset : Int

@@ -24,6 +24,7 @@ public extension Array {
     }
 }
 
+@_fixed_layout
 public final class FixedSizeBuffer<Element> : MutableCollection, RandomAccessCollection {
     
     public typealias SubSequence = Slice<FixedSizeBuffer<Element>>
@@ -49,6 +50,14 @@ public final class FixedSizeBuffer<Element> : MutableCollection, RandomAccessCol
         
         self.capacity = uninitializedCapacity
         self.buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
+    }
+    
+    public convenience init(allocator: AllocatorType = .system, from array: [Element]) {
+        self.init(allocator: allocator, uninitializedCapacity: array.count)
+        
+        for (i, element) in array.enumerated() {
+            self.buffer[i] = element
+        }
     }
     
     @inlinable
@@ -95,7 +104,7 @@ extension FixedSizeBuffer : ExpressibleByArrayLiteral {
     }
 }
 
-
+@_fixed_layout
 public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCollection {
     
     public typealias SubSequence = Slice<ExpandingBuffer<Element>>
@@ -103,7 +112,7 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     
     public let allocator : AllocatorType
     
-    @_versioned
+    @usableFromInline
     var capacity : Int
     public private(set) var buffer : UnsafeMutablePointer<Element>
     
@@ -113,7 +122,7 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     public init(allocator: AllocatorType = .system, initialCapacity: Int = 16) {
         self.allocator = allocator
         self.capacity = initialCapacity
-        self.buffer =  Allocator.allocate(capacity: capacity, allocator: allocator)
+        self.buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
     }
     
     fileprivate init(allocator: AllocatorType = .system, uninitializedCapacity: Int) {
@@ -149,9 +158,39 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     }
     
     @inlinable
+    public func append(repeating element: Element, count: Int) {
+        self.resize(capacity: self.count + count)
+        self.buffer.advanced(by: self.count).initialize(repeating: element, count: count)
+        self.count += count
+    }
+    
+    @inlinable
     public func removeAll() {
         self.buffer.deinitialize(count: self.count)
         self.count = 0
+    }
+    
+    @inlinable
+    @discardableResult
+    public func removeLast() -> Element {
+        let last = self.buffer.advanced(by: self.count - 1).move()
+        self.count -= 1
+        return last
+    }
+    
+    @inlinable
+    @discardableResult
+    public func popLast() -> Element? {
+        return self.isEmpty ? nil : self.removeLast()
+    }
+    
+    @inlinable
+    public func removePrefix(count: Int) {
+        let count = Swift.min(count, self.count)
+        let remainder = self.count - count
+        self.buffer.deinitialize(count: count)
+        self.buffer.moveInitialize(from: self.buffer.advanced(by: count), count: remainder)
+        self.count = remainder
     }
     
     @inlinable
@@ -203,9 +242,88 @@ public extension ExpandingBuffer where Element : Comparable {
 
 public extension ExpandingBuffer where Element == UInt8 {
     @inlinable
+    public func append<S : Sequence>(_ sequence: S) {
+        for element in sequence {
+            self.append(element)
+        }
+    }
+    
+    @inlinable
     public func append<T>(_ element: T) {
         self.resize(capacity: self.count + MemoryLayout.size(ofValue: element))
         UnsafeMutableRawPointer(self.buffer.advanced(by: self.count)).assumingMemoryBound(to: T.self).initialize(to: element)
         self.count += MemoryLayout.size(ofValue: element)
+    }
+    
+    @inlinable
+    public func append<T>(repeating element: T, count: Int) {
+        assert(self.count % MemoryLayout<T>.alignment == 0)
+        
+        self.resize(capacity: self.count + count * MemoryLayout<T>.stride)
+        UnsafeMutableRawPointer(self.buffer.advanced(by: self.count)).assumingMemoryBound(to: T.self).initialize(repeating: element, count: count)
+        self.count += count * MemoryLayout<T>.stride
+    }
+    
+    @inlinable
+    public func append<T>(from: UnsafePointer<T>, count: Int) {
+        assert(self.count % MemoryLayout<T>.alignment == 0)
+        self.resize(capacity: self.count + count * MemoryLayout<T>.stride)
+        
+        UnsafeMutableRawPointer(self.buffer.advanced(by: self.count)).assumingMemoryBound(to: T.self).initialize(from: from, count: count)
+        self.count += count * MemoryLayout<T>.stride
+    }
+    
+    @inlinable
+    public subscript<T>(index: Int, as type: T.Type) -> T {
+        get {
+            return self.buffer.advanced(by: index * MemoryLayout<T>.stride).withMemoryRebound(to: T.self, capacity: 1, { return $0.pointee })
+        }
+        set {
+            self.buffer.advanced(by: index * MemoryLayout<T>.stride).withMemoryRebound(to: T.self, capacity: 1, { $0.pointee = newValue })
+        }
+    }
+    
+    @inlinable
+    public func withStorageForAppendingBytes(count: Int, _ closure: (UnsafeMutablePointer<Element>) throws -> Void) rethrows {
+        self.resize(capacity: self.count + count)
+        try closure(self.buffer.advanced(by: self.count))
+        self.count += count
+    }
+}
+
+extension ExpandingBuffer : Codable where Element : Codable {
+    
+    public enum CodingKeys : CodingKey {
+        case count
+        case elements
+    }
+    
+    @inlinable
+    public convenience init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let count = try container.decode(Int.self, forKey: .count)
+        
+        self.init(initialCapacity: count)
+        
+        var nestedContainer = try container.nestedUnkeyedContainer(forKey: .elements)
+        
+        for i in 0..<count {
+            let value = try nestedContainer.decode(Element.self)
+            self.buffer.advanced(by: i).initialize(to: value)
+        }
+        
+        self.count = count
+    }
+    
+    @inlinable
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        try container.encode(self.count, forKey: .count)
+        
+        var nestedContainer = container.nestedUnkeyedContainer(forKey: .elements)
+        for i in self.startIndex..<self.endIndex {
+            try nestedContainer.encode(self[i])
+        }
     }
 }

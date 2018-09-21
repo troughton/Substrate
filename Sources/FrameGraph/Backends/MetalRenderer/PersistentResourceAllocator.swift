@@ -15,8 +15,8 @@ final class PersistentResourceAllocator : BufferAllocator, TextureAllocator {
         self.device = device
     }
     
-    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTexture {
-        return device.makeTexture(descriptor: descriptor)!
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTextureReference {
+        return MTLTextureReference(texture: device.makeTexture(descriptor: descriptor)!)
     }
     
     func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> MTLBufferReference {
@@ -26,7 +26,7 @@ final class PersistentResourceAllocator : BufferAllocator, TextureAllocator {
     func depositBuffer(_ buffer: MTLBufferReference) {
     }
     
-    func depositTexture(_ texture: MTLTexture) {
+    func depositTexture(_ texture: MTLTextureReference) {
     }
     
     func cycleFrames() {

@@ -6,8 +6,7 @@
 //
 
 import Metal
-import FrameGraph
-import RenderAPI
+import SwiftFrameGraph
 
 struct MetalRenderPipelineDescriptor : Hashable {
     var descriptor : RenderPipelineDescriptor
@@ -20,5 +19,11 @@ struct MetalRenderPipelineDescriptor : Hashable {
         self.colorAttachmentFormats = renderTargetDescriptor.colorAttachments.map { MTLPixelFormat($0?.texture.descriptor.pixelFormat ?? .invalid) }
         self.depthAttachmentFormat = MTLPixelFormat(renderTargetDescriptor.depthAttachment?.texture.descriptor.pixelFormat ?? .invalid)
         self.stencilAttachmentFormat = MTLPixelFormat(renderTargetDescriptor.stencilAttachment?.texture.descriptor.pixelFormat ?? .invalid)
+    }
+    
+    static func formatsEqual(_ lhs: MetalRenderPipelineDescriptor, _ rhs: MetalRenderPipelineDescriptor) -> Bool {
+        if lhs.depthAttachmentFormat != rhs.depthAttachmentFormat { return false }
+        if lhs.stencilAttachmentFormat != rhs.stencilAttachmentFormat { return false }
+        return lhs.colorAttachmentFormats == rhs.colorAttachmentFormats
     }
 }

@@ -12,7 +12,7 @@ import Metal
 
 final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
     
-    struct ResourceReference<R : MTLResource> {
+    struct ResourceReference<R> {
         let resource : R
         var framesUnused : Int = 0
         
@@ -22,11 +22,11 @@ final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
     }
     
     let device : MTLDevice
-    private var buffers : [[ResourceReference<MTLBuffer>]]
-    private var textures : [[ResourceReference<MTLTexture>]]
+    private var buffers : [[ResourceReference<MTLBufferReference>]]
+    private var textures : [[ResourceReference<MTLTextureReference>]]
     
-    private var buffersUsedThisFrame = [ResourceReference<MTLBuffer>]()
-    private var texturesUsedThisFrame = [ResourceReference<MTLTexture>]()
+    private var buffersUsedThisFrame = [ResourceReference<MTLBufferReference>]()
+    private var texturesUsedThisFrame = [ResourceReference<MTLTextureReference>]()
     
     let numFrames : Int
     private var currentIndex : Int = 0
@@ -34,24 +34,24 @@ final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
     init(device: MTLDevice, numFrames: Int) {
         self.numFrames = numFrames
         self.device = device
-        self.buffers = [[ResourceReference<MTLBuffer>]](repeating: [ResourceReference<MTLBuffer>](), count: numFrames)
-        self.textures = [[ResourceReference<MTLTexture>]](repeating: [ResourceReference<MTLTexture>](), count: numFrames)
+        self.buffers = [[ResourceReference<MTLBufferReference>]](repeating: [ResourceReference<MTLBufferReference>](), count: numFrames)
+        self.textures = [[ResourceReference<MTLTextureReference>]](repeating: [ResourceReference<MTLTextureReference>](), count: numFrames)
     }
     
-    private func textureFittingDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTexture? {
+    private func textureFittingDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTextureReference? {
         
         for (i, textureRef) in self.textures[currentIndex].enumerated() {
-            if descriptor.textureType       == textureRef.resource.textureType &&
-                descriptor.pixelFormat      == textureRef.resource.pixelFormat &&
-                descriptor.width            == textureRef.resource.width &&
-                descriptor.height           == textureRef.resource.height &&
-                descriptor.depth            == textureRef.resource.depth &&
-                descriptor.mipmapLevelCount == textureRef.resource.mipmapLevelCount &&
-                descriptor.sampleCount      == textureRef.resource.sampleCount &&
-                descriptor.arrayLength      == textureRef.resource.arrayLength &&
-                descriptor.storageMode      == textureRef.resource.storageMode &&
-                descriptor.cpuCacheMode     == textureRef.resource.cpuCacheMode &&
-                descriptor.usage            == textureRef.resource.usage {
+            if descriptor.textureType       == textureRef.resource.texture.textureType &&
+                descriptor.pixelFormat      == textureRef.resource.texture.pixelFormat &&
+                descriptor.width            == textureRef.resource.texture.width &&
+                descriptor.height           == textureRef.resource.texture.height &&
+                descriptor.depth            == textureRef.resource.texture.depth &&
+                descriptor.mipmapLevelCount == textureRef.resource.texture.mipmapLevelCount &&
+                descriptor.sampleCount      == textureRef.resource.texture.sampleCount &&
+                descriptor.arrayLength      == textureRef.resource.texture.arrayLength &&
+                descriptor.storageMode      == textureRef.resource.texture.storageMode &&
+                descriptor.cpuCacheMode     == textureRef.resource.texture.cpuCacheMode &&
+                descriptor.usage            == textureRef.resource.texture.usage {
                 return self.textures[currentIndex].remove(at: i, preservingOrder: false).resource
             }
         }
@@ -59,15 +59,15 @@ final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
         return nil
     }
     
-    private func bufferWithLength(_ length: Int, resourceOptions: MTLResourceOptions) -> MTLBuffer? {
+    private func bufferWithLength(_ length: Int, resourceOptions: MTLResourceOptions) -> MTLBufferReference? {
         var bestIndex = -1
         var bestLength = Int.max
         
         for (i, bufferRef) in self.buffers[currentIndex].enumerated() {
-            if bufferRef.resource.length >= length, bufferRef.resource.length < bestLength,
-            resourceOptions.matches(storageMode: bufferRef.resource.storageMode, cpuCacheMode: bufferRef.resource.cpuCacheMode) {
+            if bufferRef.resource.buffer.length >= length, bufferRef.resource.buffer.length < bestLength,
+            resourceOptions.matches(storageMode: bufferRef.resource.buffer.storageMode, cpuCacheMode: bufferRef.resource.buffer.cpuCacheMode) {
                 bestIndex = i
-                bestLength = bufferRef.resource.length
+                bestLength = bufferRef.resource.buffer.length
             }
         }
         
@@ -78,17 +78,17 @@ final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
         }
     }
     
-    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTexture {
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTextureReference {
         if let texture = self.textureFittingDescriptor(descriptor) {
             return texture
         } else {
-            return device.makeTexture(descriptor: descriptor)!
+            return MTLTextureReference(texture: device.makeTexture(descriptor: descriptor)!)
         }
     }
     
     func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> MTLBufferReference {
         if let buffer = self.bufferWithLength(length, resourceOptions: options) {
-            return MTLBufferReference(buffer: buffer, offset: 0)
+            return buffer
         } else {
             return MTLBufferReference(buffer: device.makeBuffer(length: length, options: options)!, offset: 0)
         }
@@ -96,10 +96,10 @@ final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
     
     func depositBuffer(_ buffer: MTLBufferReference) {
         // We can't just put the resource back into the array for the current frame, since it's not safe to use it for another buffers.count frames.
-        self.buffersUsedThisFrame.append(ResourceReference(resource: buffer.buffer))
+        self.buffersUsedThisFrame.append(ResourceReference(resource: buffer))
     }
     
-    func depositTexture(_ texture: MTLTexture) {
+    func depositTexture(_ texture: MTLTextureReference) {
         // We can't just put the resource back into the array for the current frame, since it's not safe to use it for another buffers.count frames.
         self.texturesUsedThisFrame.append(ResourceReference(resource: texture))
     }

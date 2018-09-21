@@ -3,10 +3,9 @@
 import Foundation
 
 public final class ResizingAllocator {
-    @_versioned
-    let allocator : AllocatorType
+    public let allocator : AllocatorType
     public internal(set) var capacity : Int = 0
-    @_versioned
+    @usableFromInline
     var buffer : UnsafeMutableRawPointer! = nil
     
     public init(allocator: AllocatorType = .system) {
@@ -14,7 +13,7 @@ public final class ResizingAllocator {
     }
     
     deinit {
-        self.buffer?.deallocate()
+        Allocator.deallocate(self.buffer, allocator: self.allocator)
     }
     
     @inlinable
@@ -39,7 +38,7 @@ public final class ResizingAllocator {
         
         if let oldBuffer = self.buffer {
             ABuffer.moveInitialize(from: (oldBuffer + AOffsetOld).assumingMemoryBound(to: A.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -83,7 +82,7 @@ public final class ResizingAllocator {
         if let oldBuffer = self.buffer {
             ABuffer.moveInitialize(from: (oldBuffer + AOffsetOld).assumingMemoryBound(to: A.self), count: self.capacity)
             BBuffer.moveInitialize(from: (oldBuffer + BOffsetOld).assumingMemoryBound(to: B.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -140,7 +139,7 @@ public final class ResizingAllocator {
             ABuffer.moveInitialize(from: (oldBuffer + AOffsetOld).assumingMemoryBound(to: A.self), count: self.capacity)
             BBuffer.moveInitialize(from: (oldBuffer + BOffsetOld).assumingMemoryBound(to: B.self), count: self.capacity)
             CBuffer.moveInitialize(from: (oldBuffer + COffsetOld).assumingMemoryBound(to: C.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -210,7 +209,7 @@ public final class ResizingAllocator {
             BBuffer.moveInitialize(from: (oldBuffer + BOffsetOld).assumingMemoryBound(to: B.self), count: self.capacity)
             CBuffer.moveInitialize(from: (oldBuffer + COffsetOld).assumingMemoryBound(to: C.self), count: self.capacity)
             DBuffer.moveInitialize(from: (oldBuffer + DOffsetOld).assumingMemoryBound(to: D.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -293,7 +292,7 @@ public final class ResizingAllocator {
             CBuffer.moveInitialize(from: (oldBuffer + COffsetOld).assumingMemoryBound(to: C.self), count: self.capacity)
             DBuffer.moveInitialize(from: (oldBuffer + DOffsetOld).assumingMemoryBound(to: D.self), count: self.capacity)
             EBuffer.moveInitialize(from: (oldBuffer + EOffsetOld).assumingMemoryBound(to: E.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -389,7 +388,7 @@ public final class ResizingAllocator {
             DBuffer.moveInitialize(from: (oldBuffer + DOffsetOld).assumingMemoryBound(to: D.self), count: self.capacity)
             EBuffer.moveInitialize(from: (oldBuffer + EOffsetOld).assumingMemoryBound(to: E.self), count: self.capacity)
             FBuffer.moveInitialize(from: (oldBuffer + FOffsetOld).assumingMemoryBound(to: F.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -498,7 +497,7 @@ public final class ResizingAllocator {
             EBuffer.moveInitialize(from: (oldBuffer + EOffsetOld).assumingMemoryBound(to: E.self), count: self.capacity)
             FBuffer.moveInitialize(from: (oldBuffer + FOffsetOld).assumingMemoryBound(to: F.self), count: self.capacity)
             GBuffer.moveInitialize(from: (oldBuffer + GOffsetOld).assumingMemoryBound(to: G.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -620,7 +619,7 @@ public final class ResizingAllocator {
             FBuffer.moveInitialize(from: (oldBuffer + FOffsetOld).assumingMemoryBound(to: F.self), count: self.capacity)
             GBuffer.moveInitialize(from: (oldBuffer + GOffsetOld).assumingMemoryBound(to: G.self), count: self.capacity)
             HBuffer.moveInitialize(from: (oldBuffer + HOffsetOld).assumingMemoryBound(to: H.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -755,7 +754,7 @@ public final class ResizingAllocator {
             GBuffer.moveInitialize(from: (oldBuffer + GOffsetOld).assumingMemoryBound(to: G.self), count: self.capacity)
             HBuffer.moveInitialize(from: (oldBuffer + HOffsetOld).assumingMemoryBound(to: H.self), count: self.capacity)
             IBuffer.moveInitialize(from: (oldBuffer + IOffsetOld).assumingMemoryBound(to: I.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -903,7 +902,7 @@ public final class ResizingAllocator {
             HBuffer.moveInitialize(from: (oldBuffer + HOffsetOld).assumingMemoryBound(to: H.self), count: self.capacity)
             IBuffer.moveInitialize(from: (oldBuffer + IOffsetOld).assumingMemoryBound(to: I.self), count: self.capacity)
             JBuffer.moveInitialize(from: (oldBuffer + JOffsetOld).assumingMemoryBound(to: J.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer
@@ -1064,7 +1063,7 @@ public final class ResizingAllocator {
             IBuffer.moveInitialize(from: (oldBuffer + IOffsetOld).assumingMemoryBound(to: I.self), count: self.capacity)
             JBuffer.moveInitialize(from: (oldBuffer + JOffsetOld).assumingMemoryBound(to: J.self), count: self.capacity)
             KBuffer.moveInitialize(from: (oldBuffer + KOffsetOld).assumingMemoryBound(to: K.self), count: self.capacity)
-            oldBuffer.deallocate()
+            Allocator.deallocate(oldBuffer, allocator: self.allocator)
         }
         
         self.buffer = newBuffer

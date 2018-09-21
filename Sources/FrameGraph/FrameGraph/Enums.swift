@@ -126,13 +126,13 @@ public enum PixelFormat : UInt, Hashable {
     case rg16Float = 65
     
     case rgba8Unorm = 70
-    case rgba8Unorm_srgb = 71
+    case rgba8Unorm_sRGB = 71
     case rgba8Snorm = 72
     case rgba8Uint = 73
     case rgba8Sint = 74
     
     case bgra8Unorm = 80
-    case bgra8Unorm_srgb = 81
+    case bgra8Unorm_sRGB = 81
     
     /* Packed 32 bit formats */
     case rgb10a2Unorm = 90
@@ -167,11 +167,11 @@ public enum PixelFormat : UInt, Hashable {
     /* Compressed formats. */
     /* S3TC/DXT */
     case bc1_rgba = 130
-    case bc1_rgba_srgb = 131
+    case bc1_rgba_sRGB = 131
     case bc2_rgba = 132
-    case bc2_rgba_srgb = 133
+    case bc2_rgba_sRGB = 133
     case bc3_rgba = 134
-    case bc3_rgba_srgb = 135
+    case bc3_rgba_sRGB = 135
     
     /* RGTC */
     case bc4_rUnorm = 140
@@ -183,10 +183,11 @@ public enum PixelFormat : UInt, Hashable {
     case bc6H_rgbFloat = 150
     case bc6H_rgbuFloat = 151
     case bc7_rgbaUnorm = 152
-    case bc7_rgbaUnorm_srgb = 153
+    case bc7_rgbaUnorm_sRGB = 153
     
+
     case gbgr422 = 240
-    
+
     case bgrg422 = 241
     
     /* Depth */
@@ -199,6 +200,7 @@ public enum PixelFormat : UInt, Hashable {
     /* Depth Stencil */
     case depth24Unorm_stencil8 = 255
     case depth32Float_stencil8 = 260
+    
     case x32_stencil8 = 261
     case x24_stencil8 = 262
 }
@@ -247,25 +249,18 @@ public extension PixelFormat {
     }
 }
 
-
-
 @available(OSX 10.11, *)
 public enum CPUCacheMode : UInt {
+    
+    
     case defaultCache
+    
     case writeCombined
 }
 
 public enum StorageMode : UInt {
-    /// In shared mode, the CPU and device will both appear to use the same memory.
-    /// However, coherency is only guaranteed between FrameGraph executions to minimize the required flushing of CPU and GPU caches.
     case shared
-    
-    /// In managed mode, GPU and CPU resources need to be explicitly synchronised. This is managed for you when you use a BufferSlice
-    /// to write to the GPU, but copying resources from the GPU to the CPU may require a 'synchronise' call.
     case managed
-    
-    /// In private mode, resources only exist in GPU memory. For resources that will not be updated or read by the CPU this will provide
-    /// the best performance.
     case `private`
 }
 
@@ -370,6 +365,10 @@ public enum DataType : UInt {
     case bool4
 }
 
+/*!
+ @enum VertexFormat
+ @abstract specifies how the vertex attribute data is laid out in memory.
+ */
 @available(OSX 10.11, *)
 public enum VertexFormat : UInt {
     
@@ -533,6 +532,7 @@ public enum CompareFunction : UInt {
 
 public enum StencilOperation : UInt {
     
+    
     case keep
     
     case zero
@@ -560,17 +560,17 @@ public struct Viewport {
     
     public var height: Double
     
-    public var znear: Double
+    public var zNear: Double
     
-    public var zfar: Double
+    public var zFar: Double
     
-    public init(originX: Double, originY: Double, width: Double, height: Double, znear: Double, zfar: Double) {
+    public init(originX: Double, originY: Double, width: Double, height: Double, zNear: Double, zFar: Double) {
         self.originX = originX
         self.originY = originY
         self.width = width
         self.height = height
-        self.znear = znear
-        self.zfar = zfar
+        self.zNear = zNear
+        self.zFar = zFar
     }
 }
 
@@ -589,7 +589,7 @@ public struct ClearColor : Hashable {
         self.red = 0.0
         self.green = 0.0
         self.blue = 0.0
-        self.alpha = 1.0
+        self.alpha = 0.0
     }
     
     public init(red: Double, green: Double, blue: Double, alpha: Double) {
@@ -600,6 +600,10 @@ public struct ClearColor : Hashable {
     }
 }
 
+/*!
+ @struct Origin
+ @abstract Identify a pixel in an image. Origin is ususally used as the upper-left corner of a region of a texture.
+ */
 public struct Origin {
     
     public var x: Int
@@ -621,6 +625,10 @@ public struct Origin {
     }
 }
 
+/*!
+ @typedef Size
+ @abstract A set of dimensions to declare the size of an object such as a compute kernel work group or grid.
+ */
 public struct Size : Hashable {
     
     public var width: Int
@@ -640,8 +648,18 @@ public struct Size : Hashable {
         self.height = height
         self.depth = depth
     }
+    
+    public init(length: Int) {
+        self.width = length
+        self.height = 1
+        self.depth = 1
+    }
 }
 
+/*!
+ @struct Region
+ @abstract Identify a region in an image or texture.
+ */
 public struct Region {
     
     public var origin: Origin
@@ -664,6 +682,9 @@ public struct Region {
     }
 }
 
+/*!
+ @struct ScissorRect
+ */
 public struct ScissorRect : Equatable {
     
     public var x : Int = 0

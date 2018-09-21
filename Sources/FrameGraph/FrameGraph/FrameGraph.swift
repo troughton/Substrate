@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import RenderAPI
 import Utilities
 
 public protocol RenderPass : class {
@@ -134,19 +133,15 @@ public enum RenderPassType {
 
 public final class RenderPassRecord {
     public let pass : RenderPass
-    public var commandRange : Range<Int>?
-    public var passIndex : Int
-    var refCount : Int
+    public internal(set) var commandRange : Range<Int>?
+    public internal(set) var passIndex : Int
+    public internal(set) var isActive : Bool
     
     init(pass: RenderPass, passIndex: Int) {
         self.pass = pass
         self.passIndex = passIndex
         self.commandRange = nil
-        self.refCount = 0
-    }
-    
-    public var isActive : Bool {
-        return self.refCount > 0
+        self.isActive = false
     }
 }
 
@@ -157,6 +152,10 @@ public protocol FrameGraphBackend {
 
 public class FrameGraph {
     
+    /// A debug setting to ensure that render passes are never culled, inactive resources are bound,
+    /// and that all bound resources are used, making it potentially easier to find issues using debug tools.
+    public static let debugMode = false
+    
     static let resourceUsages = ResourceUsages()
     static let commandRecorder = FrameGraphCommandRecorder()
     
@@ -164,6 +163,13 @@ public class FrameGraph {
     
     private static var renderPasses : [RenderPassRecord] = []
     private static let renderPassQueue = DispatchQueue(label: "Render Pass Queue")
+    
+    private static var currentFrameIndex : UInt64 = 1 // starting at 0 causes issues for waits on the first frame.
+    private static var previousFrameCompletionTime : UInt64 = 0
+    
+    public private(set) static var lastFrameRenderDuration = 1000.0 / 60.0
+    
+    static var submissionNotifyQueue = [() -> Void]()
     
     private init() {
     }
@@ -173,7 +179,7 @@ public class FrameGraph {
                                             execute: @escaping (BlitCommandEncoder) -> Void)  {
         self.renderPassQueue.sync {
             self.renderPasses.insert(RenderPassRecord(pass: CallbackBlitRenderPass(name: name, execute: execute),
-                                                      passIndex: self.renderPasses.count), at: 0)
+                                                      passIndex: 0), at: 0)
         }
     }
 
@@ -239,6 +245,8 @@ public class FrameGraph {
             fatalError("Unknown pass type for pass \(passRecord)")
         }
         
+        self.commandRecorder.commmandEncoderTemporaryArena.reset()
+        
         let endCommandIndex = self.commandRecorder.nextCommandIndex
         
         return startCommandIndex..<endCommandIndex
@@ -246,68 +254,93 @@ public class FrameGraph {
     
     static func evaluateResourceUsages(renderPasses: [RenderPassRecord]) {
         for passRecord in renderPasses {
-
             if passRecord.pass.writtenResources.isEmpty {
                 passRecord.commandRange = self.executePass(passRecord)
             } else {
-                self.resourceUsages.addReadResources(passRecord.pass.readResources, for: passRecord.pass)
-                self.resourceUsages.addWrittenResources(passRecord.pass.writtenResources, for: passRecord.pass)
+                self.resourceUsages.addReadResources(passRecord.pass.readResources, for: Unmanaged.passUnretained(passRecord))
+                self.resourceUsages.addWrittenResources(passRecord.pass.writtenResources, for: Unmanaged.passUnretained(passRecord))
+            }
+        }
+    }
+    
+    static func markActive(passIndex i: Int, dependencyTable: DependencyTable<Bool>, renderPasses: [RenderPassRecord]) {
+        if !renderPasses[i].isActive {
+            renderPasses[i].isActive = true
+            for j in 0..<i {
+                if dependencyTable.dependency(from: i, on: j), !renderPasses[j].isActive {
+                    markActive(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses)
+                }
             }
         }
     }
     
     static func compile(renderPasses: [RenderPassRecord]) {
+        renderPasses.enumerated().forEach { $1.passIndex = $0 } // We may have inserted early blit passes, so we need to se the pass indices now.
+        
         self.evaluateResourceUsages(renderPasses: renderPasses)
         
-        //Simple graph flood-fill from unreferenced resources
+        var dependencyTable = DependencyTable<Bool>(capacity: renderPasses.count, defaultValue: false)
+        var passHasSideEffects = [Bool](repeating: false, count: renderPasses.count)
         
-        var resourceRefCounts = [ObjectIdentifier : UInt32]()
+        var producingPasses = [Int]()
         
-        //Compute initial resource and pass reference counts
-        for passRecord in renderPasses {
-            passRecord.refCount += self.resourceUsages.writtenResources(for: passRecord.pass).count
-            
-            for resource in self.resourceUsages.readResources(for: passRecord.pass) {
-                resourceRefCounts[resource, default: 0] += 1
-            }
-        }
-        
-        var unusedResources = self.resourceUsages.usages.keys.filter { resourceIdentifier in
-            // This resource isn't actually used; it only has usages as an argumentBufferUnused.
-            guard let resource = resourceUsages[resourceIdentifier] else { return false }
-    
-            return (resourceRefCounts[resourceIdentifier] ?? 0) == 0 &&
-                    resource.flags.intersection([.persistent, .windowHandle]) == [] 
-        }
-        
-        while let resourceIdentifier = unusedResources.popLast() {
-            let resource = self.resourceUsages[resourceIdentifier]!
-            
-            guard resource.flags.intersection([.persistent, .windowHandle]) == [] else {
+        for resource in resourceUsages.resources {
+            let usages = resource.usages
+            guard !usages.isEmpty else {
                 continue
             }
             
-            for usage in self.resourceUsages[usagesFor: resource] where usage.isWrite {
-                let producer = usage.renderPass
-                producer.refCount -= 1
-                if producer.refCount == 0 {
-                    for resource in self.resourceUsages.readResources(for: producer.pass) {
-                        resourceRefCounts[resource]! -= 1
-                        if resourceRefCounts[resource] == 0 {
-                            unusedResources.append(resource)
-                        }
+//            assert(resource.flags.contains(.initialised) || usages.first.isWrite, "Resource read by pass \(usages.first.renderPass.pass.name) without being written to.")
+            
+            for usage in usages {
+                if usage.isRead {
+                    for producingPass in producingPasses where usage.renderPass.passIndex != producingPass {
+                        dependencyTable.setDependency(from: usage.renderPass.passIndex, on: producingPass, to: true)
                     }
                 }
+                if usage.isWrite {
+                    producingPasses.append(usage.renderPass.passIndex)
+                }
             }
+            
+            if resource.flags.intersection([.persistent, .windowHandle, .historyBuffer]) != [] {
+                for pass in producingPasses {
+                    passHasSideEffects[pass] = true
+                }
+            }
+            
+            producingPasses.removeAll(keepingCapacity: true)
         }
         
-        for passRecord in renderPasses where passRecord.commandRange == nil {
-            passRecord.commandRange = self.executePass(passRecord)
+        for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] || FrameGraph.debugMode {
+            self.markActive(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses)
+        }
+        
+        for passRecord in renderPasses where passRecord.isActive {
+            // FIXME: this doesn't interact correctly with the ResourceUsagesLists – we need to insert new nodes in place there.
+            // This issue also means those passes don't get culled, since we can't iterate through the usages list and decrement the producer reference count.
+            // We should ideally be executing passes in parallel, and then merging the resource usage lists from each pass together at the end.
+            if passRecord.commandRange == nil {
+                passRecord.commandRange = self.executePass(passRecord)
+            }
+            if passRecord.pass.passType == .cpu {
+                passRecord.isActive = false // We've definitely executed the pass now, so there's no more work to be done on it by the GPU backends.
+            }
         }
     }
     
-    public static func execute(backend: FrameGraphBackend) {
+    // Note: calling this on the same thread that execute is called on will cause deadlock.
+    public static func waitForNextFrame() {
+        FrameCompletion.waitForFrame(self.currentFrameIndex)
+    }
+    
+    public static func waitForGPUSubmission(_ function: @escaping () -> Void) {
+        self.submissionNotifyQueue.append(function)
+    }
+    
+    public static func execute(backend: FrameGraphBackend, onGPUCompletion: (() -> Void)? = nil) {
         self.completionSemaphore.wait()
+        let currentFrameIndex = self.currentFrameIndex
         
         backend.beginFrameResourceAccess()
         
@@ -342,15 +375,56 @@ public class FrameGraph {
             passes.append(passRecord)
         }
         
+        for resource in resourceUsages.allResources where resource.flags.contains(.persistent) {
+            var isRead = false
+            var isWritten = false
+            for usage in resource.usages where usage.renderPass.isActive {
+                if usage.isRead {
+                    isRead = true
+                }
+                if usage.isWrite {
+                    isWritten = true
+                    break
+                }
+            }
+            if isRead {
+                resource.writeWaitFrame = currentFrameIndex // The CPU can't write to this resource until the GPU has finished reading from it.
+            }
+            if isWritten {
+                resource.readWaitFrame = currentFrameIndex // The CPU can't read from this resource until the GPU has finished writing to it.
+            }
+        }
+        
         backend.executeFrameGraph(passes: passes, resourceUsages: self.resourceUsages, commands: commands, completion: {
+            let completionTime = DispatchTime.now().uptimeNanoseconds
+            let elapsed = completionTime - FrameGraph.previousFrameCompletionTime
+            FrameGraph.previousFrameCompletionTime = completionTime
+            self.lastFrameRenderDuration = Double(elapsed) * 1e-6
+//            print("Frame completed in \(self.lastFrameRenderDuration)ms.")
+            
             self.completionSemaphore.signal()
+            FrameCompletion.markFrameComplete(frame: currentFrameIndex)
+            onGPUCompletion?()
+            
         })
+        
+        self.submissionNotifyQueue.forEach { $0() }
+        self.submissionNotifyQueue.removeAll(keepingCapacity: true)
         
         self.reset()
         
+        self.currentFrameIndex += 1
     }
     
     private static func reset() {
+        TransientBufferRegistry.instance.clear()
+        TransientTextureRegistry.instance.clear()
+        TransientArgumentBufferRegistry.instance.clear()
+        TransientArgumentBufferArrayRegistry.instance.clear()
+        
+        PersistentTextureRegistry.instance.clear()
+        PersistentBufferRegistry.instance.clear()
+        
         self.commandRecorder.reset()
         self.resourceUsages.reset()
     }

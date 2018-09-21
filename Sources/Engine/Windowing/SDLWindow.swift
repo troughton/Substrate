@@ -6,6 +6,8 @@
 //
 //
 
+#if canImport(CSDL2)
+
 #if os(macOS)
     import AppKit
     import MetalKit
@@ -13,7 +15,7 @@
 
 import Utilities
 import Foundation
-import RenderAPI
+import SwiftFrameGraph
 import CSDL2
 
 #if SDL_WINDOWING
@@ -255,3 +257,5 @@ public struct SDLWindowOptions: OptionSet {
     public static let vulkan = SDLWindowOptions(rawValue: SDLWindowOptions.RawValue(SDL_WINDOW_VULKAN.rawValue))
 
 }
+
+#endif

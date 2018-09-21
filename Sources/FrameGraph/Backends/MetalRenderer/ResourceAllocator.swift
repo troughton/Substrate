@@ -15,8 +15,8 @@ protocol ResourceAllocator {
 
 
 protocol TextureAllocator : ResourceAllocator {
-    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTexture
-    func depositTexture(_ texture: MTLTexture)
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> MTLTextureReference
+    func depositTexture(_ texture: MTLTextureReference)
 }
 
 protocol BufferAllocator : ResourceAllocator {
@@ -41,10 +41,10 @@ extension MTLResourceOptions {
         }
         
         switch cpuCacheMode {
-        case .defaultCache:
-            break // defaultCache is an empty OptionSet.
         case .writeCombined:
             matches = matches && self.contains(.cpuCacheModeWriteCombined)
+        case .defaultCache:
+            break // defaultCache is an empty OptionSet.
         }
         
         return matches

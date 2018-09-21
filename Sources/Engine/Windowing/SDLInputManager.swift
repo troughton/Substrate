@@ -6,8 +6,11 @@
 //
 //
 
+#if canImport(CSDL2)
 
 import CSDL2
+import CwlSignal
+
 import DrawTools
 import CDebugDrawTools
 
@@ -810,3 +813,5 @@ extension InputSource {
     }
     
 }
+
+#endif

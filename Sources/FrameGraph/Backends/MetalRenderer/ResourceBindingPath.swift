@@ -5,25 +5,30 @@
 //  Created by Thomas Roughton on 2/03/18.
 //
 
-import RenderAPI
+import SwiftFrameGraph
 import Metal
 import Utilities
 
-public struct MetalResourceBindingPath {
-    private static let vertexStageFlag : UInt64 = (1 << 63)
-    private static let fragmentStageFlag : UInt64 = (1 << 62)
+@_fixed_layout
+public struct MetalResourceBindingPath : Hashable {
+    public static let vertexStageFlag : UInt64 = (1 << 63)
+    public static let fragmentStageFlag : UInt64 = (1 << 62)
     
-    private static let textureTypeFlag : UInt64 = (1 << 61)
-    private static let bufferTypeFlag : UInt64 = (1 << 60)
-    private static let samplerTypeFlag : UInt64 = (1 << 59)
+    public static let textureTypeFlag : UInt64 = (1 << 61)
+    public static let bufferTypeFlag : UInt64 = (1 << 60)
+    public static let samplerTypeFlag : UInt64 = (1 << 59)
     
-    private static let argumentBufferNone = (1 << 5) - 1 // all bits in the argumentBufferIndexRange set.
-    private static let argumentBufferIndexRange = 54..<59
-    private static let indexRange = 32..<54
-    private static let arrayIndexRange = 0..<32
+    public static let argumentBufferNone = (1 << 5) - 1 // all bits in the argumentBufferIndexRange set.
+    public static let argumentBufferIndexRange = 54..<59
+    public static let argumentBufferIndexClearMask = UInt64.maskForClearingBits(in: argumentBufferIndexRange)
+    public static let indexRange = 32..<54
+    public static let indexClearMask = UInt64.maskForClearingBits(in: indexRange)
+    public static let arrayIndexRange = 0..<32
+    public static let arrayIndexClearMask = UInt64.maskForClearingBits(in: arrayIndexRange)
     
-    var value : UInt64 = 0
+    public var value : UInt64 = 0
     
+    @inlinable
     public init(_ path: ResourceBindingPath) {
         self.value = path.value
     }
@@ -44,12 +49,12 @@ public struct MetalResourceBindingPath {
     public init(stages: MTLRenderStages, type: MTLArgumentType, argumentBufferIndex: Int?, index: Int) {
         self.value = 0
         
-        self.value.setBits(in: MetalResourceBindingPath.indexRange, to: UInt64(index))
+        self.value.setBits(in: MetalResourceBindingPath.indexRange, to: UInt64(index), clearMask: MetalResourceBindingPath.indexClearMask)
         
         self.stages = stages
         
         let argBufferBits = argumentBufferIndex ?? MetalResourceBindingPath.argumentBufferNone
-        self.value.setBits(in: MetalResourceBindingPath.argumentBufferIndexRange, to: UInt64(argBufferBits))
+        self.value.setBits(in: MetalResourceBindingPath.argumentBufferIndexRange, to: UInt64(truncatingIfNeeded: argBufferBits), clearMask: MetalResourceBindingPath.argumentBufferIndexClearMask)
         
         switch type {
         case .buffer:
@@ -86,8 +91,17 @@ public struct MetalResourceBindingPath {
     }
     
     public var argumentBufferIndex : Int? {
-        let argBufferIndex = Int(self.value.bits(in: MetalResourceBindingPath.argumentBufferIndexRange))
-        return argBufferIndex == MetalResourceBindingPath.argumentBufferNone ? nil : argBufferIndex
+        get {
+            let argBufferIndex = Int(truncatingIfNeeded: self.value.bits(in: MetalResourceBindingPath.argumentBufferIndexRange))
+            return argBufferIndex == MetalResourceBindingPath.argumentBufferNone ? nil : argBufferIndex
+        }
+        set {
+            if let newValue = newValue {
+                self.value.setBits(in: MetalResourceBindingPath.argumentBufferIndexRange, to: UInt64(truncatingIfNeeded: newValue), clearMask: MetalResourceBindingPath.argumentBufferIndexClearMask)
+            } else {
+                self.value.setBits(in: MetalResourceBindingPath.argumentBufferIndexRange, to: UInt64(truncatingIfNeeded: MetalResourceBindingPath.argumentBufferNone), clearMask: MetalResourceBindingPath.argumentBufferIndexClearMask)
+            }
+        }
     }
     
     public var type : MTLArgumentType {
@@ -105,24 +119,36 @@ public struct MetalResourceBindingPath {
     
     public var index : Int {
         get {
-            return Int(self.value.bits(in: MetalResourceBindingPath.indexRange))
+            return Int(truncatingIfNeeded: self.value.bits(in: MetalResourceBindingPath.indexRange))
         }
         set {
-            self.value.setBits(in: MetalResourceBindingPath.indexRange, to: UInt64(newValue))
+            self.value.setBits(in: MetalResourceBindingPath.indexRange, to: UInt64(truncatingIfNeeded: newValue), clearMask: MetalResourceBindingPath.indexClearMask)
         }
     }
     
+    // NOTE: When argumentBufferIndex is not nil, this refers to the array index of the _argument buffer_, and not this element within it.
     public var arrayIndex : Int {
         get {
-            return Int(self.value.bits(in: MetalResourceBindingPath.arrayIndexRange))
+            return Int(truncatingIfNeeded: self.value.bits(in: MetalResourceBindingPath.arrayIndexRange))
         }
         set {
-            self.value.setBits(in: MetalResourceBindingPath.arrayIndexRange, to: UInt64(newValue))
+            self.value.setBits(in: MetalResourceBindingPath.arrayIndexRange, to: UInt64(truncatingIfNeeded: newValue), clearMask: MetalResourceBindingPath.arrayIndexClearMask)
         }
     }
     
     public var bindIndex : Int {
-        return self.index + self.arrayIndex
+        return self.index &+ self.arrayIndex
+    }
+    
+    @inlinable
+    public static func ==(lhs: MetalResourceBindingPath, rhs: MetalResourceBindingPath) -> Bool {
+        return lhs.value == rhs.value
+    }
+}
+
+extension MetalResourceBindingPath : CustomHashable {
+    public var customHashValue : Int {
+        return Int(truncatingIfNeeded: self.value &* 39)
     }
 }
 

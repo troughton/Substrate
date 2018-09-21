@@ -6,8 +6,11 @@
 //  Copyright © 2017 Team Llama. All rights reserved.
 //
 
+#if canImport(CSDL2)
+
 import Foundation
 import CSDL2
+import CwlSignal
 
 public final class SDLGamepadManager {
     
@@ -158,3 +161,5 @@ public final class SDLGamepadManager {
     //        }
     //    }
 }
+
+#endif

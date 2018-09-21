@@ -388,6 +388,9 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     
     func executeCommand(_ command: FrameGraphCommand) {
         switch command {
+        case .clearRenderTargets:
+            break
+
         case .insertDebugSignpost(_):
             break
             
@@ -449,7 +452,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         case .setSamplerState(let args):
             self.bindingManager.setSamplerState(args: args)
             
-        case .setRenderPipelineState(let descriptorPtr):
+        case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
             self.pipelineState.descriptor = descriptor
             
@@ -478,7 +481,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         case .setCullMode(let cullMode):
             self.pipelineState.cullMode = cullMode
             
-        case .setDepthStencilState(let descriptorPtr):
+        case .setDepthStencilDescriptor(let descriptorPtr):
             self.pipelineState.depthStencil = descriptorPtr.takeUnretainedValue().value
             
         case .setScissorRect(let scissorPtr):

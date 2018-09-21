@@ -1,5 +1,9 @@
 # SwiftFrameGraph
 
+_Note: The current version of SwiftFrameGraph on `master` does not have a working backend. If you're only targeting Metal, I'd suggest using the `master` branch, since there are significant fixes and API improvements. Otherwise, the last working version supporting Vulkan is on the `Vulkan` branch._
+
+_At some point in the hopefully-not-too-distant-future the Vulkan backend will be updated with the API changes and the fixes from the Metal backend._
+
 ## What is this?
 
 In short: this is a way to code against a higher-level, Swift-native, reduced-friction version of the Metal rendering API and have your rendering code run in a fairly efficient manner, cross-platform on both Metal and Vulkan.
@@ -67,7 +71,7 @@ final class DebugDrawPass : DrawRenderPass {
         descriptor.attributes[0].offset = 0
         descriptor.attributes[0].format = .float3
 
-        // colour
+        // color
         descriptor.attributes[1].bufferIndex = 0
         descriptor.attributes[1].offset = 3 * MemoryLayout<Float>.size
         descriptor.attributes[1].format = .float4
@@ -136,8 +140,8 @@ final class DebugDrawPass : DrawRenderPass {
         self.viewUniforms = viewUniforms
 
         var renderTargetDesc = RenderTargetDescriptor(identifierType: ScreenRenderTargetIndex.self)
-        renderTargetDesc[ScreenRenderTargetIndex.display] = RenderTargetColourAttachmentDescriptor(texture: outputTexture)
-        renderTargetDesc[ScreenRenderTargetIndex.display]!.clearColour = ClearColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1.0)
+        renderTargetDesc[ScreenRenderTargetIndex.display] = RenderTargetColorAttachmentDescriptor(texture: outputTexture)
+        renderTargetDesc[ScreenRenderTargetIndex.display]!.clearColor = ClearColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1.0)
 	self.renderTargetDescriptor = renderTargetDesc
     }
 

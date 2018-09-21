@@ -9,7 +9,7 @@
 #if os(macOS)
 
 
-import RenderAPI
+import SwiftFrameGraph
 import MetalKit
 import Metal
 import AppKit
@@ -85,7 +85,6 @@ final class MTKEventView : MTKView {
 
 
 public class CocoaWindow : NSObject, Window, NSWindowDelegate {
-    
     private let window : NSWindow
     public let view : MTKView
     public let device : MTLDevice
@@ -134,13 +133,18 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate {
         
         let mtkView = MTKEventView(frame: win.frame, device: self.device)
         self.view = mtkView
-        view.colorPixelFormat = .bgra8Unorm_srgb
+        if win.screen?.canRepresent(.p3) ?? false {
+            view.colorPixelFormat = .bgr10a2Unorm
+            mtkView.colorspace = CGColorSpace(name: CGColorSpace.genericRGBLinear)
+        } else {
+            view.colorPixelFormat = .bgra8Unorm_srgb
+        }
         view.depthStencilPixelFormat = .invalid
         view.framebufferOnly = true
         mtkView.inputDelegate = inputManager
         
         view.layer?.isOpaque = true
-//        (mtkView.layer as! CAMetalLayer).displaySyncEnabled = false
+        (mtkView.layer as! CAMetalLayer).displaySyncEnabled = false
         
         self.view.autoresizingMask = [.width, .height]
         win.contentView = self.view
@@ -213,6 +217,10 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate {
             }
         }
         return urls
+    }
+    
+    public func windowWillClose(_ notification: Notification) {
+        NSApp.terminate(self)
     }
     
     public func displaySaveDialog(allowedFileTypes: [String], options: FileChooserOptions) -> URL? {

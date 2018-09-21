@@ -10,6 +10,8 @@
 
 import AppKit
 import Carbon
+import CwlSignal
+
 import SwiftMath
 import Cocoa
 
@@ -19,17 +21,21 @@ import CDebugDrawTools
 public final class CocoaInputManager : InputManagerInternal {
     public var inputState = InputState()
     
-    private var updateAccess = DispatchQueue(label: "idl.updateAccess")
+    private var updateAccess = DispatchQueue(label: "idl.updateAccess", target: .main)
     private var eventQueue = [NSEvent]()
     
+#if canImport(CSDL2)
     private var gamepadManager : SDLGamepadManager! = nil
+#endif
     
     private var endpoints = [Any]()
     
     private var cursorHidden = false
     
     public init() {
+#if canImport(CSDL2)
         self.gamepadManager = SDLGamepadManager(inputManager: self)
+#endif
         
         self.setupImGui()
         
@@ -95,7 +101,9 @@ public final class CocoaInputManager : InputManagerInternal {
         
         self.updateAccess.sync {
             self.handleEvents(windows: windows)
+        #if canImport(CSDL2)
             self.gamepadManager.update()
+        #endif
         }
         
         let imguiCursor = ImGui.mouseCursor
@@ -257,10 +265,11 @@ public final class CocoaInputManager : InputManagerInternal {
         self.eventQueue.removeAll(keepingCapacity: true)
     }
     
-    public func processInputEvent(_ event: NSEvent) {
-        self.updateAccess.sync {
+    func processInputEvent(_ event: NSEvent) {
+         // This will always be called from a view on the main thread, so we don't need to sync on the DispatchQueue here.
+//        self.updateAccess.sync {
             self.eventQueue.append(event)
-        }
+//        }
     }
     
 }
@@ -394,6 +403,9 @@ extension InputSource {
             self = .period
         case kVK_ANSI_Slash:
             self = .slash
+            
+        case kVK_ANSI_Semicolon:
+            self = .semicolon
             
         // function keys (f1-f9)
         case kVK_F1:

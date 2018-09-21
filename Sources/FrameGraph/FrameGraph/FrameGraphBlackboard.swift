@@ -24,6 +24,10 @@ public final class RenderBlackboard {
         self.mappings[String(reflecting: type(of: obj))] = nil
     }
     
+    public static func remove<T>(type: T.Type) {
+        self.mappings[String(reflecting: type)] = nil
+    }
+    
     public static func get<T>(_ type: T.Type) -> T {
         guard let item = self.mappings[String(reflecting: type)] else {
             fatalError("No item in blackboard of type \(type).")
@@ -38,4 +42,9 @@ public final class RenderBlackboard {
     public static func has<T>(_ type: T.Type) -> Bool {
         return self.mappings[String(reflecting: type)] != nil
     }
+    
+    public static func clear() {
+        self.mappings.removeAll(keepingCapacity: true)
+    }
 }
+

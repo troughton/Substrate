@@ -11,16 +11,17 @@ import Dispatch
 public enum AllocatorType {
     case system
     case frame(UInt64)
+    case custom(Unmanaged<MemoryArena>)
 }
 
 public final class Allocator {
-    @_versioned
-    static let inflightFrames : UInt64 = 3
+    @usableFromInline
+    static let inflightFrames : UInt64 = 3 // gameplay, renderer, and history.
     
-    @_versioned
+    @usableFromInline
     static let arenas = (0..<inflightFrames).map { _ in MemoryArena(blockSize: 2 * 1024 * 1024) }
     
-    @_versioned
+    @usableFromInline
     static let arenaAccessQueues = (0..<inflightFrames).map { _ in DispatchQueue(label: "Memory allocator queue") }
     
     @inlinable
@@ -29,8 +30,10 @@ public final class Allocator {
         case .system:
             return UnsafeMutableRawPointer.allocate(byteCount: byteCount, alignment: alignment)
         case .frame(let frame):
-            let allocatorIndex = Int(frame % Allocator.inflightFrames)
+            let allocatorIndex = Int(truncatingIfNeeded: frame % Allocator.inflightFrames)
             return self.arenaAccessQueues[allocatorIndex].sync { self.arenas[allocatorIndex].allocate(bytes: byteCount, alignedTo: alignment) }
+        case .custom(let arena):
+            return arena.takeUnretainedValue().allocate(bytes: byteCount, alignedTo: alignment)
         }
     }
     
@@ -40,8 +43,10 @@ public final class Allocator {
         case .system:
             return UnsafeMutablePointer.allocate(capacity: capacity)
         case .frame(let frame):
-            let allocatorIndex = Int(frame % Allocator.inflightFrames)
+            let allocatorIndex = Int(truncatingIfNeeded: frame % Allocator.inflightFrames)
             return self.arenaAccessQueues[allocatorIndex].sync { self.arenas[allocatorIndex].allocate(count: capacity) }
+        case .custom(let arena):
+            return arena.takeUnretainedValue().allocate(count: capacity)
         }
     }
     
@@ -51,6 +56,20 @@ public final class Allocator {
         case .system:
             memory.deallocate()
         case .frame:
+            break
+        case .custom:
+            break
+        }
+    }
+    
+    @inlinable
+    public static func deallocate<T>(_ memory: UnsafeMutablePointer<T>, allocator: AllocatorType) {
+        switch allocator {
+        case .system:
+            memory.deallocate()
+        case .frame:
+            break
+        case .custom:
             break
         }
     }

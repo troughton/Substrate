@@ -198,6 +198,20 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
         case .setSamplerState(let args):
             self.bindingManager.setSamplerState(args: args)
             
+        case .dispatchThreads(let args):
+            let threadsPerThreadgroup = args.pointee.threadsPerThreadgroup
+            self.pipelineState.threadsPerThreadgroup = threadsPerThreadgroup
+            self.prepareToDispatch()
+            
+            let threads = args.pointee.threads
+            
+            // Calculate how many threadgroups are required for this number of threads
+            let threadgroupsPerGridX = (args.pointee.threads.width + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width
+            let threadgroupsPerGridY = (args.pointee.threads.height + threadsPerThreadgroup.height - 1) / threadsPerThreadgroup.height
+            let threadgroupsPerGridZ = (args.pointee.threads.depth + threadsPerThreadgroup.depth - 1) / threadsPerThreadgroup.depth
+
+            vkCmdDispatch(self.commandBuffer, UInt32(threadgroupsPerGridX), UInt32(threadgroupsPerGridY), UInt32(threadgroupsPerGridZ))
+            
         case .dispatchThreadgroups(let args):
             self.pipelineState.threadsPerThreadgroup = args.pointee.threadsPerThreadgroup
             self.prepareToDispatch()
@@ -210,8 +224,8 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             
             vkCmdDispatchIndirect(self.commandBuffer, resourceRegistry[buffer: args.pointee.indirectBuffer]!.vkBuffer, VkDeviceSize(args.pointee.indirectBufferOffset))
             
-        case .setComputePipelineState(let descriptorPtr):
-            self.pipelineState.descriptor = descriptorPtr.takeUnretainedValue().value
+        case .setComputePipelineDescriptor(let descriptorPtr):
+            self.pipelineState.descriptor = descriptorPtr.takeUnretainedValue().pipelineDescriptor
             
         case .setStageInRegion(_):
             fatalError("Unimplemented.")

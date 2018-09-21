@@ -6,8 +6,7 @@
 //
 
 import Metal
-import FrameGraph
-import RenderAPI
+import SwiftFrameGraph
 
 final class MetalRenderTargetDescriptor {
     var descriptor : RenderTargetDescriptor
@@ -92,14 +91,14 @@ final class MetalRenderTargetDescriptor {
     }
     
     private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, resourceUsages: ResourceUsages) -> (MTLLoadAction, MTLStoreAction) {
-        let usages = resourceUsages[usagesFor: attachment.texture]
+        let usages = attachment.texture.usages
         
         // Are we the first usage?
         guard let firstActiveUsage = usages.firstActiveUsage else {
             return (.dontCare, .dontCare) // We need to have this texture as an attachment, but it's never actually read from or written to.
         }
         
-        let isFirstUsage = !attachment.texture.flags.contains(.initialised) && self.renderPasses.contains { $0 === firstActiveUsage.renderPass.pass }
+        let isFirstUsage = !attachment.texture.stateFlags.contains(.initialised) && self.renderPasses.contains { $0 === firstActiveUsage.renderPass.pass }
         
         // Is the texture read from after these passes?
         var ourLastUsageIndex = -1
@@ -115,7 +114,7 @@ final class MetalRenderTargetDescriptor {
         var isReadAfterPass : Bool? = nil // nil = as yet unknown
         
         for usage in usages.dropFirst(ourLastUsageIndex + 1) {
-            if !usage.renderPass.isActive { continue }
+            if !usage.renderPass.isActive || usage.stages == .cpuBeforeRender { continue }
             
             switch usage.type {
             case _ where usage.type.isRenderTarget:
@@ -130,7 +129,7 @@ final class MetalRenderTargetDescriptor {
                 }
                 
                 if let stencilAttachment = descriptor.stencilAttachment,
-                    stencilAttachment.texture === attachment.texture,
+                    stencilAttachment.texture == attachment.texture,
                     stencilAttachment.slice == attachment.slice,
                     stencilAttachment.depthPlane == attachment.depthPlane,
                     stencilAttachment.level == attachment.level {
@@ -138,7 +137,7 @@ final class MetalRenderTargetDescriptor {
                 }
                 
                 for a in descriptor.colorAttachments {
-                    if let colorAttachment = a, colorAttachment.texture === attachment.texture {
+                    if let colorAttachment = a, colorAttachment.texture == attachment.texture {
                         if colorAttachment.slice == attachment.slice,
                             colorAttachment.depthPlane == attachment.depthPlane,
                             colorAttachment.level == attachment.level {
@@ -153,8 +152,8 @@ final class MetalRenderTargetDescriptor {
                 isReadAfterPass = true
             case _ where usage.isWrite:
                 continue // We need to be conservative here; it's possible something else may write to the texture but only partially overwrite our data.
-            case .argumentBufferUnused:
-                break
+            case .unusedArgumentBuffer, .unusedRenderTarget:
+                continue
             default:
                 fatalError()
             }
@@ -163,9 +162,8 @@ final class MetalRenderTargetDescriptor {
         }
         
         if isReadAfterPass == nil {
-            
             isReadAfterPass = attachment.texture.flags.intersection([.persistent, .windowHandle]) != [] ||
-                              (attachment.texture.flags.contains(.historyBuffer) && !attachment.texture.flags.contains(.initialised))
+                              (attachment.texture.flags.contains(.historyBuffer) && !attachment.texture.stateFlags.contains(.initialised))
         }
         
         var loadAction : MTLLoadAction = .dontCare

@@ -5,8 +5,7 @@
 //  Created by Thomas Roughton on 24/12/17.
 //
 
-import RenderAPI
-import FrameGraph
+import SwiftFrameGraph
 import Metal
 
 
