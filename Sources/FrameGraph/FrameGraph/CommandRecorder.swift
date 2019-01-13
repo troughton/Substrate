@@ -9,6 +9,10 @@
 import Utilities
 import Foundation
 
+#if canImport(MetalPerformanceShaders)
+import MetalPerformanceShaders
+#endif
+
 public protocol Releasable {
     func release()
 }
@@ -152,6 +156,21 @@ public enum FrameGraphCommand {
     
     case synchroniseBuffer(Buffer.Handle)
     
+    // External:
+    
+    #if canImport(MetalPerformanceShaders)
+    
+    @available(OSX 10.14, *)
+    public typealias EncodeRayIntersectionArgs = (intersector: Unmanaged<MPSRayIntersector>, intersectionType: MPSIntersectionType, rayBuffer: Buffer.Handle, rayBufferOffset: Int, intersectionBuffer: Buffer.Handle, intersectionBufferOffset: Int, rayCount: Int, accelerationStructure: Unmanaged<MPSAccelerationStructure>)
+    @available(OSX 10.14, *)
+    case encodeRayIntersection(UnsafePointer<EncodeRayIntersectionArgs>)
+    
+    @available(OSX 10.14, *)
+    public typealias EncodeRayIntersectionRayCountBufferArgs = (intersector: Unmanaged<MPSRayIntersector>, intersectionType: MPSIntersectionType, rayBuffer: Buffer.Handle, rayBufferOffset: Int, intersectionBuffer: Buffer.Handle, intersectionBufferOffset: Int, rayCountBuffer: Buffer.Handle, rayCountBufferOffset: Int, accelerationStructure: Unmanaged<MPSAccelerationStructure>)
+    @available(OSX 10.14, *)
+    case encodeRayIntersectionRayCountBuffer(UnsafePointer<EncodeRayIntersectionRayCountBufferArgs>)
+    
+    #endif
 }
 
 
@@ -162,6 +181,11 @@ public final class FrameGraphCommandRecorder {
     public let dataArena = MemoryArena()
     @usableFromInline
     let unmanagedReferences = ExpandingBuffer<Releasable>()
+    
+    @inlinable
+    init() {
+        
+    }
     
     @inlinable
     public var nextCommandIndex : Int {
@@ -415,6 +439,8 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.pendingArgumentBuffers = ExpandingBuffer(allocator: .custom(arena))
         self.resourceBindingCommands = ExpandingBuffer(allocator: .custom(arena))
         self.usageNodesToUpdate = ExpandingBuffer(allocator: .custom(arena))
+        
+        self.pushDebugGroup(passRecord.pass.name)
     }
     
     @inlinable
@@ -651,7 +677,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                 case .setBuffer(let args):
                     if let previousArgs = currentlyBound?.bindingCommand?.assumingMemoryBound(to: FrameGraphCommand.SetBufferArgs.self) {
                         if previousArgs.pointee.handle == args.pointee.handle { // Ignore the duplicate binding.
-                            if previousArgs.pointee.offset == args.pointee.offset {
+                            if !self.pipelineStateChanged, previousArgs.pointee.offset == args.pointee.offset {
                                 return currentlyBound
                             } /* else {
                              // TODO: translate duplicate setBuffer calls into setBufferOffset.
@@ -665,7 +691,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                     
                 case .setTexture(let args):
                     if let previousArgs = currentlyBound?.bindingCommand?.assumingMemoryBound(to: FrameGraphCommand.SetTextureArgs.self) {
-                        if previousArgs.pointee.handle == args.pointee.handle { // Ignore the duplicate binding.
+                        if !self.pipelineStateChanged, previousArgs.pointee.handle == args.pointee.handle { // Ignore the duplicate binding.
                             return currentlyBound
                         }
                     }
@@ -839,27 +865,25 @@ public class ResourceBindingEncoder : CommandEncoder {
             self.boundResources.forEachMutating { bindingPath, boundResource, deleteEntry in // boundResource is an inout parameter.
                 if let reflection = pipelineReflection.argumentReflection(at: bindingPath), (reflection.isActive || FrameGraph.debugMode) {
                     // Mark the resource as used if it currently isn't
-                    if boundResource.usageNode == nil || boundResource.usageNode?.pointee.element.type == .unusedArgumentBuffer {
                         
-                        // If the command to bind the resource hasn't yet been inserted into the command stream, insert it now.
-                        if boundResource.usageNode == nil, let bindingCommandArgs = boundResource.bindingCommand {
-                            switch boundResource.resource.type {
-                            case .texture:
-                                self.commandRecorder.commands.append(.setTexture(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetTextureArgs.self)))
-                            case .buffer:
-                                self.commandRecorder.commands.append(.setBuffer(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetBufferArgs.self)))
-                            default:
-                                preconditionFailure()
-                            }
+                    // If the command to bind the resource hasn't yet been inserted into the command stream, insert it now.
+                    if boundResource.usageNode == nil, let bindingCommandArgs = boundResource.bindingCommand {
+                        switch boundResource.resource.type {
+                        case .texture:
+                            self.commandRecorder.commands.append(.setTexture(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetTextureArgs.self)))
+                        case .buffer:
+                            self.commandRecorder.commands.append(.setBuffer(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetBufferArgs.self)))
+                        default:
+                            preconditionFailure()
                         }
-                        
-                        let node = self.resourceUsages.resourceUsageNode(for: boundResource.resource.handle, encoder: self, usageType: reflection.usageType, stages: reflection.stages, inArgumentBuffer: boundResource.isInArgumentBuffer, firstCommandOffset: firstCommandOffset)
-                        boundResource.usageNode = node
-                        
-                        if boundResource.consistentUsageAssumed {
-                            deleteEntry = true // Delete the entry from this HashMap
-                            self.untrackedBoundResources.insertUnique(key: bindingPath, value: boundResource)
-                        }
+                    }
+                    
+                    let node = self.resourceUsages.resourceUsageNode(for: boundResource.resource.handle, encoder: self, usageType: reflection.usageType, stages: reflection.stages, inArgumentBuffer: boundResource.isInArgumentBuffer, firstCommandOffset: firstCommandOffset)
+                    boundResource.usageNode = node
+                    
+                    if boundResource.consistentUsageAssumed {
+                        deleteEntry = true // Delete the entry from this HashMap
+                        self.untrackedBoundResources.insertUnique(key: bindingPath, value: boundResource)
                     }
                 } else {
                     // The resource is currently unused; end its usage.
@@ -905,6 +929,7 @@ public class ResourceBindingEncoder : CommandEncoder {
     
     public func endEncoding() {
         self.updateResourceUsages(endingEncoding: true)
+        self.popDebugGroup() // Pass Name
         
         if FrameGraph.debugMode {
             if let pipelineReflection = self.currentPipelineReflection {
@@ -1262,7 +1287,9 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
         if endingEncoding {
             for usageNode in self.boundVertexBuffers {
                 guard let usageNode = usageNode else { continue }
-                usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex)
+                if self.lastGPUCommandIndex > usageNode.pointee.element.commandRangeInPass.lowerBound {
+                    usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex)
+                }
             }
             
             self.updateColorAttachmentUsages()
@@ -1377,10 +1404,12 @@ public final class BlitCommandEncoder : CommandEncoder {
         self.startCommandIndex = self.commandRecorder.nextCommandIndex
         
         assert(passRecord.pass === renderPass)
+        
+        self.pushDebugGroup(passRecord.pass.name)
     }
     
     public func endEncoding() {
-        // Nothing to do.
+        self.popDebugGroup() // Pass Name
     }
     
     public var label : String = "" {
@@ -1461,4 +1490,73 @@ public final class BlitCommandEncoder : CommandEncoder {
         resourceUsages.addResourceUsage(for: texture, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
         commandRecorder.record(FrameGraphCommand.synchroniseTextureSlice, (texture.handle, UInt32(slice), UInt32(level)))
     }
+}
+
+@_fixed_layout
+public final class ExternalCommandEncoder : CommandEncoder {
+    
+    public let commandRecorder : FrameGraphCommandRecorder
+    public let passRecord: RenderPassRecord
+    public let startCommandIndex: Int
+    public let resourceUsages : ResourceUsages
+    let externalRenderPass : ExternalRenderPass
+    
+    init(commandRecorder: FrameGraphCommandRecorder, resourceUsages: ResourceUsages, renderPass: ExternalRenderPass, passRecord: RenderPassRecord) {
+        self.commandRecorder = commandRecorder
+        self.resourceUsages = resourceUsages
+        self.externalRenderPass = renderPass
+        self.passRecord = passRecord
+        self.startCommandIndex = self.commandRecorder.nextCommandIndex
+        
+        assert(passRecord.pass === renderPass)
+        
+        self.pushDebugGroup(passRecord.pass.name)
+    }
+    
+    public func endEncoding() {
+        self.popDebugGroup() // Pass Name
+    }
+    
+    public var label : String = "" {
+        didSet {
+            commandRecorder.setLabel(label)
+        }
+    }
+    
+    #if canImport(MetalPerformanceShaders)
+    
+    @available(OSX 10.14, *)
+    @inlinable
+    public func encodeRayIntersection(intersector: MPSRayIntersector, intersectionType: MPSIntersectionType, rayBuffer: Buffer, rayBufferOffset: Int, intersectionBuffer: Buffer, intersectionBufferOffset: Int, rayCount: Int, accelerationStructure: MPSAccelerationStructure) {
+        
+        let intersector = Unmanaged.passRetained(intersector)
+        self.commandRecorder.unmanagedReferences.append(intersector)
+        
+        let accelerationStructure = Unmanaged.passRetained(accelerationStructure)
+        self.commandRecorder.unmanagedReferences.append(accelerationStructure)
+        
+        resourceUsages.addResourceUsage(for: rayBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+        resourceUsages.addResourceUsage(for: intersectionBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
+        
+        commandRecorder.record(FrameGraphCommand.encodeRayIntersection, (intersector, intersectionType, rayBuffer.handle, rayBufferOffset, intersectionBuffer.handle, intersectionBufferOffset, rayCount, accelerationStructure))
+    }
+    
+    @available(OSX 10.14, *)
+    @inlinable
+    public func encodeRayIntersection(intersector: MPSRayIntersector, intersectionType: MPSIntersectionType, rayBuffer: Buffer, rayBufferOffset: Int, intersectionBuffer: Buffer, intersectionBufferOffset: Int, rayCountBuffer: Buffer, rayCountBufferOffset: Int, accelerationStructure: MPSAccelerationStructure) {
+        
+        let intersector = Unmanaged.passRetained(intersector)
+        self.commandRecorder.unmanagedReferences.append(intersector)
+        
+        let accelerationStructure = Unmanaged.passRetained(accelerationStructure)
+        self.commandRecorder.unmanagedReferences.append(accelerationStructure)
+        
+        resourceUsages.addResourceUsage(for: rayBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+        resourceUsages.addResourceUsage(for: intersectionBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
+        resourceUsages.addResourceUsage(for: rayCountBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+        
+        commandRecorder.record(FrameGraphCommand.encodeRayIntersectionRayCountBuffer, (intersector, intersectionType, rayBuffer.handle, rayBufferOffset, intersectionBuffer.handle, intersectionBufferOffset, rayCountBuffer.handle, rayCountBufferOffset, accelerationStructure))
+    }
+    
+    #endif
 }

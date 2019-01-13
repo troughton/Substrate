@@ -5,9 +5,7 @@
 //  Created by Thomas Roughton on 8/01/18.
 //
 
-import RenderAPI
-import SwiftMath
-import FrameGraph
+import SwiftFrameGraph
 import CVkRenderer
 import Utilities
 
@@ -35,7 +33,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
     var frontFaceWinding : Winding
     var layout : VkPipelineLayout
 
-    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, subpass: UInt32, renderTargetDescriptor: RenderTargetDescriptor, pipelineReflection: PipelineReflection, stateCaches: StateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
+    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, subpass: UInt32, renderTargetDescriptor: RenderTargetDescriptor, pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
         
         var functionNames = [FixedSizeBuffer<CChar>]()
         
@@ -171,7 +169,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             }
         }
         
-        var pipelineReflection : PipelineReflection! = nil
+        var pipelineReflection : VulkanPipelineReflection! = nil
         
         var subpass : Int = 0 {
             didSet {
@@ -250,7 +248,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     var bindingManager : ResourceBindingManager! = nil
     var pipelineState : PipelineState! = nil
     
-    var boundVertexBuffers = [ObjectIdentifier?](repeating: nil, count: 8)
+    var boundVertexBuffers = [Buffer?](repeating: nil, count: 8)
     
     public init(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: CommandBufferResources, shaderLibrary: VulkanShaderLibrary, caches: StateCaches, resourceRegistry: ResourceRegistry) {
         self.device = device
@@ -279,7 +277,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         return self.pipelineState.layout
     }
     
-    var pipelineReflection: PipelineReflection {
+    var pipelineReflection: VulkanPipelineReflection {
         return self.pipelineState.pipelineReflection
     }
     
@@ -365,8 +363,8 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         if pass === self.renderTarget.renderPasses.last {
             vkCmdEndRenderPass(self.commandBuffer)
 
-            for (textureIdentifier, layout) in self.renderTarget.finalLayouts {
-                self.resourceRegistry[texture: textureIdentifier]!.layout = layout
+            for (texture, layout) in self.renderTarget.finalLayouts {
+                self.resourceRegistry[texture]!.layout = layout
             }
 
             return false
@@ -404,7 +402,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             break
 
         case .setVertexBuffer(let args):
-            self.boundVertexBuffers[Int(args.pointee.index)] = args.pointee.handle
+            self.boundVertexBuffers[Int(args.pointee.index)] = args.pointee.handle.map { Buffer(existingHandle: $0) }
             guard let handle = args.pointee.handle else { return }
             let buffer = self.resourceRegistry[buffer: handle]!
             self.commandBufferResources.buffers.append(buffer)
@@ -415,7 +413,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
 
         case .setVertexBufferOffset(let offset, let index):
             let handle = self.boundVertexBuffers[Int(index)]!
-            let buffer = self.resourceRegistry[buffer: handle]!
+            let buffer = self.resourceRegistry[handle]!
 
             var vkBuffer = buffer.vkBuffer as VkBuffer?
             var offset = VkDeviceSize(offset)
@@ -425,7 +423,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             let bindingPath = args.pointee.bindingPath
             let vkBindingPath = VulkanResourceBindingPath(bindingPath)
             
-            let argumentBuffer = args.pointee.argumentBuffer.takeUnretainedValue()
+            let argumentBuffer = args.pointee.argumentBuffer
             let vkArgumentBuffer = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, 
                                                                                     bindingPath: vkBindingPath, 
                                                                                     commandBufferResources: self.commandBufferResources, 

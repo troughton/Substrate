@@ -1,6 +1,6 @@
 //
 //  RenderBlackboard.swift
-//  InterdimensionalLlama
+//  SwiftFrameGraph
 //
 //  Created by Thomas Roughton on 2/04/17.
 //

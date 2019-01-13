@@ -122,7 +122,10 @@ C_API void VkReflectionContextEnumerateResources(const VkReflectionContext conte
         std::vector<spirv_cross::BufferRange> activeRanges = context->compiler.get_active_buffer_ranges(pushConstantBuffer.id);
         for (const spirv_cross::BufferRange &range : activeRanges) {
             const std::string& name = context->compiler.get_member_name(pushConstantBuffer.base_type_id, range.index);
-            withResourceInfo(ShaderResourceTypePushConstantBuffer, { BindingIndexSetPushConstant, range.offset }, { range.offset, range.range }, name.c_str(), AccessQualifierReadOnly);
+            withResourceInfo(ShaderResourceTypePushConstantBuffer,
+                             { BindingIndexSetPushConstant, static_cast<uint32_t>(range.offset) },
+                             { static_cast<uint32_t>(range.offset), static_cast<uint32_t>(range.range) },
+                             name.c_str(), AccessQualifierReadOnly);
         }
     }
     

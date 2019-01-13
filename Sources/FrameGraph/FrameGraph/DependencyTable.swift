@@ -30,11 +30,14 @@ public struct DependencyTable<T> {
     }
     
     public mutating func setDependency(from: Int, on: Int, to: T) {
+        assert(on < from, "Indices can only depend on earlier indices.")
+        
         let base = self.baseIndexForDependenciesFor(row: from)
         self.storage[base + on] = to
     }
     
     public func dependency(from: Int, on: Int) -> T {
+        assert(on < from, "Indices can only depend on earlier indices.")
         let base = self.baseIndexForDependenciesFor(row: from)
         return self.storage[base + on]
     }

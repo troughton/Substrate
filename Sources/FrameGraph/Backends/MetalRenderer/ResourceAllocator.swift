@@ -30,14 +30,20 @@ extension MTLResourceOptions {
     func matches(storageMode: MTLStorageMode, cpuCacheMode: MTLCPUCacheMode) -> Bool {
         var matches = true
         switch storageMode {
+        #if os(macOS)
         case .managed:
-            matches = matches && self.contains(.storageModeManaged)
+            matches = false
+        #endif
         case .shared:
             matches = matches && self.contains(.storageModeShared)
         case .private:
             matches = matches && self.contains(.storageModePrivate)
         case .memoryless:
-            fatalError("Memoryless resources aren't correctly handled yet.")
+            #if os(macOS)
+            matches = false
+            #else
+            matches = matches && self.contains(.storageModeMemoryless)
+            #endif
         }
         
         switch cpuCacheMode {

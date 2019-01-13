@@ -1,6 +1,6 @@
 //
 //  RenderTargetDescriptor.swift
-//  InterdimensionalLlama
+//  SwiftFrameGraph
 //
 //  Created by Thomas Roughton on 2/04/17.
 //
@@ -9,36 +9,14 @@
 import Utilities
 
 public protocol RenderTargetAttachmentDescriptor {
-    /*!
-     @property texture
-     @abstract The Texture object for this attachment.
-     */
     var texture: Texture { get set }
     
-    /*!
-     @property level
-     @abstract The mipmap level of the texture to be used for rendering.  Default is zero.
-     */
     var level: Int { get set }
     
-    
-    /*!
-     @property slice
-     @abstract The slice of the texture to be used for rendering.  Default is zero.
-     */
     var slice: Int { get set }
     
-    
-    /*!
-     @property depthPlane
-     @abstract The depth plane of the texture to be used for rendering.  Default is zero.
-     */
     var depthPlane: Int { get set }
     
-    /*!
-     @property wantsClear
-     @abstract Whether this attachment wants to be cleared before being used for rendering.
-     */
     var wantsClear : Bool { get }
 }
 
@@ -48,32 +26,18 @@ public struct RenderTargetColorAttachmentDescriptor : RenderTargetAttachmentDesc
         self.texture = texture
     }
     
-    /*!
-     @property texture
-     @abstract The Texture object for this attachment.
-     */
     public var texture: Texture
     
-    /*!
-     @property level
-     @abstract The mipmap level of the texture to be used for rendering.  Default is zero.
-     */
+    /// The mipmap level of the texture to be used for rendering.
     public var level: Int = 0
     
-    
-    /*!
-     @property slice
-     @abstract The slice of the texture to be used for rendering.  Default is zero.
-     */
+    /// The slice of the texture to be used for rendering. 
     public var slice: Int = 0
     
-    
-    /*!
-     @property depthPlane
-     @abstract The depth plane of the texture to be used for rendering.  Default is zero.
-     */
+    /// The depth plane of the texture to be used for rendering.
     public var depthPlane: Int = 0
     
+    /// The color to clear this attachment to.
     public var clearColor : ClearColor? = nil
     
     public var wantsClear: Bool {
@@ -87,32 +51,18 @@ public struct RenderTargetDepthAttachmentDescriptor : RenderTargetAttachmentDesc
         self.texture = texture
     }
     
-    /*!
-     @property texture
-     @abstract The Texture object for this attachment.
-     */
     public var texture: Texture
     
-    /*!
-     @property level
-     @abstract The mipmap level of the texture to be used for rendering.  Default is zero.
-     */
+    /// The mipmap level of the texture to be used for rendering.
     public var level: Int = 0
-    
-    
-    /*!
-     @property slice
-     @abstract The slice of the texture to be used for rendering.  Default is zero.
-     */
+
+    /// The slice of the texture to be used for rendering. 
     public var slice: Int = 0
-    
-    
-    /*!
-     @property depthPlane
-     @abstract The depth plane of the texture to be used for rendering.  Default is zero.
-     */
+
+    /// The depth plane of the texture to be used for rendering.
     public var depthPlane: Int = 0
     
+    /// The depth to clear this attachment to.
     public var clearDepth : Double? = nil
     
     public var wantsClear : Bool {
@@ -126,32 +76,18 @@ public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDe
         self.texture = texture
     }
     
-    /*!
-     @property texture
-     @abstract The Texture object for this attachment.
-     */
     public var texture: Texture
     
-    /*!
-     @property level
-     @abstract The mipmap level of the texture to be used for rendering.  Default is zero.
-     */
+    /// The mipmap level of the texture to be used for rendering.
     public var level: Int = 0
     
-    
-    /*!
-     @property slice
-     @abstract The slice of the texture to be used for rendering.  Default is zero.
-     */
+    /// The slice of the texture to be used for rendering. 
     public var slice: Int = 0
     
-    
-    /*!
-     @property depthPlane
-     @abstract The depth plane of the texture to be used for rendering.  Default is zero.
-     */
+    /// The depth plane of the texture to be used for rendering.
     public var depthPlane: Int = 0
     
+    /// The stencil value to clear this attachment to.
     public var clearStencil : UInt32? = nil
     
     public var wantsClear : Bool {
@@ -159,10 +95,6 @@ public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDe
     }
 }
 
-/*!
- @class RenderTargetDescriptor
- @abstract RenderTargetDescriptor represents a collection of attachments to be used to create a concrete render command encoder
- */
 public struct RenderTargetDescriptor : Hashable {
     
     public init<I : RenderTargetIdentifier>(identifierType: I.Type) {
@@ -175,16 +107,8 @@ public struct RenderTargetDescriptor : Hashable {
     
     public var stencilAttachment : RenderTargetStencilAttachmentDescriptor? = nil
     
-    /*!
-     @property visibilityResultBuffer:
-     @abstract Buffer into which samples passing the depth and stencil tests are counted.
-     */
     public var visibilityResultBuffer: Buffer? = nil
     
-    /*!
-     @property renderTargetArrayLength:
-     @abstract The number of active layers
-     */
     public var renderTargetArrayLength: Int = 0
     
     public subscript<I : RenderTargetIdentifier>(attachment: I) -> RenderTargetColorAttachmentDescriptor? {
@@ -209,5 +133,27 @@ public struct RenderTargetDescriptor : Hashable {
         }
         
         return Size(width: width, height: height, depth: 1)
+    }
+    
+    public static func areMergeable(_ descriptorA: RenderTargetDescriptor, _ descriptorB: RenderTargetDescriptor) -> Bool {
+        if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment, depthA.texture != depthB.texture || depthB.wantsClear {
+            return false
+        }
+        
+        if let stencilA = descriptorA.stencilAttachment, let stencilB = descriptorB.stencilAttachment, stencilA.texture != stencilB.texture || stencilB.wantsClear {
+            return false
+        }
+        
+        if let visA = descriptorA.visibilityResultBuffer, let visB = descriptorB.visibilityResultBuffer, visA != visB {
+            return false
+        }
+        
+        for i in 0..<min(descriptorA.colorAttachments.count, descriptorB.colorAttachments.count) {
+            if let colorA = descriptorA.colorAttachments[i], let colorB = descriptorB.colorAttachments[i], colorA.texture != colorB.texture || colorB.wantsClear {
+                return false
+            }
+        }
+        
+        return true
     }
 }

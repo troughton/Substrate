@@ -9,7 +9,6 @@ import SwiftFrameGraph
 import Metal
 
 public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
-    
     public let maxInflightFrames : Int
     
     let device : MTLDevice
@@ -41,6 +40,8 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
             disposeTexture: { [self] texture in self.dispose(texture: texture) },
             disposeBuffer: { [self] buffer in self.dispose(buffer: buffer) },
             disposeArgumentBuffer: { [self] argumentBuffer in self.dispose(argumentBuffer: argumentBuffer) },
+            disposeArgumentBufferArray: { [self] argumentBufferArray in self.dispose(argumentBufferArray: argumentBufferArray) },
+            backingResource: { [self] resource in return self.backingResource(resource) },
             isDepth24Stencil8PixelFormatSupported: { [self] in self.isDepth24Stencil8PixelFormatSupported },
             threadExecutionWidth: { [self] in self.threadExecutionWidth },
             renderDevice: { [self] in self.renderDevice },
@@ -56,7 +57,9 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
     }
     
     public func materialisePersistentTexture(_ texture: Texture) {
-        self.resourceRegistry.allocateTextureIfNeeded(texture, usage: MTLTextureUsage(texture.descriptor.usageHint))
+        resourceRegistry.accessQueue.sync {
+            _ = self.resourceRegistry.allocateTexture(texture, properties: TextureUsageProperties(texture.descriptor.usageHint))
+        }
     }
     
     public func registerWindowTexture(texture: Texture, context: Any) {
@@ -64,19 +67,25 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
     }
     
     public func materialisePersistentBuffer(_ buffer: Buffer) {
-        self.resourceRegistry.allocateBufferIfNeeded(buffer)
+        _ = resourceRegistry.accessQueue.sync {
+            self.resourceRegistry.allocateBuffer(buffer)
+        }
     }
     
     public func dispose(texture: Texture) {
-        self.resourceRegistry.disposeTexture(texture, readFence: nil, writeFences: nil)
+        self.resourceRegistry.disposeTexture(texture, keepingReference: false)
     }
     
     public func dispose(buffer: Buffer) {
-        self.resourceRegistry.disposeBuffer(buffer, readFence: nil, writeFences: nil)
+        self.resourceRegistry.disposeBuffer(buffer, keepingReference: false)
     }
     
     public func dispose(argumentBuffer: ArgumentBuffer) {
-        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer)
+        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer, keepingReference: false)
+    }
+    
+    public func dispose(argumentBufferArray: ArgumentBufferArray) {
+        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray, keepingReference: false)
     }
     
     public func executeFrameGraph(passes: [RenderPassRecord], resourceUsages: ResourceUsages, commands: [FrameGraphCommand], completion: @escaping () -> Void) {
@@ -86,7 +95,11 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
     }
     
     public var isDepth24Stencil8PixelFormatSupported: Bool {
+        #if os(macOS)
         return self.device.isDepth24Stencil8PixelFormatSupported
+        #else
+        return false
+        #endif
     }
     
     public var threadExecutionWidth: Int {
@@ -94,27 +107,47 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
     }
     
     public func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
-        return resourceRegistry.bufferContents(for: buffer) + range.lowerBound
+        return resourceRegistry.accessQueue.sync {
+            resourceRegistry.bufferContents(for: buffer) + range.lowerBound
+        }
     }
     
     public func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
+        #if os(macOS)
+        if range.isEmpty { return }
         if buffer.descriptor.storageMode == .managed {
             let mtlBuffer = resourceRegistry[buffer]!
             let offsetRange = (range.lowerBound + mtlBuffer.offset)..<(range.upperBound + mtlBuffer.offset)
             mtlBuffer.buffer.didModifyRange(offsetRange)
         }
+        #endif
+    }
+    
+    public func backingResource(_ resource: Resource) -> Any? {
+        return resourceRegistry.accessQueue.sync {
+            if let buffer = resource.buffer {
+                let bufferReference = resourceRegistry[buffer]
+                assert(bufferReference == nil || bufferReference?.offset == 0)
+                return bufferReference?.buffer
+            } else if let texture = resource.texture {
+                return resourceRegistry[texture]
+            }
+            return nil
+        }
     }
     
     public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        resourceRegistry.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
+        resourceRegistry.accessQueue.sync {
+            resourceRegistry.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
+        }
     }
     
     public func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection {
-        return self.stateCaches.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
+        return self.stateCaches.renderPipelineAccessQueue.sync { self.stateCaches.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget) }
     }
     
     public func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection {
-        return self.stateCaches.computePipelineReflection(descriptor: descriptor)
+        return self.stateCaches.computePipelineAccessQueue.sync { self.stateCaches.computePipelineReflection(descriptor: descriptor) }
     }
     
 }

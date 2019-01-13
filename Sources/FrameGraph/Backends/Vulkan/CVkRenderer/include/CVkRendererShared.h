@@ -1,6 +1,6 @@
 //
 //  CVkRendererShared.h
-//  InterdimensionalLlama
+//  SwiftFrameGraph
 //
 //  Created by Thomas Roughton on 13/01/18.
 //

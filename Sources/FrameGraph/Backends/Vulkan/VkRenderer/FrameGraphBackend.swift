@@ -6,8 +6,7 @@
 //
 
 import Dispatch
-import FrameGraph
-import RenderAPI
+import SwiftFrameGraph
 import CVkRenderer
 
 public final class VulkanFrameGraphBackend : FrameGraphBackend {
@@ -89,7 +88,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                 
                 commandEncoder.executeCommands(commands[passRecord.commandRange!], resourceCommands: &resourceCommands)
                 
-            case .cpu:
+            case .cpu, .external:
                 break
             }
         }
@@ -135,7 +134,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
         var semaphoreId = 0
         
         resourceLoop: for resource in resourceUsages.allResources {
-            let usages = resourceUsages[usagesFor: resource]
+            let usages = resource.usages
             if usages.isEmpty { continue }
 
             var usageIterator = usages.makeIterator()
@@ -147,7 +146,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     continue resourceLoop // no active usages for this resource
                 }
                 previousUsage = usage
-            } while !previousUsage.renderPass.isActive || (previousUsage.stages == .cpuBeforeRender && previousUsage.type != .unusedArgumentBuffer)
+            } while !previousUsage.renderPassRecord.isActive || (previousUsage.stages == .cpuBeforeRender && previousUsage.type != .unusedArgumentBuffer)
             
             let materialiseIndex = previousUsage.commandRange.lowerBound
             
@@ -158,7 +157,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
             let firstUsage = previousUsage
             
             while let usage = usageIterator.next()  {
-                if !usage.renderPass.isActive || usage.stages == .cpuBeforeRender { continue }
+                if !usage.renderPassRecord.isActive || usage.stages == .cpuBeforeRender { continue }
                 defer { previousUsage = usage }
 
                 if !previousUsage.isWrite && !usage.isWrite { continue }
@@ -171,7 +170,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     // Manage memory dependency.
                     
                     var isDepthStencil = false
-                    if let texture = resource as? Texture, texture.descriptor.pixelFormat.isDepth || texture.descriptor.pixelFormat.isStencil {
+                    if let texture = resource.texture, texture.descriptor.pixelFormat.isDepth || texture.descriptor.pixelFormat.isStencil {
                         isDepthStencil = true
                     }
                     
@@ -187,23 +186,22 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     let sourceMask = passUsage.type.shaderStageMask(isDepthOrStencil: isDepthStencil, stages: passUsage.stages)
                     let destinationMask = dependentUsage.type.shaderStageMask(isDepthOrStencil: isDepthStencil, stages: dependentUsage.stages)
                     
-                    let sourceLayout = resource is Texture ? passUsage.type.imageLayout(isDepthOrStencil: isDepthStencil) : VK_IMAGE_LAYOUT_UNDEFINED
-                    let destinationLayout = resource is Texture ? dependentUsage.type.imageLayout(isDepthOrStencil: isDepthStencil) : VK_IMAGE_LAYOUT_UNDEFINED
+                    let sourceLayout = resource.type == .texture ? passUsage.type.imageLayout(isDepthOrStencil: isDepthStencil) : VK_IMAGE_LAYOUT_UNDEFINED
+                    let destinationLayout = resource.type == .texture ? dependentUsage.type.imageLayout(isDepthOrStencil: isDepthStencil) : VK_IMAGE_LAYOUT_UNDEFINED
 
                     if !passUsage.type.isRenderTarget, dependentUsage.type.isRenderTarget,
-                        renderTargetDescriptors[passUsage.renderPass.passIndex] !== renderTargetDescriptors[dependentUsage.renderPass.passIndex] {
-                        renderTargetDescriptors[dependentUsage.renderPass.passIndex]!.initialLayouts[ObjectIdentifier(resource)] = sourceLayout
+                        renderTargetDescriptors[passUsage.renderPassRecord.passIndex] !== renderTargetDescriptors[dependentUsage.renderPassRecord.passIndex] {
+                        renderTargetDescriptors[dependentUsage.renderPassRecord.passIndex]!.initialLayouts[resource.texture!] = sourceLayout
                     }
                     
                     if passUsage.type.isRenderTarget, !dependentUsage.type.isRenderTarget,
-                        renderTargetDescriptors[passUsage.renderPass.passIndex] !== renderTargetDescriptors[dependentUsage.renderPass.passIndex] {
-                        renderTargetDescriptors[passUsage.renderPass.passIndex]!.finalLayouts[ObjectIdentifier(resource)] = destinationLayout
+                        renderTargetDescriptors[passUsage.renderPassRecord.passIndex] !== renderTargetDescriptors[dependentUsage.renderPassRecord.passIndex] {
+                        renderTargetDescriptors[passUsage.renderPassRecord.passIndex]!.finalLayouts[resource.texture!] = destinationLayout
                     }
                     
                     let barrier : ResourceMemoryBarrier
                     
-                    switch resource {
-                    case let texture as Texture:
+                    if let texture = resource.texture {
                         var imageBarrierInfo = VkImageMemoryBarrier()
                         imageBarrierInfo.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
                         imageBarrierInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
@@ -214,8 +212,8 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                         imageBarrierInfo.newLayout = destinationLayout
                         imageBarrierInfo.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
                         
-                        barrier = .texture(ObjectIdentifier(texture), imageBarrierInfo)
-                    case let buffer as Buffer:
+                        barrier = .texture(texture, imageBarrierInfo)
+                    } else if let buffer = resource.buffer {
                         var bufferBarrierInfo = VkBufferMemoryBarrier()
                         bufferBarrierInfo.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER
                         bufferBarrierInfo.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
@@ -225,27 +223,27 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                         bufferBarrierInfo.offset = 0
                         bufferBarrierInfo.size = VK_WHOLE_SIZE
                         
-                        barrier = .buffer(ObjectIdentifier(buffer), bufferBarrierInfo)
-                    default:
+                        barrier = .buffer(buffer, bufferBarrierInfo)
+                    } else {
                         fatalError()
                     }
                     
                     var memoryBarrierInfo = MemoryBarrierInfo(sourceMask: sourceMask, destinationMask: destinationMask, barrier: barrier)
             
-                    if passUsage.renderPass.pass.passType == .draw || dependentUsage.renderPass.pass.passType == .draw {
+                    if passUsage.renderPassRecord.pass.passType == .draw || dependentUsage.renderPassRecord.pass.passType == .draw {
 
-                        let renderTargetDescriptor = (renderTargetDescriptors[passUsage.renderPass.passIndex] ?? renderTargetDescriptors[dependentUsage.renderPass.passIndex])! // Add to the first pass if possible, the second pass if not.
+                        let renderTargetDescriptor = (renderTargetDescriptors[passUsage.renderPassRecord.passIndex] ?? renderTargetDescriptors[dependentUsage.renderPassRecord.passIndex])! // Add to the first pass if possible, the second pass if not.
                         
                         var subpassDependency = VkSubpassDependency()
                         subpassDependency.dependencyFlags = 0 // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
-                        if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(passUsage.renderPass.passIndex) {
+                        if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(passUsage.renderPassRecord.passIndex) {
                             subpassDependency.srcSubpass = UInt32(passUsageSubpass.index)
                         } else {
                             subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
                         }
                         subpassDependency.srcStageMask = VkPipelineStageFlags(sourceMask)
                         subpassDependency.srcAccessMask = VkAccessFlags(sourceAccessMask)
-                        if let destinationUsageSubpass = renderTargetDescriptor.subpassForPassIndex(dependentUsage.renderPass.passIndex) {
+                        if let destinationUsageSubpass = renderTargetDescriptor.subpassForPassIndex(dependentUsage.renderPassRecord.passIndex) {
                             subpassDependency.dstSubpass = UInt32(destinationUsageSubpass.index)
                         } else {
                             subpassDependency.dstSubpass = VK_SUBPASS_EXTERNAL
@@ -280,7 +278,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                             
                             if subpassDependency.srcSubpass == VK_SUBPASS_EXTERNAL {
                                 // Insert a pipeline barrier before the start of the Render Command Encoder.
-                                let firstPassInVkRenderPass = renderTargetDescriptors[dependentUsage.renderPass.passIndex]!.renderPasses.first!
+                                let firstPassInVkRenderPass = renderTargetDescriptors[dependentUsage.renderPassRecord.passIndex]!.renderPasses.first!
                                 let dependencyIndex = firstPassInVkRenderPass.commandRange!.lowerBound
 
                                 assert(dependencyIndex <= dependentUsage.commandRange.lowerBound)
@@ -288,7 +286,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                                 commands.append(ResourceCommand(type: .pipelineBarrier(memoryBarrierInfo), index: dependencyIndex, order: .before))
                             } else if subpassDependency.dstSubpass == VK_SUBPASS_EXTERNAL {
                                 // Insert a pipeline barrier before the next command after the render command encoder ends.
-                                let lastPassInVkRenderPass = renderTargetDescriptors[dependentUsage.renderPass.passIndex]!.renderPasses.last!
+                                let lastPassInVkRenderPass = renderTargetDescriptors[dependentUsage.renderPassRecord.passIndex]!.renderPasses.last!
                                 let dependencyIndex = lastPassInVkRenderPass.commandRange!.upperBound
 
                                 assert(dependencyIndex <= passUsage.commandRange.lowerBound)
@@ -309,7 +307,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                         
                     } else {
                         
-                        if self.device.physicalDevice.queueFamilyIndex(renderPassType: passUsage.renderPass.pass.passType) != self.device.physicalDevice.queueFamilyIndex(renderPassType: dependentUsage.renderPass.pass.passType) {
+                        if self.device.physicalDevice.queueFamilyIndex(renderPassType: passUsage.renderPassRecord.pass.passType) != self.device.physicalDevice.queueFamilyIndex(renderPassType: dependentUsage.renderPassRecord.pass.passType) {
                             // Assume that the resource has a concurrent sharing mode.
                             // If the sharing mode is concurrent, then we only need to insert a barrier for an image layout transition.
                             // Otherwise, we would need to do a queue ownership transfer.
@@ -343,12 +341,12 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
 
             let lastUsage = previousUsage
             
-            let historyBufferCreationFrame = resource.flags.contains(.historyBuffer) && !resource.flags.contains(.initialised)
-            let historyBufferUseFrame = resource.flags.contains([.historyBuffer, .initialised])
+            let historyBufferCreationFrame = resource.flags.contains(.historyBuffer) && !resource.stateFlags.contains(.initialised)
+            let historyBufferUseFrame = resource.flags.contains(.historyBuffer) && resource.stateFlags.contains(.initialised)
             
             // Insert commands to materialise and dispose of the resource.
             
-            if let buffer = resource as? Buffer {
+            if let buffer = resource.buffer {
 
                 var isModified = false
                 var queueFamilies : QueueFamilies = []
@@ -358,15 +356,15 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     bufferUsage.formUnion(VkBufferUsageFlagBits(buffer.descriptor.usageHint))
                 }
 
-                for usage in usages where usage.renderPass.isActive, usage.stages != .cpuBeforeRender {
-                    switch usage.renderPass.pass.passType {
+                for usage in usages where usage.renderPassRecord.isActive && usage.stages != .cpuBeforeRender {
+                    switch usage.renderPassRecord.pass.passType {
                     case .draw:
                         queueFamilies.formUnion(.graphics)
                     case .compute:
                         queueFamilies.formUnion(.compute)
                     case .blit:
                         queueFamilies.formUnion(.copy)
-                    case .cpu:
+                    case .cpu, .external:
                         break
                     }
                     
@@ -392,7 +390,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                         bufferUsage.formUnion(.indexBuffer)
                     case .indirectBuffer:
                         bufferUsage.formUnion(.indirectBuffer)
-                    case .readWriteRenderTarget, .writeOnlyRenderTarget, .unusedRenderTarget, .sampler, .inputAttachment:
+                    case .readWriteRenderTarget, .writeOnlyRenderTarget, .inputAttachmentRenderTarget, .unusedRenderTarget, .sampler, .inputAttachment:
                         fatalError()
                     case .unusedArgumentBuffer:
                         break
@@ -411,12 +409,11 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     if isModified { // FIXME: what if we're reading from something that the next frame will modify?
                         let sourceMask = lastUsage.type.shaderStageMask(isDepthOrStencil: false, stages: lastUsage.stages)
                     
-                        commands.append(ResourceCommand(type: .storeResource(buffer, finalLayout: nil, afterStages: sourceMask), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                        commands.append(ResourceCommand(type: .storeResource(Resource(buffer), finalLayout: nil, afterStages: sourceMask), index: lastUsage.commandRange.upperBound - 1, order: .after))
                     }
                 }
                 
-            } else {
-                let texture = resource as! Texture
+            } else if let texture = resource.texture {
                 let isDepthStencil = texture.descriptor.pixelFormat.isDepth || texture.descriptor.pixelFormat.isStencil
                 
                 var isModified = false
@@ -429,17 +426,17 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                 
                 var previousUsage : ResourceUsage? = nil
                 
-                for usage in usages where usage.renderPass.isActive, usage.stages != .cpuBeforeRender {
+                for usage in usages where usage.renderPassRecord.isActive && usage.stages != .cpuBeforeRender {
                     defer { previousUsage = usage }
                     
-                    switch usage.renderPass.pass.passType {
+                    switch usage.renderPassRecord.pass.passType {
                     case .draw:
                         queueFamilies.formUnion(.graphics)
                     case .compute:
                         queueFamilies.formUnion(.compute)
                     case .blit:
                         queueFamilies.formUnion(.copy)
-                    case .cpu:
+                    case .cpu, .external:
                         break
                     }
                     
@@ -464,6 +461,8 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                         } else {
                             textureUsage.formUnion(.colorAttachment)
                         }
+                    case .inputAttachmentRenderTarget:
+                        textureUsage.formUnion(.inputAttachment)
                     case .blitSource:
                         textureUsage.formUnion(.transferSource)
                     case .blitDestination:
@@ -477,10 +476,6 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     case .unusedArgumentBuffer:
                         break
                     }
-                    
-                }
-                if textureUsage.contains(.sampled) && (textureUsage.contains(.colorAttachment) || textureUsage.contains(.depthStencilAttachment)) {
-                    textureUsage.formUnion(.inputAttachment)
                 }
                 
                 do {
@@ -505,16 +500,16 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     
 
                     var materialiseIndex = materialiseIndex
-                    if firstUsage.renderPass.pass.passType == .draw {
+                    if firstUsage.renderPassRecord.pass.passType == .draw {
                         // Materialise the texture (performing layout transitions) before we begin the Vulkan render pass.
-                        let firstPass = renderTargetDescriptors[firstUsage.renderPass.passIndex]!.renderPasses.first!
+                        let firstPass = renderTargetDescriptors[firstUsage.renderPassRecord.passIndex]!.renderPasses.first!
                         materialiseIndex = firstPass.commandRange!.lowerBound
 
                         if firstUsage.type.isRenderTarget {
                             // We're not doing a layout transition here, so set the initial layout for the render pass
                             // to the texture's current, actual layout.
                             if let vulkanTexture = self.resourceRegistry[texture] {
-                                renderTargetDescriptors[firstUsage.renderPass.passIndex]!.initialLayouts[ObjectIdentifier(texture)] = vulkanTexture.layout
+                                renderTargetDescriptors[firstUsage.renderPassRecord.passIndex]!.initialLayouts[texture] = vulkanTexture.layout
                             }
                         }
                     }
@@ -535,11 +530,11 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
                     var finalLayout : VkImageLayout? = nil
                     
                     if lastUsage.type.isRenderTarget {
-                        renderTargetDescriptors[lastUsage.renderPass.passIndex]!.finalLayouts[ObjectIdentifier(resource)] = VK_IMAGE_LAYOUT_GENERAL
+                        renderTargetDescriptors[lastUsage.renderPassRecord.passIndex]!.finalLayouts[texture] = VK_IMAGE_LAYOUT_GENERAL
                         finalLayout = VK_IMAGE_LAYOUT_GENERAL
                     }
 
-                    commands.append(ResourceCommand(type: .storeResource(texture, finalLayout: finalLayout, afterStages: sourceMask), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                    commands.append(ResourceCommand(type: .storeResource(Resource(texture), finalLayout: finalLayout, afterStages: sourceMask), index: lastUsage.commandRange.upperBound - 1, order: .after))
                 }
                 
             }
@@ -552,8 +547,8 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
 }
 
 enum ResourceMemoryBarrier {
-    case texture(ObjectIdentifier, VkImageMemoryBarrier)
-    case buffer(ObjectIdentifier, VkBufferMemoryBarrier)
+    case texture(Texture, VkImageMemoryBarrier)
+    case buffer(Buffer, VkBufferMemoryBarrier)
 }
 
 struct MemoryBarrierInfo {

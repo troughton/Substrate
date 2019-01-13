@@ -210,8 +210,4 @@ final class MetalPipelineReflection : PipelineReflection {
         modifiedPath.stages = newParentPath.stages
         return ResourceBindingPath(modifiedPath)
     }
-    
-    public func bindingIsActive(at path: ResourceBindingPath) -> Bool {
-        return self.argumentReflection(at: path)?.isActive ?? false
-    }
 }

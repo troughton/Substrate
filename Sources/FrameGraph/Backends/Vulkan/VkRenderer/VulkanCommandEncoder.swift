@@ -5,9 +5,8 @@
 //  Created by Thomas Roughton on 17/01/18.
 //
 
-import RenderAPI
 import CVkRenderer
-import FrameGraph
+import SwiftFrameGraph
 import Dispatch
 
 protocol VulkanCommandEncoder : class {
@@ -97,14 +96,14 @@ extension VulkanCommandEncoder {
 
                 switch barrierInfo.barrier {
                 case .texture(let textureHandle, var imageBarrier):
-                    let texture = self.resourceRegistry[texture: textureHandle]!
+                    let texture = self.resourceRegistry[textureHandle]!
                     imageBarrier.image = texture.vkImage
                     vkCmdWaitEvents(self.commandBufferResources.commandBuffer, 1, &event, VkPipelineStageFlags(barrierInfo.sourceMask), VkPipelineStageFlags(barrierInfo.destinationMask), 0, nil, 0, nil, 1, &imageBarrier)
                     vkCmdResetEvent(self.commandBufferResources.commandBuffer, event, VkPipelineStageFlags(barrierInfo.destinationMask))
                     
                     texture.layout = imageBarrier.newLayout
                 case .buffer(let bufferHandle, var bufferBarrier):
-                    let buffer = self.resourceRegistry[buffer: bufferHandle]!
+                    let buffer = self.resourceRegistry[bufferHandle]!
                     bufferBarrier.buffer = buffer.vkBuffer
                     vkCmdWaitEvents(self.commandBufferResources.commandBuffer, 1, &event, VkPipelineStageFlags(barrierInfo.sourceMask), VkPipelineStageFlags(barrierInfo.destinationMask), 0, nil, 1, &bufferBarrier, 0, nil)
                     vkCmdResetEvent(self.commandBufferResources.commandBuffer, event, VkPipelineStageFlags(barrierInfo.destinationMask))
@@ -122,12 +121,12 @@ extension VulkanCommandEncoder {
                 
                 switch barrier.barrier {
                 case .buffer(let bufferHandle, var barrierInfo):
-                    let buffer = self.resourceRegistry[buffer: bufferHandle]!
+                    let buffer = self.resourceRegistry[bufferHandle]!
                     barrierInfo.buffer = buffer.vkBuffer
                     vkCmdPipelineBarrier(self.commandBufferResources.commandBuffer, VkPipelineStageFlags(barrier.sourceMask), VkPipelineStageFlags(barrier.destinationMask), 0, 0, nil, 1, &barrierInfo, 0, nil)
                     
                 case .texture(let textureHandle, var barrierInfo):
-                    let texture = self.resourceRegistry[texture: textureHandle]!
+                    let texture = self.resourceRegistry[textureHandle]!
                     barrierInfo.image = texture.vkImage
                     vkCmdPipelineBarrier(self.commandBufferResources.commandBuffer, VkPipelineStageFlags(barrier.sourceMask), VkPipelineStageFlags(barrier.destinationMask), 0, 0, nil, 0, nil, 1, &barrierInfo)
                     
@@ -141,17 +140,16 @@ extension VulkanCommandEncoder {
                 let resourceSemaphore = ResourceSemaphore(vkSemaphore: semaphore, stages: stages)
                 self.commandBufferResources.signalSemaphores.append(resourceSemaphore)
                 
-                switch resource {
-                case let texture as Texture:
+                if let texture = resource.texture {
                     let vulkanTexture = self.resourceRegistry[texture]!
                     vulkanTexture.waitSemaphore = resourceSemaphore
                     if let finalLayout = finalLayout {
                         vulkanTexture.layout = finalLayout
                     }
-                case let buffer as Buffer:
+                } else if let buffer = resource.buffer {
                     let vulkanBuffer = self.resourceRegistry[buffer]!
                     vulkanBuffer.waitSemaphore = resourceSemaphore
-                default:
+                } else {
                     fatalError()
                 }
             }
@@ -166,7 +164,7 @@ extension VulkanCommandEncoder {
 protocol VulkanResourceBindingCommandEncoder : VulkanCommandEncoder {
     var bindPoint : VkPipelineBindPoint { get }
     var pipelineLayout : VkPipelineLayout { get }
-    var pipelineReflection : PipelineReflection { get }
+    var pipelineReflection : VulkanPipelineReflection { get }
     var stateCaches : StateCaches { get }
 }
 

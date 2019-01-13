@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 16/01/18.
 //
 
-import RenderAPI
+import SwiftFrameGraph
 import CVkRenderer
 import Utilities
 
@@ -27,8 +27,8 @@ class VulkanRenderPass {
         
         if let depthAttachment = descriptor.descriptor.depthAttachment {
             var attachmentDescription = VkAttachmentDescription(pixelFormat: depthAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: depthAttachment, depthActions: descriptor.depthActions, stencilActions: descriptor.stencilActions)
-            attachmentDescription.initialLayout = descriptor.initialLayouts[ObjectIdentifier(depthAttachment.texture)] ?? VK_IMAGE_LAYOUT_UNDEFINED
-            attachmentDescription.finalLayout = descriptor.finalLayouts[ObjectIdentifier(depthAttachment.texture)] ?? VK_IMAGE_LAYOUT_GENERAL // TODO: Can we do something smarter here than just a general layout?
+            attachmentDescription.initialLayout = descriptor.initialLayouts[depthAttachment.texture] ?? VK_IMAGE_LAYOUT_UNDEFINED
+            attachmentDescription.finalLayout = descriptor.finalLayouts[depthAttachment.texture] ?? VK_IMAGE_LAYOUT_GENERAL // TODO: Can we do something smarter here than just a general layout?
             attachmentIndices[.depthStencil] = attachments.count
             attachments.append(attachmentDescription)
         } else {
@@ -38,8 +38,8 @@ class VulkanRenderPass {
         for (i, (colorAttachment, actions)) in zip(descriptor.descriptor.colorAttachments, descriptor.colorActions).enumerated() {
             guard let colorAttachment = colorAttachment else { continue }
             var attachmentDescription = VkAttachmentDescription(pixelFormat: colorAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: colorAttachment, actions: actions)
-            attachmentDescription.initialLayout = descriptor.initialLayouts[ObjectIdentifier(colorAttachment.texture)] ?? VK_IMAGE_LAYOUT_UNDEFINED
-            attachmentDescription.finalLayout = descriptor.finalLayouts[ObjectIdentifier(colorAttachment.texture)] ?? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR // FIXME: is this generally correct?
+            attachmentDescription.initialLayout = descriptor.initialLayouts[colorAttachment.texture] ?? VK_IMAGE_LAYOUT_UNDEFINED
+            attachmentDescription.finalLayout = descriptor.finalLayouts[colorAttachment.texture] ?? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR // FIXME: is this generally correct?
             attachmentIndices[.color(i)] = attachments.count
             attachments.append(attachmentDescription)
         }

@@ -6,7 +6,7 @@
 //
 
 import CVkRenderer
-import RenderAPI
+import SwiftFrameGraph
 import Utilities
 import Foundation
 
@@ -42,7 +42,7 @@ struct DescriptorSetLayoutKey : Hashable {
     var dynamicBuffers : BitSet
 }
 
-public class PipelineReflection {
+final class VulkanPipelineReflection : PipelineReflection {
     let device : VulkanDevice
     
     let resources : [VulkanResourceBindingPath : ShaderResource]
@@ -51,6 +51,15 @@ public class PipelineReflection {
     let lastSet : UInt32?
     
     private var layouts = [DescriptorSetLayoutKey : VulkanDescriptorSetLayout]()
+    
+    let reflectionCacheCount : Int
+    let reflectionCacheKeys : UnsafePointer<VulkanResourceBindingPath>
+    let reflectionCacheValues : UnsafePointer<ArgumentReflection>
+    
+    deinit {
+        self.reflectionCacheKeys.deallocate()
+        self.reflectionCacheValues.deallocate()
+    }
     
     public init(functions: [(String, VkReflectionContext, VkShaderStageFlagBits)], device: VulkanDevice) {
         self.device = device
@@ -89,6 +98,23 @@ public class PipelineReflection {
         self.specialisations = functionSpecialisations
         self.activeStagesForSets = activeStagesForSets
         self.lastSet = lastSet
+        
+        let sortedReflectionCache = resources.map { (path: $0, reflection: ArgumentReflection($1)!) }.sorted(by: { $0.path.value < $1.path.value })
+        
+        let reflectionCacheKeys = UnsafeMutablePointer<VulkanResourceBindingPath>.allocate(capacity: sortedReflectionCache.count + 1)
+        let reflectionCacheValues = UnsafeMutablePointer<ArgumentReflection>.allocate(capacity: sortedReflectionCache.count)
+        
+        for (i, pair) in sortedReflectionCache.enumerated() {
+            reflectionCacheKeys[i] = pair.path
+            reflectionCacheValues[i] = pair.reflection
+        }
+        
+        reflectionCacheKeys[sortedReflectionCache.count] = VulkanResourceBindingPath(ResourceBindingPath(value: .max)) // Insert a sentinel to speed up the linear search; https://schani.wordpress.com/2010/04/30/linear-vs-binary-search/
+        
+        self.reflectionCacheCount = sortedReflectionCache.count
+        self.reflectionCacheKeys = UnsafePointer(reflectionCacheKeys)
+        self.reflectionCacheValues = UnsafePointer(reflectionCacheValues)
+        
     }
     
     subscript(bindingPath: VulkanResourceBindingPath) -> ShaderResource {
@@ -125,6 +151,100 @@ public class PipelineReflection {
         }
         return layouts
     }
+    
+    // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
+    func reflectionCacheLinearSearch(_ path: VulkanResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
+        var i = 0
+        while true { // We're guaranteed to always exit this loop since there's a sentinel value with UInt64.max at the end of reflectionCacheKeys
+            if self.reflectionCacheKeys[i].value >= path.value {
+                break
+            }
+            i += 1
+        }
+        
+        if i < self.reflectionCacheCount, self.reflectionCacheKeys[i] == path {
+            return self.reflectionCacheValues[i]
+        } else if returnNearest, i - 1 > 0, i - 1 < self.reflectionCacheCount { // Check for the next lowest binding path.
+            return self.reflectionCacheValues[i - 1]
+        }
+        return nil
+    }
+    
+    // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
+    func reflectionCacheBinarySearch(_ path: VulkanResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
+        var low = 0
+        var high = self.reflectionCacheCount
+        
+        while low != high {
+            let mid = low &+ (high &- low) >> 1
+            let testVal = self.reflectionCacheKeys[mid].value
+            
+            low = testVal < path.value ? (mid &+ 1) : low
+            high = testVal >= path.value ? mid : high
+        }
+        
+        if low < self.reflectionCacheCount, self.reflectionCacheKeys[low] == path {
+            return self.reflectionCacheValues[low]
+        } else if returnNearest, low - 1 > 0, low - 1 < self.reflectionCacheCount { // Check for the next lowest binding path.
+            return self.reflectionCacheValues[low - 1]
+        }
+        return nil
+    }
+    
+    public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
+        let path = VulkanResourceBindingPath(path)
+        return reflectionCacheLinearSearch(path, returnNearest: false)
+    }
+    
+    public func bindingPath(argumentName: String, arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath? {
+        for resource in self.resources.values {
+            if resource.name == argumentName {
+                var bindingPath = resource.bindingPath
+                bindingPath.arrayIndex = UInt32(arrayIndex)
+                
+                if let argumentBufferPath = argumentBufferPath {
+                    assert(bindingPath.set == VulkanResourceBindingPath(argumentBufferPath).set)
+                }
+                
+                return ResourceBindingPath(bindingPath)
+            }
+        }
+        return nil
+    }
+    
+    public func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
+        
+        // TODO: handle the arrayIndex parameter for argument buffer arrays.
+        
+        // NOTE: There's currently no error checking that the argument buffer contents
+        // aren't spread across multiple sets.
+        
+        if let (firstBoundPath, _) = argumentBuffer.bindings.first {
+            let vulkanPath = VulkanResourceBindingPath(firstBoundPath)
+            return ResourceBindingPath(
+                VulkanResourceBindingPath(argumentBuffer: vulkanPath.set)
+            )
+        }
+        
+        for (pendingKey, _, _) in argumentBuffer.enqueuedBindings {
+            if let path = pendingKey.computedBindingPath(pipelineReflection: self) {
+                let vulkanPath = VulkanResourceBindingPath(path)
+                return ResourceBindingPath(
+                    VulkanResourceBindingPath(argumentBuffer: vulkanPath.set)
+                )
+            }
+        }
+        
+        return nil
+    }
+    
+    public func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath {
+        let newParentPath = VulkanResourceBindingPath(newArgumentBufferPath)
+        
+        var modifiedPath = VulkanResourceBindingPath(pathInOriginalArgumentBuffer)
+        modifiedPath.set = newParentPath.set
+        return ResourceBindingPath(modifiedPath)
+    }
 }
 
 extension ArgumentReflection {
@@ -153,7 +273,7 @@ extension ArgumentReflection {
             usageType = .readWrite
         case (.writeOnly, _):
             usageType = .write
-        case (_, _) where resource.type == .sampler:
+        case (_, .sampler):
             usageType = .sampler
         default:
             return nil
@@ -322,7 +442,7 @@ public class VulkanShaderLibrary {
     let modules : [VulkanShaderModule]
     private let functionsToModules : [String : VulkanShaderModule]
     
-    private var reflectionCache = [PipelineLayoutKey : PipelineReflection]()
+    private var reflectionCache = [PipelineLayoutKey : VulkanPipelineReflection]()
     private var pipelineLayoutCache = [PipelineLayoutKey : VkPipelineLayout]()
     
     public init(device: VulkanDevice, url: URL) throws {
@@ -330,22 +450,20 @@ public class VulkanShaderLibrary {
         self.url = url
 
         let fileManager = FileManager.default
-        let resources = try fileManager.contentsOfDirectory(atPath: url.path)
+        let resources = try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [])
         
         var modules = [VulkanShaderModule]()
         var functions = [String : VulkanShaderModule]()
 
         for file in resources {
-            if file.hasSuffix(".spv") {
-                let fileURL = url.appendingPathComponent(file)
-                
-                let shaderData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+            if file.pathExtension == ".spv" {
+                let shaderData = try Data(contentsOf: file, options: .mappedIfSafe)
         
                 let module = VulkanShaderModule(device: device, data: shaderData)
                 modules.append(module)
 
                 if module.usesGLSLMainEntryPoint {
-                    functions[file.deletingPathExtension] = module
+                    functions[file.deletingPathExtension().lastPathComponent] = module
                 } else {
                     for entryPoint in module.entryPoints {
                         functions[entryPoint] = module
@@ -390,7 +508,7 @@ public class VulkanShaderLibrary {
         return pipelineLayout!
     }
     
-    public func reflection(for key: PipelineLayoutKey) -> PipelineReflection {
+    func reflection(for key: PipelineLayoutKey) -> VulkanPipelineReflection {
         if let reflection = self.reflectionCache[key] {
             return reflection
         }
@@ -416,7 +534,7 @@ public class VulkanShaderLibrary {
             functions.append((module.entryPointForFunction(named: computeShader), module.reflectionContext, VK_SHADER_STAGE_COMPUTE_BIT))
         }
 
-        let reflection = PipelineReflection(functions: functions, device: self.device)
+        let reflection = VulkanPipelineReflection(functions: functions, device: self.device)
         self.reflectionCache[key] = reflection
         return reflection
     }

@@ -5,8 +5,7 @@
 //  Created by Thomas Roughton on 6/01/18.
 //
 
-import RenderAPI
-import FrameGraph
+import SwiftFrameGraph
 import CVkRenderer
 
 public enum QueueFamily : Int {
@@ -183,7 +182,7 @@ public final class VulkanPhysicalDevice {
         switch renderPassType {
         case .draw:
             return self.queueFamilyIndices.graphics
-        case .compute:
+        case .compute, .external:
             return self.queueFamilyIndices.compute
         case .blit:
             return self.queueFamilyIndices.copy

@@ -5,9 +5,7 @@
 //  Created by Thomas Roughton on 6/01/18.
 //
 
-import RenderAPI
-import FrameGraph
-import CVkRenderer
+import SwiftFrameGraph
 import CVkRenderer
 
 final class PoolResourceAllocator : ResourceAllocator {

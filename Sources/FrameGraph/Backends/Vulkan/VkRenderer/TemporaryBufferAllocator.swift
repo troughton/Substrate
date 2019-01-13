@@ -7,7 +7,7 @@
 
 import Utilities
 import CVkRenderer
-import RenderAPI
+import SwiftFrameGraph
 
 fileprivate class TemporaryBufferArena {
     
@@ -53,7 +53,7 @@ fileprivate class TemporaryBufferArena {
             if self.currentBlock == nil {
                 let allocationSize = max(bytes, self.blockSize)
                 
-                let renderAPIDescriptor = BufferDescriptor(length: allocationSize, storageMode: .managed, cacheMode: .defaultCache, usageHint: .shaderRead)
+                let renderAPIDescriptor = BufferDescriptor(length: allocationSize, storageMode: .managed, cacheMode: .defaultCache, usage: .shaderRead)
                 
                 var allocInfo = VmaAllocationCreateInfo()
                 allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU

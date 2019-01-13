@@ -1,6 +1,6 @@
 //
 //  EscapingPointer.swift
-//  LlamaGame
+//  CGRAGame
 //
 //  Created by Thomas Roughton on 21/05/17.
 //  Copyright © 2017 Team Llama. All rights reserved.

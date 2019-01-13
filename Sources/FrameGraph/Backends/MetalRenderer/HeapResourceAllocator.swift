@@ -7,6 +7,7 @@
 
 import Utilities
 import Metal
+import SwiftFrameGraph
 
 // TODO: Look at best practices in https://developer.apple.com/library/content/documentation/Miscellaneous/Conceptual/MetalProgrammingGuide/ResourceHeaps/ResourceHeaps.html
 // Notably: use different heaps for different types of render targets resources, and use a separate heap for persistent resources.
@@ -15,7 +16,7 @@ import Metal
 // When a resource is first disposed, we give it an index and make it aliasable.
 // Any resource with an index higher than that cannot be used while a resource with a lower index is still in use.
 
-// FIXME: aliasing resources need to have fences between the use of any resources they alias with.
+protocol HeapResourceAllocator : ResourceAllocator {}
 
 class MetalHeap {
     struct AliasingInfo {
@@ -26,6 +27,16 @@ class MetalHeap {
             self.aliasesThrough = aliasesThrough
         }
     }
+    
+    struct MTLFenceReference {
+        var fence : MTLFenceType
+        
+        // We don't need to wait on fences with the same aliasing index (aliasesThrough) and frame
+        var aliasingIndex : Int
+        var frame : UInt64
+    }
+    
+    var frame : UInt64 = 0
     
     var aliasingRange = AliasingInfo(aliasesThrough: 0)
     var nextAliasingIndex = 0
@@ -39,13 +50,25 @@ class MetalHeap {
     private var buffers = [MTLBufferReference]()
     private var textures = [MTLTextureReference]()
     
+    // Semantically an 'array of sets', where the array is indexed by the aliasing indices.
+    // When a resource is deposited, it overwrites the fences for all of the indices it aliases with.
+    // Special case: if all fences share an aliasingIndex and frame, wait on the fences associated with the resource instaed
+    private var aliasingFences : [[MTLFenceReference]] = [[]]
+    
+    var fenceRetainFunc : ((MTLFenceType) -> Void)! = nil
+    var fenceReleaseFunc : ((MTLFenceType) -> Void)! = nil
+    
     public init(heap: MTLHeap, framePurgeability: MTLPurgeableState) {
         self.heap = heap
         self.framePurgeability = framePurgeability
     }
     
     public func cycleFrames() {
+        assert(self.inUseResources.isEmpty)
+        assert(self.aliasingRange.aliasedFrom == .max && self.aliasingRange.aliasesThrough == 0)
+        
         self.heap.setPurgeableState(framePurgeability)
+        self.frame = self.frame &+ 1
     }
     
     private func bufferWithLength(_ length: Int, resourceOptions: MTLResourceOptions) -> MTLBufferReference? {
@@ -54,12 +77,10 @@ class MetalHeap {
         
         for (i, bufferRef) in self.buffers.enumerated() {
             let buffer = bufferRef.buffer
-            if !self.canUseResource(buffer) {
-                continue
-            }
             
             if buffer.length >= length, buffer.length < bestLength,
-                resourceOptions.matches(storageMode: buffer.storageMode, cpuCacheMode: buffer.cpuCacheMode) {
+                resourceOptions.matches(storageMode: buffer.storageMode, cpuCacheMode: buffer.cpuCacheMode),
+                self.canUseResource(buffer) {
                 bestIndex = i
                 bestLength = buffer.length
             }
@@ -76,10 +97,6 @@ class MetalHeap {
         for (i, textureRef) in self.textures.enumerated() {
             let texture = textureRef.texture
             
-            if !self.canUseResource(texture) {
-                continue
-            }
-            
             if  descriptor.textureType      == texture.textureType &&
                 descriptor.pixelFormat      == texture.pixelFormat &&
                 descriptor.width            == texture.width &&
@@ -90,7 +107,8 @@ class MetalHeap {
                 descriptor.arrayLength      == texture.arrayLength &&
                 descriptor.storageMode      == texture.storageMode &&
                 descriptor.cpuCacheMode     == texture.cpuCacheMode &&
-                descriptor.usage            == texture.usage {
+                descriptor.usage            == texture.usage,
+                self.canUseResource(texture) {
                 return self.textures.remove(at: i, preservingOrder: false)
             }
         }
@@ -109,29 +127,51 @@ class MetalHeap {
                aliasInfo.aliasedFrom > self.aliasingRange.aliasesThrough
     }
     
-    private func useResource(_ resource: MTLResource) {
+    private func useResource<R : MTLResourceReference>(_ resource: inout R) {
         if self.inUseResources.isEmpty {
             self.heap.setPurgeableState(.nonVolatile)
         }
-        self.inUseResources.insert(ObjectIdentifier(resource))
+        self.inUseResources.insert(ObjectIdentifier(resource.resource))
         
-        if resourceAliasInfo[ObjectIdentifier(resource)] == nil {
-            resourceAliasInfo[ObjectIdentifier(resource)] = AliasingInfo(aliasesThrough: self.nextAliasingIndex)
+        if resourceAliasInfo[ObjectIdentifier(resource.resource)] == nil {
+            resourceAliasInfo[ObjectIdentifier(resource.resource)] = AliasingInfo(aliasesThrough: self.nextAliasingIndex)
         }
-        let aliasingInfo = resourceAliasInfo[ObjectIdentifier(resource)]!
+        let aliasingInfo = resourceAliasInfo[ObjectIdentifier(resource.resource)]!
         self.aliasingRange.aliasedFrom = min(self.aliasingRange.aliasedFrom, aliasingInfo.aliasedFrom)
         self.aliasingRange.aliasesThrough = max(self.aliasingRange.aliasesThrough, aliasingInfo.aliasesThrough)
+        
+        // The resource needs to wait on any fences from within the aliasedFrom...aliasesThrough range
+        
+        let aliasingIndex = aliasingInfo.aliasesThrough
+        if self.aliasingFences[aliasingIndex].allSatisfy({ $0.aliasingIndex == aliasingIndex && $0.frame == self.frame }) {
+            // Do nothing; wait on the writeWaitFences already associated with the resource
+        } else {
+            resource.usageFences.writeWaitFences.forEach(self.fenceReleaseFunc)
+            resource.usageFences.writeWaitFences.removeAll(keepingCapacity: true)
+            
+            let applicableFences = self.aliasingFences[aliasingIndex].lazy.filter({ $0.aliasingIndex != aliasingIndex || $0.frame != self.frame }).map { $0.fence }
+            
+            for fence in applicableFences {
+                self.fenceRetainFunc(fence)
+                resource.usageFences.writeWaitFences.append(fence)
+            }
+        }
     }
     
-    private func depositResource(_ resource: MTLResource) {
-        self.inUseResources.remove(ObjectIdentifier(resource))
+    private func depositResource<R : MTLResourceReference>(_ resource: inout R) {
+        self.inUseResources.remove(ObjectIdentifier(resource.resource))
         
-        let aliasingInfo = self.resourceAliasInfo[ObjectIdentifier(resource)]!
+        var aliasingInfo = self.resourceAliasInfo[ObjectIdentifier(resource.resource)]!
         if aliasingInfo.aliasedFrom == Int.max {
-            resource.makeAliasable()
+            resource.resource.makeAliasable()
+            
             self.nextAliasingIndex += 1
-            self.resourceAliasInfo[ObjectIdentifier(resource)]!.aliasedFrom = self.nextAliasingIndex
-        } else {
+            self.aliasingFences.append([])
+            
+            aliasingInfo.aliasedFrom = self.nextAliasingIndex
+            self.resourceAliasInfo[ObjectIdentifier(resource.resource)]!.aliasedFrom = self.nextAliasingIndex
+        }
+        do {
             var through = 0
             var from = Int.max
             for resource in self.inUseResources {
@@ -142,43 +182,76 @@ class MetalHeap {
             self.aliasingRange.aliasedFrom = from
             self.aliasingRange.aliasesThrough = through
         }
+        
+        for waitFence in resource.usageFences.readWaitFences {
+            // Heap resources should not have read wait fences since they are always transient.
+            self.fenceReleaseFunc(waitFence)
+        }
+        resource.usageFences.readWaitFences.removeAll(keepingCapacity: true)
+        
+        
+        let processIndex : (Int, inout R) -> Void = { index, resource in
+            var i = 0
+            while i < self.aliasingFences[index].count {
+                // Overwrite the existing fences with the most recent fence.
+                // This is safe since the most recent fence will be dependant on the previous fences.
+                let fence = self.aliasingFences[index][i]
+                if fence.aliasingIndex != aliasingInfo.aliasesThrough || fence.frame != self.frame {
+                    self.aliasingFences[index].remove(at: i, preservingOrder: false)
+                    self.fenceReleaseFunc(fence.fence)
+                } else {
+                    i += 1
+                }
+            }
+            
+            for fence in resource.usageFences.writeWaitFences {
+                self.aliasingFences[index].append(MTLFenceReference(fence: fence, aliasingIndex: aliasingInfo.aliasesThrough, frame: self.frame))
+                self.fenceRetainFunc(fence)
+            }
+        }
+        
+        (0...aliasingInfo.aliasesThrough).forEach { processIndex($0, &resource) }
+        (aliasingInfo.aliasedFrom..<self.nextAliasingIndex).forEach { processIndex($0, &resource) }
     }
     
     public func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor, size: Int, alignment: Int) -> MTLTextureReference? {
-        var texture = self.textureFittingDescriptor(descriptor)
-        if texture == nil, self.nextAliasingIndex < self.aliasingRange.aliasedFrom, self.heap.maxAvailableSize(alignment: alignment) >= size {
-            texture = MTLTextureReference(texture: self.heap.makeTexture(descriptor: descriptor))
+        var textureOpt = self.textureFittingDescriptor(descriptor)
+        if textureOpt == nil, self.nextAliasingIndex < self.aliasingRange.aliasedFrom, self.heap.maxAvailableSize(alignment: alignment) >= size {
+            textureOpt = MTLTextureReference(texture: self.heap.makeTexture(descriptor: descriptor))
         }
-        if let texture = texture {
-            self.useResource(texture.texture)
-        }
+        guard var texture = textureOpt else { return nil }
+        
+        self.useResource(&texture)
         
         return texture
     }
     
     public func depositTexture(_ texture: MTLTextureReference) {
+        var texture = texture
+        self.depositResource(&texture)
         self.textures.append(texture)
-        self.depositResource(texture.texture)
     }
     
     public func collectBufferWithLength(_ length: Int, options: MTLResourceOptions, size: Int, alignment: Int) -> MTLBufferReference? {
-        var buffer = self.bufferWithLength(length, resourceOptions: options)
-        if buffer == nil, self.nextAliasingIndex < self.aliasingRange.aliasedFrom, self.heap.maxAvailableSize(alignment: alignment) >= size {
-            buffer = MTLBufferReference(buffer: self.heap.makeBuffer(length: length, options: options), offset: 0)
+        var bufferOpt = self.bufferWithLength(length, resourceOptions: options)
+        if bufferOpt == nil, self.nextAliasingIndex < self.aliasingRange.aliasedFrom, self.heap.maxAvailableSize(alignment: alignment) >= size {
+            bufferOpt = MTLBufferReference(buffer: self.heap.makeBuffer(length: length, options: options), offset: 0)
         }
-        if let buffer = buffer {
-            self.useResource(buffer.buffer)
-        }
+        guard var buffer = bufferOpt else { return nil }
+        
+        self.useResource(&buffer)
+        
         return buffer
     }
     
     public func depositBuffer(_ buffer: MTLBufferReference) {
+        var buffer = buffer
+        self.depositResource(&buffer)
         self.buffers.append(buffer)
-        self.depositResource(buffer.buffer)
     }
 }
 
-class HeapResourceAllocator : BufferAllocator, TextureAllocator {
+class SingleFrameHeapResourceAllocator : HeapResourceAllocator, BufferAllocator, TextureAllocator {
     
     let device : MTLDevice
     let descriptor : MTLHeapDescriptor
@@ -187,6 +260,18 @@ class HeapResourceAllocator : BufferAllocator, TextureAllocator {
     private let framePurgeability : MTLPurgeableState
     
     var heaps = [MetalHeap]()
+
+    var fenceRetainFunc : ((MTLFenceType) -> Void)! = nil {
+        didSet {
+            self.heaps.forEach { $0.fenceRetainFunc = fenceRetainFunc }
+        }
+    }
+    
+    var fenceReleaseFunc : ((MTLFenceType) -> Void)! = nil {
+        didSet {
+            self.heaps.forEach { $0.fenceReleaseFunc = fenceReleaseFunc }
+        }
+    }
     
     public init(device: MTLDevice, defaultDescriptor descriptor: MTLHeapDescriptor, framePurgeability: MTLPurgeableState) {
         self.device = device
@@ -210,6 +295,8 @@ class HeapResourceAllocator : BufferAllocator, TextureAllocator {
         self.descriptor.size = max(sizeAndAlign.size, self.heapSize)
         let mtlHeap = self.device.makeHeap(descriptor: self.descriptor)!
         let heap = MetalHeap(heap: mtlHeap, framePurgeability: self.framePurgeability)
+        heap.fenceRetainFunc = self.fenceRetainFunc
+        heap.fenceReleaseFunc = self.fenceReleaseFunc
         self.heaps.append(heap)
         return heap.collectTextureWithDescriptor(descriptor, size: sizeAndAlign.size, alignment: sizeAndAlign.align)!
     }
@@ -231,6 +318,8 @@ class HeapResourceAllocator : BufferAllocator, TextureAllocator {
         
         let mtlHeap = self.device.makeHeap(descriptor: self.descriptor)!
         let heap = MetalHeap(heap: mtlHeap, framePurgeability: self.framePurgeability)
+        heap.fenceRetainFunc = self.fenceRetainFunc
+        heap.fenceReleaseFunc = self.fenceReleaseFunc
         self.heaps.append(heap)
         
         return heap.collectBufferWithLength(length, options: options, size: sizeAndAlign.size, alignment: sizeAndAlign.align)!
@@ -253,7 +342,7 @@ class HeapResourceAllocator : BufferAllocator, TextureAllocator {
     }
 }
 
-class MultiFrameHeapResourceAllocator : BufferAllocator, TextureAllocator {
+class MultiFrameHeapResourceAllocator : HeapResourceAllocator, BufferAllocator, TextureAllocator {
     let device : MTLDevice
     let descriptor : MTLHeapDescriptor
     
@@ -262,8 +351,20 @@ class MultiFrameHeapResourceAllocator : BufferAllocator, TextureAllocator {
     
     let frameCount : Int
     
-    let heaps : [HeapResourceAllocator]
+    let heaps : [SingleFrameHeapResourceAllocator]
     var currentFrameIndex = 0
+
+    var fenceRetainFunc : ((MTLFenceType) -> Void)! = nil {
+        didSet {
+            self.heaps.forEach { $0.fenceRetainFunc = fenceRetainFunc }
+        }
+    }
+    
+    var fenceReleaseFunc : ((MTLFenceType) -> Void)! = nil {
+        didSet {
+            self.heaps.forEach { $0.fenceReleaseFunc = fenceReleaseFunc }
+        }
+    }
     
     public init(device: MTLDevice, defaultDescriptor descriptor: MTLHeapDescriptor, framePurgeability: MTLPurgeableState, numFrames: Int) {
         self.device = device
@@ -272,7 +373,7 @@ class MultiFrameHeapResourceAllocator : BufferAllocator, TextureAllocator {
         self.framePurgeability = framePurgeability
         
         self.frameCount = numFrames
-        self.heaps = (0..<numFrames).map { _ in HeapResourceAllocator(device: device, defaultDescriptor: descriptor, framePurgeability: framePurgeability) }
+        self.heaps = (0..<numFrames).map { _ in SingleFrameHeapResourceAllocator(device: device, defaultDescriptor: descriptor, framePurgeability: framePurgeability) }
         
         assert(descriptor.storageMode == .private)
     }

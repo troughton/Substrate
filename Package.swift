@@ -11,17 +11,30 @@ let supportedRenderAPIs = ["VkRenderer"]
 let package = Package(
     name: "SwiftFrameGraph",
     dependencies: [
+        .package(url: "https://github.com/glessard/swift-atomics", from: Version("4.1.0"))
     ],
     targets: [
-        .target(name: "SwiftFrameGraph", dependencies: ["Utilities"],
+        .target(name: "FrameGraphCExtras", dependencies: [],
+                path: "Sources/FrameGraph/FrameGraphCExtras"),
+        .target(name: "SwiftFrameGraph", dependencies: ["Utilities", "FrameGraphCExtras", "Atomics"],
                 path: "Sources/FrameGraph/FrameGraph"),
         
         .target(name: "Utilities", dependencies: []),
+        
+        .target(name: "SwiftMath", dependencies: []),
+        
+        .target(name: "Windowing", dependencies: ["SwiftFrameGraph", "Utilities", "DrawTools", "SwiftMath"] + supportedRenderAPIs.map { Target.Dependency(stringLiteral: $0) }),
+        
+        .target(name: "CDebugDrawTools", dependencies: [],
+                path: "Sources/DrawTools/CDebugDrawTools"),
+        
+        .target(name: "DrawTools", dependencies: ["CDebugDrawTools", "SwiftMath", "SwiftFrameGraph"],
+                path: "Sources/DrawTools/DrawTools"),
         ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14
 )
 
-#if !os(macOS)
+#if os(Windows)
 
 for target in package.targets {
     target.dependencies.append("Foundation")

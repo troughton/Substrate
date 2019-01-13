@@ -14,6 +14,8 @@ public enum ResourceType : UInt8 {
     case threadgroupMemory
     case argumentBuffer
     case argumentBufferArray
+    case imageblockData
+    case imageblock
 }
 
 /*!
@@ -99,11 +101,15 @@ public enum ResourceAccessType {
 public protocol ResourceProtocol : Hashable {
     
     init(existingHandle: Handle)
+    func dispose()
     
     var handle : Handle { get }
     var stateFlags : ResourceStateFlags { get nonmutating set }
     
-    var usages : ResourceUsagesList { get nonmutating set }
+    var usages : ResourceUsagesList { get }
+    
+    var label : String? { get nonmutating set }
+    var storageMode : StorageMode { get }
     
     var readWaitFrame : UInt64 { get nonmutating set }
     var writeWaitFrame : UInt64 { get nonmutating set }
@@ -192,6 +198,56 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
+    public var storageMode: StorageMode {
+        get {
+            switch self.type {
+            case .buffer:
+                return Buffer(existingHandle: self.handle).storageMode
+            case .texture:
+                return Texture(existingHandle: self.handle).storageMode
+            case .argumentBuffer:
+                return ArgumentBuffer(existingHandle: self.handle).storageMode
+            case .argumentBufferArray:
+                return ArgumentBufferArray(existingHandle: self.handle).storageMode
+            default:
+                fatalError()
+            }
+        }
+    }
+    
+    @inlinable
+    public var label: String? {
+        get {
+            switch self.type {
+            case .buffer:
+                return Buffer(existingHandle: self.handle).label
+            case .texture:
+                return Texture(existingHandle: self.handle).label
+            case .argumentBuffer:
+                return ArgumentBuffer(existingHandle: self.handle).label
+            case .argumentBufferArray:
+                return ArgumentBufferArray(existingHandle: self.handle).label
+            default:
+                fatalError()
+            }
+        }
+        nonmutating set {
+            switch self.type {
+            case .buffer:
+                Buffer(existingHandle: self.handle).label = newValue
+            case .texture:
+                Texture(existingHandle: self.handle).label = newValue
+            case .argumentBuffer:
+                ArgumentBuffer(existingHandle: self.handle).label = newValue
+            case .argumentBufferArray:
+                ArgumentBufferArray(existingHandle: self.handle).label = newValue
+            default:
+                fatalError()
+            }
+        }
+    }
+    
+    @inlinable
     public var readWaitFrame: UInt64 {
         get {
             switch self.type {
@@ -251,15 +307,35 @@ public struct Resource : ResourceProtocol, Hashable {
                 return ResourceUsagesList()
             }
         }
-        nonmutating set {
+    }
+    
+    @inlinable
+    internal var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
+        get {
             switch self.type {
             case .buffer:
-                Buffer(existingHandle: self.handle).usages = newValue
+                return Buffer(existingHandle: self.handle).usagesPointer
             case .texture:
-                Texture(existingHandle: self.handle).usages = newValue
+                return Texture(existingHandle: self.handle).usagesPointer
             default:
-                break
+                fatalError()
             }
+        }
+    }
+    
+    @inlinable
+    public func dispose() {
+        switch self.type {
+        case .buffer:
+            Buffer(existingHandle: self.handle).dispose()
+        case .texture:
+            Texture(existingHandle: self.handle).dispose()
+        case .argumentBuffer:
+            ArgumentBuffer(existingHandle: self.handle).dispose()
+        case .argumentBufferArray:
+            ArgumentBufferArray(existingHandle: self.handle).dispose()
+        default:
+            break
         }
     }
 }
@@ -280,7 +356,7 @@ extension ResourceProtocol {
     
     @inlinable
     public var index : Int {
-        return Int(truncatingIfNeeded: self.handle & 0xFFFFFFFF)
+        return Int(truncatingIfNeeded: self.handle & 0x1FFFFFFF) // The lower 29 bits contain the index
     }
     
     @inlinable
@@ -310,25 +386,52 @@ extension ResourceProtocol {
     @inlinable
     public var readWaitFrame : UInt64 {
         get {
-            return 0
+            return Resource(existingHandle: self.handle).readWaitFrame
         }
-        nonmutating set {}
+        nonmutating set {
+             Resource(existingHandle: self.handle).readWaitFrame = newValue
+        }
     }
     
     @inlinable
     public var writeWaitFrame : UInt64 {
         get {
-            return 0
+            return Resource(existingHandle: self.handle).writeWaitFrame
         }
-        nonmutating set {}
+        nonmutating set {
+            Resource(existingHandle: self.handle).writeWaitFrame = newValue
+        }
     }
     
     @inlinable
     public var usages : ResourceUsagesList {
         get {
-            return ResourceUsagesList()
+            return Resource(existingHandle: self.handle).usages
         }
-        nonmutating set {}
+    }
+
+    @inlinable
+    internal var usagesPointer : UnsafeMutablePointer<ResourceUsagesList> {
+        get {
+            return Resource(existingHandle: self.handle).usagesPointer
+        }
+    }
+    
+    @inlinable
+    public var label : String? {
+        get {
+            return Resource(existingHandle: self.handle).label
+        }
+        nonmutating set {
+            Resource(existingHandle: self.handle).label = newValue
+        }
+    }
+    
+    @inlinable
+    public var storageMode : StorageMode {
+        get {
+            return Resource(existingHandle: self.handle).storageMode
+        }
     }
 }
 
@@ -447,8 +550,6 @@ public struct Buffer : ResourceProtocol {
         nonmutating set {
             if self.flags.intersection([.historyBuffer, .persistent]) == [] { return }
             
-            let oldValue = PersistentBufferRegistry.instance.stateFlags[self.index]
-            
             PersistentBufferRegistry.instance.stateFlags[self.index] = newValue
         }
     }
@@ -469,6 +570,31 @@ public struct Buffer : ResourceProtocol {
                 PersistentBufferRegistry.instance.descriptors[index] = newValue
             } else {
                 TransientBufferRegistry.instance.descriptors[index] = newValue
+            }
+        }
+    }
+    
+    @inlinable
+    public var storageMode: StorageMode {
+        return self.descriptor.storageMode
+    }
+    
+    @inlinable
+    public var label : String? {
+        get {
+            let index = self.index
+            if self._usesPersistentRegistry {
+                return PersistentBufferRegistry.instance.labels[index]
+            } else {
+                return TransientBufferRegistry.instance.labels[index]
+            }
+        }
+        nonmutating set {
+            let index = self.index
+            if self._usesPersistentRegistry {
+                PersistentBufferRegistry.instance.labels[index] = newValue
+            } else {
+                TransientBufferRegistry.instance.labels[index] = newValue
             }
         }
     }
@@ -538,12 +664,16 @@ public struct Buffer : ResourceProtocol {
                 return TransientBufferRegistry.instance.usages[index]
             }
         }
-        nonmutating set {
+    }
+    
+    @inlinable
+    var usagesPointer : UnsafeMutablePointer<ResourceUsagesList> {
+        get {
             let index = self.index
             if self._usesPersistentRegistry {
-                PersistentBufferRegistry.instance.usages[index] = newValue
+                return PersistentBufferRegistry.instance.usages.advanced(by: index)
             } else {
-                TransientBufferRegistry.instance.usages[index] = newValue
+                return TransientBufferRegistry.instance.usages.advanced(by: index)
             }
         }
     }
@@ -614,10 +744,14 @@ public struct Texture : ResourceProtocol {
         }
         nonmutating set {
             assert(self.flags.intersection([.historyBuffer, .persistent]) != [], "State flags can only be set on persistent resources.")
-            let oldValue = PersistentTextureRegistry.instance.stateFlags[self.index]
             
             PersistentTextureRegistry.instance.stateFlags[self.index] = newValue
         }
+    }
+    
+    @inlinable
+    public var storageMode: StorageMode {
+        return self.descriptor.storageMode
     }
     
     @inlinable
@@ -636,6 +770,26 @@ public struct Texture : ResourceProtocol {
                 PersistentTextureRegistry.instance.descriptors[index] = newValue
             } else {
                 TransientTextureRegistry.instance.descriptors[index] = newValue
+            }
+        }
+    }
+    
+    @inlinable
+    public var label : String? {
+        get {
+            let index = self.index
+            if self._usesPersistentRegistry {
+                return PersistentTextureRegistry.instance.labels[index]
+            } else {
+                return TransientTextureRegistry.instance.labels[index]
+            }
+        }
+        nonmutating set {
+            let index = self.index
+            if self._usesPersistentRegistry {
+                PersistentTextureRegistry.instance.labels[index] = newValue
+            } else {
+                TransientTextureRegistry.instance.labels[index] = newValue
             }
         }
     }
@@ -710,12 +864,16 @@ public struct Texture : ResourceProtocol {
                 return TransientTextureRegistry.instance.usages[index]
             }
         }
-        nonmutating set {
+    }
+    
+    @inlinable
+    var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
+        get {
             let index = self.index
             if self._usesPersistentRegistry {
-                PersistentTextureRegistry.instance.usages[index] = newValue
+                return PersistentTextureRegistry.instance.usages.advanced(by: index)
             } else {
-                TransientTextureRegistry.instance.usages[index] = newValue
+                return TransientTextureRegistry.instance.usages.advanced(by: index)
             }
         }
     }
@@ -727,6 +885,8 @@ public struct Texture : ResourceProtocol {
         }
         PersistentTextureRegistry.instance.dispose(self)
     }
+    
+    public static let invalid = Texture(descriptor: TextureDescriptor.texture2DDescriptor(pixelFormat: .r32Float, width: 1, height: 1, mipmapped: false, usageHint: .shaderRead), flags: .persistent)
     
 }
 

@@ -28,6 +28,9 @@ final class StateCaches {
         var fragmentFunction : String?
     }
     
+    let renderPipelineAccessQueue = DispatchQueue(label: "State Caches Render Access Queue")
+    let computePipelineAccessQueue = DispatchQueue(label: "State Caches Compute Access Queue")
+    
     private var functionCache = [FunctionCacheKey : MTLFunction]()
     private var computeStates = [String : [(ComputePipelineDescriptor, Bool, MTLComputePipelineState, MetalPipelineReflection)]]() // Bool meaning threadgroupSizeIsMultipleOfThreadExecutionWidth
     private(set) var currentThreadExecutionWidth : Int = 0

@@ -6,7 +6,7 @@
 //
 
 import CVkRenderer
-import FrameGraph
+import SwiftFrameGraph
 import Utilities
 
 class VulkanSubmitInfo {

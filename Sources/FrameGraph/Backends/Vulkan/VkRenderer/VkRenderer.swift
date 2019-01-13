@@ -6,15 +6,12 @@
 //
 //
 
-import FrameGraph
-import RenderAPI
+import SwiftFrameGraph
 import CVkRenderer
 import Utilities
 import Foundation
-import LlamaIO
 
 public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
-    
     public let vulkanInstance : VulkanInstance
     public let device : VulkanDevice
     public let maxInflightFrames : Int
@@ -23,7 +20,7 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
     let shaderLibrary : VulkanShaderLibrary
     let frameGraph : VulkanFrameGraphBackend
     
-    public init(instance: VulkanInstance, surface: VkSurfaceKHR, numInflightFrames: Int) {
+    public init(instance: VulkanInstance, surface: VkSurfaceKHR, shaderLibraryURL: URL, numInflightFrames: Int) {
         self.vulkanInstance = instance
         self.maxInflightFrames = numInflightFrames
         let physicalDevice = self.vulkanInstance.createSystemDefaultDevice(surface: surface)!
@@ -32,11 +29,32 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
         
         self.resourceRegistry = ResourceRegistry(device: self.device, numInflightFrames: numInflightFrames)
         
-        self.shaderLibrary = try! VulkanShaderLibrary(device: self.device, url: AssetLoader.baseURL(forCatalogue: .engine).appendingPathComponent("\\Shaders\\Vulkan"))
+        self.shaderLibrary = try! VulkanShaderLibrary(device: self.device, url: shaderLibraryURL)
         
         self.frameGraph = VulkanFrameGraphBackend(device: self.device, resourceRegistry: resourceRegistry, shaderLibrary: self.shaderLibrary)
         
-        RenderBackend.backend = self
+//        RenderBackend.backend = self
+        
+        RenderBackend._cachedBackend = _CachedRenderBackend(
+            registerWindowTexture: { [self] (texture, context) in
+                self.registerWindowTexture(texture: texture, context: context)
+            },
+            materialisePersistentTexture: { [self] texture in self.materialisePersistentTexture(texture) },
+            materialisePersistentBuffer: { [self] buffer in self.materialisePersistentBuffer(buffer) },
+            bufferContents: { [self] (buffer, range) in self.bufferContents(for: buffer, range: range) },
+            bufferDidModifyRange: { [self] (buffer, range) in self.buffer(buffer, didModifyRange: range) },
+            replaceTextureRegion: { [self] (texture, region, mipmapLevel, bytes, bytesPerRow) in self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow) },
+            renderPipelineReflection: { [self] (pipeline, renderTarget) in self.renderPipelineReflection(descriptor: pipeline, renderTarget: renderTarget) },
+            computePipelineReflection: { [self] (pipeline) in self.computePipelineReflection(descriptor: pipeline) },
+            disposeTexture: { [self] texture in self.dispose(texture: texture) },
+            disposeBuffer: { [self] buffer in self.dispose(buffer: buffer) },
+            disposeArgumentBuffer: { [self] argumentBuffer in self.dispose(argumentBuffer: argumentBuffer) },
+            disposeArgumentBufferArray: { [self] argumentBuffer in self.dispose(argumentBufferArray: argumentBuffer) },
+            backingResource: { [self] resource in return self.backingResource(resource) },
+            isDepth24Stencil8PixelFormatSupported: { [self] in self.isDepth24Stencil8PixelFormatSupported },
+            threadExecutionWidth: { [self] in self.threadExecutionWidth },
+            renderDevice: { [self] in self.renderDevice },
+            maxInflightFrames: { [self] in self.maxInflightFrames })
     }
 
     public func beginFrameResourceAccess() {
@@ -80,6 +98,22 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
     public func dispose(argumentBuffer: ArgumentBuffer) {
         self.resourceRegistry.disposeArgumentBuffer(argumentBuffer)
     }
+
+    public func dispose(argumentBufferArray: ArgumentBufferArray) {
+        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray)
+    }
+
+    public func backingResource(_ resource: Resource) -> Any? {
+        return resourceRegistry.accessQueue.sync {
+            if let buffer = resource.buffer {
+                let bufferReference = resourceRegistry[buffer]
+                return bufferReference?.vkBuffer
+            } else if let texture = resource.texture {
+                return resourceRegistry[texture]?.vkImage
+            }
+            return nil
+        }
+    }
     
     public var isDepth24Stencil8PixelFormatSupported: Bool = false // TODO: query device capabilities for this
     
@@ -93,36 +127,12 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
         self.frameGraph.executeFrameGraph(passes: passes, resourceUsages: resourceUsages, commands: commands, completion: completion)
     }
     
-    public func setReflectionRenderPipeline(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) {
-        self.frameGraph.stateCaches.setReflectionRenderPipeline(descriptor: descriptor, renderTarget: renderTarget)
+    public func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection {
+        return self.frameGraph.stateCaches.reflection(for: descriptor, renderTarget: renderTarget)
     }
     
-    public func setReflectionComputePipeline(descriptor: ComputePipelineDescriptor) {
-        self.frameGraph.stateCaches.setReflectionComputePipeline(descriptor: descriptor)
-    }
-    
-    public func bindingPath(argumentName: String, arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath? {
-        return self.frameGraph.stateCaches.bindingPath(argumentName: argumentName, arrayIndex: arrayIndex)
-    }
-
-    public func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String) -> ResourceBindingPath? {
-        return self.frameGraph.stateCaches.bindingPath(argumentBuffer: argumentBuffer, argumentName: argumentName)
-    }
-
-    public func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath {
-        let newParentPath = VulkanResourceBindingPath(newArgumentBufferPath)
-        
-        var modifiedPath = VulkanResourceBindingPath(pathInOriginalArgumentBuffer)
-        modifiedPath.set = newParentPath.set
-        return ResourceBindingPath(modifiedPath)
-    }
-    
-    public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
-        return self.frameGraph.stateCaches.argumentReflection(at: path)
-    }
-    
-    public func bindingIsActive(at path: ResourceBindingPath) -> Bool {
-        return self.argumentReflection(at: path)?.isActive ?? false
+    public func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection {
+        return self.frameGraph.stateCaches.reflection(for: descriptor)
     }
 }
 

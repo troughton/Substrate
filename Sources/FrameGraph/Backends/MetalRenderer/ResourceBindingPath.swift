@@ -1,6 +1,6 @@
 //
 //  ResourceBindingPath.swift
-//  InterdimensionalLlamaPackageDescription
+//  SwiftFrameGraphPackageDescription
 //
 //  Created by Thomas Roughton on 2/03/18.
 //

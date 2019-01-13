@@ -1,8 +1,6 @@
 # SwiftFrameGraph
 
-_Note: The current version of SwiftFrameGraph on `master` does not have a working backend. If you're only targeting Metal, I'd suggest using the `master` branch, since there are significant fixes and API improvements. Otherwise, the last working version supporting Vulkan is on the `Vulkan` branch._
-
-_At some point in the hopefully-not-too-distant-future the Vulkan backend will be updated with the API changes and the fixes from the Metal backend._
+_Note: The current version of SwiftFrameGraph on `master` has not been thoroughly tested on Vulkan. If you run into issues building from `master` and using `Vulkan`, the `Vulkan` branch contains the last version tested to be working on Vulkan, although its API has fallen significantly behind `master`._
 
 ## What is this?
 
@@ -239,11 +237,7 @@ I think Swift's a great language, and it's what we wanted to use when making our
 
 ## What about multithreading?
 
-Interesting question. So, in theory, there's nothing that prevents render passes from being _recorded_ in parallel, even though the current implementation of the resource usage tracking isn't thread safe. As for executing the render passes in the backend: the current paradigm is to iterate through a list of commands that need to be executed, where resources are materialised late and disposed early. If render passes are executed out of order, we need to somehow make sure that the resources are available for each pass when it needs them while simultaneously keeping the advantage of limited resource lifetimes. This isn't at all impossible, but it's significant engineering effort and isn't a high priority for us.
-
-## Why are you doing something in a particular way?
-
-It's probably the first thing we thought of, although in some cases there's a very precise (and probably poorly documented) reason why something is the way it is. We're by no means experts; the very first graphics code I wrote for Windows was getting ImGui to show using this API and Vulkan!
+The FrameGraph automatically executes all non-CPU render passes in parallel, and the Metal backend will use parallel render command encoders where it makes sense. This does mean that you need to ensure that all `Draw`, `Blit`, and `Compute` render passes don't change any external state that other passes depend on in their `execute` methods; instead, any such changes should be made in their `init` methods or elsewhere.
 
 ## What about (some other question here)?
 

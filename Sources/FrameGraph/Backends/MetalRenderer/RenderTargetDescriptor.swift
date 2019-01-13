@@ -23,27 +23,27 @@ final class MetalRenderTargetDescriptor {
         self.renderPasses.append(renderPass)
     }
     
-    func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ descriptor: inout D?, with new: D?) -> Bool {
-        if descriptor == nil {
-            descriptor = new
+    func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ desc: inout D?, with new: D?) -> Bool {
+        guard let descriptor = desc else {
+            desc = new
             return true
         }
         
-        if new == nil {
+        guard let new = new else {
             return true
         }
         
-        if new!.wantsClear && descriptor!.wantsClear {
+        if new.wantsClear && descriptor.wantsClear {
             // We can't clear twice within a render pass.
             // If descriptor was not nil, it must've already had and been using this attachment,
             // so we can't overwrite its load action.
             return false
         }
         
-        return  descriptor!.texture     == new!.texture &&
-                descriptor!.level       == new!.level &&
-                descriptor!.slice       == new!.slice &&
-                descriptor!.depthPlane  == new!.depthPlane
+        return  descriptor.texture     == new.texture &&
+                descriptor.level       == new.level &&
+                descriptor.slice       == new.slice &&
+                descriptor.depthPlane  == new.depthPlane
     }
     
     func tryMerge(withPass pass: DrawRenderPass) -> Bool {
@@ -81,16 +81,16 @@ final class MetalRenderTargetDescriptor {
         return true
     }
     
-    func descriptorMergedWithPass(_ pass: DrawRenderPass, resourceUsages: ResourceUsages) -> MetalRenderTargetDescriptor {
+    func descriptorMergedWithPass(_ pass: DrawRenderPass, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
         if self.tryMerge(withPass: pass) {
             return self
         } else {
-            self.finalise(resourceUsages: resourceUsages)
+            self.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
             return MetalRenderTargetDescriptor(renderPass: pass)
         }
     }
     
-    private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, resourceUsages: ResourceUsages) -> (MTLLoadAction, MTLStoreAction) {
+    private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> (MTLLoadAction, MTLStoreAction) {
         let usages = attachment.texture.usages
         
         // Are we the first usage?
@@ -98,12 +98,12 @@ final class MetalRenderTargetDescriptor {
             return (.dontCare, .dontCare) // We need to have this texture as an attachment, but it's never actually read from or written to.
         }
         
-        let isFirstUsage = !attachment.texture.stateFlags.contains(.initialised) && self.renderPasses.contains { $0 === firstActiveUsage.renderPass.pass }
+        let isFirstUsage = !attachment.texture.stateFlags.contains(.initialised) && self.renderPasses.contains { $0 === firstActiveUsage.renderPassRecord.pass }
         
         // Is the texture read from after these passes?
         var ourLastUsageIndex = -1
         for (i, usage) in usages.enumerated().reversed() {
-            if self.renderPasses.contains(where: { $0 === usage.renderPass.pass }) {
+            if self.renderPasses.contains(where: { $0 === usage.renderPassRecord.pass }) {
                 ourLastUsageIndex = i
                 break
             }
@@ -114,11 +114,11 @@ final class MetalRenderTargetDescriptor {
         var isReadAfterPass : Bool? = nil // nil = as yet unknown
         
         for usage in usages.dropFirst(ourLastUsageIndex + 1) {
-            if !usage.renderPass.isActive || usage.stages == .cpuBeforeRender { continue }
+            if !usage.renderPassRecord.isActive || usage.stages == .cpuBeforeRender { continue }
             
             switch usage.type {
             case _ where usage.type.isRenderTarget:
-                guard let renderPass = usage.renderPass.pass as? DrawRenderPass else { fatalError() }
+                guard let renderPass = usage.renderPassRecord.pass as? DrawRenderPass else { fatalError() }
                 let descriptor = renderPass.renderTargetDescriptor
                 if let depthAttachment = descriptor.depthAttachment,
                     depthAttachment.texture == attachment.texture,
@@ -174,23 +174,26 @@ final class MetalRenderTargetDescriptor {
         }
         
         let storeAction : MTLStoreAction = isReadAfterPass! ? .store : .dontCare
+        if storeAction == .store || storeAction == .storeAndMultisampleResolve {
+            storedTextures.append(attachment.texture)
+        }
         
         return (loadAction, storeAction)
     }
     
-    func finalise(resourceUsages: ResourceUsages) {
+    func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture]) {
         // Compute load and store actions for all attachments.
         self.colorActions = self.descriptor.colorAttachments.map { attachment in
             guard let attachment = attachment else { return (.dontCare, .dontCare) }
-            return self.loadAndStoreActions(for: attachment, resourceUsages: resourceUsages)
+            return self.loadAndStoreActions(for: attachment, resourceUsages: resourceUsages, storedTextures: &storedTextures)
         }
         
         if let depthAttachment = self.descriptor.depthAttachment {
-            self.depthActions = self.loadAndStoreActions(for: depthAttachment, resourceUsages: resourceUsages)
+            self.depthActions = self.loadAndStoreActions(for: depthAttachment, resourceUsages: resourceUsages, storedTextures: &storedTextures)
         }
         
         if let stencilAttachment = self.descriptor.stencilAttachment {
-            self.stencilActions = self.loadAndStoreActions(for: stencilAttachment, resourceUsages: resourceUsages)
+            self.stencilActions = self.loadAndStoreActions(for: stencilAttachment, resourceUsages: resourceUsages, storedTextures: &storedTextures)
         }
     }
 }

@@ -1,6 +1,6 @@
 //
 //  Weak.swift
-//  LlamaGame
+//  CGRAGame
 //
 //  Created by Thomas Roughton on 30/05/17.
 //  Copyright © 2017 Team Llama. All rights reserved.

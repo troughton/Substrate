@@ -1,11 +1,11 @@
 //
 //  ResourceBindingPath.swift
-//  InterdimensionalLlamaPackageDescription
+//  SwiftFrameGraphPackageDescription
 //
 //  Created by Thomas Roughton on 2/03/18.
 //
 
-import RenderAPI
+import SwiftFrameGraph
 import CVkRenderer
 
 @_fixed_layout
@@ -48,6 +48,10 @@ public struct VulkanResourceBindingPath : Hashable {
         set {
             self._binding = UInt16(newValue)
         }
+    }
+
+    var value : UInt64 {
+        return unsafeBitCast(self, to: UInt64.self)
     }
 
     public var hashValue : Int {

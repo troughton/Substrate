@@ -11,6 +11,9 @@ import Metal
 final class PersistentResourceAllocator : BufferAllocator, TextureAllocator {
     let device : MTLDevice
     
+    var fenceRetainFunc : ((MTLFenceType) -> Void)? = nil // Never used.
+    var fenceReleaseFunc : ((MTLFenceType) -> Void)! = nil // Used whenever a resource is disposed.
+    
     init(device: MTLDevice) {
         self.device = device
     }
@@ -24,9 +27,21 @@ final class PersistentResourceAllocator : BufferAllocator, TextureAllocator {
     }
     
     func depositBuffer(_ buffer: MTLBufferReference) {
+        for fence in buffer.usageFences.readWaitFences {
+            fenceReleaseFunc(fence)
+        }
+        for fence in buffer.usageFences.writeWaitFences {
+            fenceReleaseFunc(fence)
+        }
     }
     
     func depositTexture(_ texture: MTLTextureReference) {
+        for fence in texture.usageFences.readWaitFences {
+            fenceReleaseFunc(fence)
+        }
+        for fence in texture.usageFences.writeWaitFences {
+            fenceReleaseFunc(fence)
+        }
     }
     
     func cycleFrames() {

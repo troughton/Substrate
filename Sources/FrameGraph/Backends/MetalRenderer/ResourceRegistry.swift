@@ -10,15 +10,86 @@ import Metal
 import MetalKit
 import Utilities
 
-class MTLBufferReference {
+final class MTLFenceHolder {
+    static var fenceIndex = 0
+    
+    let fence : MTLFence
+    let index : Int
+    
+    init(fence: MTLFence) {
+        self.fence = fence
+        
+        self.index = MTLFenceHolder.fenceIndex
+        MTLFenceHolder.fenceIndex += 1
+    }
+    
+    deinit {
+        print("This shouldn't happen!")
+    }
+}
+
+typealias MTLFenceType = MTLFence // MTLFenceHolder for debugging.
+
+extension MTLFence {
+    var fence : MTLFence {
+        return self
+    }
+}
+
+struct ResourceFences {
+    /// The fences to wait on before reading from the resource.
+    var readWaitFences : [MTLFenceType] = []
+    
+    /// The fences to wait on before writing to the resource.
+    var writeWaitFences : [MTLFenceType] = []
+}
+
+protocol MTLResourceReference {
+    associatedtype Resource : MTLResource
+    
+    var resource : Resource { get }
+    
+    /// The fences to wait on before using this resource.
+    var usageFences : ResourceFences { get set }
+    
+    /// The fences that anything that uses the resource after should wait on.
+    var disposalFences : ResourceFences { get set }
+    
+    /// Set by setDisposalFences to indicate the resource was used and should cycle fences this frame.
+    var usedThisFrame : Bool { get set }
+}
+
+extension MTLResourceReference {
+    mutating func setUsageFencesToDisposalFences() {
+        defer { self.usedThisFrame = false }
+        
+        guard self.usedThisFrame else {
+            return // The resource hasn't been used this frame. Leave the fences around for the next frame.
+        }
+        
+        self.usageFences.readWaitFences.removeAll(keepingCapacity: true)
+        self.usageFences.writeWaitFences.removeAll(keepingCapacity: true)
+        
+        let oldUsageFences = self.usageFences
+        self.usageFences = self.disposalFences
+        
+        self.disposalFences = oldUsageFences
+    }
+}
+
+struct MTLBufferReference : MTLResourceReference {
     let buffer : MTLBuffer
     let offset : Int
+    var usedThisFrame: Bool = false
     
-    /// The fence to wait on before reading from the buffer.
-    var readWaitFence : MTLFence? = nil
+    var resource : MTLBuffer {
+        return self.buffer
+    }
     
-    /// The fences to wait on before writing to the buffer
-    var writeWaitFences : [MTLFence]? = nil
+    /// The fences to wait on before using this resource.
+    var usageFences = ResourceFences()
+    /// The fences that anything that uses the resource after should wait on.
+    var disposalFences = ResourceFences()
     
     init(buffer: MTLBuffer, offset: Int) {
         self.buffer = buffer
@@ -26,56 +97,76 @@ class MTLBufferReference {
     }
 }
 
-class MTLTextureReference {
-    let texture : MTLTexture
+struct MTLTextureReference : MTLResourceReference {
+    var _texture : MTLTexture!
+    var usedThisFrame: Bool = false
     
-    /// The fence to wait on before reading from the texture.
-    var readWaitFence : MTLFence? = nil
+    var texture : MTLTexture {
+        return _texture
+    }
     
-    /// The fences to wait on before writing to the texture.
-    var writeWaitFences : [MTLFence]? = nil
+    var resource : MTLTexture {
+        return self.texture
+    }
+    
+    /// The fences to wait on before using this resource.
+    var usageFences = ResourceFences()
+    /// The fences that anything that uses the resource after should wait on.
+    var disposalFences = ResourceFences()
+    
+    init(windowTexture: ()) {
+        self._texture = nil
+    }
     
     init(texture: MTLTexture) {
-        self.texture = texture
+        self._texture = texture
     }
 }
 
 final class ResourceRegistry {
     
-    private var textureReferences = [ResourceProtocol.Handle : MTLTextureReference]()
-    private var bufferReferences = [ResourceProtocol.Handle : MTLBufferReference]()
+    let accessQueue = DispatchQueue(label: "Resource Registry Access")
+    
+    private var textureReferences = HashMap<ResourceProtocol.Handle, MTLTextureReference>()
+    private var bufferReferences = HashMap<ResourceProtocol.Handle, MTLBufferReference>()
+    private var argumentBufferReferences = HashMap<ResourceProtocol.Handle, MTLBufferReference>() // Separate since this needs to have thread-safe access.
     
     private var windowReferences = [ResourceProtocol.Handle : MTKView]()
     
-    private var fenceMappings = [Int : MTLFence]()
-    private var unusedFences = [MTLFence]()
+    private var frameEndUnusedFences = [MTLFenceType]()
+    private var unusedFences = [MTLFenceType]()
     private var fenceRetainCounts = [ObjectIdentifier : Int]()
     
     private let device : MTLDevice
     
     private let frameSharedBufferAllocator : TemporaryBufferAllocator
     private let frameSharedWriteCombinedBufferAllocator : TemporaryBufferAllocator
+    
+    #if os(macOS)
     private let frameManagedBufferAllocator : TemporaryBufferAllocator
     private let frameManagedWriteCombinedBufferAllocator : TemporaryBufferAllocator
+    #endif
+    
+    #if os(iOS)
+    private let memorylessTextureAllocator : PoolResourceAllocator
+    #endif
+    
+    private let frameArgumentBufferAllocator : TemporaryBufferAllocator
     
     private let stagingTextureAllocator : PoolResourceAllocator
-    private let privateAllocator : PoolResourceAllocator //HeapResourceAllocator
+    private let privateAllocator : SingleFrameHeapResourceAllocator
     
     // A double-buffered allocator for small per-frame private resources.
-    private let smallPrivateAllocator : TemporaryBufferAllocator //MultiFrameHeapResourceAllocator
+    private let smallPrivateAllocator : MultiFrameHeapResourceAllocator
     private let smallAllocationThreshold = 2 * 1024 * 1024 // 2MB
     
-    private let colorRenderTargetAllocator : PoolResourceAllocator // HeapResourceAllocator
-    private let depthRenderTargetAllocator : PoolResourceAllocator // HeapResourceAllocator
+    private let colorRenderTargetAllocator : SingleFrameHeapResourceAllocator
+    private let depthRenderTargetAllocator : SingleFrameHeapResourceAllocator
     
     private let historyBufferAllocator : PoolResourceAllocator
     private let persistentAllocator : PersistentResourceAllocator
     
-    private var frameCPUBuffers = [Buffer]()
-    private var frameCPUTextures = [Texture]()
-    private var frameArgumentBuffers = [ResourceProtocol.Handle]()
-    
-    public private(set) var frameDrawables : [MTLDrawable] = []
+    public private(set) var frameDrawables : [CAMetalDrawable] = []
     
     public var frameGraphHasResourceAccess = false
     
@@ -89,29 +180,66 @@ final class ResourceRegistry {
         
         self.frameSharedBufferAllocator = TemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 256 * 1024, options: .storageModeShared)
         self.frameSharedWriteCombinedBufferAllocator = TemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .cpuCacheModeWriteCombined])
+        
+        #if os(macOS)
         self.frameManagedBufferAllocator = TemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 1024 * 1024, options: .storageModeManaged)
         self.frameManagedWriteCombinedBufferAllocator = TemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 2 * 1024 * 1024, options: [.storageModeManaged, .cpuCacheModeWriteCombined])
+        self.frameArgumentBufferAllocator = TemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 2 * 1024 * 1024, options: [.storageModeManaged, .cpuCacheModeWriteCombined])
+        #else
+        self.frameArgumentBufferAllocator = TemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .cpuCacheModeWriteCombined])
+        self.memorylessTextureAllocator = PoolResourceAllocator(device: device, numFrames: 1)
+        #endif
+        
         
         let heapDescriptor = MTLHeapDescriptor()
         heapDescriptor.size = 1 << 24 // A 16MB heap
         heapDescriptor.storageMode = .private
-        self.privateAllocator = PoolResourceAllocator(device: device, numFrames: 1) // HeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty)
+        self.privateAllocator = SingleFrameHeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty)
         
-        // The small private allocator is multi-buffered to avoid the need for fence waits.
-        self.smallPrivateAllocator = TemporaryBufferAllocator(device: device, numFrames: 2, blockSize: 4 * smallAllocationThreshold, options: .storageModePrivate) // MultiFrameHeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty, numFrames: 2)
+        // The small private allocator is multi-buffered to minimise the need for fence waits.
+        self.smallPrivateAllocator = MultiFrameHeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty, numFrames: 3)
         
         heapDescriptor.size = 40_000_000 // A 40MB heap
-        self.depthRenderTargetAllocator = PoolResourceAllocator(device: device, numFrames: 1) // HeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty)
+        self.depthRenderTargetAllocator = SingleFrameHeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty)
         
         heapDescriptor.size = 200_000_000 // A 200MB heap
-        self.colorRenderTargetAllocator = PoolResourceAllocator(device: device, numFrames: 1) // HeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty)
+        self.colorRenderTargetAllocator = SingleFrameHeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty)
+
+        let fenceRetainFunc : (MTLFenceType) -> Void = { [unowned self] fence in
+            self.retainFence(fence)
+        }
+        
+        let fenceReleaseFunc : (MTLFenceType) -> Void = { [unowned self] fence in
+            self.releaseFence(fence)
+        }
+        
+        self.stagingTextureAllocator.fenceRetainFunc = fenceRetainFunc
+        self.historyBufferAllocator.fenceRetainFunc = fenceRetainFunc
+        self.persistentAllocator.fenceRetainFunc = fenceRetainFunc
+        self.privateAllocator.fenceRetainFunc = fenceRetainFunc
+        self.smallPrivateAllocator.fenceRetainFunc = fenceRetainFunc
+        self.colorRenderTargetAllocator.fenceRetainFunc = fenceRetainFunc
+        self.depthRenderTargetAllocator.fenceRetainFunc = fenceRetainFunc
+
+        self.privateAllocator.fenceReleaseFunc = fenceReleaseFunc
+        self.smallPrivateAllocator.fenceReleaseFunc = fenceReleaseFunc
+        self.colorRenderTargetAllocator.fenceReleaseFunc = fenceReleaseFunc
+        self.depthRenderTargetAllocator.fenceReleaseFunc = fenceReleaseFunc
+        self.stagingTextureAllocator.fenceReleaseFunc = fenceReleaseFunc
+        self.historyBufferAllocator.fenceReleaseFunc = fenceReleaseFunc
+        self.persistentAllocator.fenceReleaseFunc = fenceReleaseFunc
+        
+        #if os(iOS)
+        self.memorylessTextureAllocator.fenceRetainFunc = fenceRetainFunc
+        self.memorylessTextureAllocator.fenceReleaseFunc = fenceReleaseFunc
+        #endif
     }
     
     public func registerWindowTexture(texture: Texture, context: Any) {
         self.windowReferences[texture.handle] = (context as! MTKView)
     }
     
-    func allocatorForTexture(storageMode: StorageMode, flags: ResourceFlags, textureParams: (PixelFormat, MTLTextureUsage)) -> TextureAllocator {
+    func allocatorForTexture(storageMode: MTLStorageMode, flags: ResourceFlags, textureParams: (PixelFormat, MTLTextureUsage)) -> TextureAllocator {
         
         if flags.contains(.persistent) {
             return self.persistentAllocator
@@ -120,6 +248,13 @@ final class ResourceRegistry {
             assert(storageMode == .private)
             return self.historyBufferAllocator
         }
+        
+        #if os(iOS)
+        if storageMode == .memoryless {
+            return self.memorylessTextureAllocator
+        }
+        #endif
+        
         if storageMode != .private {
             return self.stagingTextureAllocator
         } else {
@@ -147,12 +282,16 @@ final class ResourceRegistry {
             }
             return self.privateAllocator
         case .managed:
+            #if os(macOS)
             switch cacheMode {
             case .writeCombined:
                 return self.frameManagedWriteCombinedBufferAllocator
             case .defaultCache:
                 return self.frameManagedBufferAllocator
             }
+            #else
+            fallthrough
+            #endif
         
         case .shared:
             switch cacheMode {
@@ -166,61 +305,80 @@ final class ResourceRegistry {
     
     func needsWaitFencesOnFrameCompletion(resource: Resource) -> Bool {
         let flags = resource.flags
-        let storageMode : StorageMode
+        let storageMode : StorageMode = resource.storageMode
         var size = Int.max
         if let buffer = resource.buffer {
-            storageMode = buffer.descriptor.storageMode
             size = buffer.descriptor.length
-        } else {
-            storageMode = resource.texture!.descriptor.storageMode
         }
         
         if flags.contains(.windowHandle) {
             return false
         }
         
-        return (storageMode == .private && size > self.smallAllocationThreshold) || flags.contains(.persistent) || (flags.contains(.historyBuffer) && !resource.stateFlags.contains(.initialised))
-    }
-    
-    func needsWaitFencesOnDispose(size: Int, storageMode: StorageMode, flags: ResourceFlags) -> Bool {
-        return storageMode == .private && size > self.smallAllocationThreshold && !flags.contains(.windowHandle)
+        // All non-private resources are multiple buffered and so don't need wait fences.
+        return (storageMode == .private && size > self.smallAllocationThreshold) || flags.intersection([.persistent, .historyBuffer]) != []
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, usage: MTLTextureUsage) -> MTLTexture {
-        let mtlTexture : MTLTextureReference
-        
+    public func allocateTexture(_ texture: Texture, properties: TextureUsageProperties) -> MTLTexture? {
         if texture.flags.contains(.windowHandle) {
-            let windowReference = self.windowReferences[texture.handle]!
-            
-            let mtlDrawable = DispatchQueue.main.sync { () -> CAMetalDrawable in
-                var mtlDrawable : CAMetalDrawable? = nil
-                while mtlDrawable == nil {
-                    mtlDrawable = (windowReference.layer as! CAMetalLayer).nextDrawable()
-                    if mtlDrawable == nil {
-                        sched_yield() // Wait until the OS can give us a texture to draw with.
-                    }
-                }
-                return mtlDrawable!
-            }
-            let drawableTexture = mtlDrawable.texture
-            if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
-                mtlTexture = MTLTextureReference(texture: drawableTexture)
-                self.frameDrawables.append(mtlDrawable)
-            } else {
-                // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
-                // let's render to an offscreen texture and not present anything.
-                let allocator = self.allocatorForTexture(storageMode: .private, flags: [], textureParams: (texture.descriptor.pixelFormat, usage))
-                mtlTexture = allocator.collectTextureWithDescriptor(MTLTextureDescriptor(texture.descriptor, usage: usage))
-            }
-        } else {
-            let allocator = self.allocatorForTexture(storageMode: texture.descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, usage))
-            mtlTexture = allocator.collectTextureWithDescriptor(MTLTextureDescriptor(texture.descriptor, usage: usage))
+            // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
+            self.textureReferences[texture.handle] = MTLTextureReference(windowTexture: ())
+            return nil
         }
+        
+        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage)
+        
+        #if os(iOS)
+        if properties.canBeMemoryless {
+            descriptor.storageMode = .memoryless
+        }
+        #endif
+        
+        let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
+        let mtlTexture = allocator.collectTextureWithDescriptor(descriptor)
         
         assert(self.textureReferences[texture.handle] == nil)
         self.textureReferences[texture.handle] = mtlTexture
         return mtlTexture.texture
+    }
+    
+    @discardableResult
+    public func allocateRenderTargetTexture(_ texture: Texture) throws -> MTLTexture {
+        if texture.flags.contains(.windowHandle) {
+            return try DispatchQueue.main.sync(execute: {
+                // Retrieving the drawable needs to be done on the main thread.
+                // Also update and check the MTLTextureReference on the same thread so that subsequent render passes
+                // retrieving the same texture always see the same result (and so nextDrawable() only gets called once).
+                
+                return try autoreleasepool { () throws -> MTLTexture in
+                    // The texture reference should always be present but the texture itself might not be.
+                    if let texture = self.textureReferences[texture.handle]!._texture {
+                        return texture
+                    }
+                    
+                    let windowReference = self.windowReferences[texture.handle]!
+                    
+                    guard let mtlDrawable = (windowReference.layer as! CAMetalLayer).nextDrawable() else {
+                        throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
+                    }
+                    
+                    let drawableTexture = mtlDrawable.texture
+                    if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
+                        self.frameDrawables.append(mtlDrawable)
+                        self.textureReferences[texture.handle]!._texture = drawableTexture
+                        return drawableTexture
+                    } else {
+                        // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
+                        // throw an error.
+                        throw RenderTargetTextureError.invalidSizeDrawable(texture)
+                    }
+                }
+            })
+        }
+    
+        // Otherwise, the texture has already been allocated as part of a materialiseTexture call.
+        return self[texture]!
     }
     
     @discardableResult
@@ -243,46 +401,54 @@ final class ResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, usage: MTLTextureUsage) -> MTLTexture {
+    public func allocateTextureIfNeeded(_ texture: Texture, usage: TextureUsageProperties) -> MTLTexture? {
         if let mtlTexture = self.textureReferences[texture.handle]?.texture {
             assert(mtlTexture.pixelFormat == MTLPixelFormat(texture.descriptor.pixelFormat))
             return mtlTexture
         }
-        return self.allocateTexture(texture, usage: usage)
+        return self.allocateTexture(texture, properties: usage)
     }
     
     func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> MTLBufferReference {
+        #if os(macOS)
+        let options : MTLResourceOptions = [.storageModeManaged, .cpuCacheModeWriteCombined, .hazardTrackingModeUntracked]
+        #else
+        let options : MTLResourceOptions = [.storageModeShared, .cpuCacheModeWriteCombined, .hazardTrackingModeUntracked]
+        #endif
+        
         if argumentBuffer.flags.contains(.persistent) {
-            return self.persistentAllocator.collectBufferWithLength(encodedLength, options: [.storageModeManaged, .hazardTrackingModeUntracked])
+            return self.persistentAllocator.collectBufferWithLength(encodedLength, options: options)
         }
-        return self.frameManagedBufferAllocator.collectBufferWithLength(encodedLength, options: [.storageModeManaged, .hazardTrackingModeUntracked])
+        return self.frameArgumentBufferAllocator.collectBufferWithLength(encodedLength, options: options)
     }
     
     // `encoder` is taken as a closure since retrieving an argument encoder from the state caches has a small cost.
     func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer, bindingPath: ResourceBindingPath, encoder: () -> MTLArgumentEncoder, stateCaches: StateCaches) -> MTLBufferReference {
-        if let mtlArgumentBuffer = self.bufferReferences[argumentBuffer.handle] {
-            return mtlArgumentBuffer
+        return self.accessQueue.sync {
+            if let mtlArgumentBuffer = self.argumentBufferReferences[argumentBuffer.handle] {
+                return mtlArgumentBuffer
+            }
+            
+            let argEncoder = encoder()
+            let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
+            
+            argEncoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
+            argEncoder.encodeArguments(from: argumentBuffer, argumentBufferPath: bindingPath, resourceRegistry: self, stateCaches: stateCaches)
+            
+            #if os(macOS)
+            storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength))
+            #endif
+            
+            self.argumentBufferReferences[argumentBuffer.handle] = storage
+            
+            return storage
         }
-        
-        let argEncoder = encoder()
-        let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
-        
-        argEncoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
-        argEncoder.encodeArguments(from: argumentBuffer, argumentBufferPath: bindingPath, resourceRegistry: self, stateCaches: stateCaches)
-        
-        storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength))
-        
-        self.bufferReferences[argumentBuffer.handle] = storage
-        if !argumentBuffer.flags.contains(.persistent) {
-            self.frameArgumentBuffers.append(argumentBuffer.handle)
-        }
-        
-        return storage
     }
     
     // `encoder` is taken as a closure since retrieving an argument encoder from the state caches has a small cost.
     func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray, bindingPath: ResourceBindingPath, encoder: () -> MTLArgumentEncoder, stateCaches: StateCaches) -> MTLBufferReference {
-        if let mtlArgumentBuffer = self.bufferReferences[argumentBufferArray.handle] {
+        return self.accessQueue.sync {
+        if let mtlArgumentBuffer = self.argumentBufferReferences[argumentBufferArray.handle] {
             return mtlArgumentBuffer
         }
         
@@ -297,14 +463,14 @@ final class ResourceRegistry {
             argEncoder.encodeArguments(from: argumentBuffer, argumentBufferPath: bindingPath, resourceRegistry: self, stateCaches: stateCaches)
         }
         
+        #if os(macOS)
         storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength * argumentBufferArray.bindings.count))
-        
-        self.bufferReferences[argumentBufferArray.handle] = storage
-        if !argumentBufferArray.flags.contains(.persistent) {
-            self.frameArgumentBuffers.append(argumentBufferArray.handle)
-        }
+        #endif
+            
+        self.argumentBufferReferences[argumentBufferArray.handle] = storage
         
         return storage
+}
     }
     
     // These subscript methods should only be called after 'allocate' has been called.
@@ -333,82 +499,129 @@ final class ResourceRegistry {
         return self.bufferReferences[buffer]
     }
     
-    public func disposeTexture(_ texture: Texture, readFence: MTLFence?, writeFences: [MTLFence]?) {
-        if let mtlTexture = self.textureReferences.removeValue(forKey: texture.handle), !texture.flags.contains(.windowHandle) {
-            mtlTexture.readWaitFence = readFence
-            mtlTexture.writeWaitFences = writeFences
-            let allocator = self.allocatorForTexture(storageMode: texture.descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, mtlTexture.texture.usage))
-            allocator.depositTexture(mtlTexture)
+    func releaseMultiframeFences<R : MTLResourceReference>(on resourceRef: inout R) {
+        resourceRef.usageFences.writeWaitFences.forEach {
+            self.releaseFence($0)
+        }
+        
+        resourceRef.usageFences.readWaitFences.forEach {
+            self.releaseFence($0)
         }
     }
     
-    public func disposeBuffer(_ buffer: Buffer, readFence: MTLFence?, writeFences: [MTLFence]?) {
-        if let mtlBuffer = self.bufferReferences.removeValue(forKey: buffer.handle) {
-            mtlBuffer.readWaitFence = readFence
-            mtlBuffer.writeWaitFences = writeFences
+    public func releaseMultiframeFences(on texture: Texture) {
+        self.textureReferences.withValue(forKey: texture.handle, perform: { (mtlTexturePtr, initialised) in
+            guard initialised else { return }
+            self.releaseMultiframeFences(on: &mtlTexturePtr.pointee)
+        })
+    }
+    
+    public func releaseMultiframeFences(on buffer: Buffer) {
+        self.bufferReferences.withValue(forKey: buffer.handle, perform: { (mtlBufferPtr, initialised) in
+            guard initialised else { return }
+            self.releaseMultiframeFences(on: &mtlBufferPtr.pointee)
+        })
+    }
+    
+    private func setDisposalFences<R : MTLResourceReference>(_ resourceRef: inout R, readFence: MTLFenceType?, writeFences: [MTLFenceType]?) {
+        assert(resourceRef.disposalFences.readWaitFences.isEmpty)
+        assert(resourceRef.disposalFences.writeWaitFences.isEmpty)
+        
+        if let readFence = readFence {
+            resourceRef.disposalFences.readWaitFences.append(readFence)
+            self.retainFence(readFence)
+            assert(self.fenceRetainCounts[ObjectIdentifier(readFence)]! > 0)
+        }
+        
+        if let writeFences = writeFences {
+            for fence in writeFences {
+                resourceRef.disposalFences.writeWaitFences.append(fence)
+                self.retainFence(fence)
+                assert(self.fenceRetainCounts[ObjectIdentifier(fence)]! > 0)
+            }
+        }
+        
+        resourceRef.usedThisFrame = true
+    }
+    
+    public func setDisposalFences(_ texture: Texture, readFence: MTLFenceType?, writeFences: [MTLFenceType]?) {
+        guard !texture.flags.contains(.windowHandle) else { return }
+        
+        self.textureReferences.withValue(forKey: texture.handle, perform: { (mtlTexturePtr, initialised) in
+            guard initialised else { return }
+            self.setDisposalFences(&mtlTexturePtr.pointee, readFence: readFence, writeFences: writeFences)
+        })
+    }
+    
+    public func setDisposalFences(_ buffer: Buffer, readFence: MTLFenceType?, writeFences: [MTLFenceType]?) {
+        self.bufferReferences.withValue(forKey: buffer.handle, perform: { (mtlBufferPtr, initialised) in
+            guard initialised else { return }
+            self.setDisposalFences(&mtlBufferPtr.pointee, readFence: readFence, writeFences: writeFences)
+        })
+    }
+
+    public func disposeTexture(_ texture: Texture, keepingReference: Bool) {
+        if var mtlTexture = (keepingReference ? self.textureReferences[texture.handle] : self.textureReferences.removeValue(forKey: texture.handle)) {
+            if texture.flags.contains(.windowHandle) {
+                return
+            }
+            
+            mtlTexture.setUsageFencesToDisposalFences()
+            
+            let allocator = self.allocatorForTexture(storageMode: mtlTexture.texture.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, mtlTexture.texture.usage))
+            allocator.depositTexture(mtlTexture)
+            
+        }
+    }
+    
+    public func disposeBuffer(_ buffer: Buffer, keepingReference: Bool) {
+        if var mtlBuffer = (keepingReference ? self.bufferReferences[buffer.handle] : self.bufferReferences.removeValue(forKey: buffer.handle)) {
+            
+            mtlBuffer.setUsageFencesToDisposalFences()
+            
             let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)
             allocator.depositBuffer(mtlBuffer)
         }
     }
     
-    public func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
-        self.bufferReferences.removeValue(forKey: buffer.handle)
-    }
-    
-    public func fenceWithId(_ id: Int) -> MTLFence {
-        if let fence = self.fenceMappings[id] {
-            return fence
-        } else {
-            let fence = self.unusedFences.popLast() ?? self.device.makeFence()!
-            self.fenceMappings[id] = fence
-            return fence
+    public func disposeArgumentBuffer(_ buffer: ArgumentBuffer, keepingReference: Bool) {
+        if !keepingReference {
+            self.bufferReferences.removeValue(forKey: buffer.handle)
         }
     }
     
-    public func retainFence(_ fence: MTLFence) {
-        self.fenceRetainCounts[ObjectIdentifier(fence), default: 0] += 1
-    }
-    
-    /// - parameter addToPoolImmediately: Whether to return the fence to the pool immediately or wait until the end of the frame.
-    ///   Always returning immediately to the pool causes issues since our retain/release pairs aren't properly ordered, and it's
-    ///   difficult to make them properly ordered since retain needs to run after updateFence to allow remapping to occur.
-    public func releaseFence(_ fence: MTLFence, addToPoolImmediately: Bool) {
-        let currentCount = self.fenceRetainCounts[ObjectIdentifier(fence)]!
-        self.fenceRetainCounts[ObjectIdentifier(fence)] = currentCount - 1
-        if currentCount == 1, addToPoolImmediately {
-            self.unusedFences.append(fence)
+    public func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray, keepingReference: Bool) {
+        if !keepingReference {
+            self.bufferReferences.removeValue(forKey: buffer.handle)
         }
     }
-    
-    public func retainFenceWithId(_ id: Int) {
-        let fence = self.fenceMappings[id]!
-        self.retainFence(fence)
-    }
-    
-    public func releaseFenceWithId(_ id: Int, addToPoolImmediately: Bool) {
-        let fence = self.fenceMappings[id]!
-        self.releaseFence(fence, addToPoolImmediately: addToPoolImmediately)
-    }
-    
-    public func remapFenceId(_ id: Int, toExistingFenceWithId existingId: Int) {
-        if id == existingId { return }
-        assert(self.fenceMappings[id] == nil)
-        let existingFence = self.fenceMappings[existingId]!
-        self.fenceMappings[id] = existingFence
-    }
-    
-    public func fenceWithOptionalId(_ id: Int?) -> MTLFence? {
-        guard let id = id else { return nil }
+
+    public func allocateFence() -> MTLFenceType {
         
-        return self.fenceWithId(id)
+        let fence = self.unusedFences.popLast() ?? self.device.makeFence()!
+        assert(self.fenceRetainCounts[ObjectIdentifier(fence), default: 0] == 0)
+        self.fenceRetainCounts[ObjectIdentifier(fence)] = 1
+        
+        return fence
+    }
+    
+    public func retainFence(_ fence: MTLFenceType) {
+        assert(self.fenceRetainCounts[ObjectIdentifier(fence)]! > 0, "Retaining an already-released fence.")
+        
+        self.fenceRetainCounts[ObjectIdentifier(fence)]! += 1
+    }
+    
+    public func releaseFence(_ fence: MTLFenceType) {
+        self.fenceRetainCounts[ObjectIdentifier(fence)]! -= 1
+        
+        if self.fenceRetainCounts[ObjectIdentifier(fence)]! <= 0 {
+            assert(self.fenceRetainCounts[ObjectIdentifier(fence)]! == 0)
+            self.frameEndUnusedFences.append(fence)
+        }
     }
     
     public func bufferContents(for buffer: Buffer) -> UnsafeMutableRawPointer {
         assert(buffer.flags.contains(.persistent) || self.frameGraphHasResourceAccess, "GPU memory for a transient buffer may not be accessed outside of a FrameGraph RenderPass. Consider using withDeferredSlice instead.")
-    
-        if !buffer.flags.contains(.persistent) {
-            self.frameCPUBuffers.append(buffer)
-        }
         
         let bufferReference = self.allocateBufferIfNeeded(buffer)
         return bufferReference.buffer.contents() + bufferReference.offset
@@ -417,24 +630,50 @@ final class ResourceRegistry {
     public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
         assert(texture.flags.contains(.persistent) || self.frameGraphHasResourceAccess, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
         
-        if !texture.flags.contains(.persistent) {
-            self.frameCPUTextures.append(texture)
-        }
-        
-        self.allocateTextureIfNeeded(texture, usage: MTLTextureUsage(texture.descriptor.usageHint)).replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
+        self.allocateTextureIfNeeded(texture, usage: TextureUsageProperties(texture.descriptor.usageHint))
+        self[texture]!.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
+    }
+    
+    public func registerInitialisedHistoryBufferForDisposal(resource: Resource) {
+        assert(resource.flags.contains(.historyBuffer) && resource.stateFlags.contains(.initialised))
+        resource.dispose() // This will dispose it in the FrameGraph persistent allocator, which will in turn call dispose here at the end of the frame.
     }
     
     public func cycleFrames() {
-        while let buffer = self.frameCPUBuffers.popLast() {
-            self.disposeBuffer(buffer, readFence: nil, writeFences: nil) // No fences for CPU resources.
+        // Clear all transient resources at the end of the frame.
+        
+        self.textureReferences.forEachMutating { (handle, mtlResource, deleteEntry) in
+            let resource = Resource(existingHandle: handle)
+            if resource.flags.intersection([.historyBuffer, .persistent]) == [] {
+                deleteEntry = true
+            } else {
+                mtlResource.setUsageFencesToDisposalFences()
+                assert(mtlResource.usageFences.readWaitFences.allSatisfy({ self.fenceRetainCounts[ObjectIdentifier($0)]! > 0 }))
+                assert(mtlResource.usageFences.writeWaitFences.allSatisfy({ self.fenceRetainCounts[ObjectIdentifier($0)]! > 0 }))
+            }
         }
         
-        while let texture = self.frameCPUTextures.popLast() {
-            self.disposeTexture(texture, readFence: nil, writeFences: nil)
+        self.bufferReferences.forEachMutating { (handle, mtlResource, deleteEntry) in
+            let resource = Resource(existingHandle: handle)
+            if resource.flags.intersection([.historyBuffer, .persistent]) == [] {
+                deleteEntry = true
+            } else {
+                mtlResource.setUsageFencesToDisposalFences()
+                assert(mtlResource.usageFences.readWaitFences.allSatisfy({ self.fenceRetainCounts[ObjectIdentifier($0)]! > 0 }))
+                assert(mtlResource.usageFences.writeWaitFences.allSatisfy({ self.fenceRetainCounts[ObjectIdentifier($0)]! > 0 }))
+            }
         }
-        
-        while let argBuffer = self.frameArgumentBuffers.popLast() {
-            self.bufferReferences.removeValue(forKey: argBuffer)
+
+        self.argumentBufferReferences.forEachMutating { (handle, mtlResource, deleteEntry) in
+            let resource = Resource(existingHandle: handle)
+            if resource.flags.intersection([.historyBuffer, .persistent]) == [] {
+                deleteEntry = true
+            } else {
+                mtlResource.setUsageFencesToDisposalFences()
+                assert(mtlResource.usageFences.readWaitFences.allSatisfy({ self.fenceRetainCounts[ObjectIdentifier($0)]! > 0 }))
+                assert(mtlResource.usageFences.writeWaitFences.allSatisfy({ self.fenceRetainCounts[ObjectIdentifier($0)]! > 0 }))
+            }
+            
         }
         
         self.stagingTextureAllocator.cycleFrames()
@@ -447,21 +686,24 @@ final class ResourceRegistry {
         self.persistentAllocator.cycleFrames()
         
         self.frameSharedBufferAllocator.cycleFrames()
+        self.frameSharedWriteCombinedBufferAllocator.cycleFrames()
+        
+        #if os(macOS)
         self.frameManagedBufferAllocator.cycleFrames()
         self.frameManagedWriteCombinedBufferAllocator.cycleFrames()
+        #elseif os(iOS)
+        self.memorylessTextureAllocator.cycleFrames()
+        #endif
+        
+        self.frameArgumentBufferAllocator.cycleFrames()
         
         self.windowReferences.removeAll(keepingCapacity: true)
         self.frameDrawables.removeAll(keepingCapacity: true)
         
-        var uniqueFencesToAdd = [ObjectIdentifier : MTLFence]()
-        for fence in self.fenceMappings.values {
-            if self.fenceRetainCounts[ObjectIdentifier(fence)]! == 0 {
-                uniqueFencesToAdd[ObjectIdentifier(fence)] = fence
-                
-            }
-        }
-        self.unusedFences.append(contentsOf: uniqueFencesToAdd.values)
-        self.fenceMappings.removeAll(keepingCapacity: true) // Removes any mappings to fences that are now attached to resources.
+        self.unusedFences.append(contentsOf: self.frameEndUnusedFences)
+        self.frameEndUnusedFences.removeAll(keepingCapacity: true)
+    
+        assert(self.unusedFences.allSatisfy { fence in self.fenceRetainCounts[ObjectIdentifier(fence)]! == 0 })
         
     }
 }

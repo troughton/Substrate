@@ -1,6 +1,6 @@
 //
 //  PixelFormat.swift
-//  Llama 402
+//  CGRA 402
 //
 //  Created by Thomas Roughton on 10/03/17.
 //  Copyright © 2017 Thomas Roughton. All rights reserved.
@@ -187,20 +187,23 @@ public enum PixelFormat : UInt, Hashable {
     
 
     case gbgr422 = 240
-
+    
     case bgrg422 = 241
     
     /* Depth */
+
     case depth16Unorm = 250
     case depth32Float = 252
     
     /* Stencil */
+
     case stencil8 = 253
     
     /* Depth Stencil */
+
     case depth24Unorm_stencil8 = 255
     case depth32Float_stencil8 = 260
-    
+
     case x32_stencil8 = 261
     case x24_stencil8 = 262
 }
@@ -365,11 +368,6 @@ public enum DataType : UInt {
     case bool4
 }
 
-/*!
- @enum VertexFormat
- @abstract specifies how the vertex attribute data is laid out in memory.
- */
-@available(OSX 10.11, *)
 public enum VertexFormat : UInt {
     
     
@@ -656,10 +654,6 @@ public struct Size : Hashable {
     }
 }
 
-/*!
- @struct Region
- @abstract Identify a region in an image or texture.
- */
 public struct Region {
     
     public var origin: Origin
@@ -682,9 +676,6 @@ public struct Region {
     }
 }
 
-/*!
- @struct ScissorRect
- */
 public struct ScissorRect : Equatable {
     
     public var x : Int = 0

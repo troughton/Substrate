@@ -1,19 +1,22 @@
 //
 //  CachedValue.swift
-//  InterdimensionalLlama
+//  SwiftFrameGraph
 //
 //  Created by Thomas Roughton on 25/02/17.
 //
 //
 
+@_fixed_layout
 public final class CachedValue<T> {
-    private let constructor : () -> T
-    private var _value : T? = nil
+    @usableFromInline let constructor : () -> T
+    @usableFromInline var _value : T? = nil
     
+    @inlinable
     public init(constructor: @escaping () -> T) {
         self.constructor = constructor
     }
     
+    @inlinable
     public var value : T {
         get {
             if let value = _value {
@@ -29,6 +32,7 @@ public final class CachedValue<T> {
         }
     }
     
+    @inlinable
     public func reset() {
         _value = nil
     }

@@ -146,12 +146,40 @@ public struct ArgumentBuffer : ResourceProtocol {
             }
         }
     }
+    
+    @inlinable
+    public var label : String? {
+        get {
+            if self._usesPersistentRegistry {
+                return PersistentArgumentBufferRegistry.instance.labels[self.index]
+            } else {
+                return TransientArgumentBufferRegistry.instance.labels[self.index]
+            }
+        }
+        nonmutating set {
+            if self._usesPersistentRegistry {
+                PersistentArgumentBufferRegistry.instance.labels[self.index] = newValue
+            } else {
+                TransientArgumentBufferRegistry.instance.labels[self.index] = newValue
+            }
+        }
+    }
+    
+    @inlinable
+    public var storageMode: StorageMode {
+        return .shared
+    }
 
+    // Thread-safe
     public func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
         if self._usesPersistentRegistry {
-            PersistentArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindings(closure)
+            PersistentArgumentBufferRegistry.instance.queue.sync { PersistentArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindings(closure)
+            }
         } else {
-            TransientArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindings(closure)
+            TransientArgumentBufferRegistry.instance.queue.sync {
+TransientArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindings(closure)
+
+}
         }
     }
     
@@ -168,13 +196,17 @@ public struct ArgumentBuffer : ResourceProtocol {
     @inlinable
     public func _copyBytes(_ bytes: UnsafeRawPointer, length: Int) -> Int {
         if self._usesPersistentRegistry {
-            let offset = PersistentArgumentBufferRegistry.instance.inlineDataStorage[self.index].count
-            PersistentArgumentBufferRegistry.instance.inlineDataStorage[self.index].append(bytes.assumingMemoryBound(to: UInt8.self), count: length)
-            return offset
+            return PersistentArgumentBufferRegistry.instance.queue.sync {
+                let offset = PersistentArgumentBufferRegistry.instance.inlineDataStorage[self.index].count
+                PersistentArgumentBufferRegistry.instance.inlineDataStorage[self.index].append(bytes.assumingMemoryBound(to: UInt8.self), count: length)
+                return offset
+            }
         } else {
-            let offset = TransientArgumentBufferRegistry.instance.inlineDataAllocator.count
-            TransientArgumentBufferRegistry.instance.inlineDataAllocator.append(from: bytes.assumingMemoryBound(to: UInt8.self), count: length)
-            return offset
+            return TransientArgumentBufferRegistry.instance.queue.sync {
+                let offset = TransientArgumentBufferRegistry.instance.inlineDataAllocator.count
+                TransientArgumentBufferRegistry.instance.inlineDataAllocator.append(from: bytes.assumingMemoryBound(to: UInt8.self), count: length)
+                return offset
+            }
         }
     }
     
@@ -209,6 +241,14 @@ public struct ArgumentBufferArray : ResourceProtocol {
     }
     
     @inlinable
+    public func dispose() {
+        guard self._usesPersistentRegistry else {
+            return
+        }
+        PersistentArgumentBufferArrayRegistry.instance.dispose(self)
+    }
+    
+    @inlinable
     public var stateFlags: ResourceStateFlags {
         get {
             return []
@@ -235,6 +275,29 @@ public struct ArgumentBufferArray : ResourceProtocol {
         }
     }
     
+    @inlinable
+    public var label : String? {
+        get {
+            if self._usesPersistentRegistry {
+                return PersistentArgumentBufferArrayRegistry.instance.labels[self.index]
+            } else {
+                return TransientArgumentBufferArrayRegistry.instance.labels[self.index]
+            }
+        }
+        nonmutating set {
+            if self._usesPersistentRegistry {
+                PersistentArgumentBufferArrayRegistry.instance.labels[self.index] = newValue
+            } else {
+                TransientArgumentBufferArrayRegistry.instance.labels[self.index] = newValue
+            }
+        }
+    }
+    
+    @inlinable
+    public var storageMode: StorageMode {
+        return .shared
+    }
+    
     public func reserveCapacity(_ capacity: Int) {
         self.bindings.reserveCapacity(capacity)
     }
@@ -259,7 +322,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
 
 @_fixed_layout
 public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
-    
+
     public let argumentBuffer : ArgumentBuffer
     
     @inlinable
@@ -267,8 +330,14 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         self.argumentBuffer = ArgumentBuffer(existingHandle: existingHandle)
     }
     
+    @inlinable
     public init(flags: ResourceFlags) {
         self.argumentBuffer = ArgumentBuffer(flags: flags)
+    }
+    
+    @inlinable
+    public func dispose() {
+        self.argumentBuffer.dispose()
     }
     
     @inlinable

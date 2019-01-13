@@ -14,24 +14,25 @@ enum WaitFence {
 }
 
 enum ResourceCommands {
+    
+    // These commands mutate the ResourceRegistry and should be executed before render pass execution:
     case materialiseBuffer(Buffer)
-    case materialiseTexture(Texture, usage: MTLTextureUsage)
-    case disposeBuffer(Buffer, readFence: Int?, writeFences: [Int]?) // readFence must be waited on before reading, writeFences must be waited on before writing.
-    case disposeTexture(Texture, readFence: Int?, writeFences: [Int]?)
+    case materialiseTexture(Texture, usage: TextureUsageProperties)
+    case disposeResource(Resource.Handle)
+    
+    case retainFence(MTLFenceType)
+    case releaseFence(MTLFenceType)
+    case releaseMultiframeFences(resource: ResourceProtocol.Handle)
+    case setDisposalFences(Resource, readWaitFence: MTLFenceType?, writeWaitFences: [MTLFenceType]?)
+    
+    // These commands need to be executed during render pass execution and do not modify the ResourceRegistry.
     
     case useResource(Resource, usage: MTLResourceUsage)
-    
     case textureBarrier
-    case updateFence(id: Int, afterStages: MTLRenderStages?)
-    case waitForFence(id: Int, beforeStages: MTLRenderStages?)
-    
-    case retainFence(id: Int)
-    case releaseFence(id: Int)
-    case releaseMultiframeFences(resource: ResourceProtocol.Handle, resourceType: ResourceType)
-    
+    case memoryBarrier(Resource, afterStages: MTLRenderStages?, beforeStages: MTLRenderStages?)
+    case updateFence(MTLFenceType, afterStages: MTLRenderStages?)
+    case waitForFence(MTLFenceType, beforeStages: MTLRenderStages?)
     case waitForMultiframeFence(resource: ResourceProtocol.Handle, resourceType: ResourceType, waitFence: WaitFence, beforeStages: MTLRenderStages?)
-    case storeMultiframeBuffer(buffer: Buffer, readFence: Int?, writeFences: [Int]?)
-    case storeMultiframeTexture(texture: Texture, readFence: Int?, writeFences: [Int]?)
     
     var priority : Int {
         switch self {
@@ -41,12 +42,59 @@ enum ResourceCommands {
             return 2
         case .releaseFence, .releaseMultiframeFences:
             return 3
-        case .storeMultiframeBuffer, .storeMultiframeTexture:
+        case .setDisposalFences:
             return 4
-        case .disposeBuffer, .disposeTexture:
+        case .disposeResource:
             return 5
         default:
             return 1
+        }
+    }
+    
+    func execute(resourceRegistry: ResourceRegistry) {
+        switch self {
+        case .materialiseBuffer(let buffer):
+            resourceRegistry.allocateBufferIfNeeded(buffer)
+            buffer.applyDeferredSliceActions()
+            
+        case .materialiseTexture(let texture, let usage):
+            resourceRegistry.allocateTextureIfNeeded(texture, usage: usage)
+            
+        case .retainFence(let fence):
+            resourceRegistry.retainFence(fence)
+            
+        case .releaseFence(let fence):
+            resourceRegistry.releaseFence(fence)
+            
+        case .releaseMultiframeFences(let resourceHandle):
+            let resource = Resource(existingHandle: resourceHandle)
+            
+            if let buffer = resource.buffer {
+                resourceRegistry.releaseMultiframeFences(on: buffer)
+            } else if let texture = resource.texture {
+                resourceRegistry.releaseMultiframeFences(on: texture)
+            }
+            
+        case .setDisposalFences(let resource, let readWaitFence, let writeWaitFences):
+            if let buffer = resource.buffer {
+                resourceRegistry.setDisposalFences(buffer, readFence: readWaitFence, writeFences: writeWaitFences)
+            } else if let texture = resource.texture {
+                resourceRegistry.setDisposalFences(texture, readFence: readWaitFence, writeFences: writeWaitFences)
+            }
+            
+        case .disposeResource(let resourceHandle):
+            let resource = Resource(existingHandle: resourceHandle)
+            if let buffer = resource.buffer {
+                resourceRegistry.disposeBuffer(buffer, keepingReference: true)
+            } else if let texture = resource.texture {
+                resourceRegistry.disposeTexture(texture, keepingReference: true)
+                
+            } else {
+                fatalError()
+            }
+            
+        default:
+            fatalError()
         }
     }
 }
@@ -75,6 +123,24 @@ struct ResourceCommand : Comparable {
     }
 }
 
+struct TextureUsageProperties {
+    var usage : MTLTextureUsage
+    #if os(iOS)
+    var canBeMemoryless : Bool
+    #endif
+    
+    init(usage: MTLTextureUsage, canBeMemoryless: Bool = false) {
+        self.usage = usage
+        #if os(iOS)
+        self.canBeMemoryless = canBeMemoryless
+        #endif
+    }
+    
+    init(_ usage: TextureUsage) {
+        self.init(usage: MTLTextureUsage(usage), canBeMemoryless: false)
+    }
+}
+
 public final class MetalFrameGraph : FrameGraphBackend {
     
     let resourceRegistry : ResourceRegistry
@@ -97,64 +163,29 @@ public final class MetalFrameGraph : FrameGraphBackend {
     // Generates a render target descriptor, if applicable, for each pass.
     // MetalRenderTargetDescriptor is a reference type, so we can check if two passes share a render target
     // (and therefore MTLRenderCommandEncoder)
-    func generateRenderTargetDescriptors(passes: [RenderPassRecord], resourceUsages: ResourceUsages) -> [MetalRenderTargetDescriptor?] {
+    // storedTextures contain all textures that are stored to (i.e. textures that aren't eligible to be memoryless on iOS).
+    func generateRenderTargetDescriptors(passes: [RenderPassRecord], resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> [MetalRenderTargetDescriptor?] {
         var descriptors = [MetalRenderTargetDescriptor?](repeating: nil, count: passes.count)
         
         var currentDescriptor : MetalRenderTargetDescriptor? = nil
         for (i, passRecord) in passes.enumerated() {
             if let renderPass = passRecord.pass as? DrawRenderPass {
                 if let descriptor = currentDescriptor {
-                    currentDescriptor = descriptor.descriptorMergedWithPass(renderPass, resourceUsages: resourceUsages)
+                    currentDescriptor = descriptor.descriptorMergedWithPass(renderPass, resourceUsages: resourceUsages, storedTextures: &storedTextures)
                 } else {
                     currentDescriptor = MetalRenderTargetDescriptor(renderPass: renderPass)
                 }
             } else {
-                currentDescriptor?.finalise(resourceUsages: resourceUsages)
+                currentDescriptor?.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
                 currentDescriptor = nil
             }
             
             descriptors[i] = currentDescriptor
         }
         
-        currentDescriptor?.finalise(resourceUsages: resourceUsages)
+        currentDescriptor?.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
         
         return descriptors
-    }
-    
-    func sharesCommandEncoders(_ passA: RenderPassRecord, _ passB: RenderPassRecord, passes: [RenderPassRecord], renderTargetDescriptors: [MetalRenderTargetDescriptor?]) -> Bool {
-        if passA.passIndex == passB.passIndex {
-            return true
-        }
-        if passA.pass.passType == .draw, renderTargetDescriptors[passA.passIndex] === renderTargetDescriptors[passB.passIndex] {
-            return true
-        }
-        
-        let referenceType = passB.pass.passType
-        for i in passA.passIndex..<passB.passIndex {
-            if passes[i].pass.passType != referenceType {
-                return false
-            }
-        }
-        
-        return true
-    }
-    
-    func generateCommandEncoderIndices(passes: [RenderPassRecord], renderTargetDescriptors: [MetalRenderTargetDescriptor?]) -> ([Int], count: Int) {
-        var encoderIndex = 0
-        var passEncoderIndices = [Int](repeating: 0, count: passes.count)
-        
-        for (i, pass) in passes.enumerated().dropFirst() {
-            let previousPass = passes[i - 1]
-            assert(pass.passIndex != previousPass.passIndex)
-        
-            if previousPass.pass.passType != pass.pass.passType || renderTargetDescriptors[previousPass.passIndex] !== renderTargetDescriptors[pass.passIndex] {
-                encoderIndex += 1
-            }
-            
-            passEncoderIndices[i] = encoderIndex
-        }
-        
-        return (passEncoderIndices, encoderIndex + 1)
     }
     
     // For fence tracking - support at most one dependency between each set of two render passes. Make the fence update as early as possible, and make the fence wait as late as possible.
@@ -175,18 +206,19 @@ public final class MetalFrameGraph : FrameGraphBackend {
         }
     }
     
+    var resourceRegistryPreFrameCommands = [ResourceCommand]()
+    
     var resourceCommands = [ResourceCommand]()
-    var renderTargetTextureUsages = [Texture : MTLTextureUsage]()
+    var renderTargetTextureProperties = [Texture : TextureUsageProperties]()
     var commandEncoderDependencies = [[Dependency]]()
     
-    func generateResourceCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, renderTargetDescriptors: [MetalRenderTargetDescriptor?]) {
-        let (passCommandEncoderIndices, commandEncoderCount) = self.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
+    /// - param storedTextures: textures that are stored as part of a render target (and therefore can't be memoryless on iOS)
+    func generateResourceCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, renderTargetDescriptors: [MetalRenderTargetDescriptor?], storedTextures: [Texture]) {
+        let (passCommandEncoderIndices, _, commandEncoderCount) = EncoderManager.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
         
         if self.commandEncoderDependencies.count < commandEncoderCount {
             commandEncoderDependencies.append(contentsOf: repeatElement([Dependency](), count: commandEncoderCount - self.commandEncoderDependencies.count))
         }
-        
-        var fenceId = 0
         
         resourceLoop: for resource in resourceUsages.allResources {
             let resourceType = resource.type
@@ -201,11 +233,11 @@ public final class MetalFrameGraph : FrameGraphBackend {
                 var previousPass : RenderPassRecord? = nil
                 var resourceUsage : MTLResourceUsage = []
                 
-                for usage in usages where usage.renderPass.isActive && usage.inArgumentBuffer && usage.stages != .cpuBeforeRender {
+                for usage in usages where usage.renderPassRecord.isActive && usage.inArgumentBuffer && usage.stages != .cpuBeforeRender {
                     
-                    defer { previousPass = usage.renderPass }
+                    defer { previousPass = usage.renderPassRecord }
                     
-                    if let previousPassUnwrapped = previousPass, passCommandEncoderIndices[previousPassUnwrapped.passIndex] != passCommandEncoderIndices[usage.renderPass.passIndex] {
+                    if let previousPassUnwrapped = previousPass, passCommandEncoderIndices[previousPassUnwrapped.passIndex] != passCommandEncoderIndices[usage.renderPassRecord.passIndex] {
                         self.resourceCommands.append(ResourceCommand(command: .useResource(resource, usage: resourceUsage), index: commandIndex, order: .before))
                         previousPass = nil
                     }
@@ -240,9 +272,23 @@ public final class MetalFrameGraph : FrameGraphBackend {
                     continue resourceLoop // no active usages for this resource.
                 }
                 previousUsage = usage
-            } while !previousUsage.renderPass.isActive || previousUsage.type == .unusedArgumentBuffer
-
-            let firstUsage = previousUsage
+            } while !previousUsage.renderPassRecord.isActive || previousUsage.type == .unusedArgumentBuffer
+            
+            
+            var firstUsage = previousUsage
+            
+            if !firstUsage.isWrite {
+                
+                // Scan forward from the 'first usage' until we find the _actual_ first usage - that is, the usage whose command range comes first.
+                // The 'first usage' might only not actually be the first if the first usages are all reads.
+                
+                var firstUsageIterator = usageIterator // Since the usageIterator is a struct, this will copy the iterator.
+                while let nextUsage = firstUsageIterator.next(), nextUsage.isRead {
+                    if nextUsage.renderPassRecord.isActive, nextUsage.type != .unusedRenderTarget, nextUsage.commandRange.lowerBound < firstUsage.commandRange.lowerBound {
+                        firstUsage = nextUsage
+                    }
+                }
+            }
             
             var readsSinceLastWrite = firstUsage.isRead ? [firstUsage] : []
             var previousWrite = firstUsage.isWrite ? firstUsage : nil
@@ -257,38 +303,41 @@ public final class MetalFrameGraph : FrameGraphBackend {
             }
             
             while let usage = usageIterator.next()  {
-                if !usage.renderPass.isActive || usage.stages == .cpuBeforeRender {
+                if !usage.renderPassRecord.isActive || usage.stages == .cpuBeforeRender {
                     continue
                 }
                 
                 if usage.isWrite {
                     assert(!resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "A resource with the flag .immutableOnceInitialised is being written to in \(usage) when it has already been initialised.")
                     
-                    for previousRead in readsSinceLastWrite where passCommandEncoderIndices[previousRead.renderPass.passIndex] != passCommandEncoderIndices[usage.renderPass.passIndex] {
+                    for previousRead in readsSinceLastWrite where passCommandEncoderIndices[previousRead.renderPassRecord.passIndex] != passCommandEncoderIndices[usage.renderPassRecord.passIndex] {
                         let dependency = Dependency(dependentUsage: usage, passUsage: previousRead)
-                        commandEncoderDependencies[passCommandEncoderIndices[previousRead.renderPass.passIndex]].append(dependency)
-                    }
-                    
-                    if let previousWrite = previousWrite, passCommandEncoderIndices[previousWrite.renderPass.passIndex] != passCommandEncoderIndices[usage.renderPass.passIndex] {
-                        let dependency = Dependency(dependentUsage: usage, passUsage: previousWrite)
-                        commandEncoderDependencies[passCommandEncoderIndices[previousWrite.renderPass.passIndex]].append(dependency)
-                    }
-                    
-                } else if usage.isRead, let previousWrite = previousWrite {
-                    // usage.isRead
-                    
-                    if usage.renderPass.pass is DrawRenderPass, usage.type != .readWriteRenderTarget, renderTargetDescriptors[previousWrite.renderPass.passIndex] === renderTargetDescriptors[usage.renderPass.passIndex] {
-                        if previousWrite.type.isRenderTarget && previousWrite.type != .unusedRenderTarget {
-                            // Insert a texture barrier.
-                            self.resourceCommands.append(ResourceCommand(command: .textureBarrier, index: usage.commandRange.lowerBound, order: .before))
-                        }
-                    } else if passCommandEncoderIndices[previousWrite.renderPass.passIndex] != passCommandEncoderIndices[usage.renderPass.passIndex] {
-                        let dependency = Dependency(dependentUsage: usage, passUsage: previousWrite)
-                        commandEncoderDependencies[passCommandEncoderIndices[previousWrite.renderPass.passIndex]].append(dependency)
+                        commandEncoderDependencies[passCommandEncoderIndices[previousRead.renderPassRecord.passIndex]].append(dependency)
                     }
                 }
                 
-                if previousWrite == nil, passCommandEncoderIndices[usage.renderPass.passIndex] != passCommandEncoderIndices[previousUsage.renderPass.passIndex] {
+                // Only insert a barrier for the first usage following a write.
+                if usage.isRead, previousUsage.isWrite,
+                    passCommandEncoderIndices[previousUsage.renderPassRecord.passIndex] == passCommandEncoderIndices[usage.renderPassRecord.passIndex]  {
+                        if !(previousUsage.type.isRenderTarget && (usage.type == .writeOnlyRenderTarget || usage.type == .readWriteRenderTarget)) {
+                            if #available(OSX 10.14, *) {
+                                self.resourceCommands.append(ResourceCommand(command: .memoryBarrier(Resource(resource), afterStages: MTLRenderStages(previousUsage.stages.last), beforeStages: MTLRenderStages(usage.stages.first)), index: usage.commandRange.lowerBound, order: .before))
+                                
+                            } else {
+                                if previousUsage.type.isRenderTarget, (usage.type != .writeOnlyRenderTarget && usage.type != .readWriteRenderTarget) {
+                                    // Insert a texture barrier.
+                                    self.resourceCommands.append(ResourceCommand(command: .textureBarrier, index: usage.commandRange.lowerBound, order: .before))
+                                }
+                            }
+                        }
+                }
+                
+                if (usage.isRead || usage.isWrite), let previousWrite = previousWrite, passCommandEncoderIndices[previousWrite.renderPassRecord.passIndex] != passCommandEncoderIndices[usage.renderPassRecord.passIndex] {
+                    let dependency = Dependency(dependentUsage: usage, passUsage: previousWrite)
+                    commandEncoderDependencies[passCommandEncoderIndices[previousWrite.renderPassRecord.passIndex]].append(dependency)
+                }
+                
+                if previousWrite == nil, passCommandEncoderIndices[usage.renderPassRecord.passIndex] != passCommandEncoderIndices[previousUsage.renderPassRecord.passIndex] {
                     // No previous writes in the frame, so we need to wait on possible fences from the previous frame.
                     // We only need to do this once per command encoder.
                     let waitFence = usage.isWrite ? WaitFence.write : WaitFence.read
@@ -303,395 +352,247 @@ public final class MetalFrameGraph : FrameGraphBackend {
                     readsSinceLastWrite.append(usage)
                 }
                 
-                previousUsage = usage
+                if usage.commandRange.endIndex > previousUsage.commandRange.endIndex { // FIXME: this is only necessary because resource commands are executed sequentially; this will only be false if both usage and previousUsage are reads, and so it doesn't matter which order they happen in.
+                    // A better solution would be to effectively compile all resource commands ahead of time - doing so will also enable multithreading and out-of-order execution of render passes.
+                    previousUsage = usage
+                }
             }
             
             let lastUsage = previousUsage
             
-            self.resourceCommands.append(ResourceCommand(command: .releaseMultiframeFences(resource: resource.handle, resourceType: resourceType), index: lastUsage.commandRange.upperBound - 1, order: .after))
-            
-            var storeWriteFences : [Int]? = nil
-            var storeReadFence : Int? = nil
-            
-            if resourceRegistry.needsWaitFencesOnFrameCompletion(resource: resource) {
-                // Reads need to wait for all previous writes to complete.
-                // Writes need to wait for all previous reads and writes to complete.
-                
-                if let previousWrite = previousWrite {
-                    let updateFenceId = fenceId
-                    storeReadFence = updateFenceId
-                    storeWriteFences = [updateFenceId]
-                    fenceId += 1
-                    
-                    self.resourceCommands.append(ResourceCommand(command: .updateFence(id: updateFenceId, afterStages: MTLRenderStages(previousWrite.stages.last)), index: previousWrite.commandRange.upperBound - 1, order: .after))
-                }
-                
-                if !resource.flags.contains(.immutableOnceInitialised) {
-                    var writeFences = storeWriteFences ?? []
-                    for read in readsSinceLastWrite {
-                        let updateFenceId = fenceId
-                        writeFences.append(updateFenceId)
-                        fenceId += 1
-                        
-                        self.resourceCommands.append(ResourceCommand(command: .updateFence(id: updateFenceId, afterStages: MTLRenderStages(read.stages.last)), index: read.commandRange.upperBound - 1, order: .after))
-                    }
-                    storeWriteFences = writeFences
+            self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .releaseMultiframeFences(resource: resource.handle), index: lastUsage.commandRange.upperBound - 1, order: .after))
+
+            defer {
+                if resource.flags.intersection([.historyBuffer, .persistent]) != [] {
+                    resource.markAsInitialised()
                 }
             }
             
             let historyBufferUseFrame = resource.flags.contains(.historyBuffer) && resource.stateFlags.contains(.initialised)
             
+            var canBeMemoryless = false
+            
             // Insert commands to materialise and dispose of the resource.
             if !resource.flags.contains(.persistent) || resource.flags.contains(.windowHandle) {
                 if let buffer = resource.buffer {
                     if !historyBufferUseFrame {
-                        self.resourceCommands.append(ResourceCommand(command: .materialiseBuffer(buffer), index: firstUsage.commandRange.lowerBound, order: .before))
+                        self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .materialiseBuffer(buffer), index: firstUsage.commandRange.lowerBound, order: .before))
                     }
                     
-                    if resource.flags.contains(.historyBuffer) && !resource.stateFlags.contains(.initialised) {
-                        self.resourceCommands.append(ResourceCommand(command: .storeMultiframeBuffer(buffer: buffer, readFence: storeReadFence, writeFences: storeWriteFences), index: lastUsage.commandRange.upperBound - 1, order: .after))
-                    } else {
-                        self.resourceCommands.append(ResourceCommand(command: .disposeBuffer(buffer, readFence: storeReadFence, writeFences: storeWriteFences), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                    if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised) {
+                        if historyBufferUseFrame {
+                            self.resourceRegistry.registerInitialisedHistoryBufferForDisposal(resource: Resource(buffer))
+                        } else {
+                            self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .disposeResource(buffer.handle), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                        }
                     }
-    
+                    
                 } else {
                     let texture = resource.texture!
                     var textureUsage : MTLTextureUsage = []
+                    
                     for usage in usages {
                         switch usage.type {
                         case .read:
                             textureUsage.formUnion(.shaderRead)
                         case .write:
                             textureUsage.formUnion(.shaderWrite)
-                        case .readWriteRenderTarget, .writeOnlyRenderTarget:
+                        case .readWriteRenderTarget, .writeOnlyRenderTarget, .inputAttachmentRenderTarget:
                             textureUsage.formUnion(.renderTarget)
                         default:
                             break
                         }
                     }
+                    
+                    #if os(iOS)
+                    canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
+                        && textureUsage == .renderTarget
+                        && !storedTextures.contains(texture)
+                    let properties = TextureUsageProperties(usage: textureUsage, canBeMemoryless: canBeMemoryless)
+                    #else
+                    let properties = TextureUsageProperties(usage: textureUsage)
+                    #endif
+                    
                     if textureUsage.contains(.renderTarget) {
-                        self.renderTargetTextureUsages[texture] = textureUsage
+                        self.renderTargetTextureProperties[texture] = properties
                     }
                     
                     if !historyBufferUseFrame {
-                        self.resourceCommands.append(ResourceCommand(command: .materialiseTexture(texture, usage: textureUsage), index: firstUsage.commandRange.lowerBound, order: .before))
+                        self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .materialiseTexture(texture, usage: properties), index: firstUsage.commandRange.lowerBound, order: .before))
                     }
                     
-                    if resource.flags.contains(.historyBuffer) && !resource.stateFlags.contains(.initialised) {
-                        self.resourceCommands.append(ResourceCommand(command: .storeMultiframeTexture(texture: texture, readFence: storeReadFence, writeFences: storeWriteFences), index: lastUsage.commandRange.upperBound - 1, order: .after))
-                    } else {
-                        self.resourceCommands.append(ResourceCommand(command: .disposeTexture(texture, readFence: storeReadFence, writeFences: storeWriteFences), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                    if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised) {
+                        if historyBufferUseFrame {
+                            self.resourceRegistry.registerInitialisedHistoryBufferForDisposal(resource: Resource(texture))
+                        } else {
+                            self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .disposeResource(texture.handle), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                        }
+                        
                     }
-                }
-            } else if storeReadFence != nil || storeWriteFences != nil { // If we did anything with the resource..
-                if let buffer = resource.buffer {
-                    self.resourceCommands.append(ResourceCommand(command: .storeMultiframeBuffer(buffer: buffer, readFence: storeReadFence, writeFences: storeWriteFences), index: lastUsage.commandRange.upperBound - 1, order: .after))
-                } else {
-                    let texture = resource.texture!
-                    self.resourceCommands.append(ResourceCommand(command: .storeMultiframeTexture(texture: texture, readFence: storeReadFence, writeFences: storeWriteFences), index: lastUsage.commandRange.upperBound - 1, order: .after))
                 }
             }
+            
+            do {
+                var storeWriteFences : [MTLFenceType]? = nil
+                var storeReadFence : MTLFenceType? = nil
+                
+                if resourceRegistry.needsWaitFencesOnFrameCompletion(resource: resource), !canBeMemoryless {
+                    // Reads need to wait for all previous writes to complete.
+                    // Writes need to wait for all previous reads and writes to complete.
+                    
+                    if let previousWrite = previousWrite {
+                        let updateFence = self.resourceRegistry.allocateFence()
+                        storeReadFence = updateFence
+                        storeWriteFences = [updateFence]
+                        
+                        self.resourceCommands.append(ResourceCommand(command: .updateFence(updateFence, afterStages: MTLRenderStages(previousWrite.stages.last)), index: previousWrite.commandRange.upperBound - 1, order: .after))
+                        
+                        // allocateFence returns a fence with a +1 retain count, so release it at the end of the frame.
+                        self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .releaseFence(updateFence), index: .max, order: .after))
+                    }
+                    
+                    if !resource.flags.contains(.immutableOnceInitialised) {
+                        var writeFences = storeWriteFences ?? []
+                        for read in readsSinceLastWrite {
+                            let updateFence = self.resourceRegistry.allocateFence()
+                            writeFences.append(updateFence)
+                            
+                            self.resourceCommands.append(ResourceCommand(command: .updateFence(updateFence, afterStages: MTLRenderStages(read.stages.last)), index: read.commandRange.upperBound - 1, order: .after))
+                            
+                            // allocateFence returns a fence with a +1 retain count, so release it at the end of the frame.
+                            self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .releaseFence(updateFence), index: .max, order: .after))
+                        }
+                        storeWriteFences = writeFences
+                    }
+                    
+                    // setDisposalFences retains its fences.
+                    self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .setDisposalFences(resource, readWaitFence: storeReadFence, writeWaitFences: storeWriteFences), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                }
+            }
+            
         }
         
-        do {
-            // Process the dependencies, joining duplicates.
-            // TODO: Remove transitive dependencies.
-            for commandEncoderIndex in 0..<commandEncoderCount { // passIndex always points to the producing pass.
-                var dependencyIndex = 0
-                while dependencyIndex < commandEncoderDependencies[commandEncoderIndex].count {
-                    let dependency = commandEncoderDependencies[commandEncoderIndex][dependencyIndex]
-                    
-                    var passCommandIndex = dependency.passUsage.commandRange.upperBound
-                    var passStages = dependency.passUsage.stages
-                    var dependentCommandIndex = dependency.dependentUsage.commandRange.lowerBound
-                    var dependentStages = dependency.dependentUsage.stages
-                    
-                    var otherDependencyIndex = dependencyIndex + 1
-                    while otherDependencyIndex < commandEncoderDependencies[commandEncoderIndex].count {
-                        let otherDependency = commandEncoderDependencies[commandEncoderIndex][otherDependencyIndex]
-                        if passCommandEncoderIndices[dependency.dependentUsage.renderPass.passIndex] == passCommandEncoderIndices[otherDependency.dependentUsage.renderPass.passIndex] {
-                            
-                            // Update as late as necessary
-                            if passCommandIndex <= otherDependency.passUsage.commandRange.upperBound {
-                                passStages.formUnion(otherDependency.passUsage.stages)
-                                passCommandIndex = otherDependency.passUsage.commandRange.upperBound
-                            }
-                            
-                            // Wait as early as necessary
-                            if dependentCommandIndex >= otherDependency.dependentUsage.commandRange.lowerBound {
-                                dependentStages.formUnion(otherDependency.dependentUsage.stages)
-                                dependentCommandIndex = otherDependency.dependentUsage.commandRange.lowerBound
-                            }
-                            
-                            commandEncoderDependencies[commandEncoderIndex].remove(at: otherDependencyIndex)
-                        } else {
-                            otherDependencyIndex += 1
-                        }
-                    }
-                    
-                    // This may introduce duplicate updates, so we merge the updates in checkResourceCommands.
-                    // Doing it this way allows us to keep a one to one mapping here.
-                    let sourceEncoder = passCommandEncoderIndices[dependency.passUsage.renderPass.passIndex]
-                    let dependentEncoder = passCommandEncoderIndices[dependency.dependentUsage.renderPass.passIndex]
-                    if sourceEncoder != dependentEncoder {
-                        self.resourceCommands.append(ResourceCommand(command: .updateFence(id: fenceId, afterStages: MTLRenderStages(passStages.last)), index: passCommandIndex - 1, order: .after)) // - 1 because of upperBound
-                        self.resourceCommands.append(ResourceCommand(command: .retainFence(id: fenceId), index: passCommandIndex - 1, order: .after))
+        // Process the dependencies, joining duplicates.
+        // TODO: Remove transitive dependencies.
+        for commandEncoderIndex in 0..<commandEncoderCount { // passIndex always points to the producing pass.
+            var dependencyIndex = 0
+            while dependencyIndex < commandEncoderDependencies[commandEncoderIndex].count {
+                let dependency = commandEncoderDependencies[commandEncoderIndex][dependencyIndex]
+                
+                var passCommandIndex = dependency.passUsage.commandRange.upperBound
+                var passStages = dependency.passUsage.stages
+                var dependentCommandIndex = dependency.dependentUsage.commandRange.lowerBound
+                var dependentStages = dependency.dependentUsage.stages
+                
+                var otherDependencyIndex = dependencyIndex + 1
+                while otherDependencyIndex < commandEncoderDependencies[commandEncoderIndex].count {
+                    let otherDependency = commandEncoderDependencies[commandEncoderIndex][otherDependencyIndex]
+                    if passCommandEncoderIndices[dependency.dependentUsage.renderPassRecord.passIndex] == passCommandEncoderIndices[otherDependency.dependentUsage.renderPassRecord.passIndex] {
                         
-                        self.resourceCommands.append(ResourceCommand(command: .waitForFence(id: fenceId, beforeStages: MTLRenderStages(dependentStages.first)), index: dependentCommandIndex, order: .before))
-                        self.resourceCommands.append(ResourceCommand(command: .releaseFence(id: fenceId), index: dependentCommandIndex, order: .before))
-                        fenceId += 1
+                        // Update as late as necessary
+                        if passCommandIndex <= otherDependency.passUsage.commandRange.upperBound {
+                            passStages.formUnion(otherDependency.passUsage.stages)
+                            passCommandIndex = otherDependency.passUsage.commandRange.upperBound
+                        }
+                        
+                        // Wait as early as necessary
+                        if dependentCommandIndex >= otherDependency.dependentUsage.commandRange.lowerBound {
+                            dependentStages.formUnion(otherDependency.dependentUsage.stages)
+                            dependentCommandIndex = otherDependency.dependentUsage.commandRange.lowerBound
+                        }
+                        
+                        commandEncoderDependencies[commandEncoderIndex].remove(at: otherDependencyIndex)
+                    } else {
+                        otherDependencyIndex += 1
                     }
-                    
-                    dependencyIndex += 1
                 }
+                
+                // This may introduce duplicate updates, so we merge the updates in checkResourceCommands.
+                // Doing it this way allows us to keep a one to one mapping here.
+                let sourceEncoder = passCommandEncoderIndices[dependency.passUsage.renderPassRecord.passIndex]
+                let dependentEncoder = passCommandEncoderIndices[dependency.dependentUsage.renderPassRecord.passIndex]
+                if sourceEncoder != dependentEncoder {
+                    let fence = resourceRegistry.allocateFence()
+                    self.resourceCommands.append(ResourceCommand(command: .updateFence(fence, afterStages: MTLRenderStages(passStages.last)), index: passCommandIndex - 1, order: .after)) // - 1 because of upperBound
+                    
+                    self.resourceCommands.append(ResourceCommand(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependentStages.first)), index: dependentCommandIndex, order: .before))
+                    self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .releaseFence(fence), index: dependentCommandIndex, order: .before))
+                }
+                
+                dependencyIndex += 1
             }
         }
         
         self.resourceCommands.sort()
-    }
-    
-    var resourceCommandIndex = 0
-    
-    func checkResourceCommands(phase: PerformOrder, commandIndex: Int, encoder: MTLCommandEncoder) {
-        var hasPerformedTextureBarrier = false
-        var updatedFenceAndStage : (Int, MTLRenderStages?)? = nil
-        while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
-            defer { resourceCommandIndex += 1 }
-            
-            switch resourceCommands[resourceCommandIndex].command {
-            case .materialiseBuffer(let buffer):
-                self.resourceRegistry.allocateBufferIfNeeded(buffer)
-                buffer.applyDeferredSliceActions()
-                
-            case .materialiseTexture(let texture, let usage):
-                self.resourceRegistry.allocateTextureIfNeeded(texture, usage: usage)
-                
-            case .disposeBuffer(let buffer, let readFence, let writeFences):
-                var mtlReadFence : MTLFence? = nil
-                var mtlWriteFences : [MTLFence]? = nil
-                
-                if resourceRegistry.needsWaitFencesOnDispose(size: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, flags: buffer.flags) {
-                    mtlReadFence = self.resourceRegistry.fenceWithOptionalId(readFence)
-                    mtlWriteFences = writeFences?.map { self.resourceRegistry.fenceWithId($0) }
-                    
-                    mtlReadFence.map { self.resourceRegistry.retainFence($0) } // Retain the fences before disposal since they'll last across multiple frames.
-                    mtlWriteFences?.forEach { self.resourceRegistry.retainFence($0) }
-                }
-                
-                self.resourceRegistry.disposeBuffer(buffer, readFence: mtlReadFence, writeFences: mtlWriteFences)
-                
-                if buffer.flags.contains(.historyBuffer) {
-                    assert(buffer.stateFlags.contains(.initialised))
-                    buffer.dispose() // Automatically dispose used history buffers.
-                }
-                
-            case .disposeTexture(let texture, let readFence, let writeFences):
-                var mtlReadFence : MTLFence? = nil
-                var mtlWriteFences : [MTLFence]? = nil
-                
-                if resourceRegistry.needsWaitFencesOnDispose(size: Int.max, storageMode: texture.descriptor.storageMode, flags: texture.flags) {
-                    mtlReadFence = self.resourceRegistry.fenceWithOptionalId(readFence)
-                    mtlWriteFences = writeFences?.map { self.resourceRegistry.fenceWithId($0) }
-                    
-                    mtlReadFence.map { self.resourceRegistry.retainFence($0) } // Retain the fences before disposal since they'll last across multiple frames.
-                    mtlWriteFences?.forEach { self.resourceRegistry.retainFence($0) }
-                }
-                
-                self.resourceRegistry.disposeTexture(texture, readFence: mtlReadFence, writeFences: mtlWriteFences)
-                
-                if texture.flags.contains(.historyBuffer) {
-                    assert(texture.stateFlags.contains(.initialised))
-                    texture.dispose() // Automatically dispose used history buffers.
-                }
-                
-            case .textureBarrier:
-                if !hasPerformedTextureBarrier {
-                    (encoder as! MTLRenderCommandEncoder).textureBarrier()
-                    hasPerformedTextureBarrier = true
-                }
-                
-            case .retainFence(let id):
-                resourceRegistry.retainFenceWithId(id)
-                
-            case .releaseFence(let id):
-                resourceRegistry.releaseFenceWithId(id, addToPoolImmediately: false)
-                
-            case .updateFence(let id, let afterStages):
-                if let (updatedFence, stages) = updatedFenceAndStage, stages == afterStages {
-                    resourceRegistry.remapFenceId(id, toExistingFenceWithId: updatedFence) // We can combine together multiple fences that update at the same time.
-                } else {
-                    let fence = self.resourceRegistry.fenceWithId(id) // Store happens after update, so isMultiframe can be safely passed as false here since it will be overriden later if necessary.
-                    encoder.updateFence(fence, afterStages: afterStages)
-                    updatedFenceAndStage = (id, afterStages)
-                }
-                
-            case .waitForFence(let id, let beforeStages):
-                let fence = self.resourceRegistry.fenceWithId(id)
-                encoder.waitForFence(fence, beforeStages: beforeStages)
-                
-            case .waitForMultiframeFence(let resource, let resourceType, let waitFence, let beforeStages):
-                if case .buffer = resourceType {
-                    let bufferRef = self.resourceRegistry[buffer: resource]!
-                    if case .write = waitFence, let fences = bufferRef.writeWaitFences {
-                        for fence in fences {
-                            encoder.waitForFence(fence, beforeStages: beforeStages)
-                        }
-                    } else if let fence = bufferRef.readWaitFence {
-                        encoder.waitForFence(fence, beforeStages: beforeStages)
-                    }
-                } else {
-                    let textureRef = self.resourceRegistry[textureReference: resource]!
-                    if case .write = waitFence, let fences = textureRef.writeWaitFences {
-                        for fence in fences {
-                            encoder.waitForFence(fence, beforeStages: beforeStages)
-                        }
-                    } else if let fence = textureRef.readWaitFence {
-                        encoder.waitForFence(fence, beforeStages: beforeStages)
-                    }
-                }
-                
-            case .releaseMultiframeFences(let resource, let resourceType):
-                
-                if case .buffer = resourceType {
-                    let bufferRef = self.resourceRegistry[buffer: resource]!
-                    bufferRef.writeWaitFences?.forEach {
-                        resourceRegistry.releaseFence($0, addToPoolImmediately: true)
-                    }
-                    bufferRef.writeWaitFences = nil
-                    bufferRef.readWaitFence.map { resourceRegistry.releaseFence($0, addToPoolImmediately: true) }
-                    bufferRef.readWaitFence = nil
-                } else {
-                    let textureRef = self.resourceRegistry[textureReference: resource]!
-                    textureRef.writeWaitFences?.forEach {
-                        resourceRegistry.releaseFence($0, addToPoolImmediately: true)
-                    }
-                    textureRef.writeWaitFences = nil
-                    textureRef.readWaitFence.map { resourceRegistry.releaseFence($0, addToPoolImmediately: true) }
-                    textureRef.readWaitFence = nil
-                }
-                
-                
-            case .storeMultiframeTexture(let texture, let readFence, let writeFences):
-                let textureRef = self.resourceRegistry[textureReference: texture]!
-                if let readFence = readFence {
-                    textureRef.readWaitFence = self.resourceRegistry.fenceWithId(readFence)
-                    self.resourceRegistry.retainFence(textureRef.readWaitFence!)
-                }
-                if let writeFences = writeFences {
-                    textureRef.writeWaitFences = writeFences.map { self.resourceRegistry.fenceWithId($0) }
-                    textureRef.writeWaitFences!.forEach { self.resourceRegistry.retainFence($0) }
-                }
-                
-                texture.markAsInitialised()
-                
-            case .storeMultiframeBuffer(let buffer, let readFence, let writeFences):
-                let bufferRef = self.resourceRegistry[buffer]!
-                if let readFence = readFence {
-                    bufferRef.readWaitFence = self.resourceRegistry.fenceWithId(readFence)
-                    self.resourceRegistry.retainFence(bufferRef.readWaitFence!)
-                }
-                if let writeFences = writeFences {
-                    bufferRef.writeWaitFences = writeFences.map { self.resourceRegistry.fenceWithId($0) }
-                    bufferRef.writeWaitFences!.forEach { self.resourceRegistry.retainFence($0) }
-                }
-                
-                buffer.markAsInitialised()
-                
-            case .useResource(let resource, let usage):
-                let mtlResource : MTLResource
-                
-                if let texture = resource.texture {
-                    mtlResource = self.resourceRegistry[texture]!
-                } else if let buffer = resource.buffer {
-                    mtlResource = self.resourceRegistry[buffer]!.buffer
-                } else {
-                    preconditionFailure()
-                }
-                
-                if let encoder = encoder as? MTLRenderCommandEncoder {
-                    encoder.useResource(mtlResource, usage: usage)
-                } else if let encoder = encoder as? MTLComputeCommandEncoder {
-                    encoder.useResource(mtlResource, usage: usage)
-                }
-            }
-        }
+        self.resourceRegistryPreFrameCommands.sort()
     }
     
     public func executeFrameGraph(passes: [RenderPassRecord], resourceUsages: ResourceUsages, commands: [FrameGraphCommand], completion: @escaping () -> Void) {
         defer { self.resourceRegistry.cycleFrames() }
         
-        let renderTargetDescriptors = self.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages)
-        self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors)
+        var storedTextures = [Texture]()
+        let renderTargetDescriptors = self.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+        self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors, storedTextures: storedTextures)
+        
+        for command in self.resourceRegistryPreFrameCommands {
+            command.command.execute(resourceRegistry: self.resourceRegistry)
+        }
+        self.resourceRegistryPreFrameCommands.removeAll(keepingCapacity: true)
+    
         
         let commandBuffer = self.commandQueue.makeCommandBuffer()!
         let encoderManager = EncoderManager(commandBuffer: commandBuffer, resourceRegistry: self.resourceRegistry)
         
-        self.resourceCommandIndex = 0
-        
-        let (passCommandEncoders, commandEncoderCount) = generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
-        var commandEncoderNames = [String](repeating: "", count: commandEncoderCount)
-        
-        var startIndex = 0
-        for i in 0..<commandEncoderCount {
-            let endIndex = passCommandEncoders[startIndex...].firstIndex(where: { $0 != i }) ?? passCommandEncoders.endIndex
-            
-            if endIndex - startIndex <= 3 {
-                let applicablePasses = passes[startIndex..<endIndex].lazy.map { $0.pass.name }.joined(separator: ", ")
-                commandEncoderNames[i] = applicablePasses
-            } else {
-                commandEncoderNames[i] = "[\(passes[startIndex].pass.name)...\(passes[endIndex - 1].pass.name)] (\(endIndex - startIndex) passes)"
-            }
-            startIndex = endIndex
-        }
+        let (passCommandEncoders, commandEncoderNames, _) = EncoderManager.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
         
         for (i, passRecord) in passes.enumerated() {
             switch passRecord.pass.passType {
             case .blit:
                 let commandEncoder = encoderManager.blitCommandEncoder()
-                if commandEncoder.label == nil {
-                    commandEncoder.label = commandEncoderNames[passCommandEncoders[i]]
+                if commandEncoder.encoder.label == nil {
+                    commandEncoder.encoder.label = commandEncoderNames[passCommandEncoders[i]]
                 }
                 
-                commandEncoder.pushDebugGroup(passRecord.pass.name)
-                
-                commandEncoder.executeCommands(commands[passRecord.commandRange!], resourceCheck: checkResourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
-                
-                commandEncoder.popDebugGroup()
+                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCommands: resourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
                 
             case .draw:
-                let commandEncoder = encoderManager.renderCommandEncoder(descriptor: renderTargetDescriptors[i]!, textureUsages: renderTargetTextureUsages)
+                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: renderTargetDescriptors[i]!, textureUsages: self.renderTargetTextureProperties, commands: commands, resourceCommands: resourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches) else {
+                    if _isDebugAssertConfiguration() {
+                        print("Warning: skipping pass \(passRecord.pass.name) since the drawable for the render target could not be retrieved.")
+                    }
+                    
+                    continue
+                }
                 if commandEncoder.label == nil {
                     commandEncoder.label = commandEncoderNames[passCommandEncoders[i]]
                 }
                 
-                commandEncoder.pushDebugGroup(passRecord.pass.name)
-                
-                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCheck: checkResourceCommands, renderTarget: renderTargetDescriptors[i]!.descriptor, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
-                
-                commandEncoder.popDebugGroup()                
+                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCommands: resourceCommands, renderTarget: renderTargetDescriptors[i]!.descriptor, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
             case .compute:
                 let commandEncoder = encoderManager.computeCommandEncoder()
-                if commandEncoder.label == nil {
-                    commandEncoder.label = commandEncoderNames[passCommandEncoders[i]]
+                if commandEncoder.encoder.label == nil {
+                    commandEncoder.encoder.label = commandEncoderNames[passCommandEncoders[i]]
                 }
                 
-                commandEncoder.pushDebugGroup(passRecord.pass.name)
+                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCommands: resourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
                 
-                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCheck: checkResourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
-                
-                commandEncoder.popDebugGroup()
+            case .external:
+                let commandEncoder = encoderManager.externalCommandEncoder()
+                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCommands: resourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
                 
             case .cpu:
                 break
             }
         }
         
-        assert(self.resourceCommandIndex == self.resourceCommands.count)
-
         encoderManager.endEncoding()
         
         for drawable in self.resourceRegistry.frameDrawables {
+            #if os(iOS)
+            commandBuffer.present(drawable, afterMinimumDuration: 1.0 / 60.0)
+            #else
             commandBuffer.present(drawable)
+            #endif
         }
         
         commandBuffer.addCompletedHandler { (commandBuffer) in
@@ -703,32 +604,10 @@ public final class MetalFrameGraph : FrameGraphBackend {
         self.resourceRegistry.frameGraphHasResourceAccess = false
         
         self.resourceCommands.removeAll(keepingCapacity: true)
-        self.renderTargetTextureUsages.removeAll(keepingCapacity: true)
+        
+        self.renderTargetTextureProperties.removeAll(keepingCapacity: true)
         for i in 0..<self.commandEncoderDependencies.count {
             self.commandEncoderDependencies[i].removeAll(keepingCapacity: true)
-        }
-    }
-}
-
-
-extension MTLCommandEncoder {
-    public func waitForFence(_ fence: MTLFence, beforeStages: MTLRenderStages?) {
-        if let encoder = self as? MTLRenderCommandEncoder {
-            encoder.wait(for: fence, before: beforeStages!)
-        } else if let encoder = self as? MTLComputeCommandEncoder {
-            encoder.waitForFence(fence)
-        } else {
-            (self as! MTLBlitCommandEncoder).waitForFence(fence)
-        }
-    }
-    
-    public func updateFence(_ fence: MTLFence, afterStages: MTLRenderStages?) {
-        if let encoder = self as? MTLRenderCommandEncoder {
-            encoder.update(fence, after: afterStages!)
-        } else if let encoder = self as? MTLComputeCommandEncoder {
-            encoder.updateFence(fence)
-        } else {
-            (self as! MTLBlitCommandEncoder).updateFence(fence)
         }
     }
 }

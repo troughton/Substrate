@@ -1,6 +1,6 @@
 import XCTest
-@testable import InterdimensionalLlamaTests
+@testable import SwiftFrameGraphTests
 
 XCTMain([
-     testCase(InterdimensionalLlamaTests.allTests),
+     testCase(SwiftFrameGraphTests.allTests),
 ])

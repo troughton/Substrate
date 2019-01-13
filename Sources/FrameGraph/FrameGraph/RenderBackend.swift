@@ -1,6 +1,6 @@
 //
 //  RenderBackend.swift
-//  Llama 402
+//  CGRA 402
 //
 //  Created by Thomas Roughton on 10/03/17.
 //  Copyright © 2017 Thomas Roughton. All rights reserved.
@@ -14,6 +14,12 @@ public protocol PipelineReflection {
     func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath
     func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection?
     func bindingIsActive(at path: ResourceBindingPath) -> Bool
+}
+
+extension PipelineReflection {
+    public func bindingIsActive(at path: ResourceBindingPath) -> Bool {
+        return self.argumentReflection(at: path)?.isActive ?? false
+    }
 }
 
 public protocol RenderBackendProtocol : class {
@@ -34,6 +40,8 @@ public protocol RenderBackendProtocol : class {
     func dispose(texture: Texture)
     func dispose(buffer: Buffer)
     func dispose(argumentBuffer: ArgumentBuffer)
+    
+    func backingResource(_ resource: Resource) -> Any?
     
     var isDepth24Stencil8PixelFormatSupported : Bool { get }
     var threadExecutionWidth : Int { get }
@@ -61,6 +69,9 @@ public struct _CachedRenderBackend {
     public var disposeTexture : (Texture) -> Void
     public var disposeBuffer : (Buffer) -> Void
     public var disposeArgumentBuffer : (ArgumentBuffer) -> Void
+    public var disposeArgumentBufferArray : (ArgumentBufferArray) -> Void
+    
+    public var backingResource : (Resource) -> Any?
     
     public var isDepth24Stencil8PixelFormatSupported : () -> Bool
     public var threadExecutionWidth : () -> Int
@@ -80,6 +91,8 @@ public struct _CachedRenderBackend {
                 disposeTexture: @escaping (Texture) -> Void,
                 disposeBuffer: @escaping (Buffer) -> Void,
                 disposeArgumentBuffer: @escaping (ArgumentBuffer) -> Void,
+                disposeArgumentBufferArray: @escaping (ArgumentBufferArray) -> Void,
+                backingResource: @escaping (Resource) -> Any?,
                 isDepth24Stencil8PixelFormatSupported: @escaping () -> Bool,
                 threadExecutionWidth: @escaping () -> Int,
                 renderDevice: @escaping () -> Any,
@@ -95,6 +108,8 @@ public struct _CachedRenderBackend {
         self.disposeTexture = disposeTexture
         self.disposeBuffer = disposeBuffer
         self.disposeArgumentBuffer = disposeArgumentBuffer
+        self.disposeArgumentBufferArray = disposeArgumentBufferArray
+        self.backingResource = backingResource
         self.isDepth24Stencil8PixelFormatSupported = isDepth24Stencil8PixelFormatSupported
         self.threadExecutionWidth = threadExecutionWidth
         self.renderDevice = renderDevice
@@ -108,10 +123,12 @@ public struct _CachedRenderBackend {
                                                                                bufferDidModifyRange: { _, _ in },
                                                                                replaceTextureRegion: { _, _, _, _, _ in },
                                                                                renderPipelineReflection: { _, _ in fatalError() },
-                                                                               computePipelineReflection: { _ in fatalError()},
+                                                                               computePipelineReflection: { _ in fatalError() },
                                                                                disposeTexture: { _ in },
                                                                                disposeBuffer: { _ in },
                                                                                disposeArgumentBuffer: { _ in },
+                                                                               disposeArgumentBufferArray: { _ in },
+                                                                               backingResource: { _ in fatalError() },
                                                                                isDepth24Stencil8PixelFormatSupported: { false },
                                                                                threadExecutionWidth: { 0 },
                                                                                renderDevice: { fatalError() },
@@ -166,6 +183,16 @@ public struct RenderBackend {
     @inlinable
     public static func dispose(argumentBuffer: ArgumentBuffer) {
         return _cachedBackend.disposeArgumentBuffer(argumentBuffer)
+    }
+    
+    @inlinable
+    public static func dispose(argumentBufferArray: ArgumentBufferArray) {
+        return _cachedBackend.disposeArgumentBufferArray(argumentBufferArray)
+    }
+    
+    @inlinable
+    public static func backingResource<R : ResourceProtocol>(_ resource: R) -> Any? {
+        return _cachedBackend.backingResource(Resource(resource))
     }
     
     @inlinable

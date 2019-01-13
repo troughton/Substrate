@@ -5,8 +5,7 @@
 //  Created by Thomas Roughton on 6/03/18.
 //
 
-import RenderAPI
-import FrameGraph
+import SwiftFrameGraph
 import CVkRenderer
 
 final class ResourceBindingManager {
@@ -68,7 +67,7 @@ final class ResourceBindingManager {
         }
         
         
-        func setBuffer(bindingPath: ResourceBindingPath, handle: ObjectIdentifier, offset: UInt32, hasDynamicOffsets: Bool) {
+        func setBuffer(bindingPath: ResourceBindingPath, handle: Buffer.Handle, offset: UInt32, hasDynamicOffsets: Bool) {
             let buffer = bindingManager.resourceRegistry[buffer: handle]!
             self.setBuffer(bindingPath: bindingPath, buffer: buffer, offset: offset, hasDynamicOffsets: hasDynamicOffsets)
         }
@@ -130,7 +129,7 @@ final class ResourceBindingManager {
             self.dynamicOffsets[offsetInOffsets] = offset
         }
         
-        func setTexture(bindingPath: ResourceBindingPath, handle: ObjectIdentifier) {
+        func setTexture(bindingPath: ResourceBindingPath, handle: Texture.Handle) {
             self.needsRebind = true
             
             let bindingPath = VulkanResourceBindingPath(bindingPath)
@@ -210,7 +209,7 @@ final class ResourceBindingManager {
         return self.encoder.resourceRegistry
     }
     
-    var pipelineReflection : PipelineReflection {
+    var pipelineReflection : VulkanPipelineReflection {
         return self.encoder.pipelineReflection
     }
     
@@ -263,7 +262,7 @@ final class ResourceBindingManager {
         }
     }
     
-    private func setBuffer(bindingPath: ResourceBindingPath, handle: ObjectIdentifier, offset: UInt32, hasDynamicOffsets: Bool) {
+    private func setBuffer(bindingPath: ResourceBindingPath, handle: Buffer.Handle, offset: UInt32, hasDynamicOffsets: Bool) {
         let vkBindingPath = VulkanResourceBindingPath(bindingPath)
         self.managerForSet(vkBindingPath.set).setBuffer(bindingPath: bindingPath, handle: handle, offset: offset, hasDynamicOffsets: hasDynamicOffsets)
     }
@@ -273,12 +272,12 @@ final class ResourceBindingManager {
         self.managerForSet(vkBindingPath.set).setBuffer(bindingPath: bindingPath, buffer: buffer, offset: offset, hasDynamicOffsets: hasDynamicOffsets)
     }
     
-    private func setBufferOffset(bindingPath: ResourceBindingPath, handle: ObjectIdentifier, offset: UInt32) {
+    private func setBufferOffset(bindingPath: ResourceBindingPath, handle: Buffer.Handle, offset: UInt32) {
         let vkBindingPath = VulkanResourceBindingPath(bindingPath)
         self.managerForSet(vkBindingPath.set).setBufferOffset(bindingPath: bindingPath, offset: offset)
     }
     
-    private func setTexture(bindingPath: ResourceBindingPath, handle: ObjectIdentifier) {
+    private func setTexture(bindingPath: ResourceBindingPath, handle: Texture.Handle) {
         let vkBindingPath = VulkanResourceBindingPath(bindingPath)
         self.managerForSet(vkBindingPath.set).setTexture(bindingPath: bindingPath, handle: handle)
     }

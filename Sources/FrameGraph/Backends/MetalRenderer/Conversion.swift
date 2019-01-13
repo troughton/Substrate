@@ -21,6 +21,12 @@ extension ResourceType {
             self = .texture
         case .threadgroupMemory:
             self = .threadgroupMemory
+            #if os(iOS)
+        case .imageblockData:
+            self = .imageblockData
+        case .imageblock:
+            self = .imageblock
+            #endif
         }
     }
 }
@@ -255,7 +261,11 @@ extension MTLResourceOptions {
         case .shared:
             self.formUnion(.storageModeShared)
         case .managed:
+            #if os(macOS)
             self.formUnion(.storageModeManaged)
+            #else
+            self.formUnion(.storageModeShared)
+            #endif
         case .private:
             self.formUnion(.storageModePrivate)
         }
@@ -277,11 +287,13 @@ extension MTLSamplerAddressMode {
     }
 }
 
+#if os(macOS)
 extension MTLSamplerBorderColor {
     init(_ color: SamplerBorderColor) {
         self.init(rawValue: color.rawValue)!
     }
 }
+#endif
 
 extension MTLSamplerMinMagFilter {
     init(_ filter: SamplerMinMagFilter) {
@@ -319,7 +331,11 @@ extension MTLStorageMode {
         case .shared:
             self = .shared
         case .managed:
+        #if os(macOS)
             self = .managed
+        #else
+            self = .shared
+        #endif
         case .private:
             self = .private
         }

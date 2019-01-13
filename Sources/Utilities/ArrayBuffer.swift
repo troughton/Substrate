@@ -1,6 +1,6 @@
 //
 //  ReferenceArray.swift
-//  InterdimensionalLlama
+//  SwiftFrameGraph
 //
 //  Created by Thomas Roughton on 5/04/17.
 //
@@ -8,18 +8,15 @@
 
 import Swift
 
-public extension Array {
+extension Array {
     @discardableResult
-    mutating func remove(at index: Index, preservingOrder: Bool) -> Element {
+    @inlinable
+    public mutating func remove(at index: Index, preservingOrder: Bool) -> Element {
         if preservingOrder {
             return self.remove(at: index)
         } else {
-            let last = self.removeLast()
-            let value = index == self.count ? last : self[index]
-            if index != self.count {
-                self[index] = last
-            }
-            return value
+            self.swapAt(index, self.count - 1)
+            return self.removeLast()
         }
     }
 }
@@ -283,11 +280,15 @@ public extension ExpandingBuffer where Element == UInt8 {
         }
     }
     
+    /// - returns: The index at which the bytes were appended
     @inlinable
-    public func withStorageForAppendingBytes(count: Int, _ closure: (UnsafeMutablePointer<Element>) throws -> Void) rethrows {
-        self.resize(capacity: self.count + count)
-        try closure(self.buffer.advanced(by: self.count))
-        self.count += count
+    public func withStorageForAppendingBytes(count: Int, alignment: Int, _ closure: (UnsafeMutablePointer<Element>) throws -> Void) rethrows -> Int {
+        let alignedInsertionPosition = self.count.roundedUpToMultiple(of: alignment)
+        self.resize(capacity: alignedInsertionPosition + count)
+        try closure(self.buffer.advanced(by: alignedInsertionPosition))
+        self.count = alignedInsertionPosition + count
+        
+        return alignedInsertionPosition
     }
 }
 

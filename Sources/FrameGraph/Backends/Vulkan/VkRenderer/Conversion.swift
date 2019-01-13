@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 8/01/18.
 //
 
-import RenderAPI
+import SwiftFrameGraph
 import CVkRenderer
 import Utilities
 
@@ -129,7 +129,7 @@ extension PixelFormat {
         case VK_FORMAT_B8G8R8A8_UNORM:
             self = .bgra8Unorm
         case VK_FORMAT_B8G8R8A8_SRGB:
-            self = .bgra8Unorm_srgb
+            self = .bgra8Unorm_sRGB
         default:
             fatalError("Unimplemented format conversion.")
         }
@@ -170,7 +170,7 @@ extension VkRect2D {
 extension VkViewport {
     init(_ viewport: Viewport) {
         // Flip the Y coordinate to match Metal.
-        self.init(x: Float(viewport.originX), y: Float(viewport.height) - Float(viewport.originY), width: Float(viewport.width), height: -Float(viewport.height), minDepth: Float(viewport.znear), maxDepth: Float(viewport.zfar))
+        self.init(x: Float(viewport.originX), y: Float(viewport.height) - Float(viewport.originY), width: Float(viewport.width), height: -Float(viewport.height), minDepth: Float(viewport.zNear), maxDepth: Float(viewport.zFar))
     }
 }
 
@@ -722,7 +722,7 @@ extension VkFormat {
         switch pixelFormat {
         case .invalid:
             self = VK_FORMAT_UNDEFINED
-        case .bgra8Unorm_srgb:
+        case .bgra8Unorm_sRGB:
             self = VK_FORMAT_B8G8R8A8_SRGB
         case .bgra8Unorm:
             self = VK_FORMAT_B8G8R8A8_UNORM

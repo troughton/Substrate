@@ -1,6 +1,6 @@
 //
 //  VertexDescriptor.swift
-//  InterdimensionalLlama
+//  SwiftFrameGraph
 //
 //  Created by Thomas Roughton on 7/04/17.
 //
@@ -27,9 +27,6 @@ public struct VertexAttributeDescriptor : Hashable {
     public var bufferIndex: Int = 0
 }
 
-/*
- VertexDescriptor
- */
 public struct VertexDescriptor : Hashable {
     
     public init() {

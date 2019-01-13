@@ -2,7 +2,7 @@
 /.build
 /.vs
 /.vscode
-InterdimensionalLlama.xcodeproj
+SwiftFrameGraph.xcodeproj
 *.xcuserstate
 xcuserdata/
 /Package.resolved

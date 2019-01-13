@@ -22,6 +22,7 @@ final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
     }
     
     let device : MTLDevice
+    
     private var buffers : [[ResourceReference<MTLBufferReference>]]
     private var textures : [[ResourceReference<MTLTextureReference>]]
     
@@ -30,6 +31,9 @@ final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
     
     let numFrames : Int
     private var currentIndex : Int = 0
+    
+    var fenceRetainFunc : ((MTLFenceType) -> Void)? = nil // Never used.
+    var fenceReleaseFunc : ((MTLFenceType) -> Void)! = nil // Used whenever a resource is disposed after being inactive for a few frames.
     
     init(device: MTLDevice, numFrames: Int) {
         self.numFrames = numFrames
@@ -110,8 +114,14 @@ final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
             while i < self.buffers[self.currentIndex].count {
                 self.buffers[self.currentIndex][i].framesUnused += 1
                 
-                if self.buffers[self.currentIndex][i].framesUnused > 2 {
-                    self.buffers[self.currentIndex].remove(at: i, preservingOrder: false)
+                if self.buffers[self.currentIndex][i].framesUnused > 5 {
+                    let buffer = self.buffers[self.currentIndex].remove(at: i, preservingOrder: false)
+                    for fence in buffer.resource.usageFences.readWaitFences {
+                        fenceReleaseFunc(fence)
+                    }
+                    for fence in buffer.resource.usageFences.writeWaitFences {
+                        fenceReleaseFunc(fence)
+                    }
                 } else {
                     i += 1
                 }
@@ -126,8 +136,14 @@ final class PoolResourceAllocator : BufferAllocator, TextureAllocator {
             while i < self.textures[self.currentIndex].count {
                 self.textures[self.currentIndex][i].framesUnused += 1
                 
-                if self.textures[self.currentIndex][i].framesUnused > 2 {
-                    self.textures[self.currentIndex].remove(at: i, preservingOrder: false)
+                if self.textures[self.currentIndex][i].framesUnused > 5 {
+                    let texture = self.textures[self.currentIndex].remove(at: i, preservingOrder: false)
+                    for fence in texture.resource.usageFences.readWaitFences {
+                        fenceReleaseFunc(fence)
+                    }
+                    for fence in texture.resource.usageFences.writeWaitFences {
+                        fenceReleaseFunc(fence)
+                    }
                 } else {
                     i += 1
                 }

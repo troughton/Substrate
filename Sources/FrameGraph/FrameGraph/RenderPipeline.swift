@@ -1,6 +1,6 @@
 //
 //  RenderPipelineDescriptor.swift
-//  InterdimensionalLlama
+//  SwiftFrameGraph
 //
 //  Created by Thomas Roughton on 7/04/17.
 //
@@ -40,6 +40,14 @@ public struct BlendDescriptor : Hashable {
 
 public protocol RenderTargetIdentifier : RawRepresentable where RawValue == Int {
     static var count : Int { get }
+}
+
+public enum DisplayRenderTargetIndex : Int, CaseIterable, RenderTargetIdentifier {
+    case display
+    
+    public static var count: Int {
+        return DisplayRenderTargetIndex.allCases.count
+    }
 }
 
 public struct RenderPipelineDescriptor : Hashable {

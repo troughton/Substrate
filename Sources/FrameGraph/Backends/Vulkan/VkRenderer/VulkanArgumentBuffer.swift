@@ -6,7 +6,7 @@
 //
 
 import CVkRenderer
-import RenderAPI
+import SwiftFrameGraph
 
 // TODO: this will need to change to accomodate immutable samplers.
 
@@ -18,7 +18,7 @@ final class VulkanArgumentBuffer {
     private var images = [VulkanImage]()
     private var buffers = [VulkanBuffer]()
     
-    public init(arguments: ArgumentBuffer, bindingPath: VulkanResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: PipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    public init(arguments: ArgumentBuffer, bindingPath: VulkanResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         self.device = commandBufferResources.device
 
         let layout = pipelineReflection.descriptorSetLayout(set: bindingPath.set, dynamicBuffers: []).vkLayout
@@ -41,7 +41,7 @@ final class VulkanArgumentBuffer {
         }
     }
     
-    func encodeArguments(from buffer: ArgumentBuffer, pipelineReflection: PipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    func encodeArguments(from buffer: ArgumentBuffer, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         var descriptorWrites = [VkWriteDescriptorSet]()
 
         let bufferInfoSentinel = UnsafePointer<VkDescriptorBufferInfo>(bitPattern: 0x10)
@@ -108,7 +108,7 @@ final class VulkanArgumentBuffer {
                 imageInfos.append(imageInfo)
 
             case .bytes(let offset, let length):
-                let bytes = buffer.bytes(offset: offset)
+                let bytes = buffer._bytes(offset: offset)
                 
                 assert(self.isTransient)
                 

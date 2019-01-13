@@ -6,8 +6,7 @@
 //
 
 import CVkRenderer
-import RenderAPI
-import FrameGraph
+import SwiftFrameGraph
 
 enum MergeResult {
     case incompatible
@@ -65,8 +64,8 @@ final class VulkanRenderTargetDescriptor {
     var subpasses = [VulkanSubpass]()
     private(set) var dependencies = [VkSubpassDependency]()
     
-    var initialLayouts = [ObjectIdentifier : VkImageLayout]()
-    var finalLayouts = [ObjectIdentifier : VkImageLayout]()
+    var initialLayouts = [Texture : VkImageLayout]()
+    var finalLayouts = [Texture : VkImageLayout]()
     
     init(renderPass: RenderPassRecord) {
         let drawRenderPass = renderPass.pass as! DrawRenderPass
@@ -220,23 +219,23 @@ final class VulkanRenderTargetDescriptor {
         let renderPassRange = Range(self.renderPasses.first!.passIndex...self.renderPasses.last!.passIndex)
         assert(renderPassRange.count == self.renderPasses.count)
 
-        let usages = resourceUsages[usagesFor: attachment.texture]
+        let usages = attachment.texture.usages
         var usageIterator = usages.makeIterator()
-        var isFirstUsage = !attachment.texture.flags.contains(.initialised)
+        var isFirstUsage = !attachment.texture.stateFlags.contains(.initialised)
         var isLastUsage = attachment.texture.flags.intersection([.persistent, .windowHandle]) == [] && 
-                          !(attachment.texture.flags.contains(.historyBuffer) && !attachment.texture.flags.contains(.initialised))
+                          !(attachment.texture.flags.contains(.historyBuffer) && !attachment.texture.stateFlags.contains(.initialised))
         var currentRenderPassIndex = renderPassRange.lowerBound
         
         var isFirstLocalUsage = true
         
         while let usage = usageIterator.next() {
-            if !usage.renderPass.isActive { continue }
+            if !usage.renderPassRecord.isActive { continue }
             
-            if usage.renderPass.passIndex < renderPassRange.lowerBound {
+            if usage.renderPassRecord.passIndex < renderPassRange.lowerBound {
                 isFirstUsage = false
                 continue
             }
-            if usage.renderPass.passIndex >= renderPassRange.upperBound {
+            if usage.renderPassRecord.passIndex >= renderPassRange.upperBound {
                 if usage.isRead || (usage.type.isRenderTarget && isDepthStencil) {
                     // Using a depth texture as an attachment also implies reading from it.
                     isLastUsage = false
@@ -246,11 +245,11 @@ final class VulkanRenderTargetDescriptor {
                 }
             }
             
-            let usageSubpass = self.subpassForPassIndex(usage.renderPass.passIndex)
+            let usageSubpass = self.subpassForPassIndex(usage.renderPassRecord.passIndex)
 
             while self.subpassForPassIndex(currentRenderPassIndex)!.index < usageSubpass!.index {
                 if isFirstLocalUsage {
-                    currentRenderPassIndex = usage.renderPass.passIndex
+                    currentRenderPassIndex = usage.renderPassRecord.passIndex
                     isFirstLocalUsage = false
                 } else {
                     self.subpasses[currentRenderPassIndex - renderPassRange.lowerBound].preserve(attachmentIndex: attachmentIndex)
@@ -264,7 +263,7 @@ final class VulkanRenderTargetDescriptor {
                 if usage.type == .readWrite {
                     print("Warning: reading from a storage image that is also a render target attachment.")
                 }
-                self.subpasses[usage.renderPass.passIndex - renderPassRange.lowerBound].readFrom(attachmentIndex: attachmentIndex)
+                self.subpasses[usage.renderPassRecord.passIndex - renderPassRange.lowerBound].readFrom(attachmentIndex: attachmentIndex)
             }
 
         }

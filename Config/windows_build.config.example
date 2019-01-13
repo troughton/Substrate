@@ -4,5 +4,5 @@ TOOLCHAIN_BIN_DIR="/home/{USERNAME}/swift-windows-toolchain/usr/bin"
 
 VULKAN_SDK="/mnt/c/VulkanSDK"
 
-MSVC="/mnt/c/Users/{USERNAME}/Documents/InterdimensionalLlama/Other/MSVC"
-WINDOWS_KIT="/mnt/c/Users/{USERNAME}/Documents/InterdimensionalLlama/Other/Windows Kits/10"
+MSVC="/mnt/c/Users/{USERNAME}/Documents/SwiftFrameGraph/Other/MSVC"
+WINDOWS_KIT="/mnt/c/Users/{USERNAME}/Documents/SwiftFrameGraph/Other/Windows Kits/10"

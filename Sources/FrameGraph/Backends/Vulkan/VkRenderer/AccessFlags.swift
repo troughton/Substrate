@@ -1,4 +1,4 @@
-import RenderAPI
+import SwiftFrameGraph
 import CVkRenderer
 
 public extension ResourceUsageType {

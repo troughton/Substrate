@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 9/01/18.
 //
 
-import RenderAPI
+import SwiftFrameGraph
 import CVkRenderer
 
 final class StateCaches {
@@ -21,7 +21,7 @@ final class StateCaches {
     private var vertexInputStates = [VertexDescriptor : VertexInputStateCreateInfo]()
     private var functionSpecialisationStates = [AnyFunctionConstants : SpecialisationInfo]()
     private var samplers = [SamplerDescriptor : VkSampler]()
-    private var currentPipelineReflection : PipelineReflection? = nil
+    private var currentPipelineReflection : VulkanPipelineReflection? = nil
     private var renderPipelines = [RenderPipelineCacheKey : VkPipeline?]()
     private var computePipelines = [VulkanComputePipelineDescriptor : VkPipeline?]()
     
@@ -51,7 +51,7 @@ final class StateCaches {
                      renderPass renderPass: VulkanRenderPass, 
                      subpass subpass: UInt32,
                      renderTargetDescriptor renderTargetDescriptor: RenderTargetDescriptor,
-                     pipelineReflection pipelineReflection: PipelineReflection) -> VkPipeline? {
+                     pipelineReflection pipelineReflection: VulkanPipelineReflection) -> VkPipeline? {
         let cacheKey = RenderPipelineCacheKey(pipelineDescriptor: pipelineDescriptor, renderTargetDescriptor: renderTargetDescriptor)
         if let pipeline = self.renderPipelines[cacheKey] {
             return pipeline
@@ -68,7 +68,7 @@ final class StateCaches {
         return pipeline
     }
 
-    public subscript(pipelineDescriptor: VulkanComputePipelineDescriptor, pipelineReflection pipelineReflection: PipelineReflection) -> VkPipeline? {
+    public subscript(pipelineDescriptor: VulkanComputePipelineDescriptor, pipelineReflection pipelineReflection: VulkanPipelineReflection) -> VkPipeline? {
         if let pipeline = self.computePipelines[pipelineDescriptor] {
             return pipeline
         }
@@ -86,7 +86,7 @@ final class StateCaches {
     }
 
 
-    public subscript(functionConstants: AnyFunctionConstants?, pipelineReflection pipelineReflection: PipelineReflection) -> SpecialisationInfo? {
+    public subscript(functionConstants: AnyFunctionConstants?, pipelineReflection pipelineReflection: VulkanPipelineReflection) -> SpecialisationInfo? {
         guard let functionConstants = functionConstants else {
             return nil
         }
@@ -138,55 +138,12 @@ final class StateCaches {
         return sampler!
     }
     
-    public func setReflectionRenderPipeline(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) {
-        self.currentPipelineReflection = self.shaderLibrary.reflection(for: .graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction))
+    public func reflection(for descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> VulkanPipelineReflection {
+        return self.shaderLibrary.reflection(for: .graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction))
     }
     
-    public func setReflectionComputePipeline(descriptor: ComputePipelineDescriptor) {
-        self.currentPipelineReflection = self.shaderLibrary.reflection(for: .compute(descriptor.function))
-    }
-    
-    public func bindingPath(argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
-        for resource in self.currentPipelineReflection!.resources.values {
-            if resource.name == argumentName {
-                var bindingPath = resource.bindingPath
-                bindingPath.arrayIndex = UInt32(arrayIndex)
-                return ResourceBindingPath(bindingPath)
-            }
-        }
-        return nil
-    }
-
-    public func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String) -> ResourceBindingPath? {
-        
-        // NOTE: There's currently no error checking that the argument buffer contents
-        // aren't spread across multiple sets.
-
-        if let (firstBoundPath, _) = argumentBuffer.bindings.first {
-            let vulkanPath = VulkanResourceBindingPath(firstBoundPath)
-            return ResourceBindingPath(
-                VulkanResourceBindingPath(argumentBuffer: vulkanPath.set)
-            )
-        }
-
-        for (pendingKey, _, _) in argumentBuffer.enqueuedBindings {
-            if let path = pendingKey.computedBindingPath {
-                let vulkanPath = VulkanResourceBindingPath(path)
-                return ResourceBindingPath(
-                    VulkanResourceBindingPath(argumentBuffer: vulkanPath.set)
-                )
-            }
-        }
-
-        return nil
-    }
-    
-    public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
-        let vulkanPath = VulkanResourceBindingPath(path)
-        if let resource = self.currentPipelineReflection!.resources[vulkanPath] {
-            return ArgumentReflection(resource)
-        }
-        return nil
+    public func reflection(for descriptor: ComputePipelineDescriptor) -> VulkanPipelineReflection {
+        return self.shaderLibrary.reflection(for: .compute(descriptor.function))
     }
 }
 

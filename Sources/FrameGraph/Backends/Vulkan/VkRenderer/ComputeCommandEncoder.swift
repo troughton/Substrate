@@ -5,8 +5,7 @@
 //  Created by Thomas Roughton on 8/01/18.
 //
 
-import RenderAPI
-import FrameGraph
+import SwiftFrameGraph
 import CVkRenderer
 import Utilities
 
@@ -15,7 +14,7 @@ struct VulkanComputePipelineDescriptor : Hashable {
     var layout : VkPipelineLayout
     var threadsPerThreadgroup : Size 
 
-    func withVulkanPipelineCreateInfo(pipelineReflection: PipelineReflection, stateCaches: StateCaches, _ withInfo: (inout VkComputePipelineCreateInfo) -> Void) {
+    func withVulkanPipelineCreateInfo(pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches, _ withInfo: (inout VkComputePipelineCreateInfo) -> Void) {
         let specialisationInfo = stateCaches[self.descriptor.functionConstants, pipelineReflection: pipelineReflection] // TODO: also pass in threadsPerThreadgroup.
         let specialisationInfoPtr = specialisationInfo == nil ? nil : escapingPointer(to: &specialisationInfo!.info)
 
@@ -75,7 +74,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             return _layout
         }
         
-        var pipelineReflection : PipelineReflection! = nil
+        var pipelineReflection : VulkanPipelineReflection! = nil
         
         var threadsPerThreadgroup : Size = Size(width: 0, height: 0, depth: 0) {
             didSet {
@@ -126,7 +125,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
         return self.pipelineState.layout
     }
     
-    var pipelineReflection: PipelineReflection {
+    var pipelineReflection: VulkanPipelineReflection {
         return self.pipelineState.pipelineReflection
     }
     
@@ -171,7 +170,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             let bindingPath = args.pointee.bindingPath
             let vkBindingPath = VulkanResourceBindingPath(bindingPath)
             
-            let argumentBuffer = args.pointee.argumentBuffer.takeUnretainedValue()
+            let argumentBuffer = args.pointee.argumentBuffer
             let vkArgumentBuffer = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, 
                                                                                     bindingPath: vkBindingPath, 
                                                                                     commandBufferResources: self.commandBufferResources, 

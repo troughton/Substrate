@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 15/01/18.
 //
 
-import RenderAPI
+import SwiftFrameGraph
 import CVkRenderer
 
 struct ResourceSemaphore {

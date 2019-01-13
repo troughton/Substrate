@@ -5,8 +5,7 @@
 //  Created by Thomas Roughton on 8/01/18.
 //
 
-import RenderAPI
-import FrameGraph
+import SwiftFrameGraph
 import CVkRenderer
 
 class VulkanBlitCommandEncoder : VulkanCommandEncoder {
