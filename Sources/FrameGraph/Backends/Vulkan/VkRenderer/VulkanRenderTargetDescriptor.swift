@@ -271,7 +271,7 @@ final class VulkanRenderTargetDescriptor {
         var loadAction : VkAttachmentLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE
         if attachment.wantsClear {
             loadAction = VK_ATTACHMENT_LOAD_OP_CLEAR
-        } else if !isFirstUsage {
+        } else if !isFirstUsage && !attachment.fullyOverwritesContents {
             loadAction = VK_ATTACHMENT_LOAD_OP_LOAD
         }
         

@@ -169,7 +169,7 @@ final class MetalRenderTargetDescriptor {
         var loadAction : MTLLoadAction = .dontCare
         if attachment.wantsClear {
             loadAction = .clear
-        } else if !isFirstUsage {
+        } else if !isFirstUsage && !attachment.fullyOverwritesContents {
             loadAction = .load
         }
         

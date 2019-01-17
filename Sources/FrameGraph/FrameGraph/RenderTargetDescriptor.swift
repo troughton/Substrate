@@ -18,6 +18,10 @@ public protocol RenderTargetAttachmentDescriptor {
     var depthPlane: Int { get set }
     
     var wantsClear : Bool { get }
+    
+    /// If true, this texture's previous contents will not be loaded,
+    /// and will be overwritten when the attachment is stored.
+    var fullyOverwritesContents : Bool { get set }
 }
 
 public struct RenderTargetColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
@@ -39,6 +43,10 @@ public struct RenderTargetColorAttachmentDescriptor : RenderTargetAttachmentDesc
     
     /// The color to clear this attachment to.
     public var clearColor : ClearColor? = nil
+    
+    /// If true, this texture's previous contents will not be loaded,
+    /// and will be overwritten when the attachment is stored.
+    public var fullyOverwritesContents : Bool = false
     
     public var wantsClear: Bool {
         return self.clearColor != nil
@@ -65,6 +73,10 @@ public struct RenderTargetDepthAttachmentDescriptor : RenderTargetAttachmentDesc
     /// The depth to clear this attachment to.
     public var clearDepth : Double? = nil
     
+    /// If true, this texture's previous contents will not be loaded,
+    /// and will be overwritten when the attachment is stored.
+    public var fullyOverwritesContents : Bool = false
+    
     public var wantsClear : Bool {
         return self.clearDepth != nil
     }
@@ -89,6 +101,10 @@ public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDe
     
     /// The stencil value to clear this attachment to.
     public var clearStencil : UInt32? = nil
+    
+    /// If true, this texture's previous contents will not be loaded,
+    /// and will be overwritten when the attachment is stored.
+    public var fullyOverwritesContents : Bool = false
     
     public var wantsClear : Bool {
         return self.clearStencil != nil
