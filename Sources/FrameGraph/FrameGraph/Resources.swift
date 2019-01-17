@@ -886,7 +886,7 @@ public struct Texture : ResourceProtocol {
         PersistentTextureRegistry.instance.dispose(self)
     }
     
-    public static let invalid = Texture(descriptor: TextureDescriptor.texture2DDescriptor(pixelFormat: .r32Float, width: 1, height: 1, mipmapped: false, usageHint: .shaderRead), flags: .persistent)
+    public static let invalid = Texture(descriptor: TextureDescriptor(texture2DWithFormat: .r32Float, width: 1, height: 1, mipmapped: false, usageHint: .shaderRead), flags: .persistent)
     
 }
 

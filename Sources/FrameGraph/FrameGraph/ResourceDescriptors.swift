@@ -72,7 +72,7 @@ public struct TextureDescriptor {
         
     }
 
-    public static func texture2DDescriptor(pixelFormat: PixelFormat, width: Int, height: Int, mipmapped: Bool, usageHint: TextureUsage = []) -> TextureDescriptor {
+    public init(texture2DWithFormat pixelFormat: PixelFormat, width: Int, height: Int, mipmapped: Bool, usageHint: TextureUsage = []) {
         var descriptor = TextureDescriptor()
         descriptor.pixelFormat = pixelFormat
         descriptor.textureType = .type2D
@@ -80,17 +80,17 @@ public struct TextureDescriptor {
         descriptor.height = height
         descriptor.mipmapLevelCount = mipmapped ? 1 + Int(floor(log2(Double(max(width, height))))) : 1
         descriptor.usageHint = usageHint
-        return descriptor
+        self = descriptor
     }
     
-    public static func textureCubeDescriptor(pixelFormat: PixelFormat, size: Int, mipmapped: Bool) -> TextureDescriptor {
+    public init(textureCubeWithFormat pixelFormat: PixelFormat, size: Int, mipmapped: Bool) {
         var descriptor = TextureDescriptor()
         descriptor.pixelFormat = pixelFormat
         descriptor.textureType = .typeCube
         descriptor.width = size
         descriptor.height = size
         descriptor.mipmapLevelCount = mipmapped ? 1 + Int(floor(log2(Double(size)))) : 1
-        return descriptor
+        self = descriptor
     }
     
     public var textureType: TextureType = .type2D
