@@ -370,7 +370,11 @@ public final class MetalFrameGraph : FrameGraphBackend {
             
             let historyBufferUseFrame = resource.flags.contains(.historyBuffer) && resource.stateFlags.contains(.initialised)
             
+            #if os(iOS)
             var canBeMemoryless = false
+            #else
+            let canBeMemoryless = false
+            #endif
             
             // Insert commands to materialise and dispose of the resource.
             if !resource.flags.contains(.persistent) || resource.flags.contains(.windowHandle) {
