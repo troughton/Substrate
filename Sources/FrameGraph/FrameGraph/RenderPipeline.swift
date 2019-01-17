@@ -43,17 +43,13 @@ public protocol RenderTargetIdentifier : RawRepresentable where RawValue == Int 
 }
 
 extension RenderTargetIdentifier where Self : CaseIterable {
-    static var count : Int {
+    public static var count : Int {
         return self.allCases.count
     }
 }
 
 public enum DisplayRenderTargetIndex : Int, CaseIterable, RenderTargetIdentifier {
     case display
-    
-    public static var count: Int {
-        return DisplayRenderTargetIndex.allCases.count
-    }
 }
 
 public struct RenderPipelineDescriptor : Hashable {
