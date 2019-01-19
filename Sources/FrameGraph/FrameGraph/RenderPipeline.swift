@@ -53,7 +53,7 @@ public enum DisplayRenderTargetIndex : Int, CaseIterable, RenderTargetIdentifier
 }
 
 public struct RenderPipelineDescriptor : Hashable {
-    public init<I : RenderTargetIdentifier>(identifier: I.Type) {
+    public init<I : RenderTargetIdentifier>(identifierType: I.Type) {
         self.blendStates = [BlendDescriptor?](repeating: nil, count: I.count)
         self.writeMasks = [ColorWriteMask](repeating: .all, count: I.count)
     }
