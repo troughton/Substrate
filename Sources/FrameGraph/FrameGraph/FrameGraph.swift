@@ -468,7 +468,9 @@ public class FrameGraph {
                     // Also set each producing pass to be dependent on all previous passes, since the relative ordering of writes matters.
                     // The producingPasses list is guaranteed to be ordered.
                     for priorRead in priorReads where usagePassIndex != priorRead {
-                        dependencyTable.setDependency(from: usagePassIndex, on: priorRead, to: .ordering)
+                        if dependencyTable.dependency(from: usagePassIndex, on: priorRead) != .execution {
+                            dependencyTable.setDependency(from: usagePassIndex, on: priorRead, to: .ordering)
+                        }
                     }
                     
                     producingPasses.append(usagePassIndex)
@@ -485,7 +487,9 @@ public class FrameGraph {
             // The producingPasses list is guaranteed to be ordered.
             for (i, pass) in producingPasses.enumerated() {
                 for dependentPass in producingPasses[(i + 1)...] where dependentPass != pass {
-                    dependencyTable.setDependency(from: dependentPass, on: pass, to: .ordering)
+                    if dependencyTable.dependency(from: dependentPass, on: pass) != .execution {
+                        dependencyTable.setDependency(from: dependentPass, on: pass, to: .ordering)
+                    }
                 }
             }
             
