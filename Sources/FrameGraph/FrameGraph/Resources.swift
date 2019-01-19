@@ -81,6 +81,12 @@ public struct ResourceFlags : OptionSet {
     public static let immutableOnceInitialised = ResourceFlags(rawValue: 1 << 4)
 }
 
+extension ResourceFlags {
+    /// If this resource is a view into another resource.
+    @usableFromInline
+    static let resourceView = ResourceFlags(rawValue: 1 << 5)
+}
+
 @_fixed_layout
 public struct ResourceStateFlags : OptionSet {
     public let rawValue: UInt16
@@ -163,6 +169,52 @@ public struct Resource : ResourceProtocol, Hashable {
         } else {
             return nil
         }
+    }
+    
+    public static let invalidResource = Resource(existingHandle: .max)
+}
+
+extension Resource : CustomHashable {
+    public var customHashValue : Int {
+        return self.hashValue
+    }
+}
+
+extension ResourceProtocol {
+    public typealias Handle = UInt64
+    
+    @inlinable
+    public var type : ResourceType {
+        return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle >> 48)).unsafelyUnwrapped
+    }
+    
+    @inlinable
+    public var index : Int {
+        return Int(truncatingIfNeeded: self.handle & 0x1FFFFFFF) // The lower 29 bits contain the index
+    }
+    
+    @inlinable
+    public var flags : ResourceFlags {
+        return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: (self.handle >> 32) & 0xFFFF))
+    }
+    
+    @inlinable
+    public var _usesPersistentRegistry : Bool {
+        if self.flags.contains(.persistent) || self.flags.contains(.historyBuffer) {
+            return true
+        } else {
+            return false
+        }
+    }
+    
+    @inlinable
+    public func markAsInitialised() {
+        self.stateFlags.formUnion(.initialised)
+    }
+    
+    @inlinable
+    public func discardContents() {
+        self.stateFlags.remove(.initialised)
     }
     
     @inlinable
@@ -324,6 +376,18 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
+    public var baseResource: Resource? {
+        get {
+            switch self.type {
+            case .texture:
+                return Texture(existingHandle: self.handle).baseResource
+            default:
+                return nil
+            }
+        }
+    }
+    
+    @inlinable
     public func dispose() {
         switch self.type {
         case .buffer:
@@ -338,105 +402,29 @@ public struct Resource : ResourceProtocol, Hashable {
             break
         }
     }
-}
-
-extension Resource : CustomHashable {
-    public var customHashValue : Int {
-        return self.hashValue
-    }
-}
-
-extension ResourceProtocol {
-    public typealias Handle = UInt64
     
     @inlinable
-    public var type : ResourceType {
-        return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle >> 48)).unsafelyUnwrapped
-    }
-    
-    @inlinable
-    public var index : Int {
-        return Int(truncatingIfNeeded: self.handle & 0x1FFFFFFF) // The lower 29 bits contain the index
-    }
-    
-    @inlinable
-    public var flags : ResourceFlags {
-        return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: (self.handle >> 32) & 0xFFFF))
-    }
-    
-    @inlinable
-    public var _usesPersistentRegistry : Bool {
-        if self.flags.contains(.persistent) || self.flags.contains(.historyBuffer) {
-            return true
-        } else {
-            return false
-        }
-    }
-    
-    @inlinable
-    public func markAsInitialised() {
-        self.stateFlags.formUnion(.initialised)
-    }
-    
-    @inlinable
-    public func discardContents() {
-        self.stateFlags.remove(.initialised)
-    }
-    
-    @inlinable
-    public var readWaitFrame : UInt64 {
-        get {
-            return Resource(existingHandle: self.handle).readWaitFrame
-        }
-        nonmutating set {
-             Resource(existingHandle: self.handle).readWaitFrame = newValue
-        }
-    }
-    
-    @inlinable
-    public var writeWaitFrame : UInt64 {
-        get {
-            return Resource(existingHandle: self.handle).writeWaitFrame
-        }
-        nonmutating set {
-            Resource(existingHandle: self.handle).writeWaitFrame = newValue
-        }
-    }
-    
-    @inlinable
-    public var usages : ResourceUsagesList {
-        get {
-            return Resource(existingHandle: self.handle).usages
-        }
-    }
-
-    @inlinable
-    internal var usagesPointer : UnsafeMutablePointer<ResourceUsagesList> {
-        get {
-            return Resource(existingHandle: self.handle).usagesPointer
-        }
-    }
-    
-    @inlinable
-    public var label : String? {
-        get {
-            return Resource(existingHandle: self.handle).label
-        }
-        nonmutating set {
-            Resource(existingHandle: self.handle).label = newValue
-        }
-    }
-    
-    @inlinable
-    public var storageMode : StorageMode {
-        get {
-            return Resource(existingHandle: self.handle).storageMode
-        }
+    public var isTextureView : Bool {
+        return self.flags.contains(.resourceView)
     }
 }
 
 @_fixed_layout
 public struct Buffer : ResourceProtocol {
+    @_fixed_layout
+    public struct TextureViewDescriptor {
+        public var descriptor : TextureDescriptor
+        public var offset : Int
+        public var bytesPerRow : Int
+        
+        @inlinable
+        public init(descriptor: TextureDescriptor, offset: Int, bytesPerRow: Int) {
+            self.descriptor = descriptor
+            self.offset = offset
+            self.bytesPerRow = bytesPerRow
+        }
+    }
+    
     public let handle : Handle
     
     @inlinable
@@ -689,6 +677,22 @@ public struct Buffer : ResourceProtocol {
 
 @_fixed_layout
 public struct Texture : ResourceProtocol {
+    @_fixed_layout
+    public struct TextureViewDescriptor {
+        public var pixelFormat: PixelFormat
+        public var textureType: TextureType
+        public var levels: Range<Int>
+        public var slices: Range<Int>
+        
+        @inlinable
+        public init(pixelFormat: PixelFormat, textureType: TextureType, levels: Range<Int> = -1..<0, slices: Range<Int> = -1..<0) {
+            self.pixelFormat = pixelFormat
+            self.textureType = textureType
+            self.levels = levels
+            self.slices = slices
+        }
+    }
+    
     public let handle : Handle
     
     @inlinable
@@ -711,6 +715,22 @@ public struct Texture : ResourceProtocol {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
             RenderBackend.materialisePersistentTexture(self)
         }
+    }
+    
+    @inlinable
+    public init(viewOf base: Texture, descriptor: TextureViewDescriptor) {
+        let flags : ResourceFlags = .resourceView
+        
+        let index = TransientTextureRegistry.instance.allocate(descriptor: descriptor, baseResource: base)
+        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.texture.rawValue) << 48)
+    }
+    
+    @inlinable
+    public init(viewOf base: Buffer, descriptor: Buffer.TextureViewDescriptor) {
+        let flags : ResourceFlags = .resourceView
+    
+        let index = TransientTextureRegistry.instance.allocate(descriptor: descriptor, baseResource: base)
+        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.texture.rawValue) << 48)
     }
     
     @inlinable
@@ -861,7 +881,7 @@ public struct Texture : ResourceProtocol {
             if self._usesPersistentRegistry {
                 return PersistentTextureRegistry.instance.usages[index]
             } else {
-                return TransientTextureRegistry.instance.usages[index]
+                return self.baseResource?.usages ?? TransientTextureRegistry.instance.usages[index]
             }
         }
     }
@@ -873,8 +893,30 @@ public struct Texture : ResourceProtocol {
             if self._usesPersistentRegistry {
                 return PersistentTextureRegistry.instance.usages.advanced(by: index)
             } else {
-                return TransientTextureRegistry.instance.usages.advanced(by: index)
+                return self.baseResource?.usagesPointer ?? TransientTextureRegistry.instance.usages.advanced(by: index)
             }
+        }
+    }
+    
+    @inlinable
+    public var baseResource : Resource? {
+        get {
+            let index = self.index
+            if !self.isTextureView {
+                return nil
+            } else {
+                return TransientTextureRegistry.instance.baseResources[index]
+            }
+        }
+    }
+    
+    @inlinable
+    public var textureViewBaseInfo : TextureViewBaseInfo? {
+        let index = self.index
+        if !self.isTextureView {
+            return nil
+        } else {
+            return TransientTextureRegistry.instance.textureViewInfos[index]
         }
     }
     

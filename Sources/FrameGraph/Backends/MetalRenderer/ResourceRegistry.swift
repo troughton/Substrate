@@ -315,6 +315,10 @@ final class ResourceRegistry {
             return false
         }
         
+        if resource.isTextureView {
+            return false // We only need wait fences on its base resource.
+        }
+        
         // All non-private resources are multiple buffered and so don't need wait fences.
         return (storageMode == .private && size > self.smallAllocationThreshold) || flags.intersection([.persistent, .historyBuffer]) != []
     }
@@ -332,6 +336,7 @@ final class ResourceRegistry {
         #if os(iOS)
         if properties.canBeMemoryless {
             descriptor.storageMode = .memoryless
+            descriptor.resourceOptions.formUnion(.storageModeMemoryless)
         }
         #endif
         
@@ -341,6 +346,34 @@ final class ResourceRegistry {
         assert(self.textureReferences[texture.handle] == nil)
         self.textureReferences[texture.handle] = mtlTexture
         return mtlTexture.texture
+    }
+    
+    @discardableResult
+    public func allocateTextureView(_ texture: Texture, properties: TextureUsageProperties) -> MTLTexture? {
+        assert(!texture.flags.contains(.windowHandle))
+        assert(!texture.flags.contains(.persistent))
+        
+        let mtlTexture : MTLTexture
+        
+        let baseResource = texture.baseResource!
+        switch texture.textureViewBaseInfo! {
+        case .buffer(let bufferInfo):
+            let mtlBuffer = self[buffer: baseResource.handle]!
+            let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: properties.usage)
+            mtlTexture = mtlBuffer.resource.makeTexture(descriptor: descriptor, offset: bufferInfo.offset, bytesPerRow: bufferInfo.bytesPerRow)!
+        case .texture(let textureInfo):
+            let baseTexture = self[texture: baseResource.handle]!
+            if textureInfo.levels.lowerBound == -1 || textureInfo.slices.lowerBound == -1 {
+                assert(textureInfo.levels.lowerBound == -1 && textureInfo.slices.lowerBound == -1)
+                mtlTexture = baseTexture.makeTextureView(pixelFormat: MTLPixelFormat(textureInfo.pixelFormat))!
+            } else {
+                mtlTexture = baseTexture.makeTextureView(pixelFormat: MTLPixelFormat(textureInfo.pixelFormat), textureType: MTLTextureType(textureInfo.textureType), levels: textureInfo.levels, slices: textureInfo.slices)!
+            }
+        }
+        
+        assert(self.textureReferences[texture.handle] == nil)
+        self.textureReferences[texture.handle] = MTLTextureReference(texture: mtlTexture)
+        return mtlTexture
     }
     
     @discardableResult
@@ -384,7 +417,11 @@ final class ResourceRegistry {
     @discardableResult
     public func allocateBuffer(_ buffer: Buffer) -> MTLBufferReference {
         let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)
-        let mtlBuffer = allocator.collectBufferWithLength(buffer.descriptor.length, options: MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode))
+        var options = MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode)
+        if buffer.descriptor.usageHint.contains(.textureView) {
+            options.remove(.hazardTrackingModeUntracked) // FIXME: workaround for a bug in Metal where setting hazardTrackingModeUntracked on a MTLTextureDescriptor doesn't stick
+        }
+        let mtlBuffer = allocator.collectBufferWithLength(buffer.descriptor.length, options: options)
         
         assert(self.bufferReferences[buffer.handle] == nil)
         self.bufferReferences[buffer.handle] = mtlBuffer

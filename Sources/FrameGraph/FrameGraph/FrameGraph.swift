@@ -443,6 +443,8 @@ public class FrameGraph {
         }
         
         for resource in self.threadResourceUsages[0].resources where resource.type == .buffer || resource.type == .texture {
+            if resource.isTextureView { continue } // Skip over the non-canonical versions of resources.
+            
             resource.usagesPointer.reverse() // Since the usages list is constructed in reverse order.
             
             assert(resource._usesPersistentRegistry || (resource.handle >> 29) & 0b111 == expectedFrame, "Transient resource is being used in a frame after it was allocated.")

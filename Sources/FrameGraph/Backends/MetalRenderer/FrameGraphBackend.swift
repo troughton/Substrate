@@ -18,6 +18,7 @@ enum ResourceCommands {
     // These commands mutate the ResourceRegistry and should be executed before render pass execution:
     case materialiseBuffer(Buffer)
     case materialiseTexture(Texture, usage: TextureUsageProperties)
+    case materialiseTextureView(Texture, usage: TextureUsageProperties)
     case disposeResource(Resource.Handle)
     
     case retainFence(MTLFenceType)
@@ -59,6 +60,9 @@ enum ResourceCommands {
             
         case .materialiseTexture(let texture, let usage):
             resourceRegistry.allocateTextureIfNeeded(texture, usage: usage)
+            
+        case .materialiseTextureView(let texture, let usage):
+            resourceRegistry.allocateTextureView(texture, properties: usage)
             
         case .retainFence(let fence):
             resourceRegistry.retainFence(fence)
@@ -408,6 +412,10 @@ public final class MetalFrameGraph : FrameGraphBackend {
                         }
                     }
                     
+                    if texture.descriptor.usageHint.contains(.pixelFormatView) {
+                        textureUsage.formUnion(.pixelFormatView)
+                    }
+                    
                     #if os(iOS)
                     canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
                         && textureUsage == .renderTarget
@@ -422,7 +430,11 @@ public final class MetalFrameGraph : FrameGraphBackend {
                     }
                     
                     if !historyBufferUseFrame {
-                        self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .materialiseTexture(texture, usage: properties), index: firstUsage.commandRange.lowerBound, order: .before))
+                        if texture.isTextureView {
+                            self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .materialiseTextureView(texture, usage: properties), index: firstUsage.commandRange.lowerBound, order: .before))
+                        } else {
+                            self.resourceRegistryPreFrameCommands.append(ResourceCommand(command: .materialiseTexture(texture, usage: properties), index: firstUsage.commandRange.lowerBound, order: .before))
+                        }
                     }
                     
                     if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised) {
@@ -571,7 +583,7 @@ public final class MetalFrameGraph : FrameGraphBackend {
                     commandEncoder.label = commandEncoderNames[passCommandEncoders[i]]
                 }
                 
-                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCommands: resourceCommands, renderTarget: renderTargetDescriptors[i]!.descriptor, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCommands: resourceCommands, renderTarget: renderTargetDescriptors[i]!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
             case .compute:
                 let commandEncoder = encoderManager.computeCommandEncoder()
                 if commandEncoder.encoder.label == nil {

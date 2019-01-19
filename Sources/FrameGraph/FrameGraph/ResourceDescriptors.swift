@@ -64,6 +64,8 @@ public struct BufferUsage : OptionSet {
     public static let vertexBuffer = BufferUsage(rawValue: 32)
     
     public static let indirectBuffer = BufferUsage(rawValue: 64)
+    
+    public static let textureView = BufferUsage(rawValue: 128)
 }
 
 public struct TextureDescriptor {

@@ -160,6 +160,11 @@ public protocol TextureRegistry {
     var descriptors : UnsafeMutablePointer<TextureDescriptor> { get }
 }
 
+public enum TextureViewBaseInfo {
+    case buffer(Buffer.TextureViewDescriptor)
+    case texture(Texture.TextureViewDescriptor)
+}
+
 @_fixed_layout
 public final class TransientTextureRegistry : TextureRegistry {
     public static let instance = TransientTextureRegistry()
@@ -171,11 +176,15 @@ public final class TransientTextureRegistry : TextureRegistry {
     public var usages : UnsafeMutablePointer<ResourceUsagesList>
     
     public var labels : UnsafeMutablePointer<String?>
+    public var baseResources : UnsafeMutablePointer<Resource>
+    public var textureViewInfos : UnsafeMutablePointer<TextureViewBaseInfo?>
     
     public init() {
         self.descriptors = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.labels = UnsafeMutablePointer.allocate(capacity: self.capacity)
+        self.baseResources = UnsafeMutablePointer.allocate(capacity: self.capacity)
+        self.textureViewInfos = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.count.initialize(0)
     }
     
@@ -188,6 +197,52 @@ public final class TransientTextureRegistry : TextureRegistry {
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.usages.advanced(by: index).initialize(to: ResourceUsagesList())
         self.labels.advanced(by: index).initialize(to: nil)
+        self.baseResources.advanced(by: index).initialize(to: Resource.invalidResource)
+        self.textureViewInfos.advanced(by: index).initialize(to: nil)
+        
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+    }
+    
+    @inlinable
+    public func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) -> UInt64 {
+        let index = self.count.increment()
+        self.ensureCapacity(index + 1)
+        assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
+        
+        self.descriptors.advanced(by: index).initialize(to: descriptor.descriptor)
+        self.usages.advanced(by: index).initialize(to: ResourceUsagesList())
+        self.labels.advanced(by: index).initialize(to: nil)
+        self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
+        self.textureViewInfos.advanced(by: index).initialize(to: .buffer(descriptor))
+        
+        baseResource.descriptor.usageHint.formUnion(.textureView)
+        
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+    }
+    
+    @inlinable
+    public func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) -> UInt64 {
+        let index = self.count.increment()
+        self.ensureCapacity(index + 1)
+        assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
+        
+        var descriptor = baseResource.descriptor
+        descriptor.pixelFormat = viewDescriptor.pixelFormat
+        descriptor.textureType = viewDescriptor.textureType
+        if viewDescriptor.slices.lowerBound != -1 {
+            descriptor.arrayLength = viewDescriptor.slices.count
+        }
+        if viewDescriptor.levels.lowerBound != -1 {
+            descriptor.mipmapLevelCount = viewDescriptor.levels.count
+        }
+        
+        baseResource.descriptor.usageHint.formUnion(.pixelFormatView)
+        
+        self.descriptors.advanced(by: index).initialize(to: descriptor)
+        self.usages.advanced(by: index).initialize(to:  ResourceUsagesList())
+        self.labels.advanced(by: index).initialize(to: nil)
+        self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
+        self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
         
         return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
     }
@@ -203,6 +258,8 @@ public final class TransientTextureRegistry : TextureRegistry {
         self.descriptors.deinitialize(count: count)
         self.usages.deinitialize(count: count)
         self.labels.deinitialize(count: count)
+        self.baseResources.deinitialize(count: count)
+        self.textureViewInfos.deinitialize(count: count)
     }
 }
 
