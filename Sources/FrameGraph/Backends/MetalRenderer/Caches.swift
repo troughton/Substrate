@@ -37,6 +37,7 @@ final class StateCaches {
     
     private var renderStates = [RenderPipelineFunctionNames : [(MetalRenderPipelineDescriptor, MTLRenderPipelineState, MetalPipelineReflection)]]()
     
+    let defaultDepthState : MTLDepthStencilState
     private var depthStates = [(DepthStencilDescriptor, MTLDepthStencilState)]()
     private var samplerStates = [(SamplerDescriptor, MTLSamplerState)]()
     
@@ -49,6 +50,11 @@ final class StateCaches {
         } else {
             self.library = device.makeDefaultLibrary()!
         }
+        
+        let defaultDepthDescriptor = DepthStencilDescriptor()
+        let mtlDescriptor = MTLDepthStencilDescriptor(defaultDepthDescriptor)
+        self.defaultDepthState = self.device.makeDepthStencilState(descriptor: mtlDescriptor)!
+        self.depthStates.append((defaultDepthDescriptor, defaultDepthState))
     }
     
     func function(named name: String, functionConstants: AnyFunctionConstants?) -> MTLFunction {

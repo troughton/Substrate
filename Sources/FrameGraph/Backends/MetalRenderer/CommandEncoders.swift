@@ -94,7 +94,7 @@ final class EncoderManager {
                 return nil
             }
             
-            let renderEncoder : FGMTLRenderCommandEncoder = EncoderManager.useParallelEncoding ? FGMTLParallelRenderCommandEncoder(encoder: commandBuffer.makeParallelRenderCommandEncoder(descriptor: mtlDescriptor)!) : FGMTLThreadRenderCommandEncoder(encoder: commandBuffer.makeRenderCommandEncoder(descriptor: mtlDescriptor)!)
+            let renderEncoder : FGMTLRenderCommandEncoder = EncoderManager.useParallelEncoding ? FGMTLParallelRenderCommandEncoder(encoder: commandBuffer.makeParallelRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor) : FGMTLThreadRenderCommandEncoder(encoder: commandBuffer.makeRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor)
             self.renderEncoder = renderEncoder
             return renderEncoder
         }
@@ -272,7 +272,7 @@ extension FGMTLCommandEncoder {
 
 protocol FGMTLRenderCommandEncoder : class {
     var label : String? { get set }
-    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches)
+    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches)
     func endEncoding()
 }
 
@@ -280,12 +280,14 @@ public final class FGMTLParallelRenderCommandEncoder : FGMTLRenderCommandEncoder
     static let commandCountThreshold = Int.max // 512
     
     let parallelEncoder: MTLParallelRenderCommandEncoder
+    let renderPassDescriptor : MTLRenderPassDescriptor
     
     let dispatchGroup = DispatchGroup()
     var currentEncoder : FGMTLRenderCommandEncoder? = nil
     
-    init(encoder: MTLParallelRenderCommandEncoder) {
+    init(encoder: MTLParallelRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor) {
         self.parallelEncoder = encoder
+        self.renderPassDescriptor = renderPassDescriptor
     }
     
     var label: String? {
@@ -297,15 +299,15 @@ public final class FGMTLParallelRenderCommandEncoder : FGMTLRenderCommandEncoder
         }
     }
     
-    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         if commands.count < FGMTLParallelRenderCommandEncoder.commandCountThreshold {
             if let currentEncoder = currentEncoder {
-                currentEncoder.executePass(commands: commands, resourceCommands: resourceCommands, renderTarget: renderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                currentEncoder.executePass(commands: commands, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
             } else {
                 let encoder = self.parallelEncoder.makeRenderCommandEncoder()!
-                let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder)
+                let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor)
                 
-                fgEncoder.executePass(commands: commands, resourceCommands: resourceCommands, renderTarget: renderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                fgEncoder.executePass(commands: commands, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
                 
                 self.currentEncoder = fgEncoder
             }
@@ -316,10 +318,10 @@ public final class FGMTLParallelRenderCommandEncoder : FGMTLRenderCommandEncoder
             self.currentEncoder = nil
             
             let encoder = self.parallelEncoder.makeRenderCommandEncoder()!
-            let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder)
+            let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor)
             
             DispatchQueue.global().async(group: self.dispatchGroup) {
-                fgEncoder.executePass(commands: commands, resourceCommands: resourceCommands, renderTarget: renderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                fgEncoder.executePass(commands: commands, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
                 fgEncoder.endEncoding()
             }
         }
@@ -347,14 +349,16 @@ public final class FGMTLThreadRenderCommandEncoder : FGMTLCommandEncoder, FGMTLR
         }
     }
     
+    let renderPassDescriptor : MTLRenderPassDescriptor
     var pipelineDescriptor : RenderPipelineDescriptor? = nil
     var baseBufferOffsets = [BufferOffsetKey : Int]()
     
     var updatedFences = Set<ObjectIdentifier>()
     var waitedOnFences = Set<FenceWaitKey>()
     
-    init(encoder: MTLRenderCommandEncoder) {
+    init(encoder: MTLRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor) {
         self.encoder = encoder
+        self.renderPassDescriptor = renderPassDescriptor
     }
     
     var label: String? {
@@ -366,8 +370,12 @@ public final class FGMTLThreadRenderCommandEncoder : FGMTLCommandEncoder, FGMTLR
         }
     }
     
-    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < commands.startIndex }
+        
+        if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
+            encoder.setDepthStencilState(stateCaches.defaultDepthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
+        }
         
         for (i, command) in zip(commands.indices, commands) {
             self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceRegistry: resourceRegistry, encoder: encoder)

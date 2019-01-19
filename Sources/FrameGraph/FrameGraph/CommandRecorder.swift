@@ -1223,6 +1223,11 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
     }
     
     public func setDepthStencilDescriptor(_ descriptor: DepthStencilDescriptor?) {
+        guard self.drawRenderPass.renderTargetDescriptor.depthAttachment != nil ||
+            self.drawRenderPass.renderTargetDescriptor.stencilAttachment != nil else {
+                return
+        }
+        
         self.depthStencilDescriptor = descriptor
         
         let box = Unmanaged.passRetained(ReferenceBox(descriptor))
