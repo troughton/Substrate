@@ -272,7 +272,7 @@ extension FGMTLCommandEncoder {
 
 protocol FGMTLRenderCommandEncoder : class {
     var label : String? { get set }
-    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches)
+    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: _RenderTargetDescriptor, passRenderTarget: _RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches)
     func endEncoding()
 }
 
@@ -299,7 +299,7 @@ public final class FGMTLParallelRenderCommandEncoder : FGMTLRenderCommandEncoder
         }
     }
     
-    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: _RenderTargetDescriptor, passRenderTarget: _RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         if commands.count < FGMTLParallelRenderCommandEncoder.commandCountThreshold {
             if let currentEncoder = currentEncoder {
                 currentEncoder.executePass(commands: commands, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
@@ -350,7 +350,7 @@ public final class FGMTLThreadRenderCommandEncoder : FGMTLCommandEncoder, FGMTLR
     }
     
     let renderPassDescriptor : MTLRenderPassDescriptor
-    var pipelineDescriptor : RenderPipelineDescriptor? = nil
+    var pipelineDescriptor : _RenderPipelineDescriptor? = nil
     var baseBufferOffsets = [BufferOffsetKey : Int]()
     
     var updatedFences = Set<ObjectIdentifier>()
@@ -370,7 +370,7 @@ public final class FGMTLThreadRenderCommandEncoder : FGMTLCommandEncoder, FGMTLR
         }
     }
     
-    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    func executePass(commands: ArraySlice<FrameGraphCommand>, resourceCommands: [ResourceCommand], renderTarget: _RenderTargetDescriptor, passRenderTarget: _RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < commands.startIndex }
         
         if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
@@ -388,7 +388,7 @@ public final class FGMTLThreadRenderCommandEncoder : FGMTLCommandEncoder, FGMTLR
         self.encoder.endEncoding()
     }
     
-    func executeCommand(_ command: FrameGraphCommand, encoder: MTLRenderCommandEncoder, renderTarget: RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    func executeCommand(_ command: FrameGraphCommand, encoder: MTLRenderCommandEncoder, renderTarget: _RenderTargetDescriptor, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         switch command {
         case .clearRenderTargets:
             break
@@ -544,12 +544,7 @@ public final class FGMTLThreadRenderCommandEncoder : FGMTLCommandEncoder, FGMTLR
             encoder.setTriangleFillMode(MTLTriangleFillMode(fillMode))
             
         case .setDepthStencilDescriptor(let descriptorPtr):
-            let state : MTLDepthStencilState?
-            if let descriptor = descriptorPtr.takeUnretainedValue().value {
-                state = stateCaches[descriptor]
-            } else {
-                state = nil
-            }
+            let state = stateCaches[descriptorPtr.takeUnretainedValue().value]
             encoder.setDepthStencilState(state)
             
         case .setScissorRect(let scissorPtr):
@@ -642,7 +637,7 @@ public final class FGMTLComputeCommandEncoder : FGMTLCommandEncoder {
             
             let argumentBuffer = args.pointee.argumentBuffer
             let mtlArgumentBuffer = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, bindingPath: bindingPath, encoder: { () -> MTLArgumentEncoder in
-                return stateCaches.argumentEncoder(atIndex: mtlBindingPath.bindIndex, functionName: self.pipelineDescriptor!.function, functionConstants: self.pipelineDescriptor!.functionConstants)
+                return stateCaches.argumentEncoder(atIndex: mtlBindingPath.bindIndex, functionName: self.pipelineDescriptor!.function, functionConstants: self.pipelineDescriptor!._functionConstants)
             }, stateCaches: stateCaches)
             
             encoder.setBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
@@ -653,7 +648,7 @@ public final class FGMTLComputeCommandEncoder : FGMTLCommandEncoder {
             
             let argumentBuffer = args.pointee.argumentBuffer
             let mtlArgumentBuffer = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer, bindingPath: bindingPath, encoder: { () -> MTLArgumentEncoder in
-                return stateCaches.argumentEncoder(atIndex: mtlBindingPath.bindIndex, functionName: self.pipelineDescriptor!.function, functionConstants: self.pipelineDescriptor!.functionConstants)
+                return stateCaches.argumentEncoder(atIndex: mtlBindingPath.bindIndex, functionName: self.pipelineDescriptor!.function, functionConstants: self.pipelineDescriptor!._functionConstants)
             }, stateCaches: stateCaches)
             
             encoder.setBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)

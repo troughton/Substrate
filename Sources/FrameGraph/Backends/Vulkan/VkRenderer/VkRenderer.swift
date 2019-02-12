@@ -44,6 +44,7 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
             bufferContents: { [self] (buffer, range) in self.bufferContents(for: buffer, range: range) },
             bufferDidModifyRange: { [self] (buffer, range) in self.buffer(buffer, didModifyRange: range) },
             replaceTextureRegion: { [self] (texture, region, mipmapLevel, bytes, bytesPerRow) in self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow) },
+            replaceTextureRegionForSlice: { [self] (texture, region, mipmapLevel, slice, bytes, bytesPerRow, bytesPerImage) in self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow) },
             renderPipelineReflection: { [self] (pipeline, renderTarget) in self.renderPipelineReflection(descriptor: pipeline, renderTarget: renderTarget) },
             computePipelineReflection: { [self] (pipeline) in self.computePipelineReflection(descriptor: pipeline) },
             disposeTexture: { [self] texture in self.dispose(texture: texture) },
@@ -83,8 +84,12 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
         self.resourceRegistry.buffer(buffer, didModifyRange: range)
     }
     
+    public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
+        fatalError("replaceTextureRegion is unimplemented.")
+    }
+    
     public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        fatalError()
+        fatalError("replaceTextureRegion is unimplemented.")
     }
     
     public func dispose(texture: Texture) {
@@ -95,11 +100,11 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
         self.resourceRegistry.disposeBuffer(buffer)
     }
 
-    public func dispose(argumentBuffer: ArgumentBuffer) {
+    public func dispose(argumentBuffer: _ArgumentBuffer) {
         self.resourceRegistry.disposeArgumentBuffer(argumentBuffer)
     }
 
-    public func dispose(argumentBufferArray: ArgumentBufferArray) {
+    public func dispose(argumentBufferArray: _ArgumentBufferArray) {
         self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray)
     }
 
@@ -127,7 +132,7 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
         self.frameGraph.executeFrameGraph(passes: passes, resourceUsages: resourceUsages, commands: commands, completion: completion)
     }
     
-    public func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection {
+    public func renderPipelineReflection(descriptor: _RenderPipelineDescriptor, renderTarget: _RenderTargetDescriptor) -> PipelineReflection {
         return self.frameGraph.stateCaches.reflection(for: descriptor, renderTarget: renderTarget)
     }
     

@@ -13,7 +13,6 @@ import SwiftMath
 import CDebugDrawTools
 import Utilities
 
-
 final class DebugDrawPass : DrawRenderPass {
     
     static let vertexDescriptor : VertexDescriptor = {
@@ -65,8 +64,8 @@ final class DebugDrawPass : DrawRenderPass {
         return depthStencilDescriptor
     }()
     
-    static let pipelineDescriptor : RenderPipelineDescriptor = {
-        var descriptor = RenderPipelineDescriptor(identifier: DisplayRenderTargetIndex.self)
+    static let pipelineDescriptor : RenderPipelineDescriptor<DisplayRenderTargetIndex> = {
+        var descriptor = RenderPipelineDescriptor<DisplayRenderTargetIndex>()
         
         var blendDescriptor = BlendDescriptor()
         
@@ -77,7 +76,7 @@ final class DebugDrawPass : DrawRenderPass {
         blendDescriptor.destinationRGBBlendFactor = .oneMinusSourceAlpha
         blendDescriptor.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         
-        descriptor[blendStateFor: DisplayRenderTargetIndex.display] = blendDescriptor
+        descriptor[blendStateFor: .display] = blendDescriptor
         
         descriptor.vertexDescriptor = DebugDrawPass.vertexDescriptor
         
@@ -88,14 +87,14 @@ final class DebugDrawPass : DrawRenderPass {
     }()
     
     
-    let renderTargetDescriptor: RenderTargetDescriptor
+    let renderTargetDescriptor: RenderTargetDescriptor<DisplayRenderTargetIndex>
     
     var name: String = "Debug Draw"
     
     let drawData : DebugDraw.DrawData
     let projectionMatrix: Matrix4x4f
     
-    init(drawData: DebugDraw.DrawData, projectionMatrix: Matrix4x4f, renderTargetDescriptor: RenderTargetDescriptor) {
+    init(drawData: DebugDraw.DrawData, projectionMatrix: Matrix4x4f, renderTargetDescriptor: RenderTargetDescriptor<DisplayRenderTargetIndex>) {
         self.drawData = drawData
         self.projectionMatrix = projectionMatrix
         self.renderTargetDescriptor = renderTargetDescriptor
@@ -123,7 +122,9 @@ final class DebugDrawPass : DrawRenderPass {
         var bufferOffset = 0
         // Non-points
         do {
-            rce.setDepthStencilDescriptor(DebugDrawPass.depthStencilWithDepth)
+            if self.renderTargetDescriptor.depthAttachment != nil {
+                rce.setDepthStencilDescriptor(DebugDrawPass.depthStencilWithDepth)
+            }
             self.drawData.depthEnabledData.drawNonPoints(encoder: rce, buffer: bufferSlice, bufferOffset: &bufferOffset)
             
             rce.setDepthStencilDescriptor(DebugDrawPass.depthStencilNoDepth)

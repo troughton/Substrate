@@ -19,10 +19,6 @@ public let RenderMaxInflightFrames = 3
 
 public final class Renderer {
     
-    struct MainRenderTarget {
-        var descriptor : RenderTargetDescriptor
-    }
-    
     static var backend : FrameGraphBackend! = nil
     
     public let renderStartedSemaphore = DispatchSemaphore(value: 0)
@@ -59,12 +55,12 @@ public final class Renderer {
         
         defer { Allocator.frameCompleted(frame) }
         
-        var destinationRenderTargets = [Texture : RenderTargetDescriptor]()
+        var destinationRenderTargets = [Texture : _RenderTargetDescriptor]()
         
         for renderRequest in renderRequests {
             
             let renderTexture : Texture
-            var renderTargetDescriptor : RenderTargetDescriptor
+            var renderTargetDescriptor : _RenderTargetDescriptor
             switch renderRequest.destination {
             case .window(let window):
                 renderTexture = window.texture
@@ -72,7 +68,7 @@ public final class Renderer {
                     let clearPass = ClearRenderTargetPass(outputTexture: window.texture)
                     FrameGraph.addPass(clearPass)
                     
-                    var descriptor = clearPass.renderTargetDescriptor
+                    var descriptor = clearPass.renderTargetDescriptor._descriptor
                     for i in 0..<descriptor.colorAttachments.count {
                         descriptor.colorAttachments[i]?.clearColor = nil
                     }
@@ -83,9 +79,9 @@ public final class Renderer {
                 renderTexture = texture
                 
                 renderTargetDescriptor = destinationRenderTargets[renderTexture] ?? {
-                    var descriptor = RenderTargetDescriptor(identifierType: DisplayRenderTargetIndex.self)
-                    descriptor[DisplayRenderTargetIndex.display] = RenderTargetColorAttachmentDescriptor(texture: texture)
-                    return descriptor
+                    var descriptor = RenderTargetDescriptor<DisplayRenderTargetIndex>()
+                    descriptor[.display] = RenderTargetColorAttachmentDescriptor(texture: texture)
+                    return descriptor._descriptor
                     }()
             }
             
@@ -98,10 +94,10 @@ public final class Renderer {
             
             switch renderRequest.source {
             case let .imgui(imguiData):
-                let imguiPass = ImGuiPass(renderer: self, renderData: imguiData, renderTargetDescriptor: renderTargetDescriptor)
+                let imguiPass = ImGuiPass(renderer: self, renderData: imguiData, renderTargetDescriptor: RenderTargetDescriptor(renderTargetDescriptor))
                 _ = FrameGraph.addPass(imguiPass)
             case let .texture(texture, isToneMapped):
-                let hdrResolvePass = BlitColorRegionPass(inputTexture: texture, scissorRect: scissor, renderTargetDescriptor: renderTargetDescriptor)
+                let hdrResolvePass = BlitColorRegionPass(inputTexture: texture, scissorRect: scissor, renderTargetDescriptor: RenderTargetDescriptor<DisplayRenderTargetIndex>(renderTargetDescriptor))
                 _ = FrameGraph.addPass(hdrResolvePass)
             case let .frameGraphPass(function):
                 function()

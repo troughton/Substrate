@@ -25,7 +25,7 @@ struct DynamicStateCreateInfo {
 }
 
 struct VulkanRenderPipelineDescriptor : Hashable {
-    var descriptor : RenderPipelineDescriptor
+    var descriptor : _RenderPipelineDescriptor
     var depthStencil : DepthStencilDescriptor?
     var primitiveType: PrimitiveType
     var cullMode : CullMode
@@ -33,7 +33,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
     var frontFaceWinding : Winding
     var layout : VkPipelineLayout
 
-    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, subpass: UInt32, renderTargetDescriptor: RenderTargetDescriptor, pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
+    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, subpass: UInt32, renderTargetDescriptor: _RenderTargetDescriptor, pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
         
         var functionNames = [FixedSizeBuffer<CChar>]()
         
@@ -157,7 +157,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             self.bindingManager = bindingManager
         }
         
-        var descriptor : RenderPipelineDescriptor! = nil {
+        var descriptor : _RenderPipelineDescriptor! = nil {
             didSet {
                 
                 let key = PipelineLayoutKey.graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction)
@@ -244,7 +244,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     let resourceRegistry: ResourceRegistry
     
     var renderPass : VulkanRenderPass! = nil
-    var currentDrawRenderPass : DrawRenderPass! = nil
+    var currentDrawRenderPass : _DrawRenderPass! = nil
     var bindingManager : ResourceBindingManager! = nil
     var pipelineState : PipelineState! = nil
     
@@ -290,7 +290,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             let pipeline = self.stateCaches[self.pipelineState.vulkanPipelineDescriptor, 
                                             renderPass: self.renderPass, 
                                             subpass: UInt32(self.pipelineState.subpass), 
-                                            renderTargetDescriptor: self.currentDrawRenderPass.renderTargetDescriptor,
+                                            renderTargetDescriptor: self.currentDrawRenderPass._renderTargetDescriptor,
                                             pipelineReflection: self.pipelineState.pipelineReflection]
             vkCmdBindPipeline(self.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline)
         }
@@ -299,7 +299,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     }
     
     public func beginPass(_ pass: RenderPassRecord) {
-        self.currentDrawRenderPass = (pass.pass as! DrawRenderPass)        
+        self.currentDrawRenderPass = (pass.pass as! _DrawRenderPass)        
         self.pipelineState.hasChanged = true
         
         let renderTargetSize = renderTarget.descriptor.size

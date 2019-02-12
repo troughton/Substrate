@@ -67,10 +67,10 @@ public enum FrameGraphCommand {
     public typealias SetSamplerStateArgs = (bindingPath: ResourceBindingPath, descriptor: SamplerDescriptor)
     case setSamplerState(UnsafePointer<SetSamplerStateArgs>)
     
-    public typealias SetArgumentBufferArgs = (bindingPath: ResourceBindingPath, argumentBuffer: ArgumentBuffer)
+    public typealias SetArgumentBufferArgs = (bindingPath: ResourceBindingPath, argumentBuffer: _ArgumentBuffer)
     case setArgumentBuffer(UnsafePointer<SetArgumentBufferArgs>)
     
-    public typealias SetArgumentBufferArrayArgs = (bindingPath: ResourceBindingPath, argumentBuffer: ArgumentBufferArray, isBound: Bool)
+    public typealias SetArgumentBufferArrayArgs = (bindingPath: ResourceBindingPath, argumentBuffer: _ArgumentBufferArray, isBound: Bool)
     case setArgumentBufferArray(UnsafePointer<SetArgumentBufferArrayArgs>)
     
     // Render
@@ -82,7 +82,7 @@ public enum FrameGraphCommand {
     
     case setVertexBufferOffset(offset: UInt32, index: UInt32)
     
-    case setRenderPipelineDescriptor(Unmanaged<ReferenceBox<RenderPipelineDescriptor>>)
+    case setRenderPipelineDescriptor(Unmanaged<ReferenceBox<_RenderPipelineDescriptor>>)
     
     public typealias DrawPrimitivesArgs = (primitiveType: PrimitiveType, vertexStart: UInt32, vertexCount: UInt32, instanceCount: UInt32, baseInstance: UInt32)
     case drawPrimitives(UnsafePointer<DrawPrimitivesArgs>)
@@ -98,7 +98,7 @@ public enum FrameGraphCommand {
     
     case setTriangleFillMode(TriangleFillMode)
     
-    case setDepthStencilDescriptor(Unmanaged<ReferenceBox<DepthStencilDescriptor?>>)
+    case setDepthStencilDescriptor(Unmanaged<ReferenceBox<DepthStencilDescriptor>>)
     
     case setScissorRect(UnsafePointer<ScissorRect>)
     
@@ -372,7 +372,7 @@ public class ResourceBindingEncoder : CommandEncoder {
     @usableFromInline
     let resourceUsages : ResourceUsages
     
-    public enum ArgumentBufferType {
+    public enum _ArgumentBufferType {
         case standalone
         case inArray(index: Int, bindingArgs: UnsafeMutablePointer<FrameGraphCommand.SetArgumentBufferArrayArgs>)
         
@@ -388,7 +388,7 @@ public class ResourceBindingEncoder : CommandEncoder {
     }
     
     @usableFromInline
-    let pendingArgumentBuffers : ExpandingBuffer<(FunctionArgumentKey, ArgumentBuffer, type: ArgumentBufferType, assumeConsistentUsage: Bool)>
+    let pendingArgumentBuffers : ExpandingBuffer<(FunctionArgumentKey, _ArgumentBuffer, type: _ArgumentBufferType, assumeConsistentUsage: Bool)>
     var pendingArgumentBufferCountLastUpdate = 0
     
     @usableFromInline
@@ -507,28 +507,23 @@ public class ResourceBindingEncoder : CommandEncoder {
     }
     
     @inlinable
-    public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, key: FunctionArgumentKey) {
+    public func setArgumentBuffer<K>(_ argumentBuffer: ArgumentBuffer<K>?, key: FunctionArgumentKey) {
         guard let argumentBuffer = argumentBuffer else { return }
         
-        self.pendingArgumentBuffers.append((key, argumentBuffer, type: .standalone, assumeConsistentUsage: false))
+        self.pendingArgumentBuffers.append((key, argumentBuffer.argumentBuffer, type: .standalone, assumeConsistentUsage: false))
         self.needsUpdateBindings = true
     }
     
     @inlinable
-    public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, key: FunctionArgumentKey) {
-        self.setArgumentBuffer(argumentBuffer?.argumentBuffer, key: key)
-    }
-    
-    @inlinable
-    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, key: FunctionArgumentKey, assumeConsistentUsage: Bool = false) {
-        guard let argumentBufferArray = argumentBufferArray else { return }
+    public func setArgumentBufferArray<K>(_ argumentBufferArray: ArgumentBufferArray<K>?, key: FunctionArgumentKey, assumeConsistentUsage: Bool = false) {
+        guard let argumentBufferArray = argumentBufferArray?.argumentBufferArray else { return }
         
         let args : FrameGraphCommand.SetArgumentBufferArrayArgs = (.nil, argumentBufferArray, false) // false meaning is not yet bound
         let argsPointer = commandRecorder.copyData(args)
         
-        for (i, argumentBuffer) in argumentBufferArray.bindings.enumerated() {
+        for (i, argumentBuffer) in argumentBufferArray._bindings.enumerated() {
             guard let argumentBuffer = argumentBuffer else { continue }
-            let type : ArgumentBufferType = .inArray(index: i, bindingArgs: UnsafeMutablePointer(mutating: argsPointer))
+            let type : _ArgumentBufferType = .inArray(index: i, bindingArgs: UnsafeMutablePointer(mutating: argsPointer))
             self.pendingArgumentBuffers.append((key, argumentBuffer, type: type, assumeConsistentUsage: assumeConsistentUsage))
         }
         
@@ -990,14 +985,14 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
         }
     }
     
-    let drawRenderPass : DrawRenderPass
+    let drawRenderPass : _DrawRenderPass
     
     @usableFromInline
     var boundVertexBuffers = [ResourceUsageNodePtr?](repeating: nil, count: 8)
     @usableFromInline
     var renderTargetAttachmentUsages : HashMap<Attachment, ResourceUsageNodePtr>
     
-    var renderPipelineDescriptor : RenderPipelineDescriptor? = nil
+    var renderPipelineDescriptor : _RenderPipelineDescriptor? = nil
     var depthStencilDescriptor : DepthStencilDescriptor? = nil
     
     @usableFromInline
@@ -1005,7 +1000,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
     @usableFromInline
     var gpuCommandsStartIndexDepthStencil : Int? = nil
 
-    init(commandRecorder: FrameGraphCommandRecorder, resourceUsages: ResourceUsages, renderPass: DrawRenderPass, passRecord: RenderPassRecord) {
+    init(commandRecorder: FrameGraphCommandRecorder, resourceUsages: ResourceUsages, renderPass: _DrawRenderPass, passRecord: RenderPassRecord) {
         self.drawRenderPass = renderPass
         let allocator = Unmanaged.passUnretained(commandRecorder.commmandEncoderTemporaryArena)
         self.renderTargetAttachmentUsages = HashMap(allocator: .custom(allocator))
@@ -1016,7 +1011,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
         
         var needsClearCommand = false
         
-        for (i, attachment) in renderPass.renderTargetDescriptor.colorAttachments.enumerated() {
+        for (i, attachment) in renderPass._renderTargetDescriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             self.resourceUsages.registerResource(Resource(attachment.texture))
             
@@ -1025,7 +1020,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
             self.renderTargetAttachmentUsages[.color(i)] = usageNode
         }
         
-        if let depthAttachment = renderPass.renderTargetDescriptor.depthAttachment {
+        if let depthAttachment = renderPass._renderTargetDescriptor.depthAttachment {
             self.resourceUsages.registerResource(Resource(depthAttachment.texture))
             
             needsClearCommand = needsClearCommand || depthAttachment.wantsClear
@@ -1033,7 +1028,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
             self.renderTargetAttachmentUsages[.depth] = usageNode
         }
         
-        if let stencilAttachment = renderPass.renderTargetDescriptor.stencilAttachment {
+        if let stencilAttachment = renderPass._renderTargetDescriptor.stencilAttachment {
             self.resourceUsages.registerResource(Resource(stencilAttachment.texture))
             
             needsClearCommand = needsClearCommand || stencilAttachment.wantsClear
@@ -1066,10 +1061,10 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
             return
         }
         
-        for (i, attachment) in drawRenderPass.renderTargetDescriptor.colorAttachments.enumerated() {
+        for (i, attachment) in drawRenderPass._renderTargetDescriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
         
-            guard renderPipelineDescriptor.writeMasks[i] != [] else {
+            guard renderPipelineDescriptor.writeMasks[i, default: []] != [] else {
                 continue
             }
             
@@ -1105,7 +1100,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
             return // No depth writes enabled, depth test always passes, no stencil tests.
         }
         
-        depthCheck: if depthStencilDescriptor.isDepthWriteEnabled, let depthAttachment = drawRenderPass.renderTargetDescriptor.depthAttachment {
+        depthCheck: if depthStencilDescriptor.isDepthWriteEnabled, let depthAttachment = drawRenderPass._renderTargetDescriptor.depthAttachment {
             let type : ResourceUsageType = depthStencilDescriptor.depthCompareFunction != .always ? .readWriteRenderTarget : .writeOnlyRenderTarget
             
             if let usageNode = self.renderTargetAttachmentUsages[.depth] {
@@ -1126,7 +1121,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
             self.renderTargetAttachmentUsages[.depth] = usageNode
         }
         
-        stencilCheck: if let stencilAttachment = drawRenderPass.renderTargetDescriptor.stencilAttachment {
+        stencilCheck: if let stencilAttachment = drawRenderPass._renderTargetDescriptor.stencilAttachment {
             let isRead = depthStencilDescriptor.backFaceStencil.stencilCompareFunction != .always || depthStencilDescriptor.frontFaceStencil.stencilCompareFunction != .always
             let isWrite =   depthStencilDescriptor.backFaceStencil.stencilFailureOperation != .keep ||
                             depthStencilDescriptor.backFaceStencil.depthFailureOperation != .keep ||
@@ -1164,13 +1159,15 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
         }
     }
     
-    public func setRenderPipelineDescriptor(_ descriptor: RenderPipelineDescriptor, retainExistingBindings: Bool = true) {
+    public func setRenderPipelineDescriptor<I>(_ descriptor: RenderPipelineDescriptor<I>, retainExistingBindings: Bool = true) {
         if !retainExistingBindings {
             self.resetAllBindings()
         }
         
+        let descriptor = descriptor._descriptor
+        
         self.renderPipelineDescriptor = descriptor
-        self.currentPipelineReflection = RenderBackend.renderPipelineReflection(descriptor: descriptor, renderTarget: self.drawRenderPass.renderTargetDescriptor)
+        self.currentPipelineReflection = RenderBackend.renderPipelineReflection(descriptor: descriptor, renderTarget: self.drawRenderPass._renderTargetDescriptor)
         
         self.pipelineStateChanged = true
         self.needsUpdateBindings = true
@@ -1223,10 +1220,12 @@ public final class RenderCommandEncoder : ResourceBindingEncoder {
     }
     
     public func setDepthStencilDescriptor(_ descriptor: DepthStencilDescriptor?) {
-        guard self.drawRenderPass.renderTargetDescriptor.depthAttachment != nil ||
-            self.drawRenderPass.renderTargetDescriptor.stencilAttachment != nil else {
+        guard self.drawRenderPass._renderTargetDescriptor.depthAttachment != nil ||
+            self.drawRenderPass._renderTargetDescriptor.stencilAttachment != nil else {
                 return
         }
+        
+        let descriptor = descriptor ?? DepthStencilDescriptor()
         
         self.depthStencilDescriptor = descriptor
         
@@ -1336,7 +1335,7 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
         self.needsUpdateBindings = true
         
         self.currentThreadExecutionWidth = RenderBackend.threadExecutionWidth
-        
+
         let pipelineBox = ComputePipelineDescriptorBox(descriptor)
         self.currentComputePipeline = pipelineBox
         

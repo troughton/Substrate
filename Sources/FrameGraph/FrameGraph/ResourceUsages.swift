@@ -278,6 +278,11 @@ public struct ResourceUsage {
     }
     
     @inlinable
+    public var affectsGPUBarriers : Bool {
+        return self.renderPassRecord.isActive && self.stages != .cpuBeforeRender && self.type != .unusedRenderTarget
+    }
+    
+    @inlinable
     public var commandRange : Range<Int> {
         let startIndex = renderPassRecord.commandRange!.lowerBound
         return (self.commandRangeInPass.lowerBound + startIndex)..<(self.commandRangeInPass.upperBound + startIndex)

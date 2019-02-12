@@ -108,7 +108,7 @@ public final class VulkanFrameGraphBackend : FrameGraphBackend {
         
         var currentDescriptor : VulkanRenderTargetDescriptor? = nil
         for (i, renderPassRecord) in passes.enumerated() {
-            if renderPassRecord.pass is DrawRenderPass {
+            if renderPassRecord.pass is _DrawRenderPass {
                 if let descriptor = currentDescriptor {
                     currentDescriptor = descriptor.descriptorMergedWithPass(renderPassRecord, resourceUsages: resourceUsages)
                 } else {

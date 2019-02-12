@@ -91,9 +91,9 @@ final class MetalPipelineReflection : PipelineReflection {
         if let existingMatch = bindingPathCache[BindingPathCacheKey(argumentName: argument.name, argumentBufferIndex: nil)] {
             assert(existingMatch.index == rootPath.index && existingMatch.type == rootPath.type, "A variable with the same name is bound at different indices or with different types in the vertex and fragment shader.")
             
+            rootPath.stages = existingMatch.stages
             let existingReflection = reflectionCache[rootPath]!
-            
-            rootPath.stages.formUnion(existingMatch.stages)
+            rootPath.stages.formUnion(stages)
             
             reflection.isActive = reflection.isActive || existingReflection.isActive
             reflection.stages = reflection.stages.union(existingReflection.stages)
@@ -197,7 +197,7 @@ final class MetalPipelineReflection : PipelineReflection {
         return reflectionCacheLinearSearch(path, returnNearest: path.argumentBufferIndex != nil) // If the path's in an argument buffer, the id might be higher than the id used for the reflection since array indices within argument buffers are represented as offsets to the id.
     }
     
-    public func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
+    public func bindingPath(argumentBuffer: _ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
         return self.bindingPath(argumentName: argumentName, arrayIndex: arrayIndex, argumentBufferPath: nil)
     }
     

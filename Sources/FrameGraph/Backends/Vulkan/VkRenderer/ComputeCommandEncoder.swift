@@ -15,7 +15,7 @@ struct VulkanComputePipelineDescriptor : Hashable {
     var threadsPerThreadgroup : Size 
 
     func withVulkanPipelineCreateInfo(pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches, _ withInfo: (inout VkComputePipelineCreateInfo) -> Void) {
-        let specialisationInfo = stateCaches[self.descriptor.functionConstants, pipelineReflection: pipelineReflection] // TODO: also pass in threadsPerThreadgroup.
+        let specialisationInfo = stateCaches[self.descriptor._functionConstants, pipelineReflection: pipelineReflection] // TODO: also pass in threadsPerThreadgroup.
         let specialisationInfoPtr = specialisationInfo == nil ? nil : escapingPointer(to: &specialisationInfo!.info)
 
         let module = stateCaches.shaderLibrary.moduleForFunction(self.descriptor.function)!

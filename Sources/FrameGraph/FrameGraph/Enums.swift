@@ -641,11 +641,12 @@ public struct Size : Hashable {
         self.depth = 0
     }
     
-    public init(width: Int, height: Int, depth: Int) {
+    public init(width: Int, height: Int, depth: Int = 1) {
         self.width = width
         self.height = height
         self.depth = depth
     }
+    
     
     public init(length: Int) {
         self.width = length

@@ -59,54 +59,51 @@ final class FullScreenTriangle {
 }
 
 
-final class BlitColorRegionPass : DrawRenderPass {
-    static let pipelineDescriptor : RenderPipelineDescriptor = {
-        var pipelineDescriptor = RenderPipelineDescriptor(identifier: DisplayRenderTargetIndex.self)
-        pipelineDescriptor.vertexDescriptor = nil
-        pipelineDescriptor.vertexFunction = "passThroughVertex"
-        pipelineDescriptor.fragmentFunction = "hdrResolveFragment"
-        
-        pipelineDescriptor.label = "HDR Tone Map"
-        return pipelineDescriptor
-    }()
+final class BlitColorRegionPass<I : RenderTargetIdentifier> : DrawRenderPass {
     
-    static let depthStencilDescriptor : DepthStencilDescriptor = {
-        var depthStencilDescriptor = DepthStencilDescriptor()
-        depthStencilDescriptor.depthCompareFunction = .always
-        depthStencilDescriptor.isDepthWriteEnabled = false
-        return depthStencilDescriptor
-    }()
-    
-    let name = "Blit Colour Region"
+    let name = "Blit Color Region"
     
     let inputTexture : Texture
     let scissorRect : ScissorRect?
-    let renderTargetDescriptor : RenderTargetDescriptor
+    let renderTargetDescriptor : RenderTargetDescriptor<I>
     
-    init(inputTexture: Texture, scissorRect: ScissorRect? = nil, renderTargetDescriptor: RenderTargetDescriptor) {
+    init(inputTexture: Texture, scissorRect: ScissorRect? = nil, renderTargetDescriptor: RenderTargetDescriptor<I>) {
         self.inputTexture = inputTexture
         self.scissorRect = scissorRect
         self.renderTargetDescriptor = renderTargetDescriptor
     }
     
     func execute(renderCommandEncoder renderEncoder: RenderCommandEncoder) {
+        
         if let scissorRect = self.scissorRect {
             renderEncoder.setViewport(Viewport(originX: Double(scissorRect.x), originY: Double(scissorRect.y), width: Double(scissorRect.width), height: Double(scissorRect.height), zNear: 0.0, zFar: 1.0))
             
-            let viewportOrigin = Vector2f(scissorRect.x, scissorRect.y)
+            let viewportOrigin = Vector2f(Float(scissorRect.x), Float(scissorRect.y))
             renderEncoder.setValue(viewportOrigin, key: "viewportOrigin")
         } else {
             renderEncoder.setValue(Vector2f(0, 0), key: "viewportOrigin")
         }
         
-        renderEncoder.setTexture(inputTexture, key: "inputTexture")
+        renderEncoder.setTexture(inputTexture, key: "lightAccumulationBuffer")
         renderEncoder.setCullMode(.none)
         
         if self.renderTargetDescriptor.depthAttachment != nil {
-            renderEncoder.setDepthStencilDescriptor(BlitColorRegionPass.depthStencilDescriptor)
+            
+            var depthStencilDescriptor = DepthStencilDescriptor()
+            depthStencilDescriptor.depthCompareFunction = .always
+            depthStencilDescriptor.isDepthWriteEnabled = false
+            
+            renderEncoder.setDepthStencilDescriptor(depthStencilDescriptor)
         }
         
-        renderEncoder.setRenderPipelineDescriptor(BlitColorRegionPass.pipelineDescriptor)
+        var pipelineDescriptor = RenderPipelineDescriptor<DisplayRenderTargetIndex>()
+        pipelineDescriptor.vertexDescriptor = nil
+        pipelineDescriptor.vertexFunction = "passThroughVertex"
+        pipelineDescriptor.fragmentFunction = "hdrResolveFragment"
+        
+        pipelineDescriptor.label = "HDR Tone Map"
+        
+        renderEncoder.setRenderPipelineDescriptor(pipelineDescriptor)
         
         FullScreenTriangle.draw(renderEncoder: renderEncoder)
         
@@ -116,16 +113,16 @@ final class BlitColorRegionPass : DrawRenderPass {
 final class ClearRenderTargetPass : DrawRenderPass {
     let name = "clearRenderTarget"
     let outputTexture: Texture
-    let renderTargetDescriptor: RenderTargetDescriptor
+    let renderTargetDescriptor: RenderTargetDescriptor<DisplayRenderTargetIndex>
     
-    init(outputTexture: Texture, clearColor: ClearColor = ClearColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1.0)) {
+    init(outputTexture: Texture, clearColor: ClearColor = ClearColor()) {
         self.outputTexture = outputTexture
         
         var attachment = RenderTargetColorAttachmentDescriptor(texture: outputTexture)
         attachment.clearColor = clearColor
         
-        var renderTargetDesc = RenderTargetDescriptor(identifierType: DisplayRenderTargetIndex.self)
-        renderTargetDesc[DisplayRenderTargetIndex.display] = attachment
+        var renderTargetDesc = RenderTargetDescriptor<DisplayRenderTargetIndex>()
+        renderTargetDesc[.display] = attachment
         
         self.renderTargetDescriptor = renderTargetDesc
     }

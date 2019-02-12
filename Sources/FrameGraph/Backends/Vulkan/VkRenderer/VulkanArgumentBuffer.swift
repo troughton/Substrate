@@ -18,7 +18,7 @@ final class VulkanArgumentBuffer {
     private var images = [VulkanImage]()
     private var buffers = [VulkanBuffer]()
     
-    public init(arguments: ArgumentBuffer, bindingPath: VulkanResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    public init(arguments: _ArgumentBuffer, bindingPath: VulkanResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         self.device = commandBufferResources.device
 
         let layout = pipelineReflection.descriptorSetLayout(set: bindingPath.set, dynamicBuffers: []).vkLayout
@@ -41,7 +41,7 @@ final class VulkanArgumentBuffer {
         }
     }
     
-    func encodeArguments(from buffer: ArgumentBuffer, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    func encodeArguments(from buffer: _ArgumentBuffer, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         var descriptorWrites = [VkWriteDescriptorSet]()
 
         let bufferInfoSentinel = UnsafePointer<VkDescriptorBufferInfo>(bitPattern: 0x10)

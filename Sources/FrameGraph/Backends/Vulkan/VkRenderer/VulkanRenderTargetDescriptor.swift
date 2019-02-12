@@ -20,13 +20,13 @@ enum RenderTargetAttachmentIndex : Hashable {
 }
 
 final class VulkanSubpass {
-    var descriptor : RenderTargetDescriptor
+    var descriptor : _RenderTargetDescriptor
     var index : Int
     
     var inputAttachments = [RenderTargetAttachmentIndex]()
     var preserveAttachments = [RenderTargetAttachmentIndex]()
     
-    init(descriptor: RenderTargetDescriptor, index: Int) {
+    init(descriptor: _RenderTargetDescriptor, index: Int) {
         self.descriptor = descriptor
         self.index = index
     }
@@ -52,7 +52,7 @@ final class VulkanSubpass {
 }
 
 final class VulkanRenderTargetDescriptor {
-    var descriptor : RenderTargetDescriptor
+    var descriptor : _RenderTargetDescriptor
     var renderPasses = [RenderPassRecord]()
     
     var colorActions : [(VkAttachmentLoadOp, VkAttachmentStoreOp)] = []
@@ -68,11 +68,11 @@ final class VulkanRenderTargetDescriptor {
     var finalLayouts = [Texture : VkImageLayout]()
     
     init(renderPass: RenderPassRecord) {
-        let drawRenderPass = renderPass.pass as! DrawRenderPass
-        self.descriptor = drawRenderPass.renderTargetDescriptor
+        let drawRenderPass = renderPass.pass as! _DrawRenderPass
+        self.descriptor = drawRenderPass._renderTargetDescriptor
         self.renderPasses.append(renderPass)
         
-        self.subpasses.append(VulkanSubpass(descriptor: drawRenderPass.renderTargetDescriptor, index: 0))
+        self.subpasses.append(VulkanSubpass(descriptor: drawRenderPass._renderTargetDescriptor, index: 0))
     }
     
     func subpassForPassIndex(_ passIndex: Int) -> VulkanSubpass? {
@@ -126,9 +126,9 @@ final class VulkanRenderTargetDescriptor {
     }
     
     func tryMerge(withPass passRecord: RenderPassRecord) -> Bool {
-        let pass = passRecord.pass as! DrawRenderPass
+        let pass = passRecord.pass as! _DrawRenderPass
         
-        if pass.renderTargetDescriptor.colorAttachments.count != self.descriptor.colorAttachments.count {
+        if pass._renderTargetDescriptor.colorAttachments.count != self.descriptor.colorAttachments.count {
             return false // The render targets must be using the same AttachmentIdentifier and therefore have the same maximum attachment count.
         }
         
@@ -137,7 +137,7 @@ final class VulkanRenderTargetDescriptor {
         var mergeResult = MergeResult.identical
         
         for i in 0..<newDescriptor.colorAttachments.count {
-            switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: pass.renderTargetDescriptor.colorAttachments[i]) {
+            switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: pass._renderTargetDescriptor.colorAttachments[i]) {
             case .identical:
                 break
             case .incompatible:
@@ -147,7 +147,7 @@ final class VulkanRenderTargetDescriptor {
             }
         }
         
-        switch self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: pass.renderTargetDescriptor.depthAttachment) {
+        switch self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: pass._renderTargetDescriptor.depthAttachment) {
         case .identical:
             break
         case .incompatible:
@@ -156,7 +156,7 @@ final class VulkanRenderTargetDescriptor {
             mergeResult = .compatible
         }
         
-        switch self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: pass.renderTargetDescriptor.stencilAttachment) {
+        switch self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: pass._renderTargetDescriptor.stencilAttachment) {
         case .identical:
             break
         case .incompatible:
@@ -174,13 +174,13 @@ final class VulkanRenderTargetDescriptor {
             self.subpasses.append(VulkanSubpass(descriptor: newDescriptor, index: self.subpasses.last!.index + 1))
         }
         
-        if newDescriptor.visibilityResultBuffer != nil && pass.renderTargetDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
+        if newDescriptor.visibilityResultBuffer != nil && pass._renderTargetDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
             return false
         } else {
-            newDescriptor.visibilityResultBuffer = pass.renderTargetDescriptor.visibilityResultBuffer
+            newDescriptor.visibilityResultBuffer = pass._renderTargetDescriptor.visibilityResultBuffer
         }
         
-        newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, pass.renderTargetDescriptor.renderTargetArrayLength)
+        newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, pass._renderTargetDescriptor.renderTargetArrayLength)
         
         self.descriptor = newDescriptor
         self.renderPasses.append(passRecord)

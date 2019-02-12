@@ -12,7 +12,7 @@ final class StateCaches {
 
     private struct RenderPipelineCacheKey : Hashable {
         var pipelineDescriptor : VulkanRenderPipelineDescriptor
-        var renderTargetDescriptor : RenderTargetDescriptor
+        var renderTargetDescriptor : _RenderTargetDescriptor
     }
 
     let device: VulkanDevice
@@ -50,7 +50,7 @@ final class StateCaches {
     public subscript(pipelineDescriptor: VulkanRenderPipelineDescriptor, 
                      renderPass renderPass: VulkanRenderPass, 
                      subpass subpass: UInt32,
-                     renderTargetDescriptor renderTargetDescriptor: RenderTargetDescriptor,
+                     renderTargetDescriptor renderTargetDescriptor: _RenderTargetDescriptor,
                      pipelineReflection pipelineReflection: VulkanPipelineReflection) -> VkPipeline? {
         let cacheKey = RenderPipelineCacheKey(pipelineDescriptor: pipelineDescriptor, renderTargetDescriptor: renderTargetDescriptor)
         if let pipeline = self.renderPipelines[cacheKey] {
@@ -138,7 +138,7 @@ final class StateCaches {
         return sampler!
     }
     
-    public func reflection(for descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> VulkanPipelineReflection {
+    public func reflection(for descriptor: _RenderPipelineDescriptor, renderTarget: _RenderTargetDescriptor) -> VulkanPipelineReflection {
         return self.shaderLibrary.reflection(for: .graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction))
     }
     

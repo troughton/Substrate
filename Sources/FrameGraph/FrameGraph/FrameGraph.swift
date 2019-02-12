@@ -24,9 +24,22 @@ extension RenderPass {
     public var writtenResources : [Resource] { return [] }
 }
 
-public protocol DrawRenderPass : RenderPass {
-    var renderTargetDescriptor : RenderTargetDescriptor { get }
+public protocol _DrawRenderPass : RenderPass {
+    var _renderTargetDescriptor : _RenderTargetDescriptor { get }
     func execute(renderCommandEncoder: RenderCommandEncoder)
+}
+
+public protocol DrawRenderPass : _DrawRenderPass {
+    associatedtype AttachmentIdentifier : RenderTargetIdentifier
+    var renderTargetDescriptor : RenderTargetDescriptor<AttachmentIdentifier> { get }
+    func execute(renderCommandEncoder: RenderCommandEncoder)
+}
+
+extension DrawRenderPass {
+    @inlinable
+    public var _renderTargetDescriptor : _RenderTargetDescriptor {
+        return self.renderTargetDescriptor._descriptor
+    }
 }
 
 extension DrawRenderPass {
@@ -75,12 +88,12 @@ extension ExternalRenderPass {
     }
 }
 
-final class CallbackDrawRenderPass : DrawRenderPass {
+final class CallbackDrawRenderPass<I : RenderTargetIdentifier> : DrawRenderPass {
     public let name : String
-    public let renderTargetDescriptor: RenderTargetDescriptor
+    public let renderTargetDescriptor: RenderTargetDescriptor<I>
     public let executeFunc : (RenderCommandEncoder) -> Void
     
-    public init(name: String, descriptor: RenderTargetDescriptor, execute: @escaping (RenderCommandEncoder) -> Void) {
+    public init(name: String, descriptor: RenderTargetDescriptor<I>, execute: @escaping (RenderCommandEncoder) -> Void) {
         self.name = name
         self.renderTargetDescriptor = descriptor
         self.executeFunc = execute
@@ -238,8 +251,8 @@ public class FrameGraph {
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
     
-    public static func addDrawCallbackPass(name: String,
-                                    descriptor: RenderTargetDescriptor,
+    public static func addDrawCallbackPass<I>(name: String,
+                                    descriptor: RenderTargetDescriptor<I>,
                                        execute: @escaping (RenderCommandEncoder) -> Void) {
         self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor, execute: execute))
     }
@@ -275,7 +288,7 @@ public class FrameGraph {
         let startCommandIndex = commandRecorder.nextCommandIndex
 
         switch passRecord.pass {
-        case let drawPass as DrawRenderPass:
+        case let drawPass as _DrawRenderPass:
             let rce = RenderCommandEncoder(commandRecorder: commandRecorder, resourceUsages: resourceUsages, renderPass: drawPass, passRecord: passRecord)
             drawPass.execute(renderCommandEncoder: rce)
             rce.endEncoding()
@@ -376,11 +389,10 @@ public class FrameGraph {
         if renderPasses[i].isActive, !addedToList[i] {
             addedToList[i] = true
             
-            if let targetRenderTargetDescriptor = (renderPasses[i].pass as? DrawRenderPass)?.renderTargetDescriptor {
-                
+            if let targetRenderTargetDescriptor = (renderPasses[i].pass as? _DrawRenderPass)?._renderTargetDescriptor {
                 // First process all passes that can't share the same render target...
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? DrawRenderPass)?.renderTargetDescriptor, RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
+                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? _DrawRenderPass)?._renderTargetDescriptor, _RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
                     } else {
                         computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
                     }
@@ -388,7 +400,7 @@ public class FrameGraph {
                 
                 // ... and then process those which can.
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? DrawRenderPass)?.renderTargetDescriptor, RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
+                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? _DrawRenderPass)?._renderTargetDescriptor, _RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
                         computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
                     }
                 }
@@ -587,7 +599,6 @@ public class FrameGraph {
                     resource.readWaitFrame = currentFrameIndex // The CPU can't read from this resource until the GPU has finished writing to it.
                 }
             }
-            
             assert(resource.storageMode != .private || (resource.usages.firstActiveUsage?.isWrite ?? true) || resource.stateFlags.contains(.initialised), "Resource \(resource) (type \(resource.type), label \(String(describing: resource.label))) is read from in pass \(resource.usages.firstActiveUsage!.renderPassRecord.pass.name) without being first written to.")
         }
         

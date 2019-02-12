@@ -116,7 +116,7 @@ public final class ResourceRegistry {
         return self.allocateTexture(texture, descriptor: texture.descriptor, flags: texture.flags, usage: usage, sharingMode: sharingMode, initialLayout: initialLayout)
     }
 
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer, bindingPath: VulkanResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches) -> VulkanArgumentBuffer {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, bindingPath: VulkanResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches) -> VulkanArgumentBuffer {
         if let vulkanArgumentBuffer = self.argumentBufferReferences[argumentBuffer.handle] {
             return vulkanArgumentBuffer
         }
@@ -174,12 +174,12 @@ public final class ResourceRegistry {
         }
     }
 
-    public func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
+    public func disposeArgumentBuffer(_ buffer: _ArgumentBuffer) {
         // Only called if the buffer isn't persistent.
         self.argumentBufferReferences.removeValue(forKey: buffer.handle)
     }
 
-    public func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
+    public func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray) {
         // Only called if the buffer isn't persistent.
         self.argumentBufferReferences.removeValue(forKey: buffer.handle)
     }

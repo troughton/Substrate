@@ -152,7 +152,7 @@ public final class MetalFrameGraph : FrameGraphBackend {
     
     let commandQueue : MTLCommandQueue
     
-    var currentRenderTargetDescriptor : RenderTargetDescriptor? = nil
+    var currentRenderTargetDescriptor : _RenderTargetDescriptor? = nil
     
     init(device: MTLDevice, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         self.commandQueue = device.makeCommandQueue()!
@@ -173,7 +173,7 @@ public final class MetalFrameGraph : FrameGraphBackend {
         
         var currentDescriptor : MetalRenderTargetDescriptor? = nil
         for (i, passRecord) in passes.enumerated() {
-            if let renderPass = passRecord.pass as? DrawRenderPass {
+            if let renderPass = passRecord.pass as? _DrawRenderPass {
                 if let descriptor = currentDescriptor {
                     currentDescriptor = descriptor.descriptorMergedWithPass(renderPass, resourceUsages: resourceUsages, storedTextures: &storedTextures)
                 } else {
@@ -229,7 +229,7 @@ public final class MetalFrameGraph : FrameGraphBackend {
             
             let usages = resource.usages
             if usages.isEmpty { continue }
-            
+   
             do {
                 // Track resource residency.
                 
@@ -276,7 +276,7 @@ public final class MetalFrameGraph : FrameGraphBackend {
                     continue resourceLoop // no active usages for this resource.
                 }
                 previousUsage = usage
-            } while !previousUsage.renderPassRecord.isActive || previousUsage.type == .unusedArgumentBuffer
+            } while !previousUsage.affectsGPUBarriers
             
             
             var firstUsage = previousUsage
@@ -307,13 +307,13 @@ public final class MetalFrameGraph : FrameGraphBackend {
             }
             
             while let usage = usageIterator.next()  {
-                if !usage.renderPassRecord.isActive || usage.stages == .cpuBeforeRender {
+                if !usage.affectsGPUBarriers {
                     continue
                 }
                 
                 if usage.isWrite {
                     assert(!resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "A resource with the flag .immutableOnceInitialised is being written to in \(usage) when it has already been initialised.")
-                    
+                     
                     for previousRead in readsSinceLastWrite where passCommandEncoderIndices[previousRead.renderPassRecord.passIndex] != passCommandEncoderIndices[usage.renderPassRecord.passIndex] {
                         let dependency = Dependency(dependentUsage: usage, passUsage: previousRead)
                         commandEncoderDependencies[passCommandEncoderIndices[previousRead.renderPassRecord.passIndex]].append(dependency)
@@ -405,6 +405,8 @@ public final class MetalFrameGraph : FrameGraphBackend {
                             textureUsage.formUnion(.shaderRead)
                         case .write:
                             textureUsage.formUnion(.shaderWrite)
+                        case .readWrite:
+                            textureUsage.formUnion([.shaderRead, .shaderWrite])
                         case .readWriteRenderTarget, .writeOnlyRenderTarget, .inputAttachmentRenderTarget:
                             textureUsage.formUnion(.renderTarget)
                         default:
@@ -583,7 +585,7 @@ public final class MetalFrameGraph : FrameGraphBackend {
                     commandEncoder.label = commandEncoderNames[passCommandEncoders[i]]
                 }
                 
-                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCommands: resourceCommands, renderTarget: renderTargetDescriptors[i]!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                commandEncoder.executePass(commands: commands[passRecord.commandRange!], resourceCommands: resourceCommands, renderTarget: renderTargetDescriptors[i]!.descriptor, passRenderTarget: (passRecord.pass as! _DrawRenderPass)._renderTargetDescriptor, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
             case .compute:
                 let commandEncoder = encoderManager.computeCommandEncoder()
                 if commandEncoder.encoder.label == nil {

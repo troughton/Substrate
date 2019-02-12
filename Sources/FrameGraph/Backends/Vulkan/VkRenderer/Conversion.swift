@@ -508,7 +508,7 @@ struct ColorBlendStateCreateInfo {
     let attachmentStates : FixedSizeBuffer<VkPipelineColorBlendAttachmentState>
     var info : VkPipelineColorBlendStateCreateInfo
     
-    init(descriptor: RenderPipelineDescriptor, renderTargetDescriptor: RenderTargetDescriptor) {
+    init(descriptor: _RenderPipelineDescriptor, renderTargetDescriptor: _RenderTargetDescriptor) {
         self.attachmentStates = FixedSizeBuffer(capacity: descriptor.blendStates.count, defaultValue: VkPipelineColorBlendAttachmentState())
         
         // Fill out attachment blend info
@@ -660,7 +660,7 @@ extension VkSamplerCreateInfo {
 }
 
 extension VkPipelineMultisampleStateCreateInfo {
-    public init(_ descriptor: RenderPipelineDescriptor) {
+    public init(_ descriptor: _RenderPipelineDescriptor) {
         self.init()
         self.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
         self.rasterizationSamples = VkSampleCountFlagBits(rawValue: VkSampleCountFlagBits.RawValue(descriptor.sampleCount))

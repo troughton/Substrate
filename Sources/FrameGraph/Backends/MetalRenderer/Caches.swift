@@ -91,7 +91,7 @@ final class StateCaches {
         return encoder
     }
     
-    public subscript(descriptor: RenderPipelineDescriptor, renderTarget renderTarget: RenderTargetDescriptor) -> MTLRenderPipelineState {
+    public subscript(descriptor: _RenderPipelineDescriptor, renderTarget renderTarget: _RenderTargetDescriptor) -> MTLRenderPipelineState {
         let metalDescriptor = MetalRenderPipelineDescriptor(descriptor, renderTargetDescriptor: renderTarget)
         
         let lookupKey = RenderPipelineFunctionNames(vertexFunction: descriptor.vertexFunction!, fragmentFunction: descriptor.fragmentFunction)
@@ -117,7 +117,7 @@ final class StateCaches {
         
     }
     
-    public func reflection(for pipelineDescriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> MetalPipelineReflection {
+    public func reflection(for pipelineDescriptor: _RenderPipelineDescriptor, renderTarget: _RenderTargetDescriptor) -> MetalPipelineReflection {
         
         let lookupKey = RenderPipelineFunctionNames(vertexFunction: pipelineDescriptor.vertexFunction!, fragmentFunction: pipelineDescriptor.fragmentFunction)
         
@@ -145,7 +145,7 @@ final class StateCaches {
         }
         
         let mtlDescriptor = MTLComputePipelineDescriptor()
-        mtlDescriptor.computeFunction = self.function(named: descriptor.function, functionConstants: descriptor.functionConstants)
+        mtlDescriptor.computeFunction = self.function(named: descriptor.function, functionConstants: descriptor._functionConstants)
         mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
         
         var reflection : MTLComputePipelineReflection? = nil
@@ -171,7 +171,7 @@ final class StateCaches {
         return self.reflection(for: pipelineDescriptor)
     }
     
-    public func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> MetalPipelineReflection {
+    public func renderPipelineReflection(descriptor: _RenderPipelineDescriptor, renderTarget: _RenderTargetDescriptor) -> MetalPipelineReflection {
         return self.reflection(for: descriptor, renderTarget: renderTarget)
     }
     

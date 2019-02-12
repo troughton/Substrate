@@ -8,8 +8,8 @@
 
 import Foundation
 
-public protocol PipelineReflection {
-    func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?
+public protocol PipelineReflection : class {
+    func bindingPath(argumentBuffer: _ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?
     func bindingPath(argumentName: String, arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath?
     func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath
     func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection?
@@ -33,13 +33,13 @@ public protocol RenderBackendProtocol : class {
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
     
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int)
-    
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection
+    func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int)
+    func renderPipelineReflection(descriptor: _RenderPipelineDescriptor, renderTarget: _RenderTargetDescriptor) -> PipelineReflection
     func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection
     
     func dispose(texture: Texture)
     func dispose(buffer: Buffer)
-    func dispose(argumentBuffer: ArgumentBuffer)
+    func dispose(argumentBuffer: _ArgumentBuffer)
     
     func backingResource(_ resource: Resource) -> Any?
     
@@ -62,14 +62,16 @@ public struct _CachedRenderBackend {
     public var bufferDidModifyRange : (Buffer, Range<Int>) -> Void
     
     public var replaceTextureRegion : (Texture, Region, Int, UnsafeRawPointer,Int) -> Void
+    public var replaceTextureRegionForSlice : (Texture, Region, Int, Int, UnsafeRawPointer, Int, Int) -> Void
+   
+    public var renderPipelineReflection : (_RenderPipelineDescriptor, _RenderTargetDescriptor) -> PipelineReflection
     
-    public var renderPipelineReflection : (RenderPipelineDescriptor, RenderTargetDescriptor) -> PipelineReflection
     public var computePipelineReflection : (ComputePipelineDescriptor) -> PipelineReflection
     
     public var disposeTexture : (Texture) -> Void
     public var disposeBuffer : (Buffer) -> Void
-    public var disposeArgumentBuffer : (ArgumentBuffer) -> Void
-    public var disposeArgumentBufferArray : (ArgumentBufferArray) -> Void
+    public var disposeArgumentBuffer : (_ArgumentBuffer) -> Void
+    public var disposeArgumentBufferArray : (_ArgumentBufferArray) -> Void
     
     public var backingResource : (Resource) -> Any?
     
@@ -86,12 +88,13 @@ public struct _CachedRenderBackend {
                 bufferContents: @escaping (Buffer, Range<Int>) -> UnsafeMutableRawPointer,
                 bufferDidModifyRange: @escaping (Buffer, Range<Int>) -> Void,
                 replaceTextureRegion: @escaping (Texture, Region, Int, UnsafeRawPointer, Int) -> Void,
-                renderPipelineReflection: @escaping (RenderPipelineDescriptor, RenderTargetDescriptor) -> PipelineReflection,
+                replaceTextureRegionForSlice: @escaping (Texture, Region, Int, Int, UnsafeRawPointer, Int, Int) -> Void,
+                renderPipelineReflection: @escaping (_RenderPipelineDescriptor, _RenderTargetDescriptor) -> PipelineReflection,
                 computePipelineReflection: @escaping (ComputePipelineDescriptor) -> PipelineReflection,
                 disposeTexture: @escaping (Texture) -> Void,
                 disposeBuffer: @escaping (Buffer) -> Void,
-                disposeArgumentBuffer: @escaping (ArgumentBuffer) -> Void,
-                disposeArgumentBufferArray: @escaping (ArgumentBufferArray) -> Void,
+                disposeArgumentBuffer: @escaping (_ArgumentBuffer) -> Void,
+                disposeArgumentBufferArray: @escaping (_ArgumentBufferArray) -> Void,
                 backingResource: @escaping (Resource) -> Any?,
                 isDepth24Stencil8PixelFormatSupported: @escaping () -> Bool,
                 threadExecutionWidth: @escaping () -> Int,
@@ -103,6 +106,7 @@ public struct _CachedRenderBackend {
         self.bufferContents = bufferContents
         self.bufferDidModifyRange = bufferDidModifyRange
         self.replaceTextureRegion = replaceTextureRegion
+        self.replaceTextureRegionForSlice = replaceTextureRegionForSlice
         self.renderPipelineReflection = renderPipelineReflection
         self.computePipelineReflection = computePipelineReflection
         self.disposeTexture = disposeTexture
@@ -122,6 +126,7 @@ public struct _CachedRenderBackend {
                                                                                bufferContents: { _, _ in fatalError() },
                                                                                bufferDidModifyRange: { _, _ in },
                                                                                replaceTextureRegion: { _, _, _, _, _ in },
+                                                                               replaceTextureRegionForSlice: { _, _, _, _, _, _, _ in },
                                                                                renderPipelineReflection: { _, _ in fatalError() },
                                                                                computePipelineReflection: { _ in fatalError() },
                                                                                disposeTexture: { _ in },
@@ -161,7 +166,7 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection {
+    public static func renderPipelineReflection(descriptor: _RenderPipelineDescriptor, renderTarget: _RenderTargetDescriptor) -> PipelineReflection {
         return _cachedBackend.renderPipelineReflection(descriptor, renderTarget)
     }
     
@@ -181,12 +186,12 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func dispose(argumentBuffer: ArgumentBuffer) {
+    public static func dispose(argumentBuffer: _ArgumentBuffer) {
         return _cachedBackend.disposeArgumentBuffer(argumentBuffer)
     }
     
     @inlinable
-    public static func dispose(argumentBufferArray: ArgumentBufferArray) {
+    public static func dispose(argumentBufferArray: _ArgumentBufferArray) {
         return _cachedBackend.disposeArgumentBufferArray(argumentBufferArray)
     }
     
@@ -218,6 +223,11 @@ public struct RenderBackend {
     @inlinable
     public static func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
         return _cachedBackend.replaceTextureRegion(texture, region, mipmapLevel, bytes, bytesPerRow)
+    }
+
+    @inlinable
+    public static func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
+        return _cachedBackend.replaceTextureRegionForSlice(texture, region, mipmapLevel, slice, bytes, bytesPerRow, bytesPerImage)
     }
     
     @inlinable
@@ -265,7 +275,7 @@ public struct RenderBackend {
 //    }
 //
 //    @inlinable
-//    public static func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
+//    public static func bindingPath(argumentBuffer: _ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
 //        return backend.bindingPath(argumentBuffer: argumentBuffer, argumentName: argumentName, arrayIndex: arrayIndex)
 //    }
 //
@@ -300,7 +310,7 @@ public struct RenderBackend {
 //    }
 //
 //    @inlinable
-//    public static func dispose(argumentBuffer: ArgumentBuffer) {
+//    public static func dispose(argumentBuffer: _ArgumentBuffer) {
 //        return backend.dispose(argumentBuffer: argumentBuffer)
 //    }
 //

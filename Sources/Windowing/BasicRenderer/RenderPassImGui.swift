@@ -32,8 +32,8 @@ final class ImGuiPass : DrawRenderPass {
         return vertexDescriptor
     }()
     
-    static let pipelineDescriptor : RenderPipelineDescriptor = {
-        var descriptor = RenderPipelineDescriptor(identifier: DisplayRenderTargetIndex.self)
+    static let pipelineDescriptor : RenderPipelineDescriptor<DisplayRenderTargetIndex> = {
+        var descriptor = RenderPipelineDescriptor<DisplayRenderTargetIndex>()
         
         descriptor.vertexFunction = "imgui_vertex"
         descriptor.fragmentFunction = "imgui_fragment"
@@ -45,10 +45,10 @@ final class ImGuiPass : DrawRenderPass {
         blendDescriptor.destinationRGBBlendFactor = .oneMinusSourceAlpha
         blendDescriptor.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         
-        descriptor[blendStateFor: DisplayRenderTargetIndex.display] = blendDescriptor
+        descriptor[blendStateFor: .display] = blendDescriptor
         descriptor.label = "ImGui Pass Pipeline"
         
-        descriptor.functionConstants = AnyFunctionConstants(ImGuiFragmentFunctionConstants())
+        descriptor.setFunctionConstants(ImGuiFragmentFunctionConstants())
         
         return descriptor
     }()
@@ -66,7 +66,7 @@ final class ImGuiPass : DrawRenderPass {
     static let fontTexture : Texture = {
         let (pixels, width, height, bytesPerPixel) = ImGui.getFontTexDataAsAlpha8()
         
-        var textureDescriptor = TextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: width, height: height, mipmapped: false)
+        var textureDescriptor = TextureDescriptor(texture2DWithFormat: .r8Unorm, width: width, height: height, mipmapped: false)
         textureDescriptor.storageMode = .private
         textureDescriptor.usageHint = [.shaderRead, .blitDestination]
         let fontTexture = Texture(descriptor: textureDescriptor, flags: .persistent)
@@ -78,7 +78,7 @@ final class ImGuiPass : DrawRenderPass {
         })
         
         ImGui.setFontTexID(UnsafeMutableRawPointer(bitPattern: UInt(fontTexture.handle))!)
-    
+        
         return fontTexture
     }()
     
@@ -127,9 +127,9 @@ final class ImGuiPass : DrawRenderPass {
     let name = "ImGui"
     let renderer : Renderer
     let renderData : ImGui.RenderData
-    let renderTargetDescriptor: RenderTargetDescriptor
+    let renderTargetDescriptor: RenderTargetDescriptor<DisplayRenderTargetIndex>
     
-    init(renderer: Renderer, renderData: ImGui.RenderData, renderTargetDescriptor: RenderTargetDescriptor) {
+    init(renderer: Renderer, renderData: ImGui.RenderData, renderTargetDescriptor: RenderTargetDescriptor<DisplayRenderTargetIndex>) {
         
         let _ = ImGuiPass.fontTexture // make sure the font texture is initialised
         
@@ -154,8 +154,8 @@ final class ImGuiPass : DrawRenderPass {
         let displayWidth = Float(self.renderData.displaySize.width)
         let displayHeight = Float(self.renderData.displaySize.height)
         
-        let fbWidth = self.renderTargetDescriptor.colorAttachments[0]!.texture.descriptor.width
-        let fbHeight = self.renderTargetDescriptor.colorAttachments[0]!.texture.descriptor.height
+        let fbWidth = self.renderTargetDescriptor.size.width
+        let fbHeight = self.renderTargetDescriptor.size.height
         let fbWidthF = Float(fbWidth)
         let fbHeightF = Float(fbHeight)
         
@@ -204,10 +204,10 @@ final class ImGuiPass : DrawRenderPass {
                             let lookupHandle = UInt32(truncatingIfNeeded: textureIdentifier) // Only the lower 32 bits, since that's how many bits are reserved for the index in Texture.Handle.
                             texture = TextureLookup.textureWithId(lookupHandle) ?? Texture.invalid
                         }
-
+                        
                         guard let functionConstants = ImGuiFragmentFunctionConstants(descriptor: texture.descriptor, convertLinearToSRGB: texture == ImGuiPass.fontTexture) else { continue }
                         if previousFunctionConstants != functionConstants {
-                            pipelineDescriptor.functionConstants = AnyFunctionConstants(functionConstants)
+                            pipelineDescriptor.setFunctionConstants(functionConstants)
                             renderEncoder.setRenderPipelineDescriptor(pipelineDescriptor)
                             
                             previousFunctionConstants = functionConstants

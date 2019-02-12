@@ -35,6 +35,7 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
             bufferContents: { [self] (buffer, range) in self.bufferContents(for: buffer, range: range) },
             bufferDidModifyRange: { [self] (buffer, range) in self.buffer(buffer, didModifyRange: range) },
             replaceTextureRegion: { [self] (texture, region, mipmapLevel, bytes, bytesPerRow) in self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow) },
+            replaceTextureRegionForSlice: { (texture, region, mipmapLevel, slice, bytes, bytesPerRow, bytesPerImage) in self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage) },
             renderPipelineReflection: { [self] (pipeline, renderTarget) in self.renderPipelineReflection(descriptor: pipeline, renderTarget: renderTarget) },
             computePipelineReflection: { [self] (pipeline) in self.computePipelineReflection(descriptor: pipeline) },
             disposeTexture: { [self] texture in self.dispose(texture: texture) },
@@ -80,11 +81,11 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
         self.resourceRegistry.disposeBuffer(buffer, keepingReference: false)
     }
     
-    public func dispose(argumentBuffer: ArgumentBuffer) {
+    public func dispose(argumentBuffer: _ArgumentBuffer) {
         self.resourceRegistry.disposeArgumentBuffer(argumentBuffer, keepingReference: false)
     }
     
-    public func dispose(argumentBufferArray: ArgumentBufferArray) {
+    public func dispose(argumentBufferArray: _ArgumentBufferArray) {
         self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray, keepingReference: false)
     }
     
@@ -142,7 +143,13 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
         }
     }
     
-    public func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection {
+    public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
+        resourceRegistry.accessQueue.sync {
+            resourceRegistry.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
+        }
+    }
+    
+    public func renderPipelineReflection(descriptor: _RenderPipelineDescriptor, renderTarget: _RenderTargetDescriptor) -> PipelineReflection {
         return self.stateCaches.renderPipelineAccessQueue.sync { self.stateCaches.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget) }
     }
     

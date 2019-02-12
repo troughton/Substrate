@@ -8,7 +8,7 @@
 #ifndef CVkRendererShared_h
 #define CVkRendererShared_h
 
-#include <CVulkan.h>
+#include <vulkan/vulkan.h>
 
 #if defined _WIN32 || defined __CYGWIN__
 #define NOMINMAX

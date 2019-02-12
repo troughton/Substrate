@@ -7,7 +7,7 @@
 
 import SwiftFrameGraph
 import Metal
-
+import Utilities
 
 enum RenderTargetTextureError : Error {
     case invalidSizeDrawable(Texture)
@@ -189,7 +189,7 @@ extension MTLRenderPipelineDescriptor {
         self.stencilAttachmentPixelFormat = descriptor.stencilAttachmentFormat
         
         for i in 0..<descriptor.colorAttachmentFormats.count {
-            self.colorAttachments[i] = MTLRenderPipelineColorAttachmentDescriptor(blendDescriptor: descriptor.descriptor.blendStates[i], writeMask: descriptor.descriptor.writeMasks[i], pixelFormat: descriptor.colorAttachmentFormats[i])
+            self.colorAttachments[i] = MTLRenderPipelineColorAttachmentDescriptor(blendDescriptor: descriptor.descriptor.blendStates[i, default: nil], writeMask: descriptor.descriptor.writeMasks[i, default: []], pixelFormat: descriptor.colorAttachmentFormats[i, default: .invalid])
         }
     }
 }
@@ -207,11 +207,11 @@ extension MTLTextureDescriptor {
         self.sampleCount = descriptor.sampleCount
         self.arrayLength = descriptor.arrayLength
         
-        self.resourceOptions = MTLResourceOptions(storageMode: descriptor.storageMode, cacheMode: descriptor.cacheMode)
-        
         self.cpuCacheMode = MTLCPUCacheMode(descriptor.cacheMode)
         self.storageMode = MTLStorageMode(descriptor.storageMode)
         self.usage = usage
+        
+        self.resourceOptions = MTLResourceOptions(storageMode: descriptor.storageMode, cacheMode: descriptor.cacheMode)
     }
 }
 

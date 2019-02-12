@@ -273,7 +273,7 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
     private var _texture : CachedValue<Texture>!
     
     public var textureDescriptor : TextureDescriptor {
-        return TextureDescriptor.texture2DDescriptor(pixelFormat: PixelFormat(rawValue: mtkView.colorPixelFormat.rawValue)!, width: Int(exactly: self.drawableSize.width)!, height: Int(exactly: self.drawableSize.height)!, mipmapped: false)
+        return TextureDescriptor(texture2DWithFormat: PixelFormat(rawValue: mtkView.colorPixelFormat.rawValue)!, width: Int(exactly: self.drawableSize.width)!, height: Int(exactly: self.drawableSize.height)!, mipmapped: false)
     }
     
     public var texture : Texture {

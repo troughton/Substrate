@@ -291,8 +291,7 @@ public final class PersistentTextureRegistry : TextureRegistry {
     }
     
     @inlinable
-    public func allocate(descriptor: TextureDescriptor, flags: ResourceFlags) -> UInt64 {
-        
+    public func allocate(descriptor: TextureDescriptor, flags: ResourceFlags) -> UInt64 {        
         return self.queue.sync {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -357,13 +356,14 @@ public final class TransientArgumentBufferRegistry {
     public var count = 0
     
     public var data : UnsafeMutablePointer<_ArgumentBufferData>
+    public var sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
     
     public var labels : UnsafeMutablePointer<String?>
     
     public init() {
         self.allocator = ResizingAllocator(allocator: .system)
         self.inlineDataAllocator = ExpandingBuffer()
-        (self.data, self.labels) = allocator.reallocate(capacity: 16)
+        (self.data, self.sourceArrays, self.labels) = allocator.reallocate(capacity: 16)
     }
     
     @inlinable
@@ -375,6 +375,24 @@ public final class TransientArgumentBufferRegistry {
             assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
             
             self.data.advanced(by: index).initialize(to: _ArgumentBufferData())
+            self.sourceArrays.advanced(by: index).initialize(to: _ArgumentBufferArray(existingHandle: Resource.invalidResource.handle))
+            self.labels.advanced(by: index).initialize(to: nil)
+            self.count += 1
+            
+            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+        }
+    }
+    
+    @inlinable
+    public func allocate(flags: ResourceFlags, sourceArray: _ArgumentBufferArray) -> UInt64 {
+        return self.queue.sync {
+            self.ensureCapacity(self.count + 1)
+            
+            let index = self.count
+            assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
+            
+            self.data.advanced(by: index).initialize(to: _ArgumentBufferData())
+            self.sourceArrays.advanced(by: index).initialize(to: sourceArray)
             self.labels.advanced(by: index).initialize(to: nil)
             self.count += 1
             
@@ -385,13 +403,14 @@ public final class TransientArgumentBufferRegistry {
     @inlinable
     public func ensureCapacity(_ capacity: Int) {
         if self.allocator.capacity < capacity {
-            (self.data, self.labels) = allocator.reallocate(capacity: 2 * capacity)
+            (self.data, self.sourceArrays, self.labels) = allocator.reallocate(capacity: 2 * capacity)
         }
     }
     
     @inlinable
     public func clear() {
         self.data.deinitialize(count: self.count)
+        self.sourceArrays.deinitialize(count: self.count)
         self.labels.deinitialize(count: self.count)
         self.count = 0
     }
@@ -407,13 +426,14 @@ public final class PersistentArgumentBufferRegistry {
     public var maxIndex = 0
     
     public var data : UnsafeMutablePointer<_ArgumentBufferData>
+    public var sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
     public var inlineDataStorage : UnsafeMutablePointer<Data>
     
     public var labels : UnsafeMutablePointer<String?>
     
     public init() {
         self.allocator = ResizingAllocator(allocator: .system)
-        (self.data, self.inlineDataStorage, self.labels) = allocator.reallocate(capacity: 16)
+        (self.data, self.inlineDataStorage, self.sourceArrays, self.labels) = allocator.reallocate(capacity: 16)
     }
     
     public func allocate(flags: ResourceFlags) -> UInt64 {
@@ -435,14 +455,34 @@ public final class PersistentArgumentBufferRegistry {
         }
     }
     
-    @inlinable
-    public func ensureCapacity(_ capacity: Int) {
-        if self.allocator.capacity < capacity {
-            (self.data, self.inlineDataStorage, self.labels) = allocator.reallocate(capacity: 2 * capacity)
+    public func allocate(flags: ResourceFlags, sourceArray: _ArgumentBufferArray) -> UInt64 {
+        return self.queue.sync {
+            let index : Int
+            if let reusedIndex = self.freeIndices.popFirst() {
+                index = reusedIndex
+            } else {
+                index = self.maxIndex
+                self.ensureCapacity(self.maxIndex + 1)
+                self.maxIndex += 1
+            }
+            
+            self.data.advanced(by: index).initialize(to: _ArgumentBufferData())
+            self.inlineDataStorage.advanced(by: index).initialize(to: Data())
+            self.sourceArrays.advanced(by: index).initialize(to: sourceArray)
+            self.labels.advanced(by: index).initialize(to: nil)
+            
+            return UInt64(truncatingIfNeeded: index)
         }
     }
     
-    public func dispose(_ argumentBuffer: ArgumentBuffer) {
+    @inlinable
+    public func ensureCapacity(_ capacity: Int) {
+        if self.allocator.capacity < capacity {
+            (self.data, self.inlineDataStorage, self.sourceArrays, self.labels) = allocator.reallocate(capacity: 2 * capacity)
+        }
+    }
+    
+    public func dispose(_ argumentBuffer: _ArgumentBuffer) {
         self.queue.sync {
             RenderBackend.dispose(argumentBuffer: argumentBuffer)
             
@@ -450,6 +490,7 @@ public final class PersistentArgumentBufferRegistry {
             
             self.data.advanced(by: index).deinitialize(count: 1)
             self.inlineDataStorage.advanced(by: index).deinitialize(count: 1)
+            self.sourceArrays.advanced(by: index).deinitialize(count: 1)
             self.labels.advanced(by: index).deinitialize(count: 1)
             
             self.freeIndices.append(index)
@@ -465,7 +506,7 @@ public final class TransientArgumentBufferArrayRegistry {
     public let allocator : ResizingAllocator
     public var count = 0
     
-    public var bindings : UnsafeMutablePointer<[ArgumentBuffer?]>
+    public var bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>
     
     public var labels : UnsafeMutablePointer<String?>
     
@@ -514,7 +555,7 @@ public final class PersistentArgumentBufferArrayRegistry {
     public var freeIndices = RingBuffer<Int>()
     public var maxIndex = 0
     
-    public var bindings : UnsafeMutablePointer<[ArgumentBuffer?]>
+    public var bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>
     
     public var labels : UnsafeMutablePointer<String?>
     
@@ -548,9 +589,9 @@ public final class PersistentArgumentBufferArrayRegistry {
         }
     }
     
-    public func dispose(_ argumentBufferArray: ArgumentBufferArray) {
+    public func dispose(_ argumentBufferArray: _ArgumentBufferArray) {
         self.queue.sync {
-            print("Warning: disposal of non-transient ArgumentBufferArrays isn't implemented in RenderBackend.")
+            print("Warning: disposal of non-transient _ArgumentBufferArrays isn't implemented in RenderBackend.")
 //            RenderBackend.dispose(argumentBuffer: argumentBuffer)
             
             let index = argumentBufferArray.index

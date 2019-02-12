@@ -154,18 +154,18 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
-    public var argumentBuffer : ArgumentBuffer? {
+    public var argumentBuffer : _ArgumentBuffer? {
         if self.type == .argumentBuffer {
-            return ArgumentBuffer(existingHandle: self.handle)
+            return _ArgumentBuffer(existingHandle: self.handle)
         } else {
             return nil
         }
     }
     
     @inlinable
-    public var argumentBufferArray : ArgumentBufferArray? {
+    public var argumentBufferArray : _ArgumentBufferArray? {
         if self.type == .argumentBufferArray {
-            return ArgumentBufferArray(existingHandle: self.handle)
+            return _ArgumentBufferArray(existingHandle: self.handle)
         } else {
             return nil
         }
@@ -226,9 +226,9 @@ extension ResourceProtocol {
             case .texture:
                 return Texture(existingHandle: self.handle).stateFlags
             case .argumentBuffer:
-                return ArgumentBuffer(existingHandle: self.handle).stateFlags
+                return _ArgumentBuffer(existingHandle: self.handle).stateFlags
             case .argumentBufferArray:
-                return ArgumentBufferArray(existingHandle: self.handle).stateFlags
+                return _ArgumentBufferArray(existingHandle: self.handle).stateFlags
             default:
                 fatalError()
             }
@@ -240,9 +240,9 @@ extension ResourceProtocol {
             case .texture:
                 Texture(existingHandle: self.handle).stateFlags = newValue
             case .argumentBuffer:
-                ArgumentBuffer(existingHandle: self.handle).stateFlags = newValue
+                _ArgumentBuffer(existingHandle: self.handle).stateFlags = newValue
             case .argumentBufferArray:
-                ArgumentBufferArray(existingHandle: self.handle).stateFlags = newValue
+                _ArgumentBufferArray(existingHandle: self.handle).stateFlags = newValue
             default:
                 fatalError()
             }
@@ -258,9 +258,9 @@ extension ResourceProtocol {
             case .texture:
                 return Texture(existingHandle: self.handle).storageMode
             case .argumentBuffer:
-                return ArgumentBuffer(existingHandle: self.handle).storageMode
+                return _ArgumentBuffer(existingHandle: self.handle).storageMode
             case .argumentBufferArray:
-                return ArgumentBufferArray(existingHandle: self.handle).storageMode
+                return _ArgumentBufferArray(existingHandle: self.handle).storageMode
             default:
                 fatalError()
             }
@@ -276,9 +276,9 @@ extension ResourceProtocol {
             case .texture:
                 return Texture(existingHandle: self.handle).label
             case .argumentBuffer:
-                return ArgumentBuffer(existingHandle: self.handle).label
+                return _ArgumentBuffer(existingHandle: self.handle).label
             case .argumentBufferArray:
-                return ArgumentBufferArray(existingHandle: self.handle).label
+                return _ArgumentBufferArray(existingHandle: self.handle).label
             default:
                 fatalError()
             }
@@ -290,9 +290,9 @@ extension ResourceProtocol {
             case .texture:
                 Texture(existingHandle: self.handle).label = newValue
             case .argumentBuffer:
-                ArgumentBuffer(existingHandle: self.handle).label = newValue
+                _ArgumentBuffer(existingHandle: self.handle).label = newValue
             case .argumentBufferArray:
-                ArgumentBufferArray(existingHandle: self.handle).label = newValue
+                _ArgumentBufferArray(existingHandle: self.handle).label = newValue
             default:
                 fatalError()
             }
@@ -395,9 +395,9 @@ extension ResourceProtocol {
         case .texture:
             Texture(existingHandle: self.handle).dispose()
         case .argumentBuffer:
-            ArgumentBuffer(existingHandle: self.handle).dispose()
+            _ArgumentBuffer(existingHandle: self.handle).dispose()
         case .argumentBufferArray:
-            ArgumentBufferArray(existingHandle: self.handle).dispose()
+            _ArgumentBufferArray(existingHandle: self.handle).dispose()
         default:
             break
         }
@@ -511,6 +511,11 @@ public struct Buffer : ResourceProtocol {
     }
     
     public func applyDeferredSliceActions() {
+        // TODO: Add support for deferred slice actions to persistent resources. 
+        guard !self.flags.contains(.historyBuffer) else {
+            return
+        }
+        
         for action in self._deferredSliceActions {
             action.apply(self)
         }
@@ -750,6 +755,13 @@ public struct Texture : ResourceProtocol {
     }
     
     @inlinable
+    public func replace(region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
+        self.waitForCPUAccess(accessType: .write)
+        
+        RenderBackend.replaceTextureRegion(texture: self, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
+    }
+    
+    @inlinable
     public var flags : ResourceFlags {
         return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: (self.handle >> 32) & 0xFFFF))
     }
@@ -764,7 +776,7 @@ public struct Texture : ResourceProtocol {
         }
         nonmutating set {
             assert(self.flags.intersection([.historyBuffer, .persistent]) != [], "State flags can only be set on persistent resources.")
-            
+
             PersistentTextureRegistry.instance.stateFlags[self.index] = newValue
         }
     }

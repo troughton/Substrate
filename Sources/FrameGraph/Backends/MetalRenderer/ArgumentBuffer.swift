@@ -1,5 +1,5 @@
 //
-//  ArgumentBuffer.swift
+//  _ArgumentBuffer.swift
 //  MetalRenderer
 //
 //  Created by Thomas Roughton on 16/03/18.
@@ -11,7 +11,7 @@ import SwiftFrameGraph
 extension MTLArgumentEncoder {
 
     // TODO: not all resources may exist at the first use, so we need to try to fill in the remaining resources once they're materialised every time the argument buffer is bound.
-    func encodeArguments(from argBuffer: ArgumentBuffer, argumentBufferPath: ResourceBindingPath, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    func encodeArguments(from argBuffer: _ArgumentBuffer, argumentBufferPath: ResourceBindingPath, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         
         for (bindingPath, binding) in argBuffer.bindings {
             

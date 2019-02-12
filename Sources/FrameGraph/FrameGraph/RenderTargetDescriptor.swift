@@ -111,7 +111,89 @@ public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDe
     }
 }
 
-public struct RenderTargetDescriptor : Hashable {
+@_fixed_layout
+public struct RenderTargetDescriptor<I : RenderTargetIdentifier> {
+    public var _descriptor : _RenderTargetDescriptor
+    
+    @inlinable
+    public init() {
+        self._descriptor = _RenderTargetDescriptor(identifierType: I.self)
+    }
+    
+    @inlinable
+    public init(_ descriptor : _RenderTargetDescriptor) {
+        self._descriptor = descriptor
+    }
+    
+    
+    @inlinable
+    public subscript(attachment: I) -> RenderTargetColorAttachmentDescriptor? {
+        get {
+            return self._descriptor.colorAttachments[attachment.rawValue]
+        }
+        set {
+            self._descriptor.colorAttachments[attachment.rawValue] = newValue
+        }
+    }
+    
+    @inlinable
+    public subscript(colorAttachment attachmentIndex: Int) -> RenderTargetColorAttachmentDescriptor? {
+        get {
+            return self._descriptor.colorAttachments[attachmentIndex]
+        }
+        set {
+            self._descriptor.colorAttachments[attachmentIndex] = newValue
+        }
+    }
+    
+    @inlinable
+    public var depthAttachment : RenderTargetDepthAttachmentDescriptor? {
+        get {
+            return self._descriptor.depthAttachment
+        }
+        set {
+            self._descriptor.depthAttachment = newValue
+        }
+    }
+    
+    @inlinable
+    public var stencilAttachment : RenderTargetStencilAttachmentDescriptor? {
+        get {
+            return self._descriptor.stencilAttachment
+        }
+        set {
+            self._descriptor.stencilAttachment = newValue
+        }
+    }
+    
+    @inlinable
+    public var visibilityResultBuffer: Buffer? {
+        get {
+            return self._descriptor.visibilityResultBuffer
+        }
+        set {
+            self._descriptor.visibilityResultBuffer = newValue
+        }
+    }
+    
+    @inlinable
+    public var renderTargetArrayLength: Int {
+        get {
+            return self._descriptor.renderTargetArrayLength
+        }
+        set {
+            self._descriptor.renderTargetArrayLength = newValue
+        }
+    }
+    
+    @inlinable
+    public var size : Size {
+        return self._descriptor.size
+    }
+}
+
+@_fixed_layout
+public struct _RenderTargetDescriptor : Hashable {
     
     public init<I : RenderTargetIdentifier>(identifierType: I.Type) {
          self.colorAttachments = Array(repeating: nil, count: I.count)
@@ -127,31 +209,24 @@ public struct RenderTargetDescriptor : Hashable {
     
     public var renderTargetArrayLength: Int = 0
     
-    public subscript<I : RenderTargetIdentifier>(attachment: I) -> RenderTargetColorAttachmentDescriptor? {
-        get {
-            return self.colorAttachments[attachment.rawValue]
-        }
-        set {
-            self.colorAttachments[attachment.rawValue] = newValue
-        }
-    }
-    
     public var size : Size {
-        var width = 0
-        var height = 0
+        var width = Int.max
+        var height = Int.max
         
-        width = max(self.depthAttachment?.texture.width ?? 0, width)
-        height = max(self.depthAttachment?.texture.height ?? 0, height)
+        width = min(self.depthAttachment?.texture.width ?? .max, width)
+        height = min(self.depthAttachment?.texture.height ?? .max, height)
+        width = min(self.stencilAttachment?.texture.width ?? .max, width)
+        height = min(self.stencilAttachment?.texture.height ?? .max, height)
         
         for attachment in self.colorAttachments {
-            width = max(attachment?.texture.width ?? 0, width)
-            height = max(attachment?.texture.height ?? 0, height)
+            width = min(attachment?.texture.width ?? .max, width)
+            height = min(attachment?.texture.height ?? .max, height)
         }
         
-        return Size(width: width, height: height, depth: 1)
+        return width == .max ? Size(length: 1) : Size(width: width, height: height, depth: 1)
     }
     
-    public static func areMergeable(_ descriptorA: RenderTargetDescriptor, _ descriptorB: RenderTargetDescriptor) -> Bool {
+    public static func areMergeable(_ descriptorA: _RenderTargetDescriptor, _ descriptorB: _RenderTargetDescriptor) -> Bool {
         if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment, depthA.texture != depthB.texture || depthB.wantsClear {
             return false
         }
@@ -170,6 +245,6 @@ public struct RenderTargetDescriptor : Hashable {
             }
         }
         
-        return true
+        return descriptorA.size == descriptorB.size
     }
 }

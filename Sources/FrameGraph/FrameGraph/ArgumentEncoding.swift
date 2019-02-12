@@ -13,6 +13,12 @@ public protocol FunctionArgumentKey {
     func bindingPath(arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath?
 }
 
+extension RawRepresentable where Self.RawValue == String {
+    public var stringValue : String {
+        return self.rawValue
+    }
+}
+
 @_fixed_layout
 public struct FunctionArgumentCodingKey : FunctionArgumentKey {
     public let codingKey : CodingKey
@@ -55,15 +61,15 @@ extension String : FunctionArgumentKey {
 
 @_fixed_layout
 public struct _ArgumentBufferData {
-    public fileprivate(set) var enqueuedBindings = ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)>()
-    public var bindings = [(ResourceBindingPath, ArgumentBuffer.ArgumentResource)]()
+    public fileprivate(set) var enqueuedBindings = ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>()
+    public var bindings = [(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)]()
     
     public init() {
         
     }
     
-    public mutating func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
-        let unhandledBindings = ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)>()
+    public mutating func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
+        let unhandledBindings = ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>()
         
         while let (key, arrayIndex, binding) = self.enqueuedBindings.popLast() {
             if let bindingPath = closure(key, arrayIndex, binding) {
@@ -79,7 +85,7 @@ public struct _ArgumentBufferData {
 
 
 @_fixed_layout
-public struct ArgumentBuffer : ResourceProtocol {
+public struct _ArgumentBuffer : ResourceProtocol {
     
     public let handle : Handle
     
@@ -97,7 +103,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public init(flags: ResourceFlags = []) {
+    init(flags: ResourceFlags = []) {
         let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags)
@@ -108,6 +114,29 @@ public struct ArgumentBuffer : ResourceProtocol {
         self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.argumentBuffer.rawValue) << 48)
     }
     
+    @inlinable
+    init(flags: ResourceFlags = [], sourceArray: _ArgumentBufferArray) {
+        let index : UInt64
+        if flags.contains(.persistent) || flags.contains(.historyBuffer) {
+            index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
+        } else {
+            index = TransientArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
+        }
+        
+        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.argumentBuffer.rawValue) << 48)
+    }
+    
+    @inlinable
+    public var sourceArray : _ArgumentBufferArray? {
+        if self.flags.contains(.resourceView) {
+            if self._usesPersistentRegistry {
+                return PersistentArgumentBufferRegistry.instance.sourceArrays[self.index]
+            } else {
+                return TransientArgumentBufferRegistry.instance.sourceArrays[self.index]
+            }
+        }
+        return nil
+    }
     
     @inlinable
     public var stateFlags: ResourceStateFlags {
@@ -119,7 +148,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)> {
+    public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)> {
         get {
             if self._usesPersistentRegistry {
                 return PersistentArgumentBufferRegistry.instance.data[self.index].enqueuedBindings
@@ -130,7 +159,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public var bindings : [(ResourceBindingPath, ArgumentBuffer.ArgumentResource)] {
+    public var bindings : [(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)] {
         get {
             if self._usesPersistentRegistry {
                 return PersistentArgumentBufferRegistry.instance.data[self.index].bindings
@@ -169,17 +198,17 @@ public struct ArgumentBuffer : ResourceProtocol {
     public var storageMode: StorageMode {
         return .shared
     }
-
+    
     // Thread-safe
-    public func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
+    public func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
         if self._usesPersistentRegistry {
             PersistentArgumentBufferRegistry.instance.queue.sync { PersistentArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindings(closure)
             }
         } else {
             TransientArgumentBufferRegistry.instance.queue.sync {
-TransientArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindings(closure)
-
-}
+                TransientArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindings(closure)
+                
+            }
         }
     }
     
@@ -220,7 +249,7 @@ TransientArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindi
 }
 
 @_fixed_layout
-public struct ArgumentBufferArray : ResourceProtocol {
+public struct _ArgumentBufferArray : ResourceProtocol {
     public let handle : Handle
     
     @inlinable
@@ -229,7 +258,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
     }
     
     @inlinable
-    public init(flags: ResourceFlags = []) {
+    init(flags: ResourceFlags = []) {
         let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             index = PersistentArgumentBufferArrayRegistry.instance.allocate(flags: flags)
@@ -245,6 +274,9 @@ public struct ArgumentBufferArray : ResourceProtocol {
         guard self._usesPersistentRegistry else {
             return
         }
+        for binding in self._bindings {
+            binding?.dispose()
+        }
         PersistentArgumentBufferArrayRegistry.instance.dispose(self)
     }
     
@@ -258,7 +290,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
     }
     
     @inlinable
-    public var bindings : [ArgumentBuffer?] {
+    public var _bindings : [_ArgumentBuffer?] {
         get {
             if self._usesPersistentRegistry {
                 return PersistentArgumentBufferArrayRegistry.instance.bindings[self.index]
@@ -297,42 +329,21 @@ public struct ArgumentBufferArray : ResourceProtocol {
     public var storageMode: StorageMode {
         return .shared
     }
-    
-    public func reserveCapacity(_ capacity: Int) {
-        self.bindings.reserveCapacity(capacity)
-    }
-    
-    public subscript(index: Int) -> ArgumentBuffer? {
-        get {
-            if index < self.bindings.count {
-                return self.bindings[index]
-            }
-            return nil
-        }
-        nonmutating set {
-            if index < self.bindings.count {
-                self.bindings[index] = newValue
-            } else {
-                self.bindings.append(contentsOf: repeatElement(nil, count: index - self.bindings.count + 1))
-                self.bindings[index] = newValue
-            }
-        }
-    }
 }
 
 @_fixed_layout
-public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
-
-    public let argumentBuffer : ArgumentBuffer
+public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
+    
+    public let argumentBuffer : _ArgumentBuffer
     
     @inlinable
     public init(existingHandle: Handle) {
-        self.argumentBuffer = ArgumentBuffer(existingHandle: existingHandle)
+        self.argumentBuffer = _ArgumentBuffer(existingHandle: existingHandle)
     }
     
     @inlinable
     public init(flags: ResourceFlags) {
-        self.argumentBuffer = ArgumentBuffer(flags: flags)
+        self.argumentBuffer = _ArgumentBuffer(flags: flags)
     }
     
     @inlinable
@@ -361,14 +372,21 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     }
     
     @inlinable
-    public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)> {
+    public var sourceArray : ArgumentBufferArray<K>? {
+        return self.argumentBuffer.sourceArray.map { ArgumentBufferArray(existingHandle: $0.handle) }
+    }
+    
+    @inlinable
+    public var _enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)> {
         return self.argumentBuffer.enqueuedBindings
     }
     
     @inlinable
-    public func setBuffer(_ buffer: Buffer, offset: Int, key: K, arrayIndex: Int = 0) {
+    public func setBuffer(_ buffer: Buffer?, offset: Int, key: K, arrayIndex: Int = 0) {
+        guard let buffer = buffer else { return }
+        
         assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.enqueuedBindings.append(
+        self._enqueuedBindings.append(
             (key, arrayIndex, .buffer(buffer, offset: offset))
         )
     }
@@ -376,14 +394,14 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     @inlinable
     public func setTexture(_ texture: Texture, key: K, arrayIndex: Int = 0) {
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.enqueuedBindings.append(
+        self._enqueuedBindings.append(
             (key, arrayIndex, .texture(texture))
         )
     }
     
     @inlinable
     public func setSampler(_ sampler: SamplerDescriptor, key: K, arrayIndex: Int = 0) {
-        self.enqueuedBindings.append(
+        self._enqueuedBindings.append(
             (key, arrayIndex, .sampler(sampler))
         )
     }
@@ -404,13 +422,13 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     @inlinable
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, for key: K, arrayIndex: Int = 0) {
         let currentOffset = self.argumentBuffer._copyBytes(bytes, length: length)
-        self.enqueuedBindings.append(
+        self._enqueuedBindings.append(
             (key, arrayIndex, .bytes(offset: currentOffset, length: length))
         )
     }
 }
 
-extension TypedArgumentBuffer {
+extension ArgumentBuffer {
     
     public func setBuffers(_ buffers: [Buffer], offsets: [Int], keys: [K]) {
         for (buffer, (offset, key)) in zip(buffers, zip(offsets, keys)) {
@@ -427,6 +445,76 @@ extension TypedArgumentBuffer {
     public func setSamplers(_ samplers: [SamplerDescriptor], keys: [K]) {
         for (sampler, key) in zip(samplers, keys) {
             self.setSampler(sampler, key: key)
+        }
+    }
+}
+
+@_fixed_layout
+public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
+    public let argumentBufferArray : _ArgumentBufferArray
+    
+    @inlinable
+    public init(existingHandle: Handle) {
+        self.argumentBufferArray = _ArgumentBufferArray(existingHandle: existingHandle)
+    }
+    
+    @inlinable
+    public init(flags: ResourceFlags = []) {
+        self.argumentBufferArray = _ArgumentBufferArray(flags: flags)
+    }
+    
+    @inlinable
+    public func dispose() {
+        self.argumentBufferArray.dispose()
+    }
+    
+    @inlinable
+    public var handle: _ArgumentBufferArray.Handle {
+        return self.argumentBufferArray.handle
+    }
+    
+    @inlinable
+    public var stateFlags: ResourceStateFlags {
+        get {
+            return self.argumentBufferArray.stateFlags
+        }
+        nonmutating set {
+            self.argumentBufferArray.stateFlags = newValue
+        }
+    }
+    
+    @inlinable
+    public var label : String? {
+        get {
+            return self.argumentBufferArray.label
+        }
+        nonmutating set {
+            self.argumentBufferArray.label = newValue
+        }
+    }
+    
+    @inlinable
+    public var storageMode: StorageMode {
+        return self.argumentBufferArray.storageMode
+    }
+    
+    public func reserveCapacity(_ capacity: Int) {
+        self.argumentBufferArray._bindings.reserveCapacity(capacity)
+    }
+    
+    public subscript(index: Int) -> ArgumentBuffer<K> {
+        get {
+            if index >= self.argumentBufferArray._bindings.count {
+                self.argumentBufferArray._bindings.append(contentsOf: repeatElement(nil, count: index - self.argumentBufferArray._bindings.count + 1))
+            }
+            
+            if let buffer = self.argumentBufferArray._bindings[index] {
+                return ArgumentBuffer(existingHandle: buffer.handle)
+            }
+            
+            let buffer = _ArgumentBuffer(flags: [self.flags, .resourceView], sourceArray: self.argumentBufferArray)
+            self.argumentBufferArray._bindings[index] = buffer
+            return ArgumentBuffer(existingHandle: buffer.handle)
         }
     }
 }

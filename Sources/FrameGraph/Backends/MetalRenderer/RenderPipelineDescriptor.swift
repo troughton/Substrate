@@ -9,12 +9,12 @@ import Metal
 import SwiftFrameGraph
 
 struct MetalRenderPipelineDescriptor : Hashable {
-    var descriptor : RenderPipelineDescriptor
+    var descriptor : _RenderPipelineDescriptor
     var colorAttachmentFormats : [MTLPixelFormat]
     var depthAttachmentFormat : MTLPixelFormat = .invalid
     var stencilAttachmentFormat : MTLPixelFormat = .invalid
     
-    public init(_ descriptor: RenderPipelineDescriptor, renderTargetDescriptor: RenderTargetDescriptor) {
+    public init(_ descriptor: _RenderPipelineDescriptor, renderTargetDescriptor: _RenderTargetDescriptor) {
         self.descriptor = descriptor
         self.colorAttachmentFormats = renderTargetDescriptor.colorAttachments.map { MTLPixelFormat($0?.texture.descriptor.pixelFormat ?? .invalid) }
         self.depthAttachmentFormat = MTLPixelFormat(renderTargetDescriptor.depthAttachment?.texture.descriptor.pixelFormat ?? .invalid)

@@ -9,8 +9,8 @@ import Metal
 import SwiftFrameGraph
 
 final class MetalRenderTargetDescriptor {
-    var descriptor : RenderTargetDescriptor
-    var renderPasses = [DrawRenderPass]()
+    var descriptor : _RenderTargetDescriptor
+    var renderPasses = [_DrawRenderPass]()
     
     var colorActions : [(MTLLoadAction, MTLStoreAction)] = []
     
@@ -18,8 +18,8 @@ final class MetalRenderTargetDescriptor {
     
     var stencilActions : (MTLLoadAction, MTLStoreAction) = (.dontCare, .dontCare)
     
-    init(renderPass: DrawRenderPass) {
-        self.descriptor = renderPass.renderTargetDescriptor
+    init(renderPass: _DrawRenderPass) {
+        self.descriptor = renderPass._renderTargetDescriptor
         self.renderPasses.append(renderPass)
     }
     
@@ -46,34 +46,34 @@ final class MetalRenderTargetDescriptor {
                 descriptor.depthPlane  == new.depthPlane
     }
     
-    func tryMerge(withPass pass: DrawRenderPass) -> Bool {
-        if pass.renderTargetDescriptor.colorAttachments.count != self.descriptor.colorAttachments.count {
+    func tryMerge(withPass pass: _DrawRenderPass) -> Bool {
+        if pass._renderTargetDescriptor.colorAttachments.count != self.descriptor.colorAttachments.count {
             return false // The render targets must be using the same AttachmentIdentifier and therefore have the same maximum attachment count.
         }
         
         var newDescriptor = descriptor
         
         for i in 0..<newDescriptor.colorAttachments.count {
-            if !self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: pass.renderTargetDescriptor.colorAttachments[i]) {
+            if !self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: pass._renderTargetDescriptor.colorAttachments[i]) {
                 return false
             }
         }
         
-        if !self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: pass.renderTargetDescriptor.depthAttachment) {
+        if !self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: pass._renderTargetDescriptor.depthAttachment) {
             return false
         }
         
-        if !self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: pass.renderTargetDescriptor.stencilAttachment) {
+        if !self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: pass._renderTargetDescriptor.stencilAttachment) {
             return false
         }
         
-        if newDescriptor.visibilityResultBuffer != nil && pass.renderTargetDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
+        if newDescriptor.visibilityResultBuffer != nil && pass._renderTargetDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
             return false
         } else {
-            newDescriptor.visibilityResultBuffer = pass.renderTargetDescriptor.visibilityResultBuffer
+            newDescriptor.visibilityResultBuffer = pass._renderTargetDescriptor.visibilityResultBuffer
         }
         
-        newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, pass.renderTargetDescriptor.renderTargetArrayLength)
+        newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, pass._renderTargetDescriptor.renderTargetArrayLength)
         
         self.descriptor = newDescriptor
         self.renderPasses.append(pass)
@@ -81,7 +81,7 @@ final class MetalRenderTargetDescriptor {
         return true
     }
     
-    func descriptorMergedWithPass(_ pass: DrawRenderPass, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
+    func descriptorMergedWithPass(_ pass: _DrawRenderPass, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
         if self.tryMerge(withPass: pass) {
             return self
         } else {
@@ -118,8 +118,8 @@ final class MetalRenderTargetDescriptor {
             
             switch usage.type {
             case _ where usage.type.isRenderTarget:
-                guard let renderPass = usage.renderPassRecord.pass as? DrawRenderPass else { fatalError() }
-                let descriptor = renderPass.renderTargetDescriptor
+                guard let renderPass = usage.renderPassRecord.pass as? _DrawRenderPass else { fatalError() }
+                let descriptor = renderPass._renderTargetDescriptor
                 if let depthAttachment = descriptor.depthAttachment,
                     depthAttachment.texture == attachment.texture,
                     depthAttachment.slice == attachment.slice,
