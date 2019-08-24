@@ -6,13 +6,63 @@
 //  Copyright © 2017 Team Llama. All rights reserved.
 //
 
-public struct BufferView : Encodable {
-    public var buffer : Buffer
+@propertyWrapper
+public struct OffsetView<T> {
+    public var wrappedValue : T
     public var offset : Int
     
-    public init(into buffer: Buffer, offset: Int) {
-        self.buffer = buffer
+    @inlinable
+    public init(wrappedValue: T) {
+        self.wrappedValue = wrappedValue
+        self.offset = 0
+    }
+    
+    @inlinable
+    public init(value: T, offset: Int) {
+        self.wrappedValue = value
         self.offset = offset
+    }
+    
+    @inlinable
+    public var projectedValue : OffsetView<T> {
+        get {
+            return self
+        }
+        set {
+            self = newValue
+        }
+    }
+}
+
+@propertyWrapper
+public struct BufferBacked<T> {
+    public var wrappedValue : T! {
+        didSet {
+            self.updateBuffer()
+        }
+    }
+    public var buffer : OffsetView<Buffer>?
+    
+    public init(wrappedValue: T?) {
+        self.wrappedValue = wrappedValue
+        self.buffer = nil
+        self.updateBuffer()
+    }
+    
+    public mutating func updateBuffer() {
+        if var value = self.wrappedValue {
+            self.buffer = OffsetView(value: Buffer(length: MemoryLayout<T>.size, bytes: &value), offset: 0)
+        }
+    }
+    
+    @inlinable
+    public var projectedValue : BufferBacked<T> {
+        get {
+            return self
+        }
+        set {
+            self = newValue
+        }
     }
 }
 
@@ -153,8 +203,6 @@ fileprivate struct _FunctionArgumentKeyedEncodingContainer<K : CodingKey, CE : R
             self.commandEncoder.setTexture(texture, key: functionArgumentKey(key))
         case let buffer as Buffer:
             self.commandEncoder.setBuffer(buffer, offset: 0, key: functionArgumentKey(key))
-        case let bufferView as BufferView:
-            self.commandEncoder.setBuffer(bufferView.buffer, offset: bufferView.offset, key: functionArgumentKey(key))
         case let sampler as SamplerDescriptor:
             self.commandEncoder.setSampler(sampler, key: functionArgumentKey(key))
         default:

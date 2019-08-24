@@ -14,6 +14,8 @@ public protocol PipelineReflection : class {
     func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath
     func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection?
     func bindingIsActive(at path: ResourceBindingPath) -> Bool
+    
+    func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer?
 }
 
 extension PipelineReflection {
@@ -24,6 +26,7 @@ extension PipelineReflection {
 
 public protocol RenderBackendProtocol : class {
     
+    func registerExternalResource(_ resource: Resource, backingResource: Any)
     func registerWindowTexture(texture: Texture, context: Any)
     
     func materialisePersistentTexture(_ texture: Texture)
@@ -32,16 +35,21 @@ public protocol RenderBackendProtocol : class {
     func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
     
+    func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int)
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int)
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int)
-    func renderPipelineReflection(descriptor: _RenderPipelineDescriptor, renderTarget: _RenderTargetDescriptor) -> PipelineReflection
-    func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection
+    
+    // Note: The pipeline reflection functions may return nil if reflection information could not be created for the pipeline.
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection?
+    func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection?
     
     func dispose(texture: Texture)
     func dispose(buffer: Buffer)
     func dispose(argumentBuffer: _ArgumentBuffer)
     
     func backingResource(_ resource: Resource) -> Any?
+    
+    func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
     
     var isDepth24Stencil8PixelFormatSupported : Bool { get }
     var threadExecutionWidth : Int { get }
@@ -51,8 +59,8 @@ public protocol RenderBackendProtocol : class {
     var maxInflightFrames : Int { get }
 }
 
-@_fixed_layout
 public struct _CachedRenderBackend {
+    public var registerExternalResource : (Resource, Any) -> Void
     public var registerWindowTexture : (Texture, Any) -> Void
     
     public var materialisePersistentTexture : (Texture) -> Void
@@ -60,13 +68,15 @@ public struct _CachedRenderBackend {
     
     public var bufferContents : (Buffer, Range<Int>) -> UnsafeMutableRawPointer
     public var bufferDidModifyRange : (Buffer, Range<Int>) -> Void
+   
+    public var copyTextureBytes : (Texture, UnsafeMutableRawPointer, Int, Region, Int) -> Void
     
     public var replaceTextureRegion : (Texture, Region, Int, UnsafeRawPointer,Int) -> Void
     public var replaceTextureRegionForSlice : (Texture, Region, Int, Int, UnsafeRawPointer, Int, Int) -> Void
    
-    public var renderPipelineReflection : (_RenderPipelineDescriptor, _RenderTargetDescriptor) -> PipelineReflection
+    public var renderPipelineReflection : (RenderPipelineDescriptor,RenderTargetDescriptor) -> PipelineReflection?
     
-    public var computePipelineReflection : (ComputePipelineDescriptor) -> PipelineReflection
+    public var computePipelineReflection : (ComputePipelineDescriptor) -> PipelineReflection?
     
     public var disposeTexture : (Texture) -> Void
     public var disposeBuffer : (Buffer) -> Void
@@ -82,15 +92,19 @@ public struct _CachedRenderBackend {
     
     public var maxInflightFrames : () -> Int
     
-    public init(registerWindowTexture: @escaping (Texture, Any) -> Void,
+    public var argumentBufferPath : (Int, RenderStages) -> ResourceBindingPath
+    
+    public init(registerExternalResource: @escaping (Resource, Any) -> Void,
+                registerWindowTexture: @escaping (Texture, Any) -> Void,
                 materialisePersistentTexture: @escaping (Texture) -> Void,
                 materialisePersistentBuffer: @escaping (Buffer) -> Void,
                 bufferContents: @escaping (Buffer, Range<Int>) -> UnsafeMutableRawPointer,
                 bufferDidModifyRange: @escaping (Buffer, Range<Int>) -> Void,
+                copyTextureBytes: @escaping (Texture, UnsafeMutableRawPointer, Int, Region, Int) -> Void,
                 replaceTextureRegion: @escaping (Texture, Region, Int, UnsafeRawPointer, Int) -> Void,
                 replaceTextureRegionForSlice: @escaping (Texture, Region, Int, Int, UnsafeRawPointer, Int, Int) -> Void,
-                renderPipelineReflection: @escaping (_RenderPipelineDescriptor, _RenderTargetDescriptor) -> PipelineReflection,
-                computePipelineReflection: @escaping (ComputePipelineDescriptor) -> PipelineReflection,
+                renderPipelineReflection: @escaping (RenderPipelineDescriptor,RenderTargetDescriptor) -> PipelineReflection?,
+                computePipelineReflection: @escaping (ComputePipelineDescriptor) -> PipelineReflection?,
                 disposeTexture: @escaping (Texture) -> Void,
                 disposeBuffer: @escaping (Buffer) -> Void,
                 disposeArgumentBuffer: @escaping (_ArgumentBuffer) -> Void,
@@ -99,12 +113,15 @@ public struct _CachedRenderBackend {
                 isDepth24Stencil8PixelFormatSupported: @escaping () -> Bool,
                 threadExecutionWidth: @escaping () -> Int,
                 renderDevice: @escaping () -> Any,
-                maxInflightFrames: @escaping () -> Int) {
+                maxInflightFrames: @escaping () -> Int,
+                argumentBufferPath: @escaping (Int, RenderStages) -> ResourceBindingPath) {
+        self.registerExternalResource = registerExternalResource
         self.registerWindowTexture = registerWindowTexture
         self.materialisePersistentTexture = materialisePersistentTexture
         self.materialisePersistentBuffer = materialisePersistentBuffer
         self.bufferContents = bufferContents
         self.bufferDidModifyRange = bufferDidModifyRange
+        self.copyTextureBytes = copyTextureBytes
         self.replaceTextureRegion = replaceTextureRegion
         self.replaceTextureRegionForSlice = replaceTextureRegionForSlice
         self.renderPipelineReflection = renderPipelineReflection
@@ -118,13 +135,16 @@ public struct _CachedRenderBackend {
         self.threadExecutionWidth = threadExecutionWidth
         self.renderDevice = renderDevice
         self.maxInflightFrames = maxInflightFrames
+        self.argumentBufferPath = argumentBufferPath
     }
     
-    public static let nilBackend : _CachedRenderBackend = _CachedRenderBackend(registerWindowTexture: { _, _ in },
+    public static let nilBackend : _CachedRenderBackend = _CachedRenderBackend(registerExternalResource: { _, _ in },
+                                                                               registerWindowTexture: { _, _ in },
                                                                                materialisePersistentTexture: { _ in },
                                                                                materialisePersistentBuffer: { _ in },
                                                                                bufferContents: { _, _ in fatalError() },
                                                                                bufferDidModifyRange: { _, _ in },
+                                                                               copyTextureBytes: { _, _, _, _, _ in },
                                                                                replaceTextureRegion: { _, _, _, _, _ in },
                                                                                replaceTextureRegionForSlice: { _, _, _, _, _, _, _ in },
                                                                                renderPipelineReflection: { _, _ in fatalError() },
@@ -137,10 +157,10 @@ public struct _CachedRenderBackend {
                                                                                isDepth24Stencil8PixelFormatSupported: { false },
                                                                                threadExecutionWidth: { 0 },
                                                                                renderDevice: { fatalError() },
-                                                                               maxInflightFrames: { 0 })
+                                                                               maxInflightFrames: { 0 },
+                                                                               argumentBufferPath: { _,_ in fatalError() })
 }
 
-@_fixed_layout
 public struct RenderBackend {
     public static var _cachedBackend = _CachedRenderBackend.nilBackend
     
@@ -154,6 +174,11 @@ public struct RenderBackend {
     public static func materialisePersistentTexture(_ texture: Texture) {
         return _cachedBackend.materialisePersistentTexture(texture)
     }
+
+    @inlinable
+    public static func registerExternalResource(_ resource: Resource, backingResource: Any) {
+        return _cachedBackend.registerExternalResource(resource, backingResource)
+    }
     
     @inlinable
     public static func registerWindowTexture(texture: Texture, context: Any) {
@@ -166,12 +191,12 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func renderPipelineReflection(descriptor: _RenderPipelineDescriptor, renderTarget: _RenderTargetDescriptor) -> PipelineReflection {
+    public static func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection? {
         return _cachedBackend.renderPipelineReflection(descriptor, renderTarget)
     }
     
     @inlinable
-    public static func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection {
+    public static func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection? {
         return _cachedBackend.computePipelineReflection(descriptor)
     }
     
@@ -219,6 +244,11 @@ public struct RenderBackend {
     public static func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         return _cachedBackend.bufferDidModifyRange(buffer, range)
     }
+
+    @inlinable
+    public static func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
+        return _cachedBackend.copyTextureBytes(texture, bytes, bytesPerRow, region, mipmapLevel)
+    }
     
     @inlinable
     public static func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
@@ -234,132 +264,18 @@ public struct RenderBackend {
     public static var renderDevice : Any {
         return _cachedBackend.renderDevice()
     }
+    
+    
+    public static var pushConstantPath : ResourceBindingPath = ResourceBindingPath.nil
+    
+     /// There are eight binding slots for argument buffers; this maps from a binding index to the ResourceBindingPath that identifies that index in the backend.
+    @inlinable
+    public static func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath {
+        assert(index < 8)
+        return _cachedBackend.argumentBufferPath(index, stages)
+    }
 }
 
-//@_fixed_layout
-//public struct RenderBackend {
-//
-//    // This is going to go through a protocol lookup table every time for each method, which might be slow.
-//    // However, we can cache the functions (the result of the lookup entry) within the types that call them
-//    // if need be; e.g. let newTextureHandle = backend.newTextureHandle.
-//    public static var backend : RenderBackendProtocol! = nil
-//
-//    @inlinable
-//    public static var maxInflightFrames : Int {
-//        return backend.maxInflightFrames
-//    }
-//
-//    @inlinable
-//    public static func materialisePersistentTexture(_ texture: Texture) {
-//        return backend.materialisePersistentTexture(texture)
-//    }
-//
-//    @inlinable
-//    public static func registerWindowTexture(texture: Texture, context: Any) {
-//        return backend.registerWindowTexture(texture: texture, context: context)
-//    }
-//
-//    @inlinable
-//    public static func materialisePersistentBuffer(_ buffer: Buffer) {
-//        return backend.materialisePersistentBuffer(buffer)
-//    }
-//
-//    @inlinable
-//    public static func setReflectionRenderPipeline(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) {
-//        return backend.setReflectionRenderPipeline(descriptor: descriptor, renderTarget: renderTarget)
-//    }
-//
-//    @inlinable
-//    public static func setReflectionComputePipeline(descriptor: ComputePipelineDescriptor) {
-//        return backend.setReflectionComputePipeline(descriptor: descriptor)
-//    }
-//
-//    @inlinable
-//    public static func bindingPath(argumentBuffer: _ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
-//        return backend.bindingPath(argumentBuffer: argumentBuffer, argumentName: argumentName, arrayIndex: arrayIndex)
-//    }
-//
-//    @inlinable
-//    public static func bindingPath(argumentName: String, arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath? {
-//        return backend.bindingPath(argumentName: argumentName, arrayIndex: arrayIndex, argumentBufferPath: argumentBufferPath)
-//    }
-//
-//    @inlinable
-//    public static func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath {
-//        return backend.bindingPath(pathInOriginalArgumentBuffer: pathInOriginalArgumentBuffer, newArgumentBufferPath: newArgumentBufferPath)
-//    }
-//
-//    @inlinable
-//    public static func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
-//        return backend.argumentReflection(at: path)
-//    }
-//
-//    @inlinable
-//    public static func bindingIsActive(at path: ResourceBindingPath) -> Bool {
-//        return backend.bindingIsActive(at: path)
-//    }
-//
-//    @inlinable
-//    public static func dispose(texture: Texture) {
-//        return backend.dispose(texture: texture)
-//    }
-//
-//    @inlinable
-//    public static func dispose(buffer: Buffer) {
-//        return backend.dispose(buffer: buffer)
-//    }
-//
-//    @inlinable
-//    public static func dispose(argumentBuffer: _ArgumentBuffer) {
-//        return backend.dispose(argumentBuffer: argumentBuffer)
-//    }
-//
-//    @inlinable
-//    public static var isDepth24Stencil8PixelFormatSupported : Bool {
-//        return backend.isDepth24Stencil8PixelFormatSupported
-//    }
-//
-//    @inlinable
-//    public static var threadExecutionWidth : Int {
-//        return backend.threadExecutionWidth
-//    }
-//
-//    @inlinable
-//    public static func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
-//        return backend.bufferContents(for: buffer, range: range)
-//    }
-//
-//    @inlinable
-//    public static func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
-//        return backend.buffer(buffer, didModifyRange: range)
-//    }
-//
-//    @inlinable
-//    public static func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-//        return backend.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
-//    }
-//
-//    @inlinable
-//    public static var renderDevice : Any {
-//        return backend.renderDevice
-//    }
-//}
-
-
-/*!
- @enum FunctionType
- @abstract An identifier for a top-level function.
- @discussion Each location in the API where a program is used requires a function written for that specific usage.
- 
- @constant FunctionTypeVertex
- A vertex shader, usable for a RenderPipelineState.
- 
- @constant FunctionTypeFragment
- A fragment shader, usable for a RenderPipelineState.
- 
- @constant FunctionTypeKernel
- A compute kernel, usable to create a ComputePipelineState.
- */
 public enum FunctionType : UInt {
     case vertex
     case fragment
@@ -396,28 +312,6 @@ public protocol Attribute : class {
     var isPatchControlPointData: Bool { get }
 }
 
-/*!
- @interface FunctionConstantReflection
- @abstract describe an uberShader constant used by the function
- */
-public struct FunctionConstantReflection {
-    
-    let name: String
-    
-    let type: DataType
-    
-    let index: Int
-    
-    let required: Bool
-    
-    public init(name: String, type: DataType, index: Int, required: Bool) {
-        self.name = name
-        self.type = type
-        self.index = index
-        self.required = required
-    }
-}
-
 public enum FunctionConstantValue : Hashable {
     case int8(Int8)
     case int16(Int16)
@@ -426,29 +320,130 @@ public enum FunctionConstantValue : Hashable {
     case uint8(UInt8)
     case uint16(UInt16)
     case uint32(UInt32)
+    
     case bool(Bool)
     case float(Float)
 }
 
-public typealias FunctionConstants = Encodable & Hashable
+public typealias FunctionConstantCodable = Encodable & Hashable
 
-public struct AnyFunctionConstants : FunctionConstants {
-    private let constants : AnyHashable
-    
-    public init<T : FunctionConstants>(_ constants: T) {
-        self.constants = constants
+public protocol FunctionConstantEncodable : NoArgConstructable, Equatable {
+    func encode(into constants: inout FunctionConstants)
+}
+
+public struct FunctionConstants : Hashable {
+    public struct IndexedConstant : Hashable {
+        public var index : Int
+        public var value : FunctionConstantValue
+        
+        public init(index: Int, value: FunctionConstantValue) {
+            self.index = index
+            self.value = value
+        }
     }
     
-    public func encode(to encoder: Encoder) throws {
-        try (self.constants.base as! Encodable).encode(to: encoder)
+    public var indexedConstants : [IndexedConstant] = []
+    public var namedConstants : [String : FunctionConstantValue] = [:]
+    
+    public init<T : FunctionConstantCodable>(_ constants: T) throws {
+        let encoder = FunctionConstantEncoder()
+        try constants.encode(to: encoder)
+        self.namedConstants = encoder.constants
     }
     
-    public var hashValue: Int {
-        return self.constants.hashValue
+    @inlinable
+    public init<T : FunctionConstantEncodable>(_ constants: T) {
+        self.init()
+        constants.encode(into: &self)
     }
     
-    public static func == (lhs: AnyFunctionConstants, rhs: AnyFunctionConstants) -> Bool {
-        return lhs.constants == rhs.constants
+    @inlinable
+    public init() {
+        
+    }
+    
+    // Indexed constants
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Int8, at index: Int) {
+        self.indexedConstants.append(FunctionConstants.IndexedConstant(index: index, value: .int8(constant)))
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Int16, at index: Int) {
+        self.indexedConstants.append(FunctionConstants.IndexedConstant(index: index, value: .int16(constant)))
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Int32, at index: Int) {
+        self.indexedConstants.append(FunctionConstants.IndexedConstant(index: index, value: .int32(constant)))
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: UInt8, at index: Int) {
+        self.indexedConstants.append(FunctionConstants.IndexedConstant(index: index, value: .uint8(constant)))
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: UInt16, at index: Int) {
+        self.indexedConstants.append(FunctionConstants.IndexedConstant(index: index, value: .uint16(constant)))
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: UInt32, at index: Int) {
+        self.indexedConstants.append(FunctionConstants.IndexedConstant(index: index, value: .uint32(constant)))
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Float, at index: Int) {
+        self.indexedConstants.append(FunctionConstants.IndexedConstant(index: index, value: .float(constant)))
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Bool, at index: Int) {
+        self.indexedConstants.append(FunctionConstants.IndexedConstant(index: index, value: .bool(constant)))
+    }
+    
+    // Named constants
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Int8, for name: String) {
+        self.namedConstants[name] = .int8(constant)
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Int16, for name: String) {
+        self.namedConstants[name] = .int16(constant)
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Int32, for name: String) {
+        self.namedConstants[name] = .int32(constant)
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: UInt8, for name: String) {
+        self.namedConstants[name] = .uint8(constant)
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: UInt16, for name: String) {
+        self.namedConstants[name] = .uint16(constant)
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: UInt32, for name: String) {
+        self.namedConstants[name] = .uint32(constant)
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Float, for name: String) {
+        self.namedConstants[name] = .float(constant)
+    }
+    
+    @inlinable
+    public mutating func setConstant(_ constant: Bool, for name: String) {
+        self.namedConstants[name] = .bool(constant)
     }
 }
 

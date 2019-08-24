@@ -1,1 +1,0 @@
-"-DDEBUG","-D_DEBUG","-D_MD","-Xclang","--dependent-lib=msvcrt",

@@ -8,3 +8,4 @@ xcuserdata/
 /Package.resolved
 *.spv
 Config/windows_build.config
+.swiftpm

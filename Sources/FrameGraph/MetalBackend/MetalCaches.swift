@@ -1,0 +1,253 @@
+//
+//  Caches.swift
+//  MetalRenderer
+//
+//  Created by Thomas Roughton on 24/12/17.
+//
+
+#if canImport(Metal)
+
+import Metal
+import FrameGraphUtilities
+
+final class MetalStateCaches {
+    
+    let device : MTLDevice
+    var library : MTLLibrary
+    
+    var libraryURL : URL?
+    var loadedLibraryModificationDate : Date = .distantPast
+    
+    struct FunctionCacheKey : Hashable {
+        var name : String
+        var constants : FunctionConstants?
+    }
+    
+    struct RenderPipelineFunctionNames : Hashable {
+        var vertexFunction : String
+        var fragmentFunction : String?
+    }
+    
+    var renderPipelineAccessLock = ReaderWriterLock()
+    var computePipelineAccessLock = ReaderWriterLock()
+    
+    private var functionCache = [FunctionCacheKey : MTLFunction]()
+    private var computeStates = [String : [(ComputePipelineDescriptor, Bool, MTLComputePipelineState, MetalPipelineReflection)]]() // Bool meaning threadgroupSizeIsMultipleOfThreadExecutionWidth
+    private(set) var currentThreadExecutionWidth : Int = 0
+    
+    private var renderStates = [RenderPipelineFunctionNames : [(MetalRenderPipelineDescriptor, MTLRenderPipelineState, MetalPipelineReflection)]]()
+    
+    let defaultDepthState : MTLDepthStencilState
+    private var depthStates = [(DepthStencilDescriptor, MTLDepthStencilState)]()
+    private var samplerStates = [(SamplerDescriptor, MTLSamplerState)]()
+    
+    public init(device: MTLDevice, libraryPath: String?) {
+        self.device = device
+        if let libraryPath = libraryPath {
+            self.library = try! device.makeLibrary(filepath: libraryPath)
+            let libraryURL = URL(fileURLWithPath: libraryPath)
+            self.libraryURL = libraryURL
+            self.loadedLibraryModificationDate = try! libraryURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate!
+        } else {
+            self.library = device.makeDefaultLibrary()!
+        }
+        
+        let defaultDepthDescriptor = DepthStencilDescriptor()
+        let mtlDescriptor = MTLDepthStencilDescriptor(defaultDepthDescriptor)
+        self.defaultDepthState = self.device.makeDepthStencilState(descriptor: mtlDescriptor)!
+        self.depthStates.append((defaultDepthDescriptor, defaultDepthState))
+    }
+    
+    func checkForLibraryReload() {
+        guard let libraryURL = self.libraryURL else { return }
+        if FileManager.default.fileExists(atPath: libraryURL.path), let currentModificationDate = try? libraryURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, currentModificationDate > self.loadedLibraryModificationDate {
+            // Metal won't pick up the changes if we use the makeLibrary(filePath:) initialiser,
+            // so we have to load into a DispatchData instead.
+            guard let data = try? Data(contentsOf: libraryURL) else {
+                return
+            }
+            
+            guard let library = data.withUnsafeBytes({ bytes -> MTLLibrary? in
+                let dispatchData = DispatchData(bytes: bytes)
+                return try? device.makeLibrary(data: dispatchData as __DispatchData)
+            }) else { return }
+            
+            self.renderPipelineAccessLock.acquireWriteAccess()
+            defer { self.renderPipelineAccessLock.releaseWriteAccess() }
+            self.computePipelineAccessLock.acquireWriteAccess()
+            defer { self.computePipelineAccessLock.releaseWriteAccess() }
+            
+            self.library = library
+            
+            self.functionCache.removeAll(keepingCapacity: true)
+            self.computeStates.removeAll(keepingCapacity: true)
+            self.renderStates.removeAll(keepingCapacity: true)
+            
+            self.loadedLibraryModificationDate = currentModificationDate
+        }
+    }
+    
+    func function(named name: String, functionConstants: FunctionConstants?) -> MTLFunction? {
+        let cacheKey = FunctionCacheKey(name: name, constants: functionConstants)
+        if let function = self.functionCache[cacheKey] {
+            return function
+        }
+        
+        do {
+            let function = try self.library.makeFunction(name: name, constantValues: functionConstants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
+                       
+            self.functionCache[cacheKey] = function
+            return function
+        } catch {
+            print("MetalFrameGraph: Error creating function named \(name)\(functionConstants.map { " with constants \($0)" } ?? ""): \(error)")
+            return nil
+        }
+    }
+    
+    public subscript(descriptor: RenderPipelineDescriptor, renderTarget renderTarget: RenderTargetDescriptor) -> MTLRenderPipelineState? {
+        let metalDescriptor = MetalRenderPipelineDescriptor(descriptor, renderTargetDescriptor: renderTarget)
+        
+        let lookupKey = RenderPipelineFunctionNames(vertexFunction: descriptor.vertexFunction!, fragmentFunction: descriptor.fragmentFunction)
+        
+        if let possibleMatches = self.renderStates[lookupKey] {
+            for (testDescriptor, state, _) in possibleMatches {
+                if testDescriptor == metalDescriptor {
+                    return state
+                }
+            }
+        }
+        
+        guard let mtlDescriptor = MTLRenderPipelineDescriptor(metalDescriptor, stateCaches: self) else {
+            return nil
+        }
+        
+        var reflection : MTLRenderPipelineReflection? = nil
+        do {
+            let state = try self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.argumentInfo, .bufferTypeInfo], reflection: &reflection)
+            
+            let pipelineReflection = MetalPipelineReflection(vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderReflection: reflection!)
+            
+            self.renderStates[lookupKey, default: []].append((metalDescriptor, state, pipelineReflection))
+            
+            return state
+        } catch {
+            print("MetalFrameGraph: Error creating render pipeline state: \(error)")
+            return nil
+        }
+    }
+    
+    public func reflection(descriptor pipelineDescriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> MetalPipelineReflection? {
+        
+        let lookupKey = RenderPipelineFunctionNames(vertexFunction: pipelineDescriptor.vertexFunction!, fragmentFunction: pipelineDescriptor.fragmentFunction)
+        
+        self.renderPipelineAccessLock.acquireReadAccess()
+        if let possibleMatches = self.renderStates[lookupKey] {
+            for (testDescriptor, _, reflection) in possibleMatches {
+                if testDescriptor.descriptor == pipelineDescriptor {
+                    self.renderPipelineAccessLock.releaseReadAccess()
+                    return reflection
+                }
+            }
+        }
+        
+        self.renderPipelineAccessLock.transformReadToWriteAccess()
+        
+        guard self[pipelineDescriptor, renderTarget: renderTarget] != nil else {
+            self.renderPipelineAccessLock.releaseWriteAccess()
+            return nil
+        }
+        
+        self.renderPipelineAccessLock.releaseWriteAccess()
+        return self.reflection(descriptor: pipelineDescriptor, renderTarget: renderTarget)
+    }
+    
+    public subscript(descriptor: ComputePipelineDescriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth: Bool) -> MTLComputePipelineState? {
+        // Figure out whether the thread group size is always a multiple of the thread execution width and set the optimisation hint appropriately.
+        
+        if let possibleMatches = self.computeStates[descriptor.function] {
+            for (testDescriptor, testThreadgroupMultiple, state, _) in possibleMatches {
+                if testThreadgroupMultiple == threadgroupSizeIsMultipleOfThreadExecutionWidth && testDescriptor == descriptor {
+                    return state
+                }
+            }
+        }
+        
+        guard let function = self.function(named: descriptor.function, functionConstants: descriptor._functionConstants) else {
+            return nil
+        }
+        
+        let mtlDescriptor = MTLComputePipelineDescriptor()
+        mtlDescriptor.computeFunction = function
+        mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
+        
+        var reflection : MTLComputePipelineReflection? = nil
+        do {
+            let state = try self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.argumentInfo, .bufferTypeInfo], reflection: &reflection)
+            
+            let pipelineReflection = MetalPipelineReflection(function: mtlDescriptor.computeFunction!, computeReflection: reflection!)
+            
+            self.computeStates[descriptor.function, default: []].append((descriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth, state, pipelineReflection))
+            
+            self.currentThreadExecutionWidth = state.threadExecutionWidth
+            
+            return state
+        } catch {
+            print("MetalFrameGraph: Error creating compute render pipeline state: \(error)")
+            return nil
+        }
+    }
+    
+    public func reflection(for pipelineDescriptor: ComputePipelineDescriptor) -> (MetalPipelineReflection, Int)? {
+        self.computePipelineAccessLock.acquireReadAccess()
+        if let possibleMatches = self.computeStates[pipelineDescriptor.function] {
+            for (testDescriptor, _, state, reflection) in possibleMatches {
+                if testDescriptor == pipelineDescriptor {
+                    self.computePipelineAccessLock.releaseReadAccess()
+                    return (reflection, state.threadExecutionWidth)
+                }
+            }
+        }
+        
+        self.computePipelineAccessLock.transformReadToWriteAccess()
+        guard self[pipelineDescriptor, false] != nil else {
+            self.computePipelineAccessLock.releaseWriteAccess()
+            return nil
+        }
+        self.computePipelineAccessLock.releaseWriteAccess()
+        return self.reflection(for: pipelineDescriptor)
+    }
+
+    public func renderPipelineReflection(descriptor pipelineDescriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> MetalPipelineReflection? {
+        return self.reflection(descriptor: pipelineDescriptor, renderTarget: renderTarget)
+    }
+    
+    public func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> MetalPipelineReflection? {
+        return self.reflection(for: descriptor)?.0
+    }
+    
+    public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
+        if let (_, state) = self.samplerStates.first(where: { $0.0 == descriptor }) {
+            return state
+        }
+        
+        let mtlDescriptor = MTLSamplerDescriptor(descriptor)
+        let state = self.device.makeSamplerState(descriptor: mtlDescriptor)!
+        self.samplerStates.append((descriptor, state))
+        
+        return state
+    }
+    
+    public subscript(descriptor: DepthStencilDescriptor) -> MTLDepthStencilState {
+        if let (_, state) = self.depthStates.first(where: { $0.0 == descriptor }) {
+            return state
+        }
+        
+        let mtlDescriptor = MTLDepthStencilDescriptor(descriptor)
+        let state = self.device.makeDepthStencilState(descriptor: mtlDescriptor)!
+        self.depthStates.append((descriptor, state))
+        
+        return state
+    }
+}
+
+#endif // canImport(Metal)

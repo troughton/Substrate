@@ -7,18 +7,18 @@
 
 import Foundation
 import FrameGraphCExtras
-import Atomics
+import SwiftAtomics
 
 
 public struct FrameCompletion {
-    private static var lastCompletedFrame : AtomicUInt64 = {
-        var frame = AtomicUInt64()
-        frame.initialize(0)
+    @usableFromInline
+    static var _lastCompletedFrame : AtomicUInt64 = {
+        var frame = AtomicUInt64(0)
         return frame
     }()
     
     public static func waitForFrame(_ frame: UInt64) {
-        while lastCompletedFrame.value < frame {
+        while _lastCompletedFrame.load() < frame {
             #if os(Windows)
             _sleep(0)
             #else
@@ -26,16 +26,22 @@ public struct FrameCompletion {
             #endif
         }
     }
-    
+
+    @inlinable
     public static func frameIsComplete(_ frame: UInt64) -> Bool {
-        return lastCompletedFrame.value >= frame
+        return _lastCompletedFrame.load() >= frame
+    }
+    
+    @inlinable
+    public static var lastCompletedFrame : UInt64 {
+        return _lastCompletedFrame.load()
     }
     
     public static func markFrameComplete(frame: UInt64) {
         repeat {
-            var testValue = self.lastCompletedFrame.value
+            var testValue = self._lastCompletedFrame.load()
             if testValue < frame {
-                if self.lastCompletedFrame.loadCAS(current: &testValue, future: frame, type: .weak, orderSwap: .relaxed, orderLoad: .relaxed) {
+                if self._lastCompletedFrame.loadCAS(current: &testValue, future: frame, type: .weak, orderSwap: .relaxed, orderLoad: .relaxed) {
                     break
                 }
             } else {

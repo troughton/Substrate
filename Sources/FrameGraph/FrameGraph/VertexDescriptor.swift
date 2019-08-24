@@ -6,7 +6,7 @@
 //
 //
 
-import Utilities
+import FrameGraphUtilities
 
 public struct VertexBufferLayoutDescriptor : Hashable {
     
@@ -30,7 +30,7 @@ public struct VertexAttributeDescriptor : Hashable {
 public struct VertexDescriptor : Hashable {
     
     public init() {
-        self._hashValue =  CachedValue(constructor: self.calculateHashValue)
+        self._hashValue = CachedValue(constructor: self.calculateHashValue)
     }
     
     private var _hashValue : CachedValue<Int>! = nil
@@ -51,8 +51,8 @@ public struct VertexDescriptor : Hashable {
         return self.layouts.hashValue &+ self.attributes.hashValue &* 17
     }
     
-    public var hashValue: Int {
-        return _hashValue.value
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self._hashValue.value)
     }
     
     public static func ==(lhs: VertexDescriptor, rhs: VertexDescriptor) -> Bool {

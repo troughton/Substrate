@@ -5,7 +5,7 @@
 //  Created by Joseph Bennett on 20/12/17.
 //
 
-import Utilities
+import FrameGraphUtilities
 import FrameGraphCExtras
 
 // This 'PerformOrder' type is necessary to make sure the command goes to the right Command Encoder
@@ -19,7 +19,6 @@ public enum PerformOrder : Comparable {
     }
 }
 
-@_fixed_layout
 public struct LinkedNode<T> {
     public var next: UnsafeMutablePointer<LinkedNode>?
     public var sortIndex : Int
@@ -42,7 +41,6 @@ extension UnsafeMutablePointer where Pointee == LinkedNode<ResourceUsage> {
 }
 
 // Note: must be bitwise identical to LinkedNode<ResourceUsage>
-@_fixed_layout
 public struct ResourceUsagesList : Sequence {
     @usableFromInline
     var head : ResourceUsageNodePtr? = nil
@@ -55,27 +53,27 @@ public struct ResourceUsagesList : Sequence {
     }
     
     @inlinable
-    public static func createNode(usage: ResourceUsage, arena: MemoryArena) -> ResourceUsageNodePtr {
-        let node = arena.allocate() as ResourceUsageNodePtr
+    public static func createNode(usage: ResourceUsage, allocator: TagAllocator.ThreadView) -> ResourceUsageNodePtr {
+        let node = allocator.allocate(capacity: 1) as ResourceUsageNodePtr
         node.initialize(to: LinkedNode(value: usage, sortIndex: usage.renderPassRecord.passIndex))
         return node
     }
     
     // This doesn't need any special synchronisation since nodes can only be merged within a render pass.
     @inlinable
-    public func nextNodeWithUsage(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, commandOffset: Int, renderPass: Unmanaged<RenderPassRecord>, arena: MemoryArena) -> (ResourceUsageNodePtr, isNew: Bool) {
+    public func nextNodeWithUsage(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, commandOffset: Int, renderPass: Unmanaged<RenderPassRecord>, allocator: TagAllocator.ThreadView) -> (ResourceUsageNodePtr, isNew: Bool) {
         let passIndex = renderPass.takeUnretainedValue().passIndex
         if let tail = self.findNode(passIndex: passIndex), tail.pointee.sortIndex == passIndex {
             assert(tail.pointee.element._renderPass.toOpaque() == renderPass.toOpaque())
             if let newUsage = tail.pointee.element.mergeOrCreateNewUsage(type: type, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandOffset, renderPass: renderPass) {
                 assert(renderPass.toOpaque() != tail.pointee.element._renderPass.toOpaque() || commandOffset >= tail.pointee.element.commandRangeInPass.lowerBound, "Adding a new usage which starts before the previous usage has ended.")
-                let node = ResourceUsagesList.createNode(usage: newUsage, arena: arena)
+                let node = ResourceUsagesList.createNode(usage: newUsage, allocator: allocator)
                 return (node, true)
             } else {
                 return (tail, false)
             }
         }
-        return (ResourceUsagesList.createNode(usage: ResourceUsage(type: type, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandOffset, renderPass: renderPass), arena: arena), true)
+        return (ResourceUsagesList.createNode(usage: ResourceUsage(type: type, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandOffset, renderPass: renderPass), allocator: allocator), true)
     }
     
     public func findNode(passIndex: Int) -> ResourceUsageNodePtr? {
@@ -115,8 +113,7 @@ public struct ResourceUsagesList : Sequence {
         return self.head == nil
     }
     
-    @_fixed_layout
-    public struct Iterator : IteratorProtocol {
+        public struct Iterator : IteratorProtocol {
         public typealias Element = ResourceUsage
         
         @usableFromInline
@@ -147,8 +144,8 @@ public struct ResourceUsagesList : Sequence {
 extension UnsafeMutablePointer where Pointee == ResourceUsagesList {
     
     @inlinable
-    func append(_ usage: ResourceUsage, arena: MemoryArena) {
-        let node = ResourceUsagesList.createNode(usage: usage, arena: arena)
+    func append(_ usage: ResourceUsage, allocator: TagAllocator.ThreadView) {
+        let node = ResourceUsagesList.createNode(usage: usage, allocator: allocator)
         self.append(node)
     }
     
@@ -186,13 +183,15 @@ extension UnsafeMutablePointer where Pointee == ResourceUsagesList {
                     continue
                 }
                 
-                success = LinkedNodeHeaderCompareAndSwap(
-                    UnsafeMutableRawPointer(insertionNode).assumingMemoryBound(to: LinkedNodeHeader.self),
-                                               UnsafeMutableRawPointer(usageNode).assumingMemoryBound(to: LinkedNodeHeader.self)
-                )
+                success = insertionNode.withMemoryRebound(to: LinkedNodeHeader.self, capacity: 1, { insertionNode in
+                    return usageNode.withMemoryRebound(to: LinkedNodeHeader.self, capacity: 1, { usageNode in
+                        return LinkedNodeHeaderCompareAndSwap(insertionNode, usageNode)
+                    })
+                })
                 
             } while !success
         })
+        assert(self.pointee.head != nil)
     }
     
     func reverse() {
@@ -208,6 +207,20 @@ extension UnsafeMutablePointer where Pointee == ResourceUsagesList {
         
         self.pointee.head = prevNode
     }
+    
+    // N.B.: this should _only_ be used for debugging. In theory, the list should already be sorted apart from
+    // for reads (which don't have to be ordered), and the backends should be able to deal with that order.
+    // In other words, if sorting the list changes behaviour, something's gone wrong.
+    func sort() {
+        let sortedNodes = Array(self.pointee).sorted(by: { $0.commandRange.lowerBound < $1.commandRange.lowerBound })
+        
+        var curNode = self.pointee.head
+        for node in sortedNodes {
+            curNode!.pointee.element = node
+            curNode = curNode!.pointee.next
+        }
+    }
+
 }
 
 extension ResourceUsageType {
@@ -242,7 +255,6 @@ extension ResourceUsageType {
 }
 
 // Note: must be a value type.
-@_fixed_layout
 public struct ResourceUsage {
     public var type : ResourceUsageType
     public var stages : RenderStages
@@ -279,7 +291,7 @@ public struct ResourceUsage {
     
     @inlinable
     public var affectsGPUBarriers : Bool {
-        return self.renderPassRecord.isActive && self.stages != .cpuBeforeRender && self.type != .unusedRenderTarget
+        return self.renderPassRecord.isActive && self.stages != .cpuBeforeRender && self.type != .unusedRenderTarget && self.renderPassRecord.pass.passType != .external
     }
     
     @inlinable
@@ -309,6 +321,8 @@ public struct ResourceUsage {
                 break
             case (.read, .write), (.readWrite, .read), (.write, .read):
                 self.type = .readWrite
+            case (.writeOnlyRenderTarget, .readWriteRenderTarget), (.readWriteRenderTarget, .writeOnlyRenderTarget):
+                self.type = .readWriteRenderTarget
             case (_, _) where !type.isWrite && !self.type.isWrite:
                 // If neither are writes, then it's fine to have conflicting uses.
                 // This might occur e.g. when reading from a buffer while simultaneously using it as an indirect buffer.
@@ -333,6 +347,13 @@ public struct ResourceUsage {
     }
 }
 
+
+extension ResourceUsage : CustomStringConvertible {
+    public var description: String {
+        return "ResourceUsage(type: \(self.type), stages: \(self.stages), inArgumentBuffer: \(self.inArgumentBuffer), pass: \(self.renderPassRecord.pass.name), commandRangeInPass: \(self.commandRangeInPass))"
+    }
+}
+
 fileprivate extension Array {
     var mutableLast : Element {
         get {
@@ -345,8 +366,8 @@ fileprivate extension Array {
 }
 
 extension Unmanaged : Hashable, Equatable where Instance : Hashable {
-    public var hashValue : Int {
-        return self.takeUnretainedValue().hashValue
+    public func hash(into hasher: inout Hasher) {
+        self.takeUnretainedValue().hash(into: &hasher)
     }
     
     public static func ==(lhs: Unmanaged, rhs: Unmanaged) -> Bool {
@@ -356,21 +377,21 @@ extension Unmanaged : Hashable, Equatable where Instance : Hashable {
 
 extension UInt64 : CustomHashable {
     public var customHashValue : Int {
-        return self.hashValue
+        return Int(truncatingIfNeeded: self)
     }
 }
 
-@_fixed_layout
+// Responsible for holding a per-thread allocator for Resource usage nodes, along with keeping track of all resources seen on this thread.
+// Can safely switch between multiple render passes being executed on the same thread (e.g. in different fibres).
 public class ResourceUsages {
     
     @usableFromInline
-    let usageNodesArena = MemoryArena()
+    var usageNodeAllocator : TagAllocator.ThreadView! = nil
     
     // ResourceUsages should hold exactly one strong reference to each resource.
     // It needs at least one to guarantee that the resource lives to the end of the frame.
     @usableFromInline
     var resources = Set<Resource>()
-    
     
     @inlinable
     init() {
@@ -383,20 +404,20 @@ public class ResourceUsages {
     
     func reset() {
         self.resources.removeAll(keepingCapacity: true)
-        self.usageNodesArena.reset()
+        self.usageNodeAllocator = nil
     }
     
     func addReadResources(_ resources: [Resource], `for` renderPass: Unmanaged<RenderPassRecord>) {
         for resource in resources {
             self.registerResource(resource)
-            resource.usagesPointer.append(ResourceUsage(type: .read, stages: .cpuBeforeRender, inArgumentBuffer: false, firstCommandOffset: 0, renderPass: renderPass), arena: self.usageNodesArena)
+            resource.usagesPointer.append(ResourceUsage(type: .read, stages: .cpuBeforeRender, inArgumentBuffer: false, firstCommandOffset: 0, renderPass: renderPass), allocator: self.usageNodeAllocator)
         }
     }
     
     func addWrittenResources(_ resources: [Resource], `for` renderPass: Unmanaged<RenderPassRecord>) {
         for resource in resources {
             self.registerResource(resource)
-            resource.usagesPointer.append(ResourceUsage(type: .write, stages: .cpuBeforeRender, inArgumentBuffer: false, firstCommandOffset: 0, renderPass: renderPass), arena: self.usageNodesArena)
+            resource.usagesPointer.append(ResourceUsage(type: .write, stages: .cpuBeforeRender, inArgumentBuffer: false, firstCommandOffset: 0, renderPass: renderPass), allocator: self.usageNodeAllocator)
         }
     }
     
@@ -408,16 +429,19 @@ public class ResourceUsages {
     /// NOTE: Must be called _before_ the command that uses the resource.
     @inlinable
     public func resourceUsageNode<C : CommandEncoder>(`for` resourceHandle: Resource.Handle, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsageNodePtr {
-        
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resourceHandle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resourceHandle }), "Resource \(resourceHandle) used but not declared.")
         
-        let resource = Resource(existingHandle: resourceHandle)
+        let resource = Resource(handle: resourceHandle)
         
-        let (usagePtr, isNew) = resource.usages.nextNodeWithUsage(type: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, commandOffset: firstCommandOffset, renderPass: encoder.unmanagedPassRecord, arena: self.usageNodesArena)
+        assert(resource.type != .argumentBuffer || !usageType.isWrite, "Read-write argument buffers are currently unsupported.")
+        assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
+        
+        let (usagePtr, isNew) = resource.usages.nextNodeWithUsage(type: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, commandOffset: firstCommandOffset, renderPass: encoder.unmanagedPassRecord, allocator: self.usageNodeAllocator)
         
         // For each resource, is the resource usage different from what is was previously used for?
         if isNew {
             resource.usagesPointer.append(usagePtr)
+            assert(!resource.usages.isEmpty)
             self.registerResource(resource)
         }
 

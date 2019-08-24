@@ -1,14 +1,13 @@
 //
-//  RenderPipelineDescriptor.swift
+//  TypedRenderPipelineDescriptor.swift
 //  SwiftFrameGraph
 //
 //  Created by Thomas Roughton on 7/04/17.
 //
 //
 
-import Utilities
+import FrameGraphUtilities
 
-@_fixed_layout
 public struct BlendDescriptor : Hashable {
     public var sourceRGBBlendFactor: BlendFactor = .one
 
@@ -27,141 +26,140 @@ public struct BlendDescriptor : Hashable {
     }
 }
 
-public protocol RenderTargetIdentifier : RawRepresentable where RawValue == Int {
-    static var count : Int { get }
-}
-
-extension RenderTargetIdentifier where Self : CaseIterable {
-    public static var count : Int {
-        return self.allCases.count
-    }
-}
-
-public enum DisplayRenderTargetIndex : Int, CaseIterable, RenderTargetIdentifier {
-    case display
-}
-
-@_fixed_layout
-public struct RenderPipelineDescriptor<I : RenderTargetIdentifier> {
-    @usableFromInline var _descriptor : _RenderPipelineDescriptor
+public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
+    public var descriptor : RenderPipelineDescriptor
     
-    @inlinable
-    public init() {
-        self._descriptor = _RenderPipelineDescriptor(identifierType: I.self)
+    public init(attachmentCount: Int) {
+        self.descriptor = RenderPipelineDescriptor(attachmentCount: attachmentCount)
     }
     
     @inlinable
     public var label: String? {
         get {
-            return self._descriptor.label
+            return self.descriptor.label
         }
         set {
-            self._descriptor.label = newValue
+            self.descriptor.label = newValue
         }
     }
     
     @inlinable
     public var vertexDescriptor : VertexDescriptor? {
         get {
-            return self._descriptor.vertexDescriptor
+            return self.descriptor.vertexDescriptor
         }
         set {
-            self._descriptor.vertexDescriptor = newValue
+            self.descriptor.vertexDescriptor = newValue
         }
     }
     
     @inlinable
-    public var vertexFunction : String? {
+    public var vertexFunction: R.VertexFunction! {
         get {
-            return self._descriptor.vertexFunction
+            guard let function = self.descriptor.vertexFunction else {
+                fatalError("No valid pipeline function set.")
+            }
+            return R.VertexFunction(rawValue: function)!
         }
         set {
-            self._descriptor.vertexFunction = newValue
+            self.descriptor.vertexFunction = newValue?.rawValue
         }
     }
     
-    @inlinable
-    public var fragmentFunction : String? {
+    public var fragmentFunction: R.FragmentFunction? {
         get {
-            return self._descriptor.fragmentFunction
+            return self.descriptor.fragmentFunction.map { R.FragmentFunction(rawValue: $0)! }
         }
         set {
-            self._descriptor.fragmentFunction = newValue
+            self.descriptor.fragmentFunction = newValue?.rawValue
         }
     }
     
-    /* Rasterization and visibility state */
+    // Rasterization and visibility state
+    
     @inlinable
-    public var sampleCount : Int {
+    public var rasterSampleCount: Int {
         get {
-            return self._descriptor.sampleCount
+            return self.descriptor.rasterSampleCount
         }
         set {
-            self._descriptor.sampleCount = newValue
+            self.descriptor.rasterSampleCount = newValue
         }
     }
     
     @inlinable
     public var isAlphaToCoverageEnabled: Bool {
         get {
-            return self._descriptor.isAlphaToCoverageEnabled
+            return self.descriptor.isAlphaToCoverageEnabled
         }
         set {
-            self._descriptor.isAlphaToCoverageEnabled = newValue
+            self.descriptor.isAlphaToCoverageEnabled = newValue
         }
     }
     
     @inlinable
     public var isAlphaToOneEnabled: Bool {
         get {
-            return self._descriptor.isAlphaToOneEnabled
+            return self.descriptor.isAlphaToOneEnabled
         }
         set {
-            self._descriptor.isAlphaToOneEnabled = newValue
+            self.descriptor.isAlphaToOneEnabled = newValue
         }
     }
     
     @inlinable
     public var isRasterizationEnabled: Bool {
         get {
-            return self._descriptor.isRasterizationEnabled
+            return self.descriptor.isRasterizationEnabled
         }
         set {
-            self._descriptor.isRasterizationEnabled = newValue
+            self.descriptor.isRasterizationEnabled = newValue
+        }
+    }
+    
+    // Color attachment names to blend descriptors
+    @inlinable
+    public var blendStates : [BlendDescriptor?] {
+        _read {
+            yield self.descriptor.blendStates
+        }
+        _modify {
+            yield &self.descriptor.blendStates
         }
     }
     
     @inlinable
-    public mutating func setFunctionConstants<FC : FunctionConstants>(_ functionConstants: FC) {
-        self._descriptor.functionConstants = AnyFunctionConstants(functionConstants)
-    }
-    
-    @inlinable
-    public subscript(blendStateFor attachment: I) -> BlendDescriptor? {
-        get {
-            return self._descriptor.blendStates[attachment.rawValue]
+    public var writeMasks : [ColorWriteMask] {
+        _read {
+            yield self.descriptor.writeMasks
         }
-        set {
-            self._descriptor.blendStates[attachment.rawValue] = newValue
+        _modify {
+            yield &self.descriptor.writeMasks
         }
     }
     
-    @inlinable
-    public subscript(writeMaskFor attachment: I) -> ColorWriteMask {
-        get {
-            return self._descriptor.writeMasks[attachment.rawValue]
+    var constantsChanged = false
+    
+    public var constants : R.FunctionConstants = R.FunctionConstants() {
+        didSet {
+            if constants != oldValue {
+                self.constantsChanged = true
+            }
         }
-        set {
-            self._descriptor.writeMasks[attachment.rawValue] = newValue
+    }
+    
+    public mutating func flushConstants() {
+        if self.constantsChanged {
+            self.descriptor.functionConstants = FunctionConstants(constants)
         }
+        self.constantsChanged = false
     }
 }
 
-@_fixed_layout
-public struct _RenderPipelineDescriptor : Hashable {
-    public init<I : RenderTargetIdentifier>(identifierType: I.Type) {
-        self.blendStates = [BlendDescriptor?](repeating: nil, count: I.count)
-        self.writeMasks = [ColorWriteMask](repeating: .all, count: I.count)
+public struct RenderPipelineDescriptor : Hashable {
+    public init(attachmentCount: Int) {
+        self.blendStates = [BlendDescriptor?](repeating: nil, count: attachmentCount)
+        self.writeMasks = [ColorWriteMask](repeating: .all, count: attachmentCount)
     }
     
     public var label: String? = nil
@@ -172,7 +170,7 @@ public struct _RenderPipelineDescriptor : Hashable {
     public var fragmentFunction: String? = nil
     
     /* Rasterization and visibility state */
-    public var sampleCount: Int = 1
+    public var rasterSampleCount: Int = 1
     public var isAlphaToCoverageEnabled: Bool = false
     public var isAlphaToOneEnabled: Bool = false
     public var isRasterizationEnabled: Bool = true
@@ -180,32 +178,78 @@ public struct _RenderPipelineDescriptor : Hashable {
     // Color attachment names to blend descriptors
     public var blendStates : [BlendDescriptor?]
     public var writeMasks : [ColorWriteMask]
-    public var functionConstants : AnyFunctionConstants? = nil
+    public var functionConstants : FunctionConstants? = nil
+    
+    @inlinable
+    public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) {
+        self.functionConstants = try! FunctionConstants(functionConstants)
+    }
     
     // Hash computation.
     // Hashes don't need to be unique, so let's go for a simple function
     // and rely on == for the proper check.
     @inlinable
-    public var hashValue : Int {
-        var result = 134
-        result = 37 &* result &+ self.vertexFunction.hashValue
-        result = 37 &* result &+ self.fragmentFunction.hashValue
-        result = 37 &* result &+ self.label.hashValue
-        return result
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.vertexFunction)
+        hasher.combine(self.fragmentFunction)
+        hasher.combine(self.label)
     }
 }
 
-@_fixed_layout
+public struct TypedComputePipelineDescriptor<R : RenderPassReflection> {
+    public var descriptor : ComputePipelineDescriptor
+    
+    public init() {
+        self.descriptor = ComputePipelineDescriptor()
+    }
+    
+    public var function: R.ComputeFunction? {
+        get {
+            return self.descriptor.function.map { R.ComputeFunction(rawValue: $0)! }
+        }
+        set {
+            self.descriptor.function = newValue?.rawValue
+        }
+    }
+    
+    var constantsChanged = false
+    
+    public var constants : R.FunctionConstants = R.FunctionConstants() {
+        didSet {
+            if constants != oldValue {
+                self.constantsChanged = true
+            }
+        }
+    }
+    
+    public mutating func flushConstants() {
+        if self.constantsChanged {
+            self.descriptor._functionConstants = FunctionConstants(constants)
+        }
+        self.constantsChanged = false
+    }
+}
+
 public struct ComputePipelineDescriptor : Hashable {
-    public var function : String
-    public var _functionConstants : AnyFunctionConstants? = nil
+    public var function : String! = nil
+    public var _functionConstants : FunctionConstants? = nil
+    
+    @inlinable
+    init() {
+        
+    }
     
     public init(function: String) {
         self.function = function
     }
     
     @inlinable
-    public mutating func setFunctionConstants<FC : FunctionConstants>(_ functionConstants: FC) {
-        self._functionConstants = AnyFunctionConstants(functionConstants)
+    public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) {
+        self._functionConstants = try! FunctionConstants(functionConstants)
+    }
+    
+    @inlinable
+    public mutating func setFunctionConstants(_ functionConstants: FunctionConstants) {
+        self._functionConstants = functionConstants
     }
 }

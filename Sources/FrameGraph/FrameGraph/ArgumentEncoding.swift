@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import Utilities
+import FrameGraphUtilities
 
 public protocol FunctionArgumentKey {
     var stringValue : String { get }
@@ -19,7 +19,6 @@ extension RawRepresentable where Self.RawValue == String {
     }
 }
 
-@_fixed_layout
 public struct FunctionArgumentCodingKey : FunctionArgumentKey {
     public let codingKey : CodingKey
     
@@ -59,32 +58,12 @@ extension String : FunctionArgumentKey {
     }
 }
 
-@_fixed_layout
-public struct _ArgumentBufferData {
-    public fileprivate(set) var enqueuedBindings = ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>()
-    public var bindings = [(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)]()
+public protocol ArgumentBufferEncodable {
+    static var activeStages : RenderStages { get }
     
-    public init() {
-        
-    }
-    
-    public mutating func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
-        let unhandledBindings = ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>()
-        
-        while let (key, arrayIndex, binding) = self.enqueuedBindings.popLast() {
-            if let bindingPath = closure(key, arrayIndex, binding) {
-                self.bindings.append((bindingPath, binding))
-            } else {
-                unhandledBindings.append((key, arrayIndex, binding))
-            }
-        }
-        
-        self.enqueuedBindings = unhandledBindings
-    }
+    func encode(into argBuffer: _ArgumentBuffer)
 }
 
-
-@_fixed_layout
 public struct _ArgumentBuffer : ResourceProtocol {
     
     public let handle : Handle
@@ -98,8 +77,9 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public init(existingHandle: Handle) {
-        self.handle = existingHandle
+    public init(handle: Handle) {
+        assert(handle == .max || Resource(handle: handle).type == .argumentBuffer)
+        self.handle = handle
     }
     
     @inlinable
@@ -112,6 +92,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
         }
         
         self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.argumentBuffer.rawValue) << 48)
+        assert(self.encoder == nil)
     }
     
     @inlinable
@@ -124,15 +105,18 @@ public struct _ArgumentBuffer : ResourceProtocol {
         }
         
         self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.argumentBuffer.rawValue) << 48)
+        assert(self.encoder == nil)
     }
     
     @inlinable
     public var sourceArray : _ArgumentBufferArray? {
         if self.flags.contains(.resourceView) {
             if self._usesPersistentRegistry {
-                return PersistentArgumentBufferRegistry.instance.sourceArrays[self.index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].sourceArrays[indexInChunk]
             } else {
-                return TransientArgumentBufferRegistry.instance.sourceArrays[self.index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return TransientArgumentBufferRegistry.instance.chunks[chunkIndex].sourceArrays[indexInChunk]
             }
         }
         return nil
@@ -148,30 +132,95 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)> {
+    public var usages : ResourceUsagesList {
         get {
             if self._usesPersistentRegistry {
-                return PersistentArgumentBufferRegistry.instance.data[self.index].enqueuedBindings
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
             } else {
-                return TransientArgumentBufferRegistry.instance.data[self.index].enqueuedBindings
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return TransientArgumentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
             }
         }
     }
     
     @inlinable
-    public var bindings : [(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)] {
+    public var encoder : UnsafeRawPointer? {
         get {
             if self._usesPersistentRegistry {
-                return PersistentArgumentBufferRegistry.instance.data[self.index].bindings
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders[indexInChunk].load()
             } else {
-                return TransientArgumentBufferRegistry.instance.data[self.index].bindings
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return TransientArgumentBufferRegistry.instance.chunks[chunkIndex].encoders[indexInChunk].load()
             }
         }
         nonmutating set {
+            if let newValue = newValue {
+                if self._usesPersistentRegistry {
+                    let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                    return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders[indexInChunk].store(newValue)
+                } else {
+                    let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                    return TransientArgumentBufferRegistry.instance.chunks[chunkIndex].encoders[indexInChunk].store(newValue)
+                }
+            }
+        }
+    }
+    
+    @inlinable
+    var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
+        get {
             if self._usesPersistentRegistry {
-                PersistentArgumentBufferRegistry.instance.data[self.index].bindings = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
             } else {
-                TransientArgumentBufferRegistry.instance.data[self.index].bindings = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return TransientArgumentBufferRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
+            }
+        }
+    }
+    
+    @inlinable
+    public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)> {
+        _read {
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                yield PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].enqueuedBindings[indexInChunk]
+            } else {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                yield TransientArgumentBufferRegistry.instance.chunks[chunkIndex].enqueuedBindings[indexInChunk]
+            }
+        }
+        nonmutating _modify {
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                yield &PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].enqueuedBindings[indexInChunk]
+            } else {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                yield &TransientArgumentBufferRegistry.instance.chunks[chunkIndex].enqueuedBindings[indexInChunk]
+            }
+        }
+    }
+    
+    @inlinable
+    public var bindings : ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)> {
+        _read {
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                yield PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
+            } else {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                yield TransientArgumentBufferRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
+            }
+        }
+        nonmutating _modify {
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                yield &PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
+            } else {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                yield &TransientArgumentBufferRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
             }
         }
     }
@@ -180,16 +229,20 @@ public struct _ArgumentBuffer : ResourceProtocol {
     public var label : String? {
         get {
             if self._usesPersistentRegistry {
-                return PersistentArgumentBufferRegistry.instance.labels[self.index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
             } else {
-                return TransientArgumentBufferRegistry.instance.labels[self.index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                return TransientArgumentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
             }
         }
         nonmutating set {
             if self._usesPersistentRegistry {
-                PersistentArgumentBufferRegistry.instance.labels[self.index] = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
             } else {
-                TransientArgumentBufferRegistry.instance.labels[self.index] = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                TransientArgumentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
             }
         }
     }
@@ -201,13 +254,27 @@ public struct _ArgumentBuffer : ResourceProtocol {
     
     // Thread-safe
     public func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
+        
+        func translateBindings() {
+            var i = 0
+            while i < self.enqueuedBindings.count {
+                let (key, arrayIndex, binding) = self.enqueuedBindings[i]
+                if let bindingPath = closure(key, arrayIndex, binding) {
+                    self.enqueuedBindings.remove(at: i)
+                    self.bindings.append((bindingPath, binding))
+                } else {
+                    i += 1
+                }
+            }
+        }
+
         if self._usesPersistentRegistry {
-            PersistentArgumentBufferRegistry.instance.queue.sync { PersistentArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindings(closure)
+            PersistentArgumentBufferRegistry.instance.lock.withLock {
+                translateBindings()
             }
         } else {
-            TransientArgumentBufferRegistry.instance.queue.sync {
-                TransientArgumentBufferRegistry.instance.data[self.index].translateEnqueuedBindings(closure)
-                
+            TransientArgumentBufferRegistry.instance.lock.withLock {
+                translateBindings()
             }
         }
     }
@@ -215,9 +282,10 @@ public struct _ArgumentBuffer : ResourceProtocol {
     @inlinable
     public func _bytes(offset: Int) -> UnsafeRawPointer {
         if self._usesPersistentRegistry {
-            return PersistentArgumentBufferRegistry.instance.inlineDataStorage[self.index].withUnsafeBytes { return UnsafeRawPointer($0) + offset }
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+            return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].inlineDataStorage[indexInChunk].withUnsafeBytes { return $0.baseAddress! + offset }
         } else {
-            return UnsafeRawPointer(TransientArgumentBufferRegistry.instance.inlineDataAllocator.buffer) + offset
+            return UnsafeRawPointer(TransientArgumentBufferRegistry.instance.inlineDataAllocator.buffer!) + offset
         }
     }
     
@@ -225,13 +293,14 @@ public struct _ArgumentBuffer : ResourceProtocol {
     @inlinable
     public func _copyBytes(_ bytes: UnsafeRawPointer, length: Int) -> Int {
         if self._usesPersistentRegistry {
-            return PersistentArgumentBufferRegistry.instance.queue.sync {
-                let offset = PersistentArgumentBufferRegistry.instance.inlineDataStorage[self.index].count
-                PersistentArgumentBufferRegistry.instance.inlineDataStorage[self.index].append(bytes.assumingMemoryBound(to: UInt8.self), count: length)
+            return PersistentArgumentBufferRegistry.instance.lock.withLock {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                let offset = PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].inlineDataStorage[indexInChunk].count
+                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].inlineDataStorage[indexInChunk].append(bytes.assumingMemoryBound(to: UInt8.self), count: length)
                 return offset
             }
         } else {
-            return TransientArgumentBufferRegistry.instance.queue.sync {
+            return TransientArgumentBufferRegistry.instance.lock.withLock {
                 let offset = TransientArgumentBufferRegistry.instance.inlineDataAllocator.count
                 TransientArgumentBufferRegistry.instance.inlineDataAllocator.append(from: bytes.assumingMemoryBound(to: UInt8.self), count: length)
                 return offset
@@ -248,13 +317,13 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
 }
 
-@_fixed_layout
 public struct _ArgumentBufferArray : ResourceProtocol {
     public let handle : Handle
     
     @inlinable
-    public init(existingHandle: Handle) {
-        self.handle = existingHandle
+    public init(handle: Handle) {
+        assert(handle == .max || Resource(handle: handle).type == .argumentBufferArray)
+        self.handle = handle
     }
     
     @inlinable
@@ -291,18 +360,20 @@ public struct _ArgumentBufferArray : ResourceProtocol {
     
     @inlinable
     public var _bindings : [_ArgumentBuffer?] {
-        get {
+        _read {
             if self._usesPersistentRegistry {
-                return PersistentArgumentBufferArrayRegistry.instance.bindings[self.index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
+                yield PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
             } else {
-                return TransientArgumentBufferArrayRegistry.instance.bindings[self.index]
+                yield TransientArgumentBufferArrayRegistry.instance.bindings[self.index]
             }
         }
-        nonmutating set {
+        nonmutating _modify {
             if self._usesPersistentRegistry {
-                PersistentArgumentBufferArrayRegistry.instance.bindings[self.index] = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
+                yield &PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
             } else {
-                TransientArgumentBufferArrayRegistry.instance.bindings[self.index] = newValue
+                yield &TransientArgumentBufferArrayRegistry.instance.bindings[self.index]
             }
         }
     }
@@ -311,14 +382,16 @@ public struct _ArgumentBufferArray : ResourceProtocol {
     public var label : String? {
         get {
             if self._usesPersistentRegistry {
-                return PersistentArgumentBufferArrayRegistry.instance.labels[self.index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
+                return PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
             } else {
                 return TransientArgumentBufferArrayRegistry.instance.labels[self.index]
             }
         }
         nonmutating set {
             if self._usesPersistentRegistry {
-                PersistentArgumentBufferArrayRegistry.instance.labels[self.index] = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
+                PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
             } else {
                 TransientArgumentBufferArrayRegistry.instance.labels[self.index] = newValue
             }
@@ -331,19 +404,19 @@ public struct _ArgumentBufferArray : ResourceProtocol {
     }
 }
 
-@_fixed_layout
 public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     
     public let argumentBuffer : _ArgumentBuffer
     
     @inlinable
-    public init(existingHandle: Handle) {
-        self.argumentBuffer = _ArgumentBuffer(existingHandle: existingHandle)
+    public init(handle: Handle) {
+        self.argumentBuffer = _ArgumentBuffer(handle: handle)
     }
     
     @inlinable
-    public init(flags: ResourceFlags) {
+    public init(flags: ResourceFlags = []) {
         self.argumentBuffer = _ArgumentBuffer(flags: flags)
+        self.argumentBuffer.label = "Argument Buffer \(K.self)"
     }
     
     @inlinable
@@ -373,12 +446,12 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     
     @inlinable
     public var sourceArray : ArgumentBufferArray<K>? {
-        return self.argumentBuffer.sourceArray.map { ArgumentBufferArray(existingHandle: $0.handle) }
+        return self.argumentBuffer.sourceArray.map { ArgumentBufferArray(handle: $0.handle) }
     }
     
     @inlinable
-    public var _enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)> {
-        return self.argumentBuffer.enqueuedBindings
+    var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
+        return self.argumentBuffer.usagesPointer
     }
     
     @inlinable
@@ -386,7 +459,7 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         guard let buffer = buffer else { return }
         
         assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self._enqueuedBindings.append(
+        self.argumentBuffer.enqueuedBindings.append(
             (key, arrayIndex, .buffer(buffer, offset: offset))
         )
     }
@@ -394,20 +467,27 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     @inlinable
     public func setTexture(_ texture: Texture, key: K, arrayIndex: Int = 0) {
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self._enqueuedBindings.append(
+        self.argumentBuffer.enqueuedBindings.append(
             (key, arrayIndex, .texture(texture))
         )
     }
     
     @inlinable
     public func setSampler(_ sampler: SamplerDescriptor, key: K, arrayIndex: Int = 0) {
-        self._enqueuedBindings.append(
+        self.argumentBuffer.enqueuedBindings.append(
             (key, arrayIndex, .sampler(sampler))
         )
+    }
+
+    @inlinable
+    public func setValue<T : ResourceProtocol>(_ value: T, key: K, arrayIndex: Int = 0) {
+        assertionFailure("Cannot set a resource with setValue; did you mean to use setTexture or setBuffer?")
     }
     
     @inlinable
     public func setValue<T>(_ value: T, key: K, arrayIndex: Int = 0) {
+        assert(_isPOD(T.self), "Only POD types should be used with setValue.")
+        
         var value = value
         withUnsafeBytes(of: &value) { bufferPointer in
             self.setBytes(bufferPointer.baseAddress!, length: bufferPointer.count, for: key, arrayIndex: arrayIndex)
@@ -422,7 +502,7 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     @inlinable
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, for key: K, arrayIndex: Int = 0) {
         let currentOffset = self.argumentBuffer._copyBytes(bytes, length: length)
-        self._enqueuedBindings.append(
+        self.argumentBuffer.enqueuedBindings.append(
             (key, arrayIndex, .bytes(offset: currentOffset, length: length))
         )
     }
@@ -449,18 +529,18 @@ extension ArgumentBuffer {
     }
 }
 
-@_fixed_layout
 public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
     public let argumentBufferArray : _ArgumentBufferArray
     
     @inlinable
-    public init(existingHandle: Handle) {
-        self.argumentBufferArray = _ArgumentBufferArray(existingHandle: existingHandle)
+    public init(handle: Handle) {
+        self.argumentBufferArray = _ArgumentBufferArray(handle: handle)
     }
     
     @inlinable
     public init(flags: ResourceFlags = []) {
         self.argumentBufferArray = _ArgumentBufferArray(flags: flags)
+        self.argumentBufferArray.label = "Argument Buffer Array \(K.self)"
     }
     
     @inlinable
@@ -509,12 +589,12 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
             }
             
             if let buffer = self.argumentBufferArray._bindings[index] {
-                return ArgumentBuffer(existingHandle: buffer.handle)
+                return ArgumentBuffer(handle: buffer.handle)
             }
             
             let buffer = _ArgumentBuffer(flags: [self.flags, .resourceView], sourceArray: self.argumentBufferArray)
             self.argumentBufferArray._bindings[index] = buffer
-            return ArgumentBuffer(existingHandle: buffer.handle)
+            return ArgumentBuffer(handle: buffer.handle)
         }
     }
 }

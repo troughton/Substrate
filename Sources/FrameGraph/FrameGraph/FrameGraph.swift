@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import Utilities
+import FrameGraphUtilities
 
 public protocol RenderPass : class {
     var name : String { get }
@@ -24,22 +24,13 @@ extension RenderPass {
     public var writtenResources : [Resource] { return [] }
 }
 
-public protocol _DrawRenderPass : RenderPass {
-    var _renderTargetDescriptor : _RenderTargetDescriptor { get }
-    func execute(renderCommandEncoder: RenderCommandEncoder)
+protocol ReflectableRenderPass {
+    associatedtype Reflection : RenderPassReflection
 }
 
-public protocol DrawRenderPass : _DrawRenderPass {
-    associatedtype AttachmentIdentifier : RenderTargetIdentifier
-    var renderTargetDescriptor : RenderTargetDescriptor<AttachmentIdentifier> { get }
+public protocol DrawRenderPass : RenderPass {
+    var renderTargetDescriptor : RenderTargetDescriptor { get }
     func execute(renderCommandEncoder: RenderCommandEncoder)
-}
-
-extension DrawRenderPass {
-    @inlinable
-    public var _renderTargetDescriptor : _RenderTargetDescriptor {
-        return self.renderTargetDescriptor._descriptor
-    }
 }
 
 extension DrawRenderPass {
@@ -88,18 +79,59 @@ extension ExternalRenderPass {
     }
 }
 
-final class CallbackDrawRenderPass<I : RenderTargetIdentifier> : DrawRenderPass {
+public protocol ReflectableDrawRenderPass : DrawRenderPass {
+    
+    associatedtype Reflection : RenderPassReflection
+    func execute(renderCommandEncoder: TypedRenderCommandEncoder<Reflection>)
+}
+
+extension ReflectableDrawRenderPass {
+    @inlinable
+    public func execute(renderCommandEncoder: RenderCommandEncoder) {
+        return self.execute(renderCommandEncoder: TypedRenderCommandEncoder(encoder: renderCommandEncoder))
+    }
+}
+
+public protocol ReflectableComputeRenderPass : ComputeRenderPass {
+    associatedtype Reflection : RenderPassReflection
+    func execute(computeCommandEncoder: TypedComputeCommandEncoder<Reflection>)
+}
+
+extension ReflectableComputeRenderPass {
+    @inlinable
+    public func execute(computeCommandEncoder: ComputeCommandEncoder) {
+        return self.execute(computeCommandEncoder: TypedComputeCommandEncoder(encoder: computeCommandEncoder))
+    }
+}
+
+final class CallbackDrawRenderPass : DrawRenderPass {
     public let name : String
-    public let renderTargetDescriptor: RenderTargetDescriptor<I>
+    public let renderTargetDescriptor: RenderTargetDescriptor
     public let executeFunc : (RenderCommandEncoder) -> Void
     
-    public init(name: String, descriptor: RenderTargetDescriptor<I>, execute: @escaping (RenderCommandEncoder) -> Void) {
+    public init(name: String, descriptor: RenderTargetDescriptor, execute: @escaping (RenderCommandEncoder) -> Void) {
         self.name = name
         self.renderTargetDescriptor = descriptor
         self.executeFunc = execute
     }
     
     public func execute(renderCommandEncoder: RenderCommandEncoder) {
+        self.executeFunc(renderCommandEncoder)
+    }
+}
+
+final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : ReflectableDrawRenderPass {
+    public let name : String
+    public let renderTargetDescriptor: RenderTargetDescriptor
+    public let executeFunc : (TypedRenderCommandEncoder<R>) -> Void
+    
+    public init(name: String, descriptor: RenderTargetDescriptor, reflection: R.Type, execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+        self.name = name
+        self.renderTargetDescriptor = descriptor
+        self.executeFunc = execute
+    }
+    
+    public func execute(renderCommandEncoder: TypedRenderCommandEncoder<R>) {
         self.executeFunc(renderCommandEncoder)
     }
 }
@@ -114,6 +146,20 @@ final class CallbackComputeRenderPass : ComputeRenderPass {
     }
     
     public func execute(computeCommandEncoder: ComputeCommandEncoder) {
+        self.executeFunc(computeCommandEncoder)
+    }
+}
+
+final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : ReflectableComputeRenderPass {
+    public let name : String
+    public let executeFunc : (TypedComputeCommandEncoder<R>) -> Void
+    
+    public init(name: String, reflection: R.Type, execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
+        self.name = name
+        self.executeFunc = execute
+    }
+    
+    public func execute(computeCommandEncoder: TypedComputeCommandEncoder<R>) {
         self.executeFunc(computeCommandEncoder)
     }
 }
@@ -168,14 +214,13 @@ public enum RenderPassType {
     case external // Using things like Metal Performance Shaders.
 }
 
-
 public final class RenderPassRecord {
     public let pass : RenderPass
-    public internal(set) var commandRange : Range<Int>?
-    public internal(set) var passIndex : Int
-    public internal(set) var isActive : Bool
-    
-    internal(set) var commandRecorderIndex : Int = 0
+    public var commands : ExpandingBuffer<FrameGraphCommand>! = nil
+    public /* internal(set) */ var commandRange : Range<Int>?
+    public /* internal(set) */ var passIndex : Int
+    public /* internal(set) */ var isActive : Bool
+    public /* internal(set) */ var usesWindowTexture : Bool = false
     
     init(pass: RenderPass, passIndex: Int) {
         self.pass = pass
@@ -185,35 +230,67 @@ public final class RenderPassRecord {
     }
 }
 
-public protocol FrameGraphBackend {
-    func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
-    func executeFrameGraph(passes: [RenderPassRecord], resourceUsages: ResourceUsages, commands: [FrameGraphCommand], completion: @escaping () -> Void)
+public enum DependencyType {
+    /// No dependency
+    case none
+    /// If the dependency is active, it must be executed first
+    case ordering
+    /// The dependency must always be executed
+    case execution
+//    /// There is a transitive dependency by way of another pass
+//    case transitive
 }
 
-@_fixed_layout
+public protocol FrameGraphBackend {
+    func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
+    func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void)
+}
+
+public enum FrameGraphTagType : UInt64 {
+    static let frameGraphTag : UInt64 = 0xf9322463 // CRC-32 of "FrameGraph"
+    
+    /// Scratch data that exists only while a render pass is being executed.
+    case renderPassExecution
+    
+    /// Data that exists while the FrameGraph is being compiled.
+    case frameGraphCompilation
+    
+    /// Data that exists until the FrameGraph has been executed on the backend.
+    case frameGraphExecution
+    
+    /// Resource usage nodes – exists until the FrameGraph has been executed on the backend.
+    case resourceUsageNodes
+    
+    public static func renderPassExecutionTag(passIndex: Int) -> TaggedHeap.Tag {
+        return (FrameGraphTagType.frameGraphTag << 32) | (FrameGraphTagType.renderPassExecution.rawValue << 16) | TaggedHeap.Tag(passIndex)
+    }
+    
+    public var tag : TaggedHeap.Tag {
+        assert(self != .renderPassExecution)
+        let tag = (FrameGraphTagType.frameGraphTag << 32) | (self.rawValue << 16)
+        return tag
+    }
+}
+
 public class FrameGraph {
     
-    /// A debug setting to ensure that render passes are never culled, inactive resources are bound,
-    /// and that all bound resources are used, making it potentially easier to find issues using debug tools.
-    public static let debugMode = false
+    public static var jobManager : FrameGraphJobManager = DefaultFrameGraphJobManager()
+
+    private static var threadResourceUsages : [ResourceUsages] = []
+    private static var threadUnmanagedReferences : [ExpandingBuffer<Releasable>]! = nil
     
-    #if os(macOS)
-    public static let executionThreads = ProcessInfo.processInfo.processorCount / 2
-    #else
-    public static let executionThreads = 1
-    #endif
+    /// executionAllocator is used for allocations that last one execution of the FrameGraph.
+    static var executionAllocator : TagAllocator! = nil
     
-    static let threadResourceUsages = (0..<executionThreads).map { _ in ResourceUsages() }
+    /// resourceUsagesAllocator is used for resource usages, and lasts one execution of the FrameGraph.
+    static var resourceUsagesAllocator : TagAllocator! = nil
     
-    static let threadCommandRecorders = (0..<executionThreads).map { _ in FrameGraphCommandRecorder() }
-    
-    static let completionSemaphore = DispatchSemaphore(value: RenderBackend.maxInflightFrames)
+    static var completionSemaphore = Semaphore(value: Int32(RenderBackend.maxInflightFrames))
     
     private static var renderPasses : [RenderPassRecord] = []
-    private static let renderPassQueue = DispatchQueue(label: "Render Pass Queue")
+    private static var renderPassLock = SpinLock()
     
-    @usableFromInline
-    private(set) static var currentFrameIndex : UInt64 = 1 // starting at 0 causes issues for waits on the first frame.
+    public private(set) static var currentFrameIndex : UInt64 = 1 // starting at 0 causes issues for waits on the first frame.
     
     private static var previousFrameCompletionTime : UInt64 = 0
     
@@ -227,21 +304,21 @@ public class FrameGraph {
     /// Useful for creating resources that may be used later in the frame.
     public static func insertEarlyBlitPass(name: String,
                                             execute: @escaping (BlitCommandEncoder) -> Void)  {
-        self.renderPassQueue.sync {
+        self.renderPassLock.withLock {
             self.renderPasses.insert(RenderPassRecord(pass: CallbackBlitRenderPass(name: name, execute: execute),
                                                       passIndex: 0), at: 0)
         }
     }
     
     public static func insertEarlyBlitPass(_ pass: BlitRenderPass)  {
-        self.renderPassQueue.sync {
+        self.renderPassLock.withLock {
             self.renderPasses.insert(RenderPassRecord(pass: pass,
                                                       passIndex: 0), at: 0)
         }
     }
 
     public static func addPass(_ renderPass: RenderPass)  {
-        self.renderPassQueue.sync {
+        self.renderPassLock.withLock {
             self.renderPasses.append(RenderPassRecord(pass: renderPass, passIndex: self.renderPasses.count))
         }
     }
@@ -251,15 +328,28 @@ public class FrameGraph {
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
     
-    public static func addDrawCallbackPass<I>(name: String,
-                                    descriptor: RenderTargetDescriptor<I>,
+    public static func addDrawCallbackPass(name: String,
+                                    descriptor: RenderTargetDescriptor,
                                        execute: @escaping (RenderCommandEncoder) -> Void) {
         self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor, execute: execute))
+    }
+    
+    public static func addDrawCallbackPass<R>(name: String,
+                                              descriptor: RenderTargetDescriptor,
+                                              reflection: R.Type,
+                                              execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+        self.addPass(ReflectableCallbackDrawRenderPass(name: name, descriptor: descriptor, reflection: reflection, execute: execute))
     }
     
     public static func addComputeCallbackPass(name: String,
                                           execute: @escaping (ComputeCommandEncoder) -> Void) {
         self.addPass(CallbackComputeRenderPass(name: name, execute: execute))
+    }
+    
+    public static func addComputeCallbackPass<R>(name: String,
+                                                 reflection: R.Type,
+                                              execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
+        self.addPass(ReflectableCallbackComputeRenderPass(name: name, reflection: reflection, execute: execute))
     }
     
     public static func addCPUCallbackPass(name: String,
@@ -282,13 +372,19 @@ public class FrameGraph {
     // Then, it will execute the command list.
 
     static func executePass(_ passRecord: RenderPassRecord, threadIndex: Int) {
-        let commandRecorder = self.threadCommandRecorders[threadIndex]
         let resourceUsages = self.threadResourceUsages[threadIndex]
+        let unmanagedReferences = self.threadUnmanagedReferences[threadIndex]
         
-        let startCommandIndex = commandRecorder.nextCommandIndex
+        let renderPassScratchTag = FrameGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
 
+        let commandRecorder = FrameGraphCommandRecorder(renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
+                                                        frameGraphExecutionAllocator: TagAllocator.ThreadView(allocator: self.executionAllocator, threadIndex: threadIndex),
+                                                        unmanagedReferences: unmanagedReferences)
+        
+        
+        
         switch passRecord.pass {
-        case let drawPass as _DrawRenderPass:
+        case let drawPass as DrawRenderPass:
             let rce = RenderCommandEncoder(commandRecorder: commandRecorder, resourceUsages: resourceUsages, renderPass: drawPass, passRecord: passRecord)
             drawPass.execute(renderCommandEncoder: rce)
             rce.endEncoding()
@@ -315,55 +411,38 @@ public class FrameGraph {
             fatalError("Unknown pass type for pass \(passRecord)")
         }
         
-        commandRecorder.commmandEncoderTemporaryArena.reset()
+        passRecord.commands = commandRecorder.commands
+        passRecord.commandRange = 0..<passRecord.commands.count
         
-        let endCommandIndex = commandRecorder.nextCommandIndex
-        
-        passRecord.commandRange = startCommandIndex..<endCommandIndex
-        passRecord.commandRecorderIndex = threadIndex
+        TaggedHeap.free(tag: renderPassScratchTag)
     }
     
     static func evaluateResourceUsages(renderPasses: [RenderPassRecord]) {
+        let jobManager = self.jobManager
         
         for passRecord in renderPasses where passRecord.pass.passType == .cpu {
             if passRecord.pass.writtenResources.isEmpty {
-                self.executePass(passRecord, threadIndex: 0)
+                self.executePass(passRecord, threadIndex: jobManager.threadIndex)
             } else {
                 self.threadResourceUsages[0].addReadResources(passRecord.pass.readResources, for: Unmanaged.passUnretained(passRecord))
                 self.threadResourceUsages[0].addWrittenResources(passRecord.pass.writtenResources, for: Unmanaged.passUnretained(passRecord))
             }
         }
         
-        DispatchQueue.concurrentPerform(iterations: self.executionThreads) { threadIndex in
-            var passIndex = threadIndex
-
-            while passIndex < renderPasses.count {
-                defer { passIndex += self.executionThreads }
-
-                let passRecord = renderPasses[passIndex]
-                if passRecord.pass.passType == .cpu {
-                    continue
-                }
-
+        for passRecord in renderPasses where passRecord.pass.passType != .cpu {
+            jobManager.dispatchPassJob { [unowned(unsafe) jobManager] in
+                let threadIndex = jobManager.threadIndex
+                
                 if passRecord.pass.writtenResources.isEmpty {
-                    self.executePass(passRecord, threadIndex: threadIndex)
+                    FrameGraph.executePass(passRecord, threadIndex: threadIndex)
                 } else {
-                    self.threadResourceUsages[threadIndex].addReadResources(passRecord.pass.readResources, for: Unmanaged.passUnretained(passRecord))
-                    self.threadResourceUsages[threadIndex].addWrittenResources(passRecord.pass.writtenResources, for: Unmanaged.passUnretained(passRecord))
+                    FrameGraph.threadResourceUsages[threadIndex].addReadResources(passRecord.pass.readResources, for: Unmanaged.passUnretained(passRecord))
+                    FrameGraph.threadResourceUsages[threadIndex].addWrittenResources(passRecord.pass.writtenResources, for: Unmanaged.passUnretained(passRecord))
                 }
-
             }
         }
-
-    }
-    
-    enum DependencyType {
-        /// No dependency
-        case none
-        /// If the dependency is active, it must be executed first
-        case ordering
-        /// The dependency must always be executed
-        case execution
+        
+        jobManager.waitForAllPassJobs()
     }
     
     static func markActive(passIndex i: Int, dependencyTable: DependencyTable<DependencyType>, renderPasses: [RenderPassRecord]) {
@@ -389,10 +468,10 @@ public class FrameGraph {
         if renderPasses[i].isActive, !addedToList[i] {
             addedToList[i] = true
             
-            if let targetRenderTargetDescriptor = (renderPasses[i].pass as? _DrawRenderPass)?._renderTargetDescriptor {
+            if let targetRenderTargetDescriptor = (renderPasses[i].pass as? DrawRenderPass)?.renderTargetDescriptor {
                 // First process all passes that can't share the same render target...
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? _DrawRenderPass)?._renderTargetDescriptor, _RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
+                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? DrawRenderPass)?.renderTargetDescriptor,RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
                     } else {
                         computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
                     }
@@ -400,7 +479,7 @@ public class FrameGraph {
                 
                 // ... and then process those which can.
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? _DrawRenderPass)?._renderTargetDescriptor, _RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
+                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? DrawRenderPass)?.renderTargetDescriptor,RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
                         computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
                     }
                 }
@@ -415,27 +494,7 @@ public class FrameGraph {
         }
     }
     
-//    static func testResourceUsagesListInsertion() {
-//        var list = ResourceUsagesList()
-//        
-//        let arenas = (0..<10).map { _ in MemoryArena(blockSize: 1024) }
-//        
-//        DispatchQueue.concurrentPerform(iterations: 10, execute: { threadIndex in
-//            for i in stride(from: threadIndex, to: 10000, by: 20) {
-//                let renderPass = RenderPassRecord(pass: CallbackCPURenderPass(name: "", execute: {} ), passIndex: i)
-//                list.append(ResourceUsage(type: .readWrite, stages: .cpuBeforeRender, inArgumentBuffer: false, firstCommandOffset: 0, renderPass: Unmanaged<RenderPassRecord>.passRetained(renderPass)), arena: arenas[threadIndex])
-//            }
-//        })
-//        
-//        var previousIndex = 0
-//        for item in list {
-//            assert(item.renderPassRecord.passIndex >= previousIndex)
-//            previousIndex = item.renderPassRecord.passIndex
-//            item._renderPass.release()
-//        }
-//    }
-    
-    static func compile(renderPasses: [RenderPassRecord]) -> [RenderPassRecord] {
+    static func compile(renderPasses: [RenderPassRecord]) -> ([RenderPassRecord], DependencyTable<DependencyType>) {
         
         renderPasses.enumerated().forEach { $1.passIndex = $0 } // We may have inserted early blit passes, so we need to set the pass indices now.
         
@@ -454,7 +513,10 @@ public class FrameGraph {
             self.threadResourceUsages[0].resources.formUnion(resourceUsages.allResources)
         }
         
-        for resource in self.threadResourceUsages[0].resources where resource.type == .buffer || resource.type == .texture {
+        // Note: we don't need to include argument buffers in this loop since the only allowed usage of an argument buffer by the GPU is a read.
+        // We don't need to reverse the order of reads, either, since reads don't form data hazards.
+        // FIXME: this assumption will no longer hold once we support read-write argument buffers.
+        for resource in self.threadResourceUsages[0].resources where resource.type == .buffer || resource.type == .texture || resource.type == .argumentBuffer {
             if resource.isTextureView { continue } // Skip over the non-canonical versions of resources.
             
             resource.usagesPointer.reverse() // Since the usages list is constructed in reverse order.
@@ -467,7 +529,6 @@ public class FrameGraph {
             }
             
 //            assert(resource.flags.contains(.initialised) || usages.first.isWrite, "Resource read by pass \(usages.first.renderPass.pass.name) without being written to.")
-            
             for usage in usages {
                 
                 let usagePassIndex = usage.renderPassRecord.passIndex
@@ -491,9 +552,15 @@ public class FrameGraph {
                 }
             }
             
-            if resource.flags.intersection([.persistent, .windowHandle, .historyBuffer]) != [] {
+            if resource.flags.intersection([.persistent, .windowHandle, .historyBuffer, .externalOwnership]) != [] {
                 for pass in producingPasses {
                     passHasSideEffects[pass] = true
+                }
+            }
+            
+            if resource.flags.contains(.windowHandle) {
+                for pass in producingPasses {
+                    renderPasses[pass].usesWindowTexture = true
                 }
             }
             
@@ -511,21 +578,18 @@ public class FrameGraph {
             priorReads.removeAll(keepingCapacity: true)
         }
         
-        for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] || FrameGraph.debugMode {
+        for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
             self.markActive(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses)
         }
 
         var addedToList = (0..<renderPasses.count).map { _ in false }
         var activePasses = [RenderPassRecord]()
-        for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] || FrameGraph.debugMode {
+        for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
             self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
         }
         
         var i = 0
         while i < activePasses.count {
-            // FIXME: passes that explicitly specify their uses don't get culled, since we can't iterate through the usages list and decrement the producer reference count.
-            // A better solution would be to insert an unknown 'read' or 'write' for each declared resource in these passes so they can participate in reference counting,
-            // and then remove those usages once the pass has been executed.
             let passRecord = activePasses[i]
             if passRecord.commandRange == nil {
                 self.executePass(passRecord, threadIndex: 0)
@@ -538,7 +602,35 @@ public class FrameGraph {
             }
         }
         
-        return activePasses
+        var activePassDependencies = DependencyTable<DependencyType>(capacity: activePasses.count, defaultValue: .none)
+
+        for pass in (0..<activePasses.count).reversed() {
+            let passIndexOriginal = activePasses[pass].passIndex
+
+            for possibleDependency in (0..<pass).reversed() {
+                let possibleDependencyIndexOriginal = activePasses[possibleDependency].passIndex
+                guard possibleDependencyIndexOriginal < passIndexOriginal else { continue }
+
+                let dependency = dependencyTable.dependency(from: passIndexOriginal, on: possibleDependencyIndexOriginal)
+                activePassDependencies.setDependency(from: pass, on: possibleDependency, to: dependency)
+            }
+        }
+        
+        // Transitive dependencies: everything that has a dependency on us also has a transitive dependency on everything we have a dependency on.
+//        for sourcePass in 1..<max(1, activePasses.count - 1) { // Nothing can depend on the last pass.
+//            for possibleDependentPass in (sourcePass + 1)..<activePasses.count {
+//                if activePassDependencies.dependency(from: possibleDependentPass, on: sourcePass) != .none {
+//                    // Introduce a transitive dependency.
+//                    for sourceDependency in 0..<sourcePass {
+//                        if activePassDependencies.dependency(from: sourcePass, on: sourceDependency) != .none, dependencyTable.dependency(from: sourcePass, on: sourceDependency) == .none {
+//                            activePassDependencies.setDependency(from: possibleDependentPass, on: sourceDependency, to: .transitive)
+//                        }
+//                    }
+//                }
+//            }
+//        }
+        
+        return (activePasses, activePassDependencies)
     }
     
     // Note: calling this on the same thread that execute is called on will cause deadlock.
@@ -550,77 +642,118 @@ public class FrameGraph {
         self.submissionNotifyQueue.append(function)
     }
     
-    public static func execute(backend: FrameGraphBackend, onGPUCompletion: (() -> Void)? = nil) {
-        self.completionSemaphore.wait()
-        let currentFrameIndex = self.currentFrameIndex
-        
-        backend.beginFrameResourceAccess()
-        
+    public static func execute(backend: FrameGraphBackend, onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
         var renderPasses : [RenderPassRecord]! = nil
-        self.renderPassQueue.sync {
+        let jobManager = self.jobManager
+        
+        self.renderPassLock.withLock {
             renderPasses = self.renderPasses
             self.renderPasses.removeAll(keepingCapacity: true)
         }
-
-        let passes = self.compile(renderPasses: renderPasses)
         
-        // The commands need to be re-ordered into a sequential manner
-        var commands = [FrameGraphCommand]()
-        commands.reserveCapacity(self.threadCommandRecorders[0].commands.count * self.executionThreads)
-        
-        for (i, passRecord) in passes.enumerated() {
-            let startCommandIndex = commands.count
-            commands.append(contentsOf: self.threadCommandRecorders[passRecord.commandRecorderIndex].commands[passRecord.commandRange!])
-            let endCommandIndex = commands.count
+        jobManager.dispatchSyncFrameGraph {
+            self.completionSemaphore.wait()
             
-            passRecord.passIndex = i
-            passRecord.commandRange = startCommandIndex..<endCommandIndex
-            assert(passRecord.commandRange!.count > 0)
-        }
-        
-        for resource in self.threadResourceUsages[0].resources { // Since at this point (after compile) the resources from all threads have been merged into the resources for thread 0.
+            let currentFrameIndex = self.currentFrameIndex
             
-            if resource.flags.contains(.persistent) {
-                var isRead = false
-                var isWritten = false
-                for usage in resource.usages where usage.renderPassRecord.isActive {
-                    if usage.isRead {
-                        isRead = true
-                    }
-                    if usage.isWrite {
-                        isWritten = true
-                        break
-                    }
-                }
-                if isRead {
-                    resource.writeWaitFrame = currentFrameIndex // The CPU can't write to this resource until the GPU has finished reading from it.
-                }
-                if isWritten {
-                    resource.readWaitFrame = currentFrameIndex // The CPU can't read from this resource until the GPU has finished writing to it.
-                }
+            self.resourceUsagesAllocator = TagAllocator(tag: FrameGraphTagType.resourceUsageNodes.tag, threadCount: jobManager.threadCount)
+            self.executionAllocator = TagAllocator(tag: FrameGraphTagType.frameGraphExecution.tag, threadCount: jobManager.threadCount)
+            
+            let threadCount = jobManager.threadCount
+            
+            self.threadResourceUsages.reserveCapacity(threadCount)
+            while self.threadResourceUsages.count < threadCount {
+                self.threadResourceUsages.append(ResourceUsages())
             }
-            assert(resource.storageMode != .private || (resource.usages.firstActiveUsage?.isWrite ?? true) || resource.stateFlags.contains(.initialised), "Resource \(resource) (type \(resource.type), label \(String(describing: resource.label))) is read from in pass \(resource.usages.firstActiveUsage!.renderPassRecord.pass.name) without being first written to.")
+            
+            self.threadUnmanagedReferences = (0..<threadCount).map { i in
+                return ExpandingBuffer(allocator: AllocatorType(TagAllocator.ThreadView(allocator: self.executionAllocator, threadIndex: i)), initialCapacity: 0)
+            }
+            
+            for (i, usages) in self.threadResourceUsages.enumerated() {
+                usages.usageNodeAllocator = TagAllocator.ThreadView(allocator: self.resourceUsagesAllocator, threadIndex: i)
+            }
+            
+            backend.beginFrameResourceAccess()
+            
+            let (passes, dependencyTable) = self.compile(renderPasses: renderPasses)
+            
+            // Index the commands for each pass in a sequential manner for the entire frame.
+            var commandCount = 0
+            for (i, passRecord) in passes.enumerated() {
+                let startCommandIndex = commandCount
+                commandCount += passRecord.commands.count
+                
+                passRecord.passIndex = i
+                passRecord.commandRange = startCommandIndex..<commandCount
+                assert(passRecord.commandRange!.count > 0)
+            }
+            
+            // Compilation is finished, so reset that tag.
+            TaggedHeap.free(tag: FrameGraphTagType.frameGraphCompilation.tag)
+            
+            for resource in self.threadResourceUsages[0].resources { // Since at this point (after compile) the resources from all threads have been merged into the resources for thread 0.
+                
+                if resource.flags.contains(.persistent) {
+                    var isRead = false
+                    var isWritten = false
+                    for usage in resource.usages where usage.renderPassRecord.isActive {
+                        if usage.isRead {
+                            isRead = true
+                        }
+                        if usage.isWrite {
+                            isWritten = true
+                            break
+                        }
+                    }
+                    if isRead {
+                        resource.writeWaitFrame = currentFrameIndex // The CPU can't write to this resource until the GPU has finished reading from it.
+                    }
+                    if isWritten {
+                        resource.readWaitFrame = currentFrameIndex // The CPU can't read from this resource until the GPU has finished writing to it.
+                    }
+                }
+                //            assert(resource.storageMode != .private || (resource.usages.firstActiveUsage?.isWrite ?? true) || resource.stateFlags.contains(.initialised), "Resource \(resource) (type \(resource.type), label \(String(describing: resource.label))) is read from in pass \(resource.usages.firstActiveUsage!.renderPassRecord.pass.name) without being first written to.")
+            }
+            
+            
+            let completion = {
+                assert(!FrameCompletion.frameIsComplete(currentFrameIndex))
+                let completionTime = DispatchTime.now().uptimeNanoseconds
+                let elapsed = completionTime - FrameGraph.previousFrameCompletionTime
+                FrameGraph.previousFrameCompletionTime = completionTime
+                self.lastFrameRenderDuration = Double(elapsed) * 1e-6
+                //            print("Frame \(currentFrameIndex) completed in \(self.lastFrameRenderDuration)ms.")
+                
+                self.completionSemaphore.signal()
+                FrameCompletion.markFrameComplete(frame: currentFrameIndex)
+                onGPUCompletion?()
+            }
+            
+            if !passes.isEmpty {
+                backend.executeFrameGraph(passes: passes, dependencyTable: dependencyTable, resourceUsages: self.threadResourceUsages[0], completion: completion)
+            } else {
+                completion()
+            }
+            
+            // Make sure the FrameGraphCommands buffers are deinitialised before the tags are freed.
+            passes.forEach {
+                $0.commands = nil
+            }
+            
+            renderPasses.forEach {
+                $0.commands = nil
+            }
+            
+            onSubmission?()
+            
+            self.submissionNotifyQueue.forEach { $0() }
+            self.submissionNotifyQueue.removeAll(keepingCapacity: true)
+            
+            self.reset()
+            
+            self.currentFrameIndex += 1
         }
-        
-        backend.executeFrameGraph(passes: passes, resourceUsages: self.threadResourceUsages[0], commands: commands, completion: {
-            let completionTime = DispatchTime.now().uptimeNanoseconds
-            let elapsed = completionTime - FrameGraph.previousFrameCompletionTime
-            FrameGraph.previousFrameCompletionTime = completionTime
-            self.lastFrameRenderDuration = Double(elapsed) * 1e-6
-//            print("Frame completed in \(self.lastFrameRenderDuration)ms.")
-            
-            self.completionSemaphore.signal()
-            FrameCompletion.markFrameComplete(frame: currentFrameIndex)
-            onGPUCompletion?()
-            
-        })
-        
-        self.submissionNotifyQueue.forEach { $0() }
-        self.submissionNotifyQueue.removeAll(keepingCapacity: true)
-        
-        self.reset()
-        
-        self.currentFrameIndex += 1
     }
     
     private static func reset() {
@@ -631,8 +764,23 @@ public class FrameGraph {
         
         PersistentTextureRegistry.instance.clear()
         PersistentBufferRegistry.instance.clear()
+        PersistentArgumentBufferRegistry.instance.clear()
+        PersistentArgumentBufferArrayRegistry.instance.clear()
         
-        self.threadCommandRecorders.forEach { $0.reset() }
+        self.threadUnmanagedReferences.forEach { unmanagedReferences in
+            for reference in unmanagedReferences {
+                reference.release()
+            }
+            unmanagedReferences.removeAll()
+        }
+        self.threadUnmanagedReferences = nil
+        
         self.threadResourceUsages.forEach { $0.reset() }
+        
+        self.executionAllocator = nil
+        self.resourceUsagesAllocator = nil
+        
+        TaggedHeap.free(tag: FrameGraphTagType.frameGraphExecution.tag)
+        TaggedHeap.free(tag: FrameGraphTagType.resourceUsageNodes.tag)
     }
 }

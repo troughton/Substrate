@@ -22,6 +22,7 @@ public enum TextureType : UInt {
 public struct TextureUsage : OptionSet {
     public let rawValue : UInt
     
+    @inlinable
     public init(rawValue: UInt) {
         self.rawValue = rawValue
     }
@@ -45,6 +46,7 @@ public struct TextureUsage : OptionSet {
 public struct BufferUsage : OptionSet {
     public let rawValue : UInt
     
+    @inlinable
     public init(rawValue: UInt) {
         self.rawValue = rawValue
     }

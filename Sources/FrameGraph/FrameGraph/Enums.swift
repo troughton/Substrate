@@ -66,23 +66,24 @@ public struct ColorWriteMask : OptionSet, Hashable {
     
     public var rawValue: UInt
     
+    @inlinable
     public init(rawValue: UInt) {
         self.rawValue = rawValue
     }
     
-    public static var red = ColorWriteMask(rawValue: 1)
+    public static let red = ColorWriteMask(rawValue: 1)
     
-    public static var green = ColorWriteMask(rawValue: 2)
+    public static let green = ColorWriteMask(rawValue: 2)
     
-    public static var blue = ColorWriteMask(rawValue: 4)
+    public static let blue = ColorWriteMask(rawValue: 4)
     
-    public static var alpha = ColorWriteMask(rawValue: 8)
+    public static let alpha = ColorWriteMask(rawValue: 8)
     
-    public static var all : ColorWriteMask = [.red, .green, .blue, .alpha]
+    public static let all : ColorWriteMask = [.red, .green, .blue, .alpha]
 }
 
 
-public enum PixelFormat : UInt, Hashable {
+public enum PixelFormat : UInt, Hashable, Codable {
     
     case invalid = 0
     
@@ -206,9 +207,115 @@ public enum PixelFormat : UInt, Hashable {
 
     case x32_stencil8 = 261
     case x24_stencil8 = 262
+    
+    @inlinable
+    public var isSRGB : Bool {
+        switch self {
+        case .r8Unorm_sRGB, .rg8Unorm_sRGB, .rgba8Unorm_sRGB, .bgra8Unorm_sRGB, .bgr10_xr_sRGB, .bgra10_xr_sRGB, .bc1_rgba_sRGB, .bc2_rgba_sRGB, .bc3_rgba_sRGB, .bc7_rgbaUnorm_sRGB:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    @inlinable
+    public var bytesPerPixel : Double {
+        switch self {
+        case .invalid:
+            return 0
+            
+        // 8 bits per channel
+        case .r8Sint, .r8Uint, .r8Snorm, .r8Unorm, .r8Unorm_sRGB, .a8Unorm:
+            return 1
+        case .rg8Sint, .rg8Uint, .rg8Snorm, .rg8Unorm, .rg8Unorm_sRGB:
+            return 2
+        case .rgba8Sint, .rgba8Uint, .rgba8Snorm, .rgba8Unorm, .rgba8Unorm_sRGB,
+             .bgra8Unorm, .bgra8Unorm_sRGB:
+            return 4
+            
+        // 16 bits per channel
+        case .r16Sint, .r16Uint, .r16Float, .r16Snorm, .r16Unorm:
+            return 2
+        case .rg16Sint, .rg16Uint, .rg16Float, .rg16Snorm, .rg16Unorm:
+            return 4
+        case .rgba16Sint, .rgba16Uint, .rgba16Float, .rgba16Snorm, .rgba16Unorm:
+            return 8
+            
+        // 32 bits per channel
+        case .r32Sint, .r32Uint, .r32Float:
+            return 4
+            
+        case .rg32Sint, .rg32Uint, .rg32Float:
+            return 8
+            
+        case .rgba32Sint, .rgba32Uint, .rgba32Float:
+            return 16
+            
+        // Packed 16-bit formats
+        case .b5g6r5Unorm, .a1bgr5Unorm, .abgr4Unorm, .bgr5a1Unorm:
+            return 2
+            
+        // Packed 32-bit formats
+        case .rgb10a2Uint, .rgb10a2Unorm, .rg11b10Float, .rgb9e5Float,
+             .bgr10a2Unorm, .bgr10_xr, .bgr10_xr_sRGB:
+            return 4
+            
+        // Packed 64-bit formats
+        case .bgra10_xr, .bgra10_xr_sRGB:
+            return 8
+            
+        // Depth, stencil, and depth-stencil
+        case .depth16Unorm:
+            return 2
+        case .depth32Float:
+            return 4
+        case .stencil8:
+            return 1
+        case .depth24Unorm_stencil8, .x24_stencil8:
+            return 4
+        case .depth32Float_stencil8, .x32_stencil8:
+            return 5
+            
+        // BCn texture compression (reference: http://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats)
+        case .bc1_rgba, .bc1_rgba_sRGB:
+            return 0.5
+            
+        case .bc4_rSnorm, .bc4_rUnorm:
+            return 0.5
+            
+        case .bc3_rgba, .bc3_rgba_sRGB:
+            return 1
+            
+        case .bc5_rgSnorm, .bc5_rgUnorm:
+            return 1
+            
+        case .bc2_rgba, .bc2_rgba_sRGB:
+            return 1
+            
+        case .bc6H_rgbFloat, .bc6H_rgbuFloat:
+            return 1
+            
+        case .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+            return 1
+            
+        // 4:2:2 subsampled
+        case .gbgr422, .bgrg422:
+            return 2
+        }
+    }
+    
+    @inlinable
+    public var rowsPerBlock : Int {
+        switch self  {
+        case .bc1_rgba, .bc2_rgba, .bc3_rgba, .bc1_rgba_sRGB, .bc2_rgba_sRGB, .bc3_rgba_sRGB, .bc4_rSnorm, .bc4_rUnorm, .bc5_rgSnorm, .bc5_rgUnorm, .bc6H_rgbFloat, .bc6H_rgbuFloat, .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+            return 4 // 4x4 blocks
+        default:
+            return 1
+        }
+    }
 }
 
-public extension PixelFormat {
+extension PixelFormat {
     public init?(string: String) {
         for i in 0...PixelFormat.x24_stencil8.rawValue {
             if let format = PixelFormat(rawValue: i) {
@@ -273,6 +380,7 @@ public struct BlitOption : OptionSet {
     
     public let rawValue : UInt
     
+    @inlinable
     public init(rawValue: UInt) {
         self.rawValue = rawValue
     }

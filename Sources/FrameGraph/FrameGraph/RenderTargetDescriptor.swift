@@ -6,7 +6,7 @@
 //
 //
 
-import Utilities
+import FrameGraphUtilities
 
 public protocol RenderTargetAttachmentDescriptor {
     var texture: Texture { get set }
@@ -22,6 +22,18 @@ public protocol RenderTargetAttachmentDescriptor {
     /// If true, this texture's previous contents will not be loaded,
     /// and will be overwritten when the attachment is stored.
     var fullyOverwritesContents : Bool { get set }
+    
+    /// The texture to perform a multisample resolve action on at the completion of the render pass.
+    var resolveTexture : Texture? { get set }
+    
+    /// The mipmap level of the resolve texture to resolve to.
+    var resolveLevel : Int { get set }
+    
+    /// The slice of the resolve texture to resolve to.
+    var resolveSlice : Int { get set }
+    
+    /// The depth plane of the resolve texture to resolve to.
+    var resolveDepthPlane : Int { get set }
 }
 
 public struct RenderTargetColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
@@ -51,6 +63,19 @@ public struct RenderTargetColorAttachmentDescriptor : RenderTargetAttachmentDesc
     public var wantsClear: Bool {
         return self.clearColor != nil
     }
+    
+    /// The texture to perform a multisample resolve action on at the completion of the render pass.
+    public var resolveTexture : Texture? = nil
+    
+    /// The mipmap level of the resolve texture to resolve to.
+    public var resolveLevel : Int = 0
+    
+    /// The slice of the resolve texture to resolve to.
+    public var resolveSlice : Int = 0
+    
+    /// The depth plane of the resolve texture to resolve to.
+    public var resolveDepthPlane : Int = 0
+    
 }
 
 public struct RenderTargetDepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
@@ -80,6 +105,18 @@ public struct RenderTargetDepthAttachmentDescriptor : RenderTargetAttachmentDesc
     public var wantsClear : Bool {
         return self.clearDepth != nil
     }
+    
+    /// The texture to perform a multisample resolve action on at the completion of the render pass.
+    public var resolveTexture : Texture? = nil
+    
+    /// The mipmap level of the resolve texture to resolve to.
+    public var resolveLevel : Int = 0
+    
+    /// The slice of the resolve texture to resolve to.
+    public var resolveSlice : Int = 0
+    
+    /// The depth plane of the resolve texture to resolve to.
+    public var resolveDepthPlane : Int = 0
 }
 
 public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
@@ -109,94 +146,25 @@ public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDe
     public var wantsClear : Bool {
         return self.clearStencil != nil
     }
+    
+    /// The texture to perform a multisample resolve action on at the completion of the render pass.
+    public var resolveTexture : Texture? = nil
+    
+    /// The mipmap level of the resolve texture to resolve to.
+    public var resolveLevel : Int = 0
+    
+    /// The slice of the resolve texture to resolve to.
+    public var resolveSlice : Int = 0
+    
+    /// The depth plane of the resolve texture to resolve to.
+    public var resolveDepthPlane : Int = 0
 }
 
-@_fixed_layout
-public struct RenderTargetDescriptor<I : RenderTargetIdentifier> {
-    public var _descriptor : _RenderTargetDescriptor
-    
-    @inlinable
-    public init() {
-        self._descriptor = _RenderTargetDescriptor(identifierType: I.self)
-    }
-    
-    @inlinable
-    public init(_ descriptor : _RenderTargetDescriptor) {
-        self._descriptor = descriptor
-    }
-    
-    
-    @inlinable
-    public subscript(attachment: I) -> RenderTargetColorAttachmentDescriptor? {
-        get {
-            return self._descriptor.colorAttachments[attachment.rawValue]
-        }
-        set {
-            self._descriptor.colorAttachments[attachment.rawValue] = newValue
-        }
-    }
-    
-    @inlinable
-    public subscript(colorAttachment attachmentIndex: Int) -> RenderTargetColorAttachmentDescriptor? {
-        get {
-            return self._descriptor.colorAttachments[attachmentIndex]
-        }
-        set {
-            self._descriptor.colorAttachments[attachmentIndex] = newValue
-        }
-    }
-    
-    @inlinable
-    public var depthAttachment : RenderTargetDepthAttachmentDescriptor? {
-        get {
-            return self._descriptor.depthAttachment
-        }
-        set {
-            self._descriptor.depthAttachment = newValue
-        }
-    }
-    
-    @inlinable
-    public var stencilAttachment : RenderTargetStencilAttachmentDescriptor? {
-        get {
-            return self._descriptor.stencilAttachment
-        }
-        set {
-            self._descriptor.stencilAttachment = newValue
-        }
-    }
-    
-    @inlinable
-    public var visibilityResultBuffer: Buffer? {
-        get {
-            return self._descriptor.visibilityResultBuffer
-        }
-        set {
-            self._descriptor.visibilityResultBuffer = newValue
-        }
-    }
-    
-    @inlinable
-    public var renderTargetArrayLength: Int {
-        get {
-            return self._descriptor.renderTargetArrayLength
-        }
-        set {
-            self._descriptor.renderTargetArrayLength = newValue
-        }
-    }
-    
-    @inlinable
-    public var size : Size {
-        return self._descriptor.size
-    }
-}
 
-@_fixed_layout
-public struct _RenderTargetDescriptor : Hashable {
+public struct RenderTargetDescriptor : Hashable {
     
-    public init<I : RenderTargetIdentifier>(identifierType: I.Type) {
-         self.colorAttachments = Array(repeating: nil, count: I.count)
+    public init(attachmentCount: Int) {
+         self.colorAttachments = Array(repeating: nil, count: attachmentCount)
     }
     
     public var colorAttachments : [RenderTargetColorAttachmentDescriptor?]
@@ -226,7 +194,7 @@ public struct _RenderTargetDescriptor : Hashable {
         return width == .max ? Size(length: 1) : Size(width: width, height: height, depth: 1)
     }
     
-    public static func areMergeable(_ descriptorA: _RenderTargetDescriptor, _ descriptorB: _RenderTargetDescriptor) -> Bool {
+    public static func areMergeable(_ descriptorA: RenderTargetDescriptor, _ descriptorB: RenderTargetDescriptor) -> Bool {
         if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment, depthA.texture != depthB.texture || depthB.wantsClear {
             return false
         }

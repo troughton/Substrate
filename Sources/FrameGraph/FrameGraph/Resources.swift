@@ -5,7 +5,7 @@
 //  Created by Joseph Bennett on 18/12/17.
 //
 
-import Utilities
+import FrameGraphUtilities
 
 public enum ResourceType : UInt8 {
     case buffer = 1
@@ -23,11 +23,11 @@ public enum ResourceType : UInt8 {
  @constant RenderStageVertex   All vertex work prior to rasterization has completed.
  @constant RenderStageFragment All rendering work has completed.
  */
-@_fixed_layout
 public struct RenderStages : OptionSet, Hashable {
     
     public let rawValue : UInt
     
+    @inlinable
     public init(rawValue: UInt) {
         self.rawValue = rawValue
     }
@@ -67,10 +67,10 @@ public struct RenderStages : OptionSet, Hashable {
     }
 }
 
-@_fixed_layout
 public struct ResourceFlags : OptionSet {
     public let rawValue: UInt8
     
+    @inlinable
     public init(rawValue: UInt8) {
         self.rawValue = rawValue
     }
@@ -78,6 +78,7 @@ public struct ResourceFlags : OptionSet {
     public static let persistent = ResourceFlags(rawValue: 1 << 0)
     public static let windowHandle = ResourceFlags(rawValue: 1 << 1)
     public static let historyBuffer = ResourceFlags(rawValue: 1 << 2)
+    public static let externalOwnership = ResourceFlags(rawValue: 1 << 3)
     public static let immutableOnceInitialised = ResourceFlags(rawValue: 1 << 4)
 }
 
@@ -87,10 +88,10 @@ extension ResourceFlags {
     static let resourceView = ResourceFlags(rawValue: 1 << 5)
 }
 
-@_fixed_layout
 public struct ResourceStateFlags : OptionSet {
     public let rawValue: UInt16
     
+    @inlinable
     public init(rawValue: UInt16) {
         self.rawValue = rawValue
     }
@@ -106,7 +107,7 @@ public enum ResourceAccessType {
 
 public protocol ResourceProtocol : Hashable {
     
-    init(existingHandle: Handle)
+    init(handle: Handle)
     func dispose()
     
     var handle : Handle { get }
@@ -121,7 +122,13 @@ public protocol ResourceProtocol : Hashable {
     var writeWaitFrame : UInt64 { get nonmutating set }
 }
 
-@_fixed_layout
+extension ResourceProtocol {
+    @inlinable
+    public static func ==(lhs: Self, rhs: Self) -> Bool {
+        return lhs.handle == rhs.handle
+    }
+}
+
 public struct Resource : ResourceProtocol, Hashable {
     public let handle : Handle
     
@@ -131,14 +138,16 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
-    public init(existingHandle: Handle) {
-        self.handle = existingHandle
+    public init(handle: Handle) {
+        assert(handle == .max || ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: handle >> 48)) != nil)
+        
+        self.handle = handle
     }
     
     @inlinable
     public var buffer : Buffer? {
         if self.type == .buffer {
-            return Buffer(existingHandle: self.handle)
+            return Buffer(handle: self.handle)
         } else {
             return nil
         }
@@ -147,7 +156,7 @@ public struct Resource : ResourceProtocol, Hashable {
     @inlinable
     public var texture : Texture? {
         if self.type == .texture {
-            return Texture(existingHandle: self.handle)
+            return Texture(handle: self.handle)
         } else {
             return nil
         }
@@ -156,7 +165,7 @@ public struct Resource : ResourceProtocol, Hashable {
     @inlinable
     public var argumentBuffer : _ArgumentBuffer? {
         if self.type == .argumentBuffer {
-            return _ArgumentBuffer(existingHandle: self.handle)
+            return _ArgumentBuffer(handle: self.handle)
         } else {
             return nil
         }
@@ -165,13 +174,13 @@ public struct Resource : ResourceProtocol, Hashable {
     @inlinable
     public var argumentBufferArray : _ArgumentBufferArray? {
         if self.type == .argumentBufferArray {
-            return _ArgumentBufferArray(existingHandle: self.handle)
+            return _ArgumentBufferArray(handle: self.handle)
         } else {
             return nil
         }
     }
     
-    public static let invalidResource = Resource(existingHandle: .max)
+    public static let invalidResource = Resource(handle: .max)
 }
 
 extension Resource : CustomHashable {
@@ -185,7 +194,7 @@ extension ResourceProtocol {
     
     @inlinable
     public var type : ResourceType {
-        return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle >> 48)).unsafelyUnwrapped
+        return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle >> 48))!
     }
     
     @inlinable
@@ -222,13 +231,13 @@ extension ResourceProtocol {
         get {
             switch self.type {
             case .buffer:
-                return Buffer(existingHandle: self.handle).stateFlags
+                return Buffer(handle: self.handle).stateFlags
             case .texture:
-                return Texture(existingHandle: self.handle).stateFlags
+                return Texture(handle: self.handle).stateFlags
             case .argumentBuffer:
-                return _ArgumentBuffer(existingHandle: self.handle).stateFlags
+                return _ArgumentBuffer(handle: self.handle).stateFlags
             case .argumentBufferArray:
-                return _ArgumentBufferArray(existingHandle: self.handle).stateFlags
+                return _ArgumentBufferArray(handle: self.handle).stateFlags
             default:
                 fatalError()
             }
@@ -236,13 +245,13 @@ extension ResourceProtocol {
         nonmutating set {
             switch self.type {
             case .buffer:
-                Buffer(existingHandle: self.handle).stateFlags = newValue
+                Buffer(handle: self.handle).stateFlags = newValue
             case .texture:
-                Texture(existingHandle: self.handle).stateFlags = newValue
+                Texture(handle: self.handle).stateFlags = newValue
             case .argumentBuffer:
-                _ArgumentBuffer(existingHandle: self.handle).stateFlags = newValue
+                _ArgumentBuffer(handle: self.handle).stateFlags = newValue
             case .argumentBufferArray:
-                _ArgumentBufferArray(existingHandle: self.handle).stateFlags = newValue
+                _ArgumentBufferArray(handle: self.handle).stateFlags = newValue
             default:
                 fatalError()
             }
@@ -254,13 +263,13 @@ extension ResourceProtocol {
         get {
             switch self.type {
             case .buffer:
-                return Buffer(existingHandle: self.handle).storageMode
+                return Buffer(handle: self.handle).storageMode
             case .texture:
-                return Texture(existingHandle: self.handle).storageMode
+                return Texture(handle: self.handle).storageMode
             case .argumentBuffer:
-                return _ArgumentBuffer(existingHandle: self.handle).storageMode
+                return _ArgumentBuffer(handle: self.handle).storageMode
             case .argumentBufferArray:
-                return _ArgumentBufferArray(existingHandle: self.handle).storageMode
+                return _ArgumentBufferArray(handle: self.handle).storageMode
             default:
                 fatalError()
             }
@@ -272,13 +281,13 @@ extension ResourceProtocol {
         get {
             switch self.type {
             case .buffer:
-                return Buffer(existingHandle: self.handle).label
+                return Buffer(handle: self.handle).label
             case .texture:
-                return Texture(existingHandle: self.handle).label
+                return Texture(handle: self.handle).label
             case .argumentBuffer:
-                return _ArgumentBuffer(existingHandle: self.handle).label
+                return _ArgumentBuffer(handle: self.handle).label
             case .argumentBufferArray:
-                return _ArgumentBufferArray(existingHandle: self.handle).label
+                return _ArgumentBufferArray(handle: self.handle).label
             default:
                 fatalError()
             }
@@ -286,13 +295,13 @@ extension ResourceProtocol {
         nonmutating set {
             switch self.type {
             case .buffer:
-                Buffer(existingHandle: self.handle).label = newValue
+                Buffer(handle: self.handle).label = newValue
             case .texture:
-                Texture(existingHandle: self.handle).label = newValue
+                Texture(handle: self.handle).label = newValue
             case .argumentBuffer:
-                _ArgumentBuffer(existingHandle: self.handle).label = newValue
+                _ArgumentBuffer(handle: self.handle).label = newValue
             case .argumentBufferArray:
-                _ArgumentBufferArray(existingHandle: self.handle).label = newValue
+                _ArgumentBufferArray(handle: self.handle).label = newValue
             default:
                 fatalError()
             }
@@ -304,9 +313,9 @@ extension ResourceProtocol {
         get {
             switch self.type {
             case .buffer:
-                return Buffer(existingHandle: self.handle).readWaitFrame
+                return Buffer(handle: self.handle).readWaitFrame
             case .texture:
-                return Texture(existingHandle: self.handle).readWaitFrame
+                return Texture(handle: self.handle).readWaitFrame
             default:
                 return 0
             }
@@ -314,9 +323,9 @@ extension ResourceProtocol {
         nonmutating set {
             switch self.type {
             case .buffer:
-                Buffer(existingHandle: self.handle).readWaitFrame = newValue
+                Buffer(handle: self.handle).readWaitFrame = newValue
             case .texture:
-                Texture(existingHandle: self.handle).readWaitFrame = newValue
+                Texture(handle: self.handle).readWaitFrame = newValue
             default:
                 break
             }
@@ -328,9 +337,9 @@ extension ResourceProtocol {
         get {
             switch self.type {
             case .buffer:
-                return Buffer(existingHandle: self.handle).writeWaitFrame
+                return Buffer(handle: self.handle).writeWaitFrame
             case .texture:
-                return Texture(existingHandle: self.handle).writeWaitFrame
+                return Texture(handle: self.handle).writeWaitFrame
             default:
                 return 0
             }
@@ -338,9 +347,9 @@ extension ResourceProtocol {
         nonmutating set {
             switch self.type {
             case .buffer:
-                Buffer(existingHandle: self.handle).writeWaitFrame = newValue
+                Buffer(handle: self.handle).writeWaitFrame = newValue
             case .texture:
-                Texture(existingHandle: self.handle).writeWaitFrame = newValue
+                Texture(handle: self.handle).writeWaitFrame = newValue
             default:
                 break
             }
@@ -352,9 +361,11 @@ extension ResourceProtocol {
         get {
             switch self.type {
             case .buffer:
-                return Buffer(existingHandle: self.handle).usages
+                return Buffer(handle: self.handle).usages
             case .texture:
-                return Texture(existingHandle: self.handle).usages
+                return Texture(handle: self.handle).usages
+            case .argumentBuffer:
+                return _ArgumentBuffer(handle: self.handle).usages
             default:
                 return ResourceUsagesList()
             }
@@ -366,9 +377,11 @@ extension ResourceProtocol {
         get {
             switch self.type {
             case .buffer:
-                return Buffer(existingHandle: self.handle).usagesPointer
+                return Buffer(handle: self.handle).usagesPointer
             case .texture:
-                return Texture(existingHandle: self.handle).usagesPointer
+                return Texture(handle: self.handle).usagesPointer
+            case .argumentBuffer:
+                return _ArgumentBuffer(handle: self.handle).usagesPointer
             default:
                 fatalError()
             }
@@ -380,7 +393,7 @@ extension ResourceProtocol {
         get {
             switch self.type {
             case .texture:
-                return Texture(existingHandle: self.handle).baseResource
+                return Texture(handle: self.handle).baseResource
             default:
                 return nil
             }
@@ -391,13 +404,13 @@ extension ResourceProtocol {
     public func dispose() {
         switch self.type {
         case .buffer:
-            Buffer(existingHandle: self.handle).dispose()
+            Buffer(handle: self.handle).dispose()
         case .texture:
-            Texture(existingHandle: self.handle).dispose()
+            Texture(handle: self.handle).dispose()
         case .argumentBuffer:
-            _ArgumentBuffer(existingHandle: self.handle).dispose()
+            _ArgumentBuffer(handle: self.handle).dispose()
         case .argumentBufferArray:
-            _ArgumentBufferArray(existingHandle: self.handle).dispose()
+            _ArgumentBufferArray(handle: self.handle).dispose()
         default:
             break
         }
@@ -409,9 +422,7 @@ extension ResourceProtocol {
     }
 }
 
-@_fixed_layout
 public struct Buffer : ResourceProtocol {
-    @_fixed_layout
     public struct TextureViewDescriptor {
         public var descriptor : TextureDescriptor
         public var offset : Int
@@ -428,8 +439,9 @@ public struct Buffer : ResourceProtocol {
     public let handle : Handle
     
     @inlinable
-    public init(existingHandle: Handle) {
-        self.handle = existingHandle
+    public init(handle: Handle) {
+        assert(handle == .max || Resource(handle: handle).type == .buffer)
+        self.handle = handle
     }
     
     @inlinable
@@ -455,7 +467,7 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer? = nil, flags: ResourceFlags = []) {
+    public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, flags: ResourceFlags = []) {
         self.init(descriptor: descriptor, flags: flags)
         
         if let bytes = bytes {
@@ -502,6 +514,18 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
+    @inlinable
+    public func fillWhenMaterialised<C : Collection>(from source: C) {
+        let requiredCapacity = source.count * MemoryLayout<C.Element>.stride
+        assert(self.length >= requiredCapacity)
+        
+        self.withDeferredSlice(byteRange: 0..<requiredCapacity) { (slice: BufferSlice<C.Element>) -> Void in
+            slice.withContents { (contents: UnsafeMutablePointer<C.Element>) in
+                _ = UnsafeMutableBufferPointer(start: contents, count: source.count).initialize(from: source)
+            }
+        }
+    }
+    
     public func onMaterialiseGPUBacking(perform: @escaping (Buffer) -> Void) {
         if self.flags.contains(.persistent) {
             perform(self)
@@ -538,12 +562,15 @@ public struct Buffer : ResourceProtocol {
             if self.flags.intersection([.historyBuffer, .persistent]) == [] {
                 return []
             }
-            return PersistentBufferRegistry.instance.stateFlags[self.index]
+            
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            return PersistentBufferRegistry.instance.chunks[chunkIndex].stateFlags[indexInChunk]
         }
         nonmutating set {
             if self.flags.intersection([.historyBuffer, .persistent]) == [] { return }
             
-            PersistentBufferRegistry.instance.stateFlags[self.index] = newValue
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            PersistentBufferRegistry.instance.chunks[chunkIndex].stateFlags[indexInChunk] = newValue
         }
     }
     
@@ -552,7 +579,8 @@ public struct Buffer : ResourceProtocol {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
-                return PersistentBufferRegistry.instance.descriptors[index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+                return PersistentBufferRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
             } else {
                 return TransientBufferRegistry.instance.descriptors[index]
             }
@@ -560,7 +588,8 @@ public struct Buffer : ResourceProtocol {
         nonmutating set {
             let index = self.index
             if self._usesPersistentRegistry {
-                PersistentBufferRegistry.instance.descriptors[index] = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+                PersistentBufferRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk] = newValue
             } else {
                 TransientBufferRegistry.instance.descriptors[index] = newValue
             }
@@ -577,7 +606,8 @@ public struct Buffer : ResourceProtocol {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
-                return PersistentBufferRegistry.instance.labels[index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+                return PersistentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
             } else {
                 return TransientBufferRegistry.instance.labels[index]
             }
@@ -585,7 +615,8 @@ public struct Buffer : ResourceProtocol {
         nonmutating set {
             let index = self.index
             if self._usesPersistentRegistry {
-                PersistentBufferRegistry.instance.labels[index] = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+                PersistentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
             } else {
                 TransientBufferRegistry.instance.labels[index] = newValue
             }
@@ -611,11 +642,13 @@ public struct Buffer : ResourceProtocol {
     public var readWaitFrame: UInt64 {
         get {
             guard self.flags.contains(.persistent) else { return 0 }
-            return PersistentBufferRegistry.instance.readWaitFrames[self.index]
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            return PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk]
         }
         nonmutating set {
             guard self.flags.contains(.persistent) else { return }
-            PersistentBufferRegistry.instance.readWaitFrames[self.index] = newValue
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk] = newValue
         }
     }
     
@@ -623,20 +656,23 @@ public struct Buffer : ResourceProtocol {
     public var writeWaitFrame: UInt64 {
         get {
             guard self.flags.contains(.persistent) else { return 0 }
-            return PersistentBufferRegistry.instance.writeWaitFrames[self.index]
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            return PersistentBufferRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk]
         }
         nonmutating set {
             guard self.flags.contains(.persistent) else { return }
-            PersistentBufferRegistry.instance.writeWaitFrames[self.index] = newValue
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            PersistentBufferRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk] = newValue
         }
     }
     
     @inlinable
     public func waitForCPUAccess(accessType: ResourceAccessType) {
         guard self.flags.contains(.persistent) else { return }
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
         
-        let readWaitFrame = PersistentBufferRegistry.instance.readWaitFrames[self.index]
-        let writeWaitFrame = PersistentBufferRegistry.instance.readWaitFrames[self.index]
+        let readWaitFrame = PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk]
+        let writeWaitFrame = PersistentBufferRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk]
         switch accessType {
         case .read:
             FrameCompletion.waitForFrame(readWaitFrame)
@@ -652,7 +688,8 @@ public struct Buffer : ResourceProtocol {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
-                return PersistentBufferRegistry.instance.usages[index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+                return PersistentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
             } else {
                 return TransientBufferRegistry.instance.usages[index]
             }
@@ -664,7 +701,8 @@ public struct Buffer : ResourceProtocol {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
-                return PersistentBufferRegistry.instance.usages.advanced(by: index)
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+                return PersistentBufferRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
             } else {
                 return TransientBufferRegistry.instance.usages.advanced(by: index)
             }
@@ -672,17 +710,15 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public func dispose() {
+    public func dispose(atEndOfFrame: Bool = true) {
         guard self._usesPersistentRegistry else {
             return
         }
-        PersistentBufferRegistry.instance.dispose(self)
+        PersistentBufferRegistry.instance.dispose(self, atEndOfFrame: atEndOfFrame)
     }
 }
 
-@_fixed_layout
 public struct Texture : ResourceProtocol {
-    @_fixed_layout
     public struct TextureViewDescriptor {
         public var pixelFormat: PixelFormat
         public var textureType: TextureType
@@ -701,8 +737,9 @@ public struct Texture : ResourceProtocol {
     public let handle : Handle
     
     @inlinable
-    public init(existingHandle: Handle) {
-        self.handle = existingHandle
+    public init(handle: Handle) {
+        assert(handle == .max || Resource(handle: handle).type == .texture)
+        self.handle = handle
     }
     
     @inlinable
@@ -720,6 +757,23 @@ public struct Texture : ResourceProtocol {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
             RenderBackend.materialisePersistentTexture(self)
         }
+    }
+    
+    @inlinable
+    public init(descriptor: TextureDescriptor, externalResource: Any, flags: ResourceFlags = [.persistent, .externalOwnership]) {
+        let index : UInt64
+        if flags.contains(.persistent) || flags.contains(.historyBuffer) {
+            index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, flags: flags)
+        } else {
+            index = TransientTextureRegistry.instance.allocate(descriptor: descriptor, flags: flags)
+        }
+        
+        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.texture.rawValue) << 48)
+        
+        if self.flags.contains(.persistent) {
+            assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+        }
+        RenderBackend.registerExternalResource(Resource(self), backingResource: externalResource)
     }
     
     @inlinable
@@ -748,6 +802,12 @@ public struct Texture : ResourceProtocol {
     }
     
     @inlinable
+    public func copyBytes(to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
+        self.waitForCPUAccess(accessType: .read)
+        RenderBackend.copyTextureBytes(from: self, to: bytes, bytesPerRow: bytesPerRow, region: region, mipmapLevel: mipmapLevel)
+    }
+    
+    @inlinable
     public func replace(region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
         self.waitForCPUAccess(accessType: .write)
         
@@ -772,12 +832,14 @@ public struct Texture : ResourceProtocol {
             if self.flags.intersection([.historyBuffer, .persistent]) == [] {
                 return []
             }
-            return PersistentTextureRegistry.instance.stateFlags[self.index]
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+            return PersistentTextureRegistry.instance.chunks[chunkIndex].stateFlags[indexInChunk]
         }
         nonmutating set {
             assert(self.flags.intersection([.historyBuffer, .persistent]) != [], "State flags can only be set on persistent resources.")
-
-            PersistentTextureRegistry.instance.stateFlags[self.index] = newValue
+            
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+            PersistentTextureRegistry.instance.chunks[chunkIndex].stateFlags[indexInChunk] = newValue
         }
     }
     
@@ -791,7 +853,8 @@ public struct Texture : ResourceProtocol {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
-                return PersistentTextureRegistry.instance.descriptors[index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+                return PersistentTextureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
             } else {
                 return TransientTextureRegistry.instance.descriptors[index]
             }
@@ -799,7 +862,8 @@ public struct Texture : ResourceProtocol {
         nonmutating set {
             let index = self.index
             if self._usesPersistentRegistry {
-                PersistentTextureRegistry.instance.descriptors[index] = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+                PersistentTextureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk] = newValue
             } else {
                 TransientTextureRegistry.instance.descriptors[index] = newValue
             }
@@ -811,7 +875,8 @@ public struct Texture : ResourceProtocol {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
-                return PersistentTextureRegistry.instance.labels[index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+                return PersistentTextureRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
             } else {
                 return TransientTextureRegistry.instance.labels[index]
             }
@@ -819,7 +884,8 @@ public struct Texture : ResourceProtocol {
         nonmutating set {
             let index = self.index
             if self._usesPersistentRegistry {
-                PersistentTextureRegistry.instance.labels[index] = newValue
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+                PersistentTextureRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
             } else {
                 TransientTextureRegistry.instance.labels[index] = newValue
             }
@@ -830,11 +896,13 @@ public struct Texture : ResourceProtocol {
     public var readWaitFrame: UInt64 {
         get {
             guard self.flags.contains(.persistent) else { return 0 }
-            return PersistentTextureRegistry.instance.readWaitFrames[self.index]
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+            return PersistentTextureRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk]
         }
         nonmutating set {
             guard self.flags.contains(.persistent) else { return }
-            PersistentTextureRegistry.instance.readWaitFrames[self.index] = newValue
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+            PersistentTextureRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk] = newValue
         }
     }
     
@@ -842,20 +910,23 @@ public struct Texture : ResourceProtocol {
     public var writeWaitFrame: UInt64 {
         get {
             guard self.flags.contains(.persistent) else { return 0 }
-            return PersistentTextureRegistry.instance.writeWaitFrames[self.index]
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+            return PersistentTextureRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk]
         }
         nonmutating set {
             guard self.flags.contains(.persistent) else { return }
-            PersistentTextureRegistry.instance.writeWaitFrames[self.index] = newValue
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+            PersistentTextureRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk] = newValue
         }
     }
     
     @inlinable
     public func waitForCPUAccess(accessType: ResourceAccessType) {
         guard self.flags.contains(.persistent) else { return }
-        
-        let readWaitFrame = PersistentTextureRegistry.instance.readWaitFrames[self.index]
-        let writeWaitFrame = PersistentTextureRegistry.instance.readWaitFrames[self.index]
+
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+        let readWaitFrame = PersistentTextureRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk]
+        let writeWaitFrame = PersistentTextureRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk]
         switch accessType {
         case .read:
             FrameCompletion.waitForFrame(readWaitFrame)
@@ -891,7 +962,8 @@ public struct Texture : ResourceProtocol {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
-                return PersistentTextureRegistry.instance.usages[index]
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+                return PersistentTextureRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
             } else {
                 return self.baseResource?.usages ?? TransientTextureRegistry.instance.usages[index]
             }
@@ -903,7 +975,8 @@ public struct Texture : ResourceProtocol {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
-                return PersistentTextureRegistry.instance.usages.advanced(by: index)
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+                return PersistentTextureRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
             } else {
                 return self.baseResource?.usagesPointer ?? TransientTextureRegistry.instance.usages.advanced(by: index)
             }
@@ -988,10 +1061,9 @@ final class EmptyBufferSlice : DeferredBufferSlice {
     }
 }
 
-@_fixed_layout
 public final class RawBufferSlice {
     public let buffer : Buffer
-    public private(set) var range : Range<Int>
+    @usableFromInline var _range : Range<Int>
     
     @usableFromInline
     let contents : UnsafeMutableRawPointer
@@ -1004,8 +1076,8 @@ public final class RawBufferSlice {
     @inlinable
     internal init(buffer: Buffer, range: Range<Int>, accessType: ResourceAccessType) {
         self.buffer = buffer
-        self.range = range
-        self.contents = RenderBackend.bufferContents(for: self.buffer, range: self.range)
+        self._range = range
+        self.contents = RenderBackend.bufferContents(for: self.buffer, range: self._range)
         self.accessType = accessType
     }
     
@@ -1014,9 +1086,14 @@ public final class RawBufferSlice {
         return try perform(self.contents)
     }
     
+    @inlinable
+    public var range : Range<Int> {
+        return self._range
+    }
+    
     public func setBytesWrittenCount(_ bytesAccessed: Int) {
         assert(bytesAccessed <= self.range.count)
-        self.range = self.range.lowerBound..<(self.range.lowerBound + bytesAccessed)
+        self._range = self.range.lowerBound..<(self.range.lowerBound + bytesAccessed)
         self.writtenToGPU = false
     }
     
@@ -1036,10 +1113,9 @@ public final class RawBufferSlice {
     }
 }
 
-@_fixed_layout
 public final class BufferSlice<T> {
     public let buffer : Buffer
-    public private(set) var range : Range<Int>
+    @usableFromInline var _range : Range<Int>
     @usableFromInline
     let contents : UnsafeMutablePointer<T>
     @usableFromInline
@@ -1050,8 +1126,8 @@ public final class BufferSlice<T> {
     @inlinable
     internal init(buffer: Buffer, range: Range<Int>, accessType: ResourceAccessType) {
         self.buffer = buffer
-        self.range = range
-        self.contents = RenderBackend.bufferContents(for: self.buffer, range: self.range).assumingMemoryBound(to: T.self)
+        self._range = range
+        self.contents = RenderBackend.bufferContents(for: self.buffer, range: self._range).bindMemory(to: T.self, capacity: range.count)
         self.accessType = accessType
     }
     
@@ -1068,6 +1144,11 @@ public final class BufferSlice<T> {
     }
     
     @inlinable
+    public var range : Range<Int> {
+        return self._range
+    }
+    
+    @inlinable
     public func withContents<A>(_ perform: (UnsafeMutablePointer<T>) throws -> A) rethrows -> A {
         return try perform(self.contents)
     }
@@ -1077,7 +1158,7 @@ public final class BufferSlice<T> {
         
         let bytesAccessed = elementsAccessed * MemoryLayout<T>.stride
         assert(bytesAccessed <= self.range.count)
-        self.range = self.range.lowerBound..<(self.range.lowerBound + bytesAccessed)
+        self._range = self.range.lowerBound..<(self.range.lowerBound + bytesAccessed)
         self.writtenToGPU = false
     }
     

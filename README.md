@@ -1,6 +1,6 @@
 # SwiftFrameGraph
 
-_Note: The current version of SwiftFrameGraph on `master` has not been thoroughly tested on Vulkan. If you run into issues building from `master` and using `Vulkan`, the `Vulkan` branch contains the last version tested to be working on Vulkan, although its API has fallen significantly behind `master`._
+_Note: The current version of SwiftFrameGraph on `master` only has support for Metal and does not work with Vulkan. If you want to use the Vulkan backend, the `Vulkan` branch contains the last version tested to be working, although its API has fallen significantly behind `master`. We plan to restore the Vulkan backend to a working state in the future._
 
 ## What is this?
 

@@ -5,7 +5,7 @@
 //  Created by Joseph Bennett on 20/12/17.
 //
 
-import Utilities
+import FrameGraphUtilities
 
 public enum ResourceUsageType {
     case read
@@ -49,7 +49,6 @@ public enum ResourceUsageType {
 /// A generic resource binding path.
 /// Can be customised by the backends to any size-compatible POD type,
 /// and then converted into a ResourceBindingPath for use of the FrameGraph.
-@_fixed_layout
 public struct ResourceBindingPath : Hashable {
     public var value : UInt64
     
@@ -71,7 +70,6 @@ extension ResourceBindingPath : CustomHashable {
     }
 }
 
-@_fixed_layout
 public struct ArgumentReflection {
     public var isActive : Bool
     public var type : ResourceType
