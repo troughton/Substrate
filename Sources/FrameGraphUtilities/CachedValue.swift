@@ -6,18 +6,18 @@
 //
 //
 
-public final class CachedValue<T> {
-    @usableFromInline let constructor : () -> T
+@propertyWrapper
+public struct Cached<T> {
+    public var constructor : (() -> T)! = nil
     @usableFromInline var _value : T? = nil
     
     @inlinable
-    public init(constructor: @escaping () -> T) {
-        self.constructor = constructor
+    public init() {
     }
     
     @inlinable
-    public var value : T {
-        get {
+    public var wrappedValue : T {
+        mutating get {
             if let value = _value {
                 return value
             } else {
@@ -32,7 +32,7 @@ public final class CachedValue<T> {
     }
     
     @inlinable
-    public func reset() {
+    public mutating func reset() {
         _value = nil
     }
 }

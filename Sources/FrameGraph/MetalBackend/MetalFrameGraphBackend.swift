@@ -150,7 +150,8 @@ struct MetalTextureUsageProperties {
         self.init(usage: MTLTextureUsage(usage), canBeMemoryless: false)
     }
 }
-public final class MetalFrameGraph : FrameGraphBackend {
+
+public final class MetalFrameGraph {
     
     let resourceRegistry : MetalResourceRegistry
     let stateCaches : MetalStateCaches
