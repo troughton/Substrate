@@ -4,6 +4,7 @@
 
 #include <stdatomic.h>
 #include <stdbool.h>
+#include "vk_mem_alloc.h"
 
 typedef struct LinkedNodeHeader {
     struct LinkedNodeHeader *_Atomic next;
