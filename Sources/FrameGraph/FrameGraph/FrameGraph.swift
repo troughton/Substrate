@@ -241,7 +241,7 @@ public enum DependencyType {
 //    case transitive
 }
 
-public protocol FrameGraphBackend {
+public protocol FrameGraphBackend : RenderBackendProtocol {
     func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
     func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void)
 }
