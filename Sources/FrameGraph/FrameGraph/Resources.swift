@@ -62,8 +62,8 @@ public struct RenderStages : OptionSet, Hashable {
         }
     }
     
-    public var hashValue: Int {
-        return Int(bitPattern: self.rawValue)
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
     }
 }
 

@@ -55,8 +55,11 @@ public struct VulkanResourceBindingPath : Hashable {
         return unsafeBitCast(self, to: UInt64.self)
     }
 
-    public var hashValue : Int {
-        return (Int(self._set) << 48) | (Int(self._binding) << 32) | Int(self.arrayIndex)
+    public func hash(into hasher: inout Hasher) {
+        self._set.hash(into: &hasher)
+        self._binding.hash(into: &hasher)
+        self.arrayIndex.hash(into: &hasher)
+        
     }
     
     public var isPushConstant : Bool {
