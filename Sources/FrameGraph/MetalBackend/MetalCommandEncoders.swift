@@ -900,10 +900,10 @@ final class FGMTLExternalCommandEncoder {
     }
     
     func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
-        if _isDebugAssertConfiguration() {
-            let resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
-            assert(resourceCommands[resourceCommandIndex].index >= pass.commandRange!.upperBound) // External encoders shouldn't have any resource commands.
-        }
+        // if _isDebugAssertConfiguration() {
+        //     let resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
+        //     assert(resourceCommands[resourceCommandIndex].index >= pass.commandRange!.upperBound) // External encoders shouldn't have any resource commands.
+        // }
         
         for (_, command) in zip(pass.commandRange!, pass.commands) {
 //            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceRegistry: resourceRegistry, encoder: ())

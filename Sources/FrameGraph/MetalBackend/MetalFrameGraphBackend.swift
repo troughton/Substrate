@@ -145,15 +145,18 @@ public final class MetalFrameGraph {
     let syncEvent : MTLEvent
     
     let commandQueue : MTLCommandQueue
+    let captureScope : MTLCaptureScope
     
     var currentRenderTargetDescriptor : RenderTargetDescriptor? = nil
     
     init(device: MTLDevice, resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
-        self.syncEvent = device.makeEvent()!
-        
         self.commandQueue = device.makeCommandQueue()!
         self.resourceRegistry = resourceRegistry
         self.stateCaches = stateCaches
+
+        self.captureScope = MTLCaptureManager.shared().makeCaptureScope(device: device)
+        self.captureScope.label = "FrameGraph execution"
+        self.syncEvent = device.makeEvent()!
     }
     
     public func beginFrameResourceAccess() {
@@ -522,7 +525,7 @@ public final class MetalFrameGraph {
     }
     
     static func passCommandBufferIndices(passes: [RenderPassRecord]) -> [Int] {
-        var indices = (0..<passes.count).map { $0 }
+        var indices = (0..<passes.count).map { _ in 0 }
         
         var currentIndex = 0
         
@@ -608,6 +611,8 @@ public final class MetalFrameGraph {
             }
         }
         
+        self.captureScope.begin()
+        defer { self.captureScope.end() }
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         
@@ -668,6 +673,7 @@ public final class MetalFrameGraph {
             
             if commandEncoderIndex != passCommandBufferIndices[i] {
                 commandEncoderIndex = passCommandBufferIndices[i]
+                assert(commandEncoderWaitEventValues[commandEncoderIndex] < self.syncEventValue)
                 commandBuffer!.encodeWaitForEvent(self.syncEvent, value: commandEncoderWaitEventValues[commandEncoderIndex])
             }
             

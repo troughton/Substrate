@@ -256,6 +256,7 @@ final class MetalResourceRegistry {
         if texture._usesPersistentRegistry {
             // Ensure we can fit this new reference.
             self.textureReferences.prepareFrame()
+            self.textureWaitEvents.prepareFrame()
         }
         
         if texture.flags.contains(.windowHandle) {
@@ -374,6 +375,7 @@ final class MetalResourceRegistry {
         if buffer._usesPersistentRegistry {
             // Ensure we can fit this new reference.
             self.bufferReferences.prepareFrame()
+            self.bufferWaitEvents.prepareFrame()
         }
         
         let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)

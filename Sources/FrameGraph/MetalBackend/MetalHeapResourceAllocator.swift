@@ -40,7 +40,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     var resourceAliasInfo = [ObjectIdentifier : AliasingInfo]()
     var inUseResources = Set<ObjectIdentifier>()
     
-    var heap : MTLHeap! = nil
+    var heap : MTLHeap? = nil
     
     struct ResourceReference<R> {
         var resource : R
@@ -60,7 +60,6 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     
     // Semantically an 'array of sets', where the array is indexed by the aliasing indices.
     // When a resource is deposited, it overwrites the fences for all of the indices it aliases with.
-    // Special case: if all fences share an aliasingIndex and frame, wait on the fences associated with the resource instaed
     private var aliasingFences : [[MTLFenceReference]] = [[]]
     
     private var waitEventValue : UInt64 = 0
@@ -73,7 +72,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     }
     
     func resetHeap() {
-        self.aliasingFences.removeAll()
+        self.aliasingFences = [[]]
         self.nextAliasingIndex = 0
         self.aliasingRange = AliasingInfo(aliasesThrough: 0)
         
@@ -87,7 +86,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     func reserveCapacity(_ capacity: Int) {
         if (self.heap?.currentAllocatedSize ?? 0) < capacity {
             let descriptor = MTLHeapDescriptor()
-            descriptor.size = max(self.heap.currentAllocatedSize * 2, capacity)
+            descriptor.size = max((self.heap?.currentAllocatedSize ?? 0) * 2, capacity)
             self.heap = self.device.makeHeap(descriptor: descriptor)!
             self.resetHeap()
         }
@@ -102,11 +101,11 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         for i in (1..<MetalHeapResourceAllocator.historyFrames).reversed() {
             self.frameMemoryUsages[i] = self.frameMemoryUsages[i - 1]
         }
-        self.frameMemoryUsages[0] = self.heap.usedSize
+        self.frameMemoryUsages[0] = self.heap?.currentAllocatedSize ?? 0
         
         let memoryHighWaterMark = self.frameMemoryUsages.max()!
         
-        if self.heap.currentAllocatedSize > 2 * memoryHighWaterMark {
+        if (self.heap?.size ?? 0) > 2 * memoryHighWaterMark {
             self.heap = nil
             self.reserveCapacity(memoryHighWaterMark)
         }
@@ -218,21 +217,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     private func depositResource<R : MTLResourceReference>(_ resource: inout R, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
         self.inUseResources.remove(ObjectIdentifier(resource.resource))
         
-        if resource.resource.heap !== self.heap {
-            return // We've reallocated the heap since this resource was allocated.
-        }
-        
-        var aliasingInfo = self.resourceAliasInfo[ObjectIdentifier(resource.resource)]!
-        if aliasingInfo.aliasedFrom == Int.max {
-            resource.resource.makeAliasable()
-            
-            self.nextAliasingIndex += 1
-            self.aliasingFences.append([])
-            
-            aliasingInfo.aliasedFrom = self.nextAliasingIndex
-            self.resourceAliasInfo[ObjectIdentifier(resource.resource)]!.aliasedFrom = self.nextAliasingIndex
-        }
-        do {
+        defer {
             var through = 0
             var from = Int.max
             for resource in self.inUseResources {
@@ -243,7 +228,20 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
             self.aliasingRange.aliasedFrom = from
             self.aliasingRange.aliasesThrough = through
         }
-        
+
+        guard var aliasingInfo = self.resourceAliasInfo[ObjectIdentifier(resource.resource)] else {
+            return
+        }
+
+        if aliasingInfo.aliasedFrom == Int.max {
+            resource.resource.makeAliasable()
+            
+            self.nextAliasingIndex += 1
+            self.aliasingFences.append([])
+            
+            aliasingInfo.aliasedFrom = self.nextAliasingIndex
+            self.resourceAliasInfo[ObjectIdentifier(resource.resource)]!.aliasedFrom = self.nextAliasingIndex
+        }
         
         let processIndex : (Int, inout R, [MetalFenceHandle]) -> Void = { index, resource, fences in
             var i = 0
@@ -273,17 +271,17 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         var textureOpt = self.textureFittingDescriptor(descriptor)
         
         let sizeAndAlign = self.device.heapTextureSizeAndAlign(descriptor: descriptor)
-        let availableSize = self.heap.maxAvailableSize(alignment: sizeAndAlign.align)
+        let availableSize = self.heap?.maxAvailableSize(alignment: sizeAndAlign.align) ?? 0
         if textureOpt == nil, self.nextAliasingIndex < self.aliasingRange.aliasedFrom, availableSize >= sizeAndAlign.size {
             assert(descriptor.usage != .unknown)
             #if os(macOS)
-            textureOpt = MTLTextureReference(texture: Unmanaged.passRetained(self.heap.makeTexture(descriptor: descriptor)!))
+            textureOpt = MTLTextureReference(texture: Unmanaged.passRetained(self.heap!.makeTexture(descriptor: descriptor)!))
             #else
-            textureOpt = MTLTextureReference(texture: Unmanaged.passRetained(self.heap.makeTexture(descriptor: descriptor)))
+            textureOpt = MTLTextureReference(texture: Unmanaged.passRetained(self.heap!.makeTexture(descriptor: descriptor)))
             #endif
         }
         guard let texture = textureOpt else {
-            self.reserveCapacity(self.heap.currentAllocatedSize.roundedUpToMultiple(of: sizeAndAlign.align) + sizeAndAlign.size)
+            self.reserveCapacity((self.heap?.size.roundedUpToMultiple(of: sizeAndAlign.align) ?? 0) + sizeAndAlign.size)
             return self.collectTextureWithDescriptor(descriptor)
         }
         
@@ -295,24 +293,27 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     public func depositTexture(_ texture: MTLTextureReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
         var resourceRef = ResourceReference(resource: texture)
         self.depositResource(&resourceRef.resource, fences: fences, waitEvent: waitEvent)
-        self.textures.append(resourceRef)
         
-        self.nextFrameWaitEventValue = max(self.nextFrameWaitEventValue, waitEvent.waitValue)
+        if texture.resource.heap === self.heap {
+            self.textures.append(resourceRef)
+            self.nextFrameWaitEventValue = max(self.nextFrameWaitEventValue, waitEvent.waitValue)
+        } // else we've reallocated the heap since this resource was allocated.
     }
     
     public func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [MetalFenceHandle], MetalWaitEvent) {
         var bufferOpt = self.bufferWithLength(length, resourceOptions: options)
         
         let sizeAndAlign = self.device.heapBufferSizeAndAlign(length: length, options: options)
-        if bufferOpt == nil, self.nextAliasingIndex < self.aliasingRange.aliasedFrom, self.heap.maxAvailableSize(alignment: sizeAndAlign.align) >= sizeAndAlign.size {
+        let availableSize = self.heap?.maxAvailableSize(alignment: sizeAndAlign.align) ?? 0
+        if bufferOpt == nil, self.nextAliasingIndex < self.aliasingRange.aliasedFrom, availableSize >= sizeAndAlign.size {
             #if os(macOS)
-            bufferOpt = MTLBufferReference(buffer: Unmanaged.passRetained(self.heap.makeBuffer(length: length, options: options)!), offset: 0)
+            bufferOpt = MTLBufferReference(buffer: Unmanaged.passRetained(self.heap!.makeBuffer(length: length, options: options)!), offset: 0)
             #else
-            bufferOpt = MTLBufferReference(buffer: Unmanaged.passRetained(self.heap.makeBuffer(length: length, options: options)), offset: 0)
+            bufferOpt = MTLBufferReference(buffer: Unmanaged.passRetained(self.heap!.makeBuffer(length: length, options: options)), offset: 0)
             #endif
         }
         guard let buffer = bufferOpt else {
-            self.reserveCapacity(self.heap.currentAllocatedSize.roundedUpToMultiple(of: sizeAndAlign.align) + sizeAndAlign.size)
+            self.reserveCapacity((self.heap?.size.roundedUpToMultiple(of: sizeAndAlign.align) ?? 0) + sizeAndAlign.size)
             return self.collectBufferWithLength(length, options: options)
         }
         
@@ -324,9 +325,11 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     public func depositBuffer(_ buffer: MTLBufferReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
         var resourceRef = ResourceReference(resource: buffer)
         self.depositResource(&resourceRef.resource, fences: fences, waitEvent: waitEvent)
-        self.buffers.append(resourceRef)
-        
-        self.nextFrameWaitEventValue = max(self.nextFrameWaitEventValue, waitEvent.waitValue)
+
+        if buffer.resource.heap === self.heap {
+            self.buffers.append(resourceRef)
+            self.nextFrameWaitEventValue = max(self.nextFrameWaitEventValue, waitEvent.waitValue)
+        } // else we've reallocated the heap since this resource was allocated.
     }
 }
 

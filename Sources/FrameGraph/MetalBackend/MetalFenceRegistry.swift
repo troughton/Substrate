@@ -52,6 +52,9 @@ final class MetalFenceRegistry {
     }
     
     deinit {
+        for i in 0..<Int(self.maxIndex) {
+            self.fences[i].release()
+        }
         self.fences.deinitialize(count: Int(self.maxIndex))
     }
     
@@ -62,6 +65,7 @@ final class MetalFenceRegistry {
             nextIndex += 1
         } else {
             index = self.maxIndex
+            self.fences.advanced(by: Int(index)).initialize(to: Unmanaged.passRetained(self.device.makeFence()!))
             self.ensureCapacity(Int(self.maxIndex + 1))
             self.maxIndex += 1
         }
