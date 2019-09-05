@@ -76,6 +76,8 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
     let numFrames : Int
     let options : MTLResourceOptions
     private var currentIndex : Int = 0
+    private var waitEventValue : UInt64 = 0
+    private var nextFrameWaitEventValue : UInt64 = 0
     
     public init(device: MTLDevice, numFrames: Int, blockSize: Int, options: MTLResourceOptions) {
         self.numFrames = numFrames
@@ -88,18 +90,20 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
         return self.arenas[self.currentIndex].allocate(bytes: bytes, alignedTo: alignment)
     }
     
-    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, MetalResourceFences) {
+    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [MetalFenceHandle], MetalWaitEvent) {
         assert(options == self.options)
         let (buffer, offset) = self.allocate(bytes: length)
-        return (MTLBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset), MetalResourceFences())
+        return (MTLBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset), [], MetalWaitEvent(waitValue: self.waitEventValue))
     }
     
-    func depositBuffer(_ buffer: MTLBufferReference, fences: MetalResourceFences) {
-        // No-op; the buffers are cleared in cycleFrames.
+    func depositBuffer(_ buffer: MTLBufferReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
+        assert(fences.isEmpty)
+        self.nextFrameWaitEventValue = max(self.waitEventValue, waitEvent.waitValue)
     }
     
     public func cycleFrames() {
         self.currentIndex = (self.currentIndex + 1) % self.numFrames
+        self.waitEventValue = self.nextFrameWaitEventValue
         self.arenas[self.currentIndex].reset()
     }
 }

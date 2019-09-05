@@ -17,29 +17,23 @@ final class MetalPersistentResourceAllocator : MetalBufferAllocator, MetalTextur
         self.device = device
     }
     
-    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, MetalResourceFences) {
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [MetalFenceHandle], MetalWaitEvent) {
         return (MTLTextureReference(texture: Unmanaged.passRetained(device.makeTexture(descriptor: descriptor)!)),
-                MetalResourceFences())
+                [],
+                MetalWaitEvent())
     }
     
-    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, MetalResourceFences) {
+    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [MetalFenceHandle], MetalWaitEvent) {
         return (MTLBufferReference(buffer: Unmanaged.passRetained(device.makeBuffer(length: length, options: options)!), offset: 0),
-                MetalResourceFences())
+                [],
+                MetalWaitEvent())
     }
     
-    func depositBuffer(_ buffer: MTLBufferReference, fences: MetalResourceFences) {
-        fences.readWaitFence.release()
-        for fence in fences.writeWaitFences {
-            fence.release()
-        }
+    func depositBuffer(_ buffer: MTLBufferReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
         buffer._buffer.release()
     }
     
-    func depositTexture(_ texture: MTLTextureReference, fences: MetalResourceFences) {
-        fences.readWaitFence.release()
-        for fence in fences.writeWaitFences {
-            fence.release()
-        }
+    func depositTexture(_ texture: MTLTextureReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
         texture._texture.release()
     }
     

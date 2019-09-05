@@ -10,7 +10,7 @@ let supportedRenderAPIs = ["VkRenderer"]
 
 let package = Package(
     name: "SwiftFrameGraph",
-    platforms: [.macOS(.v10_13), .iOS(.v11), .tvOS(.v11)],
+    platforms: [.macOS(.v10_14), .iOS(.v12), .tvOS(.v12)],
     products: [
         .library(name: "SwiftFrameGraph", targets: ["SwiftFrameGraph"]),
         .library(name: "FrameGraphUtilities", targets: ["FrameGraphUtilities"]),

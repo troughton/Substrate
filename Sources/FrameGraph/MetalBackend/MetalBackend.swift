@@ -95,19 +95,19 @@ public final class MetalBackend : RenderBackendProtocol, FrameGraphBackend {
     }
     
     public func dispose(texture: Texture) {
-        self.resourceRegistry.disposeTexture(texture, keepingReference: false)
+        self.resourceRegistry.disposeTexture(texture, keepingReference: false, waitEvent: resourceRegistry.textureWaitEvents[texture] ?? MetalWaitEvent())
     }
     
     public func dispose(buffer: Buffer) {
-        self.resourceRegistry.disposeBuffer(buffer, keepingReference: false)
+        self.resourceRegistry.disposeBuffer(buffer, keepingReference: false, waitEvent: resourceRegistry.bufferWaitEvents[buffer] ?? MetalWaitEvent())
     }
     
     public func dispose(argumentBuffer: _ArgumentBuffer) {
-        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer, keepingReference: false)
+        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer, keepingReference: false, waitEvent: resourceRegistry.argumentBufferWaitEvents[argumentBuffer] ?? MetalWaitEvent())
     }
     
     public func dispose(argumentBufferArray: _ArgumentBufferArray) {
-        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray, keepingReference: false)
+        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray, keepingReference: false, waitEvent: resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray] ?? MetalWaitEvent())
     }
     
     public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {

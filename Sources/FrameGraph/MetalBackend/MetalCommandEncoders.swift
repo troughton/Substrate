@@ -483,16 +483,6 @@ public final class FGMTLThreadRenderCommandEncoder {
                     self.memoryBarrier(resource: resourceRegistry[buffer]!.buffer, afterStages: afterStages, beforeStages: beforeStages)
                 }
                 
-            case .textureBarrier:
-                #if os(macOS)
-                if !hasPerformedTextureBarrier {
-                    encoder.textureBarrier()
-                    hasPerformedTextureBarrier = true
-                }
-                #else
-                break
-                #endif
-                
             case .updateFence(let fence, let afterStages):
                 // TODO: We can combine together multiple fences that update at the same time.
                 self.updateFence(fence.fence, afterStages: afterStages)
@@ -500,16 +490,10 @@ public final class FGMTLThreadRenderCommandEncoder {
             case .waitForFence(let fence, let beforeStages):
                 self.waitForFence(fence.fence, beforeStages: beforeStages)
                 
-            case .waitForMultiframeFence(let resource, _, let waitFence, let beforeStages):
-                resourceRegistry.withResourceUsageFencesIfPresent(for: resource, perform: { fenceStates in
-                    if case .write = waitFence {
-                        for fence in fenceStates.writeWaitFences where fence.isValid {
-                            self.waitForFence(fence.fence, beforeStages: beforeStages)
-                        }
-                    } else {
-                        if fenceStates.readWaitFence.isValid {
-                            self.waitForFence(fenceStates.readWaitFence.fence, beforeStages: beforeStages)
-                        }
+            case .waitForHeapAliasingFences(let resource, _, let beforeStages):
+                resourceRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
+                    for fence in fenceStates where fence.isValid {
+                        self.waitForFence(fence.fence, beforeStages: beforeStages)
                     }
                 })
                 
@@ -698,9 +682,6 @@ public final class FGMTLComputeCommandEncoder {
                     self.memoryBarrier(resource: resourceRegistry[buffer]!.buffer)
                 }
                 
-            case .textureBarrier:
-                assertionFailure()
-                
             case .updateFence(let fence, _):
                 // TODO: We can combine together multiple fences that update at the same time.
                 self.updateFence(fence.fence)
@@ -708,16 +689,10 @@ public final class FGMTLComputeCommandEncoder {
             case .waitForFence(let fence, _):
                 self.waitForFence(fence.fence)
                 
-            case .waitForMultiframeFence(let resource, _, let waitFence, _):
-                resourceRegistry.withResourceUsageFencesIfPresent(for: resource, perform: { fenceStates in
-                    if case .write = waitFence {
-                        for fence in fenceStates.writeWaitFences where fence.isValid {
-                            self.waitForFence(fence.fence)
-                        }
-                    } else {
-                        if fenceStates.readWaitFence.isValid {
-                            self.waitForFence(fenceStates.readWaitFence.fence)
-                        }
+            case .waitForHeapAliasingFences(let resource, _, _):
+                resourceRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
+                    for fence in fenceStates where fence.isValid {
+                        self.waitForFence(fence.fence)
                     }
                 })
                 
@@ -871,9 +846,6 @@ public final class FGMTLBlitCommandEncoder {
                     self.memoryBarrier(resource: resourceRegistry[buffer]!.buffer)
                 }
                 
-            case .textureBarrier:
-                assertionFailure()
-                
             case .updateFence(let fence, _):
                 // TODO: We can combine together multiple fences that update at the same time.
                 self.updateFence(fence.fence)
@@ -881,16 +853,10 @@ public final class FGMTLBlitCommandEncoder {
             case .waitForFence(let fence, _):
                 self.waitForFence(fence.fence)
                 
-            case .waitForMultiframeFence(let resource, _, let waitFence, _):
-                resourceRegistry.withResourceUsageFencesIfPresent(for: resource, perform: { fenceStates in
-                    if case .write = waitFence {
-                        for fence in fenceStates.writeWaitFences where fence.isValid {
-                            self.waitForFence(fence.fence)
-                        }
-                    } else {
-                        if fenceStates.readWaitFence.isValid {
-                            self.waitForFence(fenceStates.readWaitFence.fence)
-                        }
+            case .waitForHeapAliasingFences(let resource, _, _):
+                resourceRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
+                    for fence in fenceStates where fence.isValid {
+                        self.waitForFence(fence.fence)
                     }
                 })
                 

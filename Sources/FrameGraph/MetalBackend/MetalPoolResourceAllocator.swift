@@ -16,12 +16,12 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
     
     struct ResourceReference<R> {
         let resource : R
-        var fenceState : MetalResourceFences
+        var waitEvent : MetalWaitEvent
         var framesUnused : Int = 0
         
-        init(resource: R, fenceState: MetalResourceFences) {
+        init(resource: R, waitEvent: MetalWaitEvent) {
             self.resource = resource
-            self.fenceState = fenceState
+            self.waitEvent = waitEvent
         }
     }
     
@@ -43,7 +43,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         self.textures = [[ResourceReference<MTLTextureReference>]](repeating: [ResourceReference<MTLTextureReference>](), count: numFrames)
     }
     
-    private func textureFittingDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, MetalResourceFences)? {
+    private func textureFittingDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, MetalWaitEvent)? {
         
         for (i, textureRef) in self.textures[currentIndex].enumerated() {
             if descriptor.textureType       == textureRef.resource.texture.textureType &&
@@ -58,14 +58,14 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
                 descriptor.cpuCacheMode     == textureRef.resource.texture.cpuCacheMode &&
                 descriptor.usage            == textureRef.resource.texture.usage {
                 let resourceRef = self.textures[currentIndex].remove(at: i, preservingOrder: false)
-                return (resourceRef.resource, resourceRef.fenceState)
+                return (resourceRef.resource, resourceRef.waitEvent)
             }
         }
         
         return nil
     }
     
-    private func bufferWithLength(_ length: Int, resourceOptions: MTLResourceOptions) -> (MTLBufferReference, MetalResourceFences)? {
+    private func bufferWithLength(_ length: Int, resourceOptions: MTLResourceOptions) -> (MTLBufferReference, MetalWaitEvent)? {
         var bestIndex = -1
         var bestLength = Int.max
         
@@ -79,46 +79,44 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         
         if bestIndex != -1 {
             let resourceRef = self.buffers[currentIndex].remove(at: bestIndex, preservingOrder: false)
-            return (resourceRef.resource, resourceRef.fenceState)
+            return (resourceRef.resource, resourceRef.waitEvent)
         } else {
             return nil
         }
     }
     
-    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, MetalResourceFences) {
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [MetalFenceHandle], MetalWaitEvent) {
         if let texture = self.textureFittingDescriptor(descriptor) {
-            return texture
+            return (texture.0, [], texture.1)
         } else {
-            return (MTLTextureReference(texture: Unmanaged.passRetained(device.makeTexture(descriptor: descriptor)!)), MetalResourceFences())
+            return (MTLTextureReference(texture: Unmanaged.passRetained(device.makeTexture(descriptor: descriptor)!)), [], MetalWaitEvent())
         }
     }
     
-    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, MetalResourceFences) {
+    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [MetalFenceHandle], MetalWaitEvent) {
         if let buffer = self.bufferWithLength(length, resourceOptions: options) {
-            return buffer
+            return (buffer.0, [], buffer.1)
         } else {
-            return (MTLBufferReference(buffer: Unmanaged.passRetained(device.makeBuffer(length: length, options: options)!), offset: 0), MetalResourceFences())
+            return (MTLBufferReference(buffer: Unmanaged.passRetained(device.makeBuffer(length: length, options: options)!), offset: 0), [], MetalWaitEvent())
         }
     }
     
-    func depositBuffer(_ buffer: MTLBufferReference, fences: MetalResourceFences) {
-        let resourceRef = ResourceReference(resource: buffer, fenceState: fences)
-        if self.numFrames == 1 {
-            self.buffers[self.currentIndex].append(resourceRef)
-        } else {
-            // We can't just put the resource back into the array for the current frame, since it's not safe to use it for another buffers.count frames.
-            self.buffersUsedThisFrame.append(resourceRef)
-        }
+    func depositBuffer(_ buffer: MTLBufferReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
+        assert(fences.isEmpty)
+        let resourceRef = ResourceReference(resource: buffer, waitEvent: waitEvent)
+        // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.
+        // This slightly increases memory usage but greatly simplifies resource tracking, and besides, heaps should be used instead
+        // for cases where memory usage is important.
+        self.buffersUsedThisFrame.append(resourceRef)
     }
     
-    func depositTexture(_ texture: MTLTextureReference, fences: MetalResourceFences) {
-        let resourceRef = ResourceReference(resource: texture, fenceState: fences)
-        if self.numFrames == 1 {
-            self.textures[self.currentIndex].append(resourceRef)
-        } else {
-            // We can't just put the resource back into the array for the current frame, since it's not safe to use it for another buffers.count frames.
-            self.texturesUsedThisFrame.append(resourceRef)
-        }
+    func depositTexture(_ texture: MTLTextureReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
+        assert(fences.isEmpty)
+        let resourceRef = ResourceReference(resource: texture, waitEvent: waitEvent)
+        // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.
+        // This slightly increases memory usage but greatly simplifies resource tracking, and besides, heaps should be used instead
+        // for cases where memory usage is important.
+        self.texturesUsedThisFrame.append(resourceRef)
     }
     
     func cycleFrames() {
@@ -129,10 +127,6 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
                 
                 if self.buffers[self.currentIndex][i].framesUnused > 5 {
                     let buffer = self.buffers[self.currentIndex].remove(at: i, preservingOrder: false)
-                    buffer.fenceState.readWaitFence.release()
-                    for fence in buffer.fenceState.writeWaitFences {
-                        fence.release()
-                    }
                     buffer.resource._buffer.release()
                 } else {
                     i += 1
@@ -150,10 +144,6 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
                 
                 if self.textures[self.currentIndex][i].framesUnused > 5 {
                     let texture = self.textures[self.currentIndex].remove(at: i, preservingOrder: false)
-                    texture.fenceState.readWaitFence.release()
-                    for fence in texture.fenceState.writeWaitFences {
-                        fence.release()
-                    }
                     texture.resource._texture.release()
                 } else {
                     i += 1

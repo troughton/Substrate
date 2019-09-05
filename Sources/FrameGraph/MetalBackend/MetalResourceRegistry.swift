@@ -11,12 +11,9 @@ import Metal
 import MetalKit
 import FrameGraphUtilities
 
-struct MetalResourceFences {
-    /// The fence to wait on before reading from the resource.
-    var readWaitFence : MetalFenceHandle = .invalid
-    
-    /// The fences to wait on before writing to the resource.
-    var writeWaitFences : [MetalFenceHandle] = []
+struct MetalWaitEvent {
+    /// The value which the main wait event needs to reach before this resource can be used.
+    var waitValue : UInt64 = 0
 }
 
 protocol MTLResourceReference {
@@ -73,15 +70,15 @@ final class MetalResourceRegistry {
     private var argumentBufferReferences = ResourceMap<_ArgumentBuffer, MTLBufferReference>() // Separate since this needs to have thread-safe access.
     private var argumentBufferArrayReferences = ResourceMap<_ArgumentBufferArray, MTLBufferReference>() // Separate since this needs to have thread-safe access.
     
-    private var textureUsageFences = ResourceMap<Texture, MetalResourceFences>()
-    private var bufferUsageFences = ResourceMap<Buffer, MetalResourceFences>()
-    private var argumentBufferUsageFences = ResourceMap<_ArgumentBuffer, MetalResourceFences>()
-    private var argumentBufferArrayUsageFences = ResourceMap<_ArgumentBufferArray, MetalResourceFences>()
+    var textureWaitEvents = ResourceMap<Texture, MetalWaitEvent>()
+    var bufferWaitEvents = ResourceMap<Buffer, MetalWaitEvent>()
+    var argumentBufferWaitEvents = ResourceMap<_ArgumentBuffer, MetalWaitEvent>()
+    var argumentBufferArrayWaitEvents = ResourceMap<_ArgumentBufferArray, MetalWaitEvent>()
     
-    private var textureDisposalFences = ResourceMap<Texture, MetalResourceFences>()
-    private var bufferDisposalFences = ResourceMap<Buffer, MetalResourceFences>()
-    private var argumentBufferDisposalFences = ResourceMap<_ArgumentBuffer, MetalResourceFences>()
-    private var argumentBufferArrayDisposalFences = ResourceMap<_ArgumentBufferArray, MetalResourceFences>()
+    private var heapResourceUsageFences = [Resource : [MetalFenceHandle]]()
+    private var heapResourceDisposalFences = [Resource : [MetalFenceHandle]]()
+    
+    private var persistentResourceWaitEvents = [Resource : MetalWaitEvent]()
     
     private var windowReferences = [ResourceProtocol.Handle : MTKView]()
     
@@ -102,14 +99,10 @@ final class MetalResourceRegistry {
     private let frameArgumentBufferAllocator : MetalTemporaryBufferAllocator
     
     private let stagingTextureAllocator : MetalPoolResourceAllocator
-    private let privateAllocator : SingleFrameHeapResourceAllocator
+    private let privateAllocator : MetalHeapResourceAllocator
     
-    // A double-buffered allocator for small per-frame private resources.
-    private let smallPrivateAllocator : MultiFrameHeapResourceAllocator
-    private let smallAllocationThreshold = 2 * 1024 * 1024 // 2MB
-    
-    private let colorRenderTargetAllocator : SingleFrameHeapResourceAllocator
-    private let depthRenderTargetAllocator : SingleFrameHeapResourceAllocator
+    private let colorRenderTargetAllocator : MetalHeapResourceAllocator
+    private let depthRenderTargetAllocator : MetalHeapResourceAllocator
     
     private let historyBufferAllocator : MetalPoolResourceAllocator
     private let persistentAllocator : MetalPersistentResourceAllocator
@@ -138,20 +131,9 @@ final class MetalResourceRegistry {
         self.memorylessTextureAllocator = MetalPoolResourceAllocator(device: device, numFrames: 1)
         #endif
         
-        
-        let heapDescriptor = MTLHeapDescriptor()
-        heapDescriptor.size = 1 << 25 // A 64MB heap
-        heapDescriptor.storageMode = .private
-        self.privateAllocator = SingleFrameHeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty)
-        
-        // The small private allocator is multi-buffered to minimise the need for fence waits.
-        self.smallPrivateAllocator = MultiFrameHeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty, numFrames: numInflightFrames)
-        
-        heapDescriptor.size = 40_000_000 // A 40MB heap
-        self.depthRenderTargetAllocator = SingleFrameHeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty)
-        
-        heapDescriptor.size = 200_000_000 // A 200MB heap
-        self.colorRenderTargetAllocator = SingleFrameHeapResourceAllocator(device: device, defaultDescriptor: heapDescriptor, framePurgeability: .empty)
+        self.privateAllocator = MetalHeapResourceAllocator(device: device)
+        self.depthRenderTargetAllocator = MetalHeapResourceAllocator(device: device)
+        self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device)
         
         self.prepareFrame()
         MetalFenceRegistry.instance.device = self.device
@@ -164,34 +146,22 @@ final class MetalResourceRegistry {
         self.argumentBufferReferences.deinit()
         self.argumentBufferArrayReferences.deinit()
         
-        self.textureUsageFences.deinit()
-        self.bufferUsageFences.deinit()
-        self.argumentBufferUsageFences.deinit()
-        self.argumentBufferArrayUsageFences.deinit()
-        
-        self.textureDisposalFences.deinit()
-        self.bufferDisposalFences.deinit()
-        self.argumentBufferDisposalFences.deinit()
-        self.argumentBufferArrayDisposalFences.deinit()
+        self.textureWaitEvents.deinit()
+        self.bufferWaitEvents.deinit()
+        self.argumentBufferWaitEvents.deinit()
+        self.argumentBufferArrayWaitEvents.deinit()
     }
     
     public func prepareFrame() {
-        MetalFenceRegistry.instance.clearCompletedFences()
-        
         self.textureReferences.prepareFrame()
         self.bufferReferences.prepareFrame()
         self.argumentBufferReferences.prepareFrame()
         self.argumentBufferArrayReferences.prepareFrame()
         
-        self.textureUsageFences.prepareFrame()
-        self.bufferUsageFences.prepareFrame()
-        self.argumentBufferUsageFences.prepareFrame()
-        self.argumentBufferArrayUsageFences.prepareFrame()
-        
-        self.textureDisposalFences.prepareFrame()
-        self.bufferDisposalFences.prepareFrame()
-        self.argumentBufferDisposalFences.prepareFrame()
-        self.argumentBufferArrayDisposalFences.prepareFrame()
+        self.textureWaitEvents.prepareFrame()
+        self.bufferWaitEvents.prepareFrame()
+        self.argumentBufferWaitEvents.prepareFrame()
+        self.argumentBufferArrayWaitEvents.prepareFrame()
     }
     
     public func registerWindowTexture(texture: Texture, context: Any) {
@@ -199,7 +169,6 @@ final class MetalResourceRegistry {
     }
     
     func allocatorForTexture(storageMode: MTLStorageMode, flags: ResourceFlags, textureParams: (PixelFormat, MTLTextureUsage)) -> MetalTextureAllocator {
-        
         if flags.contains(.persistent) {
             return self.persistentAllocator
         }
@@ -236,9 +205,6 @@ final class MetalResourceRegistry {
         }
         switch storageMode {
         case .private:
-            if length <= self.smallAllocationThreshold {
-                return self.smallPrivateAllocator
-            }
             return self.privateAllocator
         case .managed:
             #if os(macOS)
@@ -270,24 +236,19 @@ final class MetalResourceRegistry {
     }
     
     
-    func needsWaitFencesOnFrameCompletion(resource: Resource) -> Bool {
+    func isAliasedHeapResource(resource: Resource) -> Bool {
         let flags = resource.flags
         let storageMode : StorageMode = resource.storageMode
-        var size = Int.max
-        if let buffer = resource.buffer {
-            size = buffer.descriptor.length
-        }
         
         if flags.contains(.windowHandle) {
             return false
         }
         
-        if resource.isTextureView {
-            return false // We only need wait fences on its base resource.
+        if flags.intersection([.persistent, .historyBuffer]) != [] {
+            return false
         }
         
-        // All non-private resources are multiple buffered and so don't need wait fences.
-        return (storageMode == .private && size > self.smallAllocationThreshold) || flags.intersection([.persistent, .historyBuffer]) != []
+        return storageMode == .private
     }
     
     @discardableResult
@@ -295,7 +256,6 @@ final class MetalResourceRegistry {
         if texture._usesPersistentRegistry {
             // Ensure we can fit this new reference.
             self.textureReferences.prepareFrame()
-            self.textureUsageFences.prepareFrame()
         }
         
         if texture.flags.contains(.windowHandle) {
@@ -314,14 +274,20 @@ final class MetalResourceRegistry {
         #endif
         
         let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
-        let (mtlTexture, fenceState) = allocator.collectTextureWithDescriptor(descriptor)
+        let (mtlTexture, fences, waitEvent) = allocator.collectTextureWithDescriptor(descriptor)
         if let label = texture.label {
             mtlTexture.texture.label = label
         }
         
         assert(self.textureReferences[texture] == nil)
         self.textureReferences[texture] = mtlTexture
-        self.textureUsageFences[texture] = fenceState
+        
+        self.textureWaitEvents[texture] = waitEvent
+        
+        if !fences.isEmpty {
+            self.heapResourceUsageFences[Resource(texture)] = fences
+        }
+        
         return mtlTexture.texture
     }
     
@@ -408,7 +374,6 @@ final class MetalResourceRegistry {
         if buffer._usesPersistentRegistry {
             // Ensure we can fit this new reference.
             self.bufferReferences.prepareFrame()
-            self.bufferUsageFences.prepareFrame()
         }
         
         let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)
@@ -416,14 +381,19 @@ final class MetalResourceRegistry {
         if buffer.descriptor.usageHint.contains(.textureView) {
             options.remove(.frameGraphTrackedHazards) // FIXME: workaround for a bug in Metal where setting hazardTrackingModeUntracked on a MTLTextureDescriptor doesn't stick
         }
-        let (mtlBuffer, fenceState) = allocator.collectBufferWithLength(buffer.descriptor.length, options: options)
+        let (mtlBuffer, fences, waitEvent) = allocator.collectBufferWithLength(buffer.descriptor.length, options: options)
         if let label = buffer.label {
             mtlBuffer.buffer.label = label
         }
         
         assert(self.bufferReferences[buffer] == nil)
         self.bufferReferences[buffer] = mtlBuffer
-        self.bufferUsageFences[buffer] = fenceState
+        
+        self.bufferWaitEvents[buffer] = waitEvent
+        
+        if !fences.isEmpty {
+            self.heapResourceUsageFences[Resource(buffer)] = fences
+        }
         
         return mtlBuffer
     }
@@ -445,7 +415,7 @@ final class MetalResourceRegistry {
         return self.allocateTexture(texture, properties: usage)
     }
     
-    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, MetalResourceFences) {
+    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [MetalFenceHandle], MetalWaitEvent) {
 //        #if os(macOS)
 //        let options : MTLResourceOptions = [.storageModeManaged, .frameGraphTrackedHazards]
 //        #else
@@ -468,7 +438,8 @@ final class MetalResourceRegistry {
             }
             
             let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-            let (storage, fenceState) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
+            let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
+            assert(fences.isEmpty)
             
             argEncoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
             argEncoder.encodeArguments(from: argumentBuffer, resourceRegistry: self, stateCaches: stateCaches)
@@ -478,7 +449,7 @@ final class MetalResourceRegistry {
 //            #endif
             
             self.argumentBufferReferences[argumentBuffer] = storage
-            self.argumentBufferUsageFences[argumentBuffer] = fenceState
+            self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
             
             return storage
         }
@@ -492,7 +463,8 @@ final class MetalResourceRegistry {
             }
             
             let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!).takeUnretainedValue()
-            let (storage, fenceState) = self.allocateArgumentBufferStorage(for: argumentBufferArray, encodedLength: argEncoder.encodedLength * argumentBufferArray._bindings.count)
+            let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBufferArray, encodedLength: argEncoder.encodedLength * argumentBufferArray._bindings.count)
+            assert(fences.isEmpty)
             
             for (i, argumentBuffer) in argumentBufferArray._bindings.enumerated() {
                 guard let argumentBuffer = argumentBuffer else { continue }
@@ -503,7 +475,7 @@ final class MetalResourceRegistry {
                 
                 let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encodedLength)
                 self.argumentBufferReferences[argumentBuffer] = localStorage
-                self.argumentBufferUsageFences[argumentBuffer] = fenceState
+                self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
             }
             
 //            #if os(macOS)
@@ -511,7 +483,7 @@ final class MetalResourceRegistry {
 //            #endif
             
             self.argumentBufferArrayReferences[argumentBufferArray] = storage
-            self.argumentBufferArrayUsageFences[argumentBufferArray] = fenceState
+            self.argumentBufferArrayWaitEvents[argumentBufferArray] = waitEvent
             
             return storage
         }
@@ -560,101 +532,18 @@ final class MetalResourceRegistry {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
     
-    public func withResourceUsageFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout MetalResourceFences) -> Void) {
+    public func withHeapAliasingFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout [MetalFenceHandle]) -> Void) {
         let resource = Resource(handle: resourceHandle)
         
-        switch resource.type {
-        case .buffer:
-            self.bufferUsageFences.withValue(forKey: Buffer(handle: resourceHandle), perform: { (state, initialised) in
-                guard initialised else { return }
-                perform(&state.pointee)
-            })
-            
-        case .texture:
-            self.textureUsageFences.withValue(forKey: Texture(handle: resourceHandle), perform: { (state, initialised) in
-                guard initialised else { return }
-                perform(&state.pointee)
-            })
-            
-        case .argumentBuffer:
-            self.argumentBufferUsageFences.withValue(forKey: _ArgumentBuffer(handle: resourceHandle), perform: { (state, initialised) in
-                guard initialised else { return }
-                perform(&state.pointee)
-            })
-            
-        case .argumentBufferArray:
-            self.argumentBufferArrayUsageFences.withValue(forKey: _ArgumentBufferArray(handle: resourceHandle), perform: { (state, initialised) in
-                guard initialised else { return }
-                perform(&state.pointee)
-            })
-        default:
-            fatalError()
-        }
+        perform(&self.heapResourceUsageFences[resource, default: []])
     }
     
-    func releaseMultiframeFences(on resourceFenceState: inout MetalResourceFences) {
-        resourceFenceState.writeWaitFences.forEach {
-            $0.release()
-        }
-        
-        resourceFenceState.readWaitFence.release()
+    func setDisposalFences<R : ResourceProtocol>(on resource: R, to fences: [MetalFenceHandle]) {
+        assert(self.isAliasedHeapResource(resource: Resource(resource)))
+        self.heapResourceDisposalFences[Resource(resource)] = fences
     }
     
-    func releaseMultiframeFences(on texture: Texture) {
-        self.textureUsageFences.withValue(forKey: texture, perform: { (mtlTexturePtr, initialised) in
-            guard initialised else { return }
-            self.releaseMultiframeFences(on: &mtlTexturePtr.pointee)
-        })
-    }
-    
-    func releaseMultiframeFences(on buffer: Buffer) {
-        self.bufferUsageFences.withValue(forKey: buffer, perform: { (mtlBufferPtr, initialised) in
-            guard initialised else { return }
-            self.releaseMultiframeFences(on: &mtlBufferPtr.pointee)
-        })
-    }
-    
-    func setDisposalFences<R : ResourceProtocol>(on resource: R, readFence: MetalFenceHandle, writeFences: [MetalFenceHandle]) {
-        guard !resource.flags.contains(.windowHandle) else { return }
-        
-        switch R.self {
-        case is Buffer.Type:
-            self.bufferDisposalFences[resource as! Buffer] = MetalResourceFences(readWaitFence: readFence, writeWaitFences: writeFences)
-        case is Texture.Type:
-            self.textureDisposalFences[resource as! Texture] = MetalResourceFences(readWaitFence: readFence, writeWaitFences: writeFences)
-        case is _ArgumentBuffer.Type:
-            self.argumentBufferDisposalFences[resource as! _ArgumentBuffer] = MetalResourceFences(readWaitFence: readFence, writeWaitFences: writeFences)
-        case is _ArgumentBufferArray.Type:
-            self.argumentBufferArrayDisposalFences[resource as! _ArgumentBufferArray] = MetalResourceFences(readWaitFence: readFence, writeWaitFences: writeFences)
-        case is Resource.Type:
-            let resource = resource as! Resource
-            if let buffer = resource.buffer {
-                self.setDisposalFences(on: buffer, readFence: readFence, writeFences: writeFences)
-            } else if let texture = resource.texture {
-                self.setDisposalFences(on: texture, readFence: readFence, writeFences: writeFences)
-            } else if let argumentBuffer = resource.argumentBuffer {
-                self.setDisposalFences(on: argumentBuffer, readFence: readFence, writeFences: writeFences)
-            } else if let argumentBufferArray = resource.argumentBufferArray {
-                self.setDisposalFences(on: argumentBufferArray, readFence: readFence, writeFences: writeFences)
-            } else {
-                fatalError()
-            }
-            return
-            
-        default:
-            fatalError()
-        }
-        
-        if readFence.isValid {
-            readFence.retain()
-        }
-        
-        for fence in writeFences {
-            fence.retain()
-        }
-    }
-    
-    func disposeTexture(_ texture: Texture, keepingReference: Bool) {
+    func disposeTexture(_ texture: Texture, keepingReference: Bool, waitEvent: MetalWaitEvent) {
         if let mtlTexture = (keepingReference ? self.textureReferences[texture] : self.textureReferences.removeValue(forKey: texture)) {
             if texture.flags.contains(.windowHandle) {
                 return
@@ -667,16 +556,17 @@ final class MetalResourceRegistry {
                 mtlTexture._texture.release()
             }
             
-            let fences = (keepingReference ? self.textureDisposalFences[texture] : self.textureDisposalFences.removeValue(forKey: texture)) ??
-                (keepingReference ? self.textureUsageFences[texture] : self.textureUsageFences.removeValue(forKey: texture)) ??
-                MetalResourceFences()
+            var fences : [MetalFenceHandle] = []
+            if self.isAliasedHeapResource(resource: Resource(texture)) {
+                fences = self.heapResourceDisposalFences[Resource(texture)] ?? []
+            }
             
             let allocator = self.allocatorForTexture(storageMode: mtlTexture.texture.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, mtlTexture.texture.usage))
-            allocator.depositTexture(mtlTexture, fences: fences)
+            allocator.depositTexture(mtlTexture, fences: fences, waitEvent: waitEvent)
         }
     }
     
-    func disposeBuffer(_ buffer: Buffer, keepingReference: Bool) {
+    func disposeBuffer(_ buffer: Buffer, keepingReference: Bool, waitEvent: MetalWaitEvent) {
         if let mtlBuffer = (keepingReference ? self.bufferReferences[buffer] : self.bufferReferences.removeValue(forKey: buffer)) {
             
             if buffer.flags.contains(.externalOwnership) {
@@ -684,41 +574,33 @@ final class MetalResourceRegistry {
                 return
             }
             
-            let fences = (keepingReference ? self.bufferDisposalFences[buffer] : self.bufferDisposalFences.removeValue(forKey: buffer)) ??
-                (keepingReference ? self.bufferUsageFences[buffer] : self.bufferUsageFences.removeValue(forKey: buffer)) ??
-                MetalResourceFences()
+            var fences : [MetalFenceHandle] = []
+            if self.isAliasedHeapResource(resource: Resource(buffer)) {
+                fences = self.heapResourceDisposalFences[Resource(buffer)] ?? []
+            }
             
             let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)
-            allocator.depositBuffer(mtlBuffer, fences: fences)
+            allocator.depositBuffer(mtlBuffer, fences: fences, waitEvent: waitEvent)
         }
     }
     
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, keepingReference: Bool) {
+    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, keepingReference: Bool, waitEvent: MetalWaitEvent) {
         if buffer.flags.contains(.persistent) {
             print("Disposing \(buffer)")
         }
         if let mtlBuffer = (keepingReference ? self.argumentBufferReferences[buffer] : self.argumentBufferReferences.removeValue(forKey: buffer)) {
-            
-            let fences = (keepingReference ? self.argumentBufferDisposalFences[buffer] : self.argumentBufferDisposalFences.removeValue(forKey: buffer)) ??
-                (keepingReference ? self.argumentBufferUsageFences[buffer] : self.argumentBufferUsageFences.removeValue(forKey: buffer)) ??
-                MetalResourceFences()
-            
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             
             assert(buffer.sourceArray == nil || !buffer.flags.contains(.persistent), "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal FrameGraph backend.")
-            allocator.depositBuffer(mtlBuffer, fences: fences)
+            allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)
         }
     }
     
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, keepingReference: Bool) {
+    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, keepingReference: Bool, waitEvent: MetalWaitEvent) {
         if let mtlBuffer = (keepingReference ? self.argumentBufferArrayReferences[buffer] : self.argumentBufferArrayReferences.removeValue(forKey: buffer)) {
             
-            let fences = (keepingReference ? self.argumentBufferArrayDisposalFences[buffer] : self.argumentBufferArrayDisposalFences.removeValue(forKey: buffer)) ??
-                (keepingReference ? self.argumentBufferArrayUsageFences[buffer] : self.argumentBufferArrayUsageFences.removeValue(forKey: buffer)) ??
-                MetalResourceFences()
-            
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
-            allocator.depositBuffer(mtlBuffer, fences: fences)
+            allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)
         }
     }
     
@@ -767,29 +649,11 @@ final class MetalResourceRegistry {
         self.argumentBufferReferences.removeAllTransient()
         self.argumentBufferArrayReferences.removeAllTransient()
         
-        self.textureDisposalFences.forEachMutating { (resource, fenceState, deleteEntry) in
-            self.textureUsageFences[resource] = fenceState
-            deleteEntry = true
-        }
-        
-        self.bufferDisposalFences.forEachMutating { (resource, fenceState, deleteEntry) in
-            self.bufferUsageFences[resource] = fenceState
-            deleteEntry = true
-        }
-        
-        self.argumentBufferDisposalFences.forEachMutating { (resource, fenceState, deleteEntry) in
-            self.argumentBufferUsageFences[resource] = fenceState
-            deleteEntry = true
-        }
-        
-        self.argumentBufferArrayDisposalFences.forEachMutating { (resource, fenceState, deleteEntry) in
-            self.argumentBufferArrayUsageFences[resource] = fenceState
-            deleteEntry = true
-        }
+        self.heapResourceUsageFences.removeAll(keepingCapacity: true)
+        self.heapResourceDisposalFences.removeAll(keepingCapacity: true)
         
         self.stagingTextureAllocator.cycleFrames()
         self.privateAllocator.cycleFrames()
-        self.smallPrivateAllocator.cycleFrames()
         self.historyBufferAllocator.cycleFrames()
         
         self.colorRenderTargetAllocator.cycleFrames()
