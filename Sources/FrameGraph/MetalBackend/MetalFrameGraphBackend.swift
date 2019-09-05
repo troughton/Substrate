@@ -272,7 +272,7 @@ public final class MetalFrameGraph {
                 for usage in usages
                     where usage.renderPassRecord.isActive &&
                         usage.renderPassRecord.pass.passType != .external &&
-                        /* && usage.inArgumentBuffer */
+                        /* usage.inArgumentBuffer && */
                         usage.stages != .cpuBeforeRender &&
                         !usage.type.isRenderTarget {
                             
@@ -286,6 +286,8 @@ public final class MetalFrameGraph {
                             if previousPass == nil {
                                 resourceUsage = []
                                 resourceStages = []
+                                commandIndex = usage.commandRange.lowerBound
+                            } else {
                                 commandIndex = min(commandIndex, usage.commandRange.lowerBound)
                             }
                             
