@@ -31,6 +31,9 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     private var nextAliasingIndex = 0
     private var resourceAliasingIndices = [ObjectIdentifier : Int]()
     
+    private var frameBuffers = [Unmanaged<MTLBuffer>]()
+    private var frameTextures = [Unmanaged<MTLTexture>]()
+
     private var waitEventValue : UInt64 = 0
     private var nextFrameWaitEventValue : UInt64 = 0
     
@@ -68,6 +71,12 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
             self.heap = nil
             self.reserveCapacity(memoryHighWaterMark)
         }
+
+        self.frameBuffers.forEach { $0.release() }
+        self.frameTextures.forEach { $0.release() }
+        
+        self.frameBuffers.removeAll(keepingCapacity: true)
+        self.frameTextures.removeAll(keepingCapacity: true)
 
         assert(self.resourceAliasingIndices.isEmpty)
         assert(self.heap?.usedSize ?? 0 == 0)
@@ -129,6 +138,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     
     public func depositTexture(_ texture: MTLTextureReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
         self.depositResource(texture.resource, fences: fences, waitEvent: waitEvent)
+        self.frameTextures.append(texture._texture)
     }
     
     public func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [MetalFenceHandle], MetalWaitEvent) {
@@ -155,6 +165,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     
     public func depositBuffer(_ buffer: MTLBufferReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
         self.depositResource(buffer.resource, fences: fences, waitEvent: waitEvent)
+        self.frameBuffers.append(buffer._buffer)
     }
 }
 
