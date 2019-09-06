@@ -12,7 +12,6 @@ import MetalKit
 import FrameGraphUtilities
 
 struct MetalWaitEvent {
-    /// The value which the main wait event needs to reach before this resource can be used.
     var waitValue : UInt64 = 0
 }
 
@@ -153,6 +152,8 @@ final class MetalResourceRegistry {
     }
     
     public func prepareFrame() {
+        MetalFenceRegistry.instance.clearCompletedFences()
+
         self.textureReferences.prepareFrame()
         self.bufferReferences.prepareFrame()
         self.argumentBufferReferences.prepareFrame()
@@ -675,8 +676,6 @@ final class MetalResourceRegistry {
         self.frameArgumentBufferAllocator.cycleFrames()
         
         self.windowReferences.removeAll(keepingCapacity: true)
-        
-        MetalFenceRegistry.instance.cycleFrames()
     }
 }
 
