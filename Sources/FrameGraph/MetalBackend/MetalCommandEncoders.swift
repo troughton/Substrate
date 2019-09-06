@@ -113,13 +113,7 @@ final class MetalEncoderManager {
         self.blitEncoder?.endEncoding()
         self.blitEncoder = nil
         
-        let mtlComputeEncoder : MTLComputeCommandEncoder
-        if #available(OSX 10.14, *) {
-            mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: .concurrent)!
-        } else {
-            mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder()!
-        }
-        
+        let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: .concurrent)!
         let computeEncoder = FGMTLComputeCommandEncoder(encoder: mtlComputeEncoder)
         self.computeEncoder = computeEncoder
         return computeEncoder
@@ -545,12 +539,8 @@ public final class FGMTLThreadRenderCommandEncoder {
     }
     
     func memoryBarrier(resource: MTLResource, afterStages: MTLRenderStages?, beforeStages: MTLRenderStages?) {
-        #if os(macOS)
-        if #available(OSX 10.14, *) {
-            var resource = resource
-            encoder.__memoryBarrier(resources: &resource, count: 1, after: afterStages!, before: beforeStages!)
-        }
-        #endif
+        var resource = resource
+        encoder.__memoryBarrier(resources: &resource, count: 1, after: afterStages!, before: beforeStages!)
     }
 }
 
@@ -730,15 +720,8 @@ public final class FGMTLComputeCommandEncoder {
     }
     
     func memoryBarrier(resource: MTLResource) {
-        if #available(OSX 10.15, iOS 12.0, tvOS 12.0, *) {
-            print("This is untested; is the texture barrier still needed on Catalina?")
-            var resource = resource
-            encoder.__memoryBarrier(resources: &resource, count: 1)
-        } else if #available(OSX 10.14, *) {
-            encoder.memoryBarrier(scope: .textures) // There appears to be a bug in Metal where a texture barrier must be inserted even if no textures are modified or even used.
-            var resource = resource
-            encoder.__memoryBarrier(resources: &resource, count: 1)
-        }
+        var resource = resource
+        encoder.__memoryBarrier(resources: &resource, count: 1)
     }
     
     func endEncoding() {
