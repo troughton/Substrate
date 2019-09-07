@@ -452,6 +452,7 @@ public final class TransientArgumentBufferRegistry {
     public let inlineDataAllocator : ExpandingBuffer<UInt8>
     public var count = 0
     public let chunks : UnsafeMutablePointer<Chunk>
+    public var allocatedChunkCount = 0
     
     public init() {
         self.inlineDataAllocator = ExpandingBuffer()
@@ -463,7 +464,7 @@ public final class TransientArgumentBufferRegistry {
         return self.lock.withLock {
             
             let index = self.count
-            if index % Chunk.itemsPerChunk == 0 {
+            if index == self.allocatedChunkCount * Chunk.itemsPerChunk {
                 self.allocateChunk(index / Chunk.itemsPerChunk)
             }
             
@@ -487,7 +488,7 @@ public final class TransientArgumentBufferRegistry {
     public func allocate(flags: ResourceFlags, sourceArray: _ArgumentBufferArray) -> UInt64 {
         return self.lock.withLock {
             let index = self.count
-            if index % Chunk.itemsPerChunk == 0 {
+            if index == self.allocatedChunkCount * Chunk.itemsPerChunk {
                 self.allocateChunk(index / Chunk.itemsPerChunk)
             }
             
@@ -515,7 +516,9 @@ public final class TransientArgumentBufferRegistry {
     @inlinable
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
+        assert(index == self.allocatedChunkCount)
         self.chunks.advanced(by: index).initialize(to: Chunk())
+        self.allocatedChunkCount += 1
     }
     
     public func clear() {
