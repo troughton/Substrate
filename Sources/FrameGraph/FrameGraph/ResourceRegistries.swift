@@ -8,7 +8,7 @@
 import FrameGraphUtilities
 import Dispatch
 import Foundation
-import SwiftAtomics
+import CAtomics
 
 // Registries in this file fall into two main types.
 // Fixed-capacity registries (transient buffers, transient textures, and transient argument buffer arrays) have permanently-allocated storage.
@@ -18,7 +18,7 @@ public final class TransientBufferRegistry {
     public static let instance = TransientBufferRegistry()
     
     public let capacity = 16384
-    public var count = AtomicInt(0)
+    public var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
     
     public let descriptors : UnsafeMutablePointer<BufferDescriptor>
     public let deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>
@@ -26,6 +26,7 @@ public final class TransientBufferRegistry {
     public let labels : UnsafeMutablePointer<String?>
     
     public init() {
+        self.count.initialize(to: AtomicInt(0))
         self.descriptors = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.deferredSliceActions = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: self.capacity)
@@ -35,7 +36,7 @@ public final class TransientBufferRegistry {
     @inlinable
     public func allocate(descriptor: BufferDescriptor, flags: ResourceFlags) -> UInt64 {
         
-        let index = self.count.increment()
+        let index = CAtomicsAdd(self.count, 1, .relaxed)
         self.ensureCapacity(index + 1)
         
         self.descriptors.advanced(by: index).initialize(to: descriptor)
@@ -55,13 +56,13 @@ public final class TransientBufferRegistry {
     
     @inlinable
     public func clear() {
-        let count = self.count.swap(0, order: .relaxed)
+        let count = CAtomicsExchange(self.count, 0, .relaxed)
         self.descriptors.deinitialize(count: count)
         self.deferredSliceActions.deinitialize(count: count)
         self.usages.deinitialize(count: count)
         self.labels.deinitialize(count: count)
         
-        assert(self.count.load() == 0)
+        assert(CAtomicsLoad(self.count, .relaxed) == 0)
     }
 }
 
@@ -200,7 +201,7 @@ public final class TransientTextureRegistry {
     public static let instance = TransientTextureRegistry()
     
     public let capacity = 16384
-    public var count = AtomicInt(0 )
+    public var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
     
     public var descriptors : UnsafeMutablePointer<TextureDescriptor>
     public var usages : UnsafeMutablePointer<ResourceUsagesList>
@@ -210,6 +211,7 @@ public final class TransientTextureRegistry {
     public var textureViewInfos : UnsafeMutablePointer<TextureViewBaseInfo?>
     
     public init() {
+        self.count.initialize(to: AtomicInt(0))
         self.descriptors = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.labels = UnsafeMutablePointer.allocate(capacity: self.capacity)
@@ -219,7 +221,7 @@ public final class TransientTextureRegistry {
     
     @inlinable
     public func allocate(descriptor: TextureDescriptor, flags: ResourceFlags) -> UInt64 {
-        let index = self.count.increment()
+        let index = CAtomicsAdd(self.count, 1, .relaxed)
         self.ensureCapacity(index + 1)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
@@ -234,7 +236,7 @@ public final class TransientTextureRegistry {
     
     @inlinable
     public func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) -> UInt64 {
-        let index = self.count.increment()
+        let index = CAtomicsAdd(self.count, 1, .relaxed)
         self.ensureCapacity(index + 1)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
@@ -251,7 +253,7 @@ public final class TransientTextureRegistry {
     
     @inlinable
     public func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) -> UInt64 {
-        let index = self.count.increment()
+        let index = CAtomicsAdd(self.count, 1, .relaxed)
         self.ensureCapacity(index + 1)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
@@ -283,14 +285,14 @@ public final class TransientTextureRegistry {
     
     @inlinable
     public func clear() {
-        let count = self.count.swap(0)
+        let count = CAtomicsExchange(self.count, 0, .relaxed)
         self.descriptors.deinitialize(count: count)
         self.usages.deinitialize(count: count)
         self.labels.deinitialize(count: count)
         self.baseResources.deinitialize(count: count)
         self.textureViewInfos.deinitialize(count: count)
         
-        assert(self.count.load() == 0)
+        assert(CAtomicsLoad(self.count, .relaxed) == 0)
     }
 }
 
@@ -689,12 +691,13 @@ public final class TransientArgumentBufferArrayRegistry {
     public static let instance = TransientArgumentBufferArrayRegistry()
     
     public let capacity = 1024
-    public var count : AtomicInt = AtomicInt(0)
+    public var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
     
     public let bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>
     public let labels : UnsafeMutablePointer<String?>
     
     public init() {
+        self.count.initialize(to: AtomicInt(0))
         self.bindings = .allocate(capacity: capacity)
         self.labels = .allocate(capacity: capacity)
     }
@@ -707,7 +710,7 @@ public final class TransientArgumentBufferArrayRegistry {
     
     @inlinable
     public func allocate(flags: ResourceFlags) -> UInt64 {
-        let index = self.count.increment()
+        let index = CAtomicsAdd(self.count, 1, .relaxed)
         assert(index < self.capacity)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
@@ -719,11 +722,11 @@ public final class TransientArgumentBufferArrayRegistry {
     
     @inlinable
     public func clear() {
-        let count = self.count.load()
+        let count = CAtomicsLoad(self.count, .relaxed)
         
         self.bindings.deinitialize(count: count)
         self.labels.deinitialize(count: count)
-        let oldCount = self.count.swap(0)
+        let oldCount = CAtomicsExchange(self.count, 0, .relaxed)
         assert(oldCount == count)
     }
 }

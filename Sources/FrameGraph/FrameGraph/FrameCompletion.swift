@@ -7,18 +7,21 @@
 
 import Foundation
 import FrameGraphCExtras
-import SwiftAtomics
-
+import CAtomics
 
 public struct FrameCompletion {
     @usableFromInline
-    static var _lastCompletedFrame : AtomicUInt64 = {
-        var frame = AtomicUInt64(0)
-        return frame
-    }()
+    static var _lastCompletedFrame : UnsafeMutablePointer<AtomicUInt64>! = nil
+    
+    public static func initialise() {
+        if _lastCompletedFrame == nil {
+            _lastCompletedFrame = .allocate(capacity: 1)
+            _lastCompletedFrame.initialize(to: AtomicUInt64(0))
+        }
+    }
     
     public static func waitForFrame(_ frame: UInt64) {
-        while _lastCompletedFrame.load() < frame {
+        while CAtomicsLoad(_lastCompletedFrame, .relaxed) < frame {
             #if os(Windows)
             _sleep(0)
             #else
@@ -29,19 +32,19 @@ public struct FrameCompletion {
 
     @inlinable
     public static func frameIsComplete(_ frame: UInt64) -> Bool {
-        return _lastCompletedFrame.load() >= frame
+        return CAtomicsLoad(_lastCompletedFrame, .relaxed) >= frame
     }
     
     @inlinable
     public static var lastCompletedFrame : UInt64 {
-        return _lastCompletedFrame.load()
+        return CAtomicsLoad(_lastCompletedFrame, .relaxed)
     }
     
     public static func markFrameComplete(frame: UInt64) {
         repeat {
-            var testValue = self._lastCompletedFrame.load()
+            var testValue = CAtomicsLoad(_lastCompletedFrame, .relaxed)
             if testValue < frame {
-                if self._lastCompletedFrame.loadCAS(current: &testValue, future: frame, type: .weak, orderSwap: .relaxed, orderLoad: .relaxed) {
+                if CAtomicsCompareAndExchange(_lastCompletedFrame, &testValue, frame, .weak, .relaxed, .relaxed) {
                     break
                 }
             } else {

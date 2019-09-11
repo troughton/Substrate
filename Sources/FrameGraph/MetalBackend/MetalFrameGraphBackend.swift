@@ -9,7 +9,7 @@
 
 import Metal
 import FrameGraphUtilities
-import SwiftAtomics
+import CAtomics
 
 enum MetalPreMetalFrameResourceCommands {
     
@@ -628,7 +628,8 @@ public final class MetalFrameGraph {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         
-        var commandBufferCount = AtomicInt(1) // Start off the commandBufferCount at 1 to make sure the completion handler doesn't get called until all command buffers have been submitted.
+        let commandBufferCount = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+        CAtomicsStore(commandBufferCount, 1, .relaxed) // Start off the commandBufferCount at 1 to make sure the completion handler doesn't get called until all command buffers have been submitted.
         
         var commandBuffer : MTLCommandBuffer? = nil
         var encoderManager : MetalEncoderManager? = nil
@@ -668,7 +669,8 @@ public final class MetalFrameGraph {
                     if let error = commandBuffer.error {
                         print("Error executing command buffer \(cbIndex) for frame \(frame): \(error)")
                     }
-                    if commandBufferCount.decrement() == 1 { // Only call completion for the last command buffer.
+                    if CAtomicsSubtract(commandBufferCount, 1, .relaxed) == 1 { // Only call completion for the last command buffer.
+                        commandBufferCount.deallocate()
                         completion()
                     }
                 }
@@ -690,7 +692,7 @@ public final class MetalFrameGraph {
             }
             
             if commandBuffer == nil {
-                commandBufferCount.increment()
+                CAtomicsAdd(commandBufferCount, 1, .relaxed)
                 commandBuffer = self.commandQueue.makeCommandBuffer()!
                 encoderManager = MetalEncoderManager(commandBuffer: commandBuffer!, resourceRegistry: self.resourceRegistry)
             }
@@ -708,7 +710,7 @@ public final class MetalFrameGraph {
         commandBuffers.first?.commit()
         
         // Balance out the starting count of one for commandBufferCount
-        if commandBufferCount.decrement() == 1 {
+        if CAtomicsSubtract(commandBufferCount, 1, .relaxed) == 1 {
             completion()
         }
         

@@ -300,6 +300,10 @@ public class FrameGraph {
     
     private init() {
     }
+    
+    public static func initialise() {
+        FrameCompletion.initialise()
+    }
 
     /// Useful for creating resources that may be used later in the frame.
     public static func insertEarlyBlitPass(name: String,

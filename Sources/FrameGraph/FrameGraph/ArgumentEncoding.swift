@@ -7,6 +7,7 @@
 
 import Foundation
 import FrameGraphUtilities
+import CAtomics
 
 public protocol FunctionArgumentKey {
     var stringValue : String { get }
@@ -149,20 +150,20 @@ public struct _ArgumentBuffer : ResourceProtocol {
         get {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders[indexInChunk].load()
+                return CAtomicsLoad(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), .relaxed)
             } else {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return TransientArgumentBufferRegistry.instance.chunks[chunkIndex].encoders[indexInChunk].load()
+                return CAtomicsLoad(TransientArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), .relaxed)
             }
         }
         nonmutating set {
             if let newValue = newValue {
                 if self._usesPersistentRegistry {
                     let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                    return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders[indexInChunk].store(newValue)
+                    return CAtomicsStore(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), newValue, .relaxed)
                 } else {
                     let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                    return TransientArgumentBufferRegistry.instance.chunks[chunkIndex].encoders[indexInChunk].store(newValue)
+                    return CAtomicsStore(TransientArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), newValue, .relaxed)
                 }
             }
         }

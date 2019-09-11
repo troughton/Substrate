@@ -5,27 +5,32 @@
 //  Created by Thomas Roughton on 17/05/19.
 //
 
-import SwiftAtomics
+import CAtomics
 import Foundation
 
 /// An implementation of a spin-lock using test-and-swap
 /// Necessary for fibers since fibers can move between threads.
-@_alignment(16)
 public struct ReaderWriterLock {
     // either the number of readers or .max for writer-lock.
-    @usableFromInline var value : AtomicUInt32 = AtomicUInt32(LockState.free.rawValue)
+    @usableFromInline let value : UnsafeMutablePointer<AtomicUInt32>
     
     @inlinable
     public init() {
-        
+        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<AtomicUInt32>.size, alignment: 64).assumingMemoryBound(to: AtomicUInt32.self)
+        CAtomicsStore(self.value, LockState.free.rawValue, .relaxed)
+    }
+    
+    @inlinable
+    public func `deinit`() {
+        self.value.deallocate()
     }
     
     @inlinable
     public mutating func acquireWriteAccess() {
         while true {
-            var previousReaders = self.value.load(order: .relaxed)
+            var previousReaders = CAtomicsLoad(self.value, .relaxed)
             if previousReaders == 0 {
-                if self.value.loadCAS(current: &previousReaders, future: .max, type: .weak, orderSwap: .relaxed, orderLoad: .relaxed) {
+                if CAtomicsCompareAndExchange(self.value, &previousReaders, .max, .weak, .relaxed, .relaxed) {
                     return
                 }
             }
@@ -36,11 +41,11 @@ public struct ReaderWriterLock {
     @inlinable
     public mutating func acquireReadAccess() {
         while true {
-            var previousReaders = self.value.load(order: .relaxed)
+            var previousReaders = CAtomicsLoad(self.value, .relaxed)
             
             if previousReaders != .max {
                 let newReaders = previousReaders &+ 1
-                if self.value.loadCAS(current: &previousReaders, future: newReaders, type: .weak, orderSwap: .relaxed, orderLoad: .relaxed) {
+                if CAtomicsCompareAndExchange(self.value, &previousReaders, newReaders, .weak, .relaxed, .relaxed) {
                     return
                 }
             }
@@ -50,9 +55,9 @@ public struct ReaderWriterLock {
     
     @inlinable
     public mutating func transformReadToWriteAccess() {
-        var previousReaders = self.value.load(order: .relaxed)
+        var previousReaders = CAtomicsLoad(self.value, .relaxed)
         if previousReaders == 1 {
-            if self.value.loadCAS(current: &previousReaders, future: .max, type: .weak, orderSwap: .relaxed, orderLoad: .relaxed) {
+            if CAtomicsCompareAndExchange(self.value, &previousReaders, .max, .weak, .relaxed, .relaxed) {
                 return
             }
         }
@@ -64,10 +69,10 @@ public struct ReaderWriterLock {
     @inlinable
     public mutating func releaseReadAccess() {
         while true {
-            var previousReaders = self.value.load(order: .relaxed)
+            var previousReaders = CAtomicsLoad(self.value, .relaxed)
             if previousReaders != .max /* && previousReaders > 0 */ {
                 let newReaders = previousReaders &- 1
-                if self.value.loadCAS(current: &previousReaders, future: newReaders, type: .weak, orderSwap: .relaxed, orderLoad: .relaxed) {
+                if CAtomicsCompareAndExchange(self.value, &previousReaders, newReaders, .weak, .relaxed, .relaxed) {
                     return
                 }
             }
@@ -78,9 +83,9 @@ public struct ReaderWriterLock {
     @inlinable
     public mutating func releaseWriteAccess() {
         while true {
-            var previousReaders = self.value.load(order: .relaxed)
+            var previousReaders = CAtomicsLoad(self.value, .relaxed)
             if previousReaders == .max {
-                if self.value.loadCAS(current: &previousReaders, future: 0, type: .weak, orderSwap: .relaxed, orderLoad: .relaxed) {
+                if CAtomicsCompareAndExchange(self.value, &previousReaders, 0, .weak, .relaxed, .relaxed) {
                     return
                 }
             }
