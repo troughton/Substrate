@@ -542,15 +542,18 @@ public final class MetalFrameGraph {
         var isWindowTextureEncoder = false
         
         for (i, passRecord) in passes.enumerated() {
-            if previousPassIsExternal != (passRecord.pass.passType == .external) {
-                // Wait for the previous command buffer to complete before executing.
-                if i > 0 { currentIndex += 1 }
-                previousPassIsExternal = passRecord.pass.passType == .external
-            } else 
-            if passRecord.usesWindowTexture != isWindowTextureEncoder {
-                if i > 0 { currentIndex += 1 }
-                isWindowTextureEncoder = passRecord.usesWindowTexture
-            }
+            // FIXME: we ideally want to split things up into separate command buffers
+            // for more precise wait events, but doing so makes the frame debugger very unhappy.
+
+            // if previousPassIsExternal != (passRecord.pass.passType == .external) {
+            //     // Wait for the previous command buffer to complete before executing.
+            //     if i > 0 { currentIndex += 1 }
+            //     previousPassIsExternal = passRecord.pass.passType == .external
+            // } else 
+            // if passRecord.usesWindowTexture != isWindowTextureEncoder {
+            //     if i > 0 { currentIndex += 1 }
+            //     isWindowTextureEncoder = passRecord.usesWindowTexture
+            // }
             indices[i] = currentIndex
         }
         
