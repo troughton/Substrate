@@ -542,18 +542,15 @@ public final class MetalFrameGraph {
         var isWindowTextureEncoder = false
         
         for (i, passRecord) in passes.enumerated() {
-            // FIXME: we ideally want to split things up into separate command buffers
-            // for more precise wait events, but doing so makes the frame debugger very unhappy.
-
-            // if previousPassIsExternal != (passRecord.pass.passType == .external) {
-            //     // Wait for the previous command buffer to complete before executing.
-            //     if i > 0 { currentIndex += 1 }
-            //     previousPassIsExternal = passRecord.pass.passType == .external
-            // } else 
-            // if passRecord.usesWindowTexture != isWindowTextureEncoder {
-            //     if i > 0 { currentIndex += 1 }
-            //     isWindowTextureEncoder = passRecord.usesWindowTexture
-            // }
+            if previousPassIsExternal != (passRecord.pass.passType == .external) {
+                // Wait for the previous command buffer to complete before executing.
+                if i > 0 { currentIndex += 1 }
+                previousPassIsExternal = passRecord.pass.passType == .external
+            } else
+            if passRecord.usesWindowTexture != isWindowTextureEncoder {
+                if i > 0 { currentIndex += 1 }
+                isWindowTextureEncoder = passRecord.usesWindowTexture
+            }
             indices[i] = currentIndex
         }
         
@@ -637,7 +634,7 @@ public final class MetalFrameGraph {
         var commandBuffer : MTLCommandBuffer? = nil
         var encoderManager : MetalEncoderManager? = nil
         
-        var commandBuffers = [MTLCommandBuffer]()
+        var committedCommandBufferCount = 0
         var commandEncoderIndex = -1
 
         func processCommandBuffer() {
@@ -658,14 +655,14 @@ public final class MetalFrameGraph {
                 // Make sure that the sync event value is what we expect, so we don't update it past
                 // the signal for another buffer before that buffer has completed.
                 // We only need to do this if we haven't already waited in this command buffer for it.
-                if commandEncoderWaitEventValues[commandEncoderIndex] != self.syncEventValue {
-                    commandBuffer.encodeWaitForEvent(self.syncEvent, value: self.syncEventValue)
-                }
+                // if commandEncoderWaitEventValues[commandEncoderIndex] != self.syncEventValue {
+                //     commandBuffer.encodeWaitForEvent(self.syncEvent, value: self.syncEventValue)
+                // }
                 // Then, signal our own completion.
                 self.syncEventValue += 1
                 commandBuffer.encodeSignalEvent(self.syncEvent, value: self.syncEventValue)
 
-                let cbIndex = commandBuffers.count
+                let cbIndex = committedCommandBufferCount
                 let frame = FrameGraph.currentFrameIndex
 
                 commandBuffer.addCompletedHandler { (commandBuffer) in
@@ -678,10 +675,8 @@ public final class MetalFrameGraph {
                     }
                 }
                 
-                commandBuffers.last?.addScheduledHandler { _ in
-                    commandBuffer.commit()
-                }
-                commandBuffers.append(commandBuffer)
+                commandBuffer.commit()
+                committedCommandBufferCount += 1
                 
             }
             commandBuffer = nil
@@ -690,7 +685,7 @@ public final class MetalFrameGraph {
         
         for (i, passRecord) in passes.enumerated() {
             let commandBufferIndex = passCommandBufferIndices[i]
-            if commandBufferIndex != commandBuffers.count {
+            if commandBufferIndex != committedCommandBufferCount {
                 processCommandBuffer()
             }
             
@@ -710,7 +705,6 @@ public final class MetalFrameGraph {
         }
         
         processCommandBuffer()
-        commandBuffers.first?.commit()
         
         // Balance out the starting count of one for commandBufferCount
         if CAtomicsSubtract(commandBufferCount, 1, .relaxed) == 1 {
