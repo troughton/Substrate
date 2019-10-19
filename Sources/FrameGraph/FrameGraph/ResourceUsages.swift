@@ -303,43 +303,43 @@ public struct ResourceUsage {
     /// - returns: The new usage, if the usage couldn't be merged with self.
     @inlinable
     public mutating func mergeOrCreateNewUsage(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: Unmanaged<RenderPassRecord>) -> ResourceUsage? {
-        if type == .inputAttachment && self.type.isRenderTarget &&
-            self._renderPass.toOpaque() == renderPass.toOpaque() { // Transform a resource read within a render target into a readWriteRenderTarget.
-            self.type = .inputAttachmentRenderTarget
-            self.stages.formUnion(stages)
-            self.inArgumentBuffer = self.inArgumentBuffer || inArgumentBuffer
-            self.commandRangeInPass = Range(uncheckedBounds: (self.commandRangeInPass.lowerBound, firstCommandOffset + 1))
-            return nil
-        }
-        
-        readWriteMergeCheck: if self.commandRangeInPass.contains(firstCommandOffset), stages == self.stages, self.type != type {
-            assert(self._renderPass.toOpaque() == renderPass.toOpaque())
-            assert(self.inArgumentBuffer == inArgumentBuffer)
-            
-            switch (type, self.type) {
-            case (.read, .readWrite), (.write, .write), (.write, .readWrite):
-                break
-            case (.read, .write), (.readWrite, .read), (.write, .read):
-                self.type = .readWrite
-            case (.writeOnlyRenderTarget, .readWriteRenderTarget), (.readWriteRenderTarget, .writeOnlyRenderTarget):
-                self.type = .readWriteRenderTarget
-            case (_, _) where !type.isWrite && !self.type.isWrite:
-                // If neither are writes, then it's fine to have conflicting uses.
-                // This might occur e.g. when reading from a buffer while simultaneously using it as an indirect buffer.
-                break readWriteMergeCheck
-            default:
-                assertionFailure("Resource simulaneously bound for conflicting uses.")
+        if self._renderPass.toOpaque() == renderPass.toOpaque() {
+            if type == .inputAttachment && self.type.isRenderTarget { // Transform a resource read within a render target into a readWriteRenderTarget.
+                self.type = .inputAttachmentRenderTarget
+                self.stages.formUnion(stages)
+                self.inArgumentBuffer = self.inArgumentBuffer || inArgumentBuffer
+                self.commandRangeInPass = Range(uncheckedBounds: (self.commandRangeInPass.lowerBound, firstCommandOffset + 1))
+                return nil
             }
             
-            return nil
-        }
-        
-        if ResourceUsageType.areMergeable(self.type, type) &&
-            self._renderPass.toOpaque() == renderPass.toOpaque() &&
-            self.inArgumentBuffer == inArgumentBuffer {
-            self.stages.formUnion(stages)
-            self.commandRangeInPass = Range(uncheckedBounds: (self.commandRangeInPass.lowerBound, firstCommandOffset + 1))
-            return nil
+            readWriteMergeCheck: if self.commandRangeInPass.contains(firstCommandOffset), stages == self.stages, self.type != type {
+                assert(self._renderPass.toOpaque() == renderPass.toOpaque())
+                assert(self.inArgumentBuffer == inArgumentBuffer)
+                
+                switch (type, self.type) {
+                case (.read, .readWrite), (.write, .write), (.write, .readWrite):
+                    break
+                case (.read, .write), (.readWrite, .read), (.write, .read):
+                    self.type = .readWrite
+                case (.writeOnlyRenderTarget, .readWriteRenderTarget), (.readWriteRenderTarget, .writeOnlyRenderTarget):
+                    self.type = .readWriteRenderTarget
+                case (_, _) where !type.isWrite && !self.type.isWrite:
+                    // If neither are writes, then it's fine to have conflicting uses.
+                    // This might occur e.g. when reading from a buffer while simultaneously using it as an indirect buffer.
+                    break readWriteMergeCheck
+                default:
+                    assertionFailure("Resource simulaneously bound for conflicting uses.")
+                }
+                
+                return nil
+            }
+            
+            if ResourceUsageType.areMergeable(self.type, type) &&
+                self.inArgumentBuffer == inArgumentBuffer {
+                self.stages.formUnion(stages)
+                self.commandRangeInPass = Range(uncheckedBounds: (self.commandRangeInPass.lowerBound, firstCommandOffset + 1))
+                return nil
+            }
         }
         
         return ResourceUsage(type: type, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: renderPass)
