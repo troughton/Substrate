@@ -42,12 +42,12 @@ extension FunctionArgumentKey {
     }
     
     @inlinable
-    public func bindingPath(argumentBufferPath: ResourceBindingPath?, arrayIndex: Int, pipelineReflection: PipelineReflection) -> ResourceBindingPath? {
+    func bindingPath(argumentBufferPath: ResourceBindingPath?, arrayIndex: Int, pipelineReflection: PipelineReflection) -> ResourceBindingPath? {
         return self.bindingPath(arrayIndex: arrayIndex, argumentBufferPath: argumentBufferPath) ?? pipelineReflection.bindingPath(argumentName: self.stringValue, arrayIndex: arrayIndex, argumentBufferPath: argumentBufferPath)
     }
     
     @inlinable
-    public func computedBindingPath(pipelineReflection: PipelineReflection) -> ResourceBindingPath? {
+    func computedBindingPath(pipelineReflection: PipelineReflection) -> ResourceBindingPath? {
         return self.bindingPath(arrayIndex: 0, argumentBufferPath: nil) ?? pipelineReflection.bindingPath(argumentName: self.stringValue, arrayIndex: 0, argumentBufferPath: nil)
     }
 }
@@ -92,7 +92,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
             index = TransientArgumentBufferRegistry.instance.allocate(flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.argumentBuffer.rawValue) << 48)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
         assert(self.encoder == nil)
     }
     
@@ -105,7 +105,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
             index = TransientArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.argumentBuffer.rawValue) << 48)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
         assert(self.encoder == nil)
     }
     
@@ -316,6 +316,16 @@ public struct _ArgumentBuffer : ResourceProtocol {
         }
         PersistentArgumentBufferRegistry.instance.dispose(self)
     }
+    
+    @inlinable
+    public var isValid : Bool {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+            return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+        } else {
+            return FrameGraph.currentFrameIndex & 0xFF == self.generation
+        }
+    }
 }
 
 public struct _ArgumentBufferArray : ResourceProtocol {
@@ -336,7 +346,7 @@ public struct _ArgumentBufferArray : ResourceProtocol {
             index = TransientArgumentBufferArrayRegistry.instance.allocate(flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.argumentBufferArray.rawValue) << 48)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBufferArray.rawValue) << Self.typeBitsRange.lowerBound)
     }
     
     @inlinable
@@ -403,6 +413,16 @@ public struct _ArgumentBufferArray : ResourceProtocol {
     public var storageMode: StorageMode {
         return .shared
     }
+    
+    @inlinable
+    public var isValid : Bool {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
+            return PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+        } else {
+            return FrameGraph.currentFrameIndex & 0xFF == self.generation
+        }
+    }
 }
 
 public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
@@ -453,6 +473,27 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     @inlinable
     var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
         return self.argumentBuffer.usagesPointer
+    }
+    
+    @inlinable
+    public var isValid: Bool {
+        return self.argumentBuffer.isValid
+    }
+    
+    
+    @inlinable
+    public var label : String? {
+        get {
+            return self.argumentBuffer.label
+        }
+        nonmutating set {
+            self.argumentBuffer.label = newValue
+        }
+    }
+    
+    @inlinable
+    public var storageMode: StorageMode {
+        return self.argumentBuffer.storageMode
     }
     
     @inlinable
@@ -507,6 +548,7 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
             (key, arrayIndex, .bytes(offset: currentOffset, length: length))
         )
     }
+    
 }
 
 extension ArgumentBuffer {
@@ -577,6 +619,11 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
     @inlinable
     public var storageMode: StorageMode {
         return self.argumentBufferArray.storageMode
+    }
+    
+    @inlinable
+    public var isValid: Bool {
+        return self.argumentBufferArray.isValid
     }
     
     public func reserveCapacity(_ capacity: Int) {

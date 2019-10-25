@@ -64,6 +64,7 @@ final class MetalResourceRegistry {
     
     var accessLock = ReaderWriterLock()
     
+    private var heapReferences = ResourceMap<Heap, MTLHeap>()
     private var textureReferences = ResourceMap<Texture, MTLTextureReference>()
     private var bufferReferences = ResourceMap<Buffer, MTLBufferReference>()
     private var argumentBufferReferences = ResourceMap<_ArgumentBuffer, MTLBufferReference>() // Separate since this needs to have thread-safe access.
@@ -250,6 +251,22 @@ final class MetalResourceRegistry {
         }
         
         return storageMode == .private
+    }
+    
+    @discardableResult
+    public func allocateHeap(_ heap: Heap) -> MTLHeap {
+        assert(heap._usesPersistentRegistry)
+        
+        self.heapReferences.prepareFrame()
+        
+        let descriptor = MTLHeapDescriptor(heap.descriptor)
+        
+        let mtlHeap = self.device.makeHeap(descriptor: descriptor)!
+        
+        assert(self.heapReferences[heap] == nil)
+        self.heapReferences[heap] = mtlHeap
+        
+        return mtlHeap
     }
     
     @discardableResult
@@ -546,6 +563,10 @@ final class MetalResourceRegistry {
         self.heapResourceDisposalFences[Resource(resource)] = fences
     }
     
+    func disposeHeap(_ heap: Heap) {
+        self.heapReferences.removeValue(forKey: heap)
+    }
+    
     func disposeTexture(_ texture: Texture, keepingReference: Bool, waitEvent: MetalWaitEvent) {
         if let mtlTexture = (keepingReference ? self.textureReferences[texture] : self.textureReferences.removeValue(forKey: texture)) {
             if texture.flags.contains(.windowHandle) {
@@ -588,9 +609,6 @@ final class MetalResourceRegistry {
     }
     
     func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, keepingReference: Bool, waitEvent: MetalWaitEvent) {
-        if buffer.flags.contains(.persistent) {
-            print("Disposing \(buffer)")
-        }
         if let mtlBuffer = (keepingReference ? self.argumentBufferReferences[buffer] : self.argumentBufferReferences.removeValue(forKey: buffer)) {
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             
@@ -601,7 +619,6 @@ final class MetalResourceRegistry {
     
     func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, keepingReference: Bool, waitEvent: MetalWaitEvent) {
         if let mtlBuffer = (keepingReference ? self.argumentBufferArrayReferences[buffer] : self.argumentBufferArrayReferences.removeValue(forKey: buffer)) {
-            
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)
         }

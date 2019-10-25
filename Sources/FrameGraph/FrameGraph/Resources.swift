@@ -10,6 +10,7 @@ import FrameGraphUtilities
 public enum ResourceType : UInt8 {
     case buffer = 1
     case texture
+    case heap
     case sampler
     case threadgroupMemory
     case argumentBuffer
@@ -68,10 +69,10 @@ public struct RenderStages : OptionSet, Hashable {
 }
 
 public struct ResourceFlags : OptionSet {
-    public let rawValue: UInt8
+    public let rawValue: UInt16
     
     @inlinable
-    public init(rawValue: UInt8) {
+    public init(rawValue: UInt16) {
         self.rawValue = rawValue
     }
     
@@ -80,12 +81,8 @@ public struct ResourceFlags : OptionSet {
     public static let historyBuffer = ResourceFlags(rawValue: 1 << 2)
     public static let externalOwnership = ResourceFlags(rawValue: 1 << 3)
     public static let immutableOnceInitialised = ResourceFlags(rawValue: 1 << 4)
-}
-
-extension ResourceFlags {
     /// If this resource is a view into another resource.
-    @usableFromInline
-    static let resourceView = ResourceFlags(rawValue: 1 << 5)
+    public static let resourceView = ResourceFlags(rawValue: 1 << 5)
 }
 
 public struct ResourceStateFlags : OptionSet {
@@ -106,7 +103,6 @@ public enum ResourceAccessType {
 }
 
 public protocol ResourceProtocol : Hashable {
-    
     init(handle: Handle)
     func dispose()
     
@@ -120,9 +116,15 @@ public protocol ResourceProtocol : Hashable {
     
     var readWaitFrame : UInt64 { get nonmutating set }
     var writeWaitFrame : UInt64 { get nonmutating set }
+    
+    /// Returns whether or not a resource handle represents a valid GPU resource.
+    /// A resource handle is valid if it is a transient resource that was allocated in the current frame
+    /// or is a persistent resource that has not been disposed.
+    var isValid : Bool { get }
 }
 
 extension ResourceProtocol {
+    
     @inlinable
     public static func ==(lhs: Self, rhs: Self) -> Bool {
         return lhs.handle == rhs.handle
@@ -139,7 +141,7 @@ public struct Resource : ResourceProtocol, Hashable {
     
     @inlinable
     public init(handle: Handle) {
-        assert(handle == .max || ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: handle >> 48)) != nil)
+        assert(handle == .max || ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: handle.bits(in: Self.typeBitsRange))) != nil)
         
         self.handle = handle
     }
@@ -180,50 +182,13 @@ public struct Resource : ResourceProtocol, Hashable {
         }
     }
     
-    public static let invalidResource = Resource(handle: .max)
-}
-
-extension Resource : CustomHashable {
-    public var customHashValue : Int {
-        return self.hashValue
-    }
-}
-
-extension ResourceProtocol {
-    public typealias Handle = UInt64
-    
     @inlinable
-    public var type : ResourceType {
-        return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle >> 48))!
-    }
-    
-    @inlinable
-    public var index : Int {
-        return Int(truncatingIfNeeded: self.handle & 0x1FFFFFFF) // The lower 29 bits contain the index
-    }
-    
-    @inlinable
-    public var flags : ResourceFlags {
-        return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: (self.handle >> 32) & 0xFFFF))
-    }
-    
-    @inlinable
-    public var _usesPersistentRegistry : Bool {
-        if self.flags.contains(.persistent) || self.flags.contains(.historyBuffer) {
-            return true
+    public var heap : Heap? {
+        if self.type == .heap {
+            return Heap(handle: self.handle)
         } else {
-            return false
+            return nil
         }
-    }
-    
-    @inlinable
-    public func markAsInitialised() {
-        self.stateFlags.formUnion(.initialised)
-    }
-    
-    @inlinable
-    public func discardContents() {
-        self.stateFlags.remove(.initialised)
     }
     
     @inlinable
@@ -389,6 +354,24 @@ extension ResourceProtocol {
     }
     
     @inlinable
+    public var isValid: Bool {
+        switch self.type {
+        case .buffer:
+            return Buffer(handle: self.handle).isValid
+        case .texture:
+            return Texture(handle: self.handle).isValid
+        case .argumentBuffer:
+            return _ArgumentBuffer(handle: self.handle).isValid
+        case .argumentBufferArray:
+            return _ArgumentBufferArray(handle: self.handle).isValid
+        case .heap:
+            return Heap(handle: self.handle).isValid
+        default:
+            fatalError()
+        }
+    }
+    
+    @inlinable
     public var baseResource: Resource? {
         get {
             switch self.type {
@@ -411,16 +394,195 @@ extension ResourceProtocol {
             _ArgumentBuffer(handle: self.handle).dispose()
         case .argumentBufferArray:
             _ArgumentBufferArray(handle: self.handle).dispose()
+        case .heap:
+            Heap(handle: self.handle).dispose()
         default:
             break
         }
+    }
+    
+    public static let invalidResource = Resource(handle: .max)
+}
+
+extension Resource : CustomHashable {
+    public var customHashValue : Int {
+        return self.hashValue
+    }
+}
+
+extension ResourceProtocol {
+    public typealias Handle = UInt64
+    
+    @inlinable
+    public static var typeBitsRange : Range<Int> { return 56..<64 }
+    
+    @inlinable
+    public static var flagBitsRange : Range<Int> { return 40..<56 }
+    
+    @inlinable
+    public static var generationBitsRange : Range<Int> { return 32..<40 }
+    
+    @inlinable
+    public static var indexBitsRange : Range<Int> { return 0..<32 }
+    
+    @inlinable
+    public var type : ResourceType {
+        return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.typeBitsRange)))!
+    }
+    
+    @inlinable
+    public var flags : ResourceFlags {
+        return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.flagBitsRange)))
+    }
+
+    @inlinable
+    public var generation : UInt8 {
+        return UInt8(truncatingIfNeeded: self.handle.bits(in: Self.generationBitsRange))
+    }
+    
+    @inlinable
+    public var index : Int {
+        return Int(truncatingIfNeeded: self.handle.bits(in: Self.indexBitsRange))
+    }
+    
+    @inlinable
+    public var _usesPersistentRegistry : Bool {
+        if self.flags.contains(.persistent) || self.flags.contains(.historyBuffer) {
+            return true
+        } else {
+            return false
+        }
+    }
+    
+    @inlinable
+    public func markAsInitialised() {
+        self.stateFlags.formUnion(.initialised)
+    }
+    
+    @inlinable
+    public func discardContents() {
+        self.stateFlags.remove(.initialised)
     }
     
     @inlinable
     public var isTextureView : Bool {
         return self.flags.contains(.resourceView)
     }
+    
+    @inlinable
+    public var usages : ResourceUsagesList {
+        return ResourceUsagesList()
+    }
+    
+    @inlinable
+    public var readWaitFrame : UInt64 {
+        get {
+            return 0
+        }
+        nonmutating set {
+            fatalError()
+        }
+    }
+    
+    @inlinable
+    public var writeWaitFrame : UInt64 {
+        get {
+            return 0
+        }
+        nonmutating set {
+            fatalError()
+        }
+    }
+    
+    @inlinable
+    public var stateFlags : ResourceStateFlags {
+        get {
+            return []
+        }
+        nonmutating set {
+            fatalError()
+        }
+    }
 }
+
+public struct Heap : ResourceProtocol {
+    public let handle : Handle
+    
+    @inlinable
+    public init(handle: Handle) {
+        assert(handle == .max || Resource(handle: handle).type == .heap)
+        self.handle = handle
+    }
+    
+    @inlinable
+    public init(size: Int, type: HeapType = .automaticPlacement, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache) {
+        self.init(descriptor: HeapDescriptor(size: size, type: type, storageMode: storageMode, cacheMode: cacheMode))
+    }
+    
+    @inlinable
+    public init(descriptor: HeapDescriptor) {
+        let flags : ResourceFlags = .persistent
+        
+        let index = HeapRegistry.instance.allocate(descriptor: descriptor)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.heap.rawValue) << Self.typeBitsRange.lowerBound)
+        
+        RenderBackend.materialiseHeap(self)
+    }
+    
+    @inlinable
+    public var size : Int {
+        return self.descriptor.size
+    }
+    
+    @inlinable
+    public var descriptor : HeapDescriptor {
+        get {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            return HeapRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
+        }
+        nonmutating set {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            HeapRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk] = newValue
+        }
+    }
+    
+    @inlinable
+    public var storageMode: StorageMode {
+        return self.descriptor.storageMode
+    }
+    
+    @inlinable
+    public var label : String? {
+        get {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            return HeapRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
+        }
+        nonmutating set {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            HeapRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+        }
+    }
+
+    @inlinable
+    public func dispose() {
+        self.dispose(atEndOfFrame: true)
+    }
+        
+    @inlinable
+    public func dispose(atEndOfFrame: Bool = true) {
+        guard self._usesPersistentRegistry else {
+            return
+        }
+        HeapRegistry.instance.dispose(self, atEndOfFrame: atEndOfFrame)
+    }
+    
+    @inlinable
+    public var isValid : Bool {
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+        return HeapRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+    }
+}
+
 
 public struct Buffer : ResourceProtocol {
     public struct TextureViewDescriptor {
@@ -458,7 +620,7 @@ public struct Buffer : ResourceProtocol {
             index = TransientBufferRegistry.instance.allocate(descriptor: descriptor, flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.buffer.rawValue) << 48)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.buffer.rawValue) << Self.typeBitsRange.lowerBound)
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
@@ -708,6 +870,11 @@ public struct Buffer : ResourceProtocol {
             }
         }
     }
+
+    @inlinable
+    public func dispose() {
+        self.dispose(atEndOfFrame: true)
+    }
     
     @inlinable
     public func dispose(atEndOfFrame: Bool = true) {
@@ -715,6 +882,16 @@ public struct Buffer : ResourceProtocol {
             return
         }
         PersistentBufferRegistry.instance.dispose(self, atEndOfFrame: atEndOfFrame)
+    }
+    
+    @inlinable
+    public var isValid : Bool {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            return PersistentBufferRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+        } else {
+            return FrameGraph.currentFrameIndex & 0xFF == self.generation
+        }
     }
 }
 
@@ -751,7 +928,7 @@ public struct Texture : ResourceProtocol {
             index = TransientTextureRegistry.instance.allocate(descriptor: descriptor, flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.texture.rawValue) << 48)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
@@ -768,7 +945,7 @@ public struct Texture : ResourceProtocol {
             index = TransientTextureRegistry.instance.allocate(descriptor: descriptor, flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.texture.rawValue) << 48)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
@@ -781,7 +958,7 @@ public struct Texture : ResourceProtocol {
         let flags : ResourceFlags = .resourceView
         
         let index = TransientTextureRegistry.instance.allocate(descriptor: descriptor, baseResource: base)
-        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.texture.rawValue) << 48)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
     }
     
     @inlinable
@@ -789,7 +966,7 @@ public struct Texture : ResourceProtocol {
         let flags : ResourceFlags = .resourceView
     
         let index = TransientTextureRegistry.instance.allocate(descriptor: descriptor, baseResource: base)
-        self.handle = index | (UInt64(flags.rawValue) << 32) | (UInt64(ResourceType.texture.rawValue) << 48)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
     }
     
     @inlinable
@@ -819,11 +996,6 @@ public struct Texture : ResourceProtocol {
         self.waitForCPUAccess(accessType: .write)
         
         RenderBackend.replaceTextureRegion(texture: self, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
-    }
-    
-    @inlinable
-    public var flags : ResourceFlags {
-        return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: (self.handle >> 32) & 0xFFFF))
     }
     
     @inlinable
@@ -1011,6 +1183,16 @@ public struct Texture : ResourceProtocol {
             return
         }
         PersistentTextureRegistry.instance.dispose(self)
+    }
+    
+    @inlinable
+    public var isValid : Bool {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+            return PersistentTextureRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+        } else {
+            return FrameGraph.currentFrameIndex & 0xFF == self.generation
+        }
     }
     
     public static let invalid = Texture(descriptor: TextureDescriptor(texture2DWithFormat: .r32Float, width: 1, height: 1, mipmapped: false, usageHint: .shaderRead), flags: .persistent)

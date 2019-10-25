@@ -10,7 +10,7 @@ import Vulkan
 import Dispatch
 import FrameGraphCExtras
 
-public final class VulkanFrameGraphBackend : FrameGraphBackend {
+public final class VulkanFrameGraphBackend : _FrameGraphBackend {
     
     let device: VulkanDevice
     let resourceRegistry : ResourceRegistry

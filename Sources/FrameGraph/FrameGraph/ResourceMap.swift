@@ -41,6 +41,8 @@ public struct ResourceMap<R : ResourceProtocol, V> {
         case is _ArgumentBufferArray.Type:
             self.reserveTransientCapacity(TransientArgumentBufferArrayRegistry.instance.capacity)
             self.reservePersistentCapacity(PersistentArgumentBufferArrayRegistry.instance.maxIndex)
+        case is Heap.Type:
+            self.reservePersistentCapacity(HeapRegistry.instance.maxIndex)
         default:
             fatalError()
         }

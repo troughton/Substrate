@@ -241,7 +241,11 @@ public enum DependencyType {
 //    case transitive
 }
 
-public protocol FrameGraphBackend : RenderBackendProtocol {
+public protocol FrameGraphBackend : class {
+    
+}
+
+protocol _FrameGraphBackend : FrameGraphBackend, RenderBackendProtocol {
     func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
     func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void)
 }
@@ -510,7 +514,7 @@ public class FrameGraph {
         var producingPasses = [Int]()
         var priorReads = [Int]()
         
-        let expectedFrame = self.currentFrameIndex & 0b111
+        let expectedFrame = self.currentFrameIndex & 0xFF
             
         // Merge the resources from all other threads into the usages for the first thread.
         for resourceUsages in self.threadResourceUsages.dropFirst() {
@@ -525,7 +529,7 @@ public class FrameGraph {
             
             resource.usagesPointer.reverse() // Since the usages list is constructed in reverse order.
             
-            assert(resource._usesPersistentRegistry || (resource.handle >> 29) & 0b111 == expectedFrame, "Transient resource is being used in a frame after it was allocated.")
+            assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
             
             let usages = resource.usages
             guard !usages.isEmpty else {
@@ -647,6 +651,8 @@ public class FrameGraph {
     }
     
     public static func execute(backend: FrameGraphBackend, onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
+        let backend = backend as! _FrameGraphBackend
+        
         var renderPasses : [RenderPassRecord]! = nil
         let jobManager = self.jobManager
         

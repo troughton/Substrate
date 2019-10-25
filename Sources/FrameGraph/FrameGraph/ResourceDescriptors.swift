@@ -147,3 +147,22 @@ public struct BufferDescriptor {
         self.usageHint = usage
     }
 }
+
+public enum HeapType {
+    case automaticPlacement
+    case sparseTexture
+}
+
+public struct HeapDescriptor {
+    public var size : Int
+    public var type : HeapType
+    public var storageMode : StorageMode
+    public var cacheMode : CPUCacheMode
+    
+    public init(size: Int, type: HeapType = .automaticPlacement, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache) {
+        self.size = size
+        self.type = type
+        self.storageMode = storageMode
+        self.cacheMode = cacheMode
+    }
+}

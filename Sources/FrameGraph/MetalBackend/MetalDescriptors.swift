@@ -15,6 +15,28 @@ enum RenderTargetTextureError : Error {
     case unableToRetrieveDrawable(Texture)
 }
 
+extension MTLHeapDescriptor {
+    convenience init(_ descriptor: HeapDescriptor) {
+        self.init()
+        
+        self.size = descriptor.size
+        if #available(macOS 10.15, iOS 13.0, tvOS 13.0, *) {
+            switch descriptor.type {
+            case .automaticPlacement:
+                self.type = .automatic
+                #if os(iOS)
+            case .sparseTexture:
+                self.type = .sparse
+                #endif
+            default:
+                self.type = .automatic
+            }
+        }
+        self.storageMode = MTLStorageMode(descriptor.storageMode)
+        self.cpuCacheMode = MTLCPUCacheMode(descriptor.cacheMode)
+    }
+}
+
 extension MTLStencilDescriptor {
     convenience init(_ descriptor : StencilDescriptor) {
         self.init()

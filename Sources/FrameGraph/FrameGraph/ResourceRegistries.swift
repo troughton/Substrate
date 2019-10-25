@@ -46,7 +46,7 @@ public final class TransientBufferRegistry {
         
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
@@ -80,6 +80,7 @@ public final class PersistentBufferRegistry {
         public var writeWaitFrames : UnsafeMutablePointer<UInt64>
         public var descriptors : UnsafeMutablePointer<BufferDescriptor>
         public var usages : UnsafeMutablePointer<ResourceUsagesList>
+        public var generations : UnsafeMutablePointer<UInt8>
         public var labels : UnsafeMutablePointer<String?>
         
         public init() {
@@ -88,7 +89,10 @@ public final class PersistentBufferRegistry {
             self.writeWaitFrames = .allocate(capacity: Chunk.itemsPerChunk)
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
+            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
+            
+            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
         }
         
         public func deallocate() {
@@ -97,6 +101,7 @@ public final class PersistentBufferRegistry {
             self.writeWaitFrames.deallocate()
             self.descriptors.deallocate()
             self.usages.deallocate()
+            self.generations.deallocate()
             self.labels.deallocate()
         }
     }
@@ -137,7 +142,9 @@ public final class PersistentBufferRegistry {
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
-            return UInt64(truncatingIfNeeded: index)
+            let generation = self.chunks[chunkIndex].generations[indexInChunk]
+            
+            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
         }
     }
     
@@ -163,6 +170,8 @@ public final class PersistentBufferRegistry {
         self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
+        
+        self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
         
         self.freeIndices.append(index)
     }
@@ -231,7 +240,7 @@ public final class TransientTextureRegistry {
         self.baseResources.advanced(by: index).initialize(to: Resource.invalidResource)
         self.textureViewInfos.advanced(by: index).initialize(to: nil)
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
@@ -248,7 +257,7 @@ public final class TransientTextureRegistry {
         
         baseResource.descriptor.usageHint.formUnion(.textureView)
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
@@ -275,7 +284,7 @@ public final class TransientTextureRegistry {
         self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
         self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
@@ -309,6 +318,7 @@ public final class PersistentTextureRegistry {
         public var writeWaitFrames : UnsafeMutablePointer<UInt64>
         public var descriptors : UnsafeMutablePointer<TextureDescriptor>
         public var usages : UnsafeMutablePointer<ResourceUsagesList>
+        public var generations : UnsafeMutablePointer<UInt8>
         public var labels : UnsafeMutablePointer<String?>
         
         public init() {
@@ -317,7 +327,10 @@ public final class PersistentTextureRegistry {
             self.writeWaitFrames = .allocate(capacity: Chunk.itemsPerChunk)
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
+            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
+            
+            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
         }
         
         public func deallocate() {
@@ -326,6 +339,7 @@ public final class PersistentTextureRegistry {
             self.writeWaitFrames.deallocate()
             self.descriptors.deallocate()
             self.usages.deallocate()
+            self.generations.deallocate()
             self.labels.deallocate()
         }
     }
@@ -366,7 +380,9 @@ public final class PersistentTextureRegistry {
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
-            return UInt64(truncatingIfNeeded: index)
+            let generation = self.chunks[chunkIndex].generations[indexInChunk]
+            
+            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
         }
     }
     
@@ -395,6 +411,8 @@ public final class PersistentTextureRegistry {
             self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
+
+            self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
             
             self.freeIndices.append(index)
         }
@@ -482,7 +500,7 @@ public final class TransientArgumentBufferRegistry {
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             self.count += 1
             
-            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
         }
     }
     
@@ -506,7 +524,7 @@ public final class TransientArgumentBufferRegistry {
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             self.count += 1
             
-            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
         }
     }
     
@@ -551,6 +569,7 @@ public final class PersistentArgumentBufferRegistry {
         public var bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
         public var inlineDataStorage : UnsafeMutablePointer<Data>
         public var sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
+        public var generations : UnsafeMutablePointer<UInt8>
         
         public var labels : UnsafeMutablePointer<String?>
         
@@ -561,7 +580,10 @@ public final class PersistentArgumentBufferRegistry {
             self.bindings = .allocate(capacity: Chunk.itemsPerChunk)
             self.inlineDataStorage = .allocate(capacity: Chunk.itemsPerChunk)
             self.sourceArrays = .allocate(capacity: Chunk.itemsPerChunk)
+            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
+            
+            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
         }
         
         public func deallocate() {
@@ -571,6 +593,7 @@ public final class PersistentArgumentBufferRegistry {
             self.bindings.deallocate()
             self.inlineDataStorage.deallocate()
             self.sourceArrays.deallocate()
+            self.generations.deallocate()
             self.labels.deallocate()
         }
     }
@@ -611,7 +634,9 @@ public final class PersistentArgumentBufferRegistry {
             self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
-            return UInt64(truncatingIfNeeded: index)
+            let generation = self.chunks[chunkIndex].generations[indexInChunk]
+            
+            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
         }
     }
     
@@ -639,7 +664,9 @@ public final class PersistentArgumentBufferRegistry {
             self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
-            return UInt64(truncatingIfNeeded: index)
+            let generation = self.chunks[chunkIndex].generations[indexInChunk]
+            
+            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
         }
     }
     
@@ -670,6 +697,8 @@ public final class PersistentArgumentBufferRegistry {
             self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
+
+            self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
             
             self.freeIndices.append(index)
         }
@@ -717,7 +746,7 @@ public final class TransientArgumentBufferArrayRegistry {
         self.bindings.advanced(by: index).initialize(to: [])
         self.labels.advanced(by: index).initialize(to: nil)
             
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0b111) << 29)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
@@ -738,15 +767,20 @@ public final class PersistentArgumentBufferArrayRegistry {
         public static let itemsPerChunk = 2048
         
         public let bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>
+        public var generations : UnsafeMutablePointer<UInt8>
         public let labels : UnsafeMutablePointer<String?>
         
         public init() {
             self.bindings = .allocate(capacity: Chunk.itemsPerChunk)
+            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
+            
+            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
         }
         
         public func deallocate() {
             self.bindings.deallocate()
+            self.generations.deallocate()
             self.labels.deallocate()
         }
     }
@@ -783,7 +817,9 @@ public final class PersistentArgumentBufferArrayRegistry {
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: [])
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
-            return UInt64(truncatingIfNeeded: index)
+            let generation = self.chunks[chunkIndex].generations[indexInChunk]
+            
+            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
         }
     }
     
@@ -809,6 +845,8 @@ public final class PersistentArgumentBufferArrayRegistry {
             
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
+
+            self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
             
             self.freeIndices.append(index)
         }
@@ -819,6 +857,113 @@ public final class PersistentArgumentBufferArrayRegistry {
     public func dispose(_ buffer: _ArgumentBufferArray) {
         self.lock.withLock {
             self.enqueuedDisposals.append(buffer)
+        }
+    }
+}
+
+
+public final class HeapRegistry {
+    
+    public static let instance = HeapRegistry()
+    
+    public struct Chunk {
+        public static let itemsPerChunk = 4096
+        
+        public var descriptors : UnsafeMutablePointer<HeapDescriptor>
+        public var generations : UnsafeMutablePointer<UInt8>
+        public var labels : UnsafeMutablePointer<String?>
+        
+        public init() {
+            self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
+            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
+            self.labels = .allocate(capacity: Chunk.itemsPerChunk)
+            
+            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
+        }
+        
+        public func deallocate() {
+            self.descriptors.deallocate()
+            self.generations.deallocate()
+            self.labels.deallocate()
+        }
+    }
+    
+    public static let maxChunks = 128
+    
+    public var lock = SpinLock()
+    
+    public var freeIndices = RingBuffer<Int>()
+    public var maxIndex = 0
+    public let enqueuedDisposals = ExpandingBuffer<Heap>()
+    public let chunks : UnsafeMutablePointer<Chunk>
+    
+    public init() {
+        self.chunks = .allocate(capacity: Self.maxChunks)
+    }
+    
+    @inlinable
+    public func allocate(descriptor: HeapDescriptor) -> UInt64 {
+        return self.lock.withLock {
+            let index : Int
+            if let reusedIndex = self.freeIndices.popFirst() {
+                index = reusedIndex
+            } else {
+                index = self.maxIndex
+                if self.maxIndex % Chunk.itemsPerChunk == 0 {
+                    self.allocateChunk(self.maxIndex / Chunk.itemsPerChunk)
+                }
+                self.maxIndex += 1
+            }
+            
+            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
+            self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
+            
+            return UInt64(truncatingIfNeeded: index)
+        }
+    }
+    
+    var chunkCount : Int {
+        if self.maxIndex == 0 { return 0 }
+        return (self.maxIndex / Chunk.itemsPerChunk) + 1
+    }
+    
+    @inlinable
+    func allocateChunk(_ index: Int) {
+        assert(index < Self.maxChunks)
+        self.chunks.advanced(by: index).initialize(to: Chunk())
+    }
+    
+    private func disposeImmediately(heap: Heap) {
+        RenderBackend.dispose(heap: heap)
+        
+        let index = heap.index
+        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
+        
+        self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
+        
+        self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
+        
+        self.freeIndices.append(index)
+    }
+    
+    public func clear() {
+        assert(!self.lock.isLocked)
+        
+        for heap in self.enqueuedDisposals {
+            self.disposeImmediately(heap: heap)
+        }
+        
+        self.enqueuedDisposals.removeAll()
+    }
+    
+    public func dispose(_ heap: Heap, atEndOfFrame: Bool = true) {
+        self.lock.withLock {
+            if atEndOfFrame {
+                self.enqueuedDisposals.append(heap)
+            } else {
+                self.disposeImmediately(heap: heap)
+            }
         }
     }
 }
