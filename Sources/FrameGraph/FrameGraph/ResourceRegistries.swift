@@ -123,7 +123,7 @@ public final class PersistentBufferRegistry {
     }
     
     @inlinable
-    public func allocate(descriptor: BufferDescriptor, flags: ResourceFlags) -> UInt64 {
+    public func allocate(descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -143,7 +143,7 @@ public final class PersistentBufferRegistry {
             self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).initialize(to: 0)
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
-            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: Heap(handle: Resource.invalidResource.handle))
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap ?? Heap(handle: Resource.invalidResource.handle))
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]
@@ -366,7 +366,7 @@ public final class PersistentTextureRegistry {
     }
     
     @inlinable
-    public func allocate(descriptor: TextureDescriptor, flags: ResourceFlags) -> UInt64 {        
+    public func allocate(descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -386,7 +386,7 @@ public final class PersistentTextureRegistry {
             self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).initialize(to: 0)
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
-            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: Heap(handle: Resource.invalidResource.handle))
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap ?? Heap(handle: Resource.invalidResource.handle))
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]

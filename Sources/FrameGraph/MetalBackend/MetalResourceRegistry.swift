@@ -254,14 +254,14 @@ final class MetalResourceRegistry {
     }
     
     @discardableResult
-    public func allocateHeap(_ heap: Heap) -> MTLHeap {
+    public func allocateHeap(_ heap: Heap) -> MTLHeap? {
         assert(heap._usesPersistentRegistry)
         
         self.heapReferences.prepareFrame()
         
         let descriptor = MTLHeapDescriptor(heap.descriptor)
         
-        let mtlHeap = self.device.makeHeap(descriptor: descriptor)!
+        let mtlHeap = self.device.makeHeap(descriptor: descriptor)
         
         assert(self.heapReferences[heap] == nil)
         self.heapReferences[heap] = mtlHeap
@@ -292,8 +292,23 @@ final class MetalResourceRegistry {
         }
         #endif
         
-        let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
-        let (mtlTexture, fences, waitEvent) = allocator.collectTextureWithDescriptor(descriptor)
+        let mtlTexture : MTLTextureReference
+        let fences : [MetalFenceHandle]
+        let waitEvent : MetalWaitEvent
+        if let heap = texture.heap {
+            guard let mtlHeap = self.heapReferences[heap] else {
+                print("Warning: requested heap \(heap) for texture \(texture) is invalid.")
+                return nil
+            }
+            guard let texture = mtlHeap.makeTexture(descriptor: descriptor) else { return nil}
+            mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(texture))
+            fences = []
+            waitEvent = MetalWaitEvent()
+        } else {
+            let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
+            (mtlTexture, fences, waitEvent) = allocator.collectTextureWithDescriptor(descriptor)
+        }
+        
         if let label = texture.label {
             mtlTexture.texture.label = label
         }
@@ -389,19 +404,35 @@ final class MetalResourceRegistry {
     }
     
     @discardableResult
-    public func allocateBuffer(_ buffer: Buffer) -> MTLBufferReference {
+    public func allocateBuffer(_ buffer: Buffer) -> MTLBufferReference? {
         if buffer._usesPersistentRegistry {
             // Ensure we can fit this new reference.
             self.bufferReferences.prepareFrame()
             self.bufferWaitEvents.prepareFrame()
         }
         
-        let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)
         var options = MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode)
         if buffer.descriptor.usageHint.contains(.textureView) {
             options.remove(.frameGraphTrackedHazards) // FIXME: workaround for a bug in Metal where setting hazardTrackingModeUntracked on a MTLTextureDescriptor doesn't stick
         }
-        let (mtlBuffer, fences, waitEvent) = allocator.collectBufferWithLength(buffer.descriptor.length, options: options)
+        
+        let mtlBuffer : MTLBufferReference
+        let fences : [MetalFenceHandle]
+        let waitEvent : MetalWaitEvent
+        if let heap = buffer.heap {
+            guard let mtlHeap = self.heapReferences[heap] else {
+                print("Warning: requested heap \(heap) for buffer \(buffer) is invalid.")
+                return nil
+            }
+            guard let buffer = mtlHeap.makeBuffer(length: buffer.descriptor.length, options: options) else { return nil}
+            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(buffer), offset: 0)
+            fences = []
+            waitEvent = MetalWaitEvent()
+        } else {
+            let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)
+            (mtlBuffer, fences, waitEvent) = allocator.collectBufferWithLength(buffer.descriptor.length, options: options)
+        }
+        
         if let label = buffer.label {
             mtlBuffer.buffer.label = label
         }
@@ -423,7 +454,7 @@ final class MetalResourceRegistry {
         if let mtlBuffer = self.bufferReferences[buffer] {
             return mtlBuffer
         }
-        return self.allocateBuffer(buffer)
+        return self.allocateBuffer(buffer)!
     }
     
     @discardableResult
@@ -572,7 +603,7 @@ final class MetalResourceRegistry {
             if texture.flags.contains(.windowHandle) {
                 return
             }
-            if texture.flags.contains(.externalOwnership) {
+            if texture.flags.contains(.externalOwnership) || texture.heap != nil {
                 mtlTexture._texture.release()
                 return
             }
@@ -593,7 +624,7 @@ final class MetalResourceRegistry {
     func disposeBuffer(_ buffer: Buffer, keepingReference: Bool, waitEvent: MetalWaitEvent) {
         if let mtlBuffer = (keepingReference ? self.bufferReferences[buffer] : self.bufferReferences.removeValue(forKey: buffer)) {
             
-            if buffer.flags.contains(.externalOwnership) {
+            if buffer.flags.contains(.externalOwnership) || buffer.heap != nil {
                 mtlBuffer._buffer.release()
                 return
             }

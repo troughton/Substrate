@@ -47,9 +47,9 @@ public final class MetalBackend : _FrameGraphBackend {
         self.frameGraph.beginFrameResourceAccess()
     }
     
-    @usableFromInline func materialisePersistentTexture(_ texture: Texture) {
-        resourceRegistry.accessLock.withWriteLock {
-            _ = self.resourceRegistry.allocateTexture(texture, properties: MetalTextureUsageProperties(texture.descriptor.usageHint))
+    @usableFromInline func materialisePersistentTexture(_ texture: Texture) -> Bool {
+        return resourceRegistry.accessLock.withWriteLock {
+            return self.resourceRegistry.allocateTexture(texture, properties: MetalTextureUsageProperties(texture.descriptor.usageHint)) != nil
         }
     }
     
@@ -57,14 +57,14 @@ public final class MetalBackend : _FrameGraphBackend {
         self.resourceRegistry.registerWindowTexture(texture: texture, context: context)
     }
     
-    @usableFromInline func materialisePersistentBuffer(_ buffer: Buffer) {
-        _ = resourceRegistry.accessLock.withWriteLock {
-            self.resourceRegistry.allocateBuffer(buffer)
+    @usableFromInline func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
+        return resourceRegistry.accessLock.withWriteLock {
+            return self.resourceRegistry.allocateBuffer(buffer) != nil
         }
     }
     
-    @usableFromInline func materialiseHeap(_ heap: Heap) {
-        self.resourceRegistry.allocateHeap(heap)
+    @usableFromInline func materialiseHeap(_ heap: Heap) -> Bool {
+        return self.resourceRegistry.allocateHeap(heap) != nil
     }
 
     @usableFromInline func dispose(texture: Texture) {

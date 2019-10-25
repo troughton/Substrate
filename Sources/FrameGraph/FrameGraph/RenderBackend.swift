@@ -30,9 +30,9 @@ protocol RenderBackendProtocol : class {
     func registerExternalResource(_ resource: Resource, backingResource: Any)
     func registerWindowTexture(texture: Texture, context: Any)
     
-    func materialisePersistentTexture(_ texture: Texture)
-    func materialisePersistentBuffer(_ buffer: Buffer)
-    func materialiseHeap(_ heap: Heap)
+    func materialisePersistentTexture(_ texture: Texture) -> Bool
+    func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
+    func materialiseHeap(_ heap: Heap) -> Bool
     
     func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
@@ -72,7 +72,7 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func materialisePersistentTexture(_ texture: Texture) {
+    public static func materialisePersistentTexture(_ texture: Texture) -> Bool {
         return backend.materialisePersistentTexture(texture)
     }
 
@@ -87,12 +87,12 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func materialisePersistentBuffer(_ buffer: Buffer) {
+    public static func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
         return backend.materialisePersistentBuffer(buffer)
     }
     
     @inlinable
-    public static func materialiseHeap(_ heap: Heap) {
+    public static func materialiseHeap(_ heap: Heap) -> Bool {
         return backend.materialiseHeap(heap)
     }
     

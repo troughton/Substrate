@@ -515,18 +515,21 @@ public struct Heap : ResourceProtocol {
     }
     
     @inlinable
-    public init(size: Int, type: HeapType = .automaticPlacement, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache) {
+    public init?(size: Int, type: HeapType = .automaticPlacement, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache) {
         self.init(descriptor: HeapDescriptor(size: size, type: type, storageMode: storageMode, cacheMode: cacheMode))
     }
     
     @inlinable
-    public init(descriptor: HeapDescriptor) {
+    public init?(descriptor: HeapDescriptor) {
         let flags : ResourceFlags = .persistent
         
         let index = HeapRegistry.instance.allocate(descriptor: descriptor)
         self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.heap.rawValue) << Self.typeBitsRange.lowerBound)
         
-        RenderBackend.materialiseHeap(self)
+        if !RenderBackend.materialiseHeap(self) {
+            self.dispose()
+            return nil
+        }
     }
     
     @inlinable
@@ -549,6 +552,11 @@ public struct Heap : ResourceProtocol {
     @inlinable
     public var storageMode: StorageMode {
         return self.descriptor.storageMode
+    }
+    
+    @inlinable
+    public var cacheMode: CPUCacheMode {
+        return self.descriptor.cacheMode
     }
     
     @inlinable
@@ -615,7 +623,7 @@ public struct Buffer : ResourceProtocol {
     public init(descriptor: BufferDescriptor, flags: ResourceFlags = []) {
         let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
-            index = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, flags: flags)
+            index = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
             index = TransientBufferRegistry.instance.allocate(descriptor: descriptor, flags: flags)
         }
@@ -624,13 +632,43 @@ public struct Buffer : ResourceProtocol {
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
-            RenderBackend.materialisePersistentBuffer(self)
+            let didAllocate = RenderBackend.materialisePersistentBuffer(self)
+            assert(didAllocate, "Allocation failed for persistent buffer \(self)")
         }
     }
     
     @inlinable
     public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, flags: ResourceFlags = []) {
         self.init(descriptor: descriptor, flags: flags)
+        
+        if let bytes = bytes {
+            assert(self.descriptor.storageMode != .private)
+            self[0..<self.descriptor.length, accessType: .write].withContents { $0.copyMemory(from: bytes, byteCount: self.descriptor.length) }
+        }
+    }
+    
+    @inlinable
+    public init?(length: Int, usage: BufferUsage = .unknown, bytes: UnsafeRawPointer? = nil, heap: Heap, flags: ResourceFlags = [.persistent]) {
+        self.init(descriptor: BufferDescriptor(length: length, storageMode: heap.storageMode, cacheMode: heap.cacheMode, usage: usage), bytes: bytes, heap: heap, flags: flags)
+    }
+    
+    @inlinable
+    public init?(descriptor: BufferDescriptor, heap: Heap, flags: ResourceFlags = [.persistent]) {
+        assert(flags.contains(.persistent), "Heap-allocated resources must be persistent.")
+        assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+        
+        let index = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.buffer.rawValue) << Self.typeBitsRange.lowerBound)
+        
+        if !RenderBackend.materialisePersistentBuffer(self) {
+            self.dispose()
+            return nil
+        }
+    }
+    
+    @inlinable
+    public init?(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, heap: Heap, flags: ResourceFlags = [.persistent]) {
+        self.init(descriptor: descriptor, heap: heap, flags: flags)
         
         if let bytes = bytes {
             assert(self.descriptor.storageMode != .private)
@@ -755,6 +793,17 @@ public struct Buffer : ResourceProtocol {
             } else {
                 TransientBufferRegistry.instance.descriptors[index] = newValue
             }
+        }
+    }
+    
+    @inlinable
+    public var heap : Heap? {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            let heap = PersistentBufferRegistry.instance.chunks[chunkIndex].heaps[indexInChunk]
+            return heap.handle == Resource.invalidResource.handle ? nil : heap
+        } else {
+            return nil
         }
     }
     
@@ -923,7 +972,7 @@ public struct Texture : ResourceProtocol {
     public init(descriptor: TextureDescriptor, flags: ResourceFlags = []) {
         let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
-            index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, flags: flags)
+            index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
             index = TransientTextureRegistry.instance.allocate(descriptor: descriptor, flags: flags)
         }
@@ -932,7 +981,22 @@ public struct Texture : ResourceProtocol {
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
-            RenderBackend.materialisePersistentTexture(self)
+            let didAllocate = RenderBackend.materialisePersistentTexture(self)
+            assert(didAllocate, "Allocation failed for persistent texture \(self)")
+        }
+    }
+    
+    @inlinable
+    public init?(descriptor: TextureDescriptor, heap: Heap, flags: ResourceFlags = [.persistent]) {
+        assert(flags.contains(.persistent), "Heap-allocated resources must be persistent.")
+        assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+        
+        let index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
+        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        
+        if !RenderBackend.materialisePersistentTexture(self) {
+            self.dispose()
+            return nil
         }
     }
     
@@ -940,7 +1004,7 @@ public struct Texture : ResourceProtocol {
     public init(descriptor: TextureDescriptor, externalResource: Any, flags: ResourceFlags = [.persistent, .externalOwnership]) {
         let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
-            index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, flags: flags)
+            index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
             index = TransientTextureRegistry.instance.allocate(descriptor: descriptor, flags: flags)
         }
@@ -1039,6 +1103,17 @@ public struct Texture : ResourceProtocol {
             } else {
                 TransientTextureRegistry.instance.descriptors[index] = newValue
             }
+        }
+    }
+    
+    @inlinable
+    public var heap : Heap? {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+            let heap = PersistentTextureRegistry.instance.chunks[chunkIndex].heaps[indexInChunk]
+            return heap.handle == Resource.invalidResource.handle ? nil : heap
+        } else {
+            return nil
         }
     }
     
