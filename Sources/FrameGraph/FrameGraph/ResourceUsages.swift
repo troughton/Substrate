@@ -113,7 +113,7 @@ public struct ResourceUsagesList : Sequence {
         return self.head == nil
     }
     
-        public struct Iterator : IteratorProtocol {
+    public struct Iterator : IteratorProtocol {
         public typealias Element = ResourceUsage
         
         @usableFromInline
@@ -163,8 +163,8 @@ extension UnsafeMutablePointer where Pointee == ResourceUsagesList {
         }
     }
     
-     @inlinable
-     func append(_ usageNode: ResourceUsageNodePtr) {
+    @inlinable
+    func append(_ usageNode: ResourceUsageNodePtr) {
         let passIndex = usageNode.pointee.element.renderPassRecord.passIndex
         self.withInsertionNode(passIndex: passIndex, perform: { insertionNode in
             var insertionNode = insertionNode
@@ -220,7 +220,7 @@ extension UnsafeMutablePointer where Pointee == ResourceUsagesList {
             curNode = curNode!.pointee.next
         }
     }
-
+    
 }
 
 extension ResourceUsageType {
@@ -250,7 +250,7 @@ extension ResourceUsageType {
     static func areMergeable(_ typeA: ResourceUsageType, _ typeB: ResourceUsageType) -> Bool {
         // We can only merge resources of the same type, and we can only merge writes if they're contained within a render target.
         return typeA == typeB &&
-               (!typeA.isWrite || typeA.isRenderTarget)
+            (!typeA.isWrite || typeA.isRenderTarget)
     }
 }
 
@@ -444,7 +444,7 @@ public class ResourceUsages {
             assert(!resource.usages.isEmpty)
             self.registerResource(resource)
         }
-
+        
         assert(usagePtr.pointee.element.renderPassRecord === encoder.passRecord)
         
         return usagePtr
