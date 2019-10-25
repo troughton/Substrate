@@ -73,15 +73,16 @@ public final class PersistentBufferRegistry {
     public struct Chunk {
         public static let itemsPerChunk = 4096
         
-        public var stateFlags : UnsafeMutablePointer<ResourceStateFlags>
+        public let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The frame that must be completed on the GPU before the CPU can read from this memory.
-        public var readWaitFrames : UnsafeMutablePointer<UInt64>
+        public let readWaitFrames : UnsafeMutablePointer<UInt64>
         /// The frame that must be completed on the GPU before the CPU can write to this memory.
-        public var writeWaitFrames : UnsafeMutablePointer<UInt64>
-        public var descriptors : UnsafeMutablePointer<BufferDescriptor>
-        public var usages : UnsafeMutablePointer<ResourceUsagesList>
-        public var generations : UnsafeMutablePointer<UInt8>
-        public var labels : UnsafeMutablePointer<String?>
+        public let writeWaitFrames : UnsafeMutablePointer<UInt64>
+        public let descriptors : UnsafeMutablePointer<BufferDescriptor>
+        public let usages : UnsafeMutablePointer<ResourceUsagesList>
+        public let heaps : UnsafeMutablePointer<Heap>
+        public let generations : UnsafeMutablePointer<UInt8>
+        public let labels : UnsafeMutablePointer<String?>
         
         public init() {
             self.stateFlags = .allocate(capacity: Chunk.itemsPerChunk)
@@ -89,6 +90,7 @@ public final class PersistentBufferRegistry {
             self.writeWaitFrames = .allocate(capacity: Chunk.itemsPerChunk)
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
+            self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
             
@@ -101,6 +103,7 @@ public final class PersistentBufferRegistry {
             self.writeWaitFrames.deallocate()
             self.descriptors.deallocate()
             self.usages.deallocate()
+            self.heaps.deallocate()
             self.generations.deallocate()
             self.labels.deallocate()
         }
@@ -140,6 +143,7 @@ public final class PersistentBufferRegistry {
             self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).initialize(to: 0)
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: Heap(handle: Resource.invalidResource.handle))
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]
@@ -169,6 +173,7 @@ public final class PersistentBufferRegistry {
         self.chunks[chunkIndex].readWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
         
         self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
@@ -311,15 +316,16 @@ public final class PersistentTextureRegistry {
     public struct Chunk {
         public static let itemsPerChunk = 4096
         
-        public var stateFlags : UnsafeMutablePointer<ResourceStateFlags>
+        public let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The frame that must be completed on the GPU before the CPU can read from this memory.
-        public var readWaitFrames : UnsafeMutablePointer<UInt64>
+        public let readWaitFrames : UnsafeMutablePointer<UInt64>
         /// The frame that must be completed on the GPU before the CPU can write to this memory.
-        public var writeWaitFrames : UnsafeMutablePointer<UInt64>
-        public var descriptors : UnsafeMutablePointer<TextureDescriptor>
-        public var usages : UnsafeMutablePointer<ResourceUsagesList>
-        public var generations : UnsafeMutablePointer<UInt8>
-        public var labels : UnsafeMutablePointer<String?>
+        public let writeWaitFrames : UnsafeMutablePointer<UInt64>
+        public let descriptors : UnsafeMutablePointer<TextureDescriptor>
+        public let usages : UnsafeMutablePointer<ResourceUsagesList>
+        public let heaps : UnsafeMutablePointer<Heap>
+        public let generations : UnsafeMutablePointer<UInt8>
+        public let labels : UnsafeMutablePointer<String?>
         
         public init() {
             self.stateFlags = .allocate(capacity: Chunk.itemsPerChunk)
@@ -327,6 +333,7 @@ public final class PersistentTextureRegistry {
             self.writeWaitFrames = .allocate(capacity: Chunk.itemsPerChunk)
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
+            self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
             
@@ -339,6 +346,7 @@ public final class PersistentTextureRegistry {
             self.writeWaitFrames.deallocate()
             self.descriptors.deallocate()
             self.usages.deallocate()
+            self.heaps.deallocate()
             self.generations.deallocate()
             self.labels.deallocate()
         }
@@ -378,6 +386,7 @@ public final class PersistentTextureRegistry {
             self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).initialize(to: 0)
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: Heap(handle: Resource.invalidResource.handle))
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]
@@ -410,6 +419,7 @@ public final class PersistentTextureRegistry {
             self.chunks[chunkIndex].readWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
 
             self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
@@ -438,13 +448,13 @@ public final class TransientArgumentBufferRegistry {
     public struct Chunk {
         public static let itemsPerChunk = 2048
         
-        public var usages : UnsafeMutablePointer<ResourceUsagesList>
-        public var encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
-        public var enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
-        public var bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
-        public var sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
+        public let usages : UnsafeMutablePointer<ResourceUsagesList>
+        public let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
+        public let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
+        public let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
+        public let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
         
-        public var labels : UnsafeMutablePointer<String?>
+        public let labels : UnsafeMutablePointer<String?>
         
         public init() {
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
@@ -563,15 +573,16 @@ public final class PersistentArgumentBufferRegistry {
     public struct Chunk {
         public static let itemsPerChunk = 2048
         
-        public var usages : UnsafeMutablePointer<ResourceUsagesList>
-        public var encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
-        public var enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
-        public var bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
-        public var inlineDataStorage : UnsafeMutablePointer<Data>
-        public var sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
-        public var generations : UnsafeMutablePointer<UInt8>
+        public let usages : UnsafeMutablePointer<ResourceUsagesList>
+        public let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
+        public let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
+        public let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
+        public let inlineDataStorage : UnsafeMutablePointer<Data>
+        public let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
+        public let heaps : UnsafeMutablePointer<Heap>
+        public let generations : UnsafeMutablePointer<UInt8>
         
-        public var labels : UnsafeMutablePointer<String?>
+        public let labels : UnsafeMutablePointer<String?>
         
         public init() {
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
@@ -580,6 +591,7 @@ public final class PersistentArgumentBufferRegistry {
             self.bindings = .allocate(capacity: Chunk.itemsPerChunk)
             self.inlineDataStorage = .allocate(capacity: Chunk.itemsPerChunk)
             self.sourceArrays = .allocate(capacity: Chunk.itemsPerChunk)
+            self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
             
@@ -593,6 +605,7 @@ public final class PersistentArgumentBufferRegistry {
             self.bindings.deallocate()
             self.inlineDataStorage.deallocate()
             self.sourceArrays.deallocate()
+            self.heaps.deallocate()
             self.generations.deallocate()
             self.labels.deallocate()
         }
@@ -632,6 +645,7 @@ public final class PersistentArgumentBufferRegistry {
             self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: Heap(handle: Resource.invalidResource.handle))
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]
@@ -662,6 +676,7 @@ public final class PersistentArgumentBufferRegistry {
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
             self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: Heap(handle: Resource.invalidResource.handle))
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]
@@ -696,6 +711,7 @@ public final class PersistentArgumentBufferRegistry {
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).deinitialize(count: 1)
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
 
             self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
@@ -767,11 +783,13 @@ public final class PersistentArgumentBufferArrayRegistry {
         public static let itemsPerChunk = 2048
         
         public let bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>
-        public var generations : UnsafeMutablePointer<UInt8>
+        public let heaps : UnsafeMutablePointer<Heap>
+        public let generations : UnsafeMutablePointer<UInt8>
         public let labels : UnsafeMutablePointer<String?>
         
         public init() {
             self.bindings = .allocate(capacity: Chunk.itemsPerChunk)
+            self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
             
@@ -780,6 +798,7 @@ public final class PersistentArgumentBufferArrayRegistry {
         
         public func deallocate() {
             self.bindings.deallocate()
+            self.heaps.deallocate()
             self.generations.deallocate()
             self.labels.deallocate()
         }
@@ -815,6 +834,7 @@ public final class PersistentArgumentBufferArrayRegistry {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: [])
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: Heap(handle: Resource.invalidResource.handle))
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]
@@ -844,6 +864,7 @@ public final class PersistentArgumentBufferArrayRegistry {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
+            self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
 
             self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
@@ -869,9 +890,9 @@ public final class HeapRegistry {
     public struct Chunk {
         public static let itemsPerChunk = 4096
         
-        public var descriptors : UnsafeMutablePointer<HeapDescriptor>
-        public var generations : UnsafeMutablePointer<UInt8>
-        public var labels : UnsafeMutablePointer<String?>
+        public let descriptors : UnsafeMutablePointer<HeapDescriptor>
+        public let generations : UnsafeMutablePointer<UInt8>
+        public let labels : UnsafeMutablePointer<String?>
         
         public init() {
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
