@@ -68,19 +68,19 @@ public final class MetalBackend : _FrameGraphBackend {
     }
 
     @usableFromInline func dispose(texture: Texture) {
-        self.resourceRegistry.disposeTexture(texture, keepingReference: false, waitEvent: resourceRegistry.textureWaitEvents[texture] ?? MetalWaitEvent())
+        self.resourceRegistry.disposeTexture(texture, keepingReference: false, waitEvent: resourceRegistry.textureWaitEvents.removeValue(forKey: texture) ?? MetalContextWaitEvent())
     }
     
     @usableFromInline func dispose(buffer: Buffer) {
-        self.resourceRegistry.disposeBuffer(buffer, keepingReference: false, waitEvent: resourceRegistry.bufferWaitEvents[buffer] ?? MetalWaitEvent())
+        self.resourceRegistry.disposeBuffer(buffer, keepingReference: false, waitEvent: resourceRegistry.bufferWaitEvents.removeValue(forKey: buffer) ?? MetalContextWaitEvent())
     }
     
     @usableFromInline func dispose(argumentBuffer: _ArgumentBuffer) {
-        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer, keepingReference: false, waitEvent: resourceRegistry.argumentBufferWaitEvents[argumentBuffer] ?? MetalWaitEvent())
+        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer, keepingReference: false, waitEvent: resourceRegistry.argumentBufferWaitEvents[argumentBuffer] ?? MetalContextWaitEvent())
     }
     
     @usableFromInline func dispose(argumentBufferArray: _ArgumentBufferArray) {
-        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray, keepingReference: false, waitEvent: resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray] ?? MetalWaitEvent())
+        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray, keepingReference: false, waitEvent: resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray] ?? MetalContextWaitEvent())
     }
     
     @usableFromInline func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {

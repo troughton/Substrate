@@ -306,7 +306,6 @@ public class FrameGraph {
     }
     
     public static func initialise() {
-        FrameCompletion.initialise()
     }
 
     /// Useful for creating resources that may be used later in the frame.
@@ -641,11 +640,6 @@ public class FrameGraph {
         return (activePasses, activePassDependencies)
     }
     
-    // Note: calling this on the same thread that execute is called on will cause deadlock.
-    public static func waitForNextFrame() {
-        FrameCompletion.waitForFrame(self.currentFrameIndex)
-    }
-    
     public static func waitForGPUSubmission(_ function: @escaping () -> Void) {
         self.submissionNotifyQueue.append(function)
     }
@@ -702,33 +696,7 @@ public class FrameGraph {
             // Compilation is finished, so reset that tag.
             TaggedHeap.free(tag: FrameGraphTagType.frameGraphCompilation.tag)
             
-            for resource in self.threadResourceUsages[0].resources { // Since at this point (after compile) the resources from all threads have been merged into the resources for thread 0.
-                
-                if resource.flags.contains(.persistent) {
-                    var isRead = false
-                    var isWritten = false
-                    for usage in resource.usages where usage.renderPassRecord.isActive {
-                        if usage.isRead {
-                            isRead = true
-                        }
-                        if usage.isWrite {
-                            isWritten = true
-                            break
-                        }
-                    }
-                    if isRead {
-                        resource.writeWaitFrame = currentFrameIndex // The CPU can't write to this resource until the GPU has finished reading from it.
-                    }
-                    if isWritten {
-                        resource.readWaitFrame = currentFrameIndex // The CPU can't read from this resource until the GPU has finished writing to it.
-                    }
-                }
-                //            assert(resource.storageMode != .private || (resource.usages.firstActiveUsage?.isWrite ?? true) || resource.stateFlags.contains(.initialised), "Resource \(resource) (type \(resource.type), label \(String(describing: resource.label))) is read from in pass \(resource.usages.firstActiveUsage!.renderPassRecord.pass.name) without being first written to.")
-            }
-            
-            
             let completion = {
-                assert(!FrameCompletion.frameIsComplete(currentFrameIndex))
                 let completionTime = DispatchTime.now().uptimeNanoseconds
                 let elapsed = completionTime - FrameGraph.previousFrameCompletionTime
                 FrameGraph.previousFrameCompletionTime = completionTime
@@ -736,7 +704,6 @@ public class FrameGraph {
                 //            print("Frame \(currentFrameIndex) completed in \(self.lastFrameRenderDuration)ms.")
                 
                 self.completionSemaphore.signal()
-                FrameCompletion.markFrameComplete(frame: currentFrameIndex)
                 onGPUCompletion?()
             }
             

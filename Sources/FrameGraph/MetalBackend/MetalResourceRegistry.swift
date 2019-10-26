@@ -11,7 +11,8 @@ import Metal
 import MetalKit
 import FrameGraphUtilities
 
-struct MetalWaitEvent {
+/// The value to wait for on the event associated with this FrameGraph context.
+struct MetalContextWaitEvent {
     var waitValue : UInt64 = 0
 }
 
@@ -70,15 +71,13 @@ final class MetalResourceRegistry {
     private var argumentBufferReferences = ResourceMap<_ArgumentBuffer, MTLBufferReference>() // Separate since this needs to have thread-safe access.
     private var argumentBufferArrayReferences = ResourceMap<_ArgumentBufferArray, MTLBufferReference>() // Separate since this needs to have thread-safe access.
     
-    var textureWaitEvents = ResourceMap<Texture, MetalWaitEvent>()
-    var bufferWaitEvents = ResourceMap<Buffer, MetalWaitEvent>()
-    var argumentBufferWaitEvents = ResourceMap<_ArgumentBuffer, MetalWaitEvent>()
-    var argumentBufferArrayWaitEvents = ResourceMap<_ArgumentBufferArray, MetalWaitEvent>()
+    var textureWaitEvents = ResourceMap<Texture, MetalContextWaitEvent>()
+    var bufferWaitEvents = ResourceMap<Buffer, MetalContextWaitEvent>()
+    var argumentBufferWaitEvents = ResourceMap<_ArgumentBuffer, MetalContextWaitEvent>()
+    var argumentBufferArrayWaitEvents = ResourceMap<_ArgumentBufferArray, MetalContextWaitEvent>()
     
     private var heapResourceUsageFences = [Resource : [MetalFenceHandle]]()
     private var heapResourceDisposalFences = [Resource : [MetalFenceHandle]]()
-    
-    private var persistentResourceWaitEvents = [Resource : MetalWaitEvent]()
     
     private var windowReferences = [ResourceProtocol.Handle : MTKView]()
     
@@ -294,7 +293,7 @@ final class MetalResourceRegistry {
         
         let mtlTexture : MTLTextureReference
         let fences : [MetalFenceHandle]
-        let waitEvent : MetalWaitEvent
+        let waitEvent : MetalContextWaitEvent
         if let heap = texture.heap {
             guard let mtlHeap = self.heapReferences[heap] else {
                 print("Warning: requested heap \(heap) for texture \(texture) is invalid.")
@@ -303,7 +302,7 @@ final class MetalResourceRegistry {
             guard let texture = mtlHeap.makeTexture(descriptor: descriptor) else { return nil}
             mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(texture))
             fences = []
-            waitEvent = MetalWaitEvent()
+            waitEvent = MetalContextWaitEvent()
         } else {
             let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
             (mtlTexture, fences, waitEvent) = allocator.collectTextureWithDescriptor(descriptor)
@@ -418,7 +417,7 @@ final class MetalResourceRegistry {
         
         let mtlBuffer : MTLBufferReference
         let fences : [MetalFenceHandle]
-        let waitEvent : MetalWaitEvent
+        let waitEvent : MetalContextWaitEvent
         if let heap = buffer.heap {
             guard let mtlHeap = self.heapReferences[heap] else {
                 print("Warning: requested heap \(heap) for buffer \(buffer) is invalid.")
@@ -427,7 +426,7 @@ final class MetalResourceRegistry {
             guard let buffer = mtlHeap.makeBuffer(length: buffer.descriptor.length, options: options) else { return nil}
             mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(buffer), offset: 0)
             fences = []
-            waitEvent = MetalWaitEvent()
+            waitEvent = MetalContextWaitEvent()
         } else {
             let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)
             (mtlBuffer, fences, waitEvent) = allocator.collectBufferWithLength(buffer.descriptor.length, options: options)
@@ -466,7 +465,7 @@ final class MetalResourceRegistry {
         return self.allocateTexture(texture, properties: usage)
     }
     
-    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [MetalFenceHandle], MetalWaitEvent) {
+    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [MetalFenceHandle], MetalContextWaitEvent) {
 //        #if os(macOS)
 //        let options : MTLResourceOptions = [.storageModeManaged, .frameGraphTrackedHazards]
 //        #else
@@ -598,7 +597,7 @@ final class MetalResourceRegistry {
         self.heapReferences.removeValue(forKey: heap)
     }
     
-    func disposeTexture(_ texture: Texture, keepingReference: Bool, waitEvent: MetalWaitEvent) {
+    func disposeTexture(_ texture: Texture, keepingReference: Bool, waitEvent: MetalContextWaitEvent) {
         if let mtlTexture = (keepingReference ? self.textureReferences[texture] : self.textureReferences.removeValue(forKey: texture)) {
             if texture.flags.contains(.windowHandle) {
                 return
@@ -621,7 +620,7 @@ final class MetalResourceRegistry {
         }
     }
     
-    func disposeBuffer(_ buffer: Buffer, keepingReference: Bool, waitEvent: MetalWaitEvent) {
+    func disposeBuffer(_ buffer: Buffer, keepingReference: Bool, waitEvent: MetalContextWaitEvent) {
         if let mtlBuffer = (keepingReference ? self.bufferReferences[buffer] : self.bufferReferences.removeValue(forKey: buffer)) {
             
             if buffer.flags.contains(.externalOwnership) || buffer.heap != nil {
@@ -639,7 +638,7 @@ final class MetalResourceRegistry {
         }
     }
     
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, keepingReference: Bool, waitEvent: MetalWaitEvent) {
+    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, keepingReference: Bool, waitEvent: MetalContextWaitEvent) {
         if let mtlBuffer = (keepingReference ? self.argumentBufferReferences[buffer] : self.argumentBufferReferences.removeValue(forKey: buffer)) {
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             
@@ -648,7 +647,7 @@ final class MetalResourceRegistry {
         }
     }
     
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, keepingReference: Bool, waitEvent: MetalWaitEvent) {
+    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, keepingReference: Bool, waitEvent: MetalContextWaitEvent) {
         if let mtlBuffer = (keepingReference ? self.argumentBufferArrayReferences[buffer] : self.argumentBufferArrayReferences.removeValue(forKey: buffer)) {
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)

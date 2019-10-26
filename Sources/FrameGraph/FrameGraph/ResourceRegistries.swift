@@ -74,10 +74,10 @@ public final class PersistentBufferRegistry {
         public static let itemsPerChunk = 4096
         
         public let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
-        /// The frame that must be completed on the GPU before the CPU can read from this memory.
-        public let readWaitFrames : UnsafeMutablePointer<UInt64>
-        /// The frame that must be completed on the GPU before the CPU can write to this memory.
-        public let writeWaitFrames : UnsafeMutablePointer<UInt64>
+        /// The index that must be completed on the GPU for each queue before the CPU can read from this memory.
+        public let readWaitIndices : UnsafeMutablePointer<SIMD8<UInt64>>
+        /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
+        public let writeWaitIndices : UnsafeMutablePointer<SIMD8<UInt64>>
         public let descriptors : UnsafeMutablePointer<BufferDescriptor>
         public let usages : UnsafeMutablePointer<ResourceUsagesList>
         public let heaps : UnsafeMutablePointer<Heap>
@@ -86,8 +86,8 @@ public final class PersistentBufferRegistry {
         
         public init() {
             self.stateFlags = .allocate(capacity: Chunk.itemsPerChunk)
-            self.readWaitFrames = .allocate(capacity: Chunk.itemsPerChunk)
-            self.writeWaitFrames = .allocate(capacity: Chunk.itemsPerChunk)
+            self.readWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
+            self.writeWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
             self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
@@ -99,8 +99,8 @@ public final class PersistentBufferRegistry {
         
         public func deallocate() {
             self.stateFlags.deallocate()
-            self.readWaitFrames.deallocate()
-            self.writeWaitFrames.deallocate()
+            self.readWaitIndices.deallocate()
+            self.writeWaitIndices.deallocate()
             self.descriptors.deallocate()
             self.usages.deallocate()
             self.heaps.deallocate()
@@ -139,8 +139,8 @@ public final class PersistentBufferRegistry {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
             self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).initialize(to: [])
-            self.chunks[chunkIndex].readWaitFrames.advanced(by: indexInChunk).initialize(to: 0)
-            self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).initialize(to: 0)
+            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap ?? Heap(handle: Resource.invalidResource.handle))
@@ -170,8 +170,8 @@ public final class PersistentBufferRegistry {
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
         
         self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].readWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
@@ -317,10 +317,10 @@ public final class PersistentTextureRegistry {
         public static let itemsPerChunk = 4096
         
         public let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
-        /// The frame that must be completed on the GPU before the CPU can read from this memory.
-        public let readWaitFrames : UnsafeMutablePointer<UInt64>
-        /// The frame that must be completed on the GPU before the CPU can write to this memory.
-        public let writeWaitFrames : UnsafeMutablePointer<UInt64>
+        /// The index that must be completed on the GPU for each queue before the CPU can read from this memory.
+        public let readWaitIndices : UnsafeMutablePointer<SIMD8<UInt64>>
+        /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
+        public let writeWaitIndices : UnsafeMutablePointer<SIMD8<UInt64>>
         public let descriptors : UnsafeMutablePointer<TextureDescriptor>
         public let usages : UnsafeMutablePointer<ResourceUsagesList>
         public let heaps : UnsafeMutablePointer<Heap>
@@ -329,8 +329,8 @@ public final class PersistentTextureRegistry {
         
         public init() {
             self.stateFlags = .allocate(capacity: Chunk.itemsPerChunk)
-            self.readWaitFrames = .allocate(capacity: Chunk.itemsPerChunk)
-            self.writeWaitFrames = .allocate(capacity: Chunk.itemsPerChunk)
+            self.readWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
+            self.writeWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
             self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
@@ -342,8 +342,8 @@ public final class PersistentTextureRegistry {
         
         public func deallocate() {
             self.stateFlags.deallocate()
-            self.readWaitFrames.deallocate()
-            self.writeWaitFrames.deallocate()
+            self.readWaitIndices.deallocate()
+            self.writeWaitIndices.deallocate()
             self.descriptors.deallocate()
             self.usages.deallocate()
             self.heaps.deallocate()
@@ -382,8 +382,8 @@ public final class PersistentTextureRegistry {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
             self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).initialize(to: [])
-            self.chunks[chunkIndex].readWaitFrames.advanced(by: indexInChunk).initialize(to: 0)
-            self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).initialize(to: 0)
+            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap ?? Heap(handle: Resource.invalidResource.handle))
@@ -416,8 +416,8 @@ public final class PersistentTextureRegistry {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
             self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).deinitialize(count: 1)
-            self.chunks[chunkIndex].readWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
-            self.chunks[chunkIndex].writeWaitFrames.advanced(by: indexInChunk).deinitialize(count: 1)
+            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
+            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)

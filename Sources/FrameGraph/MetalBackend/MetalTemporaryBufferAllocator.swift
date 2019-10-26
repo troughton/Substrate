@@ -90,13 +90,13 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
         return self.arenas[self.currentIndex].allocate(bytes: bytes, alignedTo: alignment)
     }
     
-    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [MetalFenceHandle], MetalWaitEvent) {
+    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [MetalFenceHandle], MetalContextWaitEvent) {
         assert(options == self.options)
         let (buffer, offset) = self.allocate(bytes: length)
-        return (MTLBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset), [], MetalWaitEvent(waitValue: self.waitEventValue))
+        return (MTLBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset), [], MetalContextWaitEvent(waitValue: self.waitEventValue))
     }
     
-    func depositBuffer(_ buffer: MTLBufferReference, fences: [MetalFenceHandle], waitEvent: MetalWaitEvent) {
+    func depositBuffer(_ buffer: MTLBufferReference, fences: [MetalFenceHandle], waitEvent: MetalContextWaitEvent) {
         assert(fences.isEmpty)
         self.nextFrameWaitEventValue = max(self.waitEventValue, waitEvent.waitValue)
     }

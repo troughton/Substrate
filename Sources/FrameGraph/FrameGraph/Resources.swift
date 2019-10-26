@@ -113,9 +113,9 @@ public protocol ResourceProtocol : Hashable {
     
     var label : String? { get nonmutating set }
     var storageMode : StorageMode { get }
-    
-    var readWaitFrame : UInt64 { get nonmutating set }
-    var writeWaitFrame : UInt64 { get nonmutating set }
+
+    /// The command buffer index on which to wait on a particular queue `queue` before it is safe to perform an access of type `type`.
+    subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 { get nonmutating set }
     
     /// Returns whether or not a resource handle represents a valid GPU resource.
     /// A resource handle is valid if it is a transient resource that was allocated in the current frame
@@ -274,13 +274,13 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
-    public var readWaitFrame: UInt64 {
+    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
             switch self.type {
             case .buffer:
-                return Buffer(handle: self.handle).readWaitFrame
+                return Buffer(handle: self.handle)[waitIndexFor: queue, accessType: type]
             case .texture:
-                return Texture(handle: self.handle).readWaitFrame
+                return Texture(handle: self.handle)[waitIndexFor: queue, accessType: type]
             default:
                 return 0
             }
@@ -288,35 +288,11 @@ public struct Resource : ResourceProtocol, Hashable {
         nonmutating set {
             switch self.type {
             case .buffer:
-                Buffer(handle: self.handle).readWaitFrame = newValue
+                Buffer(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
             case .texture:
-                Texture(handle: self.handle).readWaitFrame = newValue
+                Texture(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
             default:
-                break
-            }
-        }
-    }
-    
-    @inlinable
-    public var writeWaitFrame: UInt64 {
-        get {
-            switch self.type {
-            case .buffer:
-                return Buffer(handle: self.handle).writeWaitFrame
-            case .texture:
-                return Texture(handle: self.handle).writeWaitFrame
-            default:
-                return 0
-            }
-        }
-        nonmutating set {
-            switch self.type {
-            case .buffer:
-                Buffer(handle: self.handle).writeWaitFrame = newValue
-            case .texture:
-                Texture(handle: self.handle).writeWaitFrame = newValue
-            default:
-                break
+                fatalError()
             }
         }
     }
@@ -475,7 +451,7 @@ extension ResourceProtocol {
     }
     
     @inlinable
-    public var readWaitFrame : UInt64 {
+    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
             return 0
         }
@@ -484,13 +460,12 @@ extension ResourceProtocol {
         }
     }
     
-    @inlinable
-    public var writeWaitFrame : UInt64 {
-        get {
-            return 0
-        }
-        nonmutating set {
-            fatalError()
+    public func waitForCPUAccess(accessType: ResourceAccessType) {
+        guard self.flags.contains(.persistent) else { return }
+        
+        for queue in QueueRegistry.allQueues {
+            let waitIndex = self[waitIndexFor: queue, accessType: accessType]
+            queue.waitForCommand(waitIndex)
         }
     }
     
@@ -849,48 +824,25 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-    @inlinable
-    public var readWaitFrame: UInt64 {
+    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
             guard self.flags.contains(.persistent) else { return 0 }
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-            return PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk]
+            if type == .read {
+                return PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)]
+            } else {
+                return PersistentBufferRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)]
+            }
         }
         nonmutating set {
             guard self.flags.contains(.persistent) else { return }
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-            PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk] = newValue
-        }
-    }
-    
-    @inlinable
-    public var writeWaitFrame: UInt64 {
-        get {
-            guard self.flags.contains(.persistent) else { return 0 }
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-            return PersistentBufferRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk]
-        }
-        nonmutating set {
-            guard self.flags.contains(.persistent) else { return }
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-            PersistentBufferRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk] = newValue
-        }
-    }
-    
-    @inlinable
-    public func waitForCPUAccess(accessType: ResourceAccessType) {
-        guard self.flags.contains(.persistent) else { return }
-        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-        
-        let readWaitFrame = PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk]
-        let writeWaitFrame = PersistentBufferRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk]
-        switch accessType {
-        case .read:
-            FrameCompletion.waitForFrame(readWaitFrame)
-        case .write:
-            FrameCompletion.waitForFrame(writeWaitFrame)
-        case .readWrite:
-            FrameCompletion.waitForFrame(max(readWaitFrame, writeWaitFrame))
+            
+            if type == .read {
+                PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)] = newValue
+            } else {
+                PersistentBufferRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)] = newValue
+            }
         }
     }
     
@@ -1139,48 +1091,25 @@ public struct Texture : ResourceProtocol {
         }
     }
     
-    @inlinable
-    public var readWaitFrame: UInt64 {
+    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
             guard self.flags.contains(.persistent) else { return 0 }
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-            return PersistentTextureRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk]
+            if type == .read {
+                return PersistentTextureRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)]
+            } else {
+                return PersistentTextureRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)]
+            }
         }
         nonmutating set {
             guard self.flags.contains(.persistent) else { return }
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-            PersistentTextureRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk] = newValue
-        }
-    }
-    
-    @inlinable
-    public var writeWaitFrame: UInt64 {
-        get {
-            guard self.flags.contains(.persistent) else { return 0 }
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-            return PersistentTextureRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk]
-        }
-        nonmutating set {
-            guard self.flags.contains(.persistent) else { return }
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-            PersistentTextureRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk] = newValue
-        }
-    }
-    
-    @inlinable
-    public func waitForCPUAccess(accessType: ResourceAccessType) {
-        guard self.flags.contains(.persistent) else { return }
-
-        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-        let readWaitFrame = PersistentTextureRegistry.instance.chunks[chunkIndex].readWaitFrames[indexInChunk]
-        let writeWaitFrame = PersistentTextureRegistry.instance.chunks[chunkIndex].writeWaitFrames[indexInChunk]
-        switch accessType {
-        case .read:
-            FrameCompletion.waitForFrame(readWaitFrame)
-        case .write:
-            FrameCompletion.waitForFrame(writeWaitFrame)
-        case .readWrite:
-            FrameCompletion.waitForFrame(max(readWaitFrame, writeWaitFrame))
+            
+            if type == .read {
+                PersistentTextureRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)] = newValue
+            } else {
+                PersistentTextureRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)] = newValue
+            }
         }
     }
     

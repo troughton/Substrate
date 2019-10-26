@@ -19,7 +19,9 @@ enum MetalPreMetalFrameResourceCommands {
     case materialiseTextureView(Texture, usage: MetalTextureUsageProperties)
     case materialiseArgumentBuffer(_ArgumentBuffer)
     case materialiseArgumentBufferArray(_ArgumentBufferArray)
-    case disposeResource(Resource.Handle)
+    case disposeResource(Resource)
+    case storePersistentResourceAfterLastRead(Resource)
+    case storePersistentResourceAfterLastWrite(Resource)
     
     var isMaterialiseArgumentBuffer : Bool {
         switch self {
@@ -30,7 +32,7 @@ enum MetalPreMetalFrameResourceCommands {
         }
     }
     
-    func execute(resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches, waitEventValue: inout UInt64, signalEventValue: UInt64) {
+    func execute(resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches, queue: Queue, waitEventValue: inout UInt64, signalEventValue: UInt64) {
         switch self {
         case .materialiseBuffer(let buffer):
             resourceRegistry.allocateBufferIfNeeded(buffer)
@@ -56,15 +58,52 @@ enum MetalPreMetalFrameResourceCommands {
             resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer, stateCaches: stateCaches)
             waitEventValue = max(resourceRegistry.argumentBufferArrayWaitEvents[argumentBuffer]!.waitValue, waitEventValue)
             
-        case .disposeResource(let resourceHandle):
-            let resource = Resource(handle: resourceHandle)
-            let disposalWaitEvent = MetalWaitEvent(waitValue: signalEventValue)
+        case .disposeResource(let resource):
+            let disposalWaitEvent = MetalContextWaitEvent(waitValue: signalEventValue)
             if let buffer = resource.buffer {
                 resourceRegistry.disposeBuffer(buffer, keepingReference: true, waitEvent: disposalWaitEvent)
             } else if let texture = resource.texture {
                 resourceRegistry.disposeTexture(texture, keepingReference: true, waitEvent: disposalWaitEvent)
             } else if let argumentBuffer = resource.argumentBuffer {
                 resourceRegistry.disposeArgumentBuffer(argumentBuffer, keepingReference: true, waitEvent: disposalWaitEvent)
+            } else {
+                fatalError()
+            }
+        case .storePersistentResourceAfterLastRead(let resource):
+            if let buffer = resource.buffer {
+                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.bufferWaitEvents[buffer]?.waitValue ?? 0))
+                buffer[waitIndexFor: queue, accessType: .write] = signalEventValue
+                resourceRegistry.bufferWaitEvents[buffer] = disposalWaitEvent
+            } else if let texture = resource.texture {
+                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.textureWaitEvents[texture]?.waitValue ?? 0))
+                texture[waitIndexFor: queue, accessType: .write] = signalEventValue
+                resourceRegistry.textureWaitEvents[texture] = disposalWaitEvent
+            } else if let argumentBuffer = resource.argumentBuffer {
+                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.argumentBufferWaitEvents[argumentBuffer]?.waitValue ?? 0))
+                resourceRegistry.argumentBufferWaitEvents[argumentBuffer] = disposalWaitEvent
+            } else if let argumentBufferArray = resource.argumentBufferArray {
+                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray]?.waitValue ?? 0))
+                resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray] = disposalWaitEvent
+            } else {
+                fatalError()
+            }
+        case .storePersistentResourceAfterLastWrite(let resource):
+            if let buffer = resource.buffer {
+                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.bufferWaitEvents[buffer]?.waitValue ?? 0))
+                buffer[waitIndexFor: queue, accessType: .read] = signalEventValue
+                buffer[waitIndexFor: queue, accessType: .write] = disposalWaitEvent.waitValue
+                resourceRegistry.bufferWaitEvents[buffer] = disposalWaitEvent
+            } else if let texture = resource.texture {
+                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.textureWaitEvents[texture]?.waitValue ?? 0))
+                texture[waitIndexFor: queue, accessType: .read] = signalEventValue
+                texture[waitIndexFor: queue, accessType: .write] = disposalWaitEvent.waitValue
+                resourceRegistry.textureWaitEvents[texture] = disposalWaitEvent
+            } else if let argumentBuffer = resource.argumentBuffer {
+                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.argumentBufferWaitEvents[argumentBuffer]?.waitValue ?? 0))
+                resourceRegistry.argumentBufferWaitEvents[argumentBuffer] = disposalWaitEvent
+            } else if let argumentBufferArray = resource.argumentBufferArray {
+                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray]?.waitValue ?? 0))
+                resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray] = disposalWaitEvent
             } else {
                 fatalError()
             }
@@ -145,22 +184,29 @@ public final class MetalFrameGraph {
     let resourceRegistry : MetalResourceRegistry
     let stateCaches : MetalStateCaches
     
-    var syncEventValue : UInt64 = 0
+    var queueCommandBufferIndex : UInt64 = 0
     let syncEvent : MTLEvent
     
     let commandQueue : MTLCommandQueue
     let captureScope : MTLCaptureScope
     
+    var frameGraphQueue : Queue
+    
     var currentRenderTargetDescriptor : RenderTargetDescriptor? = nil
     
     init(device: MTLDevice, resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
         self.commandQueue = device.makeCommandQueue()!
+        self.frameGraphQueue = Queue()
         self.resourceRegistry = resourceRegistry
         self.stateCaches = stateCaches
 
         self.captureScope = MTLCaptureManager.shared().makeCaptureScope(device: device)
         self.captureScope.label = "FrameGraph Execution"
         self.syncEvent = device.makeEvent()!
+    }
+    
+    deinit {
+        self.frameGraphQueue.dispose()
     }
     
     public func beginFrameResourceAccess() {
@@ -231,7 +277,7 @@ public final class MetalFrameGraph {
     var commandEncoderDependencies = DependencyTable<Dependency?>(capacity: 1, defaultValue: nil)
     
     /// - param storedTextures: textures that are stored as part of a render target (and therefore can't be memoryless on iOS)
-    func generateResourceCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, renderTargetDescriptors: [MetalRenderTargetDescriptor?], storedTextures: [Texture]) {
+    func generateResourceCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, renderTargetDescriptors: [MetalRenderTargetDescriptor?], storedTextures: [Texture], lastCommandBufferIndex: UInt64) {
         let (passCommandEncoderIndices, _, commandEncoderCount) = MetalEncoderManager.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
         
         self.commandEncoderDependencies.resizeAndClear(capacity: commandEncoderCount, clearValue: nil)
@@ -397,9 +443,6 @@ public final class MetalFrameGraph {
             let canBeMemoryless = false
             #endif
             
-            let firstUsageEncoderIndex = passCommandEncoderIndices[firstUsage.renderPassRecord.passIndex]
-            let lastUsageEncoderIndex = passCommandEncoderIndices[lastUsage.renderPassRecord.passIndex]
-            
             // Insert commands to materialise and dispose of the resource.
             if let argumentBuffer = resource.argumentBuffer {
                 // Unlike textures and buffers, we materialise persistent argument buffers at first use rather than immediately.
@@ -409,9 +452,15 @@ public final class MetalFrameGraph {
                 
                 if !resource.flags.contains(.persistent), !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised) {
                     if historyBufferUseFrame {
-                        self.resourceRegistry.registerInitialisedHistoryBufferForDisposal(resource: Resource(argumentBuffer))
+                        self.resourceRegistry.registerInitialisedHistoryBufferForDisposal(resource: resource)
                     } else {
-                        self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .disposeResource(argumentBuffer.handle), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                        self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .disposeResource(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                    }
+                } else if resource.flags.contains(.persistent), (!resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised)) {
+                    self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .storePersistentResourceAfterLastRead(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                    
+                    if let usage = previousWrite {
+                        self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .storePersistentResourceAfterLastWrite(resource), passIndex: usage.renderPassRecord.passIndex, index: usage.commandRange.last!, order: .after))
                     }
                 }
                 
@@ -423,9 +472,9 @@ public final class MetalFrameGraph {
                     
                     if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised) {
                         if historyBufferUseFrame {
-                            self.resourceRegistry.registerInitialisedHistoryBufferForDisposal(resource: Resource(buffer))
+                            self.resourceRegistry.registerInitialisedHistoryBufferForDisposal(resource: resource)
                         } else {
-                            self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .disposeResource(buffer.handle), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                            self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .disposeResource(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
                         }
                     }
                     
@@ -478,10 +527,15 @@ public final class MetalFrameGraph {
                         if historyBufferUseFrame {
                             self.resourceRegistry.registerInitialisedHistoryBufferForDisposal(resource: Resource(texture))
                         } else {
-                            self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .disposeResource(texture.handle), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                            self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .disposeResource(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
                         }
                         
                     }
+                }
+            } else if resource.flags.contains(.persistent), (!resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised)) {
+                self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .storePersistentResourceAfterLastRead(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                if let usage = previousWrite {
+                    self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .storePersistentResourceAfterLastWrite(resource), passIndex: usage.renderPassRecord.passIndex, index: usage.commandRange.last!, order: .after))
                 }
             }
             
@@ -495,7 +549,7 @@ public final class MetalFrameGraph {
                 // which in turn have a transitive dependency on the write.
                 if readsSinceLastWrite.isEmpty, let previousWrite = previousWrite, previousWrite.renderPassRecord.pass.passType != .external {
                     let label = "(Aliasing fence for \(resource), type \(resource.type) with last write: \(previousWrite.type))"
-                    let updateFence = MetalFenceHandle(label: label)
+                    let updateFence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: lastCommandBufferIndex)
                     storeFences = [updateFence]
                     
                     self.resourceCommands.append(MetalFrameResourceCommand(command: .updateFence(updateFence, afterStages: MTLRenderStages(previousWrite.stages.last)), index: previousWrite.commandRange.last!, order: .after))
@@ -503,7 +557,7 @@ public final class MetalFrameGraph {
                 
                 for read in readsSinceLastWrite where read.renderPassRecord.pass.passType != .external {
                     let label = "(Aliasing fence for \(resource), type \(resource.type) with last read: \(read.type))"
-                    let updateFence = MetalFenceHandle(label: label)
+                    let updateFence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: lastCommandBufferIndex)
                     storeFences.append(updateFence)
                     
                     self.resourceCommands.append(MetalFrameResourceCommand(command: .updateFence(updateFence, afterStages: MTLRenderStages(read.stages.last)), index: read.commandRange.last!, order: .after))
@@ -521,7 +575,7 @@ public final class MetalFrameGraph {
             for dependentIndex in min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount {
                 if let dependency = self.commandEncoderDependencies.dependency(from: dependentIndex, on: sourceIndex) {
                     let label = "(Encoder \(sourceIndex) to Encoder \(dependentIndex))"
-                    let fence = MetalFenceHandle(label: label)
+                    let fence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: lastCommandBufferIndex)
                     self.resourceCommands.append(MetalFrameResourceCommand(command: .updateFence(fence, afterStages: MTLRenderStages(dependency.passStages.last)), index: dependency.passIndex, order: .after))
                     
                     self.resourceCommands.append(MetalFrameResourceCommand(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.dependentStages.first)), index: dependency.dependentIndex, order: .before))
@@ -562,22 +616,22 @@ public final class MetalFrameGraph {
         
         self.resourceRegistry.prepareFrame()
         
+        let firstEncoderSignalValue = self.queueCommandBufferIndex + 1 // The first encoder's MTLEvent signal value is one higher than the previous value used.
+        let passCommandBufferIndices = MetalFrameGraph.passCommandBufferIndices(passes: passes)
+        
         var storedTextures = [Texture]()
         let renderTargetDescriptors = self.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages, storedTextures: &storedTextures)
-        self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors, storedTextures: storedTextures)
+        self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors, storedTextures: storedTextures, lastCommandBufferIndex: firstEncoderSignalValue + UInt64(passCommandBufferIndices.count))
         
         let (passCommandEncoders, commandEncoderNames, commandEncoderCount) = MetalEncoderManager.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
         
-        let passCommandBufferIndices = MetalFrameGraph.passCommandBufferIndices(passes: passes)
         
         var commandEncoderWaitEventValues = (0..<commandEncoderCount).map { _ in 0 as UInt64 }
         
-        let firstEncoderSignalValue = self.syncEventValue + 1 // The first encoder's MTLEvent signal value is one higher than the previous value used.
-
         for command in self.resourceRegistryPreFrameCommands {
             let encoderIndex = passCommandEncoders[command.passIndex]
             let commandBufferIndex = passCommandBufferIndices[command.passIndex]
-            command.command.execute(resourceRegistry: self.resourceRegistry, stateCaches: self.stateCaches,
+            command.command.execute(resourceRegistry: self.resourceRegistry, stateCaches: self.stateCaches, queue: self.frameGraphQueue,
                                     waitEventValue: &commandEncoderWaitEventValues[encoderIndex], signalEventValue: UInt64(commandBufferIndex) + firstEncoderSignalValue)
         }
         
@@ -655,26 +709,27 @@ public final class MetalFrameGraph {
                 // Make sure that the sync event value is what we expect, so we don't update it past
                 // the signal for another buffer before that buffer has completed.
                 // We only need to do this if we haven't already waited in this command buffer for it.
-                // if commandEncoderWaitEventValues[commandEncoderIndex] != self.syncEventValue {
-                //     commandBuffer.encodeWaitForEvent(self.syncEvent, value: self.syncEventValue)
+                // if commandEncoderWaitEventValues[commandEncoderIndex] != self.queueCommandBufferIndex {
+                //     commandBuffer.encodeWaitForEvent(self.syncEvent, value: self.queueCommandBufferIndex)
                 // }
                 // Then, signal our own completion.
-                self.syncEventValue += 1
-                commandBuffer.encodeSignalEvent(self.syncEvent, value: self.syncEventValue)
+                self.queueCommandBufferIndex += 1
+                commandBuffer.encodeSignalEvent(self.syncEvent, value: self.queueCommandBufferIndex)
 
-                let cbIndex = committedCommandBufferCount
-                let frame = FrameGraph.currentFrameIndex
+                let cbIndex = self.queueCommandBufferIndex
 
                 commandBuffer.addCompletedHandler { (commandBuffer) in
                     if let error = commandBuffer.error {
-                        print("Error executing command buffer \(cbIndex) for frame \(frame): \(error)")
+                        print("Error executing command buffer \(cbIndex): \(error)")
                     }
+                    self.frameGraphQueue.lastCompletedCommand = cbIndex
                     if CAtomicsSubtract(commandBufferCount, 1, .relaxed) == 1 { // Only call completion for the last command buffer.
                         commandBufferCount.deallocate()
                         completion()
                     }
                 }
                 
+                self.frameGraphQueue.lastSubmittedCommand = cbIndex
                 commandBuffer.commit()
                 committedCommandBufferCount += 1
                 
@@ -697,7 +752,7 @@ public final class MetalFrameGraph {
             
             if commandEncoderIndex != passCommandBufferIndices[i] {
                 commandEncoderIndex = passCommandBufferIndices[i]
-                assert(commandEncoderWaitEventValues[commandEncoderIndex] <= self.syncEventValue)
+                assert(commandEncoderWaitEventValues[commandEncoderIndex] <= self.queueCommandBufferIndex)
                 commandBuffer!.encodeWaitForEvent(self.syncEvent, value: commandEncoderWaitEventValues[commandEncoderIndex])
             }
             
