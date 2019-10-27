@@ -153,7 +153,6 @@ struct MetalTextureUsageProperties {
 }
 
 public final class MetalFrameGraphContext : _FrameGraphContext {
-    
     public var accessSemaphore: Semaphore
     
     let backend : MetalBackend
@@ -169,7 +168,7 @@ public final class MetalFrameGraphContext : _FrameGraphContext {
     
     var currentRenderTargetDescriptor : RenderTargetDescriptor? = nil
     
-    init(backend: MetalBackend, inflightFrameCount: Int) {
+    public init(backend: MetalBackend, inflightFrameCount: Int) {
         self.backend = backend
         self.commandQueue = backend.device.makeCommandQueue()!
         self.frameGraphQueue = Queue()

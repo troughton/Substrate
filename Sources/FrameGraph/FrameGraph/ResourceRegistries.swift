@@ -46,7 +46,7 @@ public final class TransientBufferRegistry {
         
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
@@ -245,7 +245,7 @@ public final class TransientTextureRegistry {
         self.baseResources.advanced(by: index).initialize(to: Resource.invalidResource)
         self.textureViewInfos.advanced(by: index).initialize(to: nil)
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
@@ -262,7 +262,7 @@ public final class TransientTextureRegistry {
         
         baseResource.descriptor.usageHint.formUnion(.textureView)
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
@@ -289,7 +289,7 @@ public final class TransientTextureRegistry {
         self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
         self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
@@ -510,7 +510,7 @@ public final class TransientArgumentBufferRegistry {
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             self.count += 1
             
-            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
+            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
         }
     }
     
@@ -534,7 +534,7 @@ public final class TransientArgumentBufferRegistry {
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             self.count += 1
             
-            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
+            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
         }
     }
     
@@ -762,7 +762,7 @@ public final class TransientArgumentBufferArrayRegistry {
         self.bindings.advanced(by: index).initialize(to: [])
         self.labels.advanced(by: index).initialize(to: nil)
             
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
+        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
     @inlinable
