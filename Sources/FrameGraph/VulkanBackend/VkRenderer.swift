@@ -12,27 +12,27 @@ import FrameGraphCExtras
 import FrameGraphUtilities
 import Foundation
 
-public final class VkBackend : RenderBackendProtocol, FrameGraphBackend {
+public final class VkBackend : RenderBackendProtocol, FrameGraphContext {
     public let vulkanInstance : VulkanInstance
     public let device : VulkanDevice
     public let maxInflightFrames : Int
     
     let resourceRegistry : ResourceRegistry
     let shaderLibrary : VulkanShaderLibrary
-    let frameGraph : VulkanFrameGraphBackend
+    let frameGraph : VulkanFrameGraphContext
     
-    public init(instance: VulkanInstance, surface: VkSurfaceKHR, shaderLibraryURL: URL, numInflightFrames: Int) {
+    public init(instance: VulkanInstance, surface: VkSurfaceKHR, shaderLibraryURL: URL, inflightFrameCount: Int) {
         self.vulkanInstance = instance
-        self.maxInflightFrames = numInflightFrames
+        self.maxInflightFrames = inflightFrameCount
         let physicalDevice = self.vulkanInstance.createSystemDefaultDevice(surface: surface)!
         
         self.device = VulkanDevice(physicalDevice: physicalDevice)
         
-        self.resourceRegistry = ResourceRegistry(device: self.device, numInflightFrames: numInflightFrames)
+        self.resourceRegistry = ResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount)
         
         self.shaderLibrary = try! VulkanShaderLibrary(device: self.device, url: shaderLibraryURL)
         
-        self.frameGraph = VulkanFrameGraphBackend(device: self.device, resourceRegistry: resourceRegistry, shaderLibrary: self.shaderLibrary)
+        self.frameGraph = VulkanFrameGraphContext(device: self.device, resourceRegistry: resourceRegistry, shaderLibrary: self.shaderLibrary)
         
 //        RenderBackend.backend = self
         

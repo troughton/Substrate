@@ -79,7 +79,7 @@ public final class QueueRegistry {
     }
 }
 
-public struct Queue {
+public struct Queue : Equatable {
     let index : UInt8
     
     fileprivate init(index: UInt8) {
@@ -125,3 +125,5 @@ public struct Queue {
         }
     }
 }
+
+public typealias QueueCommandIndices = SIMD8<UInt64>

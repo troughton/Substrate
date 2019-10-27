@@ -1,5 +1,5 @@
 //
-//  VkFrameGraphBackend.swift
+//  VkFrameGraphContext.swift
 //  VkRenderer
 //
 //  Created by Joseph Bennett on 2/01/18.
@@ -10,7 +10,7 @@ import Vulkan
 import Dispatch
 import FrameGraphCExtras
 
-public final class VulkanFrameGraphBackend : _FrameGraphBackend {
+public final class VulkanFrameGraphContext : _FrameGraphContext {
     
     let device: VulkanDevice
     let resourceRegistry : ResourceRegistry

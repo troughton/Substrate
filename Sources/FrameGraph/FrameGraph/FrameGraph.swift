@@ -241,11 +241,12 @@ public enum DependencyType {
 //    case transitive
 }
 
-public protocol FrameGraphBackend : class {
+public protocol FrameGraphContext : class {
     
 }
 
-protocol _FrameGraphBackend : FrameGraphBackend, RenderBackendProtocol {
+protocol _FrameGraphContext : FrameGraphContext {
+    var accessSemaphore : Semaphore { get }
     func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
     func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void)
 }
@@ -289,12 +290,10 @@ public class FrameGraph {
     /// resourceUsagesAllocator is used for resource usages, and lasts one execution of the FrameGraph.
     static var resourceUsagesAllocator : TagAllocator! = nil
     
-    static var completionSemaphore = Semaphore(value: Int32(RenderBackend.maxInflightFrames))
-    
     private static var renderPasses : [RenderPassRecord] = []
     private static var renderPassLock = SpinLock()
     
-    public private(set) static var currentFrameIndex : UInt64 = 1 // starting at 0 causes issues for waits on the first frame.
+    public private(set) static var currentFrameIndex : UInt64 = 0
     
     private static var previousFrameCompletionTime : UInt64 = 0
     
@@ -644,8 +643,8 @@ public class FrameGraph {
         self.submissionNotifyQueue.append(function)
     }
     
-    public static func execute(backend: FrameGraphBackend, onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
-        let backend = backend as! _FrameGraphBackend
+    public static func execute(backend: FrameGraphContext, onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
+        let backend = backend as! _FrameGraphContext
         
         var renderPasses : [RenderPassRecord]! = nil
         let jobManager = self.jobManager
@@ -656,7 +655,7 @@ public class FrameGraph {
         }
         
         jobManager.dispatchSyncFrameGraph {
-            self.completionSemaphore.wait()
+            backend.accessSemaphore.wait()
             
             let currentFrameIndex = self.currentFrameIndex
             
@@ -703,7 +702,6 @@ public class FrameGraph {
                 self.lastFrameRenderDuration = Double(elapsed) * 1e-6
                 //            print("Frame \(currentFrameIndex) completed in \(self.lastFrameRenderDuration)ms.")
                 
-                self.completionSemaphore.signal()
                 onGPUCompletion?()
             }
             

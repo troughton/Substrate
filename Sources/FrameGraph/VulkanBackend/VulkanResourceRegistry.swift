@@ -38,9 +38,9 @@ public final class ResourceRegistry {
 
     public var frameGraphHasResourceAccess = false
     
-    public init(device: VulkanDevice, numInflightFrames: Int) {
+    public init(device: VulkanDevice, inflightFrameCount: Int) {
         self.device = device
-        self.commandPool = VulkanCommandPool(device: device, numInflightFrames: numInflightFrames)
+        self.commandPool = VulkanCommandPool(device: device, inflightFrameCount: inflightFrameCount)
         
         var allocatorInfo = VmaAllocatorCreateInfo()
         allocatorInfo.device = device.vkDevice
@@ -50,9 +50,9 @@ public final class ResourceRegistry {
         vmaCreateAllocator(&allocatorInfo, &allocator)
         self.vmaAllocator = allocator!
         
-        self.uploadResourceAllocator = PoolResourceAllocator(device: device, allocator: self.vmaAllocator, memoryUsage: VMA_MEMORY_USAGE_CPU_TO_GPU, numFrames: numInflightFrames)
+        self.uploadResourceAllocator = PoolResourceAllocator(device: device, allocator: self.vmaAllocator, memoryUsage: VMA_MEMORY_USAGE_CPU_TO_GPU, numFrames: inflightFrameCount)
         self.privateResourceAllocator = PoolResourceAllocator(device: device, allocator: self.vmaAllocator, memoryUsage: VMA_MEMORY_USAGE_GPU_ONLY, numFrames: 1)
-        self.temporaryBufferAllocator = TemporaryBufferAllocator(numFrames: numInflightFrames, allocator: self.vmaAllocator, device: device)
+        self.temporaryBufferAllocator = TemporaryBufferAllocator(numFrames: inflightFrameCount, allocator: self.vmaAllocator, device: device)
     }
     
     deinit {

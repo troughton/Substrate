@@ -75,9 +75,9 @@ public final class PersistentBufferRegistry {
         
         public let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this memory.
-        public let readWaitIndices : UnsafeMutablePointer<SIMD8<UInt64>>
+        public let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
-        public let writeWaitIndices : UnsafeMutablePointer<SIMD8<UInt64>>
+        public let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         public let descriptors : UnsafeMutablePointer<BufferDescriptor>
         public let usages : UnsafeMutablePointer<ResourceUsagesList>
         public let heaps : UnsafeMutablePointer<Heap>
@@ -318,9 +318,9 @@ public final class PersistentTextureRegistry {
         
         public let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this memory.
-        public let readWaitIndices : UnsafeMutablePointer<SIMD8<UInt64>>
+        public let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
-        public let writeWaitIndices : UnsafeMutablePointer<SIMD8<UInt64>>
+        public let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         public let descriptors : UnsafeMutablePointer<TextureDescriptor>
         public let usages : UnsafeMutablePointer<ResourceUsagesList>
         public let heaps : UnsafeMutablePointer<Heap>

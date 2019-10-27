@@ -56,13 +56,13 @@ public enum FrameGraphCommand {
     public typealias SetBytesArgs = (bindingPath: ResourceBindingPath, bytes: UnsafeRawPointer, length: UInt32)
     case setBytes(UnsafePointer<SetBytesArgs>)
     
-    public typealias SetBufferArgs = (bindingPath: ResourceBindingPath, handle: Buffer.Handle, offset: UInt32, hasDynamicOffset: Bool)
+    public typealias SetBufferArgs = (bindingPath: ResourceBindingPath, buffer: Buffer, offset: UInt32, hasDynamicOffset: Bool)
     case setBuffer(UnsafePointer<SetBufferArgs>)
     
-    public typealias SetBufferOffsetArgs = (bindingPath: ResourceBindingPath, handle: Buffer.Handle?, offset: UInt32)
+    public typealias SetBufferOffsetArgs = (bindingPath: ResourceBindingPath, buffer: Buffer?, offset: UInt32)
     case setBufferOffset(UnsafePointer<SetBufferOffsetArgs>)
     
-    public typealias SetTextureArgs = (bindingPath: ResourceBindingPath, handle: Texture.Handle)
+    public typealias SetTextureArgs = (bindingPath: ResourceBindingPath, texture: Texture)
     case setTexture(UnsafePointer<SetTextureArgs>)
     
     public typealias SetSamplerStateArgs = (bindingPath: ResourceBindingPath, descriptor: SamplerDescriptor)
@@ -78,7 +78,7 @@ public enum FrameGraphCommand {
     
     case clearRenderTargets
     
-    public typealias SetVertexBufferArgs = (handle: Buffer.Handle?, offset: UInt32, index: UInt32)
+    public typealias SetVertexBufferArgs = (buffer: Buffer?, offset: UInt32, index: UInt32)
     case setVertexBuffer(UnsafePointer<SetVertexBufferArgs>)
     
     case setVertexBufferOffset(offset: UInt32, index: UInt32)
@@ -88,7 +88,7 @@ public enum FrameGraphCommand {
     public typealias DrawPrimitivesArgs = (primitiveType: PrimitiveType, vertexStart: UInt32, vertexCount: UInt32, instanceCount: UInt32, baseInstance: UInt32)
     case drawPrimitives(UnsafePointer<DrawPrimitivesArgs>)
     
-    public typealias DrawIndexedPrimitivesArgs = (primitiveType: PrimitiveType, indexCount: UInt32, indexType: IndexType, indexBuffer: Buffer.Handle, indexBufferOffset: UInt32, instanceCount: UInt32, baseVertex: Int32, baseInstance: UInt32)
+    public typealias DrawIndexedPrimitivesArgs = (primitiveType: PrimitiveType, indexCount: UInt32, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: UInt32, instanceCount: UInt32, baseVertex: Int32, baseInstance: UInt32)
     case drawIndexedPrimitives(UnsafePointer<DrawIndexedPrimitivesArgs>)
     
     case setViewport(UnsafePointer<Viewport>)
@@ -121,7 +121,7 @@ public enum FrameGraphCommand {
     public typealias DispatchThreadgroupsArgs = (threadgroupsPerGrid: Size, threadsPerThreadgroup: Size)
     case dispatchThreadgroups(UnsafePointer<DispatchThreadgroupsArgs>)
     
-    public typealias DispatchThreadgroupsIndirectArgs = (indirectBuffer: Buffer.Handle, indirectBufferOffset: UInt32, threadsPerThreadgroup: Size)
+    public typealias DispatchThreadgroupsIndirectArgs = (indirectBuffer: Buffer, indirectBufferOffset: UInt32, threadsPerThreadgroup: Size)
     case dispatchThreadgroupsIndirect(UnsafePointer<DispatchThreadgroupsIndirectArgs>)
     
     case setComputePipelineDescriptor(Unmanaged<ComputePipelineDescriptorBox>)
@@ -133,41 +133,41 @@ public enum FrameGraphCommand {
     
     // Blit
     
-    public typealias CopyBufferToTextureArgs = (sourceBuffer: Buffer.Handle, sourceOffset: UInt32, sourceBytesPerRow: UInt32, sourceBytesPerImage: UInt32, sourceSize: Size, destinationTexture: Texture.Handle, destinationSlice: UInt32, destinationLevel: UInt32, destinationOrigin: Origin, options: BlitOption)
+    public typealias CopyBufferToTextureArgs = (sourceBuffer: Buffer, sourceOffset: UInt32, sourceBytesPerRow: UInt32, sourceBytesPerImage: UInt32, sourceSize: Size, destinationTexture: Texture, destinationSlice: UInt32, destinationLevel: UInt32, destinationOrigin: Origin, options: BlitOption)
     case copyBufferToTexture(UnsafePointer<CopyBufferToTextureArgs>)
     
-    public typealias CopyBufferToBufferArgs = (sourceBuffer: Buffer.Handle, sourceOffset: UInt32, destinationBuffer: Buffer.Handle, destinationOffset: UInt32, size: UInt32)
+    public typealias CopyBufferToBufferArgs = (sourceBuffer: Buffer, sourceOffset: UInt32, destinationBuffer: Buffer, destinationOffset: UInt32, size: UInt32)
     case copyBufferToBuffer(UnsafePointer<CopyBufferToBufferArgs>)
     
-    public typealias CopyTextureToBufferArgs = (sourceTexture: Texture.Handle, sourceSlice: UInt32, sourceLevel: UInt32, sourceOrigin: Origin, sourceSize: Size, destinationBuffer: Buffer.Handle, destinationOffset: UInt32, destinationBytesPerRow: UInt32, destinationBytesPerImage: UInt32, options: BlitOption)
+    public typealias CopyTextureToBufferArgs = (sourceTexture: Texture, sourceSlice: UInt32, sourceLevel: UInt32, sourceOrigin: Origin, sourceSize: Size, destinationBuffer: Buffer, destinationOffset: UInt32, destinationBytesPerRow: UInt32, destinationBytesPerImage: UInt32, options: BlitOption)
     case copyTextureToBuffer(UnsafePointer<CopyTextureToBufferArgs>)
     
-    public typealias CopyTextureToTextureArgs = (sourceTexture: Texture.Handle, sourceSlice: UInt32, sourceLevel: UInt32, sourceOrigin: Origin, sourceSize: Size, destinationTexture: Texture.Handle, destinationSlice: UInt32, destinationLevel: UInt32, destinationOrigin: Origin)
+    public typealias CopyTextureToTextureArgs = (sourceTexture: Texture, sourceSlice: UInt32, sourceLevel: UInt32, sourceOrigin: Origin, sourceSize: Size, destinationTexture: Texture, destinationSlice: UInt32, destinationLevel: UInt32, destinationOrigin: Origin)
     case copyTextureToTexture(UnsafePointer<CopyTextureToTextureArgs>)
     
-    public typealias FillBufferArgs = (buffer: Buffer.Handle, range: Range<Int>, value: UInt8)
+    public typealias FillBufferArgs = (buffer: Buffer, range: Range<Int>, value: UInt8)
     case fillBuffer(UnsafePointer<FillBufferArgs>)
     
-    case generateMipmaps(Texture.Handle)
+    case generateMipmaps(Texture)
     
-    case synchroniseTexture(Texture.Handle)
+    case synchroniseTexture(Texture)
     
-    public typealias SynchroniseTextureArgs = (texture: Texture.Handle, slice: UInt32, level: UInt32)
+    public typealias SynchroniseTextureArgs = (texture: Texture, slice: UInt32, level: UInt32)
     case synchroniseTextureSlice(UnsafePointer<SynchroniseTextureArgs>)
     
-    case synchroniseBuffer(Buffer.Handle)
+    case synchroniseBuffer(Buffer)
     
     // External:
     
     #if canImport(MetalPerformanceShaders)
     
     @available(OSX 10.14, *)
-    public typealias EncodeRayIntersectionArgs = (intersector: Unmanaged<MPSRayIntersector>, intersectionType: MPSIntersectionType, rayBuffer: Buffer.Handle, rayBufferOffset: Int, intersectionBuffer: Buffer.Handle, intersectionBufferOffset: Int, rayCount: Int, accelerationStructure: Unmanaged<MPSAccelerationStructure>)
+    public typealias EncodeRayIntersectionArgs = (intersector: Unmanaged<MPSRayIntersector>, intersectionType: MPSIntersectionType, rayBuffer: Buffer, rayBufferOffset: Int, intersectionBuffer: Buffer, intersectionBufferOffset: Int, rayCount: Int, accelerationStructure: Unmanaged<MPSAccelerationStructure>)
     @available(OSX 10.14, *)
     case encodeRayIntersection(UnsafePointer<EncodeRayIntersectionArgs>)
     
     @available(OSX 10.14, *)
-    public typealias EncodeRayIntersectionRayCountBufferArgs = (intersector: Unmanaged<MPSRayIntersector>, intersectionType: MPSIntersectionType, rayBuffer: Buffer.Handle, rayBufferOffset: Int, intersectionBuffer: Buffer.Handle, intersectionBufferOffset: Int, rayCountBuffer: Buffer.Handle, rayCountBufferOffset: Int, accelerationStructure: Unmanaged<MPSAccelerationStructure>)
+    public typealias EncodeRayIntersectionRayCountBufferArgs = (intersector: Unmanaged<MPSRayIntersector>, intersectionType: MPSIntersectionType, rayBuffer: Buffer, rayBufferOffset: Int, intersectionBuffer: Buffer, intersectionBufferOffset: Int, rayCountBuffer: Buffer, rayCountBufferOffset: Int, accelerationStructure: Unmanaged<MPSAccelerationStructure>)
     @available(OSX 10.14, *)
     case encodeRayIntersectionRayCountBuffer(UnsafePointer<EncodeRayIntersectionRayCountBufferArgs>)
     
@@ -447,7 +447,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         guard let buffer = buffer else { return }
         self.resourceUsages.registerResource(Resource(buffer))
         
-        let args : FrameGraphCommand.SetBufferArgs = (.nil, buffer.handle, UInt32(offset), false)
+        let args : FrameGraphCommand.SetBufferArgs = (.nil, buffer, UInt32(offset), false)
         
         self.resourceBindingCommands.append(
             (key, .setBuffer(commandRecorder.copyData(args)))
@@ -482,7 +482,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         guard let texture = texture else { return }
         self.resourceUsages.registerResource(Resource(texture))
         
-        let args : FrameGraphCommand.SetTextureArgs = (.nil, texture.handle)
+        let args : FrameGraphCommand.SetTextureArgs = (.nil, texture)
         
         self.resourceBindingCommands.append(
             (key, .setTexture(commandRecorder.copyData(args)))
@@ -698,15 +698,15 @@ public class ResourceBindingEncoder : CommandEncoder {
                     }
                     let setBufferArgs = setBufferArgsRaw.assumingMemoryBound(to: FrameGraphCommand.SetBufferArgs.self)
                     
-                    let handle = setBufferArgs.pointee.handle
-                    UnsafeMutablePointer(mutating: args).pointee.handle = handle
+                    let handle = setBufferArgs.pointee.buffer
+                    UnsafeMutablePointer(mutating: args).pointee.buffer = handle
                     setBufferArgs.pointee.hasDynamicOffset = true
                     
                     return currentlyBound
                     
                 case .setBuffer(let args):
                     if let previousArgs = currentlyBound?.bindingCommand?.assumingMemoryBound(to: FrameGraphCommand.SetBufferArgs.self) {
-                        if previousArgs.pointee.handle == args.pointee.handle { // Ignore the duplicate binding.
+                        if previousArgs.pointee.buffer == args.pointee.buffer { // Ignore the duplicate binding.
                             if !self.pipelineStateChanged, previousArgs.pointee.offset == args.pointee.offset {
                                 return currentlyBound
                             } /* else {
@@ -715,18 +715,18 @@ public class ResourceBindingEncoder : CommandEncoder {
                         }
                     }
                     
-                    identifier = args.pointee.handle
+                    identifier = args.pointee.buffer.handle
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
                     argsPtr = UnsafeMutableRawPointer(mutating: args)
                     
                 case .setTexture(let args):
                     if let previousArgs = currentlyBound?.bindingCommand?.assumingMemoryBound(to: FrameGraphCommand.SetTextureArgs.self) {
-                        if !self.pipelineStateChanged, previousArgs.pointee.handle == args.pointee.handle { // Ignore the duplicate binding.
+                        if !self.pipelineStateChanged, previousArgs.pointee.texture == args.pointee.texture { // Ignore the duplicate binding.
                             return currentlyBound
                         }
                     }
                     
-                    identifier = args.pointee.handle
+                    identifier = args.pointee.texture.handle
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
                     argsPtr = UnsafeMutableRawPointer(mutating: args)
                     
@@ -1286,7 +1286,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         let newUsageNode = self.resourceUsages.resourceUsageNode(for: buffer.handle, encoder: self, usageType: .vertexBuffer, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: self.nextCommandOffset)
         self.boundVertexBuffers[index] = newUsageNode
         
-        commandRecorder.record(FrameGraphCommand.setVertexBuffer, (buffer.handle, UInt32(offset), UInt32(index)))
+        commandRecorder.record(FrameGraphCommand.setVertexBuffer, (buffer, UInt32(offset), UInt32(index)))
     }
     
     public func setVertexBufferOffset(_ offset: Int, index: Int) {
@@ -1376,7 +1376,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         self.gpuCommandsStartIndexDepthStencil = self.gpuCommandsStartIndexDepthStencil ?? self.nextCommandOffset
         self.resourceUsages.addResourceUsage(for: indexBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .indexBuffer, stages: .vertex, inArgumentBuffer: false)
         
-        commandRecorder.record(FrameGraphCommand.drawIndexedPrimitives, (primitiveType, UInt32(indexCount), indexType, indexBuffer.handle, UInt32(indexBufferOffset), UInt32(instanceCount), Int32(baseVertex), UInt32(baseInstance)))
+        commandRecorder.record(FrameGraphCommand.drawIndexedPrimitives, (primitiveType, UInt32(indexCount), indexType, indexBuffer, UInt32(indexBufferOffset), UInt32(instanceCount), Int32(baseVertex), UInt32(baseInstance)))
     }
     
     public override func updateResourceUsages(endingEncoding: Bool = false) {
@@ -1507,7 +1507,7 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
         
         self.resourceUsages.addResourceUsage(for: indirectBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .indirectBuffer, stages: .compute, inArgumentBuffer: false)
         
-        commandRecorder.record(FrameGraphCommand.dispatchThreadgroupsIndirect, (indirectBuffer.handle, UInt32(indirectBufferOffset), threadsPerThreadgroup))
+        commandRecorder.record(FrameGraphCommand.dispatchThreadgroupsIndirect, (indirectBuffer, UInt32(indirectBufferOffset), threadsPerThreadgroup))
     }
 }
 
@@ -1547,7 +1547,7 @@ public final class BlitCommandEncoder : CommandEncoder {
         resourceUsages.addResourceUsage(for: sourceBuffer, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
         resourceUsages.addResourceUsage(for: destinationTexture, commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
         
-        commandRecorder.record(FrameGraphCommand.copyBufferToTexture, (sourceBuffer.handle, UInt32(sourceOffset), UInt32(sourceBytesPerRow), UInt32(sourceBytesPerImage), sourceSize, destinationTexture.handle, UInt32(destinationSlice), UInt32(destinationLevel), destinationOrigin, options))
+        commandRecorder.record(FrameGraphCommand.copyBufferToTexture, (sourceBuffer, UInt32(sourceOffset), UInt32(sourceBytesPerRow), UInt32(sourceBytesPerImage), sourceSize, destinationTexture, UInt32(destinationSlice), UInt32(destinationLevel), destinationOrigin, options))
     }
     
     public func copy(from sourceBuffer: Buffer, sourceOffset: Int, to destinationBuffer: Buffer, destinationOffset: Int, size: Int) {
@@ -1556,7 +1556,7 @@ public final class BlitCommandEncoder : CommandEncoder {
         resourceUsages.addResourceUsage(for: sourceBuffer, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
         resourceUsages.addResourceUsage(for: destinationBuffer, commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
         
-        commandRecorder.record(FrameGraphCommand.copyBufferToBuffer, (sourceBuffer.handle, UInt32(sourceOffset), destinationBuffer.handle, UInt32(destinationOffset), UInt32(size)))
+        commandRecorder.record(FrameGraphCommand.copyBufferToBuffer, (sourceBuffer, UInt32(sourceOffset), destinationBuffer, UInt32(destinationOffset), UInt32(size)))
     }
     
     public func copy(from sourceTexture: Texture, sourceSlice: Int, sourceLevel: Int, sourceOrigin: Origin, sourceSize: Size, to destinationBuffer: Buffer, destinationOffset: Int, destinationBytesPerRow: Int, destinationBytesPerImage: Int, options: BlitOption = []) {
@@ -1565,7 +1565,7 @@ public final class BlitCommandEncoder : CommandEncoder {
         resourceUsages.addResourceUsage(for: sourceTexture, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
         resourceUsages.addResourceUsage(for: destinationBuffer, commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
         
-        commandRecorder.record(FrameGraphCommand.copyTextureToBuffer, (sourceTexture.handle, UInt32(sourceSlice), UInt32(sourceLevel), sourceOrigin, sourceSize, destinationBuffer.handle, UInt32(destinationOffset), UInt32(destinationBytesPerRow), UInt32(destinationBytesPerImage), options))
+        commandRecorder.record(FrameGraphCommand.copyTextureToBuffer, (sourceTexture, UInt32(sourceSlice), UInt32(sourceLevel), sourceOrigin, sourceSize, destinationBuffer, UInt32(destinationOffset), UInt32(destinationBytesPerRow), UInt32(destinationBytesPerImage), options))
     }
     
     public func copy(from sourceTexture: Texture, sourceSlice: Int, sourceLevel: Int, sourceOrigin: Origin, sourceSize: Size, to destinationTexture: Texture, destinationSlice: Int, destinationLevel: Int, destinationOrigin: Origin) {
@@ -1574,35 +1574,35 @@ public final class BlitCommandEncoder : CommandEncoder {
         resourceUsages.addResourceUsage(for: sourceTexture, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
         resourceUsages.addResourceUsage(for: destinationTexture, commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
         
-        commandRecorder.record(FrameGraphCommand.copyTextureToTexture, (sourceTexture.handle, UInt32(sourceSlice), UInt32(sourceLevel), sourceOrigin, sourceSize, destinationTexture.handle, UInt32(destinationSlice), UInt32(destinationLevel), destinationOrigin))
+        commandRecorder.record(FrameGraphCommand.copyTextureToTexture, (sourceTexture, UInt32(sourceSlice), UInt32(sourceLevel), sourceOrigin, sourceSize, destinationTexture, UInt32(destinationSlice), UInt32(destinationLevel), destinationOrigin))
     }
     
     public func fill(buffer: Buffer, range: Range<Int>, value: UInt8) {
         resourceUsages.addResourceUsage(for: buffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
         
-        commandRecorder.record(FrameGraphCommand.fillBuffer, (buffer.handle, range, value))
+        commandRecorder.record(FrameGraphCommand.fillBuffer, (buffer, range, value))
     }
     
     public func generateMipmaps(for texture: Texture) {
         resourceUsages.addResourceUsage(for: texture, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
         
-        commandRecorder.record(.generateMipmaps(texture.handle))
+        commandRecorder.record(.generateMipmaps(texture))
     }
     
     public func synchronize(buffer: Buffer) {
         resourceUsages.addResourceUsage(for: buffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
         
-        commandRecorder.record(.synchroniseBuffer(buffer.handle))
+        commandRecorder.record(.synchroniseBuffer(buffer))
     }
     
     public func synchronize(texture: Texture) {
         resourceUsages.addResourceUsage(for: texture, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
-        commandRecorder.record(.synchroniseTexture(texture.handle))
+        commandRecorder.record(.synchroniseTexture(texture))
     }
     
     public func synchronize(texture: Texture, slice: Int, level: Int) {
         resourceUsages.addResourceUsage(for: texture, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
-        commandRecorder.record(FrameGraphCommand.synchroniseTextureSlice, (texture.handle, UInt32(slice), UInt32(level)))
+        commandRecorder.record(FrameGraphCommand.synchroniseTextureSlice, (texture, UInt32(slice), UInt32(level)))
     }
 }
 
@@ -1650,7 +1650,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
         resourceUsages.addResourceUsage(for: rayBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
         resourceUsages.addResourceUsage(for: intersectionBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
         
-        commandRecorder.record(FrameGraphCommand.encodeRayIntersection, (intersector, intersectionType, rayBuffer.handle, rayBufferOffset, intersectionBuffer.handle, intersectionBufferOffset, rayCount, accelerationStructure))
+        commandRecorder.record(FrameGraphCommand.encodeRayIntersection, (intersector, intersectionType, rayBuffer, rayBufferOffset, intersectionBuffer, intersectionBufferOffset, rayCount, accelerationStructure))
     }
     
     @available(OSX 10.14, *)
@@ -1666,7 +1666,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
         resourceUsages.addResourceUsage(for: intersectionBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
         resourceUsages.addResourceUsage(for: rayCountBuffer, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
         
-        commandRecorder.record(FrameGraphCommand.encodeRayIntersectionRayCountBuffer, (intersector, intersectionType, rayBuffer.handle, rayBufferOffset, intersectionBuffer.handle, intersectionBufferOffset, rayCountBuffer.handle, rayCountBufferOffset, accelerationStructure))
+        commandRecorder.record(FrameGraphCommand.encodeRayIntersectionRayCountBuffer, (intersector, intersectionType, rayBuffer, rayBufferOffset, intersectionBuffer, intersectionBufferOffset, rayCountBuffer, rayCountBufferOffset, accelerationStructure))
     }
     
     #endif

@@ -20,8 +20,9 @@ enum MetalPreMetalFrameResourceCommands {
     case materialiseArgumentBuffer(_ArgumentBuffer)
     case materialiseArgumentBufferArray(_ArgumentBufferArray)
     case disposeResource(Resource)
-    case storePersistentResourceAfterLastRead(Resource)
-    case storePersistentResourceAfterLastWrite(Resource)
+    
+    case waitForCommandBuffer(index: UInt64, queue: Queue)
+    case updateCommandBufferWaitIndex(Resource)
     
     var isMaterialiseArgumentBuffer : Bool {
         switch self {
@@ -32,17 +33,19 @@ enum MetalPreMetalFrameResourceCommands {
         }
     }
     
-    func execute(resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches, queue: Queue, waitEventValue: inout UInt64, signalEventValue: UInt64) {
+    func execute(resourceRegistry: MetalTransientResourceRegistry, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches, queue: Queue, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+        let queueIndex = Int(queue.index)
+        
         switch self {
         case .materialiseBuffer(let buffer):
             resourceRegistry.allocateBufferIfNeeded(buffer)
-            waitEventValue = max(resourceRegistry.bufferWaitEvents[buffer]!.waitValue, waitEventValue)
+            waitEventValues[queueIndex] = max(resourceRegistry.bufferWaitEvents[buffer]!.waitValue, waitEventValues[queueIndex])
             buffer.applyDeferredSliceActions()
             
         case .materialiseTexture(let texture, let usage):
             resourceRegistry.allocateTextureIfNeeded(texture, usage: usage)
             if let textureWaitEvent = resourceRegistry.textureWaitEvents[texture] {
-                waitEventValue = max(textureWaitEvent.waitValue, waitEventValue)
+                waitEventValues[queueIndex] = max(textureWaitEvent.waitValue, waitEventValues[queueIndex])
             } else {
                 assert(texture.flags.contains(.windowHandle))
             }
@@ -51,62 +54,32 @@ enum MetalPreMetalFrameResourceCommands {
             resourceRegistry.allocateTextureView(texture, properties: usage)
             
         case .materialiseArgumentBuffer(let argumentBuffer):
-            resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, stateCaches: stateCaches)
-            waitEventValue = max(resourceRegistry.argumentBufferWaitEvents[argumentBuffer]!.waitValue, waitEventValue)
+            resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
+            waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
             
         case .materialiseArgumentBufferArray(let argumentBuffer):
-            resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer, stateCaches: stateCaches)
-            waitEventValue = max(resourceRegistry.argumentBufferArrayWaitEvents[argumentBuffer]!.waitValue, waitEventValue)
+            resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
+            waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
             
         case .disposeResource(let resource):
             let disposalWaitEvent = MetalContextWaitEvent(waitValue: signalEventValue)
             if let buffer = resource.buffer {
-                resourceRegistry.disposeBuffer(buffer, keepingReference: true, waitEvent: disposalWaitEvent)
+                resourceRegistry.disposeBuffer(buffer, waitEvent: disposalWaitEvent)
             } else if let texture = resource.texture {
-                resourceRegistry.disposeTexture(texture, keepingReference: true, waitEvent: disposalWaitEvent)
+                resourceRegistry.disposeTexture(texture, waitEvent: disposalWaitEvent)
             } else if let argumentBuffer = resource.argumentBuffer {
-                resourceRegistry.disposeArgumentBuffer(argumentBuffer, keepingReference: true, waitEvent: disposalWaitEvent)
+                resourceRegistry.disposeArgumentBuffer(argumentBuffer, waitEvent: disposalWaitEvent)
             } else {
                 fatalError()
             }
-        case .storePersistentResourceAfterLastRead(let resource):
-            if let buffer = resource.buffer {
-                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.bufferWaitEvents[buffer]?.waitValue ?? 0))
-                buffer[waitIndexFor: queue, accessType: .write] = signalEventValue
-                resourceRegistry.bufferWaitEvents[buffer] = disposalWaitEvent
-            } else if let texture = resource.texture {
-                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.textureWaitEvents[texture]?.waitValue ?? 0))
-                texture[waitIndexFor: queue, accessType: .write] = signalEventValue
-                resourceRegistry.textureWaitEvents[texture] = disposalWaitEvent
-            } else if let argumentBuffer = resource.argumentBuffer {
-                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.argumentBufferWaitEvents[argumentBuffer]?.waitValue ?? 0))
-                resourceRegistry.argumentBufferWaitEvents[argumentBuffer] = disposalWaitEvent
-            } else if let argumentBufferArray = resource.argumentBufferArray {
-                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray]?.waitValue ?? 0))
-                resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray] = disposalWaitEvent
-            } else {
-                fatalError()
-            }
-        case .storePersistentResourceAfterLastWrite(let resource):
-            if let buffer = resource.buffer {
-                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.bufferWaitEvents[buffer]?.waitValue ?? 0))
-                buffer[waitIndexFor: queue, accessType: .read] = signalEventValue
-                buffer[waitIndexFor: queue, accessType: .write] = disposalWaitEvent.waitValue
-                resourceRegistry.bufferWaitEvents[buffer] = disposalWaitEvent
-            } else if let texture = resource.texture {
-                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.textureWaitEvents[texture]?.waitValue ?? 0))
-                texture[waitIndexFor: queue, accessType: .read] = signalEventValue
-                texture[waitIndexFor: queue, accessType: .write] = disposalWaitEvent.waitValue
-                resourceRegistry.textureWaitEvents[texture] = disposalWaitEvent
-            } else if let argumentBuffer = resource.argumentBuffer {
-                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.argumentBufferWaitEvents[argumentBuffer]?.waitValue ?? 0))
-                resourceRegistry.argumentBufferWaitEvents[argumentBuffer] = disposalWaitEvent
-            } else if let argumentBufferArray = resource.argumentBufferArray {
-                let disposalWaitEvent = MetalContextWaitEvent(waitValue: max(signalEventValue, resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray]?.waitValue ?? 0))
-                resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray] = disposalWaitEvent
-            } else {
-                fatalError()
-            }
+            
+        case .waitForCommandBuffer(let index, let waitQueue):
+            waitEventValues[Int(waitQueue.index)] = max(index, waitEventValues[Int(waitQueue.index)])
+            
+        case .updateCommandBufferWaitIndex(let resource):
+            // TODO: split out reads and writes.
+            resource[waitIndexFor: queue, accessType: .read] = signalEventValue
+            resource[waitIndexFor: queue, accessType: .write] = signalEventValue
         }
     }
 }
@@ -179,10 +152,12 @@ struct MetalTextureUsageProperties {
     }
 }
 
-public final class MetalFrameGraph {
+public final class MetalFrameGraphContext : _FrameGraphContext {
     
-    let resourceRegistry : MetalResourceRegistry
-    let stateCaches : MetalStateCaches
+    public var accessSemaphore: Semaphore
+    
+    let backend : MetalBackend
+    let resourceRegistry : MetalTransientResourceRegistry
     
     var queueCommandBufferIndex : UInt64 = 0
     let syncEvent : MTLEvent
@@ -194,24 +169,31 @@ public final class MetalFrameGraph {
     
     var currentRenderTargetDescriptor : RenderTargetDescriptor? = nil
     
-    init(device: MTLDevice, resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
-        self.commandQueue = device.makeCommandQueue()!
+    init(backend: MetalBackend, inflightFrameCount: Int) {
+        self.backend = backend
+        self.commandQueue = backend.device.makeCommandQueue()!
         self.frameGraphQueue = Queue()
-        self.resourceRegistry = resourceRegistry
-        self.stateCaches = stateCaches
-
-        self.captureScope = MTLCaptureManager.shared().makeCaptureScope(device: device)
+        self.resourceRegistry = MetalTransientResourceRegistry(device: backend.device, inflightFrameCount: inflightFrameCount)
+        self.accessSemaphore = Semaphore(value: Int32(inflightFrameCount))
+        
+        self.captureScope = MTLCaptureManager.shared().makeCaptureScope(device: backend.device)
         self.captureScope.label = "FrameGraph Execution"
-        self.syncEvent = device.makeEvent()!
+        self.syncEvent = backend.device.makeEvent()!
+        
+        backend.queueSyncEvents[Int(self.frameGraphQueue.index)] = self.syncEvent
     }
     
     deinit {
+        backend.queueSyncEvents[Int(self.frameGraphQueue.index)] = nil
         self.frameGraphQueue.dispose()
     }
     
     public func beginFrameResourceAccess() {
-        self.resourceRegistry.frameGraphHasResourceAccess = true
-        self.stateCaches.checkForLibraryReload()
+        self.backend.setActiveContext(self)
+    }
+    
+    var resourceMap : MetalFrameResourceMap {
+        return MetalFrameResourceMap(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
     // Generates a render target descriptor, if applicable, for each pass.
@@ -457,11 +439,12 @@ public final class MetalFrameGraph {
                         self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .disposeResource(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
                     }
                 } else if resource.flags.contains(.persistent), (!resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised)) {
-                    self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .storePersistentResourceAfterLastRead(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
-                    
-                    if let usage = previousWrite {
-                        self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .storePersistentResourceAfterLastWrite(resource), passIndex: usage.renderPassRecord.passIndex, index: usage.commandRange.last!, order: .after))
+                    for queue in QueueRegistry.allQueues {
+                        // TODO: separate out the wait index for the first read from the first write.
+                        let waitIndex = resource[waitIndexFor: queue, accessType: previousWrite != nil ? .readWrite : .read]
+                        self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.last!, order: .before))
                     }
+                    self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
                 }
                 
             } else if !resource.flags.contains(.persistent) || resource.flags.contains(.windowHandle) {
@@ -533,10 +516,12 @@ public final class MetalFrameGraph {
                     }
                 }
             } else if resource.flags.contains(.persistent), (!resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised)) {
-                self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .storePersistentResourceAfterLastRead(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
-                if let usage = previousWrite {
-                    self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .storePersistentResourceAfterLastWrite(resource), passIndex: usage.renderPassRecord.passIndex, index: usage.commandRange.last!, order: .after))
+                for queue in QueueRegistry.allQueues {
+                    // TODO: separate out the wait index for the first read from the first write.
+                    let waitIndex = resource[waitIndexFor: queue, accessType: previousWrite != nil ? .readWrite : .read]
+                    self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.last!, order: .before))
                 }
+                self.resourceRegistryPreFrameCommands.append(MetalPreMetalFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
             }
             
             if resourceRegistry.isAliasedHeapResource(resource: resource), !canBeMemoryless {
@@ -617,7 +602,7 @@ public final class MetalFrameGraph {
         self.resourceRegistry.prepareFrame()
         
         let firstEncoderSignalValue = self.queueCommandBufferIndex + 1 // The first encoder's MTLEvent signal value is one higher than the previous value used.
-        let passCommandBufferIndices = MetalFrameGraph.passCommandBufferIndices(passes: passes)
+        let passCommandBufferIndices = MetalFrameGraphContext.passCommandBufferIndices(passes: passes)
         
         var storedTextures = [Texture]()
         let renderTargetDescriptors = self.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages, storedTextures: &storedTextures)
@@ -626,13 +611,13 @@ public final class MetalFrameGraph {
         let (passCommandEncoders, commandEncoderNames, commandEncoderCount) = MetalEncoderManager.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
         
         
-        var commandEncoderWaitEventValues = (0..<commandEncoderCount).map { _ in 0 as UInt64 }
+        var commandEncoderWaitEventValues = (0..<commandEncoderCount).map { _ in QueueCommandIndices(repeating: 0) }
         
         for command in self.resourceRegistryPreFrameCommands {
             let encoderIndex = passCommandEncoders[command.passIndex]
             let commandBufferIndex = passCommandBufferIndices[command.passIndex]
-            command.command.execute(resourceRegistry: self.resourceRegistry, stateCaches: self.stateCaches, queue: self.frameGraphQueue,
-                                    waitEventValue: &commandEncoderWaitEventValues[encoderIndex], signalEventValue: UInt64(commandBufferIndex) + firstEncoderSignalValue)
+            command.command.execute(resourceRegistry: self.resourceRegistry, resourceMap: self.resourceMap, stateCaches: backend.stateCaches, queue: self.frameGraphQueue,
+                                    waitEventValues: &commandEncoderWaitEventValues[encoderIndex], signalEventValue: UInt64(commandBufferIndex) + firstEncoderSignalValue)
         }
         
         self.resourceRegistryPreFrameCommands.removeAll(keepingCapacity: true)
@@ -645,10 +630,10 @@ public final class MetalFrameGraph {
                     commandEncoder.encoder.label = commandEncoderNames[passCommandEncoders[i]]
                 }
                 
-                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
                 
             case .draw:
-                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: renderTargetDescriptors[i]!, textureUsages: self.renderTargetTextureProperties, resourceCommands: resourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches) else {
+                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: renderTargetDescriptors[i]!, textureUsages: self.renderTargetTextureProperties, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches) else {
                     if _isDebugAssertConfiguration() {
                         print("Warning: skipping pass \(passRecord.pass.name) since the drawable for the render target could not be retrieved.")
                     }
@@ -659,18 +644,18 @@ public final class MetalFrameGraph {
                     commandEncoder.label = commandEncoderNames[passCommandEncoders[i]]
                 }
                 
-                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, renderTarget: renderTargetDescriptors[i]!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, renderTarget: renderTargetDescriptors[i]!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             case .compute:
                 let commandEncoder = encoderManager.computeCommandEncoder()
                 if commandEncoder.encoder.label == nil {
                     commandEncoder.encoder.label = commandEncoderNames[passCommandEncoders[i]]
                 }
                 
-                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
                 
             case .external:
                 let commandEncoder = encoderManager.externalCommandEncoder()
-                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
                 
             case .cpu:
                 break
@@ -726,6 +711,7 @@ public final class MetalFrameGraph {
                     if CAtomicsSubtract(commandBufferCount, 1, .relaxed) == 1 { // Only call completion for the last command buffer.
                         commandBufferCount.deallocate()
                         completion()
+                        self.accessSemaphore.signal()
                     }
                 }
                 
@@ -747,13 +733,25 @@ public final class MetalFrameGraph {
             if commandBuffer == nil {
                 CAtomicsAdd(commandBufferCount, 1, .relaxed)
                 commandBuffer = self.commandQueue.makeCommandBuffer()!
-                encoderManager = MetalEncoderManager(commandBuffer: commandBuffer!, resourceRegistry: self.resourceRegistry)
+                encoderManager = MetalEncoderManager(commandBuffer: commandBuffer!, resourceMap: self.resourceMap)
             }
             
             if commandEncoderIndex != passCommandBufferIndices[i] {
                 commandEncoderIndex = passCommandBufferIndices[i]
-                assert(commandEncoderWaitEventValues[commandEncoderIndex] <= self.queueCommandBufferIndex)
-                commandBuffer!.encodeWaitForEvent(self.syncEvent, value: commandEncoderWaitEventValues[commandEncoderIndex])
+                
+                let waitEventValues = commandEncoderWaitEventValues[commandEncoderIndex]
+                for queue in QueueRegistry.allQueues {
+                    if waitEventValues[Int(queue.index)] > queue.lastCompletedCommand {
+                        if let event = backend.queueSyncEvents[Int(queue.index)] {
+                            commandBuffer!.encodeWaitForEvent(event, value: waitEventValues[Int(queue.index)])
+                        } else {
+                            // It's not a Metal queue, so the best we can do is sleep and wait until the queue is completd.
+                            while queue.lastCompletedCommand < waitEventValues[Int(queue.index)] {
+                                sleep(0)
+                            }
+                        }
+                    }
+                }
             }
             
             executePass(passRecord, i: i, encoderManager: encoderManager!)
@@ -766,11 +764,12 @@ public final class MetalFrameGraph {
             completion()
         }
         
-        self.resourceRegistry.frameGraphHasResourceAccess = false
-        
         self.resourceCommands.removeAll(keepingCapacity: true)
         
         self.renderTargetTextureProperties.removeAll(keepingCapacity: true)
+        
+        assert(self.backend.activeContext === self)
+        self.backend.activeContext = nil
     }
 }
 

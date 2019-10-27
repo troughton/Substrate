@@ -87,15 +87,15 @@ extension MTLSamplerDescriptor {
 
 
 extension MTLRenderPassAttachmentDescriptor {
-    func fill(from descriptor: RenderTargetAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceRegistry: MetalResourceRegistry) throws {
+    func fill(from descriptor: RenderTargetAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
         
         let texture = descriptor.texture
-        self.texture = try resourceRegistry.allocateRenderTargetTexture(texture)
+        self.texture = try resourceMap.renderTargetTexture(texture)
         self.level = descriptor.level
         self.slice = descriptor.slice
         self.depthPlane = descriptor.depthPlane
         
-        self.resolveTexture = try descriptor.resolveTexture.map { try resourceRegistry.allocateRenderTargetTexture($0) }
+        self.resolveTexture = try descriptor.resolveTexture.map { try resourceMap.renderTargetTexture($0) }
         self.resolveLevel = descriptor.resolveLevel
         self.resolveSlice = descriptor.resolveSlice
         self.resolveDepthPlane = descriptor.resolveDepthPlane
@@ -106,9 +106,9 @@ extension MTLRenderPassAttachmentDescriptor {
 }
 
 extension MTLRenderPassColorAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceRegistry: MetalResourceRegistry) throws {
+    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
         self.init()
-        try self.fill(from: descriptor, actions: actions, resourceRegistry: resourceRegistry)
+        try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         
         if let clearColor = descriptor.clearColor {
             self.clearColor = MTLClearColor(clearColor)
@@ -117,9 +117,9 @@ extension MTLRenderPassColorAttachmentDescriptor {
 }
 
 extension MTLRenderPassDepthAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceRegistry: MetalResourceRegistry) throws {
+    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
         self.init()
-        try self.fill(from: descriptor, actions: actions, resourceRegistry: resourceRegistry)
+        try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         
         if let clearDepth = descriptor.clearDepth {
             self.clearDepth = clearDepth
@@ -129,9 +129,9 @@ extension MTLRenderPassDepthAttachmentDescriptor {
 }
 
 extension MTLRenderPassStencilAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceRegistry: MetalResourceRegistry) throws {
+    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
         self.init()
-        try self.fill(from: descriptor, actions: actions, resourceRegistry: resourceRegistry)
+        try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         
         if let clearStencil = descriptor.clearStencil {
             self.clearStencil = clearStencil
@@ -140,25 +140,25 @@ extension MTLRenderPassStencilAttachmentDescriptor {
 }
 
 extension MTLRenderPassDescriptor {
-    convenience init(_ descriptorWrapper: MetalRenderTargetDescriptor, resourceRegistry: MetalResourceRegistry) throws {
+    convenience init(_ descriptorWrapper: MetalRenderTargetDescriptor, resourceMap: MetalFrameResourceMap) throws {
         self.init()
         let descriptor = descriptorWrapper.descriptor
         
         for (i, attachment) in descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
-            self.colorAttachments[i] = try MTLRenderPassColorAttachmentDescriptor(attachment, actions: descriptorWrapper.colorActions[i], resourceRegistry: resourceRegistry)
+            self.colorAttachments[i] = try MTLRenderPassColorAttachmentDescriptor(attachment, actions: descriptorWrapper.colorActions[i], resourceMap: resourceMap)
         }
         
         if let depthAttachment = descriptor.depthAttachment {
-            self.depthAttachment = try MTLRenderPassDepthAttachmentDescriptor(depthAttachment, actions: descriptorWrapper.depthActions, resourceRegistry: resourceRegistry)
+            self.depthAttachment = try MTLRenderPassDepthAttachmentDescriptor(depthAttachment, actions: descriptorWrapper.depthActions, resourceMap: resourceMap)
         }
         
         if let stencilAttachment = descriptor.stencilAttachment {
-            self.stencilAttachment = try MTLRenderPassStencilAttachmentDescriptor(stencilAttachment,  actions: descriptorWrapper.stencilActions, resourceRegistry: resourceRegistry)
+            self.stencilAttachment = try MTLRenderPassStencilAttachmentDescriptor(stencilAttachment, actions: descriptorWrapper.stencilActions, resourceMap: resourceMap)
         }
         
         if let visibilityBuffer = descriptor.visibilityResultBuffer {
-            let buffer = resourceRegistry.allocateBufferIfNeeded(visibilityBuffer)
+            let buffer = resourceMap[visibilityBuffer]
             assert(buffer.offset == 0, "TODO: Non-zero offsets need to be passed to the MTLRenderCommandEncoder via setVisibilityResultMode()")
             self.visibilityResultBuffer = buffer.buffer
         }

@@ -79,7 +79,7 @@ public struct ResourceFlags : OptionSet {
     public static let persistent = ResourceFlags(rawValue: 1 << 0)
     public static let windowHandle = ResourceFlags(rawValue: 1 << 1)
     public static let historyBuffer = ResourceFlags(rawValue: 1 << 2)
-    public static let externalOwnership = ResourceFlags(rawValue: 1 << 3)
+    public static let externalOwnership = ResourceFlags(rawValue: (1 << 3) | (1 << 0))
     public static let immutableOnceInitialised = ResourceFlags(rawValue: 1 << 4)
     /// If this resource is a view into another resource.
     public static let resourceView = ResourceFlags(rawValue: 1 << 5)

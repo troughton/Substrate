@@ -87,17 +87,17 @@ public struct Semaphore {
     }
     
     @inlinable
-    public mutating func signal() {
+    public func signal() {
         CAtomicsAdd(self.value, 1, .relaxed)
     }
     
     @inlinable
-    public mutating func signal(count: Int) {
+    public func signal(count: Int) {
         CAtomicsAdd(self.value, Int32(count), .relaxed)
     }
     
     @inlinable
-    public mutating func wait() {
+    public func wait() {
         // If the value was greater than 0, we can proceed immediately.
         while CAtomicsSubtract(self.value, 1, .relaxed) <= 0 {
             // Otherwise, reset and try again.

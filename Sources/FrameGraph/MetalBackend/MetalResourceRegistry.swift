@@ -61,27 +61,354 @@ struct MTLTextureReference : MTLResourceReference {
     }
 }
 
-final class MetalResourceRegistry {
+struct MetalFrameResourceMap {
+    let persistentRegistry : MetalPersistentResourceRegistry
+    let transientRegistry : MetalTransientResourceRegistry
     
+    subscript(buffer: Buffer) -> MTLBufferReference {
+        if buffer.flags.contains(.persistent) {
+            return persistentRegistry[buffer]!
+        } else {
+            return transientRegistry[buffer]!
+        }
+    }
+    
+    subscript(texture: Texture) -> MTLTexture {
+        if texture.flags.contains(.persistent) {
+            return persistentRegistry[texture]!
+        } else {
+            return transientRegistry[texture]!
+        }
+    }
+    
+    subscript(buffer: _ArgumentBuffer) -> MTLBufferReference {
+        if buffer.flags.contains(.persistent) {
+            return persistentRegistry[buffer]!
+        } else {
+            return transientRegistry[buffer]!
+        }
+    }
+    
+    subscript(buffer: _ArgumentBufferArray) -> MTLBufferReference {
+        if buffer.flags.contains(.persistent) {
+            return persistentRegistry[buffer]!
+        } else {
+            return transientRegistry[buffer]!
+        }
+    }
+    
+    func bufferForCPUAccess(_ buffer: Buffer) -> MTLBufferReference {
+        if buffer.flags.contains(.persistent) {
+            return persistentRegistry[buffer]!
+        } else {
+            return transientRegistry.accessLock.withLock { transientRegistry.allocateBufferIfNeeded(buffer) }
+        }
+    }
+    
+    func textureForCPUAccess(_ texture: Texture) -> MTLTexture {
+        if texture.flags.contains(.persistent) {
+            return persistentRegistry[texture]!
+        } else {
+            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: MetalTextureUsageProperties(texture.descriptor.usageHint))! }
+        }
+    }
+    
+    func renderTargetTexture(_ texture: Texture) throws -> MTLTexture {
+        if texture.flags.contains(.windowHandle) {
+            return try self.transientRegistry.allocateWindowHandleTexture(texture, persistentRegistry: persistentRegistry)
+        }
+        return self[texture]
+    }
+}
+
+final class MetalPersistentResourceRegistry {
     var accessLock = ReaderWriterLock()
     
-    private var heapReferences = ResourceMap<Heap, MTLHeap>()
-    private var textureReferences = ResourceMap<Texture, MTLTextureReference>()
-    private var bufferReferences = ResourceMap<Buffer, MTLBufferReference>()
-    private var argumentBufferReferences = ResourceMap<_ArgumentBuffer, MTLBufferReference>() // Separate since this needs to have thread-safe access.
-    private var argumentBufferArrayReferences = ResourceMap<_ArgumentBufferArray, MTLBufferReference>() // Separate since this needs to have thread-safe access.
+    private var heapReferences = PersistentResourceMap<Heap, MTLHeap>()
+    private var textureReferences = PersistentResourceMap<Texture, MTLTextureReference>()
+    private var bufferReferences = PersistentResourceMap<Buffer, MTLBufferReference>()
+    private var argumentBufferReferences = PersistentResourceMap<_ArgumentBuffer, MTLBufferReference>() // Separate since this needs to have thread-safe access.
+    private var argumentBufferArrayReferences = PersistentResourceMap<_ArgumentBufferArray, MTLBufferReference>() // Separate since this needs to have thread-safe access.
     
-    var textureWaitEvents = ResourceMap<Texture, MetalContextWaitEvent>()
-    var bufferWaitEvents = ResourceMap<Buffer, MetalContextWaitEvent>()
-    var argumentBufferWaitEvents = ResourceMap<_ArgumentBuffer, MetalContextWaitEvent>()
-    var argumentBufferArrayWaitEvents = ResourceMap<_ArgumentBufferArray, MetalContextWaitEvent>()
+    var windowReferences = [Texture : MTKView]()
+    
+    private let device : MTLDevice
+    
+    public init(device: MTLDevice) {
+        self.device = device
+        
+        self.prepareFrame()
+        MetalFenceRegistry.instance.device = self.device
+    }
+    
+    deinit {
+        self.textureReferences.deinit()
+        self.bufferReferences.deinit()
+        self.argumentBufferReferences.deinit()
+        self.argumentBufferArrayReferences.deinit()
+    }
+    
+    public func prepareFrame() {
+        MetalFenceRegistry.instance.clearCompletedFences()
+
+        self.textureReferences.prepareFrame()
+        self.bufferReferences.prepareFrame()
+        self.argumentBufferReferences.prepareFrame()
+        self.argumentBufferArrayReferences.prepareFrame()
+    }
+    
+    public func registerWindowTexture(texture: Texture, context: Any) {
+        self.windowReferences[texture] = (context as! MTKView)
+    }
+    
+    @discardableResult
+    public func allocateHeap(_ heap: Heap) -> MTLHeap? {
+        precondition(heap._usesPersistentRegistry)
+        
+        self.heapReferences.prepareFrame()
+        
+        let descriptor = MTLHeapDescriptor(heap.descriptor)
+        
+        let mtlHeap = self.device.makeHeap(descriptor: descriptor)
+        
+        assert(self.heapReferences[heap] == nil)
+        self.heapReferences[heap] = mtlHeap
+        
+        return mtlHeap
+    }
+    
+    @discardableResult
+    public func allocateTexture(_ texture: Texture, properties: MetalTextureUsageProperties) -> MTLTexture? {
+        precondition(texture._usesPersistentRegistry)
+        
+        // Ensure we can fit this new reference.
+        self.textureReferences.prepareFrame()
+        
+        if texture.flags.contains(.windowHandle) {
+            // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
+            self.textureReferences[texture] = MTLTextureReference(windowTexture: ())
+            return nil
+        }
+        
+        // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
+        
+        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage)
+        
+        let mtlTexture : MTLTextureReference
+        if let heap = texture.heap {
+            guard let mtlHeap = self.heapReferences[heap] else {
+                print("Warning: requested heap \(heap) for texture \(texture) is invalid.")
+                return nil
+            }
+            guard let texture = mtlHeap.makeTexture(descriptor: descriptor) else { return nil }
+            mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(texture))
+        } else {
+            guard let texture = self.device.makeTexture(descriptor: descriptor) else { return nil }
+            mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(texture))
+        }
+        
+        if let label = texture.label {
+            mtlTexture.texture.label = label
+        }
+        
+        assert(self.textureReferences[texture] == nil)
+        self.textureReferences[texture] = mtlTexture
+        
+        return mtlTexture.texture
+    }
+    
+    @discardableResult
+    public func allocateBuffer(_ buffer: Buffer) -> MTLBufferReference? {
+        precondition(buffer._usesPersistentRegistry)
+        
+        // Ensure we can fit this new reference.
+        self.bufferReferences.prepareFrame()
+        
+        
+        // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
+        
+        let options = MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode)
+        
+        let mtlBuffer : MTLBufferReference
+        
+        if let heap = buffer.heap {
+            guard let mtlHeap = self.heapReferences[heap] else {
+                print("Warning: requested heap \(heap) for buffer \(buffer) is invalid.")
+                return nil
+            }
+            guard let buffer = mtlHeap.makeBuffer(length: buffer.descriptor.length, options: options) else { return nil }
+            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(buffer), offset: 0)
+        } else {
+            guard let buffer = self.device.makeBuffer(length: buffer.descriptor.length, options: options) else { return nil }
+            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(buffer), offset: 0)
+        }
+        
+        if let label = buffer.label {
+            mtlBuffer.buffer.label = label
+        }
+        
+        assert(self.bufferReferences[buffer] == nil)
+        self.bufferReferences[buffer] = mtlBuffer
+        
+        return mtlBuffer
+    }
+    
+    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> MTLBufferReference {
+//        #if os(macOS)
+//        let options : MTLResourceOptions = [.storageModeManaged, .frameGraphTrackedHazards]
+//        #else
+        let options : MTLResourceOptions = [.storageModeShared, .frameGraphTrackedHazards]
+//        #endif
+        
+        return MTLBufferReference(buffer: Unmanaged.passRetained(self.device.makeBuffer(length: encodedLength, options: options)!), offset: 0)
+    }
+    
+    @discardableResult
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> MTLBufferReference {
+        if let baseArray = argumentBuffer.sourceArray {
+            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray, resourceMap: resourceMap, stateCaches: stateCaches)
+            return self.argumentBufferReferences[argumentBuffer]!
+        }
+        if let mtlArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
+            return mtlArgumentBuffer
+        }
+        
+        let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
+        let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
+        
+        argEncoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
+        argEncoder.encodeArguments(from: argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
+        
+//            #if os(macOS)
+//            storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength))
+//            #endif
+        
+        self.argumentBufferReferences[argumentBuffer] = storage
+        
+        return storage
+    }
+    
+    @discardableResult
+    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> MTLBufferReference {
+        if let mtlArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
+            return mtlArgumentBuffer
+        }
+        
+        let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!).takeUnretainedValue()
+        let storage = self.allocateArgumentBufferStorage(for: argumentBufferArray, encodedLength: argEncoder.encodedLength * argumentBufferArray._bindings.count)
+        
+        for (i, argumentBuffer) in argumentBufferArray._bindings.enumerated() {
+            guard let argumentBuffer = argumentBuffer else { continue }
+            
+            argEncoder.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: i)
+            argEncoder.encodeArguments(from: argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
+            
+            let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encodedLength)
+            self.argumentBufferReferences[argumentBuffer] = localStorage
+        }
+        
+//            #if os(macOS)
+//            storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength * argumentBufferArray._bindings.count))
+//            #endif
+        
+        self.argumentBufferArrayReferences[argumentBufferArray] = storage
+        
+        return storage
+    }
+    
+    public func importExternalResource(_ resource: Resource, backingResource: Any) {
+        self.prepareFrame()
+        if let texture = resource.texture {
+            self.textureReferences[texture] = MTLTextureReference(texture: Unmanaged.passRetained(backingResource as! MTLTexture))
+        } else if let buffer = resource.buffer {
+            self.bufferReferences[buffer] = MTLBufferReference(buffer: Unmanaged.passRetained(backingResource as! MTLBuffer), offset: 0)
+        }
+    }
+    
+    // These subscript methods should only be called after 'allocate' has been called.
+    // If you hit an error here, check if you forgot to make a resource persistent.
+    public subscript(texture: Texture) -> MTLTexture? {
+        return self.textureReferences[texture]?.texture
+    }
+    
+    public subscript(texture texture: Texture.Handle) -> MTLTexture? {
+        return self.textureReferences[Texture(handle: texture)]!.texture
+    }
+    
+    public subscript(textureReference texture: Texture) -> MTLTextureReference? {
+        return self.textureReferences[texture]!
+    }
+    
+    public subscript(textureReference texture: Texture.Handle) -> MTLTextureReference? {
+        return self.textureReferences[Texture(handle: texture)]!
+    }
+    
+    public subscript(buffer: Buffer) -> MTLBufferReference? {
+        return self.bufferReferences[buffer]
+    }
+    
+    public subscript(buffer buffer: Buffer.Handle) -> MTLBufferReference? {
+        return self.bufferReferences[Buffer(handle: buffer)]
+    }
+    
+    public subscript(argumentBuffer: _ArgumentBuffer) -> MTLBufferReference? {
+        return self.argumentBufferReferences[argumentBuffer]
+    }
+    
+    public subscript(argumentBufferArray: _ArgumentBufferArray) -> MTLBufferReference? {
+        return self.argumentBufferArrayReferences[argumentBufferArray]
+    }
+    
+    func disposeHeap(_ heap: Heap) {
+        self.heapReferences.removeValue(forKey: heap)
+    }
+    
+    func disposeTexture(_ texture: Texture) {
+        if let mtlTexture = self.textureReferences.removeValue(forKey: texture) {
+            if texture.flags.contains(.windowHandle) {
+                return
+            }
+            
+            mtlTexture._texture.release()
+        }
+    }
+    
+    func disposeBuffer(_ buffer: Buffer) {
+        if let mtlBuffer = self.bufferReferences.removeValue(forKey: buffer) {
+            mtlBuffer._buffer.release()
+        }
+    }
+    
+    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer) {
+        if let mtlBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
+            assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal FrameGraph backend.")
+            mtlBuffer._buffer.release()
+        }
+    }
+    
+    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray) {
+        if let mtlBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
+            mtlBuffer._buffer.release()
+        }
+    }
+}
+
+
+final class MetalTransientResourceRegistry {
+    var accessLock = SpinLock()
+    
+    private var textureReferences = TransientResourceMap<Texture, MTLTextureReference>()
+    private var bufferReferences = TransientResourceMap<Buffer, MTLBufferReference>()
+    private var argumentBufferReferences = TransientResourceMap<_ArgumentBuffer, MTLBufferReference>() // Separate since this needs to have thread-safe access.
+    private var argumentBufferArrayReferences = TransientResourceMap<_ArgumentBufferArray, MTLBufferReference>() // Separate since this needs to have thread-safe access.
+    
+    var textureWaitEvents = TransientResourceMap<Texture, MetalContextWaitEvent>()
+    var bufferWaitEvents = TransientResourceMap<Buffer, MetalContextWaitEvent>()
+    var argumentBufferWaitEvents = TransientResourceMap<_ArgumentBuffer, MetalContextWaitEvent>()
+    var argumentBufferArrayWaitEvents = TransientResourceMap<_ArgumentBufferArray, MetalContextWaitEvent>()
     
     private var heapResourceUsageFences = [Resource : [MetalFenceHandle]]()
     private var heapResourceDisposalFences = [Resource : [MetalFenceHandle]]()
-    
-    private var windowReferences = [ResourceProtocol.Handle : MTKView]()
-    
-    private let device : MTLDevice
     
     private let frameSharedBufferAllocator : MetalTemporaryBufferAllocator
     private let frameSharedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
@@ -104,29 +431,23 @@ final class MetalResourceRegistry {
     private let depthRenderTargetAllocator : MetalHeapResourceAllocator
     
     private let historyBufferAllocator : MetalPoolResourceAllocator
-    private let persistentAllocator : MetalPersistentResourceAllocator
     
     public private(set) var frameDrawables : [CAMetalDrawable] = []
     
-    public var frameGraphHasResourceAccess = false
-    
-    public init(device: MTLDevice, numInflightFrames: Int) {
-        self.device = device
+    public init(device: MTLDevice, inflightFrameCount: Int) {
         
-        self.stagingTextureAllocator = MetalPoolResourceAllocator(device: device, numFrames: numInflightFrames)
+        self.stagingTextureAllocator = MetalPoolResourceAllocator(device: device, numFrames: inflightFrameCount)
         self.historyBufferAllocator = MetalPoolResourceAllocator(device: device, numFrames: 1)
         
-        self.persistentAllocator = MetalPersistentResourceAllocator(device: device)
-        
-        self.frameSharedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 256 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
-        self.frameSharedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
+        self.frameSharedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 256 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
+        self.frameSharedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
         
         #if os(macOS)
-        self.frameManagedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 1024 * 1024, options: [.storageModeManaged, .frameGraphTrackedHazards])
-        self.frameManagedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 2 * 1024 * 1024, options: [.storageModeManaged, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
-        self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
+        self.frameManagedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 1024 * 1024, options: [.storageModeManaged, .frameGraphTrackedHazards])
+        self.frameManagedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeManaged, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
+        self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
         #else
-        self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: numInflightFrames, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
+        self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
         self.memorylessTextureAllocator = MetalPoolResourceAllocator(device: device, numFrames: 1)
         #endif
         
@@ -135,7 +456,6 @@ final class MetalResourceRegistry {
         self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device)
         
         self.prepareFrame()
-        MetalFenceRegistry.instance.device = self.device
     }
     
     
@@ -165,14 +485,9 @@ final class MetalResourceRegistry {
         self.argumentBufferArrayWaitEvents.prepareFrame()
     }
     
-    public func registerWindowTexture(texture: Texture, context: Any) {
-        self.windowReferences[texture.handle] = (context as! MTKView)
-    }
-    
     func allocatorForTexture(storageMode: MTLStorageMode, flags: ResourceFlags, textureParams: (PixelFormat, MTLTextureUsage)) -> MetalTextureAllocator {
-        if flags.contains(.persistent) {
-            return self.persistentAllocator
-        }
+        assert(!flags.contains(.persistent))
+        
         if flags.contains(.historyBuffer) {
             assert(storageMode == .private)
             return self.historyBufferAllocator
@@ -196,10 +511,8 @@ final class MetalResourceRegistry {
     }
     
     func allocatorForBuffer(length: Int, storageMode: StorageMode, cacheMode: CPUCacheMode, flags: ResourceFlags) -> MetalBufferAllocator {
+        assert(!flags.contains(.persistent))
         
-        if flags.contains(.persistent) {
-            return self.persistentAllocator
-        }
         if flags.contains(.historyBuffer) {
             assert(storageMode == .private)
             return self.historyBufferAllocator
@@ -230,12 +543,9 @@ final class MetalResourceRegistry {
     }
     
     func allocatorForArgumentBuffer(flags: ResourceFlags) -> MetalBufferAllocator {
-        if flags.contains(.persistent) {
-            return self.persistentAllocator
-        }
+        assert(!flags.contains(.persistent))
         return self.frameArgumentBufferAllocator
     }
-    
     
     func isAliasedHeapResource(resource: Resource) -> Bool {
         let flags = resource.flags
@@ -250,22 +560,6 @@ final class MetalResourceRegistry {
         }
         
         return storageMode == .private
-    }
-    
-    @discardableResult
-    public func allocateHeap(_ heap: Heap) -> MTLHeap? {
-        assert(heap._usesPersistentRegistry)
-        
-        self.heapReferences.prepareFrame()
-        
-        let descriptor = MTLHeapDescriptor(heap.descriptor)
-        
-        let mtlHeap = self.device.makeHeap(descriptor: descriptor)
-        
-        assert(self.heapReferences[heap] == nil)
-        self.heapReferences[heap] = mtlHeap
-        
-        return mtlHeap
     }
     
     @discardableResult
@@ -291,22 +585,8 @@ final class MetalResourceRegistry {
         }
         #endif
         
-        let mtlTexture : MTLTextureReference
-        let fences : [MetalFenceHandle]
-        let waitEvent : MetalContextWaitEvent
-        if let heap = texture.heap {
-            guard let mtlHeap = self.heapReferences[heap] else {
-                print("Warning: requested heap \(heap) for texture \(texture) is invalid.")
-                return nil
-            }
-            guard let texture = mtlHeap.makeTexture(descriptor: descriptor) else { return nil}
-            mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(texture))
-            fences = []
-            waitEvent = MetalContextWaitEvent()
-        } else {
-            let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
-            (mtlTexture, fences, waitEvent) = allocator.collectTextureWithDescriptor(descriptor)
-        }
+        let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
+        let (mtlTexture, fences, waitEvent) = allocator.collectTextureWithDescriptor(descriptor)
         
         if let label = texture.label {
             mtlTexture.texture.label = label
@@ -352,54 +632,51 @@ final class MetalResourceRegistry {
     }
     
     @discardableResult
-    public func allocateRenderTargetTexture(_ texture: Texture) throws -> MTLTexture {
-        if texture.flags.contains(.windowHandle) {
-            var mtlTexture : MTLTexture! = nil
-            var error : RenderTargetTextureError? = nil
-            
-            // Retrieving the drawable needs to be done on the main thread.
-            // Also update and check the MTLTextureReference on the same thread so that subsequent render passes
-            // retrieving the same texture always see the same result (and so nextDrawable() only gets called once).
-            
-            FrameGraph.jobManager.syncOnMainThread {
-                 autoreleasepool {
-                    // The texture reference should always be present but the texture itself might not be.
-                    if let texture = self.textureReferences[texture]!._texture {
-                        mtlTexture = texture.takeUnretainedValue()
-                        return
-                    }
-                    
-                    let windowReference = self.windowReferences[texture.handle]!
-                    
-                    guard let mtlDrawable = (windowReference.layer as! CAMetalLayer).nextDrawable() else {
-                        error = RenderTargetTextureError.unableToRetrieveDrawable(texture)
-                        return
-                    }
-                    
-                    let drawableTexture = mtlDrawable.texture
-                    if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
-                        self.frameDrawables.append(mtlDrawable)
-                        self.textureReferences[texture]!._texture = Unmanaged.passUnretained(drawableTexture) // since it's owned by the MTLDrawable
-                        mtlTexture = drawableTexture
-                        return
-                    } else {
-                        // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
-                        // throw an error.
-                        error = RenderTargetTextureError.invalidSizeDrawable(texture, requestedSize: Size(width: texture.descriptor.width, height: texture.descriptor.height), drawableSize: Size(width: drawableTexture.width, height: drawableTexture.height))
-                        return
-                    }
-                }
-                        
-            }
-            if let error = error {
-                throw error
-            } else {
-                return mtlTexture
-            }
-        }
+    public func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: MetalPersistentResourceRegistry) throws -> MTLTexture {
+        precondition( texture.flags.contains(.windowHandle))
         
-        // Otherwise, the texture has already been allocated as part of a materialiseTexture call.
-        return self[texture]!
+        var mtlTexture : MTLTexture! = nil
+        var error : RenderTargetTextureError? = nil
+        
+        // Retrieving the drawable needs to be done on the main thread.
+        // Also update and check the MTLTextureReference on the same thread so that subsequent render passes
+        // retrieving the same texture always see the same result (and so nextDrawable() only gets called once).
+        
+        FrameGraph.jobManager.syncOnMainThread {
+             autoreleasepool {
+                // The texture reference should always be present but the texture itself might not be.
+                if let texture = self.textureReferences[texture]!._texture {
+                    mtlTexture = texture.takeUnretainedValue()
+                    return
+                }
+                
+                let windowReference = persistentRegistry.windowReferences.removeValue(forKey: texture)!
+                
+                guard let mtlDrawable = (windowReference.layer as! CAMetalLayer).nextDrawable() else {
+                    error = RenderTargetTextureError.unableToRetrieveDrawable(texture)
+                    return
+                }
+                
+                let drawableTexture = mtlDrawable.texture
+                if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
+                    self.frameDrawables.append(mtlDrawable)
+                    self.textureReferences[texture]!._texture = Unmanaged.passUnretained(drawableTexture) // since it's owned by the MTLDrawable
+                    mtlTexture = drawableTexture
+                    return
+                } else {
+                    // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
+                    // throw an error.
+                    error = RenderTargetTextureError.invalidSizeDrawable(texture, requestedSize: Size(width: texture.descriptor.width, height: texture.descriptor.height), drawableSize: Size(width: drawableTexture.width, height: drawableTexture.height))
+                    return
+                }
+            }
+                    
+        }
+        if let error = error {
+            throw error
+        } else {
+            return mtlTexture
+        }
     }
     
     @discardableResult
@@ -415,22 +692,9 @@ final class MetalResourceRegistry {
             options.remove(.frameGraphTrackedHazards) // FIXME: workaround for a bug in Metal where setting hazardTrackingModeUntracked on a MTLTextureDescriptor doesn't stick
         }
         
-        let mtlBuffer : MTLBufferReference
-        let fences : [MetalFenceHandle]
-        let waitEvent : MetalContextWaitEvent
-        if let heap = buffer.heap {
-            guard let mtlHeap = self.heapReferences[heap] else {
-                print("Warning: requested heap \(heap) for buffer \(buffer) is invalid.")
-                return nil
-            }
-            guard let buffer = mtlHeap.makeBuffer(length: buffer.descriptor.length, options: options) else { return nil}
-            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(buffer), offset: 0)
-            fences = []
-            waitEvent = MetalContextWaitEvent()
-        } else {
-            let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)
-            (mtlBuffer, fences, waitEvent) = allocator.collectBufferWithLength(buffer.descriptor.length, options: options)
-        }
+
+        let allocator = self.allocatorForBuffer(length: buffer.descriptor.length, storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, flags: buffer.flags)
+        let (mtlBuffer, fences, waitEvent) = allocator.collectBufferWithLength(buffer.descriptor.length, options: options)
         
         if let label = buffer.label {
             mtlBuffer.buffer.label = label
@@ -477,66 +741,62 @@ final class MetalResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, stateCaches: MetalStateCaches) -> MTLBufferReference {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> MTLBufferReference {
         if let baseArray = argumentBuffer.sourceArray {
-            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray, stateCaches: stateCaches)
+            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray, resourceMap: resourceMap, stateCaches: stateCaches)
             return self.argumentBufferReferences[argumentBuffer]!
         }
-        return self.accessLock.withWriteLock {
-            if let mtlArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
-                return mtlArgumentBuffer
-            }
-            
-            let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-            let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
-            assert(fences.isEmpty)
-            
-            argEncoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
-            argEncoder.encodeArguments(from: argumentBuffer, resourceRegistry: self, stateCaches: stateCaches)
-            
+        if let mtlArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
+            return mtlArgumentBuffer
+        }
+        
+        let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
+        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
+        assert(fences.isEmpty)
+        
+        argEncoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
+        argEncoder.encodeArguments(from: argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
+        
 //            #if os(macOS)
 //            storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength))
 //            #endif
-            
-            self.argumentBufferReferences[argumentBuffer] = storage
-            self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
-            
-            return storage
-        }
+        
+        self.argumentBufferReferences[argumentBuffer] = storage
+        self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
+        
+        return storage
     }
     
     @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray, stateCaches: MetalStateCaches) -> MTLBufferReference {
-        return self.accessLock.withWriteLock {
-            if let mtlArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
-                return mtlArgumentBuffer
-            }
+    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> MTLBufferReference {
+        if let mtlArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
+            return mtlArgumentBuffer
+        }
+        
+        let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!).takeUnretainedValue()
+        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBufferArray, encodedLength: argEncoder.encodedLength * argumentBufferArray._bindings.count)
+        assert(fences.isEmpty)
+        
+        for (i, argumentBuffer) in argumentBufferArray._bindings.enumerated() {
+            guard let argumentBuffer = argumentBuffer else { continue }
             
-            let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!).takeUnretainedValue()
-            let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBufferArray, encodedLength: argEncoder.encodedLength * argumentBufferArray._bindings.count)
-            assert(fences.isEmpty)
+            argEncoder.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: i)
             
-            for (i, argumentBuffer) in argumentBufferArray._bindings.enumerated() {
-                guard let argumentBuffer = argumentBuffer else { continue }
-                
-                argEncoder.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: i)
-                
-                argEncoder.encodeArguments(from: argumentBuffer, resourceRegistry: self, stateCaches: stateCaches)
-                
-                let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encodedLength)
-                self.argumentBufferReferences[argumentBuffer] = localStorage
-                self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
-            }
+            argEncoder.encodeArguments(from: argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
             
+            let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encodedLength)
+            self.argumentBufferReferences[argumentBuffer] = localStorage
+            self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
+        }
+        
 //            #if os(macOS)
 //            storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength * argumentBufferArray._bindings.count))
 //            #endif
-            
-            self.argumentBufferArrayReferences[argumentBufferArray] = storage
-            self.argumentBufferArrayWaitEvents[argumentBufferArray] = waitEvent
-            
-            return storage
-        }
+        
+        self.argumentBufferArrayReferences[argumentBufferArray] = storage
+        self.argumentBufferArrayWaitEvents[argumentBufferArray] = waitEvent
+        
+        return storage
     }
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
@@ -593,17 +853,11 @@ final class MetalResourceRegistry {
         self.heapResourceDisposalFences[Resource(resource)] = fences
     }
     
-    func disposeHeap(_ heap: Heap) {
-        self.heapReferences.removeValue(forKey: heap)
-    }
-    
-    func disposeTexture(_ texture: Texture, keepingReference: Bool, waitEvent: MetalContextWaitEvent) {
-        if let mtlTexture = (keepingReference ? self.textureReferences[texture] : self.textureReferences.removeValue(forKey: texture)) {
+    func disposeTexture(_ texture: Texture, waitEvent: MetalContextWaitEvent) {
+        // We keep the reference around until the end of the frame since allocation/disposal is all processed ahead of time.
+        precondition(!texture._usesPersistentRegistry)
+        if let mtlTexture = self.textureReferences[texture] {
             if texture.flags.contains(.windowHandle) {
-                return
-            }
-            if texture.flags.contains(.externalOwnership) || texture.heap != nil {
-                mtlTexture._texture.release()
                 return
             }
             if texture.isTextureView {
@@ -620,14 +874,10 @@ final class MetalResourceRegistry {
         }
     }
     
-    func disposeBuffer(_ buffer: Buffer, keepingReference: Bool, waitEvent: MetalContextWaitEvent) {
-        if let mtlBuffer = (keepingReference ? self.bufferReferences[buffer] : self.bufferReferences.removeValue(forKey: buffer)) {
-            
-            if buffer.flags.contains(.externalOwnership) || buffer.heap != nil {
-                mtlBuffer._buffer.release()
-                return
-            }
-            
+    func disposeBuffer(_ buffer: Buffer, waitEvent: MetalContextWaitEvent) {
+        // We keep the reference around until the end of the frame since allocation/disposal is all processed ahead of time.
+        precondition(!buffer._usesPersistentRegistry)
+        if let mtlBuffer = self.bufferReferences[buffer] {
             var fences : [MetalFenceHandle] = []
             if self.isAliasedHeapResource(resource: Resource(buffer)) {
                 fences = self.heapResourceDisposalFences[Resource(buffer)] ?? []
@@ -638,48 +888,18 @@ final class MetalResourceRegistry {
         }
     }
     
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, keepingReference: Bool, waitEvent: MetalContextWaitEvent) {
-        if let mtlBuffer = (keepingReference ? self.argumentBufferReferences[buffer] : self.argumentBufferReferences.removeValue(forKey: buffer)) {
-            let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
-            
-            assert(buffer.sourceArray == nil || !buffer.flags.contains(.persistent), "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal FrameGraph backend.")
-            allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)
-        }
-    }
-    
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, keepingReference: Bool, waitEvent: MetalContextWaitEvent) {
-        if let mtlBuffer = (keepingReference ? self.argumentBufferArrayReferences[buffer] : self.argumentBufferArrayReferences.removeValue(forKey: buffer)) {
+    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, waitEvent: MetalContextWaitEvent) {
+        if let mtlBuffer = self.argumentBufferReferences[buffer] {
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)
         }
     }
     
-    func bufferContents(for buffer: Buffer) -> UnsafeMutableRawPointer {
-        assert(buffer.flags.contains(.persistent) || self.frameGraphHasResourceAccess, "GPU memory for a transient buffer may not be accessed outside of a FrameGraph RenderPass. Consider using withDeferredSlice instead.")
-        
-        let bufferReference = self.allocateBufferIfNeeded(buffer)
-        return bufferReference.buffer.contents() + bufferReference.offset
-    }
-    
-    func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
-        assert(texture.flags.contains(.persistent) || self.frameGraphHasResourceAccess, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
-        
-        self.allocateTextureIfNeeded(texture, usage: MetalTextureUsageProperties(texture.descriptor.usageHint))
-        self[texture]!.getBytes(bytes, bytesPerRow: bytesPerRow, from: MTLRegion(region), mipmapLevel: mipmapLevel)
-    }
-    
-    func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        assert(texture.flags.contains(.persistent) || self.frameGraphHasResourceAccess, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
-        
-        self.allocateTextureIfNeeded(texture, usage: MetalTextureUsageProperties(texture.descriptor.usageHint))
-        self[texture]!.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
-    }
-    
-    func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
-        assert(texture.flags.contains(.persistent) || self.frameGraphHasResourceAccess, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
-        
-        self.allocateTextureIfNeeded(texture, usage: MetalTextureUsageProperties(texture.descriptor.usageHint))
-        self[texture]!.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
+    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, waitEvent: MetalContextWaitEvent) {
+        if let mtlBuffer = self.argumentBufferArrayReferences[buffer] {
+            let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
+            allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)
+        }
     }
     
     func registerInitialisedHistoryBufferForDisposal(resource: Resource) {
@@ -694,10 +914,10 @@ final class MetalResourceRegistry {
     func cycleFrames() {
         // Clear all transient resources at the end of the frame.
         
-        self.textureReferences.removeAllTransient()
-        self.bufferReferences.removeAllTransient()
-        self.argumentBufferReferences.removeAllTransient()
-        self.argumentBufferArrayReferences.removeAllTransient()
+        self.textureReferences.removeAll()
+        self.bufferReferences.removeAll()
+        self.argumentBufferReferences.removeAll()
+        self.argumentBufferArrayReferences.removeAll()
         
         self.heapResourceUsageFences.removeAll(keepingCapacity: true)
         self.heapResourceDisposalFences.removeAll(keepingCapacity: true)
@@ -708,7 +928,6 @@ final class MetalResourceRegistry {
         
         self.colorRenderTargetAllocator.cycleFrames()
         self.depthRenderTargetAllocator.cycleFrames()
-        self.persistentAllocator.cycleFrames()
         
         self.frameSharedBufferAllocator.cycleFrames()
         self.frameSharedWriteCombinedBufferAllocator.cycleFrames()
@@ -721,8 +940,6 @@ final class MetalResourceRegistry {
         #endif
         
         self.frameArgumentBufferAllocator.cycleFrames()
-        
-        self.windowReferences.removeAll(keepingCapacity: true)
     }
 }
 

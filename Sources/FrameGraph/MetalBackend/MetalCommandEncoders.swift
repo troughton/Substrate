@@ -15,16 +15,16 @@ final class MetalEncoderManager {
     static let useParallelEncoding = false
     
     private let commandBuffer : MTLCommandBuffer
-    private let resourceRegistry : MetalResourceRegistry
+    private let resourceMap : MetalFrameResourceMap
     private var previousRenderTarget : MetalRenderTargetDescriptor? = nil
     
     private var renderEncoder : FGMTLRenderCommandEncoder? = nil
     private var computeEncoder : FGMTLComputeCommandEncoder? = nil
     private var blitEncoder : FGMTLBlitCommandEncoder? = nil
     
-    init(commandBuffer: MTLCommandBuffer, resourceRegistry: MetalResourceRegistry) {
+    init(commandBuffer: MTLCommandBuffer, resourceMap: MetalFrameResourceMap) {
         self.commandBuffer = commandBuffer
-        self.resourceRegistry = resourceRegistry
+        self.resourceMap = resourceMap
     }
     
     static func sharesCommandEncoders(_ passA: RenderPassRecord, _ passB: RenderPassRecord, passes: [RenderPassRecord], renderTargetDescriptors: [MetalRenderTargetDescriptor?]) -> Bool {
@@ -73,7 +73,7 @@ final class MetalEncoderManager {
         return (passEncoderIndices, commandEncoderNames, encoderIndex + 1)
     }
     
-    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : MetalTextureUsageProperties], resourceCommands: [MetalFrameResourceCommand], resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) -> FGMTLRenderCommandEncoder? {
+    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : MetalTextureUsageProperties], resourceCommands: [MetalFrameResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> FGMTLRenderCommandEncoder? {
         if descriptor === previousRenderTarget, let renderEncoder = self.renderEncoder {
             return renderEncoder
         } else {
@@ -90,7 +90,7 @@ final class MetalEncoderManager {
             
             let mtlDescriptor : MTLRenderPassDescriptor
             do {
-                mtlDescriptor = try MTLRenderPassDescriptor(descriptor, resourceRegistry: self.resourceRegistry)
+                mtlDescriptor = try MTLRenderPassDescriptor(descriptor, resourceMap: self.resourceMap)
             } catch {
                 print("Error creating pass descriptor: \(error)")
                 return nil
@@ -187,15 +187,15 @@ public final class FGMTLParallelRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         if pass.commandRange!.count < FGMTLParallelRenderCommandEncoder.commandCountThreshold {
             if let currentEncoder = currentEncoder {
-                currentEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                currentEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
             } else {
                 let encoder = self.parallelEncoder.makeRenderCommandEncoder()!
                 let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor)
                 
-                fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
                 
                 self.currentEncoder = fgEncoder
             }
@@ -209,7 +209,7 @@ public final class FGMTLParallelRenderCommandEncoder {
             let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor)
             
             DispatchQueue.global().async(group: self.dispatchGroup) {
-                fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
+                fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
                 fgEncoder.endEncoding()
             }
         }
@@ -265,7 +265,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
@@ -273,9 +273,9 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceRegistry: resourceRegistry)
-            self.executeCommand(command, encoder: encoder, renderTarget: renderTarget, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceRegistry: resourceRegistry)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+            self.executeCommand(command, encoder: encoder, renderTarget: renderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
         }
     }
     
@@ -283,7 +283,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         self.encoder.endEncoding()
     }
     
-    func executeCommand(_ command: FrameGraphCommand, encoder: MTLRenderCommandEncoder, renderTarget: RenderTargetDescriptor, resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: FrameGraphCommand, encoder: MTLRenderCommandEncoder, renderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         switch command {
         case .clearRenderTargets:
             break
@@ -312,8 +312,8 @@ public final class FGMTLThreadRenderCommandEncoder {
             
         case .setVertexBuffer(let args):
             let mtlBuffer : MTLBufferReference?
-            if let bufferHandle = args.pointee.handle {
-                mtlBuffer = resourceRegistry[buffer: bufferHandle]
+            if let buffer = args.pointee.buffer {
+                mtlBuffer = resourceMap[buffer]
             } else {
                 mtlBuffer = nil
             }
@@ -334,7 +334,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             let stages = mtlBindingPath.stages
             
             let argumentBuffer = args.pointee.argumentBuffer
-            let mtlArgumentBuffer = resourceRegistry[argumentBuffer]!
+            let mtlArgumentBuffer = resourceMap[argumentBuffer]
             
             if stages.contains(.vertex) {
                 encoder.setVertexBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
@@ -349,7 +349,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             let stages = mtlBindingPath.stages
             
             let argumentBuffer = args.pointee.argumentBuffer
-            let mtlArgumentBuffer = resourceRegistry[argumentBuffer]!
+            let mtlArgumentBuffer = resourceMap[argumentBuffer]
             
             if stages.contains(.vertex) {
                 encoder.setVertexBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
@@ -359,19 +359,19 @@ public final class FGMTLThreadRenderCommandEncoder {
             }
             
         case .setBuffer(let args):
-            let mtlBuffer = resourceRegistry[buffer: args.pointee.handle]
+            let mtlBuffer = resourceMap[args.pointee.buffer]
             
             let mtlBindingPath = args.pointee.bindingPath
             assert(mtlBindingPath.bindIndex < 31, "The maximum number of buffers allowed in the buffer argument table for a single function is 31.")
             
             let stages = mtlBindingPath.stages
             if stages.contains(.vertex) {
-                self.baseBufferOffsets[mtlBindingPath.bindIndex] = (mtlBuffer?.offset ?? 0)
-                encoder.setVertexBuffer(mtlBuffer?.buffer, offset: Int(args.pointee.offset) + (mtlBuffer?.offset ?? 0), index: mtlBindingPath.bindIndex)
+                self.baseBufferOffsets[mtlBindingPath.bindIndex] = mtlBuffer.offset
+                encoder.setVertexBuffer(mtlBuffer.buffer, offset: Int(args.pointee.offset) + mtlBuffer.offset, index: mtlBindingPath.bindIndex)
             }
             if stages.contains(.fragment) {
-                self.baseBufferOffsets[mtlBindingPath.bindIndex + 31] = (mtlBuffer?.offset ?? 0)
-                encoder.setFragmentBuffer(mtlBuffer?.buffer, offset: Int(args.pointee.offset) + (mtlBuffer?.offset ?? 0), index: mtlBindingPath.bindIndex)
+                self.baseBufferOffsets[mtlBindingPath.bindIndex + 31] = mtlBuffer.offset
+                encoder.setFragmentBuffer(mtlBuffer.buffer, offset: Int(args.pointee.offset) + mtlBuffer.offset, index: mtlBindingPath.bindIndex)
             }
             
         case .setBufferOffset(let args):
@@ -391,7 +391,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             }
             
         case .setTexture(let args):
-            let mtlTexture = resourceRegistry[texture: args.pointee.handle]
+            let mtlTexture = resourceMap[args.pointee.texture]
             
             let mtlBindingPath = args.pointee.bindingPath
             let stages = mtlBindingPath.stages
@@ -423,7 +423,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             encoder.drawPrimitives(type: MTLPrimitiveType(args.pointee.primitiveType), vertexStart: Int(args.pointee.vertexStart), vertexCount: Int(args.pointee.vertexCount), instanceCount: Int(args.pointee.instanceCount), baseInstance: Int(args.pointee.baseInstance))
             
         case .drawIndexedPrimitives(let args):
-            let indexBuffer = resourceRegistry[buffer: args.pointee.indexBuffer]!
+            let indexBuffer = resourceMap[args.pointee.indexBuffer]
             
             encoder.drawIndexedPrimitives(type: MTLPrimitiveType(args.pointee.primitiveType), indexCount: Int(args.pointee.indexCount), indexType: MTLIndexType(args.pointee.indexType), indexBuffer: indexBuffer.buffer, indexBufferOffset: Int(args.pointee.indexBufferOffset) + indexBuffer.offset, instanceCount: Int(args.pointee.instanceCount), baseVertex: Int(args.pointee.baseVertex), baseInstance: Int(args.pointee.baseInstance))
             
@@ -463,7 +463,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceRegistry: MetalResourceRegistry) {
+    func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
         var hasPerformedTextureBarrier = false
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
@@ -472,9 +472,9 @@ public final class FGMTLThreadRenderCommandEncoder {
                 
             case .memoryBarrier(let resource, let afterStages, let beforeStages):
                 if let texture = resource.texture {
-                    self.memoryBarrier(resource: resourceRegistry[texture]!, afterStages: afterStages, beforeStages: beforeStages)
+                    self.memoryBarrier(resource: resourceMap[texture], afterStages: afterStages, beforeStages: beforeStages)
                 } else if let buffer = resource.buffer {
-                    self.memoryBarrier(resource: resourceRegistry[buffer]!.buffer, afterStages: afterStages, beforeStages: beforeStages)
+                    self.memoryBarrier(resource: resourceMap[buffer].buffer, afterStages: afterStages, beforeStages: beforeStages)
                 }
                 
             case .updateFence(let fence, let afterStages):
@@ -485,7 +485,7 @@ public final class FGMTLThreadRenderCommandEncoder {
                 self.waitForFence(fence.fence, beforeStages: beforeStages)
                 
             case .waitForHeapAliasingFences(let resource, _, let beforeStages):
-                resourceRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
+                resourceMap.transientRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
                     for fence in fenceStates where fence.isValid {
                         self.waitForFence(fence.fence, beforeStages: beforeStages)
                     }
@@ -495,11 +495,11 @@ public final class FGMTLThreadRenderCommandEncoder {
                 var mtlResource : MTLResource
                 
                 if let texture = resource.texture {
-                    mtlResource = resourceRegistry[texture]!
+                    mtlResource = resourceMap[texture]
                 } else if let buffer = resource.buffer {
-                    mtlResource = resourceRegistry[buffer]!.buffer
+                    mtlResource = resourceMap[buffer].buffer
                 } else if let argumentBuffer = resource.argumentBuffer {
-                    mtlResource = resourceRegistry[argumentBuffer]!.buffer
+                    mtlResource = resourceMap[argumentBuffer].buffer
                 } else {
                     preconditionFailure()
                 }
@@ -564,17 +564,17 @@ public final class FGMTLComputeCommandEncoder {
         self.baseBufferOffsets.deallocate()
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceRegistry: resourceRegistry)
-            self.executeCommand(command, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceRegistry: resourceRegistry)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+            self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
         }
     }
     
-    func executeCommand(_ command: FrameGraphCommand, resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: FrameGraphCommand, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         switch command {
         case .insertDebugSignpost(let cString):
             encoder.insertDebugSignpost(String(cString: cString))
@@ -593,7 +593,7 @@ public final class FGMTLComputeCommandEncoder {
             let mtlBindingPath = bindingPath
             
             let argumentBuffer = args.pointee.argumentBuffer
-            let mtlArgumentBuffer = resourceRegistry[argumentBuffer]!
+            let mtlArgumentBuffer = resourceMap[argumentBuffer]
             
             encoder.setBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
             
@@ -602,7 +602,7 @@ public final class FGMTLComputeCommandEncoder {
             let mtlBindingPath = bindingPath
             
             let argumentBuffer = args.pointee.argumentBuffer
-            let mtlArgumentBuffer = resourceRegistry[argumentBuffer]!
+            let mtlArgumentBuffer = resourceMap[argumentBuffer]
             
             encoder.setBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
             
@@ -612,10 +612,10 @@ public final class FGMTLComputeCommandEncoder {
             
         case .setBuffer(let args):
             let mtlBindingPath = args.pointee.bindingPath
-            let mtlBuffer = resourceRegistry[buffer: args.pointee.handle]
-            encoder.setBuffer(mtlBuffer?.buffer, offset: Int(args.pointee.offset) + (mtlBuffer?.offset ?? 0), index: mtlBindingPath.bindIndex)
+            let mtlBuffer = resourceMap[args.pointee.buffer]
+            encoder.setBuffer(mtlBuffer.buffer, offset: Int(args.pointee.offset) + mtlBuffer.offset, index: mtlBindingPath.bindIndex)
             
-            self.baseBufferOffsets[mtlBindingPath.bindIndex] = mtlBuffer?.offset ?? 0
+            self.baseBufferOffsets[mtlBindingPath.bindIndex] = mtlBuffer.offset
             
         case .setBufferOffset(let args):
             let mtlBindingPath = args.pointee.bindingPath
@@ -624,7 +624,7 @@ public final class FGMTLComputeCommandEncoder {
             
         case .setTexture(let args):
             let mtlBindingPath = args.pointee.bindingPath
-            let mtlTexture = resourceRegistry[texture: args.pointee.handle]
+            let mtlTexture = resourceMap[args.pointee.texture]
             encoder.setTexture(mtlTexture, index: mtlBindingPath.bindIndex)
             
         case .setSamplerState(let args):
@@ -639,7 +639,7 @@ public final class FGMTLComputeCommandEncoder {
             encoder.dispatchThreadgroups(MTLSize(args.pointee.threadgroupsPerGrid), threadsPerThreadgroup: MTLSize(args.pointee.threadsPerThreadgroup))
             
         case .dispatchThreadgroupsIndirect(let args):
-            let indirectBuffer = resourceRegistry[buffer: args.pointee.indirectBuffer]!
+            let indirectBuffer = resourceMap[args.pointee.indirectBuffer]
             encoder.dispatchThreadgroups(indirectBuffer: indirectBuffer.buffer, indirectBufferOffset: Int(args.pointee.indirectBufferOffset) + indirectBuffer.offset, threadsPerThreadgroup: MTLSize(args.pointee.threadsPerThreadgroup))
             
         case .setComputePipelineDescriptor(let descriptorPtr):
@@ -658,7 +658,7 @@ public final class FGMTLComputeCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceRegistry: MetalResourceRegistry) {
+    func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
         var hasPerformedTextureBarrier = false
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
@@ -667,9 +667,9 @@ public final class FGMTLComputeCommandEncoder {
                 
             case .memoryBarrier(let resource, _, _):
                 if let texture = resource.texture {
-                    self.memoryBarrier(resource: resourceRegistry[texture]!)
+                    self.memoryBarrier(resource: resourceMap[texture])
                 } else if let buffer = resource.buffer {
-                    self.memoryBarrier(resource: resourceRegistry[buffer]!.buffer)
+                    self.memoryBarrier(resource: resourceMap[buffer].buffer)
                 }
                 
             case .updateFence(let fence, _):
@@ -680,7 +680,7 @@ public final class FGMTLComputeCommandEncoder {
                 self.waitForFence(fence.fence)
                 
             case .waitForHeapAliasingFences(let resource, _, _):
-                resourceRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
+                resourceMap.transientRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
                     for fence in fenceStates where fence.isValid {
                         self.waitForFence(fence.fence)
                     }
@@ -690,11 +690,11 @@ public final class FGMTLComputeCommandEncoder {
                 var mtlResource : MTLResource
                 
                 if let texture = resource.texture {
-                    mtlResource = resourceRegistry[texture]!
+                    mtlResource = resourceMap[texture]
                 } else if let buffer = resource.buffer {
-                    mtlResource = resourceRegistry[buffer]!.buffer
+                    mtlResource = resourceMap[buffer].buffer
                 } else if let argumentBuffer = resource.argumentBuffer {
-                    mtlResource = resourceRegistry[argumentBuffer]!.buffer
+                    mtlResource = resourceMap[argumentBuffer].buffer
                 } else {
                     preconditionFailure()
                 }
@@ -740,17 +740,17 @@ public final class FGMTLBlitCommandEncoder {
         self.encoder = encoder
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceRegistry: resourceRegistry)
-            self.executeCommand(command, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceRegistry: resourceRegistry)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+            self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
         }
     }
     
-    func executeCommand(_ command: FrameGraphCommand, resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: FrameGraphCommand, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         switch command {
         case .insertDebugSignpost(let cString):
             encoder.insertDebugSignpost(String(cString: cString))
@@ -765,46 +765,46 @@ public final class FGMTLBlitCommandEncoder {
             encoder.popDebugGroup()
             
         case .copyBufferToTexture(let args):
-            let sourceBuffer = resourceRegistry[buffer: args.pointee.sourceBuffer]!
-            encoder.copy(from: sourceBuffer.buffer, sourceOffset: Int(args.pointee.sourceOffset) + sourceBuffer.offset, sourceBytesPerRow: Int(args.pointee.sourceBytesPerRow), sourceBytesPerImage: Int(args.pointee.sourceBytesPerImage), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceRegistry[texture: args.pointee.destinationTexture]!, destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin), options: MTLBlitOption(args.pointee.options))
+            let sourceBuffer = resourceMap[args.pointee.sourceBuffer]
+            encoder.copy(from: sourceBuffer.buffer, sourceOffset: Int(args.pointee.sourceOffset) + sourceBuffer.offset, sourceBytesPerRow: Int(args.pointee.sourceBytesPerRow), sourceBytesPerImage: Int(args.pointee.sourceBytesPerImage), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture], destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin), options: MTLBlitOption(args.pointee.options))
             
         case .copyBufferToBuffer(let args):
-            let sourceBuffer = resourceRegistry[buffer: args.pointee.sourceBuffer]!
-            let destinationBuffer = resourceRegistry[buffer: args.pointee.destinationBuffer]!
+            let sourceBuffer = resourceMap[args.pointee.sourceBuffer]
+            let destinationBuffer = resourceMap[args.pointee.destinationBuffer]
             encoder.copy(from: sourceBuffer.buffer, sourceOffset: Int(args.pointee.sourceOffset) + sourceBuffer.offset, to: destinationBuffer.buffer, destinationOffset: Int(args.pointee.destinationOffset) + destinationBuffer.offset, size: Int(args.pointee.size))
             
         case .copyTextureToBuffer(let args):
-            let destinationBuffer = resourceRegistry[buffer: args.pointee.destinationBuffer]!
-            encoder.copy(from: resourceRegistry[texture: args.pointee.sourceTexture]!, sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: destinationBuffer.buffer, destinationOffset: Int(args.pointee.destinationOffset) + destinationBuffer.offset, destinationBytesPerRow: Int(args.pointee.destinationBytesPerRow), destinationBytesPerImage: Int(args.pointee.destinationBytesPerImage), options: MTLBlitOption(args.pointee.options))
+            let destinationBuffer = resourceMap[args.pointee.destinationBuffer]
+            encoder.copy(from: resourceMap[args.pointee.sourceTexture], sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: destinationBuffer.buffer, destinationOffset: Int(args.pointee.destinationOffset) + destinationBuffer.offset, destinationBytesPerRow: Int(args.pointee.destinationBytesPerRow), destinationBytesPerImage: Int(args.pointee.destinationBytesPerImage), options: MTLBlitOption(args.pointee.options))
             
         case .copyTextureToTexture(let args):
-            encoder.copy(from: resourceRegistry[texture: args.pointee.sourceTexture]!, sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceRegistry[texture: args.pointee.destinationTexture]!, destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin))
+            encoder.copy(from: resourceMap[args.pointee.sourceTexture], sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture], destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin))
             
         case .fillBuffer(let args):
-            let buffer = resourceRegistry[buffer: args.pointee.buffer]!
+            let buffer = resourceMap[args.pointee.buffer]
             let range = (args.pointee.range.lowerBound + buffer.offset)..<(args.pointee.range.upperBound + buffer.offset)
             encoder.fill(buffer: buffer.buffer, range: range, value: args.pointee.value)
             
         case .generateMipmaps(let texture):
-            encoder.generateMipmaps(for: resourceRegistry[texture: texture]!)
+            encoder.generateMipmaps(for: resourceMap[texture])
             
         case .synchroniseTexture(let textureHandle):
             #if os(macOS)
-            encoder.synchronize(resource: resourceRegistry[texture: textureHandle]!)
+            encoder.synchronize(resource: resourceMap[textureHandle])
             #else
             break
             #endif
             
         case .synchroniseTextureSlice(let args):
             #if os(macOS)
-            encoder.synchronize(texture: resourceRegistry[texture: args.pointee.texture]!, slice: Int(args.pointee.slice), level: Int(args.pointee.level))
+            encoder.synchronize(texture: resourceMap[args.pointee.texture], slice: Int(args.pointee.slice), level: Int(args.pointee.level))
             #else
             break
             #endif
             
         case .synchroniseBuffer(let buffer):
             #if os(macOS)
-            let buffer = resourceRegistry[buffer: buffer]!
+            let buffer = resourceMap[buffer]
             encoder.synchronize(resource: buffer.buffer)
             #else
             break
@@ -815,7 +815,7 @@ public final class FGMTLBlitCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceRegistry: MetalResourceRegistry) {
+    func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
         var hasPerformedTextureBarrier = false
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
@@ -824,9 +824,9 @@ public final class FGMTLBlitCommandEncoder {
                 
             case .memoryBarrier(let resource, _, _):
                 if let texture = resource.texture {
-                    self.memoryBarrier(resource: resourceRegistry[texture]!)
+                    self.memoryBarrier(resource: resourceMap[texture])
                 } else if let buffer = resource.buffer {
-                    self.memoryBarrier(resource: resourceRegistry[buffer]!.buffer)
+                    self.memoryBarrier(resource: resourceMap[buffer].buffer)
                 }
                 
             case .updateFence(let fence, _):
@@ -837,7 +837,7 @@ public final class FGMTLBlitCommandEncoder {
                 self.waitForFence(fence.fence)
                 
             case .waitForHeapAliasingFences(let resource, _, _):
-                resourceRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
+                resourceMap.transientRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
                     for fence in fenceStates where fence.isValid {
                         self.waitForFence(fence.fence)
                     }
@@ -882,26 +882,26 @@ final class FGMTLExternalCommandEncoder {
         self.commandBuffer = commandBuffer
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         // if _isDebugAssertConfiguration() {
         //     let resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         //     assert(resourceCommands[resourceCommandIndex].index >= pass.commandRange!.upperBound) // External encoders shouldn't have any resource commands.
         // }
         
         for (_, command) in zip(pass.commandRange!, pass.commands) {
-//            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceRegistry: resourceRegistry, encoder: ())
-            self.executeCommand(command, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
-//            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceRegistry: resourceRegistry, encoder: ())
+//            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap, encoder: ())
+            self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+//            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap, encoder: ())
         }
     }
     
-    func executeCommand(_ command: FrameGraphCommand, resourceRegistry: MetalResourceRegistry, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: FrameGraphCommand, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         switch command {
         case .encodeRayIntersection(let args):
             let intersector = args.pointee.intersector.takeUnretainedValue()
             
-            let rayBuffer = resourceRegistry[buffer: args.pointee.rayBuffer]!
-            let intersectionBuffer = resourceRegistry[buffer: args.pointee.intersectionBuffer]!
+            let rayBuffer = resourceMap[args.pointee.rayBuffer]
+            let intersectionBuffer = resourceMap[args.pointee.intersectionBuffer]
             
             intersector.encodeIntersection(commandBuffer: self.commandBuffer, intersectionType: args.pointee.intersectionType, rayBuffer: rayBuffer.buffer, rayBufferOffset: rayBuffer.offset + args.pointee.rayBufferOffset, intersectionBuffer: intersectionBuffer.buffer, intersectionBufferOffset: intersectionBuffer.offset + args.pointee.intersectionBufferOffset, rayCount: args.pointee.rayCount, accelerationStructure: args.pointee.accelerationStructure.takeUnretainedValue())
             
@@ -909,9 +909,9 @@ final class FGMTLExternalCommandEncoder {
             
             let intersector = args.pointee.intersector.takeUnretainedValue()
             
-            let rayBuffer = resourceRegistry[buffer: args.pointee.rayBuffer]!
-            let intersectionBuffer = resourceRegistry[buffer: args.pointee.intersectionBuffer]!
-            let rayCountBuffer = resourceRegistry[buffer: args.pointee.rayCountBuffer]!
+            let rayBuffer = resourceMap[args.pointee.rayBuffer]
+            let intersectionBuffer = resourceMap[args.pointee.intersectionBuffer]
+            let rayCountBuffer = resourceMap[args.pointee.rayCountBuffer]
             
             intersector.encodeIntersection(commandBuffer: self.commandBuffer, intersectionType: args.pointee.intersectionType, rayBuffer: rayBuffer.buffer, rayBufferOffset: rayBuffer.offset + args.pointee.rayBufferOffset, intersectionBuffer: intersectionBuffer.buffer, intersectionBufferOffset: intersectionBuffer.offset + args.pointee.intersectionBufferOffset, rayCountBuffer: rayCountBuffer.buffer, rayCountBufferOffset: rayCountBuffer.offset + args.pointee.rayCountBufferOffset, accelerationStructure: args.pointee.accelerationStructure.takeUnretainedValue())
             

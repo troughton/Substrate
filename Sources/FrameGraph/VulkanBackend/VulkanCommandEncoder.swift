@@ -172,7 +172,7 @@ protocol VulkanResourceBindingCommandEncoder : VulkanCommandEncoder {
 final class EncoderManager {
 
     let device : VulkanDevice
-    let frameGraph: VulkanFrameGraphBackend
+    let frameGraph: VulkanFrameGraphContext
     
     private var renderEncoder : VulkanRenderCommandEncoder? = nil
     private var computeEncoder : VulkanComputeCommandEncoder? = nil
@@ -180,7 +180,7 @@ final class EncoderManager {
     
     var commandBufferResources = [CommandBufferResources]()
     
-    init(frameGraph: VulkanFrameGraphBackend) {
+    init(frameGraph: VulkanFrameGraphContext) {
         self.frameGraph = frameGraph
         self.device = frameGraph.device
     }

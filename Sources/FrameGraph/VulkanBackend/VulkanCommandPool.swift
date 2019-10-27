@@ -197,14 +197,14 @@ public final class VulkanFrameCommandPool {
 public final class VulkanCommandPool {
 
     let device : VulkanDevice
-    let numInflightFrames : Int
+    let inflightFrameCount : Int
     private let pools : [VulkanFrameCommandPool]
     private var currentFrameIndex = 0
 
-    init(device: VulkanDevice, numInflightFrames: Int) {
+    init(device: VulkanDevice, inflightFrameCount: Int) {
         self.device = device
-        self.numInflightFrames = numInflightFrames
-        self.pools = (0..<numInflightFrames).map { _ in VulkanFrameCommandPool(device: device) }
+        self.inflightFrameCount = inflightFrameCount
+        self.pools = (0..<inflightFrameCount).map { _ in VulkanFrameCommandPool(device: device) }
     }
     
     public func allocateCommandBufferResources(passType: RenderPassType) -> CommandBufferResources {
@@ -212,7 +212,7 @@ public final class VulkanCommandPool {
     }
 
     public func cycleFrames() {
-        self.currentFrameIndex = (self.currentFrameIndex &+ 1) % self.numInflightFrames
+        self.currentFrameIndex = (self.currentFrameIndex &+ 1) % self.inflightFrameCount
     }
 }
 

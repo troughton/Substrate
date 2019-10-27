@@ -17,24 +17,21 @@ extension MTLResourceOptions {
     }
 }
 
-public final class MetalBackend : _FrameGraphBackend {
-    public let maxInflightFrames : Int
-    
+public final class MetalBackend : RenderBackendProtocol {
     let device : MTLDevice
-    let resourceRegistry : MetalResourceRegistry
+    let resourceRegistry : MetalPersistentResourceRegistry
     let stateCaches : MetalStateCaches
-    let frameGraph : MetalFrameGraph
     
-    public init(numInflightFrames: Int, libraryPath: String? = nil) {
+    var activeContext : MetalFrameGraphContext? = nil
+    
+    var queueSyncEvents = [MTLEvent?](repeating: nil, count: QueueRegistry.maxQueues)
+    
+    public init(libraryPath: String? = nil) {
         self.device = MTLCreateSystemDefaultDevice()!
-        self.resourceRegistry = MetalResourceRegistry(device: self.device, numInflightFrames: numInflightFrames)
         self.stateCaches = MetalStateCaches(device: self.device, libraryPath: libraryPath)
-        self.frameGraph = MetalFrameGraph(device: device, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
-        
-        self.maxInflightFrames = numInflightFrames
+        self.resourceRegistry = MetalPersistentResourceRegistry(device: device)
         
         RenderBackend.backend = self
-
         // Push constants go immediately after the argument buffers.
         RenderBackend.pushConstantPath = ResourceBindingPath(stages: [.vertex, .fragment], type: .buffer, argumentBufferIndex: nil, index: 8)
     }
@@ -43,8 +40,10 @@ public final class MetalBackend : _FrameGraphBackend {
         return self.device
     }
     
-    @usableFromInline func beginFrameResourceAccess() {
-        self.frameGraph.beginFrameResourceAccess()
+    @usableFromInline func setActiveContext(_ context: MetalFrameGraphContext) {
+        assert(self.activeContext == nil)
+        self.stateCaches.checkForLibraryReload()
+        self.activeContext = context
     }
     
     @usableFromInline func materialisePersistentTexture(_ texture: Texture) -> Bool {
@@ -68,31 +67,24 @@ public final class MetalBackend : _FrameGraphBackend {
     }
 
     @usableFromInline func dispose(texture: Texture) {
-        self.resourceRegistry.disposeTexture(texture, keepingReference: false, waitEvent: resourceRegistry.textureWaitEvents.removeValue(forKey: texture) ?? MetalContextWaitEvent())
+        self.resourceRegistry.disposeTexture(texture)
     }
     
     @usableFromInline func dispose(buffer: Buffer) {
-        self.resourceRegistry.disposeBuffer(buffer, keepingReference: false, waitEvent: resourceRegistry.bufferWaitEvents.removeValue(forKey: buffer) ?? MetalContextWaitEvent())
+        self.resourceRegistry.disposeBuffer(buffer)
     }
     
     @usableFromInline func dispose(argumentBuffer: _ArgumentBuffer) {
-        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer, keepingReference: false, waitEvent: resourceRegistry.argumentBufferWaitEvents[argumentBuffer] ?? MetalContextWaitEvent())
+        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer)
     }
     
     @usableFromInline func dispose(argumentBufferArray: _ArgumentBufferArray) {
-        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray, keepingReference: false, waitEvent: resourceRegistry.argumentBufferArrayWaitEvents[argumentBufferArray] ?? MetalContextWaitEvent())
-    }
-    
-    @usableFromInline func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {
-        autoreleasepool {
-            self.frameGraph.executeFrameGraph(passes: passes, dependencyTable: dependencyTable, resourceUsages: resourceUsages, completion: completion)
-        }
+        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray)
     }
     
     @usableFromInline func dispose(heap: Heap) {
         self.resourceRegistry.disposeHeap(heap)
     }
-    
     
     public var isDepth24Stencil8PixelFormatSupported: Bool {
         #if os(macOS)
@@ -107,16 +99,15 @@ public final class MetalBackend : _FrameGraphBackend {
     }
     
     @usableFromInline func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
-        return resourceRegistry.accessLock.withWriteLock {
-            resourceRegistry.bufferContents(for: buffer) + range.lowerBound
-        }
+        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        return bufferReference.buffer.contents() + bufferReference.offset + range.lowerBound
     }
     
     @usableFromInline func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         #if os(macOS)
         if range.isEmpty { return }
         if buffer.descriptor.storageMode == .managed {
-            let mtlBuffer = resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+            let mtlBuffer = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
             let offsetRange = (range.lowerBound + mtlBuffer.offset)..<(range.upperBound + mtlBuffer.offset)
             mtlBuffer.buffer.didModifyRange(offsetRange)
         }
@@ -140,23 +131,25 @@ public final class MetalBackend : _FrameGraphBackend {
         }
     }
     
-
     @usableFromInline func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
-        resourceRegistry.accessLock.withWriteLock {
-            resourceRegistry.copyTextureBytes(from: texture, to: bytes, bytesPerRow: bytesPerRow, region: region, mipmapLevel: mipmapLevel)
-        }
+        assert(texture.flags.contains(.persistent) || self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
+        
+        let mtlTexture = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
+        mtlTexture.getBytes(bytes, bytesPerRow: bytesPerRow, from: MTLRegion(region), mipmapLevel: mipmapLevel)
     }
     
     @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        resourceRegistry.accessLock.withWriteLock {
-            resourceRegistry.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
-        }
+        assert(texture.flags.contains(.persistent) || self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
+        
+        let mtlTexture = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
+        mtlTexture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
     }
     
     @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
-        resourceRegistry.accessLock.withWriteLock {
-            resourceRegistry.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
-        }
+        assert(texture.flags.contains(.persistent) || self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
+               
+        let mtlTexture = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
+        mtlTexture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
     }
     
     @usableFromInline
@@ -173,7 +166,6 @@ public final class MetalBackend : _FrameGraphBackend {
         let stages = MTLRenderStages(stages)
         return ResourceBindingPath(stages: stages, type: .buffer, argumentBufferIndex: nil, index: index)
     }
-    
 }
 
 #endif // canImport(Metal)

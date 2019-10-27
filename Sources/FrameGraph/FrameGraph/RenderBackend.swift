@@ -59,17 +59,10 @@ protocol RenderBackendProtocol : class {
     var threadExecutionWidth : Int { get }
     
     var renderDevice : Any { get }
-    
-    var maxInflightFrames : Int { get }
 }
 
 public struct RenderBackend {
     @usableFromInline static var backend : RenderBackendProtocol! = nil
-    
-    @inlinable
-    public static var maxInflightFrames : Int {
-        return backend.maxInflightFrames
-    }
     
     @inlinable
     public static func materialisePersistentTexture(_ texture: Texture) -> Bool {
