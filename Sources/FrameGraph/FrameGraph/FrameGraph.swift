@@ -283,7 +283,7 @@ public final class FrameGraph {
     public static var jobManager : FrameGraphJobManager = DefaultFrameGraphJobManager()
     
     static let activeFrameGraphSemaphore = DispatchSemaphore(value: 1)
-    @usableFromInline static var activeFrameGraph : FrameGraph? = nil
+    public private(set) static var activeFrameGraph : FrameGraph? = nil
     
     /// executionAllocator is used for allocations that last one execution of the FrameGraph.
     static var executionAllocator : TagAllocator! = nil
