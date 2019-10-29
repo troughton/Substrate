@@ -296,7 +296,7 @@ public final class FrameGraph {
     
     private var renderPasses : [RenderPassRecord] = []
     
-    public private(set) var currentFrameIndex : UInt64 = 0
+    public static private(set) var globalSubmissionIndex : UInt64 = 0
     private var previousFrameCompletionTime : UInt64 = 0
     public private(set) var lastFrameRenderDuration = 1000.0 / 60.0
     
@@ -510,7 +510,7 @@ public final class FrameGraph {
         var producingPasses = [Int]()
         var priorReads = [Int]()
         
-        let expectedFrame = self.currentFrameIndex & 0xFF
+        let expectedFrame = FrameGraph.globalSubmissionIndex & 0xFF
         
         // Merge the resources from all other threads into the usages for the first thread.
         for resourceUsages in FrameGraph.threadResourceUsages.dropFirst() {
@@ -655,7 +655,7 @@ public final class FrameGraph {
         jobManager.dispatchSyncFrameGraph { [self] in
             self.context.accessSemaphore.wait()
             
-            let currentFrameIndex = self.currentFrameIndex
+            let currentFrameIndex =  FrameGraph.globalSubmissionIndex
             
             FrameGraph.resourceUsagesAllocator = TagAllocator(tag: FrameGraphTagType.resourceUsageNodes.tag, threadCount: jobManager.threadCount)
             FrameGraph.executionAllocator = TagAllocator(tag: FrameGraphTagType.frameGraphExecution.tag, threadCount: jobManager.threadCount)
@@ -725,7 +725,7 @@ public final class FrameGraph {
             
             self.reset()
             
-            self.currentFrameIndex += 1
+            FrameGraph.globalSubmissionIndex += 1
         }
     }
     

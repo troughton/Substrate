@@ -891,7 +891,7 @@ public struct Buffer : ResourceProtocol {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
             return PersistentBufferRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
         } else {
-            return FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF == self.generation
+            return FrameGraph.globalSubmissionIndex & 0xFF == self.generation
         }
     }
 }
@@ -1195,7 +1195,7 @@ public struct Texture : ResourceProtocol {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
             return PersistentTextureRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
         } else {
-            return FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF == self.generation
+            return FrameGraph.globalSubmissionIndex & 0xFF == self.generation
         }
     }
     

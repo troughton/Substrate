@@ -323,7 +323,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
             return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
         } else {
-            return FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF == self.generation
+            return FrameGraph.globalSubmissionIndex & 0xFF == self.generation
         }
     }
 }
@@ -420,7 +420,7 @@ public struct _ArgumentBufferArray : ResourceProtocol {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
             return PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
         } else {
-            return FrameGraph.activeFrameGraph!.currentFrameIndex & 0xFF == self.generation
+            return FrameGraph.globalSubmissionIndex & 0xFF == self.generation
         }
     }
 }
