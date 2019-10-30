@@ -247,6 +247,7 @@ public protocol FrameGraphContext : class {
 
 // _FrameGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
 protocol _FrameGraphContext : FrameGraphContext {
+    var transientRegistryIndex : Int { get }
     var accessSemaphore : Semaphore { get }
     func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
     func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void)
@@ -303,8 +304,19 @@ public final class FrameGraph {
     var submissionNotifyQueue = [() -> Void]()
     let context : _FrameGraphContext
     
-    public init(context: FrameGraphContext) {
+    public let transientRegistryIndex : Int
+    
+    public init(context: FrameGraphContext, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384, transientArgumentBufferArrayCapacity: Int = 1024) {
         self.context = context as! _FrameGraphContext
+        self.transientRegistryIndex = self.context.transientRegistryIndex
+        
+        TransientBufferRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientBufferCapacity)
+        TransientTextureRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientTextureCapacity)
+        TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientArgumentBufferArrayCapacity)
+    }
+    
+    deinit {
+        TransientRegistryManager.free(self.transientRegistryIndex)
     }
     
     public static func initialise() {
@@ -730,10 +742,10 @@ public final class FrameGraph {
     }
     
     private func reset() {
-        TransientBufferRegistry.instance.clear()
-        TransientTextureRegistry.instance.clear()
-        TransientArgumentBufferRegistry.instance.clear()
-        TransientArgumentBufferArrayRegistry.instance.clear()
+        TransientBufferRegistry.instances[transientRegistryIndex].clear()
+        TransientTextureRegistry.instances[transientRegistryIndex].clear()
+        TransientArgumentBufferRegistry.instances[transientRegistryIndex].clear()
+        TransientArgumentBufferArrayRegistry.instances[transientRegistryIndex].clear()
         
         PersistentTextureRegistry.instance.clear()
         PersistentBufferRegistry.instance.clear()

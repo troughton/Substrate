@@ -212,6 +212,7 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
 public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     public let allocator : AllocatorType
+    let transientRegistryIndex : Int
     
     public typealias Index = Int
     
@@ -221,20 +222,21 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     @usableFromInline var capacity = 0
     
-    public init(allocator: AllocatorType = .system) {
+    public init(allocator: AllocatorType = .system, transientRegistryIndex: Int) {
         self.allocator = allocator
+        self.transientRegistryIndex = transientRegistryIndex
     }
 
     public mutating func prepareFrame() {
         switch R.self {
         case is Buffer.Type:
-            self.reserveCapacity(TransientBufferRegistry.instance.capacity)
+            self.reserveCapacity(TransientBufferRegistry.instances[self.transientRegistryIndex].capacity)
         case is Texture.Type:
-            self.reserveCapacity(TransientTextureRegistry.instance.capacity)
+            self.reserveCapacity(TransientTextureRegistry.instances[self.transientRegistryIndex].capacity)
         case is _ArgumentBuffer.Type:
-            self.reserveCapacity(TransientArgumentBufferRegistry.instance.count)
+            self.reserveCapacity(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].count)
         case is _ArgumentBufferArray.Type:
-            self.reserveCapacity(TransientArgumentBufferArrayRegistry.instance.capacity)
+            self.reserveCapacity(TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].capacity)
         case is Heap.Type:
             break
         default:
@@ -423,10 +425,10 @@ public struct ResourceMap<R : ResourceProtocol, V> {
     public var transientMap : TransientResourceMap<R, V>
     public var persistentMap : PersistentResourceMap<R, V>
     
-    public init(allocator: AllocatorType = .system) {
+    public init(allocator: AllocatorType = .system, transientRegistryIndex: Int) {
         self.allocator = allocator
         
-        self.transientMap = TransientResourceMap(allocator: allocator)
+        self.transientMap = TransientResourceMap(allocator: allocator, transientRegistryIndex: transientRegistryIndex)
         self.persistentMap = PersistentResourceMap(allocator: allocator)
     }
 

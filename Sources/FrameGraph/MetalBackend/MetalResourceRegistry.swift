@@ -397,15 +397,15 @@ final class MetalPersistentResourceRegistry {
 final class MetalTransientResourceRegistry {
     var accessLock = SpinLock()
     
-    private var textureReferences = TransientResourceMap<Texture, MTLTextureReference>()
-    private var bufferReferences = TransientResourceMap<Buffer, MTLBufferReference>()
-    private var argumentBufferReferences = TransientResourceMap<_ArgumentBuffer, MTLBufferReference>() // Separate since this needs to have thread-safe access.
-    private var argumentBufferArrayReferences = TransientResourceMap<_ArgumentBufferArray, MTLBufferReference>() // Separate since this needs to have thread-safe access.
+    private var textureReferences : TransientResourceMap<Texture, MTLTextureReference>
+    private var bufferReferences : TransientResourceMap<Buffer, MTLBufferReference>
+    private var argumentBufferReferences : TransientResourceMap<_ArgumentBuffer, MTLBufferReference>
+    private var argumentBufferArrayReferences : TransientResourceMap<_ArgumentBufferArray, MTLBufferReference>
     
-    var textureWaitEvents = TransientResourceMap<Texture, MetalContextWaitEvent>()
-    var bufferWaitEvents = TransientResourceMap<Buffer, MetalContextWaitEvent>()
-    var argumentBufferWaitEvents = TransientResourceMap<_ArgumentBuffer, MetalContextWaitEvent>()
-    var argumentBufferArrayWaitEvents = TransientResourceMap<_ArgumentBufferArray, MetalContextWaitEvent>()
+    var textureWaitEvents : TransientResourceMap<Texture, MetalContextWaitEvent>
+    var bufferWaitEvents : TransientResourceMap<Buffer, MetalContextWaitEvent>
+    var argumentBufferWaitEvents : TransientResourceMap<_ArgumentBuffer, MetalContextWaitEvent>
+    var argumentBufferArrayWaitEvents : TransientResourceMap<_ArgumentBufferArray, MetalContextWaitEvent>
     
     private var heapResourceUsageFences = [Resource : [MetalFenceHandle]]()
     private var heapResourceDisposalFences = [Resource : [MetalFenceHandle]]()
@@ -434,7 +434,16 @@ final class MetalTransientResourceRegistry {
     
     public private(set) var frameDrawables : [CAMetalDrawable] = []
     
-    public init(device: MTLDevice, inflightFrameCount: Int) {
+    public init(device: MTLDevice, inflightFrameCount: Int, transientRegistryIndex: Int) {
+        self.textureReferences = .init(transientRegistryIndex: transientRegistryIndex)
+        self.bufferReferences = .init(transientRegistryIndex: transientRegistryIndex)
+        self.argumentBufferReferences = .init(transientRegistryIndex: transientRegistryIndex)
+        self.argumentBufferArrayReferences = .init(transientRegistryIndex: transientRegistryIndex)
+        
+        self.textureWaitEvents = .init(transientRegistryIndex: transientRegistryIndex)
+        self.bufferWaitEvents = .init(transientRegistryIndex: transientRegistryIndex)
+        self.argumentBufferWaitEvents = .init(transientRegistryIndex: transientRegistryIndex)
+        self.argumentBufferArrayWaitEvents = .init(transientRegistryIndex: transientRegistryIndex)
         
         self.stagingTextureAllocator = MetalPoolResourceAllocator(device: device, numFrames: inflightFrameCount)
         self.historyBufferAllocator = MetalPoolResourceAllocator(device: device, numFrames: 1)

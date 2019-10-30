@@ -14,18 +14,58 @@ import CAtomics
 // Fixed-capacity registries (transient buffers, transient textures, and transient argument buffer arrays) have permanently-allocated storage.
 // Chunk-based registries allocate storage in blocks. This avoids excessive memory usage while simultaneously ensuring that the memory for a resource is never reallocated (which would cause issues in multithreaded contexts, requiring locks for all access).
 
-public final class TransientBufferRegistry {
-    public static let instance = TransientBufferRegistry()
+
+public final class TransientRegistryManager {
+    public static let instance = TransientRegistryManager()
     
-    public let capacity = 16384
-    public var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    public static let maxTransientRegistries = UInt8.bitWidth
     
-    public let descriptors : UnsafeMutablePointer<BufferDescriptor>
-    public let deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>
-    public let usages : UnsafeMutablePointer<ResourceUsagesList>
-    public let labels : UnsafeMutablePointer<String?>
+    static var allocatedRegistries : UInt8 = 0
+    static var lock = SpinLock()
     
-    public init() {
+    public static func allocate() -> Int {
+        return self.lock.withLock {
+            for i in 0..<self.allocatedRegistries.bitWidth {
+                if self.allocatedRegistries & (1 << i) == 0 {
+                    self.allocatedRegistries |= (1 << i)
+                    
+                    return i
+                }
+            }
+            
+            fatalError("Only \(Self.maxTransientRegistries) transient registries may exist at any time.")
+        }
+    }
+    
+    public static func free(_ index: Int) {
+        self.lock.withLock {
+            assert(self.allocatedRegistries & (1 << index) != 0, "Registry index being disposed is not allocated.")
+            self.allocatedRegistries &= ~(1 << index)
+        }
+    }
+}
+
+@usableFromInline final class TransientBufferRegistry {
+
+    @usableFromInline static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { _ in TransientBufferRegistry() }
+    
+    @usableFromInline var capacity : Int
+    @usableFromInline var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    
+    @usableFromInline var descriptors : UnsafeMutablePointer<BufferDescriptor>! = nil
+    @usableFromInline var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>! = nil
+    @usableFromInline var usages : UnsafeMutablePointer<ResourceUsagesList>! = nil
+    @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
+    
+    init() {
+        self.capacity = 0
+    }
+    
+    func initialise(capacity: Int) {
+        assert(self.capacity == 0)
+        
+        self.capacity = capacity
+        
         self.count.initialize(to: AtomicInt(0))
         self.descriptors = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.deferredSliceActions = UnsafeMutablePointer.allocate(capacity: self.capacity)
@@ -33,8 +73,18 @@ public final class TransientBufferRegistry {
         self.labels = UnsafeMutablePointer.allocate(capacity: self.capacity)
     }
     
-    @inlinable
-    public func allocate(descriptor: BufferDescriptor, flags: ResourceFlags) -> UInt64 {
+    deinit {
+        self.clear()
+        
+        self.count.deallocate()
+        self.descriptors?.deallocate()
+        self.deferredSliceActions?.deallocate()
+        self.usages?.deallocate()
+        self.labels?.deallocate()
+    }
+    
+    @usableFromInline
+    func allocate(descriptor: BufferDescriptor, flags: ResourceFlags) -> UInt64 {
         
         let index = CAtomicsAdd(self.count, 1, .relaxed)
         self.ensureCapacity(index + 1)
@@ -49,13 +99,13 @@ public final class TransientBufferRegistry {
         return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
-    @inlinable
+    @usableFromInline
     func ensureCapacity(_ capacity: Int) {
         assert(capacity <= self.capacity)
     }
     
-    @inlinable
-    public func clear() {
+    @usableFromInline
+    func clear() {
         let count = CAtomicsExchange(self.count, 0, .relaxed)
         self.descriptors.deinitialize(count: count)
         self.deferredSliceActions.deinitialize(count: count)
@@ -66,25 +116,26 @@ public final class TransientBufferRegistry {
     }
 }
 
-public final class PersistentBufferRegistry {
+@usableFromInline final class PersistentBufferRegistry {
     
-    public static let instance = PersistentBufferRegistry()
+    @usableFromInline static let instance = PersistentBufferRegistry()
     
-    public struct Chunk {
-        public static let itemsPerChunk = 4096
+    @usableFromInline
+    struct Chunk {
+        @usableFromInline static let itemsPerChunk = 4096
         
-        public let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
-        /// The index that must be completed on the GPU for each queue before the CPU can read from this memory.
-        public let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
-        public let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        public let descriptors : UnsafeMutablePointer<BufferDescriptor>
-        public let usages : UnsafeMutablePointer<ResourceUsagesList>
-        public let heaps : UnsafeMutablePointer<Heap>
-        public let generations : UnsafeMutablePointer<UInt8>
-        public let labels : UnsafeMutablePointer<String?>
+        @usableFromInline let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
+        /// The index that must be comp@usableFromInline leted on the GPU for each queue before the CPU can read from this memory.
+        @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        /// The index that must be comp@usableFromInline leted on the GPU for each queue before the CPU can write to this memory.
+        @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        @usableFromInline let descriptors : UnsafeMutablePointer<BufferDescriptor>
+        @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
+        @usableFromInline let heaps : UnsafeMutablePointer<Heap>
+        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
+        @usableFromInline let labels : UnsafeMutablePointer<String?>
         
-        public init() {
+        init() {
             self.stateFlags = .allocate(capacity: Chunk.itemsPerChunk)
             self.readWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
             self.writeWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
@@ -97,7 +148,7 @@ public final class PersistentBufferRegistry {
             self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
         }
         
-        public func deallocate() {
+        func deallocate() {
             self.stateFlags.deallocate()
             self.readWaitIndices.deallocate()
             self.writeWaitIndices.deallocate()
@@ -109,21 +160,21 @@ public final class PersistentBufferRegistry {
         }
     }
     
-    public static let maxChunks = 128
+    @usableFromInline static let maxChunks = 128
     
-    public var lock = SpinLock()
+    @usableFromInline var lock = SpinLock()
     
-    public var freeIndices = RingBuffer<Int>()
-    public var maxIndex = 0
-    public let enqueuedDisposals = ExpandingBuffer<Buffer>()
-    public let chunks : UnsafeMutablePointer<Chunk>
+    @usableFromInline var freeIndices = RingBuffer<Int>()
+    @usableFromInline var maxIndex = 0
+    @usableFromInline let enqueuedDisposals = ExpandingBuffer<Buffer>()
+    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
-    public init() {
+    init() {
         self.chunks = .allocate(capacity: Self.maxChunks)
     }
     
-    @inlinable
-    public func allocate(descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) -> UInt64 {
+    @usableFromInline
+    func allocate(descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -152,12 +203,12 @@ public final class PersistentBufferRegistry {
         }
     }
     
-    var chunkCount : Int {
+    @usableFromInline var chunkCount : Int {
         if self.maxIndex == 0 { return 0 }
         return (self.maxIndex / Chunk.itemsPerChunk) + 1
     }
     
-    @inlinable
+    @usableFromInline
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
         self.chunks.advanced(by: index).initialize(to: Chunk())
@@ -181,7 +232,7 @@ public final class PersistentBufferRegistry {
         self.freeIndices.append(index)
     }
     
-    public func clear() {
+    func clear() {
         assert(!self.lock.isLocked)
         
         for buffer in self.enqueuedDisposals {
@@ -195,7 +246,7 @@ public final class PersistentBufferRegistry {
         }
     }
     
-    public func dispose(_ buffer: Buffer, atEndOfFrame: Bool = true) {
+    func dispose(_ buffer: Buffer, atEndOfFrame: Bool = true) {
         self.lock.withLock {
             if atEndOfFrame {
                 self.enqueuedDisposals.append(buffer)
@@ -211,20 +262,25 @@ public enum TextureViewBaseInfo {
     case texture(Texture.TextureViewDescriptor)
 }
 
-public final class TransientTextureRegistry {
-    public static let instance = TransientTextureRegistry()
+@usableFromInline final class TransientTextureRegistry {
+    @usableFromInline static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { _ in TransientTextureRegistry() }
     
-    public let capacity = 16384
-    public var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    @usableFromInline var capacity : Int
+    @usableFromInline let count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
     
-    public var descriptors : UnsafeMutablePointer<TextureDescriptor>
-    public var usages : UnsafeMutablePointer<ResourceUsagesList>
+    @usableFromInline var descriptors : UnsafeMutablePointer<TextureDescriptor>! = nil
+    @usableFromInline var usages : UnsafeMutablePointer<ResourceUsagesList>! = nil
     
-    public var labels : UnsafeMutablePointer<String?>
-    public var baseResources : UnsafeMutablePointer<Resource>
-    public var textureViewInfos : UnsafeMutablePointer<TextureViewBaseInfo?>
+    @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
+    @usableFromInline var baseResources : UnsafeMutablePointer<Resource>! = nil
+    @usableFromInline var textureViewInfos : UnsafeMutablePointer<TextureViewBaseInfo?>! = nil
     
-    public init() {
+    init() {
+        self.capacity = 0
+    }
+    
+    func initialise(capacity: Int) {
+        self.capacity = capacity
         self.count.initialize(to: AtomicInt(0))
         self.descriptors = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: self.capacity)
@@ -233,8 +289,19 @@ public final class TransientTextureRegistry {
         self.textureViewInfos = UnsafeMutablePointer.allocate(capacity: self.capacity)
     }
     
-    @inlinable
-    public func allocate(descriptor: TextureDescriptor, flags: ResourceFlags) -> UInt64 {
+    deinit {
+        self.clear()
+        
+        self.count.deallocate()
+        self.descriptors?.deallocate()
+        self.usages?.deallocate()
+        self.labels?.deallocate()
+        self.baseResources?.deallocate()
+        self.textureViewInfos?.deallocate()
+    }
+    
+    @usableFromInline
+    func allocate(descriptor: TextureDescriptor, flags: ResourceFlags) -> UInt64 {
         let index = CAtomicsAdd(self.count, 1, .relaxed)
         self.ensureCapacity(index + 1)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
@@ -248,8 +315,8 @@ public final class TransientTextureRegistry {
         return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
-    @inlinable
-    public func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) -> UInt64 {
+    @usableFromInline
+    func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) -> UInt64 {
         let index = CAtomicsAdd(self.count, 1, .relaxed)
         self.ensureCapacity(index + 1)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
@@ -265,8 +332,8 @@ public final class TransientTextureRegistry {
         return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
-    @inlinable
-    public func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) -> UInt64 {
+    @usableFromInline
+    func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) -> UInt64 {
         let index = CAtomicsAdd(self.count, 1, .relaxed)
         self.ensureCapacity(index + 1)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
@@ -292,13 +359,13 @@ public final class TransientTextureRegistry {
         return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
-    @inlinable
+    @usableFromInline
     func ensureCapacity(_ capacity: Int) {
         assert(capacity <= self.capacity)
     }
     
-    @inlinable
-    public func clear() {
+    @usableFromInline
+    func clear() {
         let count = CAtomicsExchange(self.count, 0, .relaxed)
         self.descriptors.deinitialize(count: count)
         self.usages.deinitialize(count: count)
@@ -310,24 +377,25 @@ public final class TransientTextureRegistry {
     }
 }
 
-public final class PersistentTextureRegistry {
-    public static let instance = PersistentTextureRegistry()
+@usableFromInline final class PersistentTextureRegistry {
+    @usableFromInline static let instance = PersistentTextureRegistry()
     
-    public struct Chunk {
-        public static let itemsPerChunk = 4096
+    @usableFromInline
+    struct Chunk {
+        @usableFromInline static let itemsPerChunk = 4096
         
-        public let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
-        /// The index that must be completed on the GPU for each queue before the CPU can read from this memory.
-        public let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
-        public let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        public let descriptors : UnsafeMutablePointer<TextureDescriptor>
-        public let usages : UnsafeMutablePointer<ResourceUsagesList>
-        public let heaps : UnsafeMutablePointer<Heap>
-        public let generations : UnsafeMutablePointer<UInt8>
-        public let labels : UnsafeMutablePointer<String?>
+        @usableFromInline let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
+        /// The index that must be comp@usableFromInline leted on the GPU for each queue before the CPU can read from this memory.
+        @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        /// The index that must be comp@usableFromInline leted on the GPU for each queue before the CPU can write to this memory.
+        @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        @usableFromInline let descriptors : UnsafeMutablePointer<TextureDescriptor>
+        @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
+        @usableFromInline let heaps : UnsafeMutablePointer<Heap>
+        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
+        @usableFromInline let labels : UnsafeMutablePointer<String?>
         
-        public init() {
+        init() {
             self.stateFlags = .allocate(capacity: Chunk.itemsPerChunk)
             self.readWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
             self.writeWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
@@ -340,7 +408,7 @@ public final class PersistentTextureRegistry {
             self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
         }
         
-        public func deallocate() {
+        func deallocate() {
             self.stateFlags.deallocate()
             self.readWaitIndices.deallocate()
             self.writeWaitIndices.deallocate()
@@ -352,21 +420,21 @@ public final class PersistentTextureRegistry {
         }
     }
     
-    public static let maxChunks = 128
+    @usableFromInline static let maxChunks = 128
     
-    public var lock = SpinLock()
+    @usableFromInline var lock = SpinLock()
     
-    public var freeIndices = RingBuffer<Int>()
-    public var maxIndex = 0
-    public let enqueuedDisposals = ExpandingBuffer<Texture>()
-    public let chunks : UnsafeMutablePointer<Chunk>
+    @usableFromInline var freeIndices = RingBuffer<Int>()
+    @usableFromInline var maxIndex = 0
+    @usableFromInline let enqueuedDisposals = ExpandingBuffer<Texture>()
+    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
-    public init() {
+    init() {
         self.chunks = .allocate(capacity: Self.maxChunks)
     }
     
-    @inlinable
-    public func allocate(descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) -> UInt64 {
+    @usableFromInline
+    func allocate(descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -395,18 +463,18 @@ public final class PersistentTextureRegistry {
         }
     }
     
-    var chunkCount : Int {
+    @usableFromInline var chunkCount : Int {
         if self.maxIndex == 0 { return 0 }
         return (self.maxIndex / Chunk.itemsPerChunk) + 1
     }
     
-    @inlinable
+    @usableFromInline
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
         self.chunks.advanced(by: index).initialize(to: Chunk())
     }
     
-    public func clear() {
+    func clear() {
         assert(!self.lock.isLocked)
         
         for texture in self.enqueuedDisposals {
@@ -433,7 +501,7 @@ public final class PersistentTextureRegistry {
         }
     }
     
-    public func dispose(_ texture: Texture) {
+    func dispose(_ texture: Texture) {
         self.lock.withLock {
             self.enqueuedDisposals.append(texture)
         }
@@ -441,22 +509,24 @@ public final class PersistentTextureRegistry {
 }
 
 // Unlike the other transient registries, the transient argument buffer registry is chunk-based.
-// This is because the number of argument buffers used within a frame can vary dramatically, and so a pre-assigned maximum is more likely to be hit.
-public final class TransientArgumentBufferRegistry {
-    public static let instance = TransientArgumentBufferRegistry()
+// This is because the number of argument buffers used within a frame can @usableFromInline vary dramatically, and so a pre-assigned maximum is more likely to be hit.
+@usableFromInline final class TransientArgumentBufferRegistry {
     
-    public struct Chunk {
-        public static let itemsPerChunk = 2048
+    @usableFromInline static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { _ in TransientArgumentBufferRegistry() }
+    
+    @usableFromInline
+    struct Chunk {
+        @usableFromInline static let itemsPerChunk = 2048
         
-        public let usages : UnsafeMutablePointer<ResourceUsagesList>
-        public let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
-        public let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
-        public let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
-        public let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
+        @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
+        @usableFromInline let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
+        @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
+        @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
+        @usableFromInline let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
         
-        public let labels : UnsafeMutablePointer<String?>
+        @usableFromInline let labels : UnsafeMutablePointer<String?>
         
-        public init() {
+        init() {
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
             self.encoders = .allocate(capacity: Chunk.itemsPerChunk)
             self.enqueuedBindings = .allocate(capacity: Chunk.itemsPerChunk)
@@ -465,7 +535,7 @@ public final class TransientArgumentBufferRegistry {
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
         }
         
-        public func deallocate() {
+        func deallocate() {
             self.usages.deallocate()
             self.encoders.deallocate()
             self.enqueuedBindings.deallocate()
@@ -475,22 +545,30 @@ public final class TransientArgumentBufferRegistry {
         }
     }
     
-    public static let maxChunks = 256
+    @usableFromInline static let maxChunks = 256
     
-    public var lock = SpinLock()
+    @usableFromInline var lock = SpinLock()
     
-    public let inlineDataAllocator : ExpandingBuffer<UInt8>
-    public var count = 0
-    public let chunks : UnsafeMutablePointer<Chunk>
-    public var allocatedChunkCount = 0
+    @usableFromInline let inlineDataAllocator : ExpandingBuffer<UInt8>
+    @usableFromInline var count = 0
+    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
+    @usableFromInline var allocatedChunkCount = 0
     
-    public init() {
+    init() {
         self.inlineDataAllocator = ExpandingBuffer()
         self.chunks = .allocate(capacity: Self.maxChunks)
     }
     
-    @inlinable
-    public func allocate(flags: ResourceFlags) -> UInt64 {
+    deinit {
+        self.clear()
+        for i in 0..<self.chunkCount {
+            self.chunks[i].deallocate()
+        }
+        self.chunks.deallocate()
+    }
+    
+    @usableFromInline
+    func allocate(flags: ResourceFlags) -> UInt64 {
         return self.lock.withLock {
             
             let index = self.count
@@ -514,8 +592,8 @@ public final class TransientArgumentBufferRegistry {
         }
     }
     
-    @inlinable
-    public func allocate(flags: ResourceFlags, sourceArray: _ArgumentBufferArray) -> UInt64 {
+    @usableFromInline
+    func allocate(flags: ResourceFlags, sourceArray: _ArgumentBufferArray) -> UInt64 {
         return self.lock.withLock {
             let index = self.count
             if index == self.allocatedChunkCount * Chunk.itemsPerChunk {
@@ -538,12 +616,12 @@ public final class TransientArgumentBufferRegistry {
         }
     }
     
-    var chunkCount : Int {
+    @usableFromInline var chunkCount : Int {
         if self.count == 0 { return 0 }
         return (self.count / Chunk.itemsPerChunk) + 1
     }
     
-    @inlinable
+    @usableFromInline
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
         assert(index == self.allocatedChunkCount)
@@ -551,7 +629,7 @@ public final class TransientArgumentBufferRegistry {
         self.allocatedChunkCount += 1
     }
     
-    public func clear() {
+    func clear() {
         assert(!self.lock.isLocked)
         
         for chunkIndex in 0..<self.chunkCount {
@@ -567,24 +645,25 @@ public final class TransientArgumentBufferRegistry {
     }
 }
 
-public final class PersistentArgumentBufferRegistry {
-    public static let instance = PersistentArgumentBufferRegistry()
+@usableFromInline final class PersistentArgumentBufferRegistry {
+    @usableFromInline static let instance = PersistentArgumentBufferRegistry()
     
-    public struct Chunk {
-        public static let itemsPerChunk = 2048
+    @usableFromInline
+    struct Chunk {
+        @usableFromInline static let itemsPerChunk = 2048
         
-        public let usages : UnsafeMutablePointer<ResourceUsagesList>
-        public let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
-        public let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
-        public let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
-        public let inlineDataStorage : UnsafeMutablePointer<Data>
-        public let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
-        public let heaps : UnsafeMutablePointer<Heap>
-        public let generations : UnsafeMutablePointer<UInt8>
+        @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
+        @usableFromInline let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
+        @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
+        @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
+        @usableFromInline let inlineDataStorage : UnsafeMutablePointer<Data>
+        @usableFromInline let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
+        @usableFromInline let heaps : UnsafeMutablePointer<Heap>
+        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         
-        public let labels : UnsafeMutablePointer<String?>
+        @usableFromInline let labels : UnsafeMutablePointer<String?>
         
-        public init() {
+        init() {
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
             self.encoders = .allocate(capacity: Chunk.itemsPerChunk)
             self.enqueuedBindings = .allocate(capacity: Chunk.itemsPerChunk)
@@ -598,7 +677,7 @@ public final class PersistentArgumentBufferRegistry {
             self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
         }
         
-        public func deallocate() {
+        func deallocate() {
             self.usages.deallocate()
             self.encoders.deallocate()
             self.enqueuedBindings.deallocate()
@@ -611,21 +690,22 @@ public final class PersistentArgumentBufferRegistry {
         }
     }
     
-    public static let maxChunks = 256
+    @usableFromInline static let maxChunks = 256
     
-    public var lock = SpinLock()
+    @usableFromInline var lock = SpinLock()
     
-    public var freeIndices = RingBuffer<Int>()
-    public var maxIndex = 0
+    @usableFromInline var freeIndices = RingBuffer<Int>()
+    @usableFromInline var maxIndex = 0
     
-    public let enqueuedDisposals = ExpandingBuffer<_ArgumentBuffer>()
-    public let chunks : UnsafeMutablePointer<Chunk>
+    @usableFromInline let enqueuedDisposals = ExpandingBuffer<_ArgumentBuffer>()
+    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
-    public init() {
+    init() {
         self.chunks = .allocate(capacity: Self.maxChunks)
     }
     
-    public func allocate(flags: ResourceFlags) -> UInt64 {
+    @usableFromInline
+    func allocate(flags: ResourceFlags) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -654,7 +734,8 @@ public final class PersistentArgumentBufferRegistry {
         }
     }
     
-    public func allocate(flags: ResourceFlags, sourceArray: _ArgumentBufferArray) -> UInt64 {
+    @usableFromInline
+    func allocate(flags: ResourceFlags, sourceArray: _ArgumentBufferArray) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -685,18 +766,18 @@ public final class PersistentArgumentBufferRegistry {
         }
     }
     
-    var chunkCount : Int {
+    @usableFromInline var chunkCount : Int {
         if self.maxIndex == 0 { return 0 }
         return (self.maxIndex / Chunk.itemsPerChunk) + 1
     }
     
-    @inlinable
+    @usableFromInline
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
         self.chunks.advanced(by: index).initialize(to: Chunk())
     }
     
-    public func clear() {
+    func clear() {
         assert(!self.lock.isLocked)
         
         for argumentBuffer in self.enqueuedDisposals {
@@ -725,23 +806,28 @@ public final class PersistentArgumentBufferRegistry {
         }
     }
     
-    public func dispose(_ buffer: _ArgumentBuffer) {
+    func dispose(_ buffer: _ArgumentBuffer) {
         self.lock.withLock {
             self.enqueuedDisposals.append(buffer)
         }
     }
 }
 
-public final class TransientArgumentBufferArrayRegistry {
-    public static let instance = TransientArgumentBufferArrayRegistry()
+@usableFromInline final class TransientArgumentBufferArrayRegistry {
+    @usableFromInline static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { _ in TransientArgumentBufferArrayRegistry() }
     
-    public let capacity = 1024
-    public var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    @usableFromInline var capacity : Int
+    @usableFromInline var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
     
-    public let bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>
-    public let labels : UnsafeMutablePointer<String?>
+    @usableFromInline var bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>! = nil
+    @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
     
-    public init() {
+    init() {
+        self.capacity = 0
+    }
+    
+    func initialise(capacity: Int) {
+        self.capacity = capacity
         self.count.initialize(to: AtomicInt(0))
         self.bindings = .allocate(capacity: capacity)
         self.labels = .allocate(capacity: capacity)
@@ -749,12 +835,12 @@ public final class TransientArgumentBufferArrayRegistry {
     
     deinit {
         self.clear()
-        self.bindings.deallocate()
-        self.labels.deallocate()
+        self.bindings?.deallocate()
+        self.labels?.deallocate()
     }
     
-    @inlinable
-    public func allocate(flags: ResourceFlags) -> UInt64 {
+    @usableFromInline
+    func allocate(flags: ResourceFlags) -> UInt64 {
         let index = CAtomicsAdd(self.count, 1, .relaxed)
         assert(index < self.capacity)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
@@ -765,8 +851,8 @@ public final class TransientArgumentBufferArrayRegistry {
         return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
     }
     
-    @inlinable
-    public func clear() {
+    @usableFromInline
+    func clear() {
         let count = CAtomicsLoad(self.count, .relaxed)
         
         self.bindings.deinitialize(count: count)
@@ -776,18 +862,19 @@ public final class TransientArgumentBufferArrayRegistry {
     }
 }
 
-public final class PersistentArgumentBufferArrayRegistry {
-    public static let instance = PersistentArgumentBufferArrayRegistry()
+@usableFromInline final class PersistentArgumentBufferArrayRegistry {
+    @usableFromInline static let instance = PersistentArgumentBufferArrayRegistry()
     
-    public struct Chunk {
-        public static let itemsPerChunk = 2048
+    @usableFromInline
+    struct Chunk {
+        @usableFromInline static let itemsPerChunk = 2048
         
-        public let bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>
-        public let heaps : UnsafeMutablePointer<Heap>
-        public let generations : UnsafeMutablePointer<UInt8>
-        public let labels : UnsafeMutablePointer<String?>
+        @usableFromInline let bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>
+        @usableFromInline let heaps : UnsafeMutablePointer<Heap>
+        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
+        @usableFromInline let labels : UnsafeMutablePointer<String?>
         
-        public init() {
+        init() {
             self.bindings = .allocate(capacity: Chunk.itemsPerChunk)
             self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
@@ -796,7 +883,7 @@ public final class PersistentArgumentBufferArrayRegistry {
             self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
         }
         
-        public func deallocate() {
+        func deallocate() {
             self.bindings.deallocate()
             self.heaps.deallocate()
             self.generations.deallocate()
@@ -804,21 +891,21 @@ public final class PersistentArgumentBufferArrayRegistry {
         }
     }
     
-    public static let maxChunks = 256
+    @usableFromInline static let maxChunks = 256
     
-    public var lock = SpinLock()
+    @usableFromInline var lock = SpinLock()
     
-    public var freeIndices = RingBuffer<Int>()
-    public var maxIndex = 0
+    @usableFromInline var freeIndices = RingBuffer<Int>()
+    @usableFromInline var maxIndex = 0
     
-    public let enqueuedDisposals = ExpandingBuffer<_ArgumentBufferArray>()
-    public let chunks : UnsafeMutablePointer<Chunk>
+    @usableFromInline let enqueuedDisposals = ExpandingBuffer<_ArgumentBufferArray>()
+    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
-    public init() {
+    init() {
         self.chunks = .allocate(capacity: Self.maxChunks)
     }
     
-    public func allocate(flags: ResourceFlags) -> UInt64 {
+    func allocate(flags: ResourceFlags) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -843,18 +930,19 @@ public final class PersistentArgumentBufferArrayRegistry {
         }
     }
     
+    @usableFromInline
     var chunkCount : Int {
         if self.maxIndex == 0 { return 0 }
         return (self.maxIndex / Chunk.itemsPerChunk) + 1
     }
     
-    @inlinable
+    @usableFromInline
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
         self.chunks.advanced(by: index).initialize(to: Chunk())
     }
     
-    public func clear() {
+    func clear() {
         assert(!self.lock.isLocked)
         
         for argumentBufferArray in self.enqueuedDisposals {
@@ -875,7 +963,7 @@ public final class PersistentArgumentBufferArrayRegistry {
         self.enqueuedDisposals.removeAll()
     }
     
-    public func dispose(_ buffer: _ArgumentBufferArray) {
+    func dispose(_ buffer: _ArgumentBufferArray) {
         self.lock.withLock {
             self.enqueuedDisposals.append(buffer)
         }
@@ -883,18 +971,19 @@ public final class PersistentArgumentBufferArrayRegistry {
 }
 
 
-public final class HeapRegistry {
+@usableFromInline final class HeapRegistry {
     
-    public static let instance = HeapRegistry()
+    @usableFromInline static let instance = HeapRegistry()
     
-    public struct Chunk {
-        public static let itemsPerChunk = 4096
+    @usableFromInline
+    struct Chunk {
+        @usableFromInline static let itemsPerChunk = 4096
         
-        public let descriptors : UnsafeMutablePointer<HeapDescriptor>
-        public let generations : UnsafeMutablePointer<UInt8>
-        public let labels : UnsafeMutablePointer<String?>
+        @usableFromInline let descriptors : UnsafeMutablePointer<HeapDescriptor>
+        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
+        @usableFromInline let labels : UnsafeMutablePointer<String?>
         
-        public init() {
+        init() {
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
@@ -902,28 +991,28 @@ public final class HeapRegistry {
             self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
         }
         
-        public func deallocate() {
+        func deallocate() {
             self.descriptors.deallocate()
             self.generations.deallocate()
             self.labels.deallocate()
         }
     }
     
-    public static let maxChunks = 128
+    @usableFromInline static let maxChunks = 128
     
-    public var lock = SpinLock()
+    @usableFromInline var lock = SpinLock()
     
-    public var freeIndices = RingBuffer<Int>()
-    public var maxIndex = 0
-    public let enqueuedDisposals = ExpandingBuffer<Heap>()
-    public let chunks : UnsafeMutablePointer<Chunk>
+    @usableFromInline var freeIndices = RingBuffer<Int>()
+    @usableFromInline var maxIndex = 0
+    @usableFromInline let enqueuedDisposals = ExpandingBuffer<Heap>()
+    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
-    public init() {
+    init() {
         self.chunks = .allocate(capacity: Self.maxChunks)
     }
     
-    @inlinable
-    public func allocate(descriptor: HeapDescriptor) -> UInt64 {
+    @usableFromInline
+    func allocate(descriptor: HeapDescriptor) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -943,12 +1032,12 @@ public final class HeapRegistry {
         }
     }
     
-    var chunkCount : Int {
+    @usableFromInline var chunkCount : Int {
         if self.maxIndex == 0 { return 0 }
         return (self.maxIndex / Chunk.itemsPerChunk) + 1
     }
     
-    @inlinable
+    @usableFromInline
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
         self.chunks.advanced(by: index).initialize(to: Chunk())
@@ -968,7 +1057,7 @@ public final class HeapRegistry {
         self.freeIndices.append(index)
     }
     
-    public func clear() {
+    func clear() {
         assert(!self.lock.isLocked)
         
         for heap in self.enqueuedDisposals {
@@ -978,7 +1067,7 @@ public final class HeapRegistry {
         self.enqueuedDisposals.removeAll()
     }
     
-    public func dispose(_ heap: Heap, atEndOfFrame: Bool = true) {
+    func dispose(_ heap: Heap, atEndOfFrame: Bool = true) {
         self.lock.withLock {
             if atEndOfFrame {
                 self.enqueuedDisposals.append(heap)

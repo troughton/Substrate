@@ -164,6 +164,7 @@ public final class MetalFrameGraphContext : _FrameGraphContext {
     let commandQueue : MTLCommandQueue
     let captureScope : MTLCaptureScope
     
+    public let transientRegistryIndex: Int
     var frameGraphQueue : Queue
     
     var currentRenderTargetDescriptor : RenderTargetDescriptor? = nil
@@ -172,7 +173,8 @@ public final class MetalFrameGraphContext : _FrameGraphContext {
         self.backend = backend
         self.commandQueue = backend.device.makeCommandQueue()!
         self.frameGraphQueue = Queue()
-        self.resourceRegistry = MetalTransientResourceRegistry(device: backend.device, inflightFrameCount: inflightFrameCount)
+        self.transientRegistryIndex = TransientRegistryManager.allocate()
+        self.resourceRegistry = MetalTransientResourceRegistry(device: backend.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
         self.accessSemaphore = Semaphore(value: Int32(inflightFrameCount))
         
         self.captureScope = MTLCaptureManager.shared().makeCaptureScope(device: backend.device)
