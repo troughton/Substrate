@@ -152,7 +152,7 @@ struct MetalTextureUsageProperties {
     }
 }
 
-public final class MetalFrameGraphContext : _FrameGraphContext {
+final class MetalFrameGraphContext : _FrameGraphContext {
     public var accessSemaphore: Semaphore
     
     let backend : MetalBackend
@@ -169,11 +169,11 @@ public final class MetalFrameGraphContext : _FrameGraphContext {
     
     var currentRenderTargetDescriptor : RenderTargetDescriptor? = nil
     
-    public init(backend: MetalBackend, inflightFrameCount: Int) {
+    public init(backend: MetalBackend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
         self.commandQueue = backend.device.makeCommandQueue()!
         self.frameGraphQueue = Queue()
-        self.transientRegistryIndex = TransientRegistryManager.allocate()
+        self.transientRegistryIndex = transientRegistryIndex
         self.resourceRegistry = MetalTransientResourceRegistry(device: backend.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
         self.accessSemaphore = Semaphore(value: Int32(inflightFrameCount))
         

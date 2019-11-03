@@ -17,7 +17,7 @@ extension MTLResourceOptions {
     }
 }
 
-public final class MetalBackend : _RenderBackendProtocol {
+final class MetalBackend : _RenderBackendProtocol {
     let device : MTLDevice
     let resourceRegistry : MetalPersistentResourceRegistry
     let stateCaches : MetalStateCaches
@@ -31,9 +31,12 @@ public final class MetalBackend : _RenderBackendProtocol {
         self.stateCaches = MetalStateCaches(device: self.device, libraryPath: libraryPath)
         self.resourceRegistry = MetalPersistentResourceRegistry(device: device)
         
-        RenderBackend._backend = self
         // Push constants go immediately after the argument buffers.
         RenderBackend.pushConstantPath = ResourceBindingPath(stages: [.vertex, .fragment], type: .buffer, argumentBufferIndex: nil, index: 8)
+    }
+    
+    public var api : RenderAPI {
+        return .metal
     }
     
     public var renderDevice: Any {

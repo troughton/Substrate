@@ -306,13 +306,20 @@ public final class FrameGraph {
     
     public let transientRegistryIndex : Int
     
-    public init(context: FrameGraphContext, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384, transientArgumentBufferArrayCapacity: Int = 1024) {
-        self.context = context as! _FrameGraphContext
-        self.transientRegistryIndex = self.context.transientRegistryIndex
+    public init(inflightFrameCount: Int, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384, transientArgumentBufferArrayCapacity: Int = 1024) {
+        
+        self.transientRegistryIndex = TransientRegistryManager.allocate()
         
         TransientBufferRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientBufferCapacity)
         TransientTextureRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientTextureCapacity)
         TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientArgumentBufferArrayCapacity)
+        
+        switch RenderBackend._backend.api {
+#if canImport(Metal)
+        case .metal:
+            self.context = MetalFrameGraphContext(backend: RenderBackend._backend as! MetalBackend, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
+#endif
+        }
     }
     
     deinit {

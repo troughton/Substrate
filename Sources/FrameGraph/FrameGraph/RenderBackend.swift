@@ -25,6 +25,15 @@ extension PipelineReflection {
     }
 }
 
+public enum RenderAPI {
+#if canImport(Metal)
+    case metal
+#endif
+#if canImport(Vulkan)
+    case vulkan
+#endif
+}
+
 public protocol RenderBackendProtocol : class {
     func backingResource(_ resource: Resource) -> Any?
     
@@ -32,6 +41,8 @@ public protocol RenderBackendProtocol : class {
     var threadExecutionWidth : Int { get }
     
     var renderDevice : Any { get }
+    
+    var api : RenderAPI { get }
 }
 
 @usableFromInline
@@ -69,6 +80,15 @@ public struct RenderBackend {
     @inlinable
     public static var backend : RenderBackendProtocol {
         return _backend
+    }
+    
+    public static func initialise(api: RenderAPI, libraryPath: String? = nil) {
+        switch api {
+#if canImport(Metal)
+        case .metal:
+            _backend = MetalBackend(libraryPath: libraryPath)
+#endif
+        }
     }
     
     @inlinable
