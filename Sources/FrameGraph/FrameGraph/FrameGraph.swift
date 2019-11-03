@@ -544,6 +544,7 @@ public final class FrameGraph {
             
             resource.usagesPointer.reverse() // Since the usages list is constructed in reverse order.
             
+            assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another FrameGraph is being used in this FrameGraph.")
             assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
             
             let usages = resource.usages
@@ -673,8 +674,6 @@ public final class FrameGraph {
         
         jobManager.dispatchSyncFrameGraph { [self] in
             self.context.accessSemaphore.wait()
-            
-            let currentFrameIndex =  FrameGraph.globalSubmissionIndex
             
             FrameGraph.resourceUsagesAllocator = TagAllocator(tag: FrameGraphTagType.resourceUsageNodes.tag, threadCount: jobManager.threadCount)
             FrameGraph.executionAllocator = TagAllocator(tag: FrameGraphTagType.frameGraphExecution.tag, threadCount: jobManager.threadCount)
