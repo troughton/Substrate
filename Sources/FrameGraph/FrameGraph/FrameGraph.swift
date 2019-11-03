@@ -529,8 +529,6 @@ public final class FrameGraph {
         var producingPasses = [Int]()
         var priorReads = [Int]()
         
-        let expectedFrame = FrameGraph.globalSubmissionIndex & 0xFF
-        
         // Merge the resources from all other threads into the usages for the first thread.
         for resourceUsages in FrameGraph.threadResourceUsages.dropFirst() {
             FrameGraph.threadResourceUsages[0].resources.formUnion(resourceUsages.allResources)

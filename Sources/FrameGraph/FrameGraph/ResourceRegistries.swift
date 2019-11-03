@@ -52,6 +52,7 @@ public final class TransientRegistryManager {
     @usableFromInline let transientRegistryIndex : Int
     @usableFromInline var capacity : Int
     @usableFromInline var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    @usableFromInline var generation : UInt8 = 0
     
     @usableFromInline var descriptors : UnsafeMutablePointer<BufferDescriptor>! = nil
     @usableFromInline var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>! = nil
@@ -98,7 +99,7 @@ public final class TransientRegistryManager {
         
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
+        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
     }
     
     @usableFromInline
@@ -113,6 +114,8 @@ public final class TransientRegistryManager {
         self.deferredSliceActions.deinitialize(count: count)
         self.usages.deinitialize(count: count)
         self.labels.deinitialize(count: count)
+        
+        self.generation = self.generation &+ 1
         
         assert(CAtomicsLoad(self.count, .relaxed) == 0)
     }
@@ -270,6 +273,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline let transientRegistryIndex : Int
     @usableFromInline var capacity : Int
     @usableFromInline let count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    @usableFromInline var generation : UInt8 = 0
     
     @usableFromInline var descriptors : UnsafeMutablePointer<TextureDescriptor>! = nil
     @usableFromInline var usages : UnsafeMutablePointer<ResourceUsagesList>! = nil
@@ -316,7 +320,7 @@ public enum TextureViewBaseInfo {
         self.baseResources.advanced(by: index).initialize(to: Resource.invalidResource)
         self.textureViewInfos.advanced(by: index).initialize(to: nil)
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
+        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
     }
     
     @usableFromInline
@@ -333,7 +337,7 @@ public enum TextureViewBaseInfo {
         
         baseResource.descriptor.usageHint.formUnion(.textureView)
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
+        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
     }
     
     @usableFromInline
@@ -360,7 +364,7 @@ public enum TextureViewBaseInfo {
         self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
         self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
         
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound)
+        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound)
     }
     
     @usableFromInline
@@ -376,6 +380,8 @@ public enum TextureViewBaseInfo {
         self.labels.deinitialize(count: count)
         self.baseResources.deinitialize(count: count)
         self.textureViewInfos.deinitialize(count: count)
+        
+        self.generation = self.generation &+ 1
         
         assert(CAtomicsLoad(self.count, .relaxed) == 0)
     }
@@ -558,6 +564,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var count = 0
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     @usableFromInline var allocatedChunkCount = 0
+    @usableFromInline var generation : UInt8 = 0
     
     init(transientRegistryIndex: Int) {
         self.transientRegistryIndex = transientRegistryIndex
@@ -594,7 +601,7 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             self.count += 1
             
-            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
+            return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
         }
     }
     
@@ -618,7 +625,7 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             self.count += 1
             
-            return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
+            return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
         }
     }
     
@@ -648,6 +655,8 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].labels.deinitialize(count: countInChunk)
         }
         self.count = 0
+        
+        self.generation = self.generation &+ 1
     }
 }
 
@@ -825,6 +834,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline let transientRegistryIndex: Int
     @usableFromInline var capacity : Int
     @usableFromInline var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    @usableFromInline var generation : UInt8 = 0
     
     @usableFromInline var bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>! = nil
     @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
@@ -856,7 +866,7 @@ public enum TextureViewBaseInfo {
         self.bindings.advanced(by: index).initialize(to: [])
         self.labels.advanced(by: index).initialize(to: nil)
             
-        return UInt64(truncatingIfNeeded: index) | ((FrameGraph.globalSubmissionIndex & 0xFF) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
+        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
     }
     
     @usableFromInline
@@ -867,6 +877,8 @@ public enum TextureViewBaseInfo {
         self.labels.deinitialize(count: count)
         let oldCount = CAtomicsExchange(self.count, 0, .relaxed)
         assert(oldCount == count)
+        
+        self.generation = self.generation &+ 1
     }
 }
 
