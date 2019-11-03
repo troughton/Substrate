@@ -261,6 +261,10 @@ final class MetalFrameGraphContext : _FrameGraphContext {
     
     /// - param storedTextures: textures that are stored as part of a render target (and therefore can't be memoryless on iOS)
     func generateResourceCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, renderTargetDescriptors: [MetalRenderTargetDescriptor?], storedTextures: [Texture], lastCommandBufferIndex: UInt64) {
+        if passes.isEmpty {
+            return
+        }
+        
         let (passCommandEncoderIndices, _, commandEncoderCount) = MetalEncoderManager.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
         
         self.commandEncoderDependencies.resizeAndClear(capacity: commandEncoderCount, clearValue: nil)
