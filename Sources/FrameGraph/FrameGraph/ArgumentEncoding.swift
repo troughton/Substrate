@@ -438,8 +438,8 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     }
     
     @inlinable
-    public init(flags: ResourceFlags = []) {
-        self.argumentBuffer = _ArgumentBuffer(flags: flags)
+    public init(frameGraph: FrameGraph? = nil, flags: ResourceFlags = []) {
+        self.argumentBuffer = _ArgumentBuffer(frameGraph: frameGraph, flags: flags)
         self.argumentBuffer.label = "Argument Buffer \(K.self)"
     }
     
@@ -582,8 +582,8 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
         self.argumentBufferArray = _ArgumentBufferArray(handle: handle)
     }
     
-    public init(flags: ResourceFlags = []) {
-        self.argumentBufferArray = _ArgumentBufferArray(flags: flags)
+    public init(frameGraph: FrameGraph? = nil, flags: ResourceFlags = []) {
+        self.argumentBufferArray = _ArgumentBufferArray(frameGraph: frameGraph, flags: flags)
         self.argumentBufferArray.label = "Argument Buffer Array \(K.self)"
     }
     
