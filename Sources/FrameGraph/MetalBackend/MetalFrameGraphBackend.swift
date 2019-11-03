@@ -761,6 +761,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         // Balance out the starting count of one for commandBufferCount
         if passCommandBufferIndices.isEmpty {
             completion()
+            self.accessSemaphore.signal()
         }
         
         self.resourceCommands.removeAll(keepingCapacity: true)
