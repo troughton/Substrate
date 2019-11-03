@@ -721,11 +721,7 @@ public final class FrameGraph {
                 onGPUCompletion?()
             }
             
-            if !passes.isEmpty {
-                self.context.executeFrameGraph(passes: passes, dependencyTable: dependencyTable, resourceUsages: FrameGraph.threadResourceUsages[0], completion: completion)
-            } else {
-                completion()
-            }
+            self.context.executeFrameGraph(passes: passes, dependencyTable: dependencyTable, resourceUsages: FrameGraph.threadResourceUsages[0], completion: completion)
             
             // Make sure the FrameGraphCommands buffers are deinitialised before the tags are freed.
             passes.forEach {
