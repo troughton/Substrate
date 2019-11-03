@@ -1001,8 +1001,8 @@ public struct Texture : ResourceProtocol {
     }
     
     @inlinable
-    public init(windowId: Int, descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any) {
-        self.init(descriptor: descriptor, flags: isMinimised ? [] : .windowHandle)
+    public init(windowId: Int, descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, frameGraph: FrameGraph) {
+        self.init(descriptor: descriptor, frameGraph: frameGraph, flags: isMinimised ? [] : .windowHandle)
         
         if !isMinimised {
             RenderBackend.registerWindowTexture(texture: self, context: nativeWindow)
