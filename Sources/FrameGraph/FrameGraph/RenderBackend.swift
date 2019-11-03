@@ -25,14 +25,23 @@ extension PipelineReflection {
     }
 }
 
-@usableFromInline
-protocol RenderBackendProtocol : class {
-    func registerExternalResource(_ resource: Resource, backingResource: Any)
-    func registerWindowTexture(texture: Texture, context: Any)
+public protocol RenderBackendProtocol : class {
+    func backingResource(_ resource: Resource) -> Any?
     
+    var isDepth24Stencil8PixelFormatSupported : Bool { get }
+    var threadExecutionWidth : Int { get }
+    
+    var renderDevice : Any { get }
+}
+
+@usableFromInline
+protocol _RenderBackendProtocol : RenderBackendProtocol {
     func materialisePersistentTexture(_ texture: Texture) -> Bool
     func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
     func materialiseHeap(_ heap: Heap) -> Bool
+    
+    func registerWindowTexture(texture: Texture, context: Any)
+    func registerExternalResource(_ resource: Resource, backingResource: Any)
     
     func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
@@ -51,122 +60,120 @@ protocol RenderBackendProtocol : class {
     func dispose(argumentBufferArray: _ArgumentBufferArray)
     func dispose(heap: Heap)
     
-    func backingResource(_ resource: Resource) -> Any?
-    
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
-    
-    var isDepth24Stencil8PixelFormatSupported : Bool { get }
-    var threadExecutionWidth : Int { get }
-    
-    var renderDevice : Any { get }
 }
 
 public struct RenderBackend {
-    @usableFromInline static var backend : RenderBackendProtocol! = nil
+    @usableFromInline static var _backend : _RenderBackendProtocol! = nil
+    
+    @inlinable
+    public static var backend : RenderBackendProtocol {
+        return _backend
+    }
     
     @inlinable
     public static func materialisePersistentTexture(_ texture: Texture) -> Bool {
-        return backend.materialisePersistentTexture(texture)
+        return _backend.materialisePersistentTexture(texture)
     }
 
     @inlinable
     public static func registerExternalResource(_ resource: Resource, backingResource: Any) {
-        return backend.registerExternalResource(resource, backingResource: backingResource)
+        return _backend.registerExternalResource(resource, backingResource: backingResource)
     }
     
     @inlinable
     public static func registerWindowTexture(texture: Texture, context: Any) {
-        return backend.registerWindowTexture(texture: texture, context: context)
+        return _backend.registerWindowTexture(texture: texture, context: context)
     }
     
     @inlinable
     public static func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
-        return backend.materialisePersistentBuffer(buffer)
+        return _backend.materialisePersistentBuffer(buffer)
     }
     
     @inlinable
     public static func materialiseHeap(_ heap: Heap) -> Bool {
-        return backend.materialiseHeap(heap)
+        return _backend.materialiseHeap(heap)
     }
     
     @inlinable
     static func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection? {
-        return backend.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
+        return _backend.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
     }
     
     @inlinable
     static func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection? {
-        return backend.computePipelineReflection(descriptor: descriptor)
+        return _backend.computePipelineReflection(descriptor: descriptor)
     }
     
     @inlinable
     public static func dispose(texture: Texture) {
-        return backend.dispose(texture: texture)
+        return _backend.dispose(texture: texture)
     }
     
     @inlinable
     public static func dispose(buffer: Buffer) {
-        return backend.dispose(buffer: buffer)
+        return _backend.dispose(buffer: buffer)
     }
     
     @inlinable
     public static func dispose(argumentBuffer: _ArgumentBuffer) {
-        return backend.dispose(argumentBuffer: argumentBuffer)
+        return _backend.dispose(argumentBuffer: argumentBuffer)
     }
     
     @inlinable
     public static func dispose(argumentBufferArray: _ArgumentBufferArray) {
-        return backend.dispose(argumentBufferArray: argumentBufferArray)
+        return _backend.dispose(argumentBufferArray: argumentBufferArray)
     }
     
     @inlinable
     public static func dispose(heap: Heap) {
-        return backend.dispose(heap: heap)
+        return _backend.dispose(heap: heap)
     }
     
     @inlinable
     public static func backingResource<R : ResourceProtocol>(_ resource: R) -> Any? {
-        return backend.backingResource(Resource(resource))
+        return _backend.backingResource(Resource(resource))
     }
     
     @inlinable
     public static var isDepth24Stencil8PixelFormatSupported : Bool {
-        return backend.isDepth24Stencil8PixelFormatSupported
+        return _backend.isDepth24Stencil8PixelFormatSupported
     }
     
     @inlinable
     public static var threadExecutionWidth : Int {
-        return backend.threadExecutionWidth
+        return _backend.threadExecutionWidth
     }
     
     @inlinable
     public static func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
-        return backend.bufferContents(for: buffer, range: range)
+        return _backend.bufferContents(for: buffer, range: range)
     }
     
     @inlinable
     public static func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
-        return backend.buffer(buffer, didModifyRange: range)
+        return _backend.buffer(buffer, didModifyRange: range)
     }
 
     @inlinable
     public static func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
-        return backend.copyTextureBytes(from: texture, to: bytes, bytesPerRow: bytesPerRow, region: region, mipmapLevel: mipmapLevel)
+        return _backend.copyTextureBytes(from: texture, to: bytes, bytesPerRow: bytesPerRow, region: region, mipmapLevel: mipmapLevel)
     }
     
     @inlinable
     public static func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        return backend.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
+        return _backend.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
     }
 
     @inlinable
     public static func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
-        return backend.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
+        return _backend.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
     }
     
     @inlinable
     public static var renderDevice : Any {
-        return backend.renderDevice
+        return _backend.renderDevice
     }
     
     public static var pushConstantPath : ResourceBindingPath = ResourceBindingPath.nil
@@ -175,7 +182,7 @@ public struct RenderBackend {
     @inlinable
     public static func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath {
         assert(index < 8)
-        return backend.argumentBufferPath(at: index, stages: stages)
+        return _backend.argumentBufferPath(at: index, stages: stages)
     }
 }
 
