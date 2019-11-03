@@ -668,8 +668,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         
-        let commandBufferCount = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
-        CAtomicsStore(commandBufferCount, 1, .relaxed) // Start off the commandBufferCount at 1 to make sure the completion handler doesn't get called until all command buffers have been submitted.
+        let lastCommandBufferIndex = passCommandBufferIndices.last ?? 0
         
         var commandBuffer : MTLCommandBuffer? = nil
         var encoderManager : MetalEncoderManager? = nil
@@ -702,21 +701,21 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 self.queueCommandBufferIndex += 1
                 commandBuffer.encodeSignalEvent(self.syncEvent, value: self.queueCommandBufferIndex)
 
-                let cbIndex = self.queueCommandBufferIndex
+                let cbIndex = committedCommandBufferCount
+                let queueCBIndex = self.queueCommandBufferIndex
 
                 commandBuffer.addCompletedHandler { (commandBuffer) in
                     if let error = commandBuffer.error {
-                        print("Error executing command buffer \(cbIndex): \(error)")
+                        print("Error executing command buffer \(queueCBIndex): \(error)")
                     }
-                    self.frameGraphQueue.lastCompletedCommand = cbIndex
-                    if CAtomicsSubtract(commandBufferCount, 1, .relaxed) == 1 { // Only call completion for the last command buffer.
-                        commandBufferCount.deallocate()
+                    self.frameGraphQueue.lastCompletedCommand = queueCBIndex
+                    if cbIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
                         completion()
                         self.accessSemaphore.signal()
                     }
                 }
                 
-                self.frameGraphQueue.lastSubmittedCommand = cbIndex
+                self.frameGraphQueue.lastSubmittedCommand = queueCBIndex
                 commandBuffer.commit()
                 committedCommandBufferCount += 1
                 
@@ -732,7 +731,6 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             }
             
             if commandBuffer == nil {
-                CAtomicsAdd(commandBufferCount, 1, .relaxed)
                 commandBuffer = self.commandQueue.makeCommandBuffer()!
                 encoderManager = MetalEncoderManager(commandBuffer: commandBuffer!, resourceMap: self.resourceMap)
             }
@@ -761,7 +759,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         processCommandBuffer()
         
         // Balance out the starting count of one for commandBufferCount
-        if CAtomicsSubtract(commandBufferCount, 1, .relaxed) == 1 {
+        if passCommandBufferIndices.isEmpty {
             completion()
         }
         
