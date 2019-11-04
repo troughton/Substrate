@@ -9,6 +9,37 @@
 
 import Metal
 
+extension _ArgumentBuffer {
+    func setArguments(storage: MTLBufferReference, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+        if self.stateFlags.contains(.initialised) { return }
+        
+        let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(self.encoder!).takeUnretainedValue()
+        
+        argEncoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
+        argEncoder.encodeArguments(from: self, resourceMap: resourceMap, stateCaches: stateCaches)
+        
+        self.markAsInitialised()
+    }
+}
+
+extension _ArgumentBufferArray {
+    func setArguments(storage: MTLBufferReference, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+        var argEncoder : MTLArgumentEncoder? = nil
+        
+        for (i, argumentBuffer) in self._bindings.enumerated() {
+            guard let argumentBuffer = argumentBuffer else { continue }
+            if argumentBuffer.stateFlags.contains(.initialised) { continue }
+            
+            if argEncoder == nil {
+                argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
+            }
+            
+            argEncoder!.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: i)
+            argEncoder!.encodeArguments(from: argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
+        }
+    }
+}
+
 extension MTLArgumentEncoder {
     func encodeArguments(from argBuffer: _ArgumentBuffer, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         for (bindingPath, binding) in argBuffer.bindings {

@@ -197,6 +197,8 @@ public struct _ArgumentBuffer : ResourceProtocol {
             }
         }
         nonmutating _modify {
+            self.waitForCPUAccess(accessType: .write)
+            
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
                 yield &PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].enqueuedBindings[indexInChunk]
@@ -204,6 +206,8 @@ public struct _ArgumentBuffer : ResourceProtocol {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
                 yield &TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].enqueuedBindings[indexInChunk]
             }
+            
+            self.stateFlags.remove(.initialised)
         }
     }
     

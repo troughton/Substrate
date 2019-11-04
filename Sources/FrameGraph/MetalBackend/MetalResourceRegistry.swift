@@ -264,9 +264,9 @@ final class MetalPersistentResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> MTLBufferReference {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer) -> MTLBufferReference {
         if let baseArray = argumentBuffer.sourceArray {
-            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray, resourceMap: resourceMap, stateCaches: stateCaches)
+            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
             return self.argumentBufferReferences[argumentBuffer]!
         }
         if let mtlArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
@@ -276,20 +276,13 @@ final class MetalPersistentResourceRegistry {
         let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
         let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
         
-        argEncoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
-        argEncoder.encodeArguments(from: argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
-        
-//            #if os(macOS)
-//            storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength))
-//            #endif
-        
         self.argumentBufferReferences[argumentBuffer] = storage
         
         return storage
     }
     
     @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> MTLBufferReference {
+    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray) -> MTLBufferReference {
         if let mtlArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
             return mtlArgumentBuffer
         }
@@ -300,16 +293,9 @@ final class MetalPersistentResourceRegistry {
         for (i, argumentBuffer) in argumentBufferArray._bindings.enumerated() {
             guard let argumentBuffer = argumentBuffer else { continue }
             
-            argEncoder.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: i)
-            argEncoder.encodeArguments(from: argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
-            
             let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encodedLength)
             self.argumentBufferReferences[argumentBuffer] = localStorage
         }
-        
-//            #if os(macOS)
-//            storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength * argumentBufferArray._bindings.count))
-//            #endif
         
         self.argumentBufferArrayReferences[argumentBufferArray] = storage
         
@@ -750,9 +736,9 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> MTLBufferReference {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer) -> MTLBufferReference {
         if let baseArray = argumentBuffer.sourceArray {
-            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray, resourceMap: resourceMap, stateCaches: stateCaches)
+            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
             return self.argumentBufferReferences[argumentBuffer]!
         }
         if let mtlArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
@@ -763,13 +749,6 @@ final class MetalTransientResourceRegistry {
         let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
         assert(fences.isEmpty)
         
-        argEncoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
-        argEncoder.encodeArguments(from: argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
-        
-//            #if os(macOS)
-//            storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength))
-//            #endif
-        
         self.argumentBufferReferences[argumentBuffer] = storage
         self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
         
@@ -777,7 +756,7 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> MTLBufferReference {
+    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray) -> MTLBufferReference {
         if let mtlArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
             return mtlArgumentBuffer
         }
@@ -789,18 +768,10 @@ final class MetalTransientResourceRegistry {
         for (i, argumentBuffer) in argumentBufferArray._bindings.enumerated() {
             guard let argumentBuffer = argumentBuffer else { continue }
             
-            argEncoder.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: i)
-            
-            argEncoder.encodeArguments(from: argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
-            
             let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encodedLength)
             self.argumentBufferReferences[argumentBuffer] = localStorage
             self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
         }
-        
-//            #if os(macOS)
-//            storage.buffer.didModifyRange(storage.offset..<(storage.offset + argEncoder.encodedLength * argumentBufferArray._bindings.count))
-//            #endif
         
         self.argumentBufferArrayReferences[argumentBufferArray] = storage
         self.argumentBufferArrayWaitEvents[argumentBufferArray] = waitEvent

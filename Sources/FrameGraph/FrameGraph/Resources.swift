@@ -470,6 +470,7 @@ extension ResourceProtocol {
     
     public func waitForCPUAccess(accessType: ResourceAccessType) {
         guard self.flags.contains(.persistent) else { return }
+        if !self.stateFlags.contains(.initialised) { return }
         
         for queue in QueueRegistry.allQueues {
             let waitIndex = self[waitIndexFor: queue, accessType: accessType]

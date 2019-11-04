@@ -54,11 +54,24 @@ enum MetalPreMetalFrameResourceCommands {
             resourceRegistry.allocateTextureView(texture, properties: usage)
             
         case .materialiseArgumentBuffer(let argumentBuffer):
-            resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
+            let mtlBufferReference : MTLBufferReference
+            if argumentBuffer.flags.contains(.persistent) {
+                mtlBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
+            } else {
+                mtlBufferReference = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
+            }
+            argumentBuffer.setArguments(storage: mtlBufferReference, resourceMap: resourceMap, stateCaches: stateCaches)
+            
             waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
             
         case .materialiseArgumentBufferArray(let argumentBuffer):
-            resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer, resourceMap: resourceMap, stateCaches: stateCaches)
+            let mtlBufferReference : MTLBufferReference
+            if argumentBuffer.flags.contains(.persistent) {
+                mtlBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
+            } else {
+                mtlBufferReference = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
+            }
+            argumentBuffer.setArguments(storage: mtlBufferReference, resourceMap: resourceMap, stateCaches: stateCaches)
             waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
             
         case .disposeResource(let resource):
@@ -417,7 +430,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             let lastUsage = previousUsage
             
             defer {
-                if resource.flags.intersection([.historyBuffer, .persistent]) != [] {
+                if previousWrite != nil, resource.flags.intersection([.historyBuffer, .persistent]) != [] {
                     resource.markAsInitialised()
                 }
             }
