@@ -130,9 +130,9 @@ public final class TransientRegistryManager {
         @usableFromInline static let itemsPerChunk = 4096
         
         @usableFromInline let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
-        /// The index that must be comp@usableFromInline leted on the GPU for each queue before the CPU can read from this memory.
+        /// The index that must be completed on the GPU for each queue before the CPU can read from this memory.
         @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        /// The index that must be comp@usableFromInline leted on the GPU for each queue before the CPU can write to this memory.
+        /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
         @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         @usableFromInline let descriptors : UnsafeMutablePointer<BufferDescriptor>
         @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
@@ -395,9 +395,9 @@ public enum TextureViewBaseInfo {
         @usableFromInline static let itemsPerChunk = 4096
         
         @usableFromInline let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
-        /// The index that must be comp@usableFromInline leted on the GPU for each queue before the CPU can read from this memory.
+        /// The index that must be completed on the GPU for each queue before the CPU can read from this memory.
         @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        /// The index that must be comp@usableFromInline leted on the GPU for each queue before the CPU can write to this memory.
+        /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
         @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         @usableFromInline let descriptors : UnsafeMutablePointer<TextureDescriptor>
         @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
@@ -674,6 +674,10 @@ public enum TextureViewBaseInfo {
         @usableFromInline let inlineDataStorage : UnsafeMutablePointer<Data>
         @usableFromInline let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
         @usableFromInline let heaps : UnsafeMutablePointer<Heap>
+        /// The index that must be completed on the GPU for each queue before the CPU can read from this memory.
+        @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
+        @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         
         @usableFromInline let labels : UnsafeMutablePointer<String?>
@@ -686,6 +690,8 @@ public enum TextureViewBaseInfo {
             self.inlineDataStorage = .allocate(capacity: Chunk.itemsPerChunk)
             self.sourceArrays = .allocate(capacity: Chunk.itemsPerChunk)
             self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
+            self.readWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
+            self.writeWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
             
@@ -700,6 +706,8 @@ public enum TextureViewBaseInfo {
             self.inlineDataStorage.deallocate()
             self.sourceArrays.deallocate()
             self.heaps.deallocate()
+            self.readWaitIndices.deallocate()
+            self.writeWaitIndices.deallocate()
             self.generations.deallocate()
             self.labels.deallocate()
         }
@@ -741,6 +749,8 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: Heap(handle: Resource.invalidResource.handle))
+            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]
@@ -773,6 +783,8 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
             self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: Heap(handle: Resource.invalidResource.handle))
+            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
+            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]

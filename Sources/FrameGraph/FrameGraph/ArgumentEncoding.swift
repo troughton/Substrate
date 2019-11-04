@@ -316,6 +316,28 @@ public struct _ArgumentBuffer : ResourceProtocol {
         }
     }
     
+    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
+        get {
+            guard self.flags.contains(.persistent) else { return 0 }
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+            if type == .read {
+                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)]
+            } else {
+                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)]
+            }
+        }
+        nonmutating set {
+            guard self.flags.contains(.persistent) else { return }
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+            
+            if type == .read {
+                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)] = newValue
+            } else {
+                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)] = newValue
+            }
+        }
+    }
+    
     public func dispose() {
         guard self._usesPersistentRegistry else {
             return
@@ -419,6 +441,16 @@ public struct _ArgumentBufferArray : ResourceProtocol {
     @inlinable
     public var storageMode: StorageMode {
         return .shared
+    }
+    
+    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
+        get {
+            return 0
+        }
+        nonmutating set {
+            // Argument buffer array waits are handled at _ArgumentBuffer granularity
+           _ = newValue
+        }
     }
     
     @inlinable

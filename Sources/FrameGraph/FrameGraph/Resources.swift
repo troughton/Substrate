@@ -281,6 +281,10 @@ public struct Resource : ResourceProtocol, Hashable {
                 return Buffer(handle: self.handle)[waitIndexFor: queue, accessType: type]
             case .texture:
                 return Texture(handle: self.handle)[waitIndexFor: queue, accessType: type]
+            case .argumentBuffer:
+                return _ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type]
+            case .argumentBufferArray:
+                return _ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type]
             default:
                 return 0
             }
@@ -291,6 +295,10 @@ public struct Resource : ResourceProtocol, Hashable {
                 Buffer(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
             case .texture:
                 Texture(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
+            case .argumentBuffer:
+                _ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
+            case .argumentBufferArray:
+                _ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
             default:
                 fatalError()
             }
