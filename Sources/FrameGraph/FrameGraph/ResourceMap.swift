@@ -21,24 +21,24 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
         self.allocator = allocator
     }
 
-    public mutating func prepareFrame() {
+    public mutating func reserveCapacity() {
         switch R.self {
         case is Buffer.Type:
-            self.reserveCapacity(PersistentBufferRegistry.instance.maxIndex)
+            self._reserveCapacity(PersistentBufferRegistry.instance.maxIndex)
         case is Texture.Type:
-            self.reserveCapacity(PersistentTextureRegistry.instance.maxIndex)
+            self._reserveCapacity(PersistentTextureRegistry.instance.maxIndex)
         case is _ArgumentBuffer.Type:
-            self.reserveCapacity(PersistentArgumentBufferRegistry.instance.maxIndex)
+            self._reserveCapacity(PersistentArgumentBufferRegistry.instance.maxIndex)
         case is _ArgumentBufferArray.Type:
-            self.reserveCapacity(PersistentArgumentBufferArrayRegistry.instance.maxIndex)
+            self._reserveCapacity(PersistentArgumentBufferArrayRegistry.instance.maxIndex)
         case is Heap.Type:
-            self.reserveCapacity(HeapRegistry.instance.maxIndex)
+            self._reserveCapacity(HeapRegistry.instance.maxIndex)
         default:
             fatalError()
         }
     }
     
-    @inlinable mutating func reserveCapacity(_ capacity: Int) {
+    @inlinable mutating func _reserveCapacity(_ capacity: Int) {
         if capacity <= self.capacity {
             return
         }
@@ -99,9 +99,10 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
     @inlinable
     public subscript(resource: R) -> V? {
         _read {
-            if resource._usesPersistentRegistry {
-                assert(resource.index < self.capacity)
-                
+            if resource.index >= self.capacity {
+                yield nil
+            }
+            else if resource._usesPersistentRegistry {
                 if self.keys[resource.index] == resource {
                     yield self.values[resource.index]
                 } else {
@@ -113,7 +114,8 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
         }
         set {
             assert(resource._usesPersistentRegistry)
-            assert(resource.index < self.capacity)
+            self.reserveCapacity()
+            
             if let newValue = newValue {
                 if self.keys[resource.index] != R(handle: Resource.invalidResource.handle) {
                     self.values[resource.index] = newValue
@@ -434,7 +436,6 @@ public struct ResourceMap<R : ResourceProtocol, V> {
 
     public mutating func prepareFrame() {
         self.transientMap.prepareFrame()
-        self.persistentMap.prepareFrame()
     }
     
     public func `deinit`() {

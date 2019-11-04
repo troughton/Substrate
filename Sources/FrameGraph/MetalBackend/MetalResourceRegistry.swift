@@ -150,11 +150,6 @@ final class MetalPersistentResourceRegistry {
     
     public func prepareFrame() {
         MetalFenceRegistry.instance.clearCompletedFences()
-
-        self.textureReferences.prepareFrame()
-        self.bufferReferences.prepareFrame()
-        self.argumentBufferReferences.prepareFrame()
-        self.argumentBufferArrayReferences.prepareFrame()
     }
     
     public func registerWindowTexture(texture: Texture, context: Any) {
@@ -164,8 +159,6 @@ final class MetalPersistentResourceRegistry {
     @discardableResult
     public func allocateHeap(_ heap: Heap) -> MTLHeap? {
         precondition(heap._usesPersistentRegistry)
-        
-        self.heapReferences.prepareFrame()
         
         let descriptor = MTLHeapDescriptor(heap.descriptor)
         
@@ -180,9 +173,6 @@ final class MetalPersistentResourceRegistry {
     @discardableResult
     public func allocateTexture(_ texture: Texture, properties: MetalTextureUsageProperties) -> MTLTexture? {
         precondition(texture._usesPersistentRegistry)
-        
-        // Ensure we can fit this new reference.
-        self.textureReferences.prepareFrame()
         
         if texture.flags.contains(.windowHandle) {
             // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
@@ -220,10 +210,6 @@ final class MetalPersistentResourceRegistry {
     @discardableResult
     public func allocateBuffer(_ buffer: Buffer) -> MTLBufferReference? {
         precondition(buffer._usesPersistentRegistry)
-        
-        // Ensure we can fit this new reference.
-        self.bufferReferences.prepareFrame()
-        
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
         
