@@ -59,10 +59,10 @@ enum MetalPreMetalFrameResourceCommands {
                 mtlBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
             } else {
                 mtlBufferReference = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
+                waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
             }
             argumentBuffer.setArguments(storage: mtlBufferReference, resourceMap: resourceMap, stateCaches: stateCaches)
             
-            waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
             
         case .materialiseArgumentBufferArray(let argumentBuffer):
             let mtlBufferReference : MTLBufferReference
@@ -70,9 +70,9 @@ enum MetalPreMetalFrameResourceCommands {
                 mtlBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
             } else {
                 mtlBufferReference = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
+                waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
             }
             argumentBuffer.setArguments(storage: mtlBufferReference, resourceMap: resourceMap, stateCaches: stateCaches)
-            waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
             
         case .disposeResource(let resource):
             let disposalWaitEvent = MetalContextWaitEvent(waitValue: signalEventValue)
