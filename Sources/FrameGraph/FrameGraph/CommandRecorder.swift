@@ -500,7 +500,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         
         let argumentBuffer = _ArgumentBuffer()
         assert(argumentBuffer.bindings.isEmpty)
-        arguments.encode(into: argumentBuffer)
+        arguments.encode(into: argumentBuffer, setIndex: setIndex)
         argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
      
         if _isDebugAssertConfiguration() {

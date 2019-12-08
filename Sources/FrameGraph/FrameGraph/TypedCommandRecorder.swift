@@ -35,7 +35,7 @@ public struct NilSet : ShaderDescriptorSet {
     @inlinable
     public init() {}
     
-    public func encode(into argBuffer: _ArgumentBuffer) {
+    public func encode(into argBuffer: _ArgumentBuffer, setIndex: Int) {
     }
 }
 

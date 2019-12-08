@@ -62,7 +62,7 @@ extension String : FunctionArgumentKey {
 public protocol ArgumentBufferEncodable {
     static var activeStages : RenderStages { get }
     
-    func encode(into argBuffer: _ArgumentBuffer)
+    func encode(into argBuffer: _ArgumentBuffer, setIndex: Int)
 }
 
 public struct _ArgumentBuffer : ResourceProtocol {
