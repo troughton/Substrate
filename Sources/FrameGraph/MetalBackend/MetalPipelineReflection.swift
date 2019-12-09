@@ -182,6 +182,23 @@ final class MetalPipelineReflection : PipelineReflection {
     }
     
     // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
+    func pathInCache(_ path: ResourceBindingPath) -> Bool {
+        var i = 0
+        while true { // We're guaranteed to always exit this loop since there's a sentinel value with UInt64.max at the end of reflectionCacheKeys
+            if self.reflectionCacheKeys[i].value >= path.value {
+                break
+            }
+            i += 1
+        }
+        
+        if i < self.reflectionCacheCount, self.reflectionCacheKeys[i] == path {
+            return true
+        } else {
+            return false
+        }
+    }
+
+    // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
     func reflectionCacheLinearSearch(_ path: ResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
         var i = 0
         while true { // We're guaranteed to always exit this loop since there's a sentinel value with UInt64.max at the end of reflectionCacheKeys
@@ -259,6 +276,20 @@ final class MetalPipelineReflection : PipelineReflection {
         modifiedPath.arrayIndex = newParentPath.arrayIndex
         modifiedPath.stages = newParentPath.stages
         return modifiedPath
+    }
+
+    public func remapArgumentBufferPathForActiveStages(_ path: ResourceBindingPath) -> ResourceBindingPath {
+        if self.pathInCache(path) { return path }
+
+        if path.stages.contains([.vertex, .fragment]) {
+            var modifiedPath = path
+            modifiedPath.stages = .vertex
+            if pathInCache(modifiedPath) { return modifiedPath }
+            modifiedPath.stages = .fragment
+            if pathInCache(modifiedPath) { return modifiedPath }
+        }
+        
+        return path
     }
     
     public func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer? {

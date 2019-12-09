@@ -778,7 +778,8 @@ public class ResourceBindingEncoder : CommandEncoder {
         let argumentBufferProcessingRange = (pipelineStateChanged ? 0 : self.pendingArgumentBufferCountLastUpdate)..<pendingArgumentBuffersStartCount
         // If the pipeline state hasn't changed, only try to bind new argument buffers.
         for i in argumentBufferProcessingRange {
-            let (argumentBufferPath, argumentBuffer, argBufferType, assumeConsistentUsage) = self.pendingArgumentBuffers[i]
+            let (argumentBufferPathTemp, argumentBuffer, argBufferType, assumeConsistentUsage) = self.pendingArgumentBuffers[i]
+            let argumentBufferPath = pipelineReflection.remapArgumentBufferPathForActiveStages(argumentBufferPathTemp)
             
             guard pipelineReflection.bindingIsActive(at: argumentBufferPath) else {
                 self.pendingArgumentBuffers.append((argumentBufferPath, argumentBuffer, argBufferType, assumeConsistentUsage))
