@@ -83,6 +83,11 @@ public struct RenderBackend {
     public static var backend : RenderBackendProtocol {
         return _backend
     }
+
+    @inlinable
+    public static var api : RenderAPI {
+        return _backend.api
+    }
     
     public static func initialise(api: RenderAPI, libraryPath: String? = nil) {
         switch api {
@@ -90,6 +95,12 @@ public struct RenderBackend {
         case .metal:
             _backend = MetalBackend(libraryPath: libraryPath)
 #endif
+#if canImport(Vulkan)
+        case .vulkan:
+            _backend = VulkanBackend()
+#endif
+        default:
+            fatalError("Backend unavailable for api \(api)")
         }
     }
     

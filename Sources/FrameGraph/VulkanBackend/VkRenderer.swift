@@ -34,28 +34,7 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphContext {
         
         self.frameGraph = VulkanFrameGraphContext(device: self.device, resourceRegistry: resourceRegistry, shaderLibrary: self.shaderLibrary)
         
-//        RenderBackend.backend = self
-        
-        RenderBackend._cachedBackend = _CachedRenderBackend(
-            registerWindowTexture: { [self] (texture, context) in
-                self.registerWindowTexture(texture: texture, context: context)
-            },
-            materialisePersistentTexture: { [self] texture in self.materialisePersistentTexture(texture) },
-            materialisePersistentBuffer: { [self] buffer in self.materialisePersistentBuffer(buffer) },
-            bufferContents: { [self] (buffer, range) in self.bufferContents(for: buffer, range: range) },
-            bufferDidModifyRange: { [self] (buffer, range) in self.buffer(buffer, didModifyRange: range) },
-            replaceTextureRegion: { [self] (texture, region, mipmapLevel, bytes, bytesPerRow) in self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow) },
-            renderPipelineReflection: { [self] (pipeline, renderTarget) in self.renderPipelineReflection(descriptor: pipeline, renderTarget: renderTarget) },
-            computePipelineReflection: { [self] (pipeline) in self.computePipelineReflection(descriptor: pipeline) },
-            disposeTexture: { [self] texture in self.dispose(texture: texture) },
-            disposeBuffer: { [self] buffer in self.dispose(buffer: buffer) },
-            disposeArgumentBuffer: { [self] argumentBuffer in self.dispose(argumentBuffer: argumentBuffer) },
-            disposeArgumentBufferArray: { [self] argumentBuffer in self.dispose(argumentBufferArray: argumentBuffer) },
-            backingResource: { [self] resource in return self.backingResource(resource) },
-            isDepth24Stencil8PixelFormatSupported: { [self] in self.isDepth24Stencil8PixelFormatSupported },
-            threadExecutionWidth: { [self] in self.threadExecutionWidth },
-            renderDevice: { [self] in self.renderDevice },
-            maxInflightFrames: { [self] in self.maxInflightFrames })
+        RenderBackend._backend = self
     }
 
     public func beginFrameResourceAccess() {

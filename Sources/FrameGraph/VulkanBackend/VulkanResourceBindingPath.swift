@@ -8,72 +8,58 @@
 #if canImport(Vulkan)
 import Vulkan
 import FrameGraphCExtras
+import SwiftFrameGraph
 
-@_fixed_layout
-public struct VulkanResourceBindingPath : Hashable {
-    fileprivate var _set : UInt16 = 0
-    fileprivate var _binding : UInt16 = 0 
-    var arrayIndex : UInt32 = 0
+extension ResourceBindingPath {
+    public static let setIndexRange = 56..<64
+    public static let bindingRange = 32..<56
+    public static let arrayIndexRange = 0..<32
     
-    public init(_ path: ResourceBindingPath) {
-        self._set = UInt16(path.value >> 48)
-        self._binding = UInt16((path.value >> 32) & 0xFFFF)
-        self.arrayIndex = UInt32(path.value & 0xFFFFFFFF)
-    }
-    
+    public static let pushConstantSet = UInt32(UInt8.max)
+    public static let argumentBufferBinding = UInt32((1 << ResourceBindingPath.bindingRange.count) - 1)
+
+    @inlinable
     public init(set: UInt32, binding: UInt32, arrayIndex: UInt32) {
-        self._set = UInt16(set) 
-        self._binding = UInt16(binding)
+        self = ResourceBindingPath(value: 0)
+        
+        self.set = set
+        self.binding = binding
         self.arrayIndex = arrayIndex
     }
 
-     public init(argumentBuffer: UInt32) {
-        self._set = UInt16(argumentBuffer) 
-        self._binding = UInt16.max
-        self.arrayIndex = 0
+    @inlinable
+    public init(argumentBuffer: UInt32) {
+        self.init(set: argumentBuffer, binding: ResourceBindingPath.argumentBufferBinding, arrayIndex: 0)
     }
     
-    var set : UInt32 {
+    @inlinable
+    public var set : UInt32 {
         get {
-            return UInt32(self._set)
+            return UInt32(truncatingIfNeeded: self.value.bits(in: ResourceBindingPath.setIndexRange))
         }
         set {
-            self._set = UInt16(newValue)
+            self.value.setBits(in: ResourceBindingPath.setIndexRange, to: UInt64(newValue))
         }
     }
 
-    var binding : UInt32 {
+    @inlinable
+    public var binding : UInt32 {
         get {
-            return UInt32(self._binding)
+            return UInt32(truncatingIfNeeded: self.value.bits(in: ResourceBindingPath.bindingRange))
         }
         set {
-            self._binding = UInt16(newValue)
+            self.value.setBits(in: ResourceBindingPath.bindingRange, to: UInt64(newValue))
         }
-    }
-
-    var value : UInt64 {
-        return unsafeBitCast(self, to: UInt64.self)
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        self._set.hash(into: &hasher)
-        self._binding.hash(into: &hasher)
-        self.arrayIndex.hash(into: &hasher)
-        
     }
     
+    @inlinable
     public var isPushConstant : Bool {
-        return self.set == BindingIndexSetPushConstant
+        return self.set == ResourceBindingPath.pushConstantSet
     }
 
+    @inlinable
     public var isArgumentBuffer : Bool {
-        return self.binding == UInt16.max
-    }
-}
-
-extension ResourceBindingPath {
-    public init(_ path: VulkanResourceBindingPath) {
-        self = ResourceBindingPath(value: (UInt64(path._set) << 48) | (UInt64(path._binding) << 32) | UInt64(path.arrayIndex))
+        return self.binding == ResourceBindingPath.argumentBufferBinding
     }
 }
 
