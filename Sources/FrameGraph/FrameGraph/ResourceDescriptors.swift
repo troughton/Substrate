@@ -51,7 +51,7 @@ public struct BufferUsage : OptionSet {
         self.rawValue = rawValue
     }
     
-    public static let unknown = BufferUsage(rawValue: 0)
+    public static let unknown : BufferUsage = []
     
     public static let shaderRead = BufferUsage(rawValue: 1)
     

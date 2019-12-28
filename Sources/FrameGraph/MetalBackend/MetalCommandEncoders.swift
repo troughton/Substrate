@@ -464,7 +464,6 @@ public final class FGMTLThreadRenderCommandEncoder {
     }
     
     func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
-        var hasPerformedTextureBarrier = false
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -659,7 +658,6 @@ public final class FGMTLComputeCommandEncoder {
     }
     
     func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
-        var hasPerformedTextureBarrier = false
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -816,7 +814,6 @@ public final class FGMTLBlitCommandEncoder {
     }
     
     func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
-        var hasPerformedTextureBarrier = false
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
