@@ -8,7 +8,6 @@
 #if canImport(Vulkan)
 import Vulkan
 import FrameGraphCExtras
-import SwiftFrameGraph
 
 extension ResourceBindingPath {
     public static let setIndexRange = 56..<64

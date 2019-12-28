@@ -319,6 +319,10 @@ public final class FrameGraph {
         case .metal:
             self.context = MetalFrameGraphContext(backend: RenderBackend._backend as! MetalBackend, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
 #endif
+#if canImport(Vulkan)
+        case .vulkan:
+            fatalError()
+#endif
         }
     }
     

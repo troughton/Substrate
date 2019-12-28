@@ -19,7 +19,7 @@ final class VulkanArgumentBuffer {
     private var images = [VulkanImage]()
     private var buffers = [VulkanBuffer]()
     
-    public init(arguments: ArgumentBuffer, bindingPath: VulkanResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    public init(arguments: ArgumentBuffer, bindingPath: ResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
         self.device = commandBufferResources.device
 
         let layout = pipelineReflection.descriptorSetLayout(set: bindingPath.set, dynamicBuffers: []).vkLayout
@@ -54,17 +54,16 @@ final class VulkanArgumentBuffer {
         var setIndex = -1
 
         for (bindingPath, binding) in buffer.bindings {
-            let vulkanPath = VulkanResourceBindingPath(bindingPath)
             
-            assert(setIndex == -1 || setIndex == Int(vulkanPath.set), "Resources in an argument buffer cannot be in different sets.")
-            setIndex = Int(vulkanPath.set)
+            assert(setIndex == -1 || setIndex == Int(bindingPath.set), "Resources in an argument buffer cannot be in different sets.")
+            setIndex = Int(bindingPath.set)
 
-            let resource = pipelineReflection[vulkanPath]
+            let resource = pipelineReflection[bindingPath]
             
             var descriptorWrite = VkWriteDescriptorSet()
             descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET
-            descriptorWrite.dstBinding = vulkanPath.binding
-            descriptorWrite.dstArrayElement = vulkanPath.arrayIndex
+            descriptorWrite.dstBinding = bindingPath.binding
+            descriptorWrite.dstArrayElement = bindingPath.arrayIndex
             descriptorWrite.descriptorCount = 1
             descriptorWrite.descriptorType = VkDescriptorType(resource.type, dynamic: false)!
             descriptorWrite.dstSet = self.descriptorSet

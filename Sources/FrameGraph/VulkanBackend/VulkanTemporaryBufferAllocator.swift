@@ -9,7 +9,6 @@
 import Vulkan
 import FrameGraphUtilities
 import FrameGraphCExtras
-import SwiftFrameGraph
 
 fileprivate class TemporaryBufferArena {
     

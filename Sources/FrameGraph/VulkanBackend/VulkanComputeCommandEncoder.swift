@@ -169,11 +169,10 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             
         case .setArgumentBuffer(let args):
             let bindingPath = args.pointee.bindingPath
-            let vkBindingPath = VulkanResourceBindingPath(bindingPath)
             
             let argumentBuffer = args.pointee.argumentBuffer
             let vkArgumentBuffer = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, 
-                                                                                    bindingPath: vkBindingPath, 
+                                                                                    bindingPath: bindingPath,
                                                                                     commandBufferResources: self.commandBufferResources, 
                                                                                     pipelineReflection: self.pipelineReflection, 
                                                                                     stateCaches: stateCaches)
@@ -181,7 +180,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             self.commandBufferResources.argumentBuffers.append(vkArgumentBuffer)
 
             var set : VkDescriptorSet? = vkArgumentBuffer.descriptorSet
-            vkCmdBindDescriptorSets(self.commandBuffer, self.bindPoint, self.pipelineLayout, vkBindingPath.set, 1, &set, 0, nil)
+            vkCmdBindDescriptorSets(self.commandBuffer, self.bindPoint, self.pipelineLayout, bindingPath.set, 1, &set, 0, nil)
 
         case .setBytes(let args):
             self.bindingManager.setBytes(args: args)

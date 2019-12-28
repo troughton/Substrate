@@ -22,6 +22,7 @@ public final class VkBackend : RenderBackendProtocol, FrameGraphContext {
     let frameGraph : VulkanFrameGraphContext
     
     public init(instance: VulkanInstance, surface: VkSurfaceKHR, shaderLibraryURL: URL, inflightFrameCount: Int) {
+        
         self.vulkanInstance = instance
         self.maxInflightFrames = inflightFrameCount
         let physicalDevice = self.vulkanInstance.createSystemDefaultDevice(surface: surface)!

@@ -26,7 +26,7 @@ public struct BitSet : OptionSet, Hashable {
 
 struct ShaderResource {
     var type : ShaderResourceType
-    var bindingPath : VulkanResourceBindingPath
+    var bindingPath : ResourceBindingPath
     var name : String
     var access : AccessQualifier
     var bindingRange : BindingRange
@@ -46,7 +46,7 @@ struct DescriptorSetLayoutKey : Hashable {
 final class VulkanPipelineReflection : PipelineReflection {
     let device : VulkanDevice
     
-    let resources : [VulkanResourceBindingPath : ShaderResource]
+    let resources : [ResourceBindingPath : ShaderResource]
     let specialisations : [FunctionSpecialisation]
     let activeStagesForSets : [UInt32 : VkShaderStageFlagBits]
     let lastSet : UInt32?
@@ -54,7 +54,7 @@ final class VulkanPipelineReflection : PipelineReflection {
     private var layouts = [DescriptorSetLayoutKey : VulkanDescriptorSetLayout]()
     
     let reflectionCacheCount : Int
-    let reflectionCacheKeys : UnsafePointer<VulkanResourceBindingPath>
+    let reflectionCacheKeys : UnsafePointer<ResourceBindingPath>
     let reflectionCacheValues : UnsafePointer<ArgumentReflection>
     
     deinit {
@@ -64,7 +64,7 @@ final class VulkanPipelineReflection : PipelineReflection {
     
     public init(functions: [(String, VkReflectionContext, VkShaderStageFlagBits)], device: VulkanDevice) {
         self.device = device
-        var resources = [VulkanResourceBindingPath : ShaderResource]()
+        var resources = [ResourceBindingPath : ShaderResource]()
         var functionSpecialisations = [FunctionSpecialisation]()
         
         var activeStagesForSets = [UInt32 : VkShaderStageFlagBits]()
@@ -76,7 +76,7 @@ final class VulkanPipelineReflection : PipelineReflection {
             }
             
             VkReflectionContextEnumerateResources(reflectionContext) { (type, bindingIndex, bindingRange, name, access)  in
-                let bindingPath = VulkanResourceBindingPath(set: bindingIndex.set, binding: bindingIndex.binding, arrayIndex: 0)
+                let bindingPath = ResourceBindingPath(set: bindingIndex.set, binding: bindingIndex.binding, arrayIndex: 0)
 
                 resources[bindingPath, default:
                     ShaderResource(type: type, bindingPath: bindingPath, name: String(cString: name!), access: access, bindingRange: bindingRange, accessedStages: stage)
@@ -102,7 +102,7 @@ final class VulkanPipelineReflection : PipelineReflection {
         
         let sortedReflectionCache = resources.map { (path: $0, reflection: ArgumentReflection($1)!) }.sorted(by: { $0.path.value < $1.path.value })
         
-        let reflectionCacheKeys = UnsafeMutablePointer<VulkanResourceBindingPath>.allocate(capacity: sortedReflectionCache.count + 1)
+        let reflectionCacheKeys = UnsafeMutablePointer<ResourceBindingPath>.allocate(capacity: sortedReflectionCache.count + 1)
         let reflectionCacheValues = UnsafeMutablePointer<ArgumentReflection>.allocate(capacity: sortedReflectionCache.count)
         
         for (i, pair) in sortedReflectionCache.enumerated() {
@@ -110,7 +110,7 @@ final class VulkanPipelineReflection : PipelineReflection {
             reflectionCacheValues[i] = pair.reflection
         }
         
-        reflectionCacheKeys[sortedReflectionCache.count] = VulkanResourceBindingPath(ResourceBindingPath(value: .max)) // Insert a sentinel to speed up the linear search; https://schani.wordpress.com/2010/04/30/linear-vs-binary-search/
+        reflectionCacheKeys[sortedReflectionCache.count] = ResourceBindingPath(ResourceBindingPath(value: .max)) // Insert a sentinel to speed up the linear search; https://schani.wordpress.com/2010/04/30/linear-vs-binary-search/
         
         self.reflectionCacheCount = sortedReflectionCache.count
         self.reflectionCacheKeys = UnsafePointer(reflectionCacheKeys)
@@ -118,7 +118,7 @@ final class VulkanPipelineReflection : PipelineReflection {
         
     }
     
-    subscript(bindingPath: VulkanResourceBindingPath) -> ShaderResource {
+    subscript(bindingPath: ResourceBindingPath) -> ShaderResource {
         return self.resources[bindingPath]!
     }
 
@@ -154,7 +154,7 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
-    func reflectionCacheLinearSearch(_ path: VulkanResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
+    func reflectionCacheLinearSearch(_ path: ResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
         var i = 0
         while true { // We're guaranteed to always exit this loop since there's a sentinel value with UInt64.max at the end of reflectionCacheKeys
             if self.reflectionCacheKeys[i].value >= path.value {
@@ -172,7 +172,7 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
-    func reflectionCacheBinarySearch(_ path: VulkanResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
+    func reflectionCacheBinarySearch(_ path: ResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
         var low = 0
         var high = self.reflectionCacheCount
         
@@ -193,7 +193,7 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
-        let path = VulkanResourceBindingPath(path)
+        let path = ResourceBindingPath(path)
         return reflectionCacheLinearSearch(path, returnNearest: false)
     }
     
@@ -204,7 +204,7 @@ final class VulkanPipelineReflection : PipelineReflection {
                 bindingPath.arrayIndex = UInt32(arrayIndex)
                 
                 if let argumentBufferPath = argumentBufferPath {
-                    assert(bindingPath.set == VulkanResourceBindingPath(argumentBufferPath).set)
+                    assert(bindingPath.set == ResourceBindingPath(argumentBufferPath).set)
                 }
                 
                 return ResourceBindingPath(bindingPath)
@@ -221,17 +221,13 @@ final class VulkanPipelineReflection : PipelineReflection {
         // aren't spread across multiple sets.
         
         if let (firstBoundPath, _) = argumentBuffer.bindings.first {
-            let vulkanPath = VulkanResourceBindingPath(firstBoundPath)
-            return ResourceBindingPath(
-                VulkanResourceBindingPath(argumentBuffer: vulkanPath.set)
-            )
+                ResourceBindingPath(argumentBuffer: firstBoundPath.set)
         }
         
         for (pendingKey, _, _) in argumentBuffer.enqueuedBindings {
             if let path = pendingKey.computedBindingPath(pipelineReflection: self) {
-                let vulkanPath = VulkanResourceBindingPath(path)
                 return ResourceBindingPath(
-                    VulkanResourceBindingPath(argumentBuffer: vulkanPath.set)
+                    ResourceBindingPath(argumentBuffer: path.set)
                 )
             }
         }
@@ -240,11 +236,9 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     public func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath {
-        let newParentPath = VulkanResourceBindingPath(newArgumentBufferPath)
-        
-        var modifiedPath = VulkanResourceBindingPath(pathInOriginalArgumentBuffer)
-        modifiedPath.set = newParentPath.set
-        return ResourceBindingPath(modifiedPath)
+        var modifiedPath = pathInOriginalArgumentBuffer
+        modifiedPath.set = newArgumentBufferPath.set
+        return modifiedPath
     }
 }
 

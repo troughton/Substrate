@@ -7,7 +7,6 @@
 
 #if canImport(Vulkan)
 import Vulkan
-import SwiftFrameGraph
 import FrameGraphCExtras
 
 final class ResourceBindingManager {
@@ -77,17 +76,17 @@ final class ResourceBindingManager {
         func setBuffer(bindingPath: ResourceBindingPath, buffer: VulkanBuffer, offset: UInt32, hasDynamicOffsets: Bool) {
             self.needsRebind = true
             
-            let vkBindingPath = VulkanResourceBindingPath(bindingPath)
+            let bindingPath = ResourceBindingPath(bindingPath)
             bindingManager.commandBufferResources.buffers.append(buffer)
             
-            self.descriptorCounts[Int(vkBindingPath.binding)] = 1
+            self.descriptorCounts[Int(bindingPath.binding)] = 1
 
-            let resource = bindingManager.pipelineReflection[vkBindingPath]
+            let resource = bindingManager.pipelineReflection[bindingPath]
             
             var descriptorWrite = VkWriteDescriptorSet()
             descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET
-            descriptorWrite.dstBinding = vkBindingPath.binding
-            descriptorWrite.dstArrayElement = vkBindingPath.arrayIndex
+            descriptorWrite.dstBinding = bindingPath.binding
+            descriptorWrite.dstArrayElement = bindingPath.arrayIndex
             descriptorWrite.descriptorCount = 1
             descriptorWrite.descriptorType = VkDescriptorType(resource.type, dynamic: hasDynamicOffsets)!
             descriptorWrite.dstSet = self.mutableSet
@@ -114,11 +113,9 @@ final class ResourceBindingManager {
         
         func setBufferOffset(bindingPath: ResourceBindingPath, offset: UInt32) {
             self.needsRebind = true
-            
-            let vulkanPath = VulkanResourceBindingPath(bindingPath)
 
             var offsetInOffsets = 0
-            for i in 0..<Int(vulkanPath.binding) {
+            for i in 0..<Int(bindingPath.binding) {
                 if self.dynamicBuffers.contains(BitSet(element: i)) {
                     offsetInOffsets += 1
                 }
@@ -134,7 +131,6 @@ final class ResourceBindingManager {
         func setTexture(bindingPath: ResourceBindingPath, handle: Texture.Handle) {
             self.needsRebind = true
             
-            let bindingPath = VulkanResourceBindingPath(bindingPath)
             self.descriptorCounts[Int(bindingPath.binding)] = 1
             
             let resource = bindingManager.pipelineReflection[bindingPath]
@@ -163,7 +159,6 @@ final class ResourceBindingManager {
         func setSamplerState(bindingPath: ResourceBindingPath, descriptor: SamplerDescriptor) {
             self.needsRebind = true
             
-            let bindingPath = VulkanResourceBindingPath(bindingPath)
             self.descriptorCounts[Int(bindingPath.binding)] = 1
             
             var descriptorWrite = VkWriteDescriptorSet()
@@ -250,8 +245,7 @@ final class ResourceBindingManager {
     }
     
     private func setBytes(bindingPath: ResourceBindingPath, bytes: UnsafeRawPointer, length: UInt32) {
-        let vkBindingPath = VulkanResourceBindingPath(bindingPath)
-        let resourceInfo = self.pipelineReflection[vkBindingPath]
+        let resourceInfo = self.pipelineReflection[bindingPath]
         
         switch resourceInfo.type {
         case .pushConstantBuffer:
@@ -265,28 +259,19 @@ final class ResourceBindingManager {
     }
     
     private func setBuffer(bindingPath: ResourceBindingPath, handle: Buffer.Handle, offset: UInt32, hasDynamicOffsets: Bool) {
-        let vkBindingPath = VulkanResourceBindingPath(bindingPath)
-        self.managerForSet(vkBindingPath.set).setBuffer(bindingPath: bindingPath, handle: handle, offset: offset, hasDynamicOffsets: hasDynamicOffsets)
+        self.managerForSet(bindingPath.set).setBuffer(bindingPath: bindingPath, handle: handle, offset: offset, hasDynamicOffsets: hasDynamicOffsets)
     }
     
-    private func setBuffer(bindingPath: ResourceBindingPath, buffer: VulkanBuffer, offset: UInt32, hasDynamicOffsets: Bool) {
-        let vkBindingPath = VulkanResourceBindingPath(bindingPath)
-        self.managerForSet(vkBindingPath.set).setBuffer(bindingPath: bindingPath, buffer: buffer, offset: offset, hasDynamicOffsets: hasDynamicOffsets)
+    private func setBuffer(bindingPath: ResourceBindingPath, buffer: VulkanBuffer, offset: UInt32, hasDynamicOffsets: Bool) { self.managerForSet(bindingPath.set).setBuffer(bindingPath: bindingPath, buffer: buffer, offset: offset, hasDynamicOffsets: hasDynamicOffsets)
     }
     
-    private func setBufferOffset(bindingPath: ResourceBindingPath, handle: Buffer.Handle, offset: UInt32) {
-        let vkBindingPath = VulkanResourceBindingPath(bindingPath)
-        self.managerForSet(vkBindingPath.set).setBufferOffset(bindingPath: bindingPath, offset: offset)
+    private func setBufferOffset(bindingPath: ResourceBindingPath, handle: Buffer.Handle, offset: UInt32) { self.managerForSet(bindingPath.set).setBufferOffset(bindingPath: bindingPath, offset: offset)
     }
     
-    private func setTexture(bindingPath: ResourceBindingPath, handle: Texture.Handle) {
-        let vkBindingPath = VulkanResourceBindingPath(bindingPath)
-        self.managerForSet(vkBindingPath.set).setTexture(bindingPath: bindingPath, handle: handle)
+    private func setTexture(bindingPath: ResourceBindingPath, handle: Texture.Handle) { self.managerForSet(bindingPath.set).setTexture(bindingPath: bindingPath, handle: handle)
     }
     
-    private func setSamplerState(bindingPath: ResourceBindingPath, descriptor: SamplerDescriptor) {
-        let vkBindingPath = VulkanResourceBindingPath(bindingPath)
-        self.managerForSet(vkBindingPath.set).setSamplerState(bindingPath: bindingPath, descriptor: descriptor)
+    private func setSamplerState(bindingPath: ResourceBindingPath, descriptor: SamplerDescriptor) { self.managerForSet(bindingPath.set).setSamplerState(bindingPath: bindingPath, descriptor: descriptor)
     }
     
     public func setBytes(args: UnsafePointer<FrameGraphCommand.SetBytesArgs>) {
@@ -294,12 +279,10 @@ final class ResourceBindingManager {
     }
     
     public func setBuffer(args: UnsafePointer<FrameGraphCommand.SetBufferArgs>) {
-        let vkBindingPath = VulkanResourceBindingPath(args.pointee.bindingPath)
-        
         if args.pointee.hasDynamicOffset {
-            self.managerForSet(vkBindingPath.set).dynamicBuffers.insert(BitSet(element: Int(vkBindingPath.binding)))
+            self.managerForSet(bindingPath.set).dynamicBuffers.insert(BitSet(element: Int(bindingPath.binding)))
         } else {
-            self.managerForSet(vkBindingPath.set).dynamicBuffers.remove(BitSet(element: Int(vkBindingPath.binding)))
+            self.managerForSet(bindingPath.set).dynamicBuffers.remove(BitSet(element: Int(bindingPath.binding)))
         }
         
         self.commands.append(.setBuffer(args))
