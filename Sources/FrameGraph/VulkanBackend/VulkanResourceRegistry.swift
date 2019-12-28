@@ -117,7 +117,7 @@ public final class ResourceRegistry {
     }
 
     func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, bindingPath: ResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches) -> VulkanArgumentBuffer {
-        if let vulkanArgumentBuffer = self.argumentBufferReferences[argumentBuffer.handle] {
+        if let vulkanArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
             return vulkanArgumentBuffer
         }
         
@@ -128,9 +128,9 @@ public final class ResourceRegistry {
                                           resourceRegistry: self, 
                                           stateCaches: stateCaches)
 
-        self.argumentBufferReferences[argumentBuffer.handle] = buffer
+        self.argumentBufferReferences[argumentBuffer] = buffer
         if !argumentBuffer.flags.contains(.persistent) {
-            self.frameArgumentBuffers.append(argumentBuffer.handle)
+            self.frameArgumentBuffers.append(argumentBuffer)
         }
         
         return buffer
@@ -174,14 +174,14 @@ public final class ResourceRegistry {
         }
     }
 
-    public func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
+    public func disposeArgumentBuffer(_ buffer: _ArgumentBuffer) {
         // Only called if the buffer isn't persistent.
-        self.argumentBufferReferences.removeValue(forKey: buffer.handle)
+        self.argumentBufferReferences.removeValue(forKey: buffer)
     }
 
-    public func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
+    public func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray) {
         // Only called if the buffer isn't persistent.
-        self.argumentBufferReferences.removeValue(forKey: buffer.handle)
+        self.argumentBufferReferences.removeValue(forKey: buffer)
     }
     
     public func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {

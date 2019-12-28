@@ -765,13 +765,10 @@ final class SpecialisationInfo {
     let mapEntries = ExpandingBuffer<VkSpecializationMapEntry>()
     var info : VkSpecializationInfo
     
-    init<T : FunctionConstants>(_ constants: T, constantIndices: [FunctionSpecialisation]) {
-        let encoder = FunctionConstantEncoder()
-        let constantsDict = try! encoder.encodeToDict(constants)
-        
+    init(_ constants: FunctionConstants, constantIndices: [FunctionSpecialisation]) {
         self.info = VkSpecializationInfo()
         
-        for (constant, value) in constantsDict {
+        for (constant, value) in constants.namedConstants {
             guard let index = constantIndices.first(where: { $0.name == constant })?.index else {
                 // print("Warning: function constant \(constant) unused.")
                 continue
@@ -784,6 +781,42 @@ final class SpecialisationInfo {
             mapEntry.offset = UInt32(self.data.count)
             
             switch value {
+            case .bool(let bool):
+                let value = VkBool32(bool)
+                self.data.append(value)
+                mapEntry.size = MemoryLayout.size(ofValue: value)
+            case .int8(let value):
+                self.data.append(value)
+                mapEntry.size = MemoryLayout.size(ofValue: value)
+            case .int16(let value):
+                self.data.append(value)
+                mapEntry.size = MemoryLayout.size(ofValue: value)
+            case .int32(let value):
+                self.data.append(value)
+                mapEntry.size = MemoryLayout.size(ofValue: value)
+            case .uint8(let value):
+                self.data.append(value)
+                mapEntry.size = MemoryLayout.size(ofValue: value)
+            case .uint16(let value):
+                self.data.append(value)
+                mapEntry.size = MemoryLayout.size(ofValue: value)
+            case .uint32(let value):
+                self.data.append(value)
+                mapEntry.size = MemoryLayout.size(ofValue: value)
+            case .float(let value):
+                self.data.append(value)
+                mapEntry.size = MemoryLayout.size(ofValue: value)
+            }
+        }
+        
+        for constant in constants.indexedConstants {
+            var mapEntry = VkSpecializationMapEntry()
+            defer { self.mapEntries.append(mapEntry) }
+            
+            mapEntry.constantID = UInt32(constant.index)
+            mapEntry.offset = UInt32(self.data.count)
+            
+            switch constant.value {
             case .bool(let bool):
                 let value = VkBool32(bool)
                 self.data.append(value)

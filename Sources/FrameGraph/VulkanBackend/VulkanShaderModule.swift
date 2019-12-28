@@ -110,7 +110,7 @@ final class VulkanPipelineReflection : PipelineReflection {
             reflectionCacheValues[i] = pair.reflection
         }
         
-        reflectionCacheKeys[sortedReflectionCache.count] = ResourceBindingPath(ResourceBindingPath(value: .max)) // Insert a sentinel to speed up the linear search; https://schani.wordpress.com/2010/04/30/linear-vs-binary-search/
+        reflectionCacheKeys[sortedReflectionCache.count] = ResourceBindingPath(value: .max) // Insert a sentinel to speed up the linear search; https://schani.wordpress.com/2010/04/30/linear-vs-binary-search/
         
         self.reflectionCacheCount = sortedReflectionCache.count
         self.reflectionCacheKeys = UnsafePointer(reflectionCacheKeys)
@@ -204,16 +204,16 @@ final class VulkanPipelineReflection : PipelineReflection {
                 bindingPath.arrayIndex = UInt32(arrayIndex)
                 
                 if let argumentBufferPath = argumentBufferPath {
-                    assert(bindingPath.set == ResourceBindingPath(argumentBufferPath).set)
+                    assert(bindingPath.set == argumentBufferPath.set)
                 }
                 
-                return ResourceBindingPath(bindingPath)
+                return bindingPath
             }
         }
         return nil
     }
     
-    public func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
+    public func bindingPath(argumentBuffer: _ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
         
         // TODO: handle the arrayIndex parameter for argument buffer arrays.
         

@@ -20,7 +20,7 @@ final class StateCaches {
     let shaderLibrary : VulkanShaderLibrary
     
     private var vertexInputStates = [VertexDescriptor : VertexInputStateCreateInfo]()
-    private var functionSpecialisationStates = [AnyFunctionConstants : SpecialisationInfo]()
+    private var functionSpecialisationStates = [FunctionConstants : SpecialisationInfo]()
     private var samplers = [SamplerDescriptor : VkSampler]()
     private var currentPipelineReflection : VulkanPipelineReflection? = nil
     private var renderPipelines = [RenderPipelineCacheKey : VkPipeline?]()
@@ -87,7 +87,7 @@ final class StateCaches {
     }
 
 
-    public subscript(functionConstants: AnyFunctionConstants?, pipelineReflection pipelineReflection: VulkanPipelineReflection) -> SpecialisationInfo? {
+    public subscript(functionConstants: FunctionConstants?, pipelineReflection pipelineReflection: VulkanPipelineReflection) -> SpecialisationInfo? {
         guard let functionConstants = functionConstants else {
             return nil
         }

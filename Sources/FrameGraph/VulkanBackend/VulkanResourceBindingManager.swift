@@ -76,7 +76,6 @@ final class ResourceBindingManager {
         func setBuffer(bindingPath: ResourceBindingPath, buffer: VulkanBuffer, offset: UInt32, hasDynamicOffsets: Bool) {
             self.needsRebind = true
             
-            let bindingPath = ResourceBindingPath(bindingPath)
             bindingManager.commandBufferResources.buffers.append(buffer)
             
             self.descriptorCounts[Int(bindingPath.binding)] = 1
@@ -279,6 +278,7 @@ final class ResourceBindingManager {
     }
     
     public func setBuffer(args: UnsafePointer<FrameGraphCommand.SetBufferArgs>) {
+        let bindingPath = args.pointee.bindingPath
         if args.pointee.hasDynamicOffset {
             self.managerForSet(bindingPath.set).dynamicBuffers.insert(BitSet(element: Int(bindingPath.binding)))
         } else {
@@ -306,11 +306,11 @@ final class ResourceBindingManager {
             case .setBytes(let args):
                 self.setBytes(bindingPath: args.pointee.bindingPath, bytes: args.pointee.bytes, length: args.pointee.length)
             case .setBuffer(let args):
-                self.setBuffer(bindingPath: args.pointee.bindingPath, handle: args.pointee.handle, offset: args.pointee.offset, hasDynamicOffsets: args.pointee.hasDynamicOffset)
+                self.setBuffer(bindingPath: args.pointee.bindingPath, handle: args.pointee, offset: args.pointee.offset, hasDynamicOffsets: args.pointee.hasDynamicOffset)
             case .setBufferOffset(let args):
-                self.setBufferOffset(bindingPath: args.pointee.bindingPath, handle: args.pointee.handle!, offset: args.pointee.offset)
+                self.setBufferOffset(bindingPath: args.pointee.bindingPath, handle: args.pointee!, offset: args.pointee.offset)
             case .setTexture(let args):
-                self.setTexture(bindingPath: args.pointee.bindingPath, handle: args.pointee.handle)
+                self.setTexture(bindingPath: args.pointee.bindingPath, handle: args.pointee)
             case .setSamplerState(let args): // TODO: we can support immutable samplers in a similar way to dynamic buffer offsets.
                 self.setSamplerState(bindingPath: args.pointee.bindingPath, descriptor: args.pointee.descriptor)
             default:

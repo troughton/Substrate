@@ -403,8 +403,8 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             break
 
         case .setVertexBuffer(let args):
-            self.boundVertexBuffers[Int(args.pointee.index)] = args.pointee.handle.map { Buffer(existingHandle: $0) }
-            guard let handle = args.pointee.handle else { return }
+            self.boundVertexBuffers[Int(args.pointee.index)] = args.pointee.buffer
+            guard let handle = args.pointee else { return }
             let buffer = self.resourceRegistry[buffer: handle]!
             self.commandBufferResources.buffers.append(buffer)
 
