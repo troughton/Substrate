@@ -16,7 +16,7 @@ let package = Package(
         .library(name: "FrameGraphUtilities", targets: ["FrameGraphUtilities"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/glessard/swift-atomics", from: Version("6.0.0"))
+        .package(url: "https://github.com/troughton/swift-atomics", .branch("patch-1"))
     ],
     targets: [
         .target(name: "FrameGraphCExtras", dependencies: []),
