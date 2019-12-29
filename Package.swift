@@ -14,6 +14,7 @@ let package = Package(
     products: [
         .library(name: "SwiftFrameGraph", targets: ["SwiftFrameGraph"]),
         .library(name: "FrameGraphUtilities", targets: ["FrameGraphUtilities"]),
+        .executable(name: "ShaderTool", targets: ["ShaderTool"])
     ],
     dependencies: [
         .package(url: "https://github.com/troughton/swift-atomics", .branch("patch-1")),
@@ -25,7 +26,7 @@ let package = Package(
         .target(name: "SwiftFrameGraph", dependencies: ["FrameGraphUtilities", "FrameGraphCExtras", "SwiftAtomics"], path: "Sources/FrameGraph"),
         .target(name: "FrameGraphUtilities", dependencies: ["SwiftAtomics"]),
         .target(
-            name: "ShaderReflectionGenerator",
+            name: "ShaderTool",
             dependencies: ["SPIRV-Cross", "SwiftFrameGraph", "Regex"]),
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14
