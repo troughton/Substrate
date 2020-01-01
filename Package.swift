@@ -17,7 +17,7 @@ let package = Package(
         .executable(name: "ShaderTool", targets: ["ShaderTool"])
     ],
     dependencies: [
-        .package(url: "https://github.com/troughton/swift-atomics", .branch("patch-1")),
+        .package(url: "https://github.com/glessard/swift-atomics", .branch("master")),
          .package(url: "https://github.com/troughton/SPIRV-Cross-SPM", from: "0.21.1"),
          .package(url: "https://github.com/sharplet/Regex", from: "2.1.0")
     ],
