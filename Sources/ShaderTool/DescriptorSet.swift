@@ -127,7 +127,7 @@ final class DescriptorSet {
                     stream.print("if let resource = self.$\(resource.name).buffer {")
                                     
                     stream.print("argBuffer.bindings.append(")
-                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), type: .buffer), .buffer(resource.wrappedValue, offset: resource.offset))")
+                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index), type: .buffer), .buffer(resource.wrappedValue, offset: resource.offset))")
                     
                     stream.print(")")
                     stream.print("}")
