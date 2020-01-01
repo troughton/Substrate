@@ -73,6 +73,7 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func dispose(argumentBufferArray: _ArgumentBufferArray)
     func dispose(heap: Heap)
     
+    var pushConstantPath : ResourceBindingPath { get }
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
 }
 
@@ -209,7 +210,10 @@ public struct RenderBackend {
         return _backend.renderDevice
     }
     
-    public static var pushConstantPath : ResourceBindingPath = ResourceBindingPath.nil
+    @inlinable
+    public static var pushConstantPath : ResourceBindingPath {
+        return _backend.pushConstantPath
+    }
     
      /// There are eight binding slots for argument buffers; this maps from a binding index to the ResourceBindingPath that identifies that index in the backend.
     @inlinable

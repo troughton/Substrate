@@ -30,9 +30,6 @@ final class MetalBackend : _RenderBackendProtocol {
         self.device = MTLCreateSystemDefaultDevice()!
         self.stateCaches = MetalStateCaches(device: self.device, libraryPath: libraryPath)
         self.resourceRegistry = MetalPersistentResourceRegistry(device: device)
-        
-        // Push constants go immediately after the argument buffers.
-        RenderBackend.pushConstantPath = ResourceBindingPath(stages: [.vertex, .fragment], type: .buffer, argumentBufferIndex: nil, index: 8)
     }
     
     public var api : RenderAPI {
@@ -164,10 +161,14 @@ final class MetalBackend : _RenderBackendProtocol {
     func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection? {
         return self.stateCaches.computePipelineReflection(descriptor: descriptor)
     }
+
+    @usableFromInline var pushConstantPath: ResourceBindingPath {
+        return ResourceBindingPath(stages: [.vertex, .fragment], type: .buffer, argumentBufferIndex: nil, index: 0) // Push constants go at index 0
+    }
     
     @usableFromInline func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath {
         let stages = MTLRenderStages(stages)
-        return ResourceBindingPath(stages: stages, type: .buffer, argumentBufferIndex: nil, index: index)
+        return ResourceBindingPath(stages: stages, type: .buffer, argumentBufferIndex: nil, index: index + 1) // Push constants go at index 0
     }
 }
 

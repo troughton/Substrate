@@ -79,7 +79,6 @@ final class DescriptorSet {
         
         stream.print("public struct \(self.name ?? "Set\(setIndex)") : ShaderDescriptorSet {")
                 
-        assert(!self.stages.isEmpty)
         stream.print("public static let activeStages : RenderStages = \(self.stages)")
         stream.newLine()
         
@@ -103,7 +102,7 @@ final class DescriptorSet {
                 stream.print("@BufferBacked public var \(resource.name) : \(resource.type.name)? = nil")
             } else {
                 let wrapperType = resource.viewType == .uniformBuffer || resource.viewType == .storageBuffer ? "@OffsetView " : ""
-                stream.print("\(wrapperType)public var \(resource.name) : \(resource.viewType.frameGraphType)? = nil")
+                stream.print("\(wrapperType)public var \(resource.name) : \(resource.viewType.frameGraphTypeName)? = nil")
             }
         }
         

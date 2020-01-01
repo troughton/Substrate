@@ -76,16 +76,27 @@ fileprivate func findExecutable(_ name: String) -> URL? {
 
     do {
         try task.run()
-    }
-    catch {
-        return nil
-    }
-    task.waitUntilExit()
+        
+        task.waitUntilExit()
 
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    if let string = String(data: data, encoding: String.Encoding.utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) {
-        guard FileManager.default.fileExists(atPath: string) else { return nil }
-        return URL(fileURLWithPath: string)
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        
+        if !data.isEmpty,
+            let string = String(data: data, encoding: String.Encoding.utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            FileManager.default.fileExists(atPath: string) {
+            return URL(fileURLWithPath: string)
+        }
+    } catch {}
+    
+    let localBin = "/usr/local/bin/\(name)"
+    let usrBin = "/usr/bin/\(name)"
+    
+    if FileManager.default.fileExists(atPath: localBin) {
+        return URL(fileURLWithPath: localBin)
+    }
+    
+    if FileManager.default.fileExists(atPath: usrBin) {
+        return URL(fileURLWithPath: usrBin)
     }
 
     return nil

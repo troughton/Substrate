@@ -7,6 +7,7 @@
 
 import Foundation
 import SPIRV_Cross
+import SwiftFrameGraph
 
 final class SPIRVContext {
     let spvContext : spvc_context
@@ -44,6 +45,7 @@ final class SPIRVCompiler {
     let compiler : spvc_compiler
     var currentEntryPoint : EntryPoint? = nil
     
+    var activeResourceIds : Set<SpvId> = []
     var shaderResources : spvc_resources? = nil
     
     init(file: SPIRVFile, context: SPIRVContext) throws {
@@ -66,6 +68,25 @@ final class SPIRVCompiler {
     }
     
     func compiledSource() throws -> String {
+        if self.file.target == .macOSMetal || self.file.target == .iOSMetal {
+            
+            // Set the push constant at buffer(0) and all argument buffers after it.
+            var binding = spvc_msl_resource_binding()
+            spvc_msl_resource_binding_init(&binding)
+            binding.stage = self.file.entryPoint.type.executionModel
+            binding.desc_set = .max
+            binding.binding = 0
+            binding.msl_buffer = 0
+            spvc_compiler_msl_add_resource_binding(self.compiler, &binding)
+            
+            for i in 0..<DescriptorSet.setCount {
+                binding.desc_set = UInt32(i)
+                binding.binding = ~3 // kArgumentBufferBinding
+                binding.msl_buffer = UInt32(i + 1)
+                spvc_compiler_msl_add_resource_binding(self.compiler, &binding)
+            }
+        }
+        
         var source : UnsafePointer<CChar>! = nil
         let result = spvc_compiler_compile(self.compiler, &source)
         guard result == SPVC_SUCCESS else {
@@ -79,10 +100,28 @@ final class SPIRVCompiler {
         let result = spvc_compiler_set_entry_point(self.compiler, entryPoint.name, entryPoint.type.executionModel)
         guard result == SPVC_SUCCESS else { return false }
         
+        self.activeResourceIds.removeAll(keepingCapacity: true)
+        
+        do {
+            var reflectedResources : UnsafePointer<spvc_reflected_resource>! = nil
+            var reflectedResourceCount = 0
+            
+            var activeSet : spvc_set! = nil
+            spvc_compiler_get_active_interface_variables(self.compiler, &activeSet)
+            
+            var activeResources : spvc_resources! = nil
+            spvc_compiler_create_shader_resources_for_active_variables(self.compiler, &activeResources, activeSet)
+            
+            for viewType in ResourceViewType.boundTypes {
+                spvc_resources_get_resource_list_for_type(activeResources, viewType.spvcType, &reflectedResources, &reflectedResourceCount)
+
+                for i in 0..<reflectedResourceCount {
+                    self.activeResourceIds.insert(reflectedResources[i].id)
+                }
+            }
+        }
+        
         spvc_compiler_create_shader_resources(self.compiler, &self.shaderResources)
-//        var activeSet : spvc_set! = nil
-//        spvc_compiler_get_active_interface_variables(self.compiler, &activeSet)
-//        spvc_compiler_create_shader_resources_for_active_variables(self.compiler, &self.shaderResources, activeSet)
         
         self.currentEntryPoint = entryPoint
         return true
@@ -140,7 +179,6 @@ final class SPIRVCompiler {
     }
     
     var boundResources : [Resource] {
-        
         var bindings : [Resource] = []
         
         var reflectedResources : UnsafePointer<spvc_reflected_resource>! = nil
@@ -148,36 +186,15 @@ final class SPIRVCompiler {
         
         let stage = self.currentEntryPoint!.type.stages
         
-        spvc_resources_get_resource_list_for_type(self.shaderResources, SPVC_RESOURCE_TYPE_UNIFORM_BUFFER, &reflectedResources, &reflectedResourceCount)
-        
-        for i in 0..<reflectedResourceCount {
-            bindings.append(Resource(compiler: self, resource: reflectedResources[i], type: .buffer, stage: stage, viewType: .uniformBuffer))
+        for viewType in ResourceViewType.boundTypes {
+            spvc_resources_get_resource_list_for_type(self.shaderResources, viewType.spvcType, &reflectedResources, &reflectedResourceCount)
+            
+            for i in 0..<reflectedResourceCount {
+                let activeStage = self.activeResourceIds.contains(reflectedResources[i].id) ? stage : []
+                bindings.append(Resource(compiler: self, resource: reflectedResources[i], type: viewType.baseType, stage: activeStage, viewType: viewType))
+            }
         }
-        
-        spvc_resources_get_resource_list_for_type(self.shaderResources, SPVC_RESOURCE_TYPE_STORAGE_BUFFER, &reflectedResources, &reflectedResourceCount)
-        
-        for i in 0..<reflectedResourceCount {
-            bindings.append(Resource(compiler: self, resource: reflectedResources[i], type: .buffer, stage: stage, viewType: .storageBuffer))
-        }
-        
-        spvc_resources_get_resource_list_for_type(self.shaderResources, SPVC_RESOURCE_TYPE_SEPARATE_IMAGE, &reflectedResources, &reflectedResourceCount)
-        
-        for i in 0..<reflectedResourceCount {
-            bindings.append(Resource(compiler: self, resource: reflectedResources[i], type: .texture, stage: stage, viewType: .texture))
-        }
-        
-        spvc_resources_get_resource_list_for_type(self.shaderResources, SPVC_RESOURCE_TYPE_STORAGE_IMAGE, &reflectedResources, &reflectedResourceCount)
-        
-        for i in 0..<reflectedResourceCount {
-            bindings.append(Resource(compiler: self, resource: reflectedResources[i], type: .texture, stage: stage, viewType: .texture))
-        }
-        
-        spvc_resources_get_resource_list_for_type(self.shaderResources, SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS, &reflectedResources, &reflectedResourceCount)
-        
-        for i in 0..<reflectedResourceCount {
-            bindings.append(Resource(compiler: self, resource: reflectedResources[i], type: .sampler, stage: stage, viewType: .sampler))
-        }
-        
+
         return bindings
     }
 }

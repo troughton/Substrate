@@ -16,6 +16,8 @@ extension ResourceBindingPath {
     
     public static let pushConstantSet = UInt32(UInt8.max)
     public static let argumentBufferBinding = UInt32((1 << ResourceBindingPath.bindingRange.count) - 1)
+    
+    public static let pushConstantPath = ResourceBindingPath(set: pushConstantSet, binding: 0, arrayIndex: 0)
 
     @inlinable
     public init(set: UInt32, binding: UInt32, arrayIndex: UInt32) {

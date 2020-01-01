@@ -75,6 +75,11 @@ public protocol RenderPassReflection {
     associatedtype Set7 : ArgumentBufferEncodable & NoArgConstructable = NilSet
 }
 
+extension RenderPassReflection {
+    @inlinable
+    public static var attachmentCount : Int { 0 }
+}
+
 public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRenderCommandEncoder {
     @usableFromInline let encoder : RenderCommandEncoder
     

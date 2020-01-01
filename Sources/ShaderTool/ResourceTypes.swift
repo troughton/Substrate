@@ -33,20 +33,53 @@ enum ResourceViewType {
     case uniformBuffer
     case storageBuffer
     case pushConstantBlock
-    case texture
+    case image
+    case storageImage
     case sampler
     
-    var frameGraphType : String {
+    var frameGraphTypeName : String {
         switch self {
         case .uniformBuffer, .storageBuffer:
             return "Buffer"
-        case .texture:
+        case .image, .storageImage:
             return "Texture"
         case .sampler:
             return "SamplerDescriptor"
         default:
             fatalError()
         }
+    }
+    
+    var baseType : ResourceType {
+        switch self {
+        case .uniformBuffer, .storageBuffer, .pushConstantBlock:
+            return .buffer
+        case .image, .storageImage:
+            return .texture
+        case .sampler:
+            return .sampler
+        }
+    }
+    
+    var spvcType : spvc_resource_type {
+        switch self {
+        case .uniformBuffer:
+            return SPVC_RESOURCE_TYPE_UNIFORM_BUFFER
+        case .storageBuffer:
+            return SPVC_RESOURCE_TYPE_STORAGE_BUFFER
+        case .pushConstantBlock:
+            return SPVC_RESOURCE_TYPE_PUSH_CONSTANT
+        case .image:
+            return SPVC_RESOURCE_TYPE_SEPARATE_IMAGE
+        case .storageImage:
+            return SPVC_RESOURCE_TYPE_STORAGE_IMAGE
+        case .sampler:
+            return SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS
+        }
+    }
+    
+    static var boundTypes : [ResourceViewType] {
+        return [.uniformBuffer, .storageBuffer, .image, .storageImage, .sampler]
     }
 }
 

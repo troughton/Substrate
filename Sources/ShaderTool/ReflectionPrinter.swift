@@ -83,12 +83,13 @@ extension ReflectionPrinter {
     }
     
     mutating func print(pass: RenderPass, typeLookup: TypeLookup) {
-        print("""
-            public struct \(pass.name)Reflection : RenderPassReflection {
-            
-                public static var attachmentCount : Int { \(pass.attachmentCount) }
-            
-            """)
+        print("public struct \(pass.name)Reflection : RenderPassReflection {")
+        newLine()
+        
+        if pass.attachmentCount > 0 {
+            print("public static var attachmentCount : Int { \(pass.attachmentCount) }")
+            newLine()
+        }
         
         // Entry points
         
@@ -140,6 +141,33 @@ extension ReflectionPrinter {
         }
         
         if !pass.pushConstants.isEmpty {
+            let setCount = (pass.sets.lastIndex(where: { $0 != nil }) ?? pass.sets.count - 1) + 1
+            
+            print("public static var pushConstantPath : ResourceBindingPath {")
+            do {
+                print("#if canImport(Metal)")
+                print("if RenderBackend.api == .metal {")
+                
+                print("return ResourceBindingPath(stages: [.vertex, .fragment], type: .buffer, argumentBufferIndex: nil, index: \(setCount))")
+
+                print("}")
+                print("#endif // canImport(Metal)")
+            }
+            newLine()
+            // Vulkan
+            do {
+                print("#if canImport(Vulkan)")
+                print("if RenderBackend.api == .vulkan {")
+                
+                print("return .pushConstantPath")
+
+                print("}")
+                print("#endif // canImport(Vulkan)")
+            }
+            print("return .nil")
+            print("}")
+            newLine()
+            
             print("public struct PushConstants : NoArgConstructable {")
             
             for constant in pass.pushConstants {
