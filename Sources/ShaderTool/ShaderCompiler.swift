@@ -135,7 +135,7 @@ final class ShaderCompiler {
         }
         
         let directoryContents = try FileManager.default.contentsOfDirectory(at: sourceDirectory, includingPropertiesForKeys: [.contentModificationDateKey, .nameKey], options: [])
-        let mostRecentModificationDate = directoryContents.lazy.map { (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantFuture }.min() ?? .distantFuture
+        let mostRecentModificationDate = directoryContents.lazy.map { (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantFuture }.max() ?? .distantFuture
         
         if let reflectionFile = reflectionFile,
             FileManager.default.fileExists(atPath: reflectionFile.path),
