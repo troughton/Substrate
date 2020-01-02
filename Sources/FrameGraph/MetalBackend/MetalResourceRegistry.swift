@@ -824,7 +824,7 @@ final class MetalTransientResourceRegistry {
         if texture._usesPersistentRegistry {
             precondition(texture.flags.contains(.historyBuffer))
             textureRef = self.persistentRegistry.textureReferences[texture]
-            textureRef?._texture.retain() // since the persistent registry releases its resources unconditionally on dispose, but we want the allocator to have ownership of it.
+            _ = textureRef?._texture.retain() // since the persistent registry releases its resources unconditionally on dispose, but we want the allocator to have ownership of it.
         } else {
             textureRef = self.textureReferences[texture]
         }
@@ -854,7 +854,7 @@ final class MetalTransientResourceRegistry {
         if buffer._usesPersistentRegistry {
             precondition(buffer.flags.contains(.historyBuffer))
             bufferRef = self.persistentRegistry.bufferReferences[buffer]
-            bufferRef?._buffer.retain() // since the persistent registry releases its resources unconditionally on dispose, but we want the allocator to have ownership of it.
+            _ = bufferRef?._buffer.retain() // since the persistent registry releases its resources unconditionally on dispose, but we want the allocator to have ownership of it.
         } else {
             bufferRef = self.bufferReferences[buffer]
         }

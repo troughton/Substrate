@@ -98,6 +98,7 @@ final class MetalCompiler : TargetCompiler {
     
     func compile(spirvCompilers: [SPIRVCompiler], to outputDirectory: URL, withDebugInformation debug: Bool) throws {
         var airFiles = [URL]()
+        var needsRegenerateLibrary = false
         var hadErrors = false
         
         let airDirectory = outputDirectory.appendingPathComponent("AIR")
@@ -124,9 +125,12 @@ final class MetalCompiler : TargetCompiler {
                 // Generate the compiled source unconditionally, since we need it to compute bindings for reflection.
                 let compiledSource = try compiler.compiledSource()
                 
-                if airFileURL.needsGeneration(sourceFile: metalFileURL) {
+                if metalFileURL.needsGeneration(sourceFile: compiler.file.url) {
                     try compiledSource.write(to: metalFileURL, atomically: false, encoding: .ascii)
+                }
+                if airFileURL.needsGeneration(sourceFile: metalFileURL) {
                     try self.driver.compileToAIR(sourceFile: metalFileURL, destinationFile: airFileURL, withDebugInformation: debug).waitUntilExit()
+                    needsRegenerateLibrary = true
                 }
                 airFiles.append(airFileURL)
             }
@@ -141,11 +145,13 @@ final class MetalCompiler : TargetCompiler {
             throw CompilerError.shaderErrors
         }
         
-        do {
-            try self.driver.generateLibrary(airFiles: airFiles, outputLibrary: outputDirectory.appendingPathComponent("Library.metallib")).waitUntilExit()
-        }
-        catch {
-            throw CompilerError.libraryGenerationFailed(error)
+        if needsRegenerateLibrary {
+            do {
+                try self.driver.generateLibrary(airFiles: airFiles, outputLibrary: outputDirectory.appendingPathComponent("Library.metallib")).waitUntilExit()
+            }
+            catch {
+                throw CompilerError.libraryGenerationFailed(error)
+            }
         }
     }
 }

@@ -27,9 +27,9 @@ struct ShaderSourceFile : Equatable {
     let entryPoints : [EntryPoint]
     let externalEntryPoints : Set<String> // Entry points from used from another source file.
     
-    init(url: URL) throws {
+    init(url: URL, modificationTimes: [URL : Date]) throws {
         self.url = url
-        self.modificationTime = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .distantPast
+        self.modificationTime = modificationTimes[url] ?? .distantFuture
         let renderPass = url.deletingPathExtension().lastPathComponent
         self.renderPass = renderPass
         
@@ -101,6 +101,45 @@ enum ShaderCompilerError : Error {
     case missingSourceDirectory(URL)
 }
 
+func computeSourceFileModificationTimes(_ files: [URL]) -> [URL : Date] {
+
+    let includeRegexPattern = Regex("#include(?:\\s+)\"([^\"]+)\"")
+    
+    var modificationTimes = [URL: Date]()
+    
+    func computeFileModification(file: URL) {
+        if modificationTimes[file] != nil {
+            return
+        }
+        
+        let directory = file.deletingLastPathComponent()
+        var modificationTime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantFuture
+        
+        if let fileText = try? String(contentsOf: file) {
+            let includedFiles = includeRegexPattern.allMatches(in: fileText)
+            
+            for include in includedFiles {
+                let fullIncludeURL = directory.appendingPathComponent(include.captures[0]!).standardized
+                if fullIncludeURL == file {
+                    print("Warning: recursive include in \(file)")
+                    continue
+                }
+                
+                computeFileModification(file: fullIncludeURL)
+                modificationTime = max(modificationTime, modificationTimes[fullIncludeURL] ?? .distantPast)
+            }
+            
+            modificationTimes[file] = modificationTime
+        }
+    }
+    
+    for file in files {
+        computeFileModification(file: file)
+    }
+    
+    return modificationTimes
+}
+
 final class ShaderCompiler {
     let baseDirectory : URL
     let sourceDirectory : URL
@@ -135,7 +174,10 @@ final class ShaderCompiler {
         }
         
         let directoryContents = try FileManager.default.contentsOfDirectory(at: sourceDirectory, includingPropertiesForKeys: [.contentModificationDateKey, .nameKey], options: [])
-        let mostRecentModificationDate = directoryContents.lazy.map { (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantFuture }.max() ?? .distantFuture
+        
+        let modificationTimes = computeSourceFileModificationTimes(directoryContents)
+        
+        let mostRecentModificationDate = modificationTimes.values.max() ?? .distantFuture
         
         if let reflectionFile = reflectionFile,
             FileManager.default.fileExists(atPath: reflectionFile.path),
@@ -144,7 +186,7 @@ final class ShaderCompiler {
             self.sourceFiles = []
         } else {
             self.sourceFiles = directoryContents.compactMap {
-                try? ShaderSourceFile(url: $0)
+                try? ShaderSourceFile(url: $0, modificationTimes: modificationTimes)
             }
         }
     }
