@@ -198,6 +198,8 @@ final class ShaderCompiler {
         
         var spirvFiles = [SPIRVFile]()
         
+        print("Compiling SPIR-V:\n")
+        
         for target in targets {
             for file in self.sourceFiles {
                 for entryPoint in file.entryPoints {
@@ -207,6 +209,9 @@ final class ShaderCompiler {
         }
         
         spvCompilationGroup.wait()
+        
+        print()
+        
         self.spirvCompilers = spirvFiles.compactMap { file in
             guard file.exists else { return nil }
             do {
@@ -221,7 +226,11 @@ final class ShaderCompiler {
             guard let compiler = target.compiler else { continue }
             let targetCompilers = self.spirvCompilers.filter { $0.file.target == target }
             do {
+                print("Compiling target \(target):\n")
+                
                 try compiler.compile(spirvCompilers: targetCompilers, to: self.baseDirectory.appendingPathComponent(target.outputDirectory), withDebugInformation: false)
+                
+                print()
             }
             catch {
                 print("Compilation failed for target \(target): \(error)")
@@ -231,6 +240,7 @@ final class ShaderCompiler {
     
     public func generateReflection() {
         guard let reflectionFile = self.reflectionFile, !self.sourceFiles.isEmpty else { return }
+        print("Generating reflection to file \(reflectionFile.path)")
         
         for compiler in self.spirvCompilers {
             do {
@@ -255,12 +265,15 @@ final class ShaderCompiler {
         let spirvDirectory = self.baseDirectory.appendingPathComponent(target.spirvDirectory)
         
         let fileName = file.url.deletingPathExtension().lastPathComponent
-        let spvFileURL = spirvDirectory.appendingPathComponent("\(fileName)-\(entryPoint.name).spv")
+        var spvFileURL = spirvDirectory.appendingPathComponent("\(fileName)-\(entryPoint.name).spv")
         
         if spvFileURL.needsGeneration(sourceFileDate: file.modificationTime) {
             DispatchQueue.global().async(group: group) {
                 let tempFileURL = spirvDirectory.appendingPathComponent("\(fileName)-\(entryPoint.name)-tmp.spv")
                 do {
+
+                    print("\(target): Compiling \(entryPoint.name) in \(file.url.lastPathComponent) to SPIR-V")
+                    
                     let task = try self.dxcDriver.compile(sourceFile: file.url, destinationFile: tempFileURL, entryPoint: entryPoint.name, type: entryPoint.type)
                     task.waitUntilExit()
                     guard task.terminationStatus == 0 else { print("Error compiling entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
@@ -270,6 +283,8 @@ final class ShaderCompiler {
                     guard optimisationTask.terminationStatus == 0 else { print("Error optimising entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
                     
                     try? FileManager.default.removeItem(at: tempFileURL)
+                    
+                    spvFileURL.removeCachedResourceValue(forKey: .contentModificationDateKey)
                     
                 } catch {
                     print("Error compiling entry point \(entryPoint.name) in file \(file): \(error)")

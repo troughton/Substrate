@@ -105,7 +105,6 @@ final class MetalCompiler : TargetCompiler {
         try FileManager.default.createDirectoryIfNeeded(at: airDirectory)
         
         for compiler in spirvCompilers where compiler.file.target == self.target {
-            
             do {
                 var options : spvc_compiler_options! = nil
                 spvc_compiler_create_compiler_options(compiler.compiler, &options)
@@ -119,17 +118,21 @@ final class MetalCompiler : TargetCompiler {
             
             let outputFileName = compiler.file.sourceFile.renderPass + "-" + compiler.file.entryPoint.name
             
-            let metalFileURL = outputDirectory.appendingPathComponent(outputFileName + ".metal")
-            let airFileURL = airDirectory.appendingPathComponent(outputFileName + ".air")
+            var metalFileURL = outputDirectory.appendingPathComponent(outputFileName + ".metal")
+            var airFileURL = airDirectory.appendingPathComponent(outputFileName + ".air")
             do {
                 // Generate the compiled source unconditionally, since we need it to compute bindings for reflection.
                 let compiledSource = try compiler.compiledSource()
                 
                 if metalFileURL.needsGeneration(sourceFile: compiler.file.url) {
+                    print("\(self.target): Compiling \(compiler.file.url.lastPathComponent)")
                     try compiledSource.write(to: metalFileURL, atomically: false, encoding: .ascii)
+                    metalFileURL.removeCachedResourceValue(forKey: .contentModificationDateKey)
                 }
                 if airFileURL.needsGeneration(sourceFile: metalFileURL) {
                     try self.driver.compileToAIR(sourceFile: metalFileURL, destinationFile: airFileURL, withDebugInformation: debug).waitUntilExit()
+                    
+                    airFileURL.removeCachedResourceValue(forKey: .contentModificationDateKey)
                     needsRegenerateLibrary = true
                 }
                 airFiles.append(airFileURL)
@@ -147,7 +150,9 @@ final class MetalCompiler : TargetCompiler {
         
         if needsRegenerateLibrary {
             do {
-                try self.driver.generateLibrary(airFiles: airFiles, outputLibrary: outputDirectory.appendingPathComponent("Library.metallib")).waitUntilExit()
+                let metalLibraryPath = outputDirectory.appendingPathComponent("Library.metallib")
+                print("\(self.target): Linking Metal library at \(metalLibraryPath.path)")
+                try self.driver.generateLibrary(airFiles: airFiles, outputLibrary: metalLibraryPath).waitUntilExit()
             }
             catch {
                 throw CompilerError.libraryGenerationFailed(error)
