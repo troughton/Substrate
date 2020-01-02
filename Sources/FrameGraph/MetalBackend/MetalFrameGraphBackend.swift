@@ -39,15 +39,18 @@ enum MetalPreFrameResourceCommands {
         switch self {
         case .materialiseBuffer(let buffer):
             resourceRegistry.allocateBufferIfNeeded(buffer)
-            waitEventValues[queueIndex] = max(resourceRegistry.bufferWaitEvents[buffer]!.waitValue, waitEventValues[queueIndex])
+            
+            let waitEvent = buffer.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(buffer)] : resourceRegistry.bufferWaitEvents[buffer]
+            
+            waitEventValues[queueIndex] = max(waitEvent!.waitValue, waitEventValues[queueIndex])
             buffer.applyDeferredSliceActions()
             
         case .materialiseTexture(let texture, let usage):
             resourceRegistry.allocateTextureIfNeeded(texture, usage: usage)
-            if let textureWaitEvent = resourceRegistry.textureWaitEvents[texture] {
+            if let textureWaitEvent = (texture.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(texture)] : resourceRegistry.textureWaitEvents[texture]) {
                 waitEventValues[queueIndex] = max(textureWaitEvent.waitValue, waitEventValues[queueIndex])
             } else {
-                assert(texture.flags.contains(.windowHandle))
+                precondition(texture.flags.contains(.windowHandle))
             }
             
         case .materialiseTextureView(let texture, let usage):
@@ -187,7 +190,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         self.commandQueue = backend.device.makeCommandQueue()!
         self.frameGraphQueue = Queue()
         self.transientRegistryIndex = transientRegistryIndex
-        self.resourceRegistry = MetalTransientResourceRegistry(device: backend.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
+        self.resourceRegistry = MetalTransientResourceRegistry(device: backend.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex, persistentRegistry: backend.resourceRegistry)
         self.accessSemaphore = Semaphore(value: Int32(inflightFrameCount))
         
         self.captureScope = MTLCaptureManager.shared().makeCaptureScope(device: backend.device)

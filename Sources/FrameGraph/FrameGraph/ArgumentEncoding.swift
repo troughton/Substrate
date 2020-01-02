@@ -84,8 +84,10 @@ public struct _ArgumentBuffer : ResourceProtocol {
     
     @inlinable
     init(frameGraph: FrameGraph? = nil, flags: ResourceFlags = []) {
+        precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
+        
         let index : UInt64
-        if flags.contains(.persistent) || flags.contains(.historyBuffer) {
+        if flags.contains(.persistent) {
             index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags)
         } else {
             guard let frameGraph = frameGraph ?? FrameGraph.activeFrameGraph else {
@@ -102,7 +104,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
     @inlinable
     init(flags: ResourceFlags = [], sourceArray: _ArgumentBufferArray) {
         let index : UInt64
-        if flags.contains(.persistent) || flags.contains(.historyBuffer) {
+        if flags.contains(.persistent) {
             index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
         } else {
             index = TransientArgumentBufferRegistry.instances[sourceArray.transientRegistryIndex].allocate(flags: flags, sourceArray: sourceArray)
@@ -366,8 +368,10 @@ public struct _ArgumentBufferArray : ResourceProtocol {
     }
     
     init(frameGraph: FrameGraph? = nil, flags: ResourceFlags = []) {
+        precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
+        
         let index : UInt64
-        if flags.contains(.persistent) || flags.contains(.historyBuffer) {
+        if flags.contains(.persistent) {
             index = PersistentArgumentBufferArrayRegistry.instance.allocate(flags: flags)
         } else {
             guard let frameGraph = frameGraph ?? FrameGraph.activeFrameGraph else {
