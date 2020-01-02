@@ -66,7 +66,7 @@ struct MetalFrameResourceMap {
     let transientRegistry : MetalTransientResourceRegistry
     
     subscript(buffer: Buffer) -> MTLBufferReference {
-        if buffer.flags.contains(.persistent) {
+        if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
             return transientRegistry[buffer]!
@@ -74,7 +74,7 @@ struct MetalFrameResourceMap {
     }
     
     subscript(texture: Texture) -> MTLTexture {
-        if texture.flags.contains(.persistent) {
+        if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
             return transientRegistry[texture]!
@@ -82,7 +82,7 @@ struct MetalFrameResourceMap {
     }
     
     subscript(buffer: _ArgumentBuffer) -> MTLBufferReference {
-        if buffer.flags.contains(.persistent) {
+        if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
             return transientRegistry[buffer]!
@@ -90,7 +90,7 @@ struct MetalFrameResourceMap {
     }
     
     subscript(buffer: _ArgumentBufferArray) -> MTLBufferReference {
-        if buffer.flags.contains(.persistent) {
+        if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
             return transientRegistry[buffer]!
@@ -98,7 +98,7 @@ struct MetalFrameResourceMap {
     }
     
     func bufferForCPUAccess(_ buffer: Buffer) -> MTLBufferReference {
-        if buffer.flags.contains(.persistent) {
+        if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
             return transientRegistry.accessLock.withLock { transientRegistry.allocateBufferIfNeeded(buffer) }
@@ -106,7 +106,7 @@ struct MetalFrameResourceMap {
     }
     
     func textureForCPUAccess(_ texture: Texture) -> MTLTexture {
-        if texture.flags.contains(.persistent) {
+        if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
             return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: MetalTextureUsageProperties(texture.descriptor.usageHint))! }
