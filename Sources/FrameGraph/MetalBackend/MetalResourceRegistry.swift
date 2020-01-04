@@ -130,7 +130,7 @@ final class MetalPersistentResourceRegistry {
     var argumentBufferReferences = PersistentResourceMap<_ArgumentBuffer, MTLBufferReference>() // Separate since this needs to have thread-safe access.
     var argumentBufferArrayReferences = PersistentResourceMap<_ArgumentBufferArray, MTLBufferReference>() // Separate since this needs to have thread-safe access.
     
-    var windowReferences = [Texture : MTKView]()
+    var windowReferences = [Texture : CAMetalLayer]()
     
     private let device : MTLDevice
     
@@ -153,7 +153,7 @@ final class MetalPersistentResourceRegistry {
     }
     
     public func registerWindowTexture(texture: Texture, context: Any) {
-        self.windowReferences[texture] = (context as! MTKView)
+        self.windowReferences[texture] = (context as! CAMetalLayer)
     }
     
     @discardableResult
@@ -634,7 +634,7 @@ final class MetalTransientResourceRegistry {
                 
                 let windowReference = persistentRegistry.windowReferences.removeValue(forKey: texture)!
                 
-                guard let mtlDrawable = (windowReference.layer as! CAMetalLayer).nextDrawable() else {
+                guard let mtlDrawable = windowReference.nextDrawable() else {
                     error = RenderTargetTextureError.unableToRetrieveDrawable(texture)
                     return
                 }
