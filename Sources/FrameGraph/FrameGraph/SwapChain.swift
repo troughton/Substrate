@@ -6,5 +6,5 @@
 //
 
 public protocol SwapChain {
-    var pixelFormat : PixelFormat { get }
+    var format : PixelFormat { get }
 }
