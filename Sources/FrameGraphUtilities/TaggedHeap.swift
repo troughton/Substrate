@@ -331,7 +331,7 @@ public struct TagAllocator {
     
     /// Calls a statically-set function to determine the current thread.
     public struct DynamicThreadView {
-        public static var threadIndexRetrievalFunc : (() -> Int)! = nil
+        public static var threadIndexRetrievalFunc : (() -> Int) = { return 0 }
         
         @usableFromInline var allocator : TagAllocator
         
@@ -345,7 +345,6 @@ public struct TagAllocator {
             if useSystemAllocator {
                 return .allocate(byteCount: bytes, alignment: alignment)
             }
-            assert(DynamicThreadView.threadIndexRetrievalFunc != nil, "TagAllocator.DynamicThreadView: The thread index retrieval function has not been set!")
             return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: DynamicThreadView.threadIndexRetrievalFunc())
         }
         
@@ -354,7 +353,6 @@ public struct TagAllocator {
             if useSystemAllocator {
                 return .allocate(capacity: capacity)
             }
-            assert(DynamicThreadView.threadIndexRetrievalFunc != nil, "TagAllocator.DynamicThreadView: The thread index retrieval function has not been set!")
             return self.allocator.allocate(capacity: capacity, threadIndex: DynamicThreadView.threadIndexRetrievalFunc())
         }
 
