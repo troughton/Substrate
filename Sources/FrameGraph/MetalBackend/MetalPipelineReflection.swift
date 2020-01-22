@@ -173,7 +173,7 @@ final class MetalPipelineReflection : PipelineReflection {
             if argumentBufferIndex != nil { // If it's within an argument buffer
                 path.index += arrayIndex
             } else {
-                path.arrayIndex = arrayIndex
+                path.arrayIndexMetal = arrayIndex
             }
             return path
         } else {
@@ -245,7 +245,7 @@ final class MetalPipelineReflection : PipelineReflection {
     
     public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
         var path = path
-        path.arrayIndex = 0
+        path.arrayIndexMetal = 0
         if path.argumentBufferIndex == nil {
             // Check to see if it's active in the specified stage first
             if let result = reflectionCacheLinearSearch(path, returnNearest: path.argumentBufferIndex != nil) {
@@ -273,7 +273,7 @@ final class MetalPipelineReflection : PipelineReflection {
         
         var modifiedPath = pathInOriginalArgumentBuffer
         modifiedPath.argumentBufferIndex = newParentPath.index
-        modifiedPath.arrayIndex = newParentPath.arrayIndex
+        modifiedPath.arrayIndexMetal = newParentPath.arrayIndexMetal
         modifiedPath.stages = newParentPath.stages
         return modifiedPath
     }

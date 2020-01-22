@@ -2,7 +2,7 @@
 import Vulkan
 import FrameGraphCExtras
 
-public extension ResourceUsageType {
+extension ResourceUsageType {
 
     public func imageLayout(isDepthOrStencil: Bool) -> VkImageLayout {
 

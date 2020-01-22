@@ -10,6 +10,7 @@ import Vulkan
 import FrameGraphCExtras
 import FrameGraphUtilities
 import Foundation
+import SPIRV_Cross
 
 public struct BitSet : OptionSet, Hashable {
     public var rawValue : UInt64
@@ -22,15 +23,6 @@ public struct BitSet : OptionSet, Hashable {
         assert(element < 64)
         self.rawValue = 1 << element
     }
-}
-
-struct ShaderResource {
-    var type : ShaderResourceType
-    var bindingPath : ResourceBindingPath
-    var name : String
-    var access : AccessQualifier
-    var bindingRange : BindingRange
-    var accessedStages : VkShaderStageFlagBits
 }
 
 struct FunctionSpecialisation {
@@ -62,7 +54,7 @@ final class VulkanPipelineReflection : PipelineReflection {
         self.reflectionCacheValues.deallocate()
     }
     
-    public init(functions: [(String, VkReflectionContext, VkShaderStageFlagBits)], device: VulkanDevice) {
+    public init(functions: [(String, spvc_compiler, SpvExecutionModel_)], device: VulkanDevice) {
         self.device = device
         var resources = [ResourceBindingPath : ShaderResource]()
         var functionSpecialisations = [FunctionSpecialisation]()
@@ -70,10 +62,8 @@ final class VulkanPipelineReflection : PipelineReflection {
         var activeStagesForSets = [UInt32 : VkShaderStageFlagBits]()
         var lastSet : UInt32? = nil
         
-        for (functionName, reflectionContext, stage) in functions {
-            functionName.withCString {
-                VkReflectionContextSetEntryPoint(reflectionContext, $0)
-            }
+        for (functionName, compiler, stage) in functions {
+            spvc_compiler_set_entry_point(compiler, functionName, stage)
             
             VkReflectionContextEnumerateResources(reflectionContext) { (type, bindingIndex, bindingRange, name, access)  in
                 let bindingPath = ResourceBindingPath(set: bindingIndex.set, binding: bindingIndex.binding, arrayIndex: 0)
@@ -88,9 +78,13 @@ final class VulkanPipelineReflection : PipelineReflection {
                 }
             }
             
-            VkReflectionContextEnumerateSpecialisationConstants(reflectionContext) { (index, constantIndex, name) in
-                if !functionSpecialisations.contains(where: { $0.index == Int(constantIndex) }) {
-                    functionSpecialisations.append(FunctionSpecialisation(index: Int(constantIndex), name: String(cString: name!)))
+            var specialisationConstantCount = 0
+            var specialisationConstants : UnsafePointer<spvc_specialization_constant>! = nil
+            spvc_compiler_get_specialization_constants(compiler, &specialisationConstants, &specialisationConstantCount)
+            for i in 0..<specialisationConstantCount {
+                if !functionSpecialisations.contains(where: { $0.index == Int(specialisationConstants[i].constant_id) }) {
+                    let name = spvc_compiler_get_name(compiler, specialisationConstants[i].id)!
+                    functionSpecialisations.append(FunctionSpecialisation(index: Int(specialisationConstants[i].constant_id), name: String(cString: name)))
                 }
             }
         }
@@ -193,7 +187,6 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
-        let path = ResourceBindingPath(path)
         return reflectionCacheLinearSearch(path, returnNearest: false)
     }
     
@@ -201,7 +194,7 @@ final class VulkanPipelineReflection : PipelineReflection {
         for resource in self.resources.values {
             if resource.name == argumentName {
                 var bindingPath = resource.bindingPath
-                bindingPath.arrayIndex = UInt32(arrayIndex)
+                bindingPath.arrayIndexVulkan = UInt32(arrayIndex)
                 
                 if let argumentBufferPath = argumentBufferPath {
                     assert(bindingPath.set == argumentBufferPath.set)
@@ -221,14 +214,12 @@ final class VulkanPipelineReflection : PipelineReflection {
         // aren't spread across multiple sets.
         
         if let (firstBoundPath, _) = argumentBuffer.bindings.first {
-                ResourceBindingPath(argumentBuffer: firstBoundPath.set)
+            return ResourceBindingPath(argumentBuffer: firstBoundPath.set)
         }
         
         for (pendingKey, _, _) in argumentBuffer.enqueuedBindings {
             if let path = pendingKey.computedBindingPath(pipelineReflection: self) {
-                return ResourceBindingPath(
-                    ResourceBindingPath(argumentBuffer: path.set)
-                )
+                return ResourceBindingPath(argumentBuffer: path.set)
             }
         }
         
@@ -285,12 +276,12 @@ extension ArgumentReflection {
             renderAPIStages.formUnion(.fragment)
         }
 
-        self.init(isActive: true, type: resourceType, bindingPath: ResourceBindingPath(resource.bindingPath), usageType: usageType, stages: renderAPIStages)
+        self.init(isActive: true, type: resourceType, bindingPath: resource.bindingPath, usageType: usageType, stages: renderAPIStages)
     }
 }
 
 extension VkDescriptorType {
-    init?(_ resourceType: ShaderResourceType, dynamic: Bool) {
+    init?(_ resourceType: spvc_resource_type, dynamic: Bool) {
         switch resourceType {
         case .pushConstantBuffer:
             return nil
@@ -306,14 +297,8 @@ extension VkDescriptorType {
             self = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
         case .uniformBuffer:
             self = dynamic ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-        case .uniformTexelBuffer:
-            self = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER
-        case .storageTexelBuffer:
-            self = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER
-        #if os(Windows)
         default:
             fatalError()
-        #endif
         }
     }
 }
@@ -372,62 +357,70 @@ public enum PipelineLayoutKey : Hashable {
     case compute(String)
 }
 
-
 public class VulkanShaderModule {
     let device: VulkanDevice
     let vkModule : VkShaderModule
-    let reflectionContext : VkReflectionContext
+    let compiler : spvc_compiler
     let data : Data
     let usesGLSLMainEntryPoint : Bool
     
     private var reflectionCache = [PipelineLayoutKey : PipelineReflection]()
     private var pipelineLayoutCache = [PipelineLayoutKey : VkPipelineLayout]()
     
-    public init(device: VulkanDevice, data: Data) {
+    public init(device: VulkanDevice, spvcContext: spvc_context, data: Data) {
         self.device = device
         self.data = data
-
-        let codePointer : UnsafePointer<UInt32> = data.withUnsafeBytes { return $0 }
-
-        let wordCount = (data.count + MemoryLayout<UInt32>.size - 1) / MemoryLayout<UInt32>.size
-        let reflectionContext = VkReflectionContextCreate(codePointer, wordCount)!
-        self.reflectionContext = reflectionContext
-
-        var createInfo = VkShaderModuleCreateInfo()
-        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO
-        createInfo.pCode = codePointer
-        createInfo.codeSize = data.count
         
         var shaderModule : VkShaderModule? = nil
-        vkCreateShaderModule(device.vkDevice, &createInfo, nil, &shaderModule).check()
+        var parsedIR : spvc_parsed_ir? = nil
+        var compiler : spvc_compiler? = nil
+        spvc_context_create_compiler(spvcContext, SPVC_BACKEND_NONE, parsedIR, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler)
+        
+        data.withUnsafeBytes { codePointer in
+            let spvCode = codePointer.bindMemory(to: SpvId.self)
+            let result = spvc_context_parse_spirv(spvcContext, spvCode.baseAddress, codePointer.count, &parsedIR)
+            assert(result == SPVC_SUCCESS)
+            
+            var createInfo = VkShaderModuleCreateInfo()
+            createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO
+            createInfo.pCode = spvCode.baseAddress
+            createInfo.codeSize = spvCode.count
+            
+            vkCreateShaderModule(device.vkDevice, &createInfo, nil, &shaderModule).check()
+        }
         
         self.vkModule = shaderModule!
+        self.compiler = compiler!
 
         var usesGLSLMainEntryPoint = false
 
-        VkReflectionContextEnumerateEntryPoints(reflectionContext) { entryPoint in
-            if strncmp("main", entryPoint, 4) == 0 {
+        var entryPointCount = 0
+        var entryPoints : UnsafePointer<spvc_entry_point>! = nil
+        spvc_compiler_get_entry_points(self.compiler, &entryPoints, &entryPointCount)
+        
+        for i in 0..<entryPointCount {
+            if String(cString: entryPoints[i].name) == "main" {
                 usesGLSLMainEntryPoint = true
             }
         }
+    
         self.usesGLSLMainEntryPoint = usesGLSLMainEntryPoint
     }
-
+    
     func entryPointForFunction(named functionName: String) -> String {
         return self.usesGLSLMainEntryPoint ? "main" : functionName
     }
 
     public var entryPoints : [String] {
-        var entryPoints = [String]()
-        VkReflectionContextEnumerateEntryPoints(self.reflectionContext) { entryPoint in
-            entryPoints.append(String(cString: entryPoint!))
-        }
-        return entryPoints
+        var entryPointCount = 0
+        var entryPoints : UnsafePointer<spvc_entry_point>! = nil
+        spvc_compiler_get_entry_points(self.compiler, &entryPoints, &entryPointCount)
+        
+        return (0..<entryPointCount).map { String(cString: entryPoints[$0].name) }
     }
     
     deinit {
         vkDestroyShaderModule(self.device.vkDevice, self.vkModule, nil)
-        VkReflectionContextDestroy(self.reflectionContext)
     }
 }
 
@@ -437,6 +430,7 @@ public class VulkanShaderLibrary {
     let modules : [VulkanShaderModule]
     private let functionsToModules : [String : VulkanShaderModule]
     
+    let spvcContext : spvc_context
     private var reflectionCache = [PipelineLayoutKey : VulkanPipelineReflection]()
     private var pipelineLayoutCache = [PipelineLayoutKey : VkPipelineLayout]()
     
@@ -444,6 +438,10 @@ public class VulkanShaderLibrary {
         self.device = device
         self.url = url
 
+        var context : spvc_context? = nil
+        spvc_context_create(&context)
+        self.spvcContext = context!
+        
         let fileManager = FileManager.default
         let resources = try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [])
         
@@ -454,7 +452,7 @@ public class VulkanShaderLibrary {
             if file.pathExtension == ".spv" {
                 let shaderData = try Data(contentsOf: file, options: .mappedIfSafe)
         
-                let module = VulkanShaderModule(device: device, data: shaderData)
+                let module = VulkanShaderModule(device: device, spvcContext: self.spvcContext, data: shaderData)
                 modules.append(module)
 
                 if module.usesGLSLMainEntryPoint {
@@ -469,6 +467,10 @@ public class VulkanShaderLibrary {
 
         self.modules = modules
         self.functionsToModules = functions
+    }
+    
+    deinit {
+        spvc_context_destroy(self.spvcContext)
     }
     
     func pipelineLayout(for key: PipelineLayoutKey, bindingManager: ResourceBindingManager) -> VkPipelineLayout {
@@ -508,25 +510,25 @@ public class VulkanShaderLibrary {
             return reflection
         }
         
-        var functions = [(String, VkReflectionContext, VkShaderStageFlagBits)]()
+        var functions = [(String, spvc_compiler, SpvExecutionModel_)]()
         switch key {
         case .graphics(let vertexShader, let fragmentShader):
             guard let vertexModule = self.functionsToModules[vertexShader] else {
                 fatalError("No shader entry point called \(vertexShader)")
             }
-            functions.append((vertexModule.entryPointForFunction(named: vertexShader), vertexModule.reflectionContext, VK_SHADER_STAGE_VERTEX_BIT))
+            functions.append((vertexModule.entryPointForFunction(named: vertexShader), vertexModule.compiler, SpvExecutionModelVertex))
 
             if let fragmentShader = fragmentShader {
                 guard let fragmentModule = self.functionsToModules[fragmentShader] else {
                     fatalError("No shader entry point called \(fragmentShader)")
                 }
-                functions.append((fragmentModule.entryPointForFunction(named: fragmentShader), fragmentModule.reflectionContext, VK_SHADER_STAGE_FRAGMENT_BIT))
+                functions.append((fragmentModule.entryPointForFunction(named: fragmentShader), fragmentModule.compiler, SpvExecutionModelFragment))
             }
         case .compute(let computeShader):
             guard let module = self.functionsToModules[computeShader] else {
                 fatalError("No shader entry point called \(computeShader)")
             }
-            functions.append((module.entryPointForFunction(named: computeShader), module.reflectionContext, VK_SHADER_STAGE_COMPUTE_BIT))
+            functions.append((module.entryPointForFunction(named: computeShader), module.compiler, SpvExecutionModelGLCompute))
         }
 
         let reflection = VulkanPipelineReflection(functions: functions, device: self.device)

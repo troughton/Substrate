@@ -21,7 +21,7 @@ public class VulkanFramebuffer {
     
     let attachments : [(AttachmentIndex, VulkanImageView)]
     
-    init(descriptor: VulkanRenderTargetDescriptor, renderPass: VkRenderPass, device: VulkanDevice, resourceRegistry: ResourceRegistry) {
+    init(descriptor: VulkanRenderTargetDescriptor, renderPass: VkRenderPass, device: VulkanDevice, resourceMap: VulkanFrameResourceMap) throws {
         self.device = device
         
         let renderTargetSize = descriptor.descriptor.size
@@ -35,19 +35,19 @@ public class VulkanFramebuffer {
         
         var attachments = [(AttachmentIndex, VulkanImageView)]()
         if let depthAttachment = descriptor.descriptor.depthAttachment {
-            let image = resourceRegistry[depthAttachment.texture]!
+            let image = try resourceMap.renderTargetTexture(depthAttachment.texture)
             attachments.append((.depth, image.viewForAttachment(descriptor: depthAttachment)))
         }
         
         if let stencilAttachment = descriptor.descriptor.stencilAttachment, stencilAttachment.texture != descriptor.descriptor.depthAttachment?.texture {
-            let image = resourceRegistry[stencilAttachment.texture]!
+            let image = try resourceMap.renderTargetTexture(stencilAttachment.texture)
             attachments.append((.stencil, image.viewForAttachment(descriptor: stencilAttachment)))
         }
         
         for (i, attachment) in descriptor.descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             
-            let image = resourceRegistry[attachment.texture]!
+            let image = try resourceMap.renderTargetTexture(attachment.texture)
             attachments.append((.color(i), image.viewForAttachment(descriptor: attachment)))
         }
         

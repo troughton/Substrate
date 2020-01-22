@@ -9,14 +9,19 @@
 import Vulkan
 import FrameGraphCExtras
 
- protocol ResourceAllocator {
-    func collectImage(descriptor: VulkanImageDescriptor) -> VulkanImage
-    func depositImage(_ image: VulkanImage)
-    
-    func collectBuffer(descriptor: VulkanBufferDescriptor) -> VulkanBuffer
-    func depositBuffer(_ buffer: VulkanBuffer)
-    
+protocol VulkanResourceAllocator {
     func cycleFrames()
 }
+
+protocol VulkanImageAllocator : VulkanResourceAllocator {
+    func collectImage(descriptor: VulkanImageDescriptor) -> (VkImageReference, [VulkanEventHandle], VulkanContextWaitSemaphore)
+    func depositImage(_ image: VkImageReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore)
+}
+
+protocol VulkanBufferAllocator : VulkanResourceAllocator {
+    func collectBuffer(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, [VulkanEventHandle], VulkanContextWaitSemaphore)
+    func depositBuffer(_ buffer: VkBufferReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore)
+}
+
 
 #endif // canImport(Vulkan)

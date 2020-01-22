@@ -9,6 +9,8 @@
 import Vulkan
 import FrameGraphCExtras
 
+extension VkDebugReportFlagBitsEXT : OptionSet { }
+
 extension VkImageCreateFlagBits : OptionSet {
     public static var sparseBinding : VkImageCreateFlagBits {
         return VK_IMAGE_CREATE_SPARSE_BINDING_BIT
@@ -66,8 +68,9 @@ extension VkImageUsageFlagBits : OptionSet {
     public static var inputAttachment : VkImageUsageFlagBits {
         return VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
     }
-    
 }
+
+extension VkImageViewCreateFlagBits : OptionSet {}
 
 extension VkBufferUsageFlagBits : OptionSet {
     

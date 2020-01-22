@@ -25,7 +25,7 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
         return .copy
     }
     
-    func executeCommands(_ commands: ArraySlice<FrameGraphCommand>, resourceCommands: inout [ResourceCommand]) {
+    func executeCommands(_ commands: ArraySlice<FrameGraphCommand>, resourceCommands: inout [VulkanFrameResourceCommand]) {
         
         for (i, command) in zip(commands.indices, commands) {
             self.executeResourceCommands(resourceCommands: &resourceCommands, order: .before, commandIndex: i)

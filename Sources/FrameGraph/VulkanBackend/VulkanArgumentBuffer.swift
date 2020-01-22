@@ -19,7 +19,7 @@ final class VulkanArgumentBuffer {
     private var images = [VulkanImage]()
     private var buffers = [VulkanBuffer]()
     
-    public init(arguments: _ArgumentBuffer, bindingPath: ResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    public init(arguments: _ArgumentBuffer, bindingPath: ResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, stateCaches: VulkanStateCaches) {
         self.device = commandBufferResources.device
 
         let layout = pipelineReflection.descriptorSetLayout(set: bindingPath.set, dynamicBuffers: []).vkLayout
@@ -32,8 +32,6 @@ final class VulkanArgumentBuffer {
         } else {
             fatalError("Persistent argument buffers unimplemented on Vulkan.")
         }
-
-        self.encodeArguments(from: arguments, pipelineReflection: pipelineReflection, resourceRegistry: resourceRegistry, stateCaches: stateCaches)
     }
 
     deinit {
@@ -41,15 +39,20 @@ final class VulkanArgumentBuffer {
             fatalError("Need to return the set to the pool.")
         }
     }
+}
+
+extension VulkanArgumentBuffer {
     
-    func encodeArguments(from buffer: _ArgumentBuffer, pipelineReflection: VulkanPipelineReflection, resourceRegistry: ResourceRegistry, stateCaches: StateCaches) {
+    func encodeArguments(from buffer: _ArgumentBuffer, pipelineReflection: VulkanPipelineReflection, resourceMap: VulkanFrameResourceMap, stateCaches: VulkanStateCaches) {
         var descriptorWrites = [VkWriteDescriptorSet]()
 
         let bufferInfoSentinel = UnsafePointer<VkDescriptorBufferInfo>(bitPattern: 0x10)
         let imageInfoSentinel = UnsafePointer<VkDescriptorImageInfo>(bitPattern: 0x20)
+        let inlineUniformSentinel = UnsafeRawPointer(bitPattern: 0x30)
     
         var imageInfos = [VkDescriptorImageInfo]()
         var bufferInfos = [VkDescriptorBufferInfo]()
+        var inlineBlocks = [VkWriteDescriptorSetInlineUniformBlockEXT]()
 
         var setIndex = -1
 
@@ -63,7 +66,7 @@ final class VulkanArgumentBuffer {
             var descriptorWrite = VkWriteDescriptorSet()
             descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET
             descriptorWrite.dstBinding = bindingPath.binding
-            descriptorWrite.dstArrayElement = bindingPath.arrayIndex
+            descriptorWrite.dstArrayElement = bindingPath.arrayIndexVulkan
             descriptorWrite.descriptorCount = 1
             descriptorWrite.descriptorType = VkDescriptorType(resource.type, dynamic: false)!
             descriptorWrite.dstSet = self.descriptorSet
@@ -72,7 +75,7 @@ final class VulkanArgumentBuffer {
 
             switch binding {
             case .texture(let texture):
-                guard let image = resourceRegistry[texture] else { continue }
+                let image = resourceMap[texture]
 
                 self.images.append(image)
             
@@ -84,12 +87,12 @@ final class VulkanArgumentBuffer {
                 imageInfos.append(imageInfo)
 
             case .buffer(let buffer, let offset):
-                guard let vkBuffer = resourceRegistry[buffer] else { continue }
-                self.buffers.append(vkBuffer)
+                let vkBuffer = resourceMap[buffer]
+                self.buffers.append(vkBuffer.buffer)
 
                 var bufferInfo = VkDescriptorBufferInfo()
-                bufferInfo.buffer = vkBuffer.vkBuffer
-                bufferInfo.offset = VkDeviceSize(offset)
+                bufferInfo.buffer = vkBuffer.buffer.vkBuffer
+                bufferInfo.offset = VkDeviceSize(offset) + VkDeviceSize(vkBuffer.offset)
                 if resource.bindingRange.size == 0 {
                     // FIXME: should be constrained to maxUniformBufferRange or maxStorageBufferRange
                     bufferInfo.range = VK_WHOLE_SIZE
@@ -110,17 +113,15 @@ final class VulkanArgumentBuffer {
             case .bytes(let offset, let length):
                 let bytes = buffer._bytes(offset: offset)
                 
-                assert(self.isTransient)
-                
-                let (buffer, offset) = resourceRegistry.temporaryBufferAllocator.bufferStoring(bytes: bytes, length: Int(length))
+                var writeDescriptorSetInlineUniformBlock = VkWriteDescriptorSetInlineUniformBlockEXT()
+                writeDescriptorSetInlineUniformBlock.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK_EXT;
+                writeDescriptorSetInlineUniformBlock.dataSize = UInt32(length)
+                writeDescriptorSetInlineUniformBlock.pData = bytes
+                inlineBlocks.append(writeDescriptorSetInlineUniformBlock)
 
-                var bufferInfo = VkDescriptorBufferInfo()
-                bufferInfo.buffer = buffer.vkBuffer
-                bufferInfo.offset = VkDeviceSize(offset)
-                bufferInfo.range = VkDeviceSize(length)
-                
-                descriptorWrite.pBufferInfo = bufferInfoSentinel
-                bufferInfos.append(bufferInfo)
+                descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT
+                descriptorWrite.descriptorCount = UInt32(length)
+                descriptorWrite.pNext = inlineUniformSentinel
             }
 
             descriptorWrites.append(descriptorWrite)
@@ -132,19 +133,24 @@ final class VulkanArgumentBuffer {
             bufferInfos.withUnsafeBufferPointer { bufferInfos in
                 var bufferInfoOffset = 0
                 
-                for i in 0..<descriptorWrites.count {
-                    if descriptorWrites[i].pBufferInfo == bufferInfoSentinel {
-                        descriptorWrites[i].pBufferInfo = bufferInfos.baseAddress?.advanced(by: bufferInfoOffset)
-                        bufferInfoOffset += 1
-                    } else {  
-                        assert(descriptorWrites[i].pImageInfo == imageInfoSentinel)
-                        descriptorWrites[i].pImageInfo = imageInfos.baseAddress?.advanced(by: imageInfoOffset)
-                        imageInfoOffset += 1
+                inlineBlocks.withUnsafeBufferPointer { inlineBlocks in
+                    var inlineBlocksOffset = 0
+                    
+                    for i in 0..<descriptorWrites.count {
+                        if descriptorWrites[i].pBufferInfo == bufferInfoSentinel {
+                            descriptorWrites[i].pBufferInfo = bufferInfos.baseAddress?.advanced(by: bufferInfoOffset)
+                            bufferInfoOffset += 1
+                        } else if descriptorWrites[i].pImageInfo == imageInfoSentinel {
+                            descriptorWrites[i].pImageInfo = imageInfos.baseAddress?.advanced(by: imageInfoOffset)
+                            imageInfoOffset += 1
+                        } else if descriptorWrites[i].pNext == inlineUniformSentinel {
+                            descriptorWrites[i].pNext = UnsafeRawPointer(inlineBlocks.baseAddress?.advanced(by: inlineBlocksOffset))
+                            inlineBlocksOffset += 1
+                        }
                     }
-
+                    
+                    vkUpdateDescriptorSets(self.device.vkDevice, UInt32(descriptorWrites.count), &descriptorWrites, 0, nil)
                 }
-                
-                vkUpdateDescriptorSets(self.device.vkDevice, UInt32(descriptorWrites.count), &descriptorWrites, 0, nil)
             }
         }
     }

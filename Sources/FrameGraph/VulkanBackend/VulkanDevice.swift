@@ -194,6 +194,11 @@ public final class VulkanPhysicalDevice {
 }
 
 public final class VulkanDevice {
+    
+    static let deviceExtensions : [StaticString] = [
+        "VK_KHR_swapchain", // VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    ]
+    
     public let physicalDevice : VulkanPhysicalDevice
     let vkDevice : VkDevice
     
@@ -203,14 +208,60 @@ public final class VulkanDevice {
     
     private(set) var queues : [VulkanQueue] = []
     
-    init(physicalDevice: VulkanPhysicalDevice) {
+    init?(physicalDevice: VulkanPhysicalDevice) {
         self.physicalDevice = physicalDevice
         
         let queueIndicesArray = physicalDevice.queueFamilyIndices(for: [.graphics, .compute, .copy])
         
-        self.vkDevice = queueIndicesArray.withUnsafeBufferPointer { queueIndices in
-            return VkDeviceCreate(physicalDevice.vkDevice, queueIndices.baseAddress, queueIndices.count)
+        var device : VkDevice? = nil
+        let queuePriority = 1.0 as Float
+        withUnsafePointer(to: queuePriority) { queuePriorityPtr in
+            
+            var queueCreateInfos = [VkDeviceQueueCreateInfo]()
+            
+            for queueFamily in queueIndicesArray {
+                var queueCreateInfo = VkDeviceQueueCreateInfo()
+                queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO
+                queueCreateInfo.queueFamilyIndex = queueFamily
+                queueCreateInfo.queueCount = 1
+                queueCreateInfo.pQueuePriorities = queuePriorityPtr
+                queueCreateInfos.append(queueCreateInfo)
+            }
+            
+            var deviceFeatures = VkPhysicalDeviceFeatures()
+            deviceFeatures.independentBlend = VkBool32(VK_TRUE)
+            deviceFeatures.depthClamp = VkBool32(VK_TRUE)
+            deviceFeatures.depthBiasClamp = VkBool32(VK_TRUE)
+            
+            var createInfo = VkDeviceCreateInfo()
+            createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+            
+            queueCreateInfos.withUnsafeBufferPointer { queueCreateInfos in
+                createInfo.queueCreateInfoCount = UInt32(queueCreateInfos.count)
+                
+                withUnsafePointer(to: deviceFeatures) { deviceFeatures in
+                    createInfo.pEnabledFeatures = deviceFeatures;
+                                   
+                    let extensions = VulkanDevice.deviceExtensions.map { ext -> UnsafePointer<CChar>? in
+                        return UnsafeRawPointer(ext.utf8Start).assumingMemoryBound(to: CChar.self)
+                    }
+                    
+                    extensions.withUnsafeBufferPointer { extensions in
+                        createInfo.enabledExtensionCount = UInt32(extensions.count)
+                        createInfo.ppEnabledExtensionNames = extensions.baseAddress
+                        
+                        createInfo.enabledLayerCount = 0
+                        
+                        if !vkCreateDevice(physicalDevice.vkDevice, &createInfo, nil, &device).check() {
+                            print("Failed to create Vulkan logical device!")
+                        }
+                    }
+                }
+            }
         }
+        
+        if device == nil { return nil }
+        self.vkDevice = device!
         
         self.eventPool = VulkanEventPool(device: self)
         self.semaphorePool = VulkanSemaphorePool(device: self)
@@ -238,12 +289,12 @@ public final class VulkanDevice {
         self.queues = queues
     }
     
-    public func queueForFamily(_ queue: QueueFamily) -> VulkanQueue {
-        return self.queues[queue.rawValue]
-    }
-    
     deinit {
         vkDestroyDevice(self.vkDevice, nil)
+    }
+
+    public func queueForFamily(_ queue: QueueFamily) -> VulkanQueue {
+        return self.queues[queue.rawValue]
     }
 }
 

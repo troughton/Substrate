@@ -9,8 +9,62 @@
 import Vulkan
 import FrameGraphCExtras
 
+extension VkImageViewType : Hashable {
+    public func hash(into hasher: inout Hasher) {
+        rawValue.hash(into: &hasher)
+    }
+}
+
+extension VkFormat : Hashable {
+    public func hash(into hasher: inout Hasher) {
+        rawValue.hash(into: &hasher)
+    }
+}
+
+extension VkComponentMapping : Hashable {
+    public static func == (lhs: VkComponentMapping, rhs: VkComponentMapping) -> Bool {
+        return lhs.r == rhs.r &&
+            lhs.g == rhs.g &&
+            lhs.b == rhs.b &&
+            lhs.a == rhs.a
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        r.rawValue.hash(into: &hasher)
+        g.rawValue.hash(into: &hasher)
+        b.rawValue.hash(into: &hasher)
+        a.rawValue.hash(into: &hasher)
+    }
+}
+
+extension VkImageSubresourceRange : Hashable {
+    public static func == (lhs: VkImageSubresourceRange, rhs: VkImageSubresourceRange) -> Bool {
+        return lhs.aspectMask == rhs.aspectMask &&
+            lhs.baseArrayLayer == rhs.baseArrayLayer &&
+            lhs.baseMipLevel == rhs.baseMipLevel &&
+            lhs.layerCount == rhs.layerCount &&
+            lhs.levelCount == rhs.levelCount
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        aspectMask.hash(into: &hasher)
+        baseArrayLayer.hash(into: &hasher)
+        baseMipLevel.hash(into: &hasher)
+        layerCount.hash(into: &hasher)
+        levelCount.hash(into: &hasher)
+    }
+}
+
 class VulkanImage {
     public let device : VulkanDevice
+    
+    struct ViewDescriptor : Hashable {
+        public var flags: VkImageViewCreateFlags
+        public var viewType: VkImageViewType
+        public var format: VkFormat
+        public var components: VkComponentMapping
+        public var subresourceRange: VkImageSubresourceRange
+    }
     
     let vkImage : VkImage
     let allocator : VmaAllocator?
@@ -18,11 +72,12 @@ class VulkanImage {
     let descriptor : VulkanImageDescriptor
     var layout : VkImageLayout
     
-    var waitSemaphore : ResourceSemaphore? = nil
+    var label : String? = nil
     
     var swapchainImageIndex : Int? = nil
     
-    private var _defaultView : Unmanaged<VulkanImageView>! = nil
+    var defaultImageView : VulkanImageView! = nil
+    var views = [ViewDescriptor : VulkanImageView]()
     
     init(device: VulkanDevice, image: VkImage, allocator: VmaAllocator?, allocation: VmaAllocation?, descriptor: VulkanImageDescriptor) {
         self.device = device
@@ -42,19 +97,19 @@ class VulkanImage {
             
             var subresourceRange = VkImageSubresourceRange()
             var aspectMask = VkImageAspectFlagBits()
-
-/*
-Specification for VkImageSubresourceRange:
-
-When using an imageView of a depth/stencil image to populate a descriptor set 
-(e.g. for sampling in the shader, or for use as an input attachment), the aspectMask 
-must only include one bit and selects whether the imageView is used for depth reads
- (i.e. using a floating-point sampler or input attachment in the shader) or stencil 
- reads (i.e. using an unsigned integer sampler or input attachment in the shader). 
- When an imageView of a depth/stencil image is used as a depth/stencil framebuffer attachment, 
- the aspectMask is ignored and both depth and stencil image subresources are used.
-*/
-
+            
+            /*
+             Specification for VkImageSubresourceRange:
+             
+             When using an imageView of a depth/stencil image to populate a descriptor set
+             (e.g. for sampling in the shader, or for use as an input attachment), the aspectMask
+             must only include one bit and selects whether the imageView is used for depth reads
+             (i.e. using a floating-point sampler or input attachment in the shader) or stencil
+             reads (i.e. using an unsigned integer sampler or input attachment in the shader).
+             When an imageView of a depth/stencil image is used as a depth/stencil framebuffer attachment,
+             the aspectMask is ignored and both depth and stencil image subresources are used.
+             */
+            
             if descriptor.format.isDepthStencil {
                 aspectMask.formUnion(VK_IMAGE_ASPECT_DEPTH_BIT) // FIXME: we assume that you always want to sample depth when sampling a depth-stencil image.
             } else if descriptor.format.isDepth {
@@ -78,13 +133,11 @@ must only include one bit and selects whether the imageView is used for depth re
             
             var imageView : VkImageView? = nil
             vkCreateImageView(self.device.vkDevice, &createInfo, nil, &imageView)
-            self._defaultView = Unmanaged.passRetained(VulkanImageView(image: self, vkView: imageView!))
+            self.defaultImageView = VulkanImageView(image: self, vkView: imageView!)
         }
     }
     
     deinit {
-        _defaultView.release()
-        
         if let allocator = self.allocator, let allocation = self.allocation {
             vmaDestroyImage(allocator, self.vkImage, allocation)
         } else {
@@ -92,26 +145,36 @@ must only include one bit and selects whether the imageView is used for depth re
         }
     }
     
-    var defaultImageView : VulkanImageView {
-        return _defaultView.takeUnretainedValue()
-    }
-    
     func matches(descriptor: VulkanImageDescriptor) -> Bool {
         return self.descriptor.matches(descriptor: descriptor)
     }
     
-    func viewForAttachment(descriptor: RenderTargetAttachmentDescriptor) -> VulkanImageView {
-
-        if self.descriptor.imageViewType == VK_IMAGE_VIEW_TYPE_2D, descriptor.level == 0 {
-            return self.defaultImageView
+    subscript(viewDescriptor: ViewDescriptor) -> VulkanImageView {
+        if let view = self.views[viewDescriptor] {
+            return view
         }
-
+        
         var createInfo = VkImageViewCreateInfo()
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO
         
         createInfo.image = self.vkImage
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D
-        createInfo.format = self.descriptor.format
+        createInfo.viewType = viewDescriptor.viewType
+        createInfo.format = viewDescriptor.format
+        createInfo.subresourceRange = viewDescriptor.subresourceRange
+        
+        var imageView : VkImageView? = nil
+        vkCreateImageView(self.device.vkDevice, &createInfo, nil, &imageView)
+        let view = VulkanImageView(image: self, vkView: imageView!)
+        
+        self.views[viewDescriptor] = view
+        return view
+    }
+    
+    func viewForAttachment(descriptor: RenderTargetAttachmentDescriptor) -> VulkanImageView {
+
+        if self.descriptor.imageViewType == VK_IMAGE_VIEW_TYPE_2D, descriptor.level == 0, descriptor.slice == 0, descriptor.depthPlane == 0 {
+            return self.defaultImageView
+        }
         
         var subresourceRange = VkImageSubresourceRange()
         var aspectMask = VkImageAspectFlagBits()
@@ -130,11 +193,9 @@ must only include one bit and selects whether the imageView is used for depth re
         subresourceRange.layerCount = 1
         subresourceRange.levelCount = 1
         
-        createInfo.subresourceRange = subresourceRange
+        let descriptor = ViewDescriptor(flags: 0, viewType: VK_IMAGE_VIEW_TYPE_2D, format: self.descriptor.format, components: VkComponentMapping(), subresourceRange: subresourceRange)
         
-        var imageView : VkImageView? = nil
-        vkCreateImageView(self.device.vkDevice, &createInfo, nil, &imageView)
-        return VulkanImageView(image: self, vkView: imageView!)
+       return self[descriptor]
     }
 }
 

@@ -10,7 +10,7 @@ import Vulkan
 import FrameGraphUtilities
 import FrameGraphCExtras
 
-fileprivate class TemporaryBufferArena {
+fileprivate class VulkanTemporaryBufferArena {
     
     private static let blockAlignment = 64
     
@@ -59,7 +59,7 @@ fileprivate class TemporaryBufferArena {
                 var allocInfo = VmaAllocationCreateInfo()
                 allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU
                 // FIXME: is it actually valid to have a buffer being used without ownership transfers?
-                let descriptor = VulkanBufferDescriptor(renderAPIDescriptor, usage: .uniformBuffer, sharingMode: .concurrent(QueueFamilies.all))
+                let descriptor = VulkanBufferDescriptor(renderAPIDescriptor, usage: .uniformBuffer, sharingMode: .exclusive)
                 var buffer : VkBuffer? = nil
                 var allocation : VmaAllocation? = nil
                 var allocationInfo = VmaAllocationInfo()
@@ -84,23 +84,23 @@ fileprivate class TemporaryBufferArena {
     }
 }
 
-class TemporaryBufferAllocator {
-    private var arenas : [TemporaryBufferArena]
+class VulkanTemporaryBufferAllocator : VulkanBufferAllocator {
+    private var arenas : [VulkanTemporaryBufferArena]
     
     let numFrames : Int
     private var currentIndex : Int = 0
     
     public init(numFrames: Int, allocator: VmaAllocator, device: VulkanDevice) {
         self.numFrames = numFrames
-        self.arenas = (0..<numFrames).map { _ in TemporaryBufferArena(allocator: allocator, device: device) }
+        self.arenas = (0..<numFrames).map { _ in VulkanTemporaryBufferArena(allocator: allocator, device: device) }
     }
     
-    public func bufferStoring(bytes: UnsafeRawPointer, length: Int) -> (VulkanBuffer, Int) {
+    public func bufferStoring(bytes: UnsafeRawPointer, length: Int) -> VkBufferReference {
         let (buffer, offset) = self.arenas[self.currentIndex].allocate(bytes: length, alignedTo: 256)
         let destination = buffer.map(range: offset..<(offset + length))
         destination.copyMemory(from: bytes, byteCount: length)
         buffer.unmapMemory(range: offset..<(offset + length))
-        return (buffer, offset)
+        return VkBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset)
     }
     
     public func cycleFrames() {

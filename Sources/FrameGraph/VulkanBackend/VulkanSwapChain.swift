@@ -58,6 +58,11 @@ public class VulkanSwapChain : SwapChain {
 
     private var currentImageIndex : Int? = nil
     
+    
+    public var format: PixelFormat {
+        return PixelFormat(self.surfaceFormat.format)
+    }
+    
     public init(device: VulkanDevice, surface: VkSurfaceKHR) {
         self.device = device
         self.surface = surface
@@ -172,7 +177,7 @@ public class VulkanSwapChain : SwapChain {
         self.createSwapChain(drawableSize: drawableSize)
     }
     
-    func nextImage(descriptor: TextureDescriptor) -> VulkanImage {
+    func nextImage(descriptor: TextureDescriptor) -> (VulkanImage, VulkanContextWaitSemaphore) {
         if self.swapChain == nil {
             self.createSwapChain(drawableSize: descriptor.size)
         } else if descriptor.size != self.currentDrawableSize {

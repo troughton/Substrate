@@ -61,7 +61,7 @@ class VulkanBuffer {
     let allocationInfo : VmaAllocationInfo
     let descriptor : VulkanBufferDescriptor
     
-    var waitSemaphore : ResourceSemaphore? = nil
+    var label : String? = nil
     
     var hasBeenHostUpdated = false
     

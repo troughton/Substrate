@@ -9,7 +9,7 @@
 import Vulkan
 import FrameGraphCExtras
 
-final class PoolResourceAllocator : ResourceAllocator {
+final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllocator {
  
     struct ResourceReference<R> {
         let resource : R

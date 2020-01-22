@@ -15,8 +15,8 @@ struct VulkanComputePipelineDescriptor : Hashable {
     var layout : VkPipelineLayout
     var threadsPerThreadgroup : Size 
 
-    func withVulkanPipelineCreateInfo(pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches, _ withInfo: (inout VkComputePipelineCreateInfo) -> Void) {
-        let specialisationInfo = stateCaches[self.descriptor.functionConstants, pipelineReflection: pipelineReflection] // TODO: also pass in threadsPerThreadgroup.
+    func withVulkanPipelineCreateInfo(pipelineReflection: VulkanPipelineReflection, stateCaches: VulkanStateCaches, _ withInfo: (inout VkComputePipelineCreateInfo) -> Void) {
+        let specialisationInfo = stateCaches[self.descriptor._functionConstants, pipelineReflection: pipelineReflection] // TODO: also pass in threadsPerThreadgroup.
         let specialisationInfoPtr = specialisationInfo == nil ? nil : escapingPointer(to: &specialisationInfo!.info)
 
         let module = stateCaches.shaderLibrary.moduleForFunction(self.descriptor.function)!
@@ -94,17 +94,17 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
     
     let device : VulkanDevice
     let commandBufferResources: CommandBufferResources
-    let resourceRegistry: ResourceRegistry
-    let stateCaches : StateCaches
+    let resourceMap: VulkanFrameResourceMap
+    let stateCaches : VulkanStateCaches
     
     var bindingManager : ResourceBindingManager! = nil
     var pipelineState : PipelineState! = nil
     
-    public init(device: VulkanDevice, commandBuffer: CommandBufferResources, shaderLibrary: VulkanShaderLibrary, caches: StateCaches, resourceRegistry: ResourceRegistry) {
+    public init(device: VulkanDevice, commandBuffer: CommandBufferResources, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: VulkanFrameResourceMap) {
         self.device = device
         self.commandBufferResources = commandBuffer
         self.stateCaches = caches
-        self.resourceRegistry = resourceRegistry
+        self.resourceMap = resourceMap
         
         self.bindingManager = ResourceBindingManager(encoder: self)
         self.pipelineState = PipelineState(shaderLibrary: shaderLibrary, bindingManager: bindingManager)
@@ -171,7 +171,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             let bindingPath = args.pointee.bindingPath
             
             let argumentBuffer = args.pointee.argumentBuffer
-            let vkArgumentBuffer = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, 
+            let vkArgumentBuffer = resourceMap.allocateArgumentBufferIfNeeded(argumentBuffer,
                                                                                     bindingPath: bindingPath,
                                                                                     commandBufferResources: self.commandBufferResources, 
                                                                                     pipelineReflection: self.pipelineReflection, 
@@ -221,7 +221,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             self.pipelineState.threadsPerThreadgroup = args.pointee.threadsPerThreadgroup
             self.prepareToDispatch()
             
-            vkCmdDispatchIndirect(self.commandBuffer, resourceRegistry[buffer: args.pointee.indirectBuffer]!.vkBuffer, VkDeviceSize(args.pointee.indirectBufferOffset))
+            vkCmdDispatchIndirect(self.commandBuffer, resourceMap[buffer: args.pointee.indirectBuffer]!.vkBuffer, VkDeviceSize(args.pointee.indirectBufferOffset))
             
         case .setComputePipelineDescriptor(let descriptorPtr):
             self.pipelineState.descriptor = descriptorPtr.takeUnretainedValue().pipelineDescriptor

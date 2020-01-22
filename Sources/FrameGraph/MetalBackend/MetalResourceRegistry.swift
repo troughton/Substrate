@@ -127,8 +127,8 @@ final class MetalPersistentResourceRegistry {
     var heapReferences = PersistentResourceMap<Heap, MTLHeap>()
     var textureReferences = PersistentResourceMap<Texture, MTLTextureReference>()
     var bufferReferences = PersistentResourceMap<Buffer, MTLBufferReference>()
-    var argumentBufferReferences = PersistentResourceMap<_ArgumentBuffer, MTLBufferReference>() // Separate since this needs to have thread-safe access.
-    var argumentBufferArrayReferences = PersistentResourceMap<_ArgumentBufferArray, MTLBufferReference>() // Separate since this needs to have thread-safe access.
+    var argumentBufferReferences = PersistentResourceMap<_ArgumentBuffer, MTLBufferReference>() 
+    var argumentBufferArrayReferences = PersistentResourceMap<_ArgumentBufferArray, MTLBufferReference>() 
     
     var windowReferences = [Texture : CAMetalLayer]()
     
@@ -142,6 +142,7 @@ final class MetalPersistentResourceRegistry {
     }
     
     deinit {
+        self.heapReferences.deinit()
         self.textureReferences.deinit()
         self.bufferReferences.deinit()
         self.argumentBufferReferences.deinit()

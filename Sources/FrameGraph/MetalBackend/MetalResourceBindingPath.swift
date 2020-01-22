@@ -11,22 +11,21 @@ import Metal
 import FrameGraphUtilities
 
 extension ResourceBindingPath {
-    public static let vertexStageFlag : UInt64 = (1 << 63)
-    public static let fragmentStageFlag : UInt64 = (1 << 62)
+    fileprivate static let vertexStageFlag : UInt64 = (1 << 63)
+    fileprivate static let fragmentStageFlag : UInt64 = (1 << 62)
     
-    public static let textureTypeFlag : UInt64 = (1 << 61)
-    public static let bufferTypeFlag : UInt64 = (1 << 60)
-    public static let samplerTypeFlag : UInt64 = (1 << 59)
+    fileprivate static let textureTypeFlag : UInt64 = (1 << 61)
+    fileprivate static let bufferTypeFlag : UInt64 = (1 << 60)
+    fileprivate static let samplerTypeFlag : UInt64 = (1 << 59)
     
-    public static let argumentBufferNone = (1 << 5) - 1 // all bits in the argumentBufferIndexRange set.
-    public static let argumentBufferIndexRange = 54..<59
-    public static let argumentBufferIndexClearMask = UInt64.maskForClearingBits(in: argumentBufferIndexRange)
-    public static let indexRange = 32..<54
-    public static let indexClearMask = UInt64.maskForClearingBits(in: indexRange)
-    public static let arrayIndexRange = 0..<32
-    public static let arrayIndexClearMask = UInt64.maskForClearingBits(in: arrayIndexRange)
+    fileprivate static let argumentBufferNone = (1 << 5) - 1 // all bits in the argumentBufferIndexRange set.
+    fileprivate static let argumentBufferIndexRange = 54..<59
+    fileprivate static let argumentBufferIndexClearMask = UInt64.maskForClearingBits(in: argumentBufferIndexRange)
+    fileprivate static let indexRange = 32..<54
+    fileprivate static let indexClearMask = UInt64.maskForClearingBits(in: indexRange)
+    fileprivate static let arrayIndexRange = 0..<32
+    fileprivate static let arrayIndexClearMask = UInt64.maskForClearingBits(in: arrayIndexRange)
 
-    @inlinable
     public init(stages: MTLRenderStages, type: MTLDataType, argumentBufferIndex: Int?, index: Int) {
         let argType : MTLArgumentType
         switch type {
@@ -40,7 +39,6 @@ extension ResourceBindingPath {
         self.init(stages: stages, type: argType, argumentBufferIndex: argumentBufferIndex, index: index)
     }
     
-    @inlinable
     public init(stages: MTLRenderStages, type: MTLArgumentType, argumentBufferIndex: Int?, index: Int) {
         self = ResourceBindingPath(value: 0)
         
@@ -63,12 +61,10 @@ extension ResourceBindingPath {
         }
     }
     
-    @inlinable
     public var stageTypeAndArgBufferMask : UInt64 {
         return self.value & (ResourceBindingPath.indexClearMask & ResourceBindingPath.arrayIndexClearMask)
     }
 
-    @inlinable
     public var stages : MTLRenderStages {
         get {
             var stages : MTLRenderStages = MTLRenderStages(rawValue: 0)
@@ -91,7 +87,6 @@ extension ResourceBindingPath {
         }
     }
     
-    @inlinable
     public var argumentBufferIndex : Int? {
         get {
             let argBufferIndex = Int(truncatingIfNeeded: self.value.bits(in: ResourceBindingPath.argumentBufferIndexRange))
@@ -106,7 +101,6 @@ extension ResourceBindingPath {
         }
     }
     
-    @inlinable
     public var type : MTLArgumentType {
         if self.value & ResourceBindingPath.bufferTypeFlag != 0 {
             return .buffer
@@ -120,7 +114,6 @@ extension ResourceBindingPath {
         fatalError()
     }
     
-    @inlinable
     public var index : Int {
         get {
             return Int(truncatingIfNeeded: self.value.bits(in: ResourceBindingPath.indexRange))
@@ -131,8 +124,7 @@ extension ResourceBindingPath {
     }
     
     // NOTE: When argumentBufferIndex is not nil, this refers to the array index of the _argument buffer_, and not this element within it.
-    @inlinable
-    public var arrayIndex : Int {
+    public var arrayIndexMetal : Int {
         get {
             return Int(truncatingIfNeeded: self.value.bits(in: ResourceBindingPath.arrayIndexRange))
         }
@@ -143,7 +135,7 @@ extension ResourceBindingPath {
     
     @inlinable
     public var bindIndex : Int {
-        return self.index &+ self.arrayIndex
+        return self.index &+ self.arrayIndexMetal
     }
 }
 

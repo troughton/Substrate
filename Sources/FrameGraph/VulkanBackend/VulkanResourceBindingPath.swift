@@ -10,30 +10,27 @@ import Vulkan
 import FrameGraphCExtras
 
 extension ResourceBindingPath {
-    public static let setIndexRange = 56..<64
-    public static let bindingRange = 32..<56
-    public static let arrayIndexRange = 0..<32
+    fileprivate static let setIndexRange = 56..<64
+    fileprivate static let bindingRange = 32..<56
+    fileprivate static let arrayIndexRange = 0..<32
     
-    public static let pushConstantSet = UInt32(UInt8.max)
-    public static let argumentBufferBinding = UInt32((1 << ResourceBindingPath.bindingRange.count) - 1)
+    fileprivate static let pushConstantSet = UInt32(UInt8.max)
+    fileprivate static let argumentBufferBinding = UInt32((1 << ResourceBindingPath.bindingRange.count) - 1)
     
-    public static let pushConstantPath = ResourceBindingPath(set: pushConstantSet, binding: 0, arrayIndex: 0)
+    fileprivate static let pushConstantPath = ResourceBindingPath(set: pushConstantSet, binding: 0, arrayIndex: 0)
 
-    @inlinable
     public init(set: UInt32, binding: UInt32, arrayIndex: UInt32) {
         self = ResourceBindingPath(value: 0)
         
         self.set = set
         self.binding = binding
-        self.arrayIndex = arrayIndex
+        self.arrayIndexVulkan = arrayIndex
     }
 
-    @inlinable
     public init(argumentBuffer: UInt32) {
         self.init(set: argumentBuffer, binding: ResourceBindingPath.argumentBufferBinding, arrayIndex: 0)
     }
     
-    @inlinable
     public var set : UInt32 {
         get {
             return UInt32(truncatingIfNeeded: self.value.bits(in: ResourceBindingPath.setIndexRange))
@@ -43,7 +40,6 @@ extension ResourceBindingPath {
         }
     }
 
-    @inlinable
     public var binding : UInt32 {
         get {
             return UInt32(truncatingIfNeeded: self.value.bits(in: ResourceBindingPath.bindingRange))
@@ -53,12 +49,19 @@ extension ResourceBindingPath {
         }
     }
     
-    @inlinable
+    public var arrayIndexVulkan : UInt32 {
+        get {
+            return UInt32(truncatingIfNeeded: self.value.bits(in: ResourceBindingPath.arrayIndexRange))
+        }
+        set {
+            self.value.setBits(in: ResourceBindingPath.arrayIndexRange, to: UInt64(newValue))
+        }
+    }
+    
     public var isPushConstant : Bool {
         return self.set == ResourceBindingPath.pushConstantSet
     }
 
-    @inlinable
     public var isArgumentBuffer : Bool {
         return self.binding == ResourceBindingPath.argumentBufferBinding
     }

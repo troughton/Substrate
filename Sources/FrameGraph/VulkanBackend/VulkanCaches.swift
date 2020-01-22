@@ -9,7 +9,7 @@
 import Vulkan
 import FrameGraphCExtras
 
-final class StateCaches {
+final class VulkanStateCaches {
 
     private struct RenderPipelineCacheKey : Hashable {
         var pipelineDescriptor : VulkanRenderPipelineDescriptor
