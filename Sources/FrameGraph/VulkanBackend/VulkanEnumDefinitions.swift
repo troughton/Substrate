@@ -22,11 +22,4 @@ extension spvc_resource_type {
     static var sampler : spvc_resource_type { return SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS }
 }
 
-//extension AccessQualifier {
-//    static var none : AccessQualifier { return AccessQualifier(AccessQualifierNone) }
-//    static var readOnly : AccessQualifier { return AccessQualifier(AccessQualifierReadOnly) }
-//    static var readWrite : AccessQualifier { return AccessQualifier(AccessQualifierReadWrite) }
-//    static var writeOnly : AccessQualifier { return AccessQualifier(AccessQualifierWriteOnly) }
-//}
-
 #endif

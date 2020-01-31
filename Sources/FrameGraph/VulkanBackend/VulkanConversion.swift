@@ -9,6 +9,43 @@
 import Vulkan
 import FrameGraphCExtras
 import FrameGraphUtilities
+import SPIRV_Cross
+
+// MARK: - SPIRV-Cross
+
+extension VkShaderStageFlagBits {
+    init?(_ executionModel: SpvExecutionModel) {
+        switch executionModel {
+        case SpvExecutionModelVertex:
+            self = VK_SHADER_STAGE_VERTEX_BIT
+        case SpvExecutionModelFragment:
+            self = VK_SHADER_STAGE_FRAGMENT_BIT
+        case SpvExecutionModelGLCompute:
+            self = VK_SHADER_STAGE_COMPUTE_BIT
+        default:
+            return nil
+        }
+    }
+}
+
+// MARK: - FrameGraph Types
+
+extension VmaMemoryUsage {
+    init(storageMode: StorageMode, cacheMode: CPUCacheMode) {
+        switch (storageMode, cacheMode) {
+        case (.private, _):
+            self = VMA_MEMORY_USAGE_GPU_ONLY
+        case (.shared, .defaultCache):
+            self = VMA_MEMORY_USAGE_CPU_ONLY
+        case (.shared, .writeCombined):
+            self = VMA_MEMORY_USAGE_CPU_TO_GPU
+        case (.managed, .defaultCache):
+            self = VMA_MEMORY_USAGE_GPU_TO_CPU
+        case (.managed, .writeCombined):
+            self = VMA_MEMORY_USAGE_CPU_TO_GPU
+        }
+    }
+}
 
 //MARK: Flag bits to flags
 
@@ -664,7 +701,7 @@ extension VkPipelineMultisampleStateCreateInfo {
     public init(_ descriptor: RenderPipelineDescriptor) {
         self.init()
         self.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
-        self.rasterizationSamples = VkSampleCountFlagBits(rawValue: VkSampleCountFlagBits.RawValue(descriptor.sampleCount))
+        self.rasterizationSamples = VkSampleCountFlagBits(rawValue: VkSampleCountFlagBits.RawValue(descriptor.rasterSampleCount))
         self.sampleShadingEnable = false
         self.minSampleShading = 1.0
         self.pSampleMask = nil

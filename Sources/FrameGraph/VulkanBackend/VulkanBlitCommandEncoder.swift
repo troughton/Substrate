@@ -13,25 +13,26 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
     let device: VulkanDevice
     
     let commandBufferResources: CommandBufferResources
-    let resourceRegistry: ResourceRegistry
+    let resourceMap: VulkanFrameResourceMap
     
-    public init(device: VulkanDevice, commandBuffer: CommandBufferResources, resourceRegistry: ResourceRegistry) {
+    public init(device: VulkanDevice, commandBuffer: CommandBufferResources, resourceMap: VulkanFrameResourceMap) {
         self.device = device
         self.commandBufferResources = commandBuffer
-        self.resourceRegistry = resourceRegistry
+        self.resourceMap = resourceMap
     }
     
     var queueFamily: QueueFamily {
         return .copy
     }
     
-    func executeCommands(_ commands: ArraySlice<FrameGraphCommand>, resourceCommands: inout [VulkanFrameResourceCommand]) {
-        
-        for (i, command) in zip(commands.indices, commands) {
-            self.executeResourceCommands(resourceCommands: &resourceCommands, order: .before, commandIndex: i)
-            self.executeCommand(command)
-            self.executeResourceCommands(resourceCommands: &resourceCommands, order: .after, commandIndex: i)
-        }
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [VulkanFrameResourceCommand]) {
+        var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
+         
+         for (i, command) in zip(pass.commandRange!, pass.commands) {
+             self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i)
+             self.executeCommand(command)
+             self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i)
+         }
     }
     
     func executeCommand(_ command: FrameGraphCommand) {
@@ -49,13 +50,13 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             break
             
         case .copyBufferToTexture(let args):
-            let source = resourceRegistry[buffer: args.pointee.sourceBuffer]!
-            let destination = resourceRegistry[texture: args.pointee.destinationTexture]!
+            let source = resourceMap[args.pointee.sourceBuffer]
+            let destination = resourceMap[args.pointee.destinationTexture]
 
             let regions = destination.descriptor.allAspects.map { aspect -> VkBufferImageCopy in
                 let layers = VkImageSubresourceLayers(aspectMask: aspect, mipLevel: args.pointee.destinationLevel, baseArrayLayer: args.pointee.destinationSlice, layerCount: 1)
                 
-                return VkBufferImageCopy(bufferOffset: VkDeviceSize(args.pointee.sourceOffset),
+                return VkBufferImageCopy(bufferOffset: VkDeviceSize(args.pointee.sourceOffset) + VkDeviceSize(source.offset),
                                          bufferRowLength: args.pointee.sourceBytesPerRow,
                                          bufferImageHeight: args.pointee.sourceBytesPerImage / args.pointee.sourceBytesPerRow,
                                          imageSubresource: layers,
@@ -64,15 +65,15 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
                 
             }
             regions.withUnsafeBufferPointer { regions in
-                vkCmdCopyBufferToImage(self.commandBufferResources.commandBuffer, source.vkBuffer, destination.vkImage, destination.layout, UInt32(regions.count), regions.baseAddress)
+                vkCmdCopyBufferToImage(self.commandBufferResources.commandBuffer, source.buffer.vkBuffer, destination.vkImage, destination.layout, UInt32(regions.count), regions.baseAddress)
             }
             
         case .copyBufferToBuffer(let args):
-            let source = resourceRegistry[buffer: args.pointee.sourceBuffer]!
-            let destination = resourceRegistry[buffer: args.pointee.destinationBuffer]!
+            let source = resourceMap[args.pointee.sourceBuffer]
+            let destination = resourceMap[args.pointee.destinationBuffer]
             
-            var region = VkBufferCopy(srcOffset: VkDeviceSize(args.pointee.sourceOffset), dstOffset: VkDeviceSize(args.pointee.destinationOffset), size: VkDeviceSize(args.pointee.size))
-            vkCmdCopyBuffer(self.commandBufferResources.commandBuffer, source.vkBuffer, destination.vkBuffer, 1, &region)
+            var region = VkBufferCopy(srcOffset: VkDeviceSize(args.pointee.sourceOffset) + VkDeviceSize(source.offset), dstOffset: VkDeviceSize(args.pointee.destinationOffset) + VkDeviceSize(destination.offset), size: VkDeviceSize(args.pointee.size))
+            vkCmdCopyBuffer(self.commandBufferResources.commandBuffer, source.buffer.vkBuffer, destination.buffer.vkBuffer, 1, &region)
             
         case .copyTextureToBuffer(let args):
             fatalError("Unimplemented.")
@@ -81,13 +82,14 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             fatalError("Unimplemented.")
             
         case .fillBuffer(let args):
+            let buffer = resourceMap[args.pointee.buffer]
             let byteValue = UInt32(args.pointee.value)
             let intValue : UInt32 = (byteValue << 24) | (byteValue << 16) | (byteValue << 8) | byteValue
-            vkCmdFillBuffer(self.commandBufferResources.commandBuffer, resourceRegistry[buffer: args.pointee.buffer]!.vkBuffer, VkDeviceSize(args.pointee.range.lowerBound), VkDeviceSize(args.pointee.range.count), intValue)
+            vkCmdFillBuffer(self.commandBufferResources.commandBuffer, buffer.buffer.vkBuffer, VkDeviceSize(args.pointee.range.lowerBound) + VkDeviceSize(buffer.offset), VkDeviceSize(args.pointee.range.count), intValue)
             
         case .generateMipmaps(let texture):
             print("Generating mipmaps for \(texture)")
-            self.generateMipmaps(image: resourceRegistry[texture: texture]!)
+            self.generateMipmaps(image: resourceMap[texture])
             
         case .synchroniseTexture(let textureHandle):
             fatalError("GPU to CPU synchronisation of managed resources is unimplemented on Vulkan.")

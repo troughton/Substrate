@@ -92,11 +92,11 @@ final class ResourceBindingManager {
             var bufferInfo = VkDescriptorBufferInfo()
             bufferInfo.buffer = buffer.buffer.vkBuffer
             bufferInfo.offset = VkDeviceSize(buffer.offset) + (hasDynamicOffsets ? 0 : VkDeviceSize(offset))
-            if resource.bindingRange.size == 0 {
+            if resource.bindingRange.count == 0 {
                 // FIXME: should be constrained to maxUniformBufferRange or maxStorageBufferRange
                 bufferInfo.range = VK_WHOLE_SIZE
             } else {
-                bufferInfo.range = VkDeviceSize(resource.bindingRange.size)
+                bufferInfo.range = VkDeviceSize(resource.bindingRange.count)
             }
             
             withUnsafePointer(to: &bufferInfo) { bufferInfo in
@@ -247,8 +247,8 @@ final class ResourceBindingManager {
         
         switch resourceInfo.type {
         case .pushConstantBuffer:
-            assert(resourceInfo.bindingRange.size == length, "The push constant size and the setBytes length must match.")
-            vkCmdPushConstants(self.commandBuffer, encoder.pipelineLayout, VkShaderStageFlags(resourceInfo.accessedStages), resourceInfo.bindingRange.offset, length, bytes)
+            assert(resourceInfo.bindingRange.count == length, "The push constant size and the setBytes length must match.")
+            vkCmdPushConstants(self.commandBuffer, encoder.pipelineLayout, VkShaderStageFlags(resourceInfo.accessedStages), resourceInfo.bindingRange.lowerBound, length, bytes)
             
         default:
             fatalError("Need to implement VK_EXT_inline_uniform_block or else fall back to a temporary staging buffer")

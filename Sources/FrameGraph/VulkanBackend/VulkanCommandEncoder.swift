@@ -33,11 +33,11 @@ extension VulkanCommandEncoder {
         return self.device.semaphorePool
     }
     
-    func executeResourceCommands(resourceCommands: inout [VulkanFrameResourceCommand], order: PerformOrder, commandIndex: Int) {
-        while let resourceCommand = resourceCommands.last, resourceCommand.index == commandIndex, resourceCommand.order == order {
-            defer { resourceCommands.removeLast() }
+    func checkResourceCommands(_ resourceCommands: [VulkanFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int) {
+        while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
+            defer { resourceCommandIndex += 1 }
             
-            switch resourceCommand.command {
+            switch resourceCommands[resourceCommandIndex].command {
             case .signalEvent(let event, let afterStages):
                 vkCmdSetEvent(self.commandBufferResources.commandBuffer, event.event, VkPipelineStageFlags(afterStages))
                 
@@ -102,7 +102,7 @@ final class EncoderManager {
     
     init(frameGraph: VulkanFrameGraphContext) {
         self.frameGraph = frameGraph
-        self.device = frameGraph.device
+        self.device = frameGraph.backend.device
     }
     
     func renderCommandEncoder(descriptor: VulkanRenderTargetDescriptor) -> VulkanRenderCommandEncoder {
@@ -111,8 +111,8 @@ final class EncoderManager {
         } else {
             self.resetEncoders()
             
-            let commandBufferResources = frameGraph.resourceRegistry.commandPool.allocateCommandBufferResources(passType: .draw)
-            let renderEncoder = VulkanRenderCommandEncoder(device: self.device, renderTarget: descriptor, commandBufferResources: commandBufferResources, shaderLibrary: frameGraph.shaderLibrary, caches: frameGraph.stateCaches, resourceRegistry: frameGraph.resourceRegistry)
+            let commandBufferResources = frameGraph.commandPool.allocateCommandBufferResources(passType: .draw)
+            let renderEncoder = VulkanRenderCommandEncoder(device: self.device, renderTarget: descriptor, commandBufferResources: commandBufferResources, shaderLibrary: frameGraph.backend.shaderLibrary, caches: frameGraph.backend.stateCaches, resourceMap: frameGraph.resourceMap)
             self.renderEncoder = renderEncoder
             return renderEncoder
         }
@@ -121,8 +121,8 @@ final class EncoderManager {
     func computeCommandEncoder() -> VulkanComputeCommandEncoder {
         self.resetEncoders()
         
-        let commandBufferResources = frameGraph.resourceRegistry.commandPool.allocateCommandBufferResources(passType: .compute)
-        let computeEncoder = VulkanComputeCommandEncoder(device: frameGraph.device, commandBuffer: commandBufferResources, shaderLibrary: frameGraph.shaderLibrary, caches: frameGraph.stateCaches, resourceRegistry: frameGraph.resourceRegistry)
+        let commandBufferResources = frameGraph.commandPool.allocateCommandBufferResources(passType: .compute)
+        let computeEncoder = VulkanComputeCommandEncoder(device: frameGraph.backend.device, commandBuffer: commandBufferResources, shaderLibrary: frameGraph.backend.shaderLibrary, caches: frameGraph.backend.stateCaches, resourceMap: frameGraph.resourceMap)
         self.computeEncoder = computeEncoder
         return computeEncoder
     }
@@ -130,8 +130,8 @@ final class EncoderManager {
     func blitCommandEncoder() -> VulkanBlitCommandEncoder {
         self.resetEncoders()
         
-        let commandBufferResources = frameGraph.resourceRegistry.commandPool.allocateCommandBufferResources(passType: .blit)
-        let blitEncoder = VulkanBlitCommandEncoder(device: self.device, commandBuffer: commandBufferResources, resourceRegistry: frameGraph.resourceRegistry)
+        let commandBufferResources = frameGraph.commandPool.allocateCommandBufferResources(passType: .blit)
+        let blitEncoder = VulkanBlitCommandEncoder(device: self.device, commandBuffer: commandBufferResources, resourceMap: frameGraph.resourceMap)
         self.blitEncoder = blitEncoder
         return blitEncoder
     }
@@ -167,7 +167,7 @@ final class EncoderManager {
             queue.submit(fence: fence)
         }
         
-        let device = frameGraph.device.vkDevice
+        let device = frameGraph.backend.device.vkDevice
         
         let fences = self.commandBufferResources[0].fences
         

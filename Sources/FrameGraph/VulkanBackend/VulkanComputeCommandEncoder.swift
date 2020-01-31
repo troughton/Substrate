@@ -144,12 +144,13 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
         self.bindingManager.bindDescriptorSets()
     }
     
-    func executeCommands(_ commands: ArraySlice<FrameGraphCommand>, resourceCommands: inout [ResourceCommand]) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [VulkanFrameResourceCommand]) {
+         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
-        for (i, command) in zip(commands.indices, commands) {
-            self.executeResourceCommands(resourceCommands: &resourceCommands, order: .before, commandIndex: i)
+        for (i, command) in zip(pass.commandRange!, pass.commands) {
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i)
             self.executeCommand(command)
-            self.executeResourceCommands(resourceCommands: &resourceCommands, order: .after, commandIndex: i)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i)
         }
     }
     
@@ -171,11 +172,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             let bindingPath = args.pointee.bindingPath
             
             let argumentBuffer = args.pointee.argumentBuffer
-            let vkArgumentBuffer = resourceMap.allocateArgumentBufferIfNeeded(argumentBuffer,
-                                                                                    bindingPath: bindingPath,
-                                                                                    commandBufferResources: self.commandBufferResources, 
-                                                                                    pipelineReflection: self.pipelineReflection, 
-                                                                                    stateCaches: stateCaches)
+            let vkArgumentBuffer = resourceMap[argumentBuffer]
 
             self.commandBufferResources.argumentBuffers.append(vkArgumentBuffer)
 
@@ -221,7 +218,8 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             self.pipelineState.threadsPerThreadgroup = args.pointee.threadsPerThreadgroup
             self.prepareToDispatch()
             
-            vkCmdDispatchIndirect(self.commandBuffer, resourceMap[buffer: args.pointee.indirectBuffer]!.vkBuffer, VkDeviceSize(args.pointee.indirectBufferOffset))
+            let buffer = resourceMap[args.pointee.indirectBuffer]
+            vkCmdDispatchIndirect(self.commandBuffer, buffer.buffer.vkBuffer, VkDeviceSize(args.pointee.indirectBufferOffset) + VkDeviceSize(buffer.offset))
             
         case .setComputePipelineDescriptor(let descriptorPtr):
             self.pipelineState.descriptor = descriptorPtr.takeUnretainedValue().pipelineDescriptor

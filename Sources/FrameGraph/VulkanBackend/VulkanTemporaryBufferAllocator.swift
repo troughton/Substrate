@@ -89,22 +89,31 @@ class VulkanTemporaryBufferAllocator : VulkanBufferAllocator {
     
     let numFrames : Int
     private var currentIndex : Int = 0
+    private var waitSemaphoreValue : UInt64 = 0
+    private var nextFrameWaitSemaphoreValue : UInt64 = 0
     
     public init(numFrames: Int, allocator: VmaAllocator, device: VulkanDevice) {
         self.numFrames = numFrames
         self.arenas = (0..<numFrames).map { _ in VulkanTemporaryBufferArena(allocator: allocator, device: device) }
     }
     
-    public func bufferStoring(bytes: UnsafeRawPointer, length: Int) -> VkBufferReference {
-        let (buffer, offset) = self.arenas[self.currentIndex].allocate(bytes: length, alignedTo: 256)
-        let destination = buffer.map(range: offset..<(offset + length))
-        destination.copyMemory(from: bytes, byteCount: length)
-        buffer.unmapMemory(range: offset..<(offset + length))
-        return VkBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset)
+    public func allocate(bytes: Int) -> (VulkanBuffer, Int) {
+        return self.arenas[self.currentIndex].allocate(bytes: bytes, alignedTo: 256)
+    }
+    
+    func collectBuffer(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, [VulkanEventHandle], VulkanContextWaitSemaphore) {
+        let (buffer, offset) = self.allocate(bytes: Int(descriptor.size))
+        return (VkBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset), [], VulkanContextWaitSemaphore(waitValue: self.waitSemaphoreValue))
+    }
+    
+    func depositBuffer(_ buffer: VkBufferReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore) {
+        assert(events.isEmpty)
+        self.nextFrameWaitSemaphoreValue = max(self.waitSemaphoreValue, waitSemaphore.waitValue)
     }
     
     public func cycleFrames() {
         self.currentIndex = (self.currentIndex + 1) % self.numFrames
+        self.waitSemaphoreValue = self.nextFrameWaitSemaphoreValue
         self.arenas[self.currentIndex].reset()
     }
 }

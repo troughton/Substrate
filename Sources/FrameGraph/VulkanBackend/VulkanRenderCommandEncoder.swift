@@ -299,7 +299,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         self.bindingManager.bindDescriptorSets()
     }
     
-    public func beginPass(_ pass: RenderPassRecord) {
+    private func beginPass(_ pass: RenderPassRecord) throws {
         self.currentDrawRenderPass = (pass.pass as! DrawRenderPass)        
         self.pipelineState.hasChanged = true
         
@@ -310,7 +310,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             
             self.renderPass = VulkanRenderPass(device: self.device, descriptor: renderTarget)
             commandBufferResources.renderPasses.append(renderPass)
-            let framebuffer = VulkanFramebuffer(descriptor: renderTarget, renderPass: renderPass.vkPass, device: self.device, resourceMap: self.resourceMap)
+            let framebuffer = try VulkanFramebuffer(descriptor: renderTarget, renderPass: renderPass.vkPass, device: self.device, resourceMap: self.resourceMap)
             commandBufferResources.framebuffers.append(framebuffer)
             
             var clearValues = [VkClearValue]()
@@ -360,7 +360,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     }
     
     /// Ends a pass and returns whether the command encoder is still valid.
-    public func endPass(_ pass: RenderPassRecord) -> Bool {
+    private func endPass(_ pass: RenderPassRecord) -> Bool {
         if pass === self.renderTarget.renderPasses.last {
             vkCmdEndRenderPass(self.commandBuffer)
 
@@ -377,11 +377,21 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     }
     
     
-    func executeCommands(_ commands: ArraySlice<FrameGraphCommand>, resourceCommands: inout [VulkanFrameResourceCommand]) {
-        for (i, command) in zip(commands.indices, commands) {
-            self.executeResourceCommands(resourceCommands: &resourceCommands, order: .before, commandIndex: i)
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [VulkanFrameResourceCommand], passRenderTarget: RenderTargetDescriptor) {
+        try! self.beginPass(pass)
+        defer { _ = self.endPass(pass) }
+        
+        var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
+       
+        // FIXME: need to insert this logic:
+//        if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
+//            encoder.setDepthStencilState(stateCaches.defaultDepthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
+//        }
+        
+        for (i, command) in zip(pass.commandRange!, pass.commands) {
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i)
             self.executeCommand(command)
-            self.executeResourceCommands(resourceCommands: &resourceCommands, order: .after, commandIndex: i)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i)
         }
     }
     
@@ -405,30 +415,26 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         case .setVertexBuffer(let args):
             self.boundVertexBuffers[Int(args.pointee.index)] = args.pointee.buffer
             guard let handle = args.pointee.buffer else { return }
-            let buffer = self.resourceMap[buffer: handle]
-            self.commandBufferResources.buffers.append(buffer)
+            let buffer = self.resourceMap[handle]
+            self.commandBufferResources.buffers.append(buffer.buffer)
 
-            var vkBuffer = buffer.vkBuffer as VkBuffer?
-            var offset = VkDeviceSize(args.pointee.offset)
+            var vkBuffer = buffer.buffer.vkBuffer as VkBuffer?
+            var offset = VkDeviceSize(args.pointee.offset) + VkDeviceSize(buffer.offset)
             vkCmdBindVertexBuffers(self.commandBuffer, args.pointee.index, 1, &vkBuffer, &offset)
 
         case .setVertexBufferOffset(let offset, let index):
             let handle = self.boundVertexBuffers[Int(index)]!
-            let buffer = self.resourceMap[handle]!
+            let buffer = self.resourceMap[handle]
 
-            var vkBuffer = buffer.vkBuffer as VkBuffer?
-            var offset = VkDeviceSize(offset)
+            var vkBuffer = buffer.buffer.vkBuffer as VkBuffer?
+            var offset = VkDeviceSize(offset) + VkDeviceSize(buffer.offset)
             vkCmdBindVertexBuffers(self.commandBuffer, index, 1, &vkBuffer, &offset)
             
         case .setArgumentBuffer(let args):
             let bindingPath = args.pointee.bindingPath
             
             let argumentBuffer = args.pointee.argumentBuffer
-            let vkArgumentBuffer = resourceMap.allocateArgumentBufferIfNeeded(argumentBuffer,
-                                                                                    bindingPath: bindingPath,
-                                                                                    commandBufferResources: self.commandBufferResources, 
-                                                                                    pipelineReflection: self.pipelineReflection, 
-                                                                                    stateCaches: stateCaches)
+            let vkArgumentBuffer = resourceMap[argumentBuffer]
 
             self.commandBufferResources.argumentBuffers.append(vkArgumentBuffer)
 
@@ -463,7 +469,8 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         case .drawIndexedPrimitives(let args):
             self.pipelineState.primitiveType = args.pointee.primitiveType
             
-            vkCmdBindIndexBuffer(self.commandBuffer, resourceMap[buffer: args.pointee.indexBuffer].vkBuffer, VkDeviceSize(args.pointee.indexBufferOffset), VkIndexType(args.pointee.indexType))
+            let buffer = resourceMap[args.pointee.indexBuffer]
+            vkCmdBindIndexBuffer(self.commandBuffer, buffer.buffer.vkBuffer, VkDeviceSize(args.pointee.indexBufferOffset) + VkDeviceSize(buffer.offset), VkIndexType(args.pointee.indexType))
             
             self.prepareToDraw()
             

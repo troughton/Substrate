@@ -13,21 +13,23 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
  
     struct ResourceReference<R> {
         let resource : R
+        var waitSemaphore : VulkanContextWaitSemaphore
         var framesUnused : Int = 0
         
-        init(resource: R) {
+        init(resource: R, waitSemaphore: VulkanContextWaitSemaphore) {
             self.resource = resource
+            self.waitSemaphore = waitSemaphore
         }
     }
     
     let device : VulkanDevice
     let allocator : VmaAllocator
     
-    private var buffers : [[ResourceReference<VulkanBuffer>]]
-    private var images : [[ResourceReference<VulkanImage>]]
+    private var buffers : [[ResourceReference<VkBufferReference>]]
+    private var images : [[ResourceReference<VkImageReference>]]
     
-    private var buffersUsedThisFrame = [ResourceReference<VulkanBuffer>]()
-    private var imagesUsedThisFrame = [ResourceReference<VulkanImage>]()
+    private var buffersUsedThisFrame = [ResourceReference<VkBufferReference>]()
+    private var imagesUsedThisFrame = [ResourceReference<VkImageReference>]()
     
     let numFrames : Int
     let memoryUsage : VmaMemoryUsage
@@ -38,43 +40,45 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
         self.device = device
         self.allocator = allocator
         self.memoryUsage = memoryUsage
-        self.buffers = [[ResourceReference<VulkanBuffer>]](repeating: [ResourceReference<VulkanBuffer>](), count: numFrames)
-        self.images = [[ResourceReference<VulkanImage>]](repeating: [ResourceReference<VulkanImage>](), count: numFrames)
+        self.buffers = [[ResourceReference<VkBufferReference>]](repeating: [], count: numFrames)
+        self.images = [[ResourceReference<VkImageReference>]](repeating: [], count: numFrames)
     }
   
     
-    private func imageFitting(descriptor: VulkanImageDescriptor) -> VulkanImage? {
+    private func imageFitting(descriptor: VulkanImageDescriptor) -> (VkImageReference, VulkanContextWaitSemaphore)? {
         
         for (i, imageRef) in self.images[currentIndex].enumerated() {
-            if imageRef.resource.matches(descriptor: descriptor) {
-                return self.images[currentIndex].remove(at: i, preservingOrder: false).resource
+            if imageRef.resource.image.matches(descriptor: descriptor) {
+                let resourceRef = self.images[currentIndex].remove(at: i, preservingOrder: false)
+                return (resourceRef.resource, resourceRef.waitSemaphore)
             }
         }
         
         return nil
     }
     
-    private func bufferFitting(descriptor: VulkanBufferDescriptor) -> VulkanBuffer? {
+    private func bufferFitting(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, VulkanContextWaitSemaphore)? {
         var bestIndex = -1
         var bestLength = UInt64.max
         
         for (i, bufferRef) in self.buffers[currentIndex].enumerated() {
-            if bufferRef.resource.fits(descriptor: descriptor), bufferRef.resource.descriptor.size < bestLength {
+            if bufferRef.resource.buffer.fits(descriptor: descriptor), bufferRef.resource.buffer.descriptor.size < bestLength {
                 bestIndex = i
-                bestLength = bufferRef.resource.descriptor.size
+                bestLength = bufferRef.resource.buffer.descriptor.size
             }
         }
         
         if bestIndex != -1 {
-            return self.buffers[currentIndex].remove(at: bestIndex, preservingOrder: false).resource
+            let resourceRef = self.buffers[currentIndex].remove(at: bestIndex, preservingOrder: false)
+            return (resourceRef.resource, resourceRef.waitSemaphore)
         } else {
             return nil
         }
     }
 
-    func collectImage(descriptor: VulkanImageDescriptor) -> VulkanImage {
+    func collectImage(descriptor: VulkanImageDescriptor) -> (VkImageReference, [VulkanEventHandle], VulkanContextWaitSemaphore) {
         if let image = self.imageFitting(descriptor: descriptor) {
-            return image
+            return (image.0, [], image.1)
         } else {
             var allocInfo = VmaAllocationCreateInfo()
             allocInfo.usage = self.memoryUsage
@@ -86,18 +90,23 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
                 vmaCreateImage(self.allocator, &info, &allocInfo, &image, &allocation, nil)
             }
             
-            return VulkanImage(device: self.device, image: image!, allocator: self.allocator, allocation: allocation!, descriptor: descriptor)
+            let vulkanImage = VulkanImage(device: self.device, image: image!, allocator: self.allocator, allocation: allocation!, descriptor: descriptor)
+            return (VkImageReference(image: Unmanaged.passRetained(vulkanImage)),
+                    [], VulkanContextWaitSemaphore())
         }
     }
     
-    func depositImage(_ image: VulkanImage) {
-        //We can't just put the resource back into the array for the current frame, since it's not safe to use it for another buffers.count frames.
-        self.imagesUsedThisFrame.append(ResourceReference(resource: image))
+    func depositImage(_ image: VkImageReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore) {
+        assert(events.isEmpty)
+        // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.
+        // This slightly increases memory usage but greatly simplifies resource tracking, and besides, heaps should be used instead
+        // for cases where memory usage is important.
+        self.imagesUsedThisFrame.append(ResourceReference(resource: image, waitSemaphore: waitSemaphore))
     }
     
-    func collectBuffer(descriptor: VulkanBufferDescriptor) -> VulkanBuffer {
+    func collectBuffer(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, [VulkanEventHandle], VulkanContextWaitSemaphore) {
         if let buffer = self.bufferFitting(descriptor: descriptor) {
-            return buffer
+            return (buffer.0, [], buffer.1)
         } else {
             var allocInfo = VmaAllocationCreateInfo()
             allocInfo.usage = self.memoryUsage
@@ -110,13 +119,18 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
                 vmaCreateBuffer(self.allocator, &info, &allocInfo, &buffer, &allocation, &allocationInfo)
             }
             
-            return VulkanBuffer(device: self.device, buffer: buffer!, allocator: self.allocator, allocation: allocation!, allocationInfo: allocationInfo, descriptor: descriptor)
+            let vulkanBuffer = VulkanBuffer(device: self.device, buffer: buffer!, allocator: self.allocator, allocation: allocation!, allocationInfo: allocationInfo, descriptor: descriptor)
+            return (VkBufferReference(buffer: Unmanaged.passRetained(vulkanBuffer), offset: 0),
+                    [], VulkanContextWaitSemaphore())
         }
     }
     
-    func depositBuffer(_ buffer: VulkanBuffer) {
-        //We can't just put the resource back into the array for the current frame, since it's not safe to use it for another buffers.count frames.
-        self.buffersUsedThisFrame.append(ResourceReference(resource: buffer))
+    func depositBuffer(_ buffer: VkBufferReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore) {
+        assert(events.isEmpty)
+        // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.
+        // This slightly increases memory usage but greatly simplifies resource tracking, and besides, heaps should be used instead
+        // for cases where memory usage is important.
+        self.buffersUsedThisFrame.append(ResourceReference(resource: buffer, waitSemaphore: waitSemaphore))
     }
     
     func cycleFrames() {
@@ -126,7 +140,8 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
                 self.buffers[self.currentIndex][i].framesUnused += 1
                 
                 if self.buffers[self.currentIndex][i].framesUnused > 2 {
-                    self.buffers[self.currentIndex].remove(at: i, preservingOrder: false)
+                    let buffer = self.buffers[self.currentIndex].remove(at: i, preservingOrder: false)
+                    buffer.resource._buffer.release()
                 } else {
                     i += 1
                 }
@@ -142,7 +157,8 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
                 self.images[self.currentIndex][i].framesUnused += 1
                 
                 if self.images[self.currentIndex][i].framesUnused > 2 {
-                    self.images[self.currentIndex].remove(at: i, preservingOrder: false)
+                    let image = self.images[self.currentIndex].remove(at: i, preservingOrder: false)
+                    image.resource._image.release()
                 } else {
                     i += 1
                 }
@@ -157,3 +173,4 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
 }
 
 #endif // canImport(Vulkan)
+

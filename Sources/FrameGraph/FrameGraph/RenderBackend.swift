@@ -90,7 +90,7 @@ public struct RenderBackend {
         return _backend.api
     }
     
-    public static func initialise(api: RenderAPI, libraryPath: String? = nil) {
+    public static func initialise(api: RenderAPI, applicationName: String, libraryPath: String? = nil) {
         switch api {
 #if canImport(Metal)
         case .metal:
@@ -98,7 +98,8 @@ public struct RenderBackend {
 #endif
 #if canImport(Vulkan)
         case .vulkan:
-            _backend = VulkanBackend()
+            let instance = VulkanInstance(applicationName: applicationName, applicationVersion: VulkanVersion(major: 0, minor: 0, patch: 1), engineName: "SwiftFrameGraph", engineVersion: VulkanVersion(major: 3, minor: 0, patch: 1))
+            fatalError()
 #endif
         default:
             fatalError("Backend unavailable for api \(api)")

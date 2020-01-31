@@ -25,6 +25,15 @@ public struct BitSet : OptionSet, Hashable {
     }
 }
 
+struct ShaderResource {
+    var name : String
+    var type : spvc_resource_type
+    var bindingPath : ResourceBindingPath
+    var bindingRange : Range<UInt32>
+    var access : ResourceAccessType
+    var accessedStages : VkShaderStageFlagBits
+}
+
 struct FunctionSpecialisation {
     var index : Int = 0
     var name : String = ""
@@ -33,6 +42,12 @@ struct FunctionSpecialisation {
 struct DescriptorSetLayoutKey : Hashable {
     var set : UInt32
     var dynamicBuffers : BitSet
+}
+
+extension String : CustomHashable {
+    public var customHashValue: Int {
+        return self.hashValue
+    }
 }
 
 final class VulkanPipelineReflection : PipelineReflection {
@@ -45,6 +60,8 @@ final class VulkanPipelineReflection : PipelineReflection {
     
     private var layouts = [DescriptorSetLayoutKey : VulkanDescriptorSetLayout]()
     
+    let bindingPathCache : HashMap<String, ResourceBindingPath>
+    
     let reflectionCacheCount : Int
     let reflectionCacheKeys : UnsafePointer<ResourceBindingPath>
     let reflectionCacheValues : UnsafePointer<ArgumentReflection>
@@ -56,26 +73,72 @@ final class VulkanPipelineReflection : PipelineReflection {
     
     public init(functions: [(String, spvc_compiler, SpvExecutionModel_)], device: VulkanDevice) {
         self.device = device
+        
+        var bindingPathCache = HashMap<String, ResourceBindingPath>()
         var resources = [ResourceBindingPath : ShaderResource]()
         var functionSpecialisations = [FunctionSpecialisation]()
         
         var activeStagesForSets = [UInt32 : VkShaderStageFlagBits]()
         var lastSet : UInt32? = nil
         
-        for (functionName, compiler, stage) in functions {
-            spvc_compiler_set_entry_point(compiler, functionName, stage)
+        for (functionName, compiler, executionModel) in functions {
+            spvc_compiler_set_entry_point(compiler, functionName, executionModel)
+            let stage = VkShaderStageFlagBits(executionModel)!
             
-            VkReflectionContextEnumerateResources(reflectionContext) { (type, bindingIndex, bindingRange, name, access)  in
-                let bindingPath = ResourceBindingPath(set: bindingIndex.set, binding: bindingIndex.binding, arrayIndex: 0)
+            var spvcResources : spvc_resources! = nil
+            spvc_compiler_create_shader_resources(compiler, &spvcResources)
+            
+            let types : [spvc_resource_type] = [.uniformBuffer, .storageBuffer, .sampledImage, .storageImage, .pushConstantBuffer]
+            
+            for type in types {
+                var resourceList : UnsafePointer<spvc_reflected_resource>! = nil
+                var resourceCount = 0
+                spvc_resources_get_resource_list_for_type(spvcResources, type, &resourceList, &resourceCount)
+                
+                for resource in UnsafeBufferPointer(start: resourceList, count: resourceCount) {
 
-                resources[bindingPath, default:
-                    ShaderResource(type: type, bindingPath: bindingPath, name: String(cString: name!), access: access, bindingRange: bindingRange, accessedStages: stage)
+                    let set = spvc_compiler_get_decoration(compiler, resource.id, SpvDecorationDescriptorSet)
+                    let binding = spvc_compiler_get_decoration(compiler, resource.id, SpvDecorationBinding)
+                    let name = spvc_compiler_get_name(compiler, resource.id)
+                    
+                    
+                    var bufferRanges : UnsafePointer<spvc_buffer_range>! = nil
+                    var bufferRangeCount = 0
+                    spvc_compiler_get_active_buffer_ranges(compiler, resource.id, &bufferRanges, &bufferRangeCount)
+                    
+                    var bufferRangesMin : Int = .max
+                    var bufferRangesMax : Int = 0
+                    
+                    for bufferRange in UnsafeBufferPointer(start: bufferRanges, count: bufferRangeCount) {
+                        bufferRangesMin = min(bufferRange.offset, bufferRangesMin)
+                        bufferRangesMax = max(bufferRange.offset + bufferRange.range, bufferRangesMax)
+                    }
+                    if bufferRangesMax < bufferRangesMin { bufferRangesMax = bufferRangesMin }
+                    
+                    let isReadOnly = spvc_compiler_get_member_decoration(compiler, resource.base_type_id, 0, SpvDecorationNonWritable) != 0
+                    let isWriteOnly = spvc_compiler_get_member_decoration(compiler, resource.base_type_id, 0, SpvDecorationNonReadable) != 0
+                    let access : ResourceAccessType = isReadOnly ? .read : (isWriteOnly ? .write : .readWrite)
+                    
+                    let bindingPath = ResourceBindingPath(set: set, binding: binding, arrayIndex: 0)
+
+                    let resourceName = String(cString: name!)
+                    bindingPathCache[resourceName] = bindingPath
+                    
+                    resources[bindingPath, default:
+                        ShaderResource(name: resourceName,
+                                       type: type,
+                                       bindingPath: bindingPath,
+                                       bindingRange: UInt32(bufferRangesMin)..<UInt32(bufferRangesMax),
+                                       access: access,
+                                       accessedStages: stage)
                     ].accessedStages.formUnion(stage)
-                activeStagesForSets[bindingPath.set, default: []].formUnion(stage)
-
-                if bindingPath.set != BindingIndexSetPushConstant {
-                    lastSet = max(lastSet ?? 0, bindingPath.set)
+                    activeStagesForSets[bindingPath.set, default: []].formUnion(stage)
+                    
+                    if type != .pushConstantBuffer {
+                        lastSet = max(lastSet ?? 0, bindingPath.set)
+                    }
                 }
+               
             }
             
             var specialisationConstantCount = 0
@@ -106,6 +169,7 @@ final class VulkanPipelineReflection : PipelineReflection {
         
         reflectionCacheKeys[sortedReflectionCache.count] = ResourceBindingPath(value: .max) // Insert a sentinel to speed up the linear search; https://schani.wordpress.com/2010/04/30/linear-vs-binary-search/
         
+        self.bindingPathCache = bindingPathCache
         self.reflectionCacheCount = sortedReflectionCache.count
         self.reflectionCacheKeys = UnsafePointer(reflectionCacheKeys)
         self.reflectionCacheValues = UnsafePointer(reflectionCacheValues)
@@ -231,13 +295,21 @@ final class VulkanPipelineReflection : PipelineReflection {
         modifiedPath.set = newArgumentBufferPath.set
         return modifiedPath
     }
+    
+    func remapArgumentBufferPathForActiveStages(_ path: ResourceBindingPath) -> ResourceBindingPath {
+        fatalError()
+    }
+
+    func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer? {
+        fatalError("This should return the descriptor set layout and possibly some other information.")
+    }
 }
 
 extension ArgumentReflection {
     init?(_ resource: ShaderResource) {
         let resourceType : ResourceType
         switch resource.type {
-        case .storageBuffer, .storageTexelBuffer, .uniformBuffer, .uniformTexelBuffer, .pushConstantBuffer:
+        case .storageBuffer, .uniformBuffer, .pushConstantBuffer:
             resourceType = .buffer
         case .sampler:
             resourceType = .sampler
@@ -253,11 +325,11 @@ extension ArgumentReflection {
             usageType = .constantBuffer
         case (_, .subpassInput):
             usageType = .inputAttachment
-        case (.readOnly, _):
+        case (.read, _):
             usageType = .read
         case (.readWrite, _):
             usageType = .readWrite
-        case (.writeOnly, _):
+        case (.write, _):
             usageType = .write
         case (_, .sampler):
             usageType = .sampler
@@ -486,7 +558,7 @@ public class VulkanShaderLibrary {
 
         var pushConstantRanges = [VkPushConstantRange]()
         for resource in reflection.resources.values where resource.bindingPath.isPushConstant {
-            pushConstantRanges.append(VkPushConstantRange(stageFlags: VkShaderStageFlags(resource.accessedStages), offset: resource.bindingRange.offset, size: resource.bindingRange.size))
+            pushConstantRanges.append(VkPushConstantRange(stageFlags: VkShaderStageFlags(resource.accessedStages), offset: resource.bindingRange.lowerBound, size: UInt32(resource.bindingRange.count)))
         }
         
         var pipelineLayout : VkPipelineLayout? = nil

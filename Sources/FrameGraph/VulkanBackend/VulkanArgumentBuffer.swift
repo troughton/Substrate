@@ -93,11 +93,11 @@ extension VulkanArgumentBuffer {
                 var bufferInfo = VkDescriptorBufferInfo()
                 bufferInfo.buffer = vkBuffer.buffer.vkBuffer
                 bufferInfo.offset = VkDeviceSize(offset) + VkDeviceSize(vkBuffer.offset)
-                if resource.bindingRange.size == 0 {
+                if resource.bindingRange.count == 0 {
                     // FIXME: should be constrained to maxUniformBufferRange or maxStorageBufferRange
                     bufferInfo.range = VK_WHOLE_SIZE
                 } else {
-                    bufferInfo.range = VkDeviceSize(resource.bindingRange.size)
+                    bufferInfo.range = VkDeviceSize(resource.bindingRange.lowerBound)
                 }
 
                 descriptorWrite.pBufferInfo = bufferInfoSentinel

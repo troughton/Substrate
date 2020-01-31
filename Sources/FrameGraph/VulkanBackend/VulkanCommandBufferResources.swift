@@ -56,7 +56,7 @@ public final class CommandBufferResources {
 
         if !self.fences.isEmpty {
             self.fences.withUnsafeBufferPointer { fences in
-                vkResetFences(self.device.vkDevice, UInt32(fences.count), fences.baseAddress).check()
+                _ = vkResetFences(self.device.vkDevice, UInt32(fences.count), fences.baseAddress).check()
             }
         }
 

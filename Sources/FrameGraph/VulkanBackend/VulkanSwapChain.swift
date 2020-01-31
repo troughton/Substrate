@@ -168,7 +168,6 @@ public class VulkanSwapChain : SwapChain {
     
     private func cleanupSwapChain() {
         vkDeviceWaitIdle(self.device.vkDevice)
-        
         vkDestroySwapchainKHR(self.device.vkDevice, swapChain, nil)
     }
 
@@ -199,8 +198,8 @@ public class VulkanSwapChain : SwapChain {
         
         let image = self.images[Int(imageIndex)]
         self.currentImageIndex = Int(imageIndex)
-        image.waitSemaphore = ResourceSemaphore(vkSemaphore: semaphore, stages: VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT)
-        return image
+        
+        fatalError("Need to return the VkSemaphore to wait on for this image. As of Vulkan 1.2, we still need to use binary semaphores for images, whereas everything else (including VulkanContextWaitSemaphores) should use counting semaphores.")
     }
     
     func submit() {
@@ -213,9 +212,9 @@ public class VulkanSwapChain : SwapChain {
         var presentInfo = VkPresentInfoKHR();
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
-        var semaphore = image.waitSemaphore?.vkSemaphore
+        var semaphore : VkSemaphore? = nil
+        fatalError("Need to provide a semaphore to wait on (if appropriate).")
         presentInfo.waitSemaphoreCount = semaphore == nil ? 0 : 1
-        defer { image.waitSemaphore = nil }
         
         withUnsafePointer(to: &semaphore) { semaphorePtr in
             presentInfo.pWaitSemaphores = semaphorePtr

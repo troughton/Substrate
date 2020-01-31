@@ -16,9 +16,7 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
     
     let backend : VulkanBackend
     let resourceRegistry : VulkanTransientResourceRegistry
-    
-//    let shaderLibrary: VulkanShaderLibrary
-//    let stateCaches: VulkanStateCaches
+    let commandPool : VulkanCommandPool
     
     var queueCommandBufferIndex : UInt64 = 0
     let syncSemaphore : VkSemaphore
@@ -26,6 +24,7 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
     public let transientRegistryIndex: Int
     var frameGraphQueue : Queue
 
+    private let commandBufferResourcesQueue = DispatchQueue(label: "Command Buffer Resources management.")
     private var inactiveCommandBufferResources = [Unmanaged<CommandBufferResources>]()
     
     var preFrameResourceCommands = [VulkanPreFrameResourceCommand]()
@@ -34,9 +33,12 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
     init(backend: VulkanBackend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
         self.frameGraphQueue = Queue()
+        self.commandPool = VulkanCommandPool(device: backend.device, inflightFrameCount: inflightFrameCount)
         self.transientRegistryIndex = transientRegistryIndex
-        resourceMap = VulkanTransientResourceRegistry(device: backend.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex, persistentRegistry: backend.resourceRegistry)
+        self.resourceRegistry = VulkanTransientResourceRegistry(device: backend.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex, persistentRegistry: backend.resourceRegistry)
         self.accessSemaphore = Semaphore(value: Int32(inflightFrameCount))
+        
+        fatalError("Need to create a counting semaphore and assign it to syncSemaphore. All VulkanContextWaitEvents for resources associated with this context should wait on that semaphore; see commandEncoderWaitEventValues in MetalFrameGraphBackend to understand how this should work.")
     }
 
     // Thread-safe.
@@ -53,7 +55,7 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
     }
     
     var resourceMap : VulkanFrameResourceMap {
-        return VulkanFrameResourceMap(persistentRegistry: self.backend.resourceRegistry, transientRegistry: resourceMap)
+        return VulkanFrameResourceMap(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
 
     // We need to make sure the resources are released on the main Vulkan thread.
@@ -68,14 +70,41 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
         }
     }
     
-    public func executeFrameGraph(passes: [RenderPassRecord], resourceUsages: ResourceUsages, commands: [FrameGraphCommand], completion: @escaping () -> Void) {
-        defer { resourceMap.cycleFrames() }
+    static func passCommandBufferIndices(passes: [RenderPassRecord]) -> [Int] {
+        var indices = (0..<passes.count).map { _ in 0 }
+        
+        var currentIndex = 0
+        
+        var previousPassIsExternal = false
+        var isWindowTextureEncoder = false
+        
+        for (i, passRecord) in passes.enumerated() {
+            if previousPassIsExternal != (passRecord.pass.passType == .external) {
+                // Wait for the previous command buffer to complete before executing.
+                if i > 0 { currentIndex += 1 }
+                previousPassIsExternal = passRecord.pass.passType == .external
+            } else
+                if passRecord.usesWindowTexture != isWindowTextureEncoder {
+                    if i > 0 { currentIndex += 1 }
+                    isWindowTextureEncoder = passRecord.usesWindowTexture
+            }
+            indices[i] = currentIndex
+        }
+        
+        return indices
+    }
+    
+    public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {
+        defer { self.resourceRegistry.cycleFrames() }
         
         self.clearInactiveCommandBufferResources()
-
-        let renderTargetDescriptors = self.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages)
+        self.resourceRegistry.prepareFrame()
         
-        var resourceCommands = self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors)
+        let renderTargetDescriptors = self.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages)
+        let passCommandBufferIndices = VulkanFrameGraphContext.passCommandBufferIndices(passes: passes)
+        
+        let firstEncoderSignalValue = self.queueCommandBufferIndex + 1
+        self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors, lastCommandBufferIndex: firstEncoderSignalValue + UInt64(passCommandBufferIndices.count))
         
         let encoderManager = EncoderManager(frameGraph: self)
         
@@ -83,25 +112,16 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
             switch passRecord.pass.passType {
             case .blit:
                 let commandEncoder = encoderManager.blitCommandEncoder()
-                
-                commandEncoder.executeCommands(commands[passRecord.commandRange!], resourceCommands: &resourceCommands)
+                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands)
                 
             case .draw:
                 let commandEncoder = encoderManager.renderCommandEncoder(descriptor: renderTargetDescriptors[i]!)
                 
-                // Special case: run any resource commands needed _before_ we start the render pass.
-                commandEncoder.executeResourceCommands(resourceCommands: &resourceCommands, order: .before, commandIndex: passRecord.commandRange!.lowerBound)
-                
-                commandEncoder.beginPass(passRecord)
-                
-                commandEncoder.executeCommands(commands[passRecord.commandRange!], resourceCommands: &resourceCommands)
-                
-                let _ = commandEncoder.endPass(passRecord)
+                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, passRenderTarget: renderTargetDescriptors[i]!.descriptor)
                 
             case .compute:
                 let commandEncoder = encoderManager.computeCommandEncoder()
-                
-                commandEncoder.executeCommands(commands[passRecord.commandRange!], resourceCommands: &resourceCommands)
+                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands)
                 
             case .cpu, .external:
                 break
@@ -111,14 +131,14 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
         // Trigger callback once GPU is finished processing frame.
         encoderManager.endEncoding(completion: completion)
         
-        for swapChain in resourceMap.windowReferences.values {
+        fatalError("Need to wait on the counting semaphore associated with this queue - see Metal encodeSignalEvent and encodeWaitForEvent in MetalFrameGraphBackend.swift.")
+        
+        for swapChain in self.resourceRegistry.frameSwapChains {
             swapChain.submit()
         }
         
         self.preFrameResourceCommands.removeAll(keepingCapacity: true)
         self.resourceCommands.removeAll(keepingCapacity: true)
-        
-        resourceMap.frameGraphHasResourceAccess = false
     }
     
     func generateRenderTargetDescriptors(passes: [RenderPassRecord], resourceUsages: ResourceUsages) -> [VulkanRenderTargetDescriptor?] {
@@ -145,10 +165,7 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
         return descriptors
     }
     
-    func generateResourceCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, renderTargetDescriptors: [VulkanRenderTargetDescriptor?]) {
-        
-        var eventId = 0
-        var semaphoreId = 0
+    func generateResourceCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, renderTargetDescriptors: [VulkanRenderTargetDescriptor?], lastCommandBufferIndex: UInt64) {
         
         resourceLoop: for resource in resourceUsages.allResources {
             let usages = resource.usages
@@ -165,6 +182,7 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
                 previousUsage = usage
             } while !previousUsage.renderPassRecord.isActive || (previousUsage.stages == .cpuBeforeRender && previousUsage.type != .unusedArgumentBuffer)
             
+            let materialisePass = previousUsage.renderPassRecord.passIndex
             let materialiseIndex = previousUsage.commandRange.lowerBound
             
             while previousUsage.type == .unusedArgumentBuffer || previousUsage.type == .unusedRenderTarget {
@@ -288,7 +306,7 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
                             resourceCommands.append(VulkanFrameResourceCommand(command: .pipelineBarrier(memoryBarrierInfo), index: dependentCommandIndex, order: .before))
                             
                             renderTargetDescriptor.addDependency(subpassDependency)
-                        } else if   sourceLayout != destinationLayout, // guaranteed to not be a buffer since buffers have UNDEFINED image layouts above.
+                        } else if sourceLayout != destinationLayout, // guaranteed to not be a buffer since buffers have UNDEFINED image layouts above.
                                     !passUsage.type.isRenderTarget, !dependentUsage.type.isRenderTarget {
                             // We need to insert a pipeline barrier to handle a layout transition.
                             // We can therefore avoid a subpass dependency in most cases.
@@ -323,8 +341,10 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
                         }
                         
                     } else {
+
+                        let event = VulkanEventHandle(label: "Memory dependency for \(resource)", queue: self.frameGraphQueue, commandBufferIndex: lastCommandBufferIndex)
                         
-                        if self.device.physicalDevice.queueFamilyIndex(renderPassType: passUsage.renderPassRecord.pass.passType) != self.device.physicalDevice.queueFamilyIndex(renderPassType: dependentUsage.renderPassRecord.pass.passType) {
+                        if self.backend.device.physicalDevice.queueFamilyIndex(renderPassType: passUsage.renderPassRecord.pass.passType) != self.backend.device.physicalDevice.queueFamilyIndex(renderPassType: dependentUsage.renderPassRecord.pass.passType) {
                             // Assume that the resource has a concurrent sharing mode.
                             // If the sharing mode is concurrent, then we only need to insert a barrier for an image layout transition.
                             // Otherwise, we would need to do a queue ownership transfer.
@@ -337,16 +357,14 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
                                 resourceCommands.append(VulkanFrameResourceCommand(command: .pipelineBarrier(memoryBarrierInfo), index: dependentCommandIndex, order: .before))
                             }
                             // Also use a semaphore, since they're on different queues
-                            resourceCommands.append(VulkanFrameResourceCommand(command: .signalEvent(id: semaphoreId, afterStages: sourceMask), index: passCommandIndex, order: .after))
-                            resourceCommands.append(VulkanFrameResourceCommand(command: .waitForEvent(id: semaphoreId, beforeStages: destinationMask), index: dependentCommandIndex, order: .before))
-                            semaphoreId += 1
+                            resourceCommands.append(VulkanFrameResourceCommand(command: .signalEvent(event, afterStages: sourceMask), index: passCommandIndex, order: .after))
+                            resourceCommands.append(VulkanFrameResourceCommand(command: .waitForEvent(event, info: memoryBarrierInfo), index: dependentCommandIndex, order: .before))
                         } else if previousUsage.isWrite || usage.isWrite {
                             // If either of these take place within a render pass, they need to be inserted as pipeline barriers instead and added
                             // as subpass dependencise if relevant. 
 
-                            resourceCommands.append(VulkanFrameResourceCommand(command: .signalEvent(id: eventId, afterStages: sourceMask), index: passCommandIndex, order: .after))
-                            resourceCommands.append(VulkanFrameResourceCommand(command: .waitForEvent(id: eventId, info: memoryBarrierInfo), index: dependentCommandIndex, order: .before))
-                            eventId += 1
+                            resourceCommands.append(VulkanFrameResourceCommand(command: .signalEvent(event, afterStages: sourceMask), index: passCommandIndex, order: .after))
+                            resourceCommands.append(VulkanFrameResourceCommand(command: .waitForEvent(event, info: memoryBarrierInfo), index: dependentCommandIndex, order: .before))
                         } else if case .texture = barrier, sourceLayout != destinationLayout { // We only need to insert a barrier to do a layout transition.
                             // TODO: We could minimise the number of layout transitions with a lookahead approach.
                             resourceCommands.append(VulkanFrameResourceCommand(command: .pipelineBarrier(memoryBarrierInfo), index: dependentCommandIndex, order: .before))
@@ -415,18 +433,19 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
                 }
                 
                 preFrameResourceCommands.append(
-                    VulkanPreFrameResourceCommand(type:
-                        .materialiseBuffer(buffer, usage: bufferUsage, sharingMode: VulkanSharingMode(queueFamilies: queueFamilies, indices: self.device.physicalDevice.queueFamilyIndices)),
+                    VulkanPreFrameResourceCommand(command:
+                        .materialiseBuffer(buffer, usage: bufferUsage),
+                                                  passIndex: firstUsage.renderPassRecord.passIndex,
                                     index: materialiseIndex, order: .before)
                 )
                 
                 if !historyBufferCreationFrame && !buffer.flags.contains(.persistent) {
-                    preFrameResourceCommands.append(VulkanFrameResourceCommand(command: .disposeBuffer(buffer), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                    preFrameResourceCommands.append(VulkanPreFrameResourceCommand(command: .disposeResource(Resource(buffer)), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.upperBound - 1, order: .after))
                 } else {
                     if isModified { // FIXME: what if we're reading from something that the next frame will modify?
                         let sourceMask = lastUsage.type.shaderStageMask(isDepthOrStencil: false, stages: lastUsage.stages)
                     
-                        preFrameResourceCommands.append(VulkanPreFrameResourceCommand(command: .storeResource(Resource(buffer), finalLayout: nil, afterStages: sourceMask), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                        fatalError("Do we need a pipeline barrier here? We should at least make sure we set the semaphore to wait on.")
                     }
                 }
                 
@@ -496,7 +515,6 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
                 }
                 
                 do {
-
                     let textureAlreadyExists = texture.flags.contains(.persistent) || historyBufferUseFrame
 
                     let destinationAccessMask = firstUsage.type.accessMask(isDepthOrStencil: isDepthStencil)
@@ -513,33 +531,30 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
                     imageBarrierInfo.newLayout = firstUsage.type.isRenderTarget ? imageBarrierInfo.oldLayout : destinationLayout
                     imageBarrierInfo.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
                     
-                    let commandType = ResourceCommandType.materialiseTexture(texture, usage: textureUsage, sharingMode: VulkanSharingMode(queueFamilies: queueFamilies, indices: self.device.physicalDevice.queueFamilyIndices), destinationMask: destinationMask, barrier: imageBarrierInfo)
+                    let commandType = VulkanPreFrameResourceCommands.materialiseTexture(texture, usage: textureUsage, destinationMask: destinationMask, barrier: imageBarrierInfo)
                     
 
-                    var materialiseIndex = materialiseIndex
                     if firstUsage.renderPassRecord.pass.passType == .draw {
                         // Materialise the texture (performing layout transitions) before we begin the Vulkan render pass.
                         let firstPass = renderTargetDescriptors[firstUsage.renderPassRecord.passIndex]!.renderPasses.first!
-                        materialiseIndex = firstPass.commandRange!.lowerBound
 
                         if firstUsage.type.isRenderTarget {
                             // We're not doing a layout transition here, so set the initial layout for the render pass
                             // to the texture's current, actual layout.
-                            if let vulkanTexture = resourceMap[texture] {
-                                renderTargetDescriptors[firstUsage.renderPassRecord.passIndex]!.initialLayouts[texture] = vulkanTexture.layout
-                            }
+                            let vulkanTexture = resourceMap[texture]
+                            renderTargetDescriptors[firstUsage.renderPassRecord.passIndex]!.initialLayouts[texture] = vulkanTexture.layout
                         }
                     }
                     
-                    resourceCommands.append(
-                        VulkanFrameResourceCommand(command: commandType,
-                                        index: materialiseIndex, order: .before))
+                    preFrameResourceCommands.append(
+                        VulkanPreFrameResourceCommand(command: commandType,
+                                                      passIndex: materialisePass, index: materialiseIndex, order: .before))
                 }
                 
                 let needsStore = historyBufferCreationFrame || texture.flags.contains(.persistent)
                 if !needsStore || texture.flags.contains(.windowHandle) {
                     // We need to dispose window handle textures just to make sure their texture references are removed from the resource registry.
-                    resourceCommands.append(VulkanFrameResourceCommand(command: .disposeTexture(texture), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                    preFrameResourceCommands.append(VulkanPreFrameResourceCommand(command: .disposeResource(Resource(texture)), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.upperBound - 1, order: .after))
                 } 
                 if needsStore && isModified {
                     let sourceMask = lastUsage.type.shaderStageMask(isDepthOrStencil: isDepthStencil, stages: lastUsage.stages)
@@ -551,7 +566,8 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
                         finalLayout = VK_IMAGE_LAYOUT_GENERAL
                     }
 
-                    resourceCommands.append(VulkanFrameResourceCommand(command: .storeResource(Resource(texture), finalLayout: finalLayout, afterStages: sourceMask), index: lastUsage.commandRange.upperBound - 1, order: .after))
+                   
+                    fatalError("Do we need a pipeline barrier here? We should at least make sure we set the semaphore to wait on, and maybe a pipeline barrier is necessary as well for non render-target textures.")
                 }
                 
             }
@@ -575,9 +591,9 @@ struct MemoryBarrierInfo {
 }
 
 enum VulkanPreFrameResourceCommands {
-    case materialiseBuffer(Buffer, usage: VkBufferUsageFlagBits, sharingMode: VulkanSharingMode)
-    case materialiseTexture(Texture, usage: VkImageUsageFlagBits, sharingMode: VulkanSharingMode, destinationMask: VkPipelineStageFlagBits, barrier: VkImageMemoryBarrier)
-    case materialiseTextureView(Texture, usage: MetalTextureUsageProperties)
+    case materialiseBuffer(Buffer, usage: VkBufferUsageFlagBits)
+    case materialiseTexture(Texture, usage: VkImageUsageFlagBits, destinationMask: VkPipelineStageFlagBits, barrier: VkImageMemoryBarrier)
+    case materialiseTextureView(Texture, usage: VkImageUsageFlagBits)
     case materialiseArgumentBuffer(_ArgumentBuffer)
     case materialiseArgumentBufferArray(_ArgumentBufferArray)
     case disposeResource(Resource)
@@ -598,16 +614,9 @@ enum VulkanPreFrameResourceCommands {
             let queueIndex = Int(queue.index)
             
             switch self {
-            case let .materialiseBuffer(buffer, usage, sharingMode):
-                let vkBuffer = resourceMap.allocateBufferIfNeeded(buffer, usage: usage, sharingMode: sharingMode)
-                commandBufferResources.buffers.append(vkBuffer)
-                
-                if vkBuffer.hasBeenHostUpdated {
-                    // Insert a pipeline barrier to read from host memory
-                    // NOTE: not actually necessary most of the time since it's implicitly
-                    // inserted by the queue submission operation.
-                    vkBuffer.hasBeenHostUpdated = false
-                }
+            case let .materialiseBuffer(buffer, usage):
+                let vkBuffer = resourceRegistry.allocateBuffer(buffer, usage: usage)
+                commandBufferResources.buffers.append(vkBuffer.buffer)
                 
                 let waitSemaphore = buffer.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitSemaphores[Resource(buffer)] : resourceRegistry.bufferWaitSemaphores[buffer]
                 
@@ -615,9 +624,9 @@ enum VulkanPreFrameResourceCommands {
                 
                 buffer.applyDeferredSliceActions()
                 
-            case let .materialiseTexture(texture, usage, sharingMode, destinationMask, barrier):
+            case let .materialiseTexture(texture, usage, destinationMask, barrier):
                 // Possible initial layouts are undefined and preinitialised. Since we never have data we're preinitialising it with, we always use undefined
-                let vkTexture = resourceMap.allocateTextureIfNeeded(texture, usage: usage, sharingMode: sharingMode, initialLayout: VK_IMAGE_LAYOUT_UNDEFINED)
+                let vkTexture = resourceRegistry.allocateTexture(texture, usage: usage, initialLayout: VK_IMAGE_LAYOUT_UNDEFINED)!
                 commandBufferResources.images.append(vkTexture)
 
                 // If both the old and new layouts are preinitialised (meaning it's a persistent resource
@@ -643,31 +652,27 @@ enum VulkanPreFrameResourceCommands {
                 }
                 
             case .materialiseTextureView(let texture, let usage):
-                resourceRegistry.allocateTextureView(texture, properties: usage)
+                resourceRegistry.allocateTextureView(texture, usage: usage)
                 
             case .materialiseArgumentBuffer(let argumentBuffer):
-                let mtlBufferReference : MTLBufferReference
-                if argumentBuffer.flags.contains(.persistent) {
-                    mtlBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
-                } else {
-                    mtlBufferReference = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
-                    waitSemaphoreValues[queueIndex] = max(resourceRegistry.argumentBufferWaitSemaphores[argumentBuffer]!.waitValue, waitSemaphoreValues[queueIndex])
-                }
-                argumentBuffer.setArguments(storage: mtlBufferReference, resourceMap: resourceMap, stateCaches: stateCaches)
+                fatalError()
                 
+                // NOTE: argumentBuffer.encoder should contain all the information we need about e.g. the descriptor set layout, any pipeline reflection etc.
+                
+//                let vkArgumentBuffer : VulkanArgumentBuffer
+//                if argumentBuffer.flags.contains(.persistent) {
+//                    vkArgumentBuffer = resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer, bindingPath: <#T##ResourceBindingPath#>, commandBufferResources: <#T##CommandBufferResources#>, pipelineReflection: <#T##VulkanPipelineReflection#>, stateCaches: <#T##VulkanStateCaches#>)
+//                } else {
+//                    vkArgumentBuffer = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
+//                    waitSemaphoreValues[queueIndex] = max(resourceRegistry.argumentBufferWaitSemaphores[argumentBuffer]!.waitValue, waitSemaphoreValues[queueIndex])
+//                }
+//                argumentBuffer.setArguments(storage: mtlBufferReference, resourceMap: resourceMap, stateCaches: stateCaches)
                 
             case .materialiseArgumentBufferArray(let argumentBuffer):
-                let mtlBufferReference : MTLBufferReference
-                if argumentBuffer.flags.contains(.persistent) {
-                    mtlBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
-                } else {
-                    mtlBufferReference = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
-                    waitSemaphoreValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitSemaphores[argumentBuffer]!.waitValue, waitSemaphoreValues[queueIndex])
-                }
-                argumentBuffer.setArguments(storage: mtlBufferReference, resourceMap: resourceMap, stateCaches: stateCaches)
+               fatalError("Argument buffer arrays are currently unsupported on Vulkan.")
                 
             case .disposeResource(let resource):
-                let disposalWaitSemaphore = VulkanContextSemaphore(waitValue: signalEventValue)
+                let disposalWaitSemaphore = VulkanContextWaitSemaphore(waitValue: signalEventValue)
                 if let buffer = resource.buffer {
                     resourceRegistry.disposeBuffer(buffer, waitSemaphore: disposalWaitSemaphore)
                 } else if let texture = resource.texture {
@@ -678,10 +683,10 @@ enum VulkanPreFrameResourceCommands {
                     fatalError()
                 }
                 
-            case .waitForCommandBuffer(let index, let waitQueue):
+            case .waitForSemaphore(let index, let waitQueue):
                 waitSemaphoreValues[Int(waitQueue.index)] = max(index, waitSemaphoreValues[Int(waitQueue.index)])
                 
-            case .updateCommandBufferWaitIndex(let resource):
+            case .updateSemaphoreWaitIndex(let resource):
                 // TODO: split out reads and writes.
                 resource[waitIndexFor: queue, accessType: .read] = signalEventValue
                 resource[waitIndexFor: queue, accessType: .write] = signalEventValue

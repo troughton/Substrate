@@ -13,6 +13,11 @@ import FrameGraphUtilities
 import Foundation
 
 public final class VulkanBackend : _RenderBackendProtocol {
+    
+    public var api: RenderAPI {
+        return .vulkan
+    }
+    
     public let vulkanInstance : VulkanInstance
     public let device : VulkanDevice
     
@@ -23,9 +28,7 @@ public final class VulkanBackend : _RenderBackendProtocol {
     var activeContext : VulkanFrameGraphContext? = nil
     
     public init(instance: VulkanInstance, surface: VkSurfaceKHR, shaderLibraryURL: URL) {
-        
         self.vulkanInstance = instance
-        self.maxInflightFrames = inflightFrameCount
         let physicalDevice = self.vulkanInstance.createSystemDefaultDevice(surface: surface)!
         
         self.device = VulkanDevice(physicalDevice: physicalDevice)!
@@ -124,12 +127,50 @@ public final class VulkanBackend : _RenderBackendProtocol {
         return self.device
     }
     
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> VulkanPipelineReflection {
+    @usableFromInline
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection? {
         return self.stateCaches.reflection(for: descriptor, renderTarget: renderTarget)
     }
     
-    func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> VulkanPipelineReflection {
+    @usableFromInline
+    func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection? {
         return self.stateCaches.reflection(for: descriptor)
+    }
+    
+    @usableFromInline
+    var pushConstantPath: ResourceBindingPath {
+        return ResourceBindingPath.pushConstantPath
+    }
+    
+    @usableFromInline
+    func materialiseHeap(_ heap: Heap) -> Bool {
+        assertionFailure("Heaps are not implemented on Vulkan")
+        return false
+    }
+    
+    @usableFromInline
+    func registerExternalResource(_ resource: Resource, backingResource: Any) {
+        fatalError("registerExternalResource is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline
+    func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
+        fatalError("copyTextureBytes is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline
+    func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
+        fatalError("replaceTextureRegion is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline
+    func dispose(heap: Heap) {
+        fatalError("dispose(Heap) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline
+    func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath {
+        return ResourceBindingPath(argumentBuffer: UInt32(index))
     }
 }
 
