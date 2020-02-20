@@ -79,7 +79,7 @@ enum CompilerError : Error {
 }
 
 protocol TargetCompiler {
-    func compile(spirvCompilers: [SPIRVCompiler], to outputDirectory: URL, withDebugInformation debug: Bool) throws
+    func compile(spirvCompilers: [SPIRVCompiler], sourceDirectory: URL, outputDirectory: URL, withDebugInformation debug: Bool) throws
 }
 
 final class MetalCompiler : TargetCompiler {
@@ -96,7 +96,7 @@ final class MetalCompiler : TargetCompiler {
         return UInt32(major * 10000 + minor * 100 + patch)
     }
     
-    func compile(spirvCompilers: [SPIRVCompiler], to outputDirectory: URL, withDebugInformation debug: Bool) throws {
+    func compile(spirvCompilers: [SPIRVCompiler], sourceDirectory: URL, outputDirectory: URL, withDebugInformation debug: Bool) throws {
         var airFiles = [URL]()
         var needsRegenerateLibrary = false
         var hadErrors = false
@@ -141,6 +141,29 @@ final class MetalCompiler : TargetCompiler {
                 print("Error compiling file \(compiler.file):")
                 print(error)
                 hadErrors = true
+            }
+        }
+        
+        let metalSourcesDirectory = sourceDirectory.appendingPathComponent("Metal")
+        if FileManager.default.fileExists(atPath: metalSourcesDirectory.path),
+            let metalFiles = try? FileManager.default.contentsOfDirectory(at: metalSourcesDirectory, includingPropertiesForKeys: nil, options: []).filter({ $0.pathExtension.lowercased() == "metal" }) {
+            for metalFileURL in metalFiles {
+                do {
+                    let outputFileName = metalFileURL.lastPathComponent
+                    var airFileURL = airDirectory.appendingPathComponent(outputFileName + ".air")
+                    
+                    if airFileURL.needsGeneration(sourceFile: metalFileURL) {
+                        try self.driver.compileToAIR(sourceFile: metalFileURL, destinationFile: airFileURL, withDebugInformation: debug).waitUntilExit()
+                        
+                        airFileURL.removeCachedResourceValue(forKey: .contentModificationDateKey)
+                        needsRegenerateLibrary = true
+                    }
+                    airFiles.append(airFileURL)
+                } catch {
+                    print("Error compiling file \(metalFileURL):")
+                    print(error)
+                    hadErrors = true
+                }
             }
         }
         

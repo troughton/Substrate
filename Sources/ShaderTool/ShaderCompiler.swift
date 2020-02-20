@@ -228,7 +228,10 @@ final class ShaderCompiler {
             do {
                 print("Compiling target \(target):\n")
                 
-                try compiler.compile(spirvCompilers: targetCompilers, to: self.baseDirectory.appendingPathComponent(target.outputDirectory), withDebugInformation: false)
+                try compiler.compile(spirvCompilers: targetCompilers,
+                                     sourceDirectory: self.baseDirectory.appendingPathComponent("Source"),
+                    outputDirectory: self.baseDirectory.appendingPathComponent(target.outputDirectory),
+                    withDebugInformation: false)
                 
                 print()
             }
