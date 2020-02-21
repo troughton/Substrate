@@ -97,7 +97,7 @@ final class MetalCompiler : TargetCompiler {
     }
     
     func compile(spirvCompilers: [SPIRVCompiler], sourceDirectory: URL, outputDirectory: URL, withDebugInformation debug: Bool) throws {
-        var airFiles = [URL]()
+        var sourceFiles = [(metalSource: URL, airFile: URL)]()
         var needsRegenerateLibrary = false
         var hadErrors = false
         
@@ -111,6 +111,7 @@ final class MetalCompiler : TargetCompiler {
                 
                 spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_VERSION, makeMSLVersion(major: 2, minor: 1, patch: 0))
                 spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ARGUMENT_BUFFERS, 1)
+                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FORCE_ACTIVE_ARGUMENT_BUFFER_RESOURCES, 1)
                 spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, self.target == .iOSMetal ? SPVC_MSL_PLATFORM_IOS.rawValue : SPVC_MSL_PLATFORM_MACOS.rawValue)
                 
                 spvc_compiler_install_compiler_options(compiler.compiler, options)
@@ -119,7 +120,7 @@ final class MetalCompiler : TargetCompiler {
             let outputFileName = compiler.file.sourceFile.renderPass + "-" + compiler.file.entryPoint.name
             
             var metalFileURL = outputDirectory.appendingPathComponent(outputFileName + ".metal")
-            var airFileURL = airDirectory.appendingPathComponent(outputFileName + ".air")
+            let airFileURL = airDirectory.appendingPathComponent(outputFileName + ".air")
             do {
                 // Generate the compiled source unconditionally, since we need it to compute bindings for reflection.
                 let compiledSource = try compiler.compiledSource()
@@ -129,13 +130,9 @@ final class MetalCompiler : TargetCompiler {
                     try compiledSource.write(to: metalFileURL, atomically: false, encoding: .ascii)
                     metalFileURL.removeCachedResourceValue(forKey: .contentModificationDateKey)
                 }
-                if airFileURL.needsGeneration(sourceFile: metalFileURL) {
-                    try self.driver.compileToAIR(sourceFile: metalFileURL, destinationFile: airFileURL, withDebugInformation: debug).waitUntilExit()
-                    
-                    airFileURL.removeCachedResourceValue(forKey: .contentModificationDateKey)
-                    needsRegenerateLibrary = true
-                }
-                airFiles.append(airFileURL)
+                
+                sourceFiles.append((metalFileURL, airFileURL))
+                
             }
             catch {
                 print("Error compiling file \(compiler.file):")
@@ -144,26 +141,31 @@ final class MetalCompiler : TargetCompiler {
             }
         }
         
+        // Also include any source files in the Source/Metal folder.
         let metalSourcesDirectory = sourceDirectory.appendingPathComponent("Metal")
         if FileManager.default.fileExists(atPath: metalSourcesDirectory.path),
-            let metalFiles = try? FileManager.default.contentsOfDirectory(at: metalSourcesDirectory, includingPropertiesForKeys: nil, options: []).filter({ $0.pathExtension.lowercased() == "metal" }) {
-            for metalFileURL in metalFiles {
-                do {
-                    let outputFileName = metalFileURL.lastPathComponent
-                    var airFileURL = airDirectory.appendingPathComponent(outputFileName + ".air")
+            let enumerator = FileManager.default.enumerator(at: metalSourcesDirectory, includingPropertiesForKeys: nil) {
+            
+            for case let metalFileURL as URL in enumerator where metalFileURL.pathExtension.lowercased() == "metal" {
+                let outputFileName = metalFileURL.lastPathComponent
+                let airFileURL = airDirectory.appendingPathComponent(outputFileName + ".air")
+                
+                sourceFiles.append((metalFileURL, airFileURL))
+            }
+        }
+        
+        for (metalFileURL, airFileURL) in sourceFiles {
+            do {
+                if airFileURL.needsGeneration(sourceFile: metalFileURL) {
+                    try self.driver.compileToAIR(sourceFile: metalFileURL, destinationFile: airFileURL, withDebugInformation: debug).waitUntilExit()
                     
-                    if airFileURL.needsGeneration(sourceFile: metalFileURL) {
-                        try self.driver.compileToAIR(sourceFile: metalFileURL, destinationFile: airFileURL, withDebugInformation: debug).waitUntilExit()
-                        
-                        airFileURL.removeCachedResourceValue(forKey: .contentModificationDateKey)
-                        needsRegenerateLibrary = true
-                    }
-                    airFiles.append(airFileURL)
-                } catch {
-                    print("Error compiling file \(metalFileURL):")
-                    print(error)
-                    hadErrors = true
+                    needsRegenerateLibrary = true
                 }
+            }
+            catch {
+                print("Error compiling Metal file \(metalFileURL):")
+                print(error)
+                hadErrors = true
             }
         }
         
@@ -171,11 +173,15 @@ final class MetalCompiler : TargetCompiler {
             throw CompilerError.shaderErrors
         }
         
+        for i in 0..<sourceFiles.count {
+            sourceFiles[i].airFile.removeCachedResourceValue(forKey: .contentModificationDateKey)
+        }
+        
         if needsRegenerateLibrary {
             do {
                 let metalLibraryPath = outputDirectory.appendingPathComponent("Library.metallib")
                 print("\(self.target): Linking Metal library at \(metalLibraryPath.path)")
-                try self.driver.generateLibrary(airFiles: airFiles, outputLibrary: metalLibraryPath).waitUntilExit()
+                try self.driver.generateLibrary(airFiles: sourceFiles.map { $1 }, outputLibrary: metalLibraryPath).waitUntilExit()
             }
             catch {
                 throw CompilerError.libraryGenerationFailed(error)

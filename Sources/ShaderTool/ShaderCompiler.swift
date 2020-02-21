@@ -17,7 +17,7 @@ struct EntryPoint : Hashable {
     var renderPass : String
 }
 
-struct ShaderSourceFile : Equatable {
+struct DXCSourceFile : Equatable {
     static let entryPointPattern = Regex(#"\[shader\(\"(\w+)\"\)\]\s*(?:\[[^\]]+\])*\s*\w+\s([^\(]+)"#)
     static let externalEntryPointPattern = Regex(#"USES-SHADER:\s+(\S+)"#)
     
@@ -34,29 +34,29 @@ struct ShaderSourceFile : Equatable {
         self.renderPass = renderPass
         
         let fileText = try String(contentsOf: url)
-        self.entryPoints = ShaderSourceFile.entryPointPattern.allMatches(in: fileText).compactMap { match in
+        self.entryPoints = DXCSourceFile.entryPointPattern.allMatches(in: fileText).compactMap { match in
             guard let shaderTypeString = match.captures[0] else { print("No shader type specified for file \(url)"); return nil }
             guard let shaderType = ShaderType(string: shaderTypeString) else { print("Unrecognised shader type \(shaderTypeString) for file \(url)"); return nil }
             return EntryPoint(name: match.captures[1]!, type: shaderType, renderPass: renderPass)
         }
-        self.externalEntryPoints = Set(ShaderSourceFile.externalEntryPointPattern.allMatches(in: fileText).map { match in
+        self.externalEntryPoints = Set(DXCSourceFile.externalEntryPointPattern.allMatches(in: fileText).map { match in
             return match.captures[0]!
         })
     }
     
-    static func ==(lhs: ShaderSourceFile, rhs: ShaderSourceFile) -> Bool {
+    static func ==(lhs: DXCSourceFile, rhs: DXCSourceFile) -> Bool {
         return lhs.url == rhs.url && lhs.entryPoints == rhs.entryPoints && lhs.externalEntryPoints == rhs.externalEntryPoints
     }
 }
 
 struct SPIRVFile {
-    let sourceFile : ShaderSourceFile
+    let sourceFile : DXCSourceFile
     let url : URL
     let entryPoint : EntryPoint
     let target : Target
     let modificationTime : Date
     
-    init(sourceFile: ShaderSourceFile, url: URL, entryPoint: EntryPoint, target: Target) {
+    init(sourceFile: DXCSourceFile, url: URL, entryPoint: EntryPoint, target: Target) {
         self.sourceFile = sourceFile
         self.url = url
         self.entryPoint = entryPoint
@@ -144,7 +144,7 @@ final class ShaderCompiler {
     let baseDirectory : URL
     let sourceDirectory : URL
     let reflectionFile : URL?
-    let sourceFiles : [ShaderSourceFile]
+    let sourceFiles : [DXCSourceFile]
     let targets : [Target]
     
     let dxcDriver : DXCDriver
@@ -186,39 +186,38 @@ final class ShaderCompiler {
             self.sourceFiles = []
         } else {
             self.sourceFiles = directoryContents.compactMap {
-                try? ShaderSourceFile(url: $0, modificationTimes: modificationTimes)
+                try? DXCSourceFile(url: $0, modificationTimes: modificationTimes)
             }
         }
     }
     
     public func compile() {
-        guard !self.sourceFiles.isEmpty else { return }
-        
-        let spvCompilationGroup = DispatchGroup()
-        
-        var spirvFiles = [SPIRVFile]()
-        
-        print("Compiling SPIR-V:\n")
-        
-        for target in targets {
-            for file in self.sourceFiles {
-                for entryPoint in file.entryPoints {
-                    spirvFiles.append(self.compileToSPV(file: file, entryPoint: entryPoint, target: target, group: spvCompilationGroup))
+        if !self.sourceFiles.isEmpty {
+            let spvCompilationGroup = DispatchGroup()
+            
+            var spirvFiles = [SPIRVFile]()
+            print("Compiling SPIR-V:\n")
+            
+            for target in targets {
+                for file in self.sourceFiles {
+                    for entryPoint in file.entryPoints {
+                        spirvFiles.append(self.compileToSPV(file: file, entryPoint: entryPoint, target: target, group: spvCompilationGroup))
+                    }
                 }
             }
-        }
-        
-        spvCompilationGroup.wait()
-        
-        print()
-        
-        self.spirvCompilers = spirvFiles.compactMap { file in
-            guard file.exists else { return nil }
-            do {
-                return try SPIRVCompiler(file: file, context: self.context)
-            } catch {
-                print("Error generating SPIRV compiler for file \(file): \(error)")
-                return nil
+            
+            spvCompilationGroup.wait()
+            
+            print()
+            
+            self.spirvCompilers = spirvFiles.compactMap { file in
+                guard file.exists else { return nil }
+                do {
+                    return try SPIRVCompiler(file: file, context: self.context)
+                } catch {
+                    print("Error generating SPIRV compiler for file \(file): \(error)")
+                    return nil
+                }
             }
         }
         
@@ -226,7 +225,7 @@ final class ShaderCompiler {
             guard let compiler = target.compiler else { continue }
             let targetCompilers = self.spirvCompilers.filter { $0.file.target == target }
             do {
-                print("Compiling target \(target):\n")
+                print("Compiling target \(target).\n")
                 
                 try compiler.compile(spirvCompilers: targetCompilers,
                                      sourceDirectory: self.baseDirectory.appendingPathComponent("Source"),
@@ -264,7 +263,7 @@ final class ShaderCompiler {
         }
     }
     
-    private func compileToSPV(file: ShaderSourceFile, entryPoint: EntryPoint, target: Target, group: DispatchGroup) -> SPIRVFile {
+    private func compileToSPV(file: DXCSourceFile, entryPoint: EntryPoint, target: Target, group: DispatchGroup) -> SPIRVFile {
         let spirvDirectory = self.baseDirectory.appendingPathComponent(target.spirvDirectory)
         
         let fileName = file.url.deletingPathExtension().lastPathComponent

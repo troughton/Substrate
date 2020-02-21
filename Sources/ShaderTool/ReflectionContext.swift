@@ -10,7 +10,7 @@ import SPIRV_Cross
 
 enum ReflectionError : Error {
     case reflectionFailed(SPIRVFile)
-    case mismatchingSourceFiles(ShaderSourceFile, ShaderSourceFile)
+    case mismatchingSourceFiles(DXCSourceFile, DXCSourceFile)
 }
 
 final class ReflectionContext {
@@ -326,7 +326,7 @@ final class TypeLookup {
 
 final class RenderPass {
     let name : String
-    let sourceFile: ShaderSourceFile
+    let sourceFile: DXCSourceFile
     
     var entryPoints : [EntryPoint] = []
     var functionConstants : [FunctionConstant] = [] // Sorted by construction
@@ -339,7 +339,7 @@ final class RenderPass {
     
     var attachmentCount : Int = 0
     
-    init(sourceFile: ShaderSourceFile) {
+    init(sourceFile: DXCSourceFile) {
         self.name = sourceFile.renderPass
         self.sourceFile = sourceFile
     }
