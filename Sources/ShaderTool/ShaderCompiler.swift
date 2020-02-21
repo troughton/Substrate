@@ -153,6 +153,8 @@ final class ShaderCompiler {
     let context = SPIRVContext()
     let reflectionContext = ReflectionContext()
     
+    let needsGenerateReflection : Bool
+    
     var spirvCompilers : [SPIRVCompiler] = []
     
     init(directory: URL, reflectionFile: URL? = nil, targets: [Target] = [.defaultTarget]) throws {
@@ -179,15 +181,17 @@ final class ShaderCompiler {
         
         let mostRecentModificationDate = modificationTimes.values.max() ?? .distantFuture
         
+        self.sourceFiles = directoryContents.compactMap {
+            try? DXCSourceFile(url: $0, modificationTimes: modificationTimes)
+        }
+        
         if let reflectionFile = reflectionFile,
             FileManager.default.fileExists(atPath: reflectionFile.path),
             let reflectionModificationDate = try? reflectionFile.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
             mostRecentModificationDate < reflectionModificationDate {
-            self.sourceFiles = []
+            self.needsGenerateReflection = false
         } else {
-            self.sourceFiles = directoryContents.compactMap {
-                try? DXCSourceFile(url: $0, modificationTimes: modificationTimes)
-            }
+            self.needsGenerateReflection = true
         }
     }
     
@@ -241,7 +245,7 @@ final class ShaderCompiler {
     }
     
     public func generateReflection() {
-        guard let reflectionFile = self.reflectionFile, !self.sourceFiles.isEmpty else { return }
+        guard let reflectionFile = self.reflectionFile, !self.sourceFiles.isEmpty, self.needsGenerateReflection else { return }
         print("Generating reflection to file \(reflectionFile.path)")
         
         for compiler in self.spirvCompilers {
