@@ -386,6 +386,9 @@ extension UInt64 : CustomHashable {
 public class ResourceUsages {
     
     @usableFromInline
+    unowned(unsafe) var frameGraph: FrameGraph! = nil
+    
+    @usableFromInline
     var usageNodeAllocator : TagAllocator.ThreadView! = nil
     
     // ResourceUsages should hold exactly one strong reference to each resource.
@@ -432,6 +435,7 @@ public class ResourceUsages {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resourceHandle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resourceHandle }), "Resource \(resourceHandle) used but not declared.")
         
         let resource = Resource(handle: resourceHandle)
+        assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
         
         assert(resource.type != .argumentBuffer || !usageType.isWrite, "Read-write argument buffers are currently unsupported.")
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
