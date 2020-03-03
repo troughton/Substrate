@@ -66,6 +66,12 @@ extension RenderStages {
     }
 }
 
+extension PixelFormat {
+    public init(_ pixelFormat: MTLPixelFormat) {
+        self.init(rawValue: pixelFormat.rawValue)!
+    }
+}
+
 extension ArgumentReflection {
     init(_ argument: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
         self.init(isActive: argument.isActive, type: ResourceType(argument.type), bindingPath: bindingPath, usageType: ResourceUsageType(argument.access), stages: stages)
