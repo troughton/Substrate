@@ -76,24 +76,27 @@ public struct TextureDescriptor {
         
     }
 
-    public init(texture2DWithFormat pixelFormat: PixelFormat, width: Int, height: Int, mipmapped: Bool, usageHint: TextureUsage = []) {
+    public init(texture2DWithFormat pixelFormat: PixelFormat, width: Int, height: Int, mipmapped: Bool, storageMode: StorageMode = .managed, usageHint: TextureUsage = []) {
         var descriptor = TextureDescriptor()
         descriptor.pixelFormat = pixelFormat
         descriptor.textureType = .type2D
         descriptor.width = width
         descriptor.height = height
         descriptor.mipmapLevelCount = mipmapped ? 1 + Int(floor(log2(Double(max(width, height))))) : 1
+        descriptor.storageMode = storageMode
         descriptor.usageHint = usageHint
         self = descriptor
     }
     
-    public init(textureCubeWithFormat pixelFormat: PixelFormat, size: Int, mipmapped: Bool) {
+    public init(textureCubeWithFormat pixelFormat: PixelFormat, size: Int, mipmapped: Bool, storageMode: StorageMode = .managed, usageHint: TextureUsage = []) {
         var descriptor = TextureDescriptor()
         descriptor.pixelFormat = pixelFormat
         descriptor.textureType = .typeCube
         descriptor.width = size
         descriptor.height = size
         descriptor.mipmapLevelCount = mipmapped ? 1 + Int(floor(log2(Double(size)))) : 1
+        descriptor.storageMode = storageMode
+        descriptor.usageHint = usageHint
         self = descriptor
     }
     

@@ -9,22 +9,30 @@
 import FrameGraphUtilities
 
 public struct VertexBufferLayoutDescriptor : Hashable {
+    public var stride: Int
+    public var stepFunction: VertexStepFunction
+    public var stepRate: Int
     
-    public var stride: Int = 0
-    
-    public var stepFunction: VertexStepFunction = .constant
-    
-    public var stepRate: Int = 1
+    @inlinable
+    public init(stride: Int = 0, stepFunction: VertexStepFunction = .constant, stepRate: Int = 1) {
+        self.stride = stride
+        self.stepFunction = stepFunction
+        self.stepRate = stepRate
+    }
 }
 
 
 public struct VertexAttributeDescriptor : Hashable {
+    public var format: VertexFormat
+    public var offset: Int
+    public var bufferIndex: Int
     
-    public var format: VertexFormat = .invalid
-    
-    public var offset: Int = 0
-    
-    public var bufferIndex: Int = 0
+    @inlinable
+    public init(format: VertexFormat, offset: Int, bufferIndex: Int) {
+        self.format = format
+        self.offset = offset
+        self.bufferIndex = bufferIndex
+    }
 }
 
 public struct VertexDescriptor : Hashable {
@@ -33,7 +41,7 @@ public struct VertexDescriptor : Hashable {
         
     }
     public var layouts = [VertexBufferLayoutDescriptor](repeating: VertexBufferLayoutDescriptor(), count: 8)
-    public var attributes = [VertexAttributeDescriptor](repeating: VertexAttributeDescriptor(), count: 16)
+    public var attributes = [VertexAttributeDescriptor](repeating: VertexAttributeDescriptor(format: .invalid, offset: 0, bufferIndex: 0), count: 16)
     
     public static func ==(lhs: VertexDescriptor, rhs: VertexDescriptor) -> Bool {
         return lhs.layouts == rhs.layouts && lhs.attributes == rhs.attributes
