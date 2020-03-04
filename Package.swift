@@ -12,6 +12,7 @@ let package = Package(
     name: "SwiftFrameGraph",
     platforms: [.macOS(.v10_14), .iOS(.v12), .tvOS(.v12)],
     products: [
+        .library(name: "FrameGraphTextureLoading", targets: ["FrameGraphTextureLoading"]),
         .library(name: "SwiftFrameGraph", targets: ["SwiftFrameGraph"]),
         .library(name: "FrameGraphUtilities", targets: ["FrameGraphUtilities"]),
         .executable(name: "ShaderTool", targets: ["ShaderTool"])
@@ -19,9 +20,11 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/glessard/swift-atomics", from: "6.0.1"),
         .package(url: "https://github.com/troughton/SPIRV-Cross-SPM", from: "0.24.0"),
-        .package(url: "https://github.com/sharplet/Regex", from: "2.1.0")
+        .package(url: "https://github.com/sharplet/Regex", from: "2.1.0"),
+        .package(url: "https://github.com/troughton/Cstb", from: "1.0.2")
     ],
     targets: [
+        .target(name: "FrameGraphTextureLoading", dependencies: ["SwiftFrameGraph", "stb_image", "stb_image_resize", "tinyexr"]),
         .target(name: "FrameGraphCExtras", dependencies: []),
         .target(name: "SwiftFrameGraph", dependencies: ["FrameGraphUtilities", "FrameGraphCExtras", "SwiftAtomics"], path: "Sources/FrameGraph"),
         .target(name: "FrameGraphUtilities", dependencies: ["SwiftAtomics"]),
