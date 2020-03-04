@@ -12,31 +12,17 @@ import stb_image
 
 extension Texture {
     
-    fileprivate func copyData<T>(from textureData: TextureData<T>, mipmapped: Bool, frameGraph: FrameGraph?) throws {
-        if self.storageMode == .private {
-            guard let frameGraph = frameGraph else {
-                self.dispose()
-                throw TextureLoadingError.privateTextureRequiresFrameGraph
-            }
-            frameGraph.insertEarlyBlitPass(name: "Upload Texture") { (bce) in
-                let mips = mipmapped ? textureData.generateMipChain(wrapMode: .wrap, compressedBlockSize: 1) : [textureData]
-                
-                for (i, data) in mips.enumerated() {
-                    let buffer = Buffer(length: data.width * data.height * data.channels * MemoryLayout<T>.size, bytes: data.data)
-                    bce.copy(from: buffer, sourceOffset: 0, sourceBytesPerRow: data.width * data.channels * MemoryLayout<T>.size, sourceBytesPerImage: buffer.length, sourceSize: Size(width: data.width, height: data.height),
-                             to: self, destinationSlice: 0, destinationLevel: i, destinationOrigin: Origin())
-                }
-            }
-        } else {
-            let mips = mipmapped ? textureData.generateMipChain(wrapMode: .wrap, compressedBlockSize: 1) : [textureData]
-            
-            for (i, data) in mips.enumerated() {
-                self.replace(region: Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, withBytes: data.data, bytesPerRow: data.width * data.channels * MemoryLayout<T>.size)
-            }
+    fileprivate func copyData<T>(from textureData: TextureData<T>, mipmapped: Bool) throws {
+        let mips = mipmapped ? textureData.generateMipChain(wrapMode: .wrap, compressedBlockSize: 1) : [textureData]
+                       
+        for (i, data) in mips.enumerated() {
+            GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: data.data, bytesPerRow: data.width * data.channels * MemoryLayout<T>.size, onUploadCompleted: { [data] _, _ in
+                _ = data
+            })
         }
     }
     
-    public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .managed, usageHint: TextureUsage = .shaderRead, frameGraph: FrameGraph? = nil) throws {
+    public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .managed, usageHint: TextureUsage = .shaderRead) throws {
         let pixelFormat: PixelFormat
         
         if url.pathExtension.lowercased() == "exr" {
@@ -55,7 +41,7 @@ extension Texture {
             let descriptor = TextureDescriptor(texture2DWithFormat: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usageHint: usageHint)
             self = Texture(descriptor: descriptor, flags: .persistent)
             
-            try self.copyData(from: textureData, mipmapped: mipmapped, frameGraph: frameGraph)
+            try self.copyData(from: textureData, mipmapped: mipmapped)
             
         } else {
             // Use stb image directly.
@@ -90,7 +76,7 @@ extension Texture {
                 let descriptor = TextureDescriptor(texture2DWithFormat: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usageHint: usageHint)
                 self = Texture(descriptor: descriptor, flags: .persistent)
                 
-                try self.copyData(from: textureData, mipmapped: mipmapped, frameGraph: frameGraph)
+                try self.copyData(from: textureData, mipmapped: mipmapped)
                 
             } else if is16Bit {
                 let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, channels)!
@@ -110,7 +96,7 @@ extension Texture {
                 let descriptor = TextureDescriptor(texture2DWithFormat: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usageHint: usageHint)
                 self = Texture(descriptor: descriptor, flags: .persistent)
                 
-                try self.copyData(from: textureData, mipmapped: mipmapped, frameGraph: frameGraph)
+                try self.copyData(from: textureData, mipmapped: mipmapped)
             } else {
                 let data = stbi_load(url.path, &width, &height, &componentsPerPixel, channels)!
                 let textureData = TextureData<UInt8>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
@@ -129,7 +115,7 @@ extension Texture {
                 let descriptor = TextureDescriptor(texture2DWithFormat: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usageHint: usageHint)
                 self = Texture(descriptor: descriptor, flags: .persistent)
                 
-                try self.copyData(from: textureData, mipmapped: mipmapped, frameGraph: frameGraph)
+                try self.copyData(from: textureData, mipmapped: mipmapped)
             }
         }
     }
