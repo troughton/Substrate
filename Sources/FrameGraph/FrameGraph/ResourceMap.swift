@@ -6,6 +6,7 @@
 //
 
 import FrameGraphUtilities
+import CAtomics
 
 public struct PersistentResourceMap<R : ResourceProtocol, V> {
     
@@ -224,21 +225,40 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     @usableFromInline var capacity = 0
     
+    @usableFromInline var count = 0
+    
     public init(allocator: AllocatorType = .system, transientRegistryIndex: Int) {
         self.allocator = allocator
         self.transientRegistryIndex = transientRegistryIndex
-    }
-
-    public mutating func prepareFrame() {
+        
         switch R.self {
         case is Buffer.Type:
             self.reserveCapacity(TransientBufferRegistry.instances[self.transientRegistryIndex].capacity)
         case is Texture.Type:
             self.reserveCapacity(TransientTextureRegistry.instances[self.transientRegistryIndex].capacity)
         case is _ArgumentBuffer.Type:
-            self.reserveCapacity(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].count)
+            break
         case is _ArgumentBufferArray.Type:
             self.reserveCapacity(TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].capacity)
+        case is Heap.Type:
+            break
+        default:
+            fatalError()
+        }
+    }
+
+    public mutating func prepareFrame() {
+        switch R.self {
+        case is Buffer.Type:
+            self.count = CAtomicsLoad(TransientBufferRegistry.instances[self.transientRegistryIndex].count, .relaxed)
+        case is Texture.Type:
+            self.count = CAtomicsLoad(TransientTextureRegistry.instances[self.transientRegistryIndex].count, .relaxed)
+        case is _ArgumentBuffer.Type:
+            let count = TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].count
+            self.reserveCapacity(count)
+            self.count = count
+        case is _ArgumentBufferArray.Type:
+            self.count = TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].count
         case is Heap.Type:
             break
         default:
@@ -367,7 +387,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     @inlinable
     public mutating func removeAll() {
-        for bucket in 0..<self.capacity {
+        for bucket in 0..<self.count {
             if self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
                 self.keys[bucket] = R(handle: Resource.invalidResource.handle)
                 self.values.advanced(by: bucket).deinitialize(count: 1)
@@ -377,7 +397,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     @inlinable
     public mutating func removeAll(iterating iterator: (R, V, _ isPersistent: Bool) -> Void) {
-        for bucket in 0..<self.capacity {
+        for bucket in 0..<self.count {
             if self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
                 iterator(self.keys[bucket], self.values[bucket], false)
                 self.keys[bucket] = R(handle: Resource.invalidResource.handle)
@@ -388,7 +408,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     @inlinable
     public func forEach(_ body: ((R, V)) throws -> Void) rethrows {
-        for bucket in 0..<self.capacity {
+        for bucket in 0..<self.count {
             if self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
                 try body((self.keys[bucket], self.values[bucket]))
             }
@@ -397,7 +417,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     @inlinable
     public mutating func forEachMutating(_ body: (R, inout V, _ deleteEntry: inout Bool) throws -> Void) rethrows {
-        for bucket in 0..<self.capacity where self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
+        for bucket in 0..<self.count where self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
             var deleteEntry = false
             try body(self.keys[bucket], &self.values[bucket], &deleteEntry)
             if deleteEntry {
