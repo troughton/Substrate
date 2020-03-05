@@ -76,6 +76,7 @@ public final class GPUResourceUploader {
                 slice.withContents {
                     $0.copyMemory(from: bytes, byteCount: count)
                 }
+                bce.copy(from: slice.buffer, sourceOffset: slice.range.lowerBound, to: buffer, destinationOffset: offset, size: count)
                 onUploadCompleted?(buffer, bytes)
             })
         }
