@@ -142,7 +142,7 @@ extension ResourceBindingPath {
 extension ResourceBindingPath {
     @inlinable
     public init(descriptorSet: Int, index: Int, type: MTLArgumentType) {
-        self.init(stages: [], type: type, argumentBufferIndex: descriptorSet, index: index)
+        self.init(stages: [], type: type, argumentBufferIndex: descriptorSet + 1, index: index) // Push constants go at index 0.
     }
 }
 
