@@ -143,13 +143,21 @@ final class MetalPipelineReflection : PipelineReflection {
                 
                 let memberReflection : ArgumentReflection?
                 if let arrayType = member.arrayType() {
-                    memberReflection = ArgumentReflection(array: arrayType, argumentBuffer: argument, bindingPath: subPath, stages: reflection.stages)
+                    memberReflection = ArgumentReflection(array: arrayType, argumentBuffer: argument, bindingPath: subPath, stages: reflection.isActive ? reflection.stages : [])
                 } else {
-                    memberReflection = ArgumentReflection(member: member, argumentBuffer: argument, bindingPath: subPath, stages: reflection.stages)
+                    memberReflection = ArgumentReflection(member: member, argumentBuffer: argument, bindingPath: subPath, stages: reflection.isActive ? reflection.stages : [])
                 }
                 
-                if memberReflection != nil {
-                    reflectionCache[subPath] = memberReflection
+                if let memberReflection = memberReflection {
+                    if var existingReflection = reflectionCache[subPath] {
+                        existingReflection.stages.formUnion(memberReflection.stages)
+                        existingReflection.isActive = existingReflection.isActive || memberReflection.isActive
+                        assert(existingReflection.type == memberReflection.type)
+                        assert(existingReflection.usageType == memberReflection.usageType)
+                        reflectionCache[subPath] = existingReflection
+                    } else {
+                        reflectionCache[subPath] = memberReflection
+                    }
                     bindingPathCache[BindingPathCacheKey(argumentName: member.name, argumentBufferIndex: argument.index)] = subPath
                 }
             }
