@@ -45,7 +45,7 @@ public struct ResourceUsagesList : Sequence {
     @usableFromInline
     var head : ResourceUsageNodePtr? = nil
     var sortIndex : Int = -1
-    var dummyUsage = ResourceUsage(type: .unusedArgumentBuffer, stages: [], inArgumentBuffer: false, firstCommandOffset: 0, renderPass: Unmanaged<RenderPassRecord>.fromOpaque(UnsafeRawPointer(bitPattern: 1)!))
+    var dummyUsage = ResourceUsage(type: .unusedArgumentBuffer, stages: [], inArgumentBuffer: false, firstCommandOffset: 0, renderPass: nil)
     
     @inlinable
     public init() {
@@ -260,13 +260,13 @@ public struct ResourceUsage {
     public var stages : RenderStages
     public var inArgumentBuffer : Bool
     @usableFromInline
-    var _renderPass : Unmanaged<RenderPassRecord>
+    var _renderPass : Unmanaged<RenderPassRecord>!
     @usableFromInline
     var commandRangeInPass : Range<Int>
     
     
     @inlinable
-    public init(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: Unmanaged<RenderPassRecord>) {
+    public init(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: Unmanaged<RenderPassRecord>?) {
         self.type = type
         self.stages = stages
         self._renderPass = renderPass
