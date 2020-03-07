@@ -255,7 +255,6 @@ public final class FrameGraphCommandRecorder {
 
 public protocol CommandEncoder : class {
     var passRecord : RenderPassRecord { get }
-    var unmanagedPassRecord : Unmanaged<RenderPassRecord> { get }
     
     var commandRecorder : FrameGraphCommandRecorder { get }
     var startCommandIndex : Int { get }
@@ -273,11 +272,6 @@ extension CommandEncoder {
     @inlinable
     public var renderPass : RenderPass {
         return self.passRecord.pass
-    }
-    
-    @inlinable
-    public var unmanagedPassRecord : Unmanaged<RenderPassRecord> {
-        return Unmanaged.passUnretained(self.passRecord)
     }
 }
 
