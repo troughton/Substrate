@@ -451,8 +451,8 @@ public final class FrameGraph {
             if passRecord.pass.writtenResources.isEmpty {
                 self.executePass(passRecord, threadIndex: jobManager.threadIndex)
             } else {
-                FrameGraph.threadResourceUsages[0].addReadResources(passRecord.pass.readResources, for: passRecord)
-                FrameGraph.threadResourceUsages[0].addWrittenResources(passRecord.pass.writtenResources, for: passRecord)
+                FrameGraph.threadResourceUsages[0].addReadResources(passRecord.pass.readResources, for: Unmanaged.passUnretained(passRecord))
+                FrameGraph.threadResourceUsages[0].addWrittenResources(passRecord.pass.writtenResources, for: Unmanaged.passUnretained(passRecord))
             }
         }
         
@@ -463,8 +463,8 @@ public final class FrameGraph {
                 if passRecord.pass.writtenResources.isEmpty {
                     self.executePass(passRecord, threadIndex: threadIndex)
                 } else {
-                    FrameGraph.threadResourceUsages[threadIndex].addReadResources(passRecord.pass.readResources, for: passRecord)
-                    FrameGraph.threadResourceUsages[threadIndex].addWrittenResources(passRecord.pass.writtenResources, for: passRecord)
+                    FrameGraph.threadResourceUsages[threadIndex].addReadResources(passRecord.pass.readResources, for: Unmanaged.passUnretained(passRecord))
+                    FrameGraph.threadResourceUsages[threadIndex].addWrittenResources(passRecord.pass.writtenResources, for: Unmanaged.passUnretained(passRecord))
                 }
             }
         }
