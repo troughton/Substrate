@@ -34,12 +34,12 @@ public enum TaggedHeap {
     static var freeBitsets : [BitSet]! = nil
     
     #if os(macOS)
-    public static let heapCapacity = 2 * 1024 * 1024 * 1024
+    public static let defaultHeapCapacity = 512 * 1024 * 1024 // 2 * 1024 * 1024 * 1024
     #else
-    public static let heapCapacity = 512 * 1024 * 1024
+    public static let defaultHeapCapacity = 256 * 1024 * 1024
     #endif
     
-    public static func initialise(capacity: Int = TaggedHeap.heapCapacity) {
+    public static func initialise(capacity: Int = TaggedHeap.defaultHeapCapacity) {
         self.blockCount = (capacity + TaggedHeap.blockSize - 1) / TaggedHeap.blockSize
         self.bitSetStorageCount = (self.blockCount + BitSet.bitsPerElement) / BitSet.bitsPerElement
         
@@ -73,8 +73,11 @@ public enum TaggedHeap {
     public static func allocateBlocks(tag: Tag, count: Int) -> UnsafeMutableRawPointer {
         var blockIndex = self.findContiguousBlock(count: count)
         if blockIndex == .max {
-            print("TaggedHeap error: no free blocks available! Allocating from the system allocator; memory will be leaked.")
-            return UnsafeMutableRawPointer.allocate(byteCount: count * TaggedHeap.blockSize, alignment: TaggedHeap.blockSize)
+            print("TaggedHeap error: no free blocks available! Reallocating a heap with double the capacity; all previous allocations will be leaked.")
+            self.spinLock.withLock {
+                self.initialise(capacity: 2 * self.blockCount * self.blockSize)
+            }
+            return self.allocateBlocks(tag: tag, count: count)
         }
         
         return self.spinLock.withLock {
