@@ -11,7 +11,7 @@ public final class GPUResourceUploader {
     // Useful to bypass uploading when running in GPU-less mode.
     public static var skipUpload = false
     
-    static var frameGraph : FrameGraph! = nil
+    public internal(set) static var frameGraph : FrameGraph! = nil
     private static var enqueuedBytes = 0
     private static var maxUploadSize = 128 * 1024 * 1024
     
@@ -31,7 +31,7 @@ public final class GPUResourceUploader {
         
         @inlinable
         public func execute(blitCommandEncoder: BlitCommandEncoder) {
-            let stagingBuffer = Buffer(length: self.stagingBufferLength, storageMode: .shared, cacheMode: .writeCombined)
+            let stagingBuffer = Buffer(length: self.stagingBufferLength, storageMode: .shared, cacheMode: .writeCombined, frameGraph: GPUResourceUploader.frameGraph)
             let bufferSlice = stagingBuffer[stagingBuffer.range, accessType: .write]
             self.closure(bufferSlice, blitCommandEncoder)
         }
