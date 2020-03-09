@@ -70,28 +70,26 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
         }
     }
     
-    static func passCommandBufferIndices(passes: [RenderPassRecord]) -> [Int] {
-        var indices = (0..<passes.count).map { _ in 0 }
+    static func encoderCommandBufferIndices(passes: [RenderPassRecord], commandEncoderIndices: [Int], commandEncoderCount: Int) -> [Int] {
         
-        var currentIndex = 0
-        
-        var previousPassIsExternal = false
-        var isWindowTextureEncoder = false
-        
-        for (i, passRecord) in passes.enumerated() {
-            if previousPassIsExternal != (passRecord.pass.passType == .external) {
-                // Wait for the previous command buffer to complete before executing.
-                if i > 0 { currentIndex += 1 }
-                previousPassIsExternal = passRecord.pass.passType == .external
-            } else
-                if passRecord.usesWindowTexture != isWindowTextureEncoder {
-                    if i > 0 { currentIndex += 1 }
-                    isWindowTextureEncoder = passRecord.usesWindowTexture
-            }
-            indices[i] = currentIndex
+        var encoderAttributes = [(isExternal: Bool, usesWindowTexture: Bool)](repeating: (false, false), count: commandEncoderCount)
+        for (i, pass) in passes.enumerated() {
+            let encoderIndex = commandEncoderIndices[i]
+            encoderAttributes[encoderIndex].isExternal = pass.pass.passType == .external
+            encoderAttributes[encoderIndex].usesWindowTexture = encoderAttributes[encoderIndex].usesWindowTexture || pass.usesWindowTexture
         }
         
-        return indices
+        var encoderCommandBufferIndices = [Int](repeating: 0, count: commandEncoderCount)
+        var currentCBIndex = 0
+        
+        for (i, attributes) in encoderAttributes.enumerated().dropFirst() {
+            if encoderAttributes[i - 1] != attributes {
+                currentCBIndex += 1
+            }
+            encoderCommandBufferIndices[i] = currentCBIndex
+        }
+        
+        return encoderCommandBufferIndices
     }
     
     public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {
@@ -101,7 +99,7 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
         self.resourceRegistry.prepareFrame()
         
         let renderTargetDescriptors = self.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages)
-        let passCommandBufferIndices = VulkanFrameGraphContext.passCommandBufferIndices(passes: passes)
+        let passCommandBufferIndices = VulkanFrameGraphContext.passCommandBufferIndices(passes: passes) // FIXME: should use encoderCommandBufferIndices as per Metal
         
         let firstEncoderSignalValue = self.queueCommandBufferIndex + 1
         self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors, lastCommandBufferIndex: firstEncoderSignalValue + UInt64(passCommandBufferIndices.count))

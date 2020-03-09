@@ -593,50 +593,62 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         self.resourceCommands.sort()
     }
     
-    static func passCommandBufferIndices(passes: [RenderPassRecord]) -> [Int] {
-        var indices = (0..<passes.count).map { _ in 0 }
+    static func encoderCommandBufferIndices(passes: [RenderPassRecord], commandEncoderIndices: [Int], commandEncoderCount: Int) -> [Int] {
         
-        var currentIndex = 0
-        
-        var previousPassIsExternal = false
-        var isWindowTextureEncoder = false
-        
-        for (i, passRecord) in passes.enumerated() {
-            if previousPassIsExternal != (passRecord.pass.passType == .external) {
-                // Wait for the previous command buffer to complete before executing.
-                if i > 0 { currentIndex += 1 }
-                previousPassIsExternal = passRecord.pass.passType == .external
-            } else
-            if passRecord.usesWindowTexture != isWindowTextureEncoder {
-                if i > 0 { currentIndex += 1 }
-                isWindowTextureEncoder = passRecord.usesWindowTexture
-            }
-            indices[i] = currentIndex
+        var encoderAttributes = [(isExternal: Bool, usesWindowTexture: Bool)](repeating: (false, false), count: commandEncoderCount)
+        for (i, pass) in passes.enumerated() {
+            let encoderIndex = commandEncoderIndices[i]
+            encoderAttributes[encoderIndex].isExternal = pass.pass.passType == .external
+            encoderAttributes[encoderIndex].usesWindowTexture = encoderAttributes[encoderIndex].usesWindowTexture || pass.usesWindowTexture
         }
         
-        return indices
+        var encoderCommandBufferIndices = [Int](repeating: 0, count: commandEncoderCount)
+        var currentCBIndex = 0
+        
+        for (i, attributes) in encoderAttributes.enumerated().dropFirst() {
+            if encoderAttributes[i - 1] != attributes {
+                currentCBIndex += 1
+            }
+            encoderCommandBufferIndices[i] = currentCBIndex
+        }
+        
+        return encoderCommandBufferIndices
     }
     
     public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {
-        defer { self.resourceRegistry.cycleFrames() }
-        
         self.resourceRegistry.prepareFrame()
         
+        defer {
+            self.resourceRegistry.cycleFrames()
+
+            self.resourceCommands.removeAll(keepingCapacity: true)
+            self.renderTargetTextureProperties.removeAll(keepingCapacity: true)
+            
+            assert(self.backend.activeContext === self)
+            self.backend.activeContext = nil
+        }
+        
+        if passes.isEmpty {
+            completion()
+            self.accessSemaphore.signal()
+            return
+        }
+        
         let firstEncoderSignalValue = self.queueCommandBufferIndex + 1 // The first encoder's MTLEvent signal value is one higher than the previous value used.
-        let passCommandBufferIndices = MetalFrameGraphContext.passCommandBufferIndices(passes: passes)
         
         var storedTextures = [Texture]()
         let renderTargetDescriptors = self.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages, storedTextures: &storedTextures)
-        self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors, storedTextures: storedTextures, lastCommandBufferIndex: firstEncoderSignalValue + UInt64(passCommandBufferIndices.count))
         
         let (passCommandEncoders, commandEncoderNames, commandEncoderCount) = MetalEncoderManager.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
+        let encoderCommandBufferIndices = MetalFrameGraphContext.encoderCommandBufferIndices(passes: passes, commandEncoderIndices: passCommandEncoders, commandEncoderCount: commandEncoderCount)
         
+        self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors, storedTextures: storedTextures, lastCommandBufferIndex: firstEncoderSignalValue + UInt64(encoderCommandBufferIndices.last!))
         
         var commandEncoderWaitEventValues = (0..<commandEncoderCount).map { _ in QueueCommandIndices(repeating: 0) }
         
         for command in self.resourceRegistryPreFrameCommands {
             let encoderIndex = passCommandEncoders[command.passIndex]
-            let commandBufferIndex = passCommandBufferIndices[command.passIndex]
+            let commandBufferIndex = encoderCommandBufferIndices[encoderIndex]
             command.command.execute(resourceRegistry: self.resourceRegistry, resourceMap: self.resourceMap, stateCaches: backend.stateCaches, queue: self.frameGraphQueue,
                                     waitEventValues: &commandEncoderWaitEventValues[encoderIndex], signalEventValue: UInt64(commandBufferIndex) + firstEncoderSignalValue)
         }
@@ -688,13 +700,13 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         
-        let lastCommandBufferIndex = passCommandBufferIndices.last ?? 0
+        let lastCommandBufferIndex = encoderCommandBufferIndices.last!
         
         var commandBuffer : MTLCommandBuffer? = nil
         var encoderManager : MetalEncoderManager? = nil
         
         var committedCommandBufferCount = 0
-        var commandEncoderIndex = -1
+        var previousCommandEncoderIndex = -1
 
         func processCommandBuffer() {
             encoderManager?.endEncoding()
@@ -745,7 +757,8 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         }
         
         for (i, passRecord) in passes.enumerated() {
-            let commandBufferIndex = passCommandBufferIndices[i]
+            let passCommandEncoderIndex = passCommandEncoders[i]
+            let commandBufferIndex = encoderCommandBufferIndices[passCommandEncoderIndex]
             if commandBufferIndex != committedCommandBufferCount {
                 processCommandBuffer()
             }
@@ -755,10 +768,10 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 encoderManager = MetalEncoderManager(commandBuffer: commandBuffer!, resourceMap: self.resourceMap)
             }
             
-            if commandEncoderIndex != passCommandBufferIndices[i] {
-                commandEncoderIndex = passCommandBufferIndices[i]
+            if previousCommandEncoderIndex != passCommandEncoderIndex {
+                previousCommandEncoderIndex = passCommandEncoderIndex
                 
-                let waitEventValues = commandEncoderWaitEventValues[commandEncoderIndex]
+                let waitEventValues = commandEncoderWaitEventValues[passCommandEncoderIndex]
                 for queue in QueueRegistry.allQueues {
                     if waitEventValues[Int(queue.index)] > queue.lastCompletedCommand {
                         if let event = backend.queueSyncEvents[Int(queue.index)] {
@@ -777,19 +790,6 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         }
         
         processCommandBuffer()
-        
-        // Balance out the starting count of one for commandBufferCount
-        if passCommandBufferIndices.isEmpty {
-            completion()
-            self.accessSemaphore.signal()
-        }
-        
-        self.resourceCommands.removeAll(keepingCapacity: true)
-        
-        self.renderTargetTextureProperties.removeAll(keepingCapacity: true)
-        
-        assert(self.backend.activeContext === self)
-        self.backend.activeContext = nil
     }
 }
 
