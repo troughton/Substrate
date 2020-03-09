@@ -15,17 +15,19 @@ struct MetalRenderPipelineDescriptor : Hashable {
     var depthAttachmentFormat : MTLPixelFormat = .invalid
     var stencilAttachmentFormat : MTLPixelFormat = .invalid
     
+    var colorAttachmentSampleCounts : [Int?]
+    var depthSampleCount : Int?
+    var stencilSampleCount : Int?
+    
     public init(_ descriptor: RenderPipelineDescriptor, renderTargetDescriptor: RenderTargetDescriptor) {
         self.descriptor = descriptor
         self.colorAttachmentFormats = renderTargetDescriptor.colorAttachments.map { MTLPixelFormat($0?.texture.descriptor.pixelFormat ?? .invalid) }
         self.depthAttachmentFormat = MTLPixelFormat(renderTargetDescriptor.depthAttachment?.texture.descriptor.pixelFormat ?? .invalid)
         self.stencilAttachmentFormat = MTLPixelFormat(renderTargetDescriptor.stencilAttachment?.texture.descriptor.pixelFormat ?? .invalid)
-    }
-    
-    static func formatsEqual(_ lhs: MetalRenderPipelineDescriptor, _ rhs: MetalRenderPipelineDescriptor) -> Bool {
-        if lhs.depthAttachmentFormat != rhs.depthAttachmentFormat { return false }
-        if lhs.stencilAttachmentFormat != rhs.stencilAttachmentFormat { return false }
-        return lhs.colorAttachmentFormats == rhs.colorAttachmentFormats
+        
+        self.colorAttachmentSampleCounts = renderTargetDescriptor.colorAttachments.map { $0?.texture.descriptor.sampleCount }
+        self.depthSampleCount = renderTargetDescriptor.depthAttachment?.texture.descriptor.sampleCount
+        self.stencilSampleCount = renderTargetDescriptor.stencilAttachment?.texture.descriptor.sampleCount
     }
 }
 

@@ -211,7 +211,6 @@ extension MTLRenderPipelineDescriptor {
             self.vertexDescriptor = MTLVertexDescriptor(vertexDescriptor)
         }
         
-        self.rasterSampleCount = descriptor.descriptor.rasterSampleCount
         self.isAlphaToCoverageEnabled = descriptor.descriptor.isAlphaToCoverageEnabled
         self.isAlphaToOneEnabled = descriptor.descriptor.isAlphaToOneEnabled
         
@@ -220,9 +219,25 @@ extension MTLRenderPipelineDescriptor {
         self.depthAttachmentPixelFormat = descriptor.depthAttachmentFormat
         self.stencilAttachmentPixelFormat = descriptor.stencilAttachmentFormat
         
+        var sampleCount = 0
+        if let depthSampleCount = descriptor.depthSampleCount {
+            sampleCount = depthSampleCount
+        }
+        if let stencilSampleCount = descriptor.stencilSampleCount {
+            assert(sampleCount == 0 || sampleCount == stencilSampleCount)
+            sampleCount = stencilSampleCount
+        }
+        
         for i in 0..<descriptor.colorAttachmentFormats.count {
             self.colorAttachments[i] = MTLRenderPipelineColorAttachmentDescriptor(blendDescriptor: descriptor.descriptor.blendStates[i, default: nil], writeMask: descriptor.descriptor.writeMasks[i, default: []], pixelFormat: descriptor.colorAttachmentFormats[i, default: .invalid])
+            
+            if let attachmentSampleCount = descriptor.colorAttachmentSampleCounts[i] {
+                assert(sampleCount == 0 || sampleCount == attachmentSampleCount)
+                sampleCount = attachmentSampleCount
+            }
         }
+        
+        self.rasterSampleCount = sampleCount
     }
 }
 

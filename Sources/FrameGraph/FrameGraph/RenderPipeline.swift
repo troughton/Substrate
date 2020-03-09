@@ -78,16 +78,6 @@ public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
     // Rasterization and visibility state
     
     @inlinable
-    public var rasterSampleCount: Int {
-        get {
-            return self.descriptor.rasterSampleCount
-        }
-        set {
-            self.descriptor.rasterSampleCount = newValue
-        }
-    }
-    
-    @inlinable
     public var isAlphaToCoverageEnabled: Bool {
         get {
             return self.descriptor.isAlphaToCoverageEnabled
@@ -170,7 +160,6 @@ public struct RenderPipelineDescriptor : Hashable {
     public var fragmentFunction: String? = nil
     
     /* Rasterization and visibility state */
-    public var rasterSampleCount: Int = 1
     public var isAlphaToCoverageEnabled: Bool = false
     public var isAlphaToOneEnabled: Bool = false
     public var isRasterizationEnabled: Bool = true
