@@ -17,6 +17,10 @@ public enum TextureType : UInt {
     case typeCubeArray
     
     case type3D
+    
+    case type2DMultisampleArray
+    
+    case typeTextureBuffer
 }
 
 public struct TextureUsage : OptionSet {

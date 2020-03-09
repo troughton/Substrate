@@ -11,8 +11,112 @@ import Metal
 
 //MARK: From Metal
 
+extension Texture {
+    public init(metalTexture: MTLTexture) {
+        self = Texture(descriptor: TextureDescriptor(from: metalTexture), externalResource: metalTexture)
+    }
+}
+
+extension TextureDescriptor {
+    public init(from mtlTexture: MTLTexture) {
+        self.init()
+        
+        self.textureType = TextureType(mtlTexture.textureType)
+        self.pixelFormat = PixelFormat(mtlTexture.pixelFormat)
+        self.width = mtlTexture.width
+        self.height = mtlTexture.height
+        self.depth = mtlTexture.depth
+        self.mipmapLevelCount = mtlTexture.mipmapLevelCount
+        self.sampleCount = mtlTexture.sampleCount
+        self.arrayLength = mtlTexture.arrayLength
+        self.storageMode = StorageMode(mtlTexture.storageMode)
+        self.cacheMode = CPUCacheMode(mtlTexture.cpuCacheMode)
+        self.usageHint = TextureUsage(mtlTexture.usage)
+    }
+}
+
+extension TextureType {
+    public init(_ type: MTLTextureType) {
+        switch type {
+        case .type1D:
+            self = .type1D
+        case .type1DArray:
+            self = .type1DArray
+        case .type2D:
+            self = .type2D
+        case .type2DArray:
+            self = .type2DArray
+        case .type2DMultisample:
+            self = .type2DMultisample
+        case .typeCube:
+            self = .typeCube
+        case .typeCubeArray:
+            self = .typeCubeArray
+        case .type3D:
+            self = .type3D
+        case .type2DMultisampleArray:
+            self = .type2DMultisampleArray
+        case .typeTextureBuffer:
+            self = .typeTextureBuffer
+        @unknown default:
+            fatalError()
+        }
+    }
+}
+
+extension StorageMode {
+    public init(_ mode: MTLStorageMode) {
+        switch mode {
+        case .shared:
+            self = .shared
+        case .managed:
+            self = .managed
+        case .private:
+            self = .private
+        #if os(iOS) || os(tvOS) || os(watchOS)
+        case .memoryless:
+            self = .private
+        #endif
+        @unknown default:
+            fatalError()
+        }
+    }
+}
+
+extension CPUCacheMode {
+    public init(_ cacheMode: MTLCPUCacheMode) {
+        switch cacheMode {
+        case .defaultCache:
+            self = .defaultCache
+        case .writeCombined:
+            self = .writeCombined
+        @unknown default:
+            self = .defaultCache
+        }
+    }
+}
+
+extension TextureUsage {
+    public init(_ usage: MTLTextureUsage) {
+        self.init()
+        
+        if usage.contains(.shaderRead) {
+            self.formUnion(.shaderRead)
+        }
+        if usage.contains(.shaderWrite) {
+            self.formUnion(.shaderWrite)
+        }
+        if usage.contains(.renderTarget) {
+            self.formUnion(.renderTarget)
+        }
+        if usage.contains(.pixelFormatView) {
+            self.formUnion(.pixelFormatView)
+        }
+    }
+}
+
 extension ResourceType {
-    init(_ type: MTLArgumentType) {
+    public init(_ type: MTLArgumentType) {
         switch type {
         case .buffer:
             self = .buffer
@@ -35,7 +139,7 @@ extension ResourceType {
 }
 
 extension ResourceUsageType {
-    init(_ access: MTLArgumentAccess) {
+    public init(_ access: MTLArgumentAccess) {
         switch access {
         case .readOnly:
             self = .read
@@ -50,7 +154,7 @@ extension ResourceUsageType {
 }
 
 extension RenderStages {
-    init(_ mtlStages: MTLRenderStages) {
+    public init(_ mtlStages: MTLRenderStages) {
         var stages = RenderStages(rawValue: 0) // Array literal causes problems for -Onone performance.
         if mtlStages == MTLRenderStages(rawValue: 0) {
             stages = .compute
@@ -123,67 +227,67 @@ extension ArgumentReflection {
 //MARK: To Metal
 
 extension MTLBlendFactor {
-    init(_ blendFactor: BlendFactor) {
+    public init(_ blendFactor: BlendFactor) {
         self.init(rawValue: blendFactor.rawValue)!
     }
 }
 
 extension MTLBlendOperation {
-    init(_ blendOperation: BlendOperation) {
+    public init(_ blendOperation: BlendOperation) {
         self.init(rawValue: blendOperation.rawValue)!
     }
 }
 
 extension MTLBlitOption {
-    init(_ option: BlitOption) {
+    public init(_ option: BlitOption) {
         self.init(rawValue: option.rawValue)
     }
 }
 
 extension MTLCompareFunction {
-    init(_ compareFunction: CompareFunction) {
+    public init(_ compareFunction: CompareFunction) {
         self.init(rawValue: compareFunction.rawValue)!
     }
 }
 
 extension MTLClearColor {
-    init(_ clearColor: ClearColor) {
+    public init(_ clearColor: ClearColor) {
         self.init(red: clearColor.red, green: clearColor.green, blue: clearColor.blue, alpha: clearColor.alpha)
     }
 }
 
 extension MTLColorWriteMask {
-    init(_ colorWriteMask: ColorWriteMask) {
+    public init(_ colorWriteMask: ColorWriteMask) {
         self.init(rawValue: colorWriteMask.rawValue)
     }
 }
 
 extension MTLCPUCacheMode {
-    init(_ mode: CPUCacheMode) {
+    public init(_ mode: CPUCacheMode) {
         self.init(rawValue: mode.rawValue)!
     }
 }
 
 extension MTLCullMode {
-    init(_ mode: CullMode) {
+    public init(_ mode: CullMode) {
         self.init(rawValue: mode.rawValue)!
     }
 }
 
 extension MTLTriangleFillMode {
-    init(_ mode: TriangleFillMode) {
+    public init(_ mode: TriangleFillMode) {
         self.init(rawValue: mode.rawValue)!
     }
 }
 
 extension MTLDataType {
-    init(_ dataType: DataType) {
+    public init(_ dataType: DataType) {
         self.init(rawValue: dataType.rawValue)!
     }
 }
 
 extension MTLDepthClipMode {
-    init(_ depthClipMode: DepthClipMode) {
+    public init(_ depthClipMode: DepthClipMode) {
         switch depthClipMode {
         case .clip:
             self = .clip
@@ -242,19 +346,19 @@ extension MTLFunctionConstantValues {
 }
 
 extension MTLIndexType {
-    init(_ type: IndexType) {
+    public init(_ type: IndexType) {
         self.init(rawValue: type.rawValue)!
     }
 }
 
 extension MTLOrigin {
-    init(_ origin: Origin) {
+    public init(_ origin: Origin) {
         self.init(x: origin.x, y: origin.y, z: origin.z)
     }
 }
 
 extension MTLPrimitiveType {
-    init(_ type: PrimitiveType) {
+    public init(_ type: PrimitiveType) {
         self.init(rawValue: type.rawValue)!
     }
 }
@@ -267,13 +371,13 @@ extension MTLPixelFormat {
 }
 
 extension MTLRegion {
-    init(_ region: Region) {
+    public init(_ region: Region) {
         self.init(origin: MTLOrigin(region.origin), size: MTLSize(region.size))
     }
 }
 
 extension MTLRenderStages {
-    init(_ renderStages: RenderStages) {
+    public init(_ renderStages: RenderStages) {
         self = MTLRenderStages(rawValue: 0)
         
         if renderStages.contains(.vertex) {
@@ -314,51 +418,51 @@ extension MTLResourceOptions {
 }
 
 extension MTLSamplerAddressMode {
-    init(_ mode: SamplerAddressMode) {
+    public init(_ mode: SamplerAddressMode) {
         self.init(rawValue: mode.rawValue)!
     }
 }
 
 #if os(macOS)
 extension MTLSamplerBorderColor {
-    init(_ color: SamplerBorderColor) {
+    public init(_ color: SamplerBorderColor) {
         self.init(rawValue: color.rawValue)!
     }
 }
 #endif
 
 extension MTLSamplerMinMagFilter {
-    init(_ filter: SamplerMinMagFilter) {
+    public init(_ filter: SamplerMinMagFilter) {
         self.init(rawValue: filter.rawValue)!
     }
 }
 
 extension MTLSamplerMipFilter {
-    init(_ filter: SamplerMipFilter) {
+    public init(_ filter: SamplerMipFilter) {
         self.init(rawValue: filter.rawValue)!
     }
 }
 
 extension MTLScissorRect {
-    init(_ rect: ScissorRect) {
+    public init(_ rect: ScissorRect) {
         self.init(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
     }
 }
 
 extension MTLSize {
-    init(_ size: Size) {
+    public init(_ size: Size) {
         self.init(width: size.width, height: size.height, depth: size.depth)
     }
 }
 
 extension MTLStencilOperation {
-    init(_ stencilOperation: StencilOperation) {
+    public init(_ stencilOperation: StencilOperation) {
         self.init(rawValue: stencilOperation.rawValue)!
     }
 }
 
 extension MTLStorageMode {
-    init(_ mode: StorageMode) {
+    public init(_ mode: StorageMode) {
         switch mode {
         case .shared:
             self = .shared
@@ -375,37 +479,37 @@ extension MTLStorageMode {
 }
 
 extension MTLTextureType {
-    init(_ type: TextureType) {
+    public init(_ type: TextureType) {
         self.init(rawValue: type.rawValue)!
     }
 }
 
 extension MTLTextureUsage {
-    init(_ usage: TextureUsage) {
+    public init(_ usage: TextureUsage) {
         self.init(rawValue: usage.rawValue & 0b11111) // Mask to only the bits Metal knows about.
     }
 }
 
 extension MTLViewport {
-    init(_ viewport: Viewport) {
+    public init(_ viewport: Viewport) {
         self.init(originX: viewport.originX, originY: viewport.originY, width: viewport.width, height: viewport.height, znear: viewport.zNear, zfar: viewport.zFar)
     }
 }
 
 extension MTLVertexFormat {
-    init(_ vertexFormat: VertexFormat) {
+    public init(_ vertexFormat: VertexFormat) {
         self.init(rawValue: vertexFormat.rawValue)!
     }
 }
 
 extension MTLVertexStepFunction {
-    init(_ stepFunction: VertexStepFunction) {
+    public init(_ stepFunction: VertexStepFunction) {
         self.init(rawValue: stepFunction.rawValue)!
     }
 }
 
 extension MTLWinding {
-    init(_ winding: Winding) {
+    public init(_ winding: Winding) {
         self = winding == .clockwise ? .clockwise : .counterClockwise
     }
 }
