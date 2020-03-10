@@ -220,6 +220,24 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         }
     }
     
+    public func pushDebugGroup(_ string: String) {
+        self.encoder.pushDebugGroup(string)
+    }
+    
+    public func popDebugGroup() {
+        self.encoder.popDebugGroup()
+    }
+    
+    @inlinable
+    public func debugGroup<T>(_ groupName: String, perform: () throws -> T) rethrows -> T {
+        try self.encoder.debugGroup(groupName, perform: perform)
+    }
+    
+    @inlinable
+    public func insertDebugSignpost(_ string: String) {
+        self.encoder.insertDebugSignpost(string)
+    }
+    
     public func setArgumentBuffer<K>(_ argumentBuffer: ArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
         self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
     }
@@ -286,7 +304,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
 
 
 public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
-    let encoder : ComputeCommandEncoder
+    @usableFromInline let encoder : ComputeCommandEncoder
     
     var pipelineDescriptorChanged : Bool = false
     
@@ -415,6 +433,19 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
                 self.encoder.setArguments(self.set7, at: 7)
             }
         }
+    }
+    
+    public func pushDebugGroup(_ string: String) {
+        self.encoder.pushDebugGroup(string)
+    }
+    
+    public func popDebugGroup() {
+        self.encoder.popDebugGroup()
+    }
+    
+    @inlinable
+    public func debugGroup<T>(_ groupName: String, perform: () throws -> T) rethrows -> T {
+        try self.encoder.debugGroup(groupName, perform: perform)
     }
     
     public func setStageInRegion(_ region: Region) {
