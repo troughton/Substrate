@@ -12,7 +12,7 @@ let package = Package(
     name: "SwiftFrameGraph",
     platforms: [.macOS(.v10_14), .iOS(.v12), .tvOS(.v12)],
     products: [
-        .library(name: "FrameGraphTextureLoading", targets: ["FrameGraphTextureLoading"]),
+        .library(name: "FrameGraphTextureIO", targets: ["FrameGraphTextureIO"]),
         .library(name: "SwiftFrameGraph", targets: ["SwiftFrameGraph"]),
         .library(name: "FrameGraphUtilities", targets: ["FrameGraphUtilities"]),
         .executable(name: "ShaderTool", targets: ["ShaderTool"])
@@ -24,7 +24,7 @@ let package = Package(
         .package(url: "https://github.com/troughton/Cstb", from: "1.0.2")
     ],
     targets: [
-        .target(name: "FrameGraphTextureLoading", dependencies: ["SwiftFrameGraph", "stb_image", "stb_image_resize", "tinyexr"]),
+        .target(name: "FrameGraphTextureIO", dependencies: ["SwiftFrameGraph", "stb_image", "stb_image_resize", "stb_image_write", "tinyexr"]),
         .target(name: "FrameGraphCExtras", dependencies: []),
         .target(name: "SwiftFrameGraph", dependencies: ["FrameGraphUtilities", "FrameGraphCExtras", "SwiftAtomics"], path: "Sources/FrameGraph"),
         .target(name: "FrameGraphUtilities", dependencies: ["SwiftAtomics"]),

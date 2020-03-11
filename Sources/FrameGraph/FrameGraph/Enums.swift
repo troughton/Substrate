@@ -219,6 +219,46 @@ public enum PixelFormat : UInt, Hashable, Codable {
     }
     
     @inlinable
+    public var channelCount : Int {
+        switch self {
+        case .invalid:
+            return 0
+            
+        case .r8Sint, .r8Uint, .r8Snorm, .r8Unorm, .r8Unorm_sRGB, .a8Unorm,
+             .r16Sint, .r16Uint, .r16Float, .r16Snorm, .r16Unorm,
+             .r32Sint, .r32Uint, .r32Float,
+             .depth16Unorm, .depth32Float, .stencil8,
+             .bc4_rSnorm, .bc4_rUnorm:
+            return 1
+            
+        case .rg8Sint, .rg8Uint, .rg8Snorm, .rg8Unorm, .rg8Unorm_sRGB,
+             .rg16Sint, .rg16Uint, .rg16Float, .rg16Snorm, .rg16Unorm,
+             .rg32Sint, .rg32Uint, .rg32Float,
+             .depth24Unorm_stencil8, .x24_stencil8, .depth32Float_stencil8, .x32_stencil8,
+             .bc5_rgSnorm, .bc5_rgUnorm:
+            return 2
+            
+        case .b5g6r5Unorm, .rg11b10Float, .rgb9e5Float, .bgr10_xr, .bgr10_xr_sRGB,
+             .bc6H_rgbFloat, .bc6H_rgbuFloat,
+             .gbgr422, .bgrg422:
+            return 3
+            
+        case .rgba8Sint, .rgba8Uint, .rgba8Snorm, .rgba8Unorm, .rgba8Unorm_sRGB,
+             .bgra8Unorm, .bgra8Unorm_sRGB,
+             .rgba16Sint, .rgba16Uint, .rgba16Float, .rgba16Snorm, .rgba16Unorm,
+             .rgba32Sint, .rgba32Uint, .rgba32Float,
+             .a1bgr5Unorm, .abgr4Unorm, .bgr5a1Unorm,
+             .rgb10a2Uint, .rgb10a2Unorm, .bgr10a2Unorm,
+             .bgra10_xr, .bgra10_xr_sRGB,
+             .bc1_rgba, .bc1_rgba_sRGB,
+             .bc2_rgba, .bc2_rgba_sRGB,
+             .bc3_rgba, .bc3_rgba_sRGB,
+             .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+            return 4
+        }
+    }
+    
+    @inlinable
     public var bytesPerPixel : Double {
         switch self {
         case .invalid:
