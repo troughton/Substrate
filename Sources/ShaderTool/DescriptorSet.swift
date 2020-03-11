@@ -102,7 +102,11 @@ final class DescriptorSet {
                 stream.print("@BufferBacked public var \(resource.name) : \(resource.type.name)? = nil")
             } else {
                 let wrapperType = resource.viewType == .uniformBuffer || resource.viewType == .storageBuffer ? "@OffsetView " : ""
-                stream.print("\(wrapperType)public var \(resource.name) : \(resource.viewType.frameGraphTypeName)? = nil")
+                if wrapperType.isEmpty, resource.binding.arrayLength > 1 { // FIXME: how do we handle this case for arrays which require property wrappers?
+                    stream.print("\(wrapperType)public var \(resource.name) : [\(resource.viewType.frameGraphTypeName)?] = .init(repeating: nil, count: \(resource.binding.arrayLength))")
+                } else {
+                    stream.print("\(wrapperType)public var \(resource.name) : \(resource.viewType.frameGraphTypeName)? = nil")
+                }
             }
         }
         
@@ -134,21 +138,32 @@ final class DescriptorSet {
                     continue
                 }
                 
-                stream.print("if let resource = self.\(resource.name) {")
-                            
+                let arrayIndexString : String
+                if resource.binding.arrayLength > 1 {
+                    arrayIndexString = " + i"
+                    stream.print("for i in 0..<\(resource.binding.arrayLength) {")
+                    stream.print("if let resource = self.\(resource.name)[i] {")
+                } else {
+                    arrayIndexString = ""
+                    stream.print("if let resource = self.\(resource.name) {")
+                }
+                
                 stream.print("argBuffer.bindings.append(")
-                        
                 
                 switch resource.type {
                 case .texture:
-                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index), type: .texture), .texture(resource))")
+                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index)\(arrayIndexString), type: .texture), .texture(resource))")
                 case .sampler:
-                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index), type: .sampler), .sampler(resource))")
+                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index)\(arrayIndexString), type: .sampler), .sampler(resource))")
                 default:
-                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index), type: .buffer), .buffer(resource, offset: self.$\(resource.name).offset))")
+                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index)\(arrayIndexString), type: .buffer), .buffer(resource, offset: self.$\(resource.name).offset))")
                 }
                 stream.print(")")
                 stream.print("}")
+                
+                if resource.binding.arrayLength > 1 {
+                    stream.print("}")
+                }
             }
         }
 
@@ -158,7 +173,7 @@ final class DescriptorSet {
         do {
             stream.print("#if canImport(Vulkan)")
             stream.print("if RenderBackend.api == .vulkan {")
-            defer { 
+            defer {
                 stream.print("}")
                 stream.print("#endif // canImport(Vulkan)")
             }
@@ -180,22 +195,33 @@ final class DescriptorSet {
                     continue
                 }
                 
-                stream.print("if let resource = self.\(resource.name) {")
-                stream.print("assert(resource.binding.set == setIndex)")
-                            
+                let arrayIndexString : String
+                if resource.binding.arrayLength > 1 {
+                    arrayIndexString = "i"
+                    stream.print("for i in 0..<\(resource.binding.arrayLength) {")
+                    stream.print("if let resource = self.\(resource.name)[i] {")
+                } else {
+                    arrayIndexString = "0"
+                    stream.print("if let resource = self.\(resource.name) {")
+                }
+                
                 stream.print("argBuffer.bindings.append(")
                 
                 switch resource.type {
                 case .texture:
-                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: 0), .texture(resource))")
+                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .texture(resource))")
                 case .sampler:
-                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: 0), .sampler(resource))")
+                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .sampler(resource))")
                 default:
-                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: 0), .buffer(resource, offset: self.$\(resource.name).offset))")
+                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .buffer(resource, offset: self.$\(resource.name).offset))")
                 }
                 
                 stream.print(")")
                 stream.print("}")
+
+                if resource.binding.arrayLength > 1 {
+                    stream.print("}")
+                }
             }
         }
         

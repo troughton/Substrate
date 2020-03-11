@@ -134,9 +134,12 @@ struct Resource : Equatable {
             type = members.first!.type
         }
         
+        let resourceTypeHandle = spvc_compiler_get_type_handle(compiler.compiler, resource.type_id)
+        
         let name = String(cString: spvc_compiler_get_name(compiler.compiler, resource.id)) // String(cString: resource.name)
         let set = Int(spvc_compiler_get_decoration(compiler.compiler, resource.id, SpvDecorationDescriptorSet))
         var binding = Int(spvc_compiler_get_decoration(compiler.compiler, resource.id, SpvDecorationBinding))
+        let arrayLength = Int(spvc_type_get_array_dimension(resourceTypeHandle, 0))
         
         if compiler.file.target == .macOSMetal || compiler.file.target == .iOSMetal {
             let assignedIndex = spvc_compiler_msl_get_automatic_resource_binding(compiler.compiler, resource.id)
@@ -145,7 +148,7 @@ struct Resource : Equatable {
             }
         }
         
-        self.init(type: type, binding: Binding(set: set, index: binding, arrayLength: 1), name: name, stage: stage, viewType: viewType)
+        self.init(type: type, binding: Binding(set: set, index: binding, arrayLength: arrayLength), name: name, stage: stage, viewType: viewType)
     }
     
     static func ==(lhs: Resource, rhs: Resource) -> Bool {
