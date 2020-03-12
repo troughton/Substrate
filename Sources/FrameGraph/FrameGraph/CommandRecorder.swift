@@ -1140,9 +1140,12 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         for (i, attachment) in drawRenderPass.renderTargetDescriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             
-            if endingEncoding, let resolveTexture = attachment.resolveTexture {
-                self.resourceUsages.registerResource(Resource(resolveTexture))
-                let _ = self.resourceUsages.resourceUsageNode(for: resolveTexture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex)
+            defer {
+                if endingEncoding, let resolveTexture = attachment.resolveTexture {
+                    self.resourceUsages.registerResource(Resource(resolveTexture))
+                    let _ = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
+                    let _ = self.resourceUsages.resourceUsageNode(for: resolveTexture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
+                }
             }
         
             guard renderPipelineDescriptor.writeMasks[i, default: []] != [] else {
@@ -1211,7 +1214,8 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             
             if endingEncoding, let resolveTexture = depthAttachment.resolveTexture {
                 self.resourceUsages.registerResource(Resource(resolveTexture))
-                let _ = self.resourceUsages.resourceUsageNode(for: resolveTexture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex)
+                let _ = self.resourceUsages.resourceUsageNode(for: depthAttachment.texture.handle, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
+                let _ = self.resourceUsages.resourceUsageNode(for: resolveTexture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
             }
         }
         
@@ -1247,7 +1251,8 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             
             if endingEncoding, let resolveTexture = stencilAttachment.resolveTexture {
                 self.resourceUsages.registerResource(Resource(resolveTexture))
-                let _ = self.resourceUsages.resourceUsageNode(for: resolveTexture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex)
+                let _ = self.resourceUsages.resourceUsageNode(for: stencilAttachment.texture.handle, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
+                let _ = self.resourceUsages.resourceUsageNode(for: resolveTexture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
             }
         }
     }
