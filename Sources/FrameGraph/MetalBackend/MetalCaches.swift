@@ -61,6 +61,11 @@ final class MetalStateCaches {
     func checkForLibraryReload() {
         guard let libraryURL = self.libraryURL else { return }
         if FileManager.default.fileExists(atPath: libraryURL.path), let currentModificationDate = try? libraryURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, currentModificationDate > self.loadedLibraryModificationDate {
+            
+            for queue in QueueRegistry.allQueues {
+                queue.waitForCommand(queue.lastSubmittedCommand) // Wait for all commands to finish on all queues.
+            }
+            
             // Metal won't pick up the changes if we use the makeLibrary(filePath:) initialiser,
             // so we have to load into a DispatchData instead.
             guard let data = try? Data(contentsOf: libraryURL) else {
