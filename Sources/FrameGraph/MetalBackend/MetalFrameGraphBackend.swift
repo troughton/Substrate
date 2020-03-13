@@ -760,6 +760,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             let passCommandEncoderIndex = passCommandEncoders[i]
             let commandBufferIndex = encoderCommandBufferIndices[passCommandEncoderIndex]
             if commandBufferIndex != committedCommandBufferCount {
+                assert(previousCommandEncoderIndex != passCommandEncoderIndex)
                 processCommandBuffer()
             }
             
@@ -770,6 +771,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             
             if previousCommandEncoderIndex != passCommandEncoderIndex {
                 previousCommandEncoderIndex = passCommandEncoderIndex
+                encoderManager?.endEncoding()
                 
                 let waitEventValues = commandEncoderWaitEventValues[passCommandEncoderIndex]
                 for queue in QueueRegistry.allQueues {

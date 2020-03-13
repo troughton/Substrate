@@ -77,16 +77,8 @@ final class MetalEncoderManager {
         if descriptor === previousRenderTarget, let renderEncoder = self.renderEncoder {
             return renderEncoder
         } else {
+            self.endEncoding()
             self.previousRenderTarget = descriptor
-            
-            self.renderEncoder?.endEncoding()
-            self.renderEncoder = nil
-            
-            self.computeEncoder?.endEncoding()
-            self.computeEncoder = nil
-            
-            self.blitEncoder?.endEncoding()
-            self.blitEncoder = nil
             
             let mtlDescriptor : MTLRenderPassDescriptor
             do {
@@ -103,15 +95,7 @@ final class MetalEncoderManager {
     }
     
     func computeCommandEncoder() -> FGMTLComputeCommandEncoder {
-        self.renderEncoder?.endEncoding()
-        self.renderEncoder = nil
-        self.previousRenderTarget = nil
-        
-        self.computeEncoder?.endEncoding()
-        self.computeEncoder = nil
-        
-        self.blitEncoder?.endEncoding()
-        self.blitEncoder = nil
+        self.endEncoding()
         
         let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: .concurrent)!
         let computeEncoder = FGMTLComputeCommandEncoder(encoder: mtlComputeEncoder)
@@ -120,15 +104,7 @@ final class MetalEncoderManager {
     }
     
     func blitCommandEncoder() -> FGMTLBlitCommandEncoder {
-        self.renderEncoder?.endEncoding()
-        self.renderEncoder = nil
-        self.previousRenderTarget = nil
-        
-        self.computeEncoder?.endEncoding()
-        self.computeEncoder = nil
-        
-        self.blitEncoder?.endEncoding()
-        self.blitEncoder = nil
+        self.endEncoding()
         
         let blitEncoder = FGMTLBlitCommandEncoder(encoder: commandBuffer.makeBlitCommandEncoder()!)
         self.blitEncoder = blitEncoder
@@ -136,15 +112,7 @@ final class MetalEncoderManager {
     }
     
     func externalCommandEncoder() -> FGMTLExternalCommandEncoder {
-        self.renderEncoder?.endEncoding()
-        self.renderEncoder = nil
-        self.previousRenderTarget = nil
-        
-        self.computeEncoder?.endEncoding()
-        self.computeEncoder = nil
-        
-        self.blitEncoder?.endEncoding()
-        self.blitEncoder = nil
+        self.endEncoding()
         
         return FGMTLExternalCommandEncoder(commandBuffer: self.commandBuffer)
     }
