@@ -323,9 +323,9 @@ extension TextureData where T == Float {
             print("Error loading texture at \(url): \(String(cString: error!))")
         }
         
-        self.init(width: Int(image.width), height: Int(image.height), channels: Int(image.num_channels), colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
+        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
         
-        for c in 0..<self.channels {
+        for c in 0..<Int(image.num_channels) {
             let channelIndex : Int
             switch (UInt8(bitPattern: header.channels[c].name.0), header.channels[c].name.1) {
             case (UInt8(ascii: "R"), 0):
