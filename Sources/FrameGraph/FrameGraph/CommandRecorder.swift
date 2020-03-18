@@ -737,7 +737,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                 // Optimisation: if the pipeline state hasn't changed, these are the only resources we need to consider, so look up their reflection data immediately.
                 if !self.pipelineStateChanged, let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
                     self.commandRecorder.commands.append(command)
-                    let node = self.resourceUsages.resourceUsageNode(for: identifier, encoder: self, usageType: reflection.usageType, stages: reflection.stages, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset)
+                    let node = self.resourceUsages.resourceUsageNode(for: identifier, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset)
                     return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usageNode: node, isInArgumentBuffer: false, consistentUsageAssumed: false)
                 } else {
                     return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usageNode: nil, isInArgumentBuffer: false, consistentUsageAssumed: false)
@@ -815,7 +815,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                         assert(argsPtr.assumingMemoryBound(to: FrameGraphCommand.SetArgumentBufferArrayArgs.self).pointee.argumentBuffer == argumentBuffer.sourceArray)
                     }
                     
-                    let node = self.resourceUsages.resourceUsageNode(for: argumentBuffer.handle, encoder: self, usageType: reflection.usageType, stages: reflection.stages, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset)
+                    let node = self.resourceUsages.resourceUsageNode(for: argumentBuffer.handle, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset)
                     return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usageNode: node, isInArgumentBuffer: false, consistentUsageAssumed: false)
                 } else {
                     return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usageNode: nil, isInArgumentBuffer: false, consistentUsageAssumed: false)
@@ -878,7 +878,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                 replacingBoundResourceNode(bindingPath: bindingPath, resultUntrackedIfUsed: assumeConsistentUsage, perform: { currentlyBound in
                     // Optimisation: if the pipeline state hasn't changed, these are the only resources we need to consider, so look up their reflection data immediately.
                     if !self.pipelineStateChanged, let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
-                        let node = self.resourceUsages.resourceUsageNode(for: identifier, encoder: self, usageType: reflection.usageType, stages: reflection.stages, inArgumentBuffer: true, firstCommandOffset: firstCommandOffset)
+                        let node = self.resourceUsages.resourceUsageNode(for: identifier, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, inArgumentBuffer: true, firstCommandOffset: firstCommandOffset)
                         return BoundResource(resource: Resource(handle: identifier), bindingCommand: nil, usageNode: node, isInArgumentBuffer: true, consistentUsageAssumed: assumeConsistentUsage)
                     } else {
                         return BoundResource(resource: Resource(handle: identifier), bindingCommand: nil, usageNode: nil, isInArgumentBuffer: true, consistentUsageAssumed: assumeConsistentUsage)
@@ -932,7 +932,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                         }
                     }
                     
-                    let node = self.resourceUsages.resourceUsageNode(for: boundResource.resource.handle, encoder: self, usageType: reflection.usageType, stages: reflection.stages, inArgumentBuffer: boundResource.isInArgumentBuffer, firstCommandOffset: firstCommandOffset)
+                    let node = self.resourceUsages.resourceUsageNode(for: boundResource.resource.handle, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, inArgumentBuffer: boundResource.isInArgumentBuffer, firstCommandOffset: firstCommandOffset)
                     boundResource.usageNode = node
                     
                     assert(!boundResource.resource.usages.isEmpty)

@@ -178,7 +178,7 @@ extension PixelFormat {
 
 extension ArgumentReflection {
     init(_ argument: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
-        self.init(isActive: argument.isActive, type: ResourceType(argument.type), bindingPath: bindingPath, usageType: ResourceUsageType(argument.access), stages: stages)
+        self.init(type: ResourceType(argument.type), bindingPath: bindingPath, usageType: ResourceUsageType(argument.access), activeStages: argument.isActive ? stages : [])
     }
     
     
@@ -197,7 +197,7 @@ extension ArgumentReflection {
             usageType = ResourceUsageType(member.pointerType()?.access ?? .readOnly) // It might be POD, in which case the usage is read only.
         }
         
-        self.init(isActive: argumentBuffer.isActive, type: type, bindingPath: bindingPath, usageType: usageType, stages: stages)
+        self.init(type: type, bindingPath: bindingPath, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [])
     }
     
     init?(array: MTLArrayType, argumentBuffer: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
@@ -218,7 +218,7 @@ extension ArgumentReflection {
             usageType = ResourceUsageType(elementPointerType.access)
         }
         
-        self.init(isActive: argumentBuffer.isActive, type: type, bindingPath: bindingPath, usageType: usageType, stages: stages)
+        self.init(type: type, bindingPath: bindingPath, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [])
     }
     
     

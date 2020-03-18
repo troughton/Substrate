@@ -652,6 +652,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             command.command.execute(resourceRegistry: self.resourceRegistry, resourceMap: self.resourceMap, stateCaches: backend.stateCaches, queue: self.frameGraphQueue,
                                     waitEventValues: &commandEncoderWaitEventValues[encoderIndex], signalEventValue: UInt64(commandBufferIndex) + firstEncoderSignalValue)
         }
+        assert(commandEncoderWaitEventValues.allSatisfy({ $0[Int(self.frameGraphQueue.index)] < firstEncoderSignalValue }))
         
         self.resourceRegistryPreFrameCommands.removeAll(keepingCapacity: true)
         

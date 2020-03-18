@@ -114,8 +114,7 @@ final class MetalPipelineReflection : PipelineReflection {
             let existingReflection = reflectionCache[rootPath]!
             rootPath.stages.formUnion(mtlStages)
             
-            reflection.isActive = reflection.isActive || existingReflection.isActive
-            reflection.stages = reflection.stages.union(existingReflection.stages)
+            reflection.activeStages.formUnion(existingReflection.activeStages)
             reflection.bindingPath = rootPath
             switch existingReflection.usageType {
             case .readWrite:
@@ -139,19 +138,27 @@ final class MetalPipelineReflection : PipelineReflection {
                 }
 
                 // Ignore pipeline stages for resources contained within argument buffers.
-                let subPath = ResourceBindingPath(stages: [], type: member.dataType, argumentBufferIndex: metalArgBufferPath.index, index: member.argumentIndex)
+                let dataType: MTLDataType
+                if let arrayType = member.arrayType() {
+                    dataType = arrayType.elementType // Handle arrays of textures
+                } else {
+                    dataType = member.dataType
+                }
+                
+                let subPath = ResourceBindingPath(stages: [], type: dataType, argumentBufferIndex: metalArgBufferPath.index, index: member.argumentIndex)
                 
                 let memberReflection : ArgumentReflection?
                 if let arrayType = member.arrayType() {
-                    memberReflection = ArgumentReflection(array: arrayType, argumentBuffer: argument, bindingPath: subPath, stages: reflection.isActive ? reflection.stages : [])
+                    memberReflection = ArgumentReflection(array: arrayType, argumentBuffer: argument, bindingPath: subPath, stages: reflection.activeStages)
                 } else {
-                    memberReflection = ArgumentReflection(member: member, argumentBuffer: argument, bindingPath: subPath, stages: reflection.isActive ? reflection.stages : [])
+                    memberReflection = ArgumentReflection(member: member, argumentBuffer: argument, bindingPath: subPath, stages: reflection.activeStages)
                 }
                 
                 if let memberReflection = memberReflection {
+                    assert(ResourceType(subPath.type) == memberReflection.type)
+                    
                     if var existingReflection = reflectionCache[subPath] {
-                        existingReflection.stages.formUnion(memberReflection.stages)
-                        existingReflection.isActive = existingReflection.isActive || memberReflection.isActive
+                        existingReflection.activeStages.formUnion(memberReflection.activeStages)
                         assert(existingReflection.type == memberReflection.type)
                         assert(existingReflection.usageType == memberReflection.usageType)
                         reflectionCache[subPath] = existingReflection

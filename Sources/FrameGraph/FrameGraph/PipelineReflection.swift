@@ -71,17 +71,19 @@ extension ResourceBindingPath : CustomHashable {
 }
 
 public struct ArgumentReflection {
-    public var isActive : Bool
     public var type : ResourceType
     public var bindingPath : ResourceBindingPath
     public var usageType : ResourceUsageType
-    public var stages : RenderStages
+    public var activeStages : RenderStages
     
-    public init(isActive: Bool, type: ResourceType, bindingPath: ResourceBindingPath, usageType: ResourceUsageType, stages: RenderStages) {
-        self.isActive = isActive
+    public init(type: ResourceType, bindingPath: ResourceBindingPath, usageType: ResourceUsageType, activeStages: RenderStages) {
         self.type = type
         self.bindingPath = bindingPath
         self.usageType = usageType
-        self.stages = stages
+        self.activeStages = activeStages
+    }
+    
+    public var isActive: Bool {
+        return !self.activeStages.isEmpty
     }
 }
