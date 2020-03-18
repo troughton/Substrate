@@ -91,7 +91,7 @@ final class MetalPipelineReflection : PipelineReflection {
         argumentEncoders.initialize(repeating: nil, count: argumentEncoderCount)
         
         computeReflection.arguments.forEach { arg in
-            MetalPipelineReflection.fillCaches(function: function, argument: arg, stages: [], bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentEncoders: argumentEncoders)
+            MetalPipelineReflection.fillCaches(function: function, argument: arg, stages: .compute, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentEncoders: argumentEncoders)
         }
         self.init(bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentEncoders: argumentEncoders, argumentEncoderCount: argumentEncoderCount)
     }
