@@ -757,6 +757,8 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             encoderManager = nil
         }
         
+        var waitedEvents = QueueCommandIndices(repeating: 0)
+        
         for (i, passRecord) in passes.enumerated() {
             let passCommandEncoderIndex = passCommandEncoders[i]
             let commandBufferIndex = encoderCommandBufferIndices[passCommandEncoderIndex]
@@ -776,7 +778,8 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 
                 let waitEventValues = commandEncoderWaitEventValues[passCommandEncoderIndex]
                 for queue in QueueRegistry.allQueues {
-                    if waitEventValues[Int(queue.index)] > queue.lastCompletedCommand {
+                    if waitedEvents[Int(queue.index)] < waitEventValues[Int(queue.index)],
+                        waitEventValues[Int(queue.index)] > queue.lastCompletedCommand {
                         if let event = backend.queueSyncEvents[Int(queue.index)] {
                             commandBuffer!.encodeWaitForEvent(event, value: waitEventValues[Int(queue.index)])
                         } else {
@@ -787,6 +790,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                         }
                     }
                 }
+                waitedEvents = pointwiseMax(waitEventValues, waitedEvents)
             }
             
             executePass(passRecord, i: i, encoderManager: encoderManager!)
