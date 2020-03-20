@@ -144,6 +144,8 @@ final class ShaderCompiler {
     let baseDirectory : URL
     let sourceDirectory : URL
     let reflectionFile : URL?
+    let compileWithDebugInfo: Bool
+    
     let sourceFiles : [DXCSourceFile]
     let targets : [Target]
     
@@ -157,10 +159,12 @@ final class ShaderCompiler {
     
     var spirvCompilers : [SPIRVCompiler] = []
     
-    init(directory: URL, reflectionFile: URL? = nil, targets: [Target] = [.defaultTarget]) throws {
+    init(directory: URL, reflectionFile: URL? = nil, targets: [Target] = [.defaultTarget], compileWithDebugInfo: Bool) throws {
         self.baseDirectory = directory
         self.sourceDirectory = directory.appendingPathComponent("Source/RenderPasses")
         self.reflectionFile = reflectionFile
+        self.compileWithDebugInfo = compileWithDebugInfo
+        
         self.targets = targets
 
         self.dxcDriver = try DXCDriver()
@@ -234,7 +238,7 @@ final class ShaderCompiler {
                 try compiler.compile(spirvCompilers: targetCompilers,
                                      sourceDirectory: self.baseDirectory.appendingPathComponent("Source"),
                     outputDirectory: self.baseDirectory.appendingPathComponent(target.outputDirectory),
-                    withDebugInformation: false)
+                    withDebugInformation: self.compileWithDebugInfo)
                 
                 print()
             }

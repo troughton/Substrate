@@ -1,22 +1,35 @@
+import ArgumentParser
 import Foundation
 
 typealias URL = Foundation.URL
 
-guard CommandLine.arguments.count >= 3 else {
-    print("Usage: ShaderReflectionGenerator shaderDirectory reflectionFile")
-    exit(-1)
+enum ArgumentError: Error {
+    case invalidReflectionFile(String)
 }
 
-let directory = URL(fileURLWithPath: CommandLine.arguments[1])
+struct ShaderTool: ParsableCommand {
+    @Argument(help: "The path to the shader directory. The directory is expected to contain a Source/RenderPasses folder, containing an HLSL file per render pass.")
+    var shaderDirectory: String
+    
+    @Argument(help: "The path to output the reflection file.")
+    var reflectionFile: String
+    
+    @Flag(help: "Compile the shaders with debug information.")
+    var debug: Bool
 
-let reflectionFile = URL(fileURLWithPath: CommandLine.arguments[2])
-
-guard reflectionFile.pathExtension == "swift" else {
-    print("Reflection file \(reflectionFile) does not have the required extension '.swift'")
-    exit(-1)
+    func run() throws {
+        let reflectionURL = URL(fileURLWithPath: reflectionFile)
+        
+        guard reflectionURL.pathExtension == "swift" else {
+            throw ArgumentError.invalidReflectionFile(reflectionFile)
+        }
+        
+        let compiler = try ShaderCompiler(directory: URL(fileURLWithPath: shaderDirectory),
+                                          reflectionFile: reflectionURL,
+                                          compileWithDebugInfo: self.debug)
+        compiler.compile()
+        compiler.generateReflection()
+    }
 }
 
-let compiler = try! ShaderCompiler(directory: directory,
-                                   reflectionFile: reflectionFile)
-compiler.compile()
-compiler.generateReflection()
+ShaderTool.main()
