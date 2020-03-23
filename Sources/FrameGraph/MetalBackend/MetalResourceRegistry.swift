@@ -633,9 +633,8 @@ final class MetalTransientResourceRegistry {
                     return
                 }
                 
-                let windowReference = persistentRegistry.windowReferences.removeValue(forKey: texture)!
-                
-                guard let mtlDrawable = windowReference.nextDrawable() else {
+                guard let windowReference = persistentRegistry.windowReferences.removeValue(forKey: texture),
+                    let mtlDrawable = windowReference.nextDrawable() else {
                     error = RenderTargetTextureError.unableToRetrieveDrawable(texture)
                     return
                 }
