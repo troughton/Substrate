@@ -163,8 +163,16 @@ public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDe
 
 public struct RenderTargetDescriptor : Hashable {
     
+    @inlinable
     public init(attachmentCount: Int) {
-         self.colorAttachments = Array(repeating: nil, count: attachmentCount)
+        self.colorAttachments = .init(repeating: nil, count: attachmentCount)
+    }
+    
+    @inlinable
+    public init(colorAttachments: [RenderTargetColorAttachmentDescriptor?] = [], depthAttachment: RenderTargetDepthAttachmentDescriptor? = nil, stencilAttachment: RenderTargetStencilAttachmentDescriptor? = nil) {
+        self.colorAttachments = colorAttachments
+        self.depthAttachment = depthAttachment
+        self.stencilAttachment = stencilAttachment
     }
     
     public var colorAttachments : [RenderTargetColorAttachmentDescriptor?]
