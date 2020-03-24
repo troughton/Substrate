@@ -129,6 +129,29 @@ indirect enum SPIRVType : Hashable {
         }
     }
     
+    
+    
+    var isKnownSwiftType: Bool {
+        switch self {
+        case .struct(let name, let members):
+            if ["AffineMatrix"].contains(name) {
+                return true
+            }
+            if name.starts(with: "type_StructuredBuffer"),
+                members.count == 1,
+                members[0].type.isKnownSwiftType {
+                return true
+            }
+            return false
+        case .vector(let element, _):
+            return element.isKnownSwiftType
+        case .array(let element, _):
+            return element.isKnownSwiftType
+        default:
+            return true
+        }
+    }
+    
     var alignment: Int {
         switch self {
         case .packedVector(let element, 3):

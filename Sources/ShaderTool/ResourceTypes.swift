@@ -130,8 +130,10 @@ struct Resource : Equatable {
     
     init(compiler: SPIRVCompiler, resource: spvc_reflected_resource, type: ResourceType, stage: RenderStages, viewType: ResourceViewType) {
         var type = SPIRVType(compiler: compiler.compiler, typeId: resource.type_id)
-        if case .struct(_, let members) = type, members.count == 1 {
-            type = members.first!.type
+        if case .struct(_, let members) = type,
+            members.count == 1,
+            !members[0].type.isKnownSwiftType {
+            type = members[0].type
         }
         
         let resourceTypeHandle = spvc_compiler_get_type_handle(compiler.compiler, resource.type_id)

@@ -246,8 +246,8 @@ final class TypeLookup {
     var typeContexts = [SPIRVType : DeclarationContext]()
     
     func registerType(_ type: SPIRVType, set: DescriptorSet?, pass: RenderPass) {
-        guard case .struct(let name, let members) = type else { return }
-        if ["AffineMatrix"].contains(name) { return } // Special-case types already declared on the Swift side.
+        if type.isKnownSwiftType { return }
+        guard case .struct(_, let members) = type else { return }
         
         for member in members {
             self.registerType(member.type, set: set, pass: pass)
@@ -301,8 +301,9 @@ final class TypeLookup {
             return String(name.dropFirst("type_PushConstant_".count))
         }
         
-        if name == "type_uniforms" {
-            return "Uniforms"
+        if name.hasPrefix("type_") {
+            let name = name.dropFirst("type_".count)
+            return String(name.prefix(1).uppercased()) + name.dropFirst()
         }
         
         if name == "AffineMatrix" {
