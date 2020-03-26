@@ -735,7 +735,9 @@ public class ResourceBindingEncoder : CommandEncoder {
                 }
                 
                 // Optimisation: if the pipeline state hasn't changed, these are the only resources we need to consider, so look up their reflection data immediately.
-                if !self.pipelineStateChanged, let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
+                // This only applies for render commands, since we may need to insert memory barriers between compute and blit commands.
+                if self is RenderCommandEncoder, !self.pipelineStateChanged,
+                    let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
                     self.commandRecorder.commands.append(command)
                     let node = self.resourceUsages.resourceUsageNode(for: identifier, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset)
                     return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usageNode: node, isInArgumentBuffer: false, consistentUsageAssumed: false)
@@ -800,7 +802,9 @@ public class ResourceBindingEncoder : CommandEncoder {
                 }
                 
                 // Optimisation: if the pipeline state hasn't changed, these are the only resources we need to consider, so look up their reflection data immediately.
-                if !self.pipelineStateChanged, let reflection = pipelineReflection.argumentReflection(at: argumentBufferPath), reflection.isActive {
+                // This only applies for render commands, since we may need to insert memory barriers between compute and blit commands.
+                if self is RenderCommandEncoder, !self.pipelineStateChanged,
+                    let reflection = pipelineReflection.argumentReflection(at: argumentBufferPath), reflection.isActive {
                     argumentBuffer.encoder = pipelineReflection.argumentBufferEncoder(at: argumentBufferPath)!
 //                    print("Encoder for \(argumentBuffer.label ?? "unnamed arg buffer") is \(argumentBuffer.encoder!)")
                     
@@ -889,7 +893,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         
         self.pendingArgumentBuffers.removeRange(argumentBufferProcessingRange)
         
-        if self.pipelineStateChanged {
+        if self.pipelineStateChanged || !(self is RenderCommandEncoder) {
             // Only update tracked bound resources, not any members of untrackedBoundResources
             // We should also bind any resources that haven't been yet bound – if the pipeline state changed, we may have skipped binding earlier
             // and intended to have it done here instead.
@@ -1480,6 +1484,7 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
             assert(self.currentComputePipeline != nil, "No compute pipeline is set for pass \(renderPass.name).")
             return
         }
+        self.needsUpdateBindings = true // to track barriers between resources bound for the compute command
 
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
         self.updateResourceUsages()
@@ -1493,7 +1498,8 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
             assert(self.currentComputePipeline != nil, "No compute pipeline is set for pass \(renderPass.name).")
             return
         }
-
+        self.needsUpdateBindings = true // to track barriers between resources bound for the compute command
+        
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
         self.updateResourceUsages()
         self.lastGPUCommandIndex = self.nextCommandOffset
@@ -1506,7 +1512,8 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
             assert(self.currentComputePipeline != nil, "No compute pipeline is set for pass \(renderPass.name).")
             return
         }
-
+        self.needsUpdateBindings = true // to track barriers between resources bound for the compute command
+        
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
         self.updateResourceUsages()
         self.lastGPUCommandIndex = self.nextCommandOffset
