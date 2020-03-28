@@ -311,7 +311,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 for usage in usages
                     where usage.renderPassRecord.isActive &&
                         usage.renderPassRecord.pass.passType != .external &&
-                        usage.inArgumentBuffer &&
+//                        usage.inArgumentBuffer &&
                         usage.stages != .cpuBeforeRender {
                             if usage.type.isRenderTarget {
                                 resourceIsRenderTarget = true
@@ -655,18 +655,29 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 }
             }
             
-            // Process the dependencies, joining duplicates.
+            
             for sourceIndex in (0..<commandEncoderCount) { // sourceIndex always points to the producing pass.
-                for dependentIndex in min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount {
-                    if reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
-                        let dependency = self.commandEncoderDependencies.dependency(from: dependentIndex, on: sourceIndex)!
-                        let label = "(Encoder \(sourceIndex) to Encoder \(dependentIndex))"
-                        let commandBufferSignalIndex = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[dependency.wait.encoderIndex].commandBufferIndex)
-                        
-                        let fence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: commandBufferSignalIndex)
-                        self.compactedResourceCommands.append(MetalCompactedResourceCommand(command: .updateFence(fence, afterStages: MTLRenderStages(dependency.signal.stages)), index: dependency.signal.index, order: .after))
-                        self.compactedResourceCommands.append(MetalCompactedResourceCommand(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.wait.stages)), index: dependency.wait.index, order: .before))
-                    }
+                let dependentRange = min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount
+                
+                var signalStages : MTLRenderStages = []
+                var signalIndex = -1
+                for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
+                    let dependency = self.commandEncoderDependencies.dependency(from: dependentIndex, on: sourceIndex)!
+                    signalStages.formUnion(MTLRenderStages(dependency.signal.stages))
+                    signalIndex = max(signalIndex, dependency.signal.index)
+                }
+                
+                if signalIndex < 0 { continue }
+                
+                let label = "Encoder \(sourceIndex) Fence"
+                let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[sourceIndex].commandBufferIndex)
+                let fence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: commandBufferSignalValue)
+                
+                self.compactedResourceCommands.append(MetalCompactedResourceCommand(command: .updateFence(fence, afterStages: signalStages), index: signalIndex, order: .after))
+                
+                for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
+                    let dependency = self.commandEncoderDependencies.dependency(from: dependentIndex, on: sourceIndex)!
+                    self.compactedResourceCommands.append(MetalCompactedResourceCommand(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.wait.stages)), index: dependency.wait.index, order: .before))
                 }
             }
         }
