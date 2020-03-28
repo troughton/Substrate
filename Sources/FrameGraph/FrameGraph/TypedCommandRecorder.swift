@@ -109,7 +109,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         didSet {
             withUnsafeBytes(of: oldValue, { oldValue in
                 withUnsafeBytes(of: self.pushConstants, { pushConstants in
-                    if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) == 0 {
+                    if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) != 0 {
                         self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, path: RenderBackend.pushConstantPath)
                         hasSetPushConstants = true
                     }
@@ -329,7 +329,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         didSet {
             withUnsafeBytes(of: oldValue, { oldValue in
                 withUnsafeBytes(of: self.pushConstants, { pushConstants in
-                    if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) == 0 {
+                    if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) != 0 {
                         self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, path: RenderBackend.pushConstantPath)
                         hasSetPushConstants = true
                     }
