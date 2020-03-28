@@ -380,8 +380,8 @@ final class MetalTransientResourceRegistry {
     var argumentBufferArrayWaitEvents : TransientResourceMap<_ArgumentBufferArray, MetalContextWaitEvent>
     var historyBufferResourceWaitEvents = [Resource : MetalContextWaitEvent]() // since history buffers use the persistent (rather than transient) resource maps.
     
-    private var heapResourceUsageFences = [Resource : [MetalFenceHandle]]()
-    private var heapResourceDisposalFences = [Resource : [MetalFenceHandle]]()
+    private var heapResourceUsageFences = [Resource : [FenceDependency]]()
+    private var heapResourceDisposalFences = [Resource : [FenceDependency]]()
     
     private let frameSharedBufferAllocator : MetalTemporaryBufferAllocator
     private let frameSharedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
@@ -710,7 +710,7 @@ final class MetalTransientResourceRegistry {
         return self.allocateTexture(texture, properties: usage)
     }
     
-    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [MetalFenceHandle], MetalContextWaitEvent) {
+    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [FenceDependency], MetalContextWaitEvent) {
 //        #if os(macOS)
 //        let options : MTLResourceOptions = [.storageModeManaged, .frameGraphTrackedHazards]
 //        #else
@@ -806,13 +806,13 @@ final class MetalTransientResourceRegistry {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
     
-    public func withHeapAliasingFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout [MetalFenceHandle]) -> Void) {
+    public func withHeapAliasingFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout [FenceDependency]) -> Void) {
         let resource = Resource(handle: resourceHandle)
         
         perform(&self.heapResourceUsageFences[resource, default: []])
     }
     
-    func setDisposalFences<R : ResourceProtocol>(on resource: R, to fences: [MetalFenceHandle]) {
+    func setDisposalFences<R : ResourceProtocol>(on resource: R, to fences: [FenceDependency]) {
         assert(self.isAliasedHeapResource(resource: Resource(resource)))
         self.heapResourceDisposalFences[Resource(resource)] = fences
     }
@@ -837,7 +837,7 @@ final class MetalTransientResourceRegistry {
                 mtlTexture._texture.release()
             }
             
-            var fences : [MetalFenceHandle] = []
+            var fences : [FenceDependency] = []
             if self.isAliasedHeapResource(resource: Resource(texture)) {
                 fences = self.heapResourceDisposalFences[Resource(texture)] ?? []
             }
@@ -860,7 +860,7 @@ final class MetalTransientResourceRegistry {
         }
         
         if let mtlBuffer = bufferRef {
-            var fences : [MetalFenceHandle] = []
+            var fences : [FenceDependency] = []
             if self.isAliasedHeapResource(resource: Resource(buffer)) {
                 fences = self.heapResourceDisposalFences[Resource(buffer)] ?? []
             }

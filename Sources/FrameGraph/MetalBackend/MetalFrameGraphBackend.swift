@@ -21,19 +21,21 @@ enum MetalPreFrameResourceCommands {
     case materialiseArgumentBufferArray(_ArgumentBufferArray)
     case disposeResource(Resource)
     
+    case waitForHeapAliasingFences(resource: Resource, waitDependency: FenceDependency)
+    
     case waitForCommandBuffer(index: UInt64, queue: Queue)
     case updateCommandBufferWaitIndex(Resource)
     
-    var isMaterialiseArgumentBuffer : Bool {
+    var isMaterialiseNonArgumentBufferResource: Bool {
         switch self {
-        case .materialiseArgumentBuffer, .materialiseArgumentBufferArray:
+        case .materialiseBuffer, .materialiseTexture, .materialiseTextureView:
             return true
         default:
             return false
         }
     }
     
-    func execute(resourceRegistry: MetalTransientResourceRegistry, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches, queue: Queue, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+    func execute(resourceRegistry: MetalTransientResourceRegistry, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches, queue: Queue, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
         let queueIndex = Int(queue.index)
         
         switch self {
@@ -96,6 +98,16 @@ enum MetalPreFrameResourceCommands {
             // TODO: split out reads and writes.
             resource[waitIndexFor: queue, accessType: .read] = signalEventValue
             resource[waitIndexFor: queue, accessType: .write] = signalEventValue
+            
+        case .waitForHeapAliasingFences(let resource, let waitDependency):
+            resourceRegistry.withHeapAliasingFencesIfPresent(for: resource.handle, perform: { fenceDependencies in
+                for signalDependency in fenceDependencies {
+                    let dependency = Dependency(signal: signalDependency, wait: waitDependency)
+                    
+                    let newDependency = encoderDependencies.dependency(from: dependency.wait.encoderIndex, on: dependency.signal.encoderIndex)?.merged(with: dependency) ?? dependency
+                    encoderDependencies.setDependency(from: dependency.wait.encoderIndex, on: dependency.signal.encoderIndex, to: newDependency)
+                }
+            })
         }
     }
 }
@@ -106,7 +118,14 @@ enum MetalFrameResourceCommands {
     case memoryBarrier(Resource, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
     case updateFence(MetalFenceHandle, afterStages: MTLRenderStages)
     case waitForFence(MetalFenceHandle, beforeStages: MTLRenderStages)
-    case waitForHeapAliasingFences(resource: ResourceProtocol.Handle, resourceType: ResourceType, beforeStages: MTLRenderStages)
+}
+
+enum MetalCompactedFrameResourceCommands {
+    // These commands need to be executed during render pass execution and do not modify the MetalResourceRegistry.
+    case useResources(UnsafeMutableBufferPointer<MTLResource>, usage: MTLResourceUsage, stages: MTLRenderStages)
+    case memoryBarrier(scope: MTLBarrierScope, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
+    case updateFence(Unmanaged<MTLFence>, afterStages: MTLRenderStages)
+    case waitForFence(Unmanaged<MTLFence>, beforeStages: MTLRenderStages)
 }
 
 struct MetalPreFrameResourceCommand : Comparable {
@@ -116,7 +135,9 @@ struct MetalPreFrameResourceCommand : Comparable {
     var order : PerformOrder
     
     public static func ==(lhs: MetalPreFrameResourceCommand, rhs: MetalPreFrameResourceCommand) -> Bool {
-        return lhs.index == rhs.index && lhs.order == rhs.order && lhs.command.isMaterialiseArgumentBuffer == rhs.command.isMaterialiseArgumentBuffer
+        return lhs.index == rhs.index &&
+            lhs.order == rhs.order &&
+            lhs.command.isMaterialiseNonArgumentBufferResource == rhs.command.isMaterialiseNonArgumentBufferResource
     }
     
     public static func <(lhs: MetalPreFrameResourceCommand, rhs: MetalPreFrameResourceCommand) -> Bool {
@@ -125,7 +146,7 @@ struct MetalPreFrameResourceCommand : Comparable {
             return true
         }
         // Materialising argument buffers always needs to happen last, after materialising all resources within it.
-        if lhs.index == rhs.index, lhs.order == rhs.order, !lhs.command.isMaterialiseArgumentBuffer && rhs.command.isMaterialiseArgumentBuffer {
+        if lhs.index == rhs.index, lhs.order == rhs.order, lhs.command.isMaterialiseNonArgumentBufferResource && !rhs.command.isMaterialiseNonArgumentBufferResource {
             return true
         }
         return false
@@ -213,62 +234,6 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         return MetalFrameResourceMap(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
-    // Generates a render target descriptor, if applicable, for each pass.
-    // MetalRenderTargetDescriptor is a reference type, so we can check if two passes share a render target
-    // (and therefore MTLRenderCommandEncoder)
-    // storedTextures contain all textures that are stored to (i.e. textures that aren't eligible to be memoryless on iOS).
-    func generateRenderTargetDescriptors(passes: [RenderPassRecord], resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> [MetalRenderTargetDescriptor?] {
-        var descriptors = [MetalRenderTargetDescriptor?](repeating: nil, count: passes.count)
-        
-        var currentDescriptor : MetalRenderTargetDescriptor? = nil
-        for (i, passRecord) in passes.enumerated() {
-            if let renderPass = passRecord.pass as? DrawRenderPass {
-                if let descriptor = currentDescriptor {
-                    currentDescriptor = descriptor.descriptorMergedWithPass(renderPass, resourceUsages: resourceUsages, storedTextures: &storedTextures)
-                } else {
-                    currentDescriptor = MetalRenderTargetDescriptor(renderPass: renderPass)
-                }
-            } else {
-                currentDescriptor?.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
-                currentDescriptor = nil
-            }
-            
-            descriptors[i] = currentDescriptor
-        }
-        
-        currentDescriptor?.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
-        
-        return descriptors
-    }
-    
-    // For fence tracking - support at most one dependency between each set of two render passes. Make the fence update as early as possible, and make the fence wait as late as possible.
-    struct Dependency {
-        /// dependentUsage is the usage within the dependent pass.
-        var dependentIndex : Int
-        var dependentStages : RenderStages
-        /// passUsage is the usage within the current pass (the pass that's depended upon).
-        var passIndex : Int
-        var passStages : RenderStages
-        
-        init(dependentUsage: ResourceUsage, passUsage: ResourceUsage) {
-            self.dependentIndex = dependentUsage.commandRange.lowerBound
-            self.dependentStages = dependentUsage.stages
-            
-            self.passIndex = passUsage.commandRange.last! // - 1 because the range is open.
-            self.passStages = passUsage.stages
-        }
-        
-        public func merged(with otherDependency: Dependency) -> Dependency {
-            var result = self
-            result.dependentIndex = min(result.dependentIndex, otherDependency.dependentIndex)
-            result.dependentStages.formUnion(otherDependency.dependentStages)
-            
-            result.passIndex = max(result.passIndex, otherDependency.passIndex)
-            result.passStages.formUnion(otherDependency.passStages)
-            return result
-        }
-    }
-    
     var resourceRegistryPreFrameCommands = [MetalPreFrameResourceCommand]()
     
     var resourceCommands = [MetalFrameResourceCommand]()
@@ -276,14 +241,13 @@ final class MetalFrameGraphContext : _FrameGraphContext {
     var commandEncoderDependencies = DependencyTable<Dependency?>(capacity: 1, defaultValue: nil)
     
     /// - param storedTextures: textures that are stored as part of a render target (and therefore can't be memoryless on iOS)
-    func generateResourceCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, renderTargetDescriptors: [MetalRenderTargetDescriptor?], storedTextures: [Texture], lastCommandBufferIndex: UInt64) {
+    func generateResourceCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, frameCommandInfo: inout MetalFrameCommandInfo) {
+        
         if passes.isEmpty {
             return
         }
         
-        let (passCommandEncoderIndices, _, commandEncoderCount) = MetalEncoderManager.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
-        
-        self.commandEncoderDependencies.resizeAndClear(capacity: commandEncoderCount, clearValue: nil)
+        self.commandEncoderDependencies.resizeAndClear(capacity: frameCommandInfo.commandEncoders.count, clearValue: nil)
         
         resourceLoop: for resource in resourceUsages.allResources {
             let resourceType = resource.type
@@ -309,7 +273,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                             
                             defer { previousPass = usage.renderPassRecord }
                             
-                            if let previousPassUnwrapped = previousPass, passCommandEncoderIndices[previousPassUnwrapped.passIndex] != passCommandEncoderIndices[usage.renderPassRecord.passIndex] {
+                            if let previousPassUnwrapped = previousPass, frameCommandInfo.encoderIndex(for: previousPassUnwrapped) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
                                 self.resourceCommands.append(MetalFrameResourceCommand(command: .useResource(resource, usage: resourceUsage, stages: resourceStages), index: commandIndex, order: .before))
                                 previousPass = nil
                             }
@@ -372,7 +336,8 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             
             if resourceRegistry.isAliasedHeapResource(resource: resource) {
                 assert(firstUsage.isWrite || firstUsage.type == .unusedRenderTarget, "Heap resource \(resource) is read from without ever being written to.")
-                self.resourceCommands.append(MetalFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource.handle, resourceType: resourceType, beforeStages: MTLRenderStages(firstUsage.stages.first)), index: firstUsage.commandRange.lowerBound, order: .before))
+                let fenceDependency = FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, stages: firstUsage.stages)
+                self.resourceRegistryPreFrameCommands.append(MetalPreFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource, waitDependency: fenceDependency), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.lowerBound, order: .before))
                 
             }
             
@@ -384,11 +349,11 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 if usage.isWrite {
                     assert(!resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "A resource with the flag .immutableOnceInitialised is being written to in \(usage) when it has already been initialised.")
                     
-                    for previousRead in readsSinceLastWrite where passCommandEncoderIndices[previousRead.renderPassRecord.passIndex] != passCommandEncoderIndices[usage.renderPassRecord.passIndex] {
-                        let dependency = Dependency(dependentUsage: usage, passUsage: previousRead)
+                    for previousRead in readsSinceLastWrite where frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
+                        let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
+                        let onEncoder = frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord)
+                        let dependency = Dependency(dependentUsage: usage, dependentEncoder: onEncoder, passUsage: previousRead, passEncoder: fromEncoder)
                         
-                        let fromEncoder = passCommandEncoderIndices[usage.renderPassRecord.passIndex]
-                        let onEncoder = passCommandEncoderIndices[previousRead.renderPassRecord.passIndex]
                         commandEncoderDependencies.setDependency(from: fromEncoder,
                                                                  on: onEncoder,
                                                                  to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
@@ -397,7 +362,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 
                 // Only insert a barrier for the first usage following a write.
                 if usage.isRead, previousUsage.isWrite,
-                    passCommandEncoderIndices[previousUsage.renderPassRecord.passIndex] == passCommandEncoderIndices[usage.renderPassRecord.passIndex]  {
+                    frameCommandInfo.encoderIndex(for: previousUsage.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord)  {
                     if !(previousUsage.type.isRenderTarget && (usage.type == .writeOnlyRenderTarget || usage.type == .readWriteRenderTarget)) {
                         assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
                         assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
@@ -406,11 +371,11 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                     }
                 }
                 
-                if (usage.isRead || usage.isWrite), let previousWrite = previousWrite, passCommandEncoderIndices[previousWrite.renderPassRecord.passIndex] != passCommandEncoderIndices[usage.renderPassRecord.passIndex] {
-                    let dependency = Dependency(dependentUsage: usage, passUsage: previousWrite)
+                if (usage.isRead || usage.isWrite), let previousWrite = previousWrite, frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
+                    let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
+                    let onEncoder = frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord)
+                    let dependency = Dependency(dependentUsage: usage, dependentEncoder: onEncoder, passUsage: previousWrite, passEncoder: fromEncoder)
                     
-                    let fromEncoder = passCommandEncoderIndices[usage.renderPassRecord.passIndex]
-                    let onEncoder = passCommandEncoderIndices[previousWrite.renderPassRecord.passIndex]
                     commandEncoderDependencies.setDependency(from: fromEncoder,
                                                              on: onEncoder,
                                                              to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
@@ -504,10 +469,10 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                         textureUsage.formUnion(.pixelFormatView)
                     }
                     
-                    #if os(iOS)
+                    #if os(iOS) || os(tvOS) || os(watchOS)
                     canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
                         && textureUsage == .renderTarget
-                        && !storedTextures.contains(texture)
+                        && !frameCommandInfo.storedTextures.contains(texture)
                     let properties = MetalTextureUsageProperties(usage: textureUsage, canBeMemoryless: canBeMemoryless)
                     #else
                     let properties = MetalTextureUsageProperties(usage: textureUsage)
@@ -549,24 +514,16 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 // Reads need to wait for all previous writes to complete.
                 // Writes need to wait for all previous reads and writes to complete.
                 
-                var storeFences : [MetalFenceHandle] = []
+                var storeFences : [FenceDependency] = []
                 
                 // We only need to wait for the write to complete if there have been no reads since the write; otherwise, we wait on the reads
                 // which in turn have a transitive dependency on the write.
                 if readsSinceLastWrite.isEmpty, let previousWrite = previousWrite, previousWrite.renderPassRecord.pass.passType != .external {
-                    let label = "(Aliasing fence for \(resource), type \(resource.type) with last write: \(previousWrite.type))"
-                    let updateFence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: lastCommandBufferIndex)
-                    storeFences = [updateFence]
-                    
-                    self.resourceCommands.append(MetalFrameResourceCommand(command: .updateFence(updateFence, afterStages: MTLRenderStages(previousWrite.stages.last)), index: previousWrite.commandRange.last!, order: .after))
+                    storeFences = [FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord), index: previousWrite.commandRange.last!, stages: previousWrite.stages)]
                 }
                 
                 for read in readsSinceLastWrite where read.renderPassRecord.pass.passType != .external {
-                    let label = "(Aliasing fence for \(resource), type \(resource.type) with last read: \(read.type))"
-                    let updateFence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: lastCommandBufferIndex)
-                    storeFences.append(updateFence)
-                    
-                    self.resourceCommands.append(MetalFrameResourceCommand(command: .updateFence(updateFence, afterStages: MTLRenderStages(read.stages.last)), index: read.commandRange.last!, order: .after))
+                    storeFences.append(FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: read.renderPassRecord), index: read.commandRange.last!, stages: read.stages))
                 }
                 
                 // setDisposalFences retains its fences.
@@ -575,44 +532,91 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             
         }
         
+        self.resourceRegistryPreFrameCommands.sort()
+        
+        // MARK: - Execute the pre-frame resource commands.
+        
+        for command in self.resourceRegistryPreFrameCommands {
+            let encoderIndex = frameCommandInfo.encoderIndex(for: command.passIndex)
+            let commandBufferIndex = frameCommandInfo.commandEncoders[encoderIndex].commandBufferIndex
+            command.command.execute(resourceRegistry: self.resourceRegistry, resourceMap: self.resourceMap, stateCaches: backend.stateCaches, queue: self.frameGraphQueue,
+                                    encoderDependencies: &self.commandEncoderDependencies,
+                                    waitEventValues: &frameCommandInfo.commandEncoders[encoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
+        }
+        
+        self.resourceRegistryPreFrameCommands.removeAll(keepingCapacity: true)
+        
+        // MARK: - Generate the fences
+        
         // Process the dependencies, joining duplicates.
-        // TODO: Remove transitive dependencies.
-        for sourceIndex in 0..<commandEncoderCount { // passIndex always points to the producing pass.
-            for dependentIndex in min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount {
-                if let dependency = self.commandEncoderDependencies.dependency(from: dependentIndex, on: sourceIndex) {
-                    let label = "(Encoder \(sourceIndex) to Encoder \(dependentIndex))"
-                    let fence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: lastCommandBufferIndex)
-                    self.resourceCommands.append(MetalFrameResourceCommand(command: .updateFence(fence, afterStages: MTLRenderStages(dependency.passStages.last)), index: dependency.passIndex, order: .after))
-                    
-                    self.resourceCommands.append(MetalFrameResourceCommand(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.dependentStages.first)), index: dependency.dependentIndex, order: .before))
+        do {
+            
+            // Floyd-Warshall algorithm for finding the shortest path.
+            // https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm
+            let commandEncoderCount = frameCommandInfo.commandEncoders.count
+            let maxDistance = commandEncoderCount + 1
+            
+            var distanceMatrix = DependencyTable<Int>(capacity: commandEncoderCount, defaultValue: maxDistance)
+            for sourceIndex in 0..<commandEncoderCount {
+                for dependentIndex in min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount {
+                    if self.commandEncoderDependencies.dependency(from: dependentIndex, on: sourceIndex) != nil {
+                        distanceMatrix.setDependency(from: dependentIndex, on: sourceIndex, to: 1)
+                    }
+                }
+            }
+            
+            for k in 0..<commandEncoderCount {
+                for i in min(k + 1, commandEncoderCount)..<commandEncoderCount {
+                    for j in min(i + 1, commandEncoderCount)..<commandEncoderCount {
+                        let candidateDistance = distanceMatrix.dependency(from: i, on: k) + distanceMatrix.dependency(from: j, on: i)
+                        if distanceMatrix.dependency(from: j, on: k) > candidateDistance {
+                            distanceMatrix.setDependency(from: j, on: k, to: candidateDistance)
+                        }
+                    }
+                }
+            }
+            
+            // Transitive reduction:
+            // https://stackoverflow.com/questions/1690953/transitive-reduction-algorithm-pseudocode
+            var reductionMatrix = DependencyTable<Bool>(capacity: commandEncoderCount, defaultValue: false)
+            for sourceIndex in 0..<commandEncoderCount {
+                for dependentIndex in min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount {
+                    if distanceMatrix.dependency(from: dependentIndex, on: sourceIndex) < maxDistance {
+                        reductionMatrix.setDependency(from: dependentIndex, on: sourceIndex, to: true)
+                    }
+                }
+            }
+            
+
+            for i in 0..<commandEncoderCount {
+                for j in 0..<i {
+                    if reductionMatrix.dependency(from: i, on: j) {
+                        for k in 0..<j {
+                            if reductionMatrix.dependency(from: j, on: k) {
+                                reductionMatrix.setDependency(from: i, on: k, to: false)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Process the dependencies, joining duplicates.
+            for sourceIndex in (0..<commandEncoderCount) { // sourceIndex always points to the producing pass.
+                for dependentIndex in min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount {
+                    if reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
+                        let dependency = self.commandEncoderDependencies.dependency(from: dependentIndex, on: sourceIndex)!
+                        let label = "(Encoder \(sourceIndex) to Encoder \(dependentIndex))"
+                        let commandBufferSignalIndex = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[dependency.wait.encoderIndex].commandBufferIndex)
+                        
+                        let fence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: commandBufferSignalIndex)
+                        self.resourceCommands.append(MetalFrameResourceCommand(command: .updateFence(fence, afterStages: MTLRenderStages(dependency.signal.stages)), index: dependency.signal.index, order: .after))
+                        self.resourceCommands.append(MetalFrameResourceCommand(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.wait.stages)), index: dependency.wait.index, order: .before))
+                    }
                 }
             }
         }
         
-        self.resourceRegistryPreFrameCommands.sort()
         self.resourceCommands.sort()
-    }
-    
-    static func encoderCommandBufferIndices(passes: [RenderPassRecord], commandEncoderIndices: [Int], commandEncoderCount: Int) -> [Int] {
-        
-        var encoderAttributes = [(isExternal: Bool, usesWindowTexture: Bool)](repeating: (false, false), count: commandEncoderCount)
-        for (i, pass) in passes.enumerated() {
-            let encoderIndex = commandEncoderIndices[i]
-            encoderAttributes[encoderIndex].isExternal = pass.pass.passType == .external
-            encoderAttributes[encoderIndex].usesWindowTexture = encoderAttributes[encoderIndex].usesWindowTexture || pass.usesWindowTexture
-        }
-        
-        var encoderCommandBufferIndices = [Int](repeating: 0, count: commandEncoderCount)
-        var currentCBIndex = 0
-        
-        for (i, attributes) in encoderAttributes.enumerated().dropFirst() {
-            if encoderAttributes[i - 1] != attributes {
-                currentCBIndex += 1
-            }
-            encoderCommandBufferIndices[i] = currentCBIndex
-        }
-        
-        return encoderCommandBufferIndices
     }
     
     public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {
@@ -634,40 +638,22 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             return
         }
         
-        let firstEncoderSignalValue = self.queueCommandBufferIndex + 1 // The first encoder's MTLEvent signal value is one higher than the previous value used.
+        var frameCommandInfo = MetalFrameCommandInfo(passes: passes, resourceUsages: resourceUsages, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
         
-        var storedTextures = [Texture]()
-        let renderTargetDescriptors = self.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+        self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, frameCommandInfo: &frameCommandInfo)
         
-        let (passCommandEncoders, commandEncoderNames, commandEncoderCount) = MetalEncoderManager.generateCommandEncoderIndices(passes: passes, renderTargetDescriptors: renderTargetDescriptors)
-        let encoderCommandBufferIndices = MetalFrameGraphContext.encoderCommandBufferIndices(passes: passes, commandEncoderIndices: passCommandEncoders, commandEncoderCount: commandEncoderCount)
-        
-        self.generateResourceCommands(passes: passes, resourceUsages: resourceUsages, renderTargetDescriptors: renderTargetDescriptors, storedTextures: storedTextures, lastCommandBufferIndex: firstEncoderSignalValue + UInt64(encoderCommandBufferIndices.last!))
-        
-        var commandEncoderWaitEventValues = (0..<commandEncoderCount).map { _ in QueueCommandIndices(repeating: 0) }
-        
-        for command in self.resourceRegistryPreFrameCommands {
-            let encoderIndex = passCommandEncoders[command.passIndex]
-            let commandBufferIndex = encoderCommandBufferIndices[encoderIndex]
-            command.command.execute(resourceRegistry: self.resourceRegistry, resourceMap: self.resourceMap, stateCaches: backend.stateCaches, queue: self.frameGraphQueue,
-                                    waitEventValues: &commandEncoderWaitEventValues[encoderIndex], signalEventValue: UInt64(commandBufferIndex) + firstEncoderSignalValue)
-        }
-        assert(commandEncoderWaitEventValues.allSatisfy({ $0[Int(self.frameGraphQueue.index)] < firstEncoderSignalValue }))
-        
-        self.resourceRegistryPreFrameCommands.removeAll(keepingCapacity: true)
-        
-        func executePass(_ passRecord: RenderPassRecord, i: Int, encoderManager: MetalEncoderManager) {
+        func executePass(_ passRecord: RenderPassRecord, i: Int, encoderInfo: MetalFrameCommandInfo.CommandEncoderInfo, encoderManager: MetalEncoderManager) {
             switch passRecord.pass.passType {
             case .blit:
                 let commandEncoder = encoderManager.blitCommandEncoder()
                 if commandEncoder.encoder.label == nil {
-                    commandEncoder.encoder.label = commandEncoderNames[passCommandEncoders[i]]
+                    commandEncoder.encoder.label = encoderInfo.name
                 }
                 
                 commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
                 
             case .draw:
-                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: renderTargetDescriptors[i]!, textureUsages: self.renderTargetTextureProperties, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches) else {
+                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: encoderInfo.renderTargetDescriptor!, textureUsages: self.renderTargetTextureProperties, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches) else {
                     if _isDebugAssertConfiguration() {
                         print("Warning: skipping pass \(passRecord.pass.name) since the drawable for the render target could not be retrieved.")
                     }
@@ -675,14 +661,14 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                     return
                 }
                 if commandEncoder.label == nil {
-                    commandEncoder.label = commandEncoderNames[passCommandEncoders[i]]
+                    commandEncoder.label = encoderInfo.name
                 }
                 
-                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, renderTarget: renderTargetDescriptors[i]!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             case .compute:
                 let commandEncoder = encoderManager.computeCommandEncoder()
                 if commandEncoder.encoder.label == nil {
-                    commandEncoder.encoder.label = commandEncoderNames[passCommandEncoders[i]]
+                    commandEncoder.encoder.label = encoderInfo.name
                 }
                 
                 commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
@@ -701,7 +687,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         
-        let lastCommandBufferIndex = encoderCommandBufferIndices.last!
+        let lastCommandBufferIndex = frameCommandInfo.commandBufferCount - 1
         
         var commandBuffer : MTLCommandBuffer? = nil
         var encoderManager : MetalEncoderManager? = nil
@@ -760,10 +746,10 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         var waitedEvents = QueueCommandIndices(repeating: 0)
         
         for (i, passRecord) in passes.enumerated() {
-            let passCommandEncoderIndex = passCommandEncoders[i]
-            let commandBufferIndex = encoderCommandBufferIndices[passCommandEncoderIndex]
+            let passCommandEncoderIndex = frameCommandInfo.encoderIndex(for: passRecord)
+            let passEncoderInfo = frameCommandInfo.commandEncoders[passCommandEncoderIndex]
+            let commandBufferIndex = passEncoderInfo.commandBufferIndex
             if commandBufferIndex != committedCommandBufferCount {
-                assert(previousCommandEncoderIndex != passCommandEncoderIndex)
                 processCommandBuffer()
             }
             
@@ -776,7 +762,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 previousCommandEncoderIndex = passCommandEncoderIndex
                 encoderManager?.endEncoding()
                 
-                let waitEventValues = commandEncoderWaitEventValues[passCommandEncoderIndex]
+                let waitEventValues = passEncoderInfo.queueCommandWaitIndices
                 for queue in QueueRegistry.allQueues {
                     if waitedEvents[Int(queue.index)] < waitEventValues[Int(queue.index)],
                         waitEventValues[Int(queue.index)] > queue.lastCompletedCommand {
@@ -793,7 +779,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 waitedEvents = pointwiseMax(waitEventValues, waitedEvents)
             }
             
-            executePass(passRecord, i: i, encoderManager: encoderManager!)
+            executePass(passRecord, i: i, encoderInfo: passEncoderInfo, encoderManager: encoderManager!)
         }
         
         processCommandBuffer()

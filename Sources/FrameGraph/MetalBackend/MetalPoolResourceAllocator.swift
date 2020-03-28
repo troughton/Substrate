@@ -85,7 +85,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         }
     }
     
-    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [MetalFenceHandle], MetalContextWaitEvent) {
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [FenceDependency], MetalContextWaitEvent) {
         if let texture = self.textureFittingDescriptor(descriptor) {
             return (texture.0, [], texture.1)
         } else {
@@ -93,7 +93,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         }
     }
     
-    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [MetalFenceHandle], MetalContextWaitEvent) {
+    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [FenceDependency], MetalContextWaitEvent) {
         if let buffer = self.bufferWithLength(length, resourceOptions: options) {
             return (buffer.0, [], buffer.1)
         } else {
@@ -101,7 +101,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         }
     }
     
-    func depositBuffer(_ buffer: MTLBufferReference, fences: [MetalFenceHandle], waitEvent: MetalContextWaitEvent) {
+    func depositBuffer(_ buffer: MTLBufferReference, fences: [FenceDependency], waitEvent: MetalContextWaitEvent) {
         assert(fences.isEmpty)
         let resourceRef = ResourceReference(resource: buffer, waitEvent: waitEvent)
         // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.
@@ -110,7 +110,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         self.buffersUsedThisFrame.append(resourceRef)
     }
     
-    func depositTexture(_ texture: MTLTextureReference, fences: [MetalFenceHandle], waitEvent: MetalContextWaitEvent) {
+    func depositTexture(_ texture: MTLTextureReference, fences: [FenceDependency], waitEvent: MetalContextWaitEvent) {
         assert(fences.isEmpty)
         let resourceRef = ResourceReference(resource: texture, waitEvent: waitEvent)
         // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.

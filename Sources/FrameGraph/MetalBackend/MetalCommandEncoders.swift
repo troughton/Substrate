@@ -27,52 +27,6 @@ final class MetalEncoderManager {
         self.resourceMap = resourceMap
     }
     
-    static func sharesCommandEncoders(_ passA: RenderPassRecord, _ passB: RenderPassRecord, passes: [RenderPassRecord], renderTargetDescriptors: [MetalRenderTargetDescriptor?]) -> Bool {
-        if passA.passIndex == passB.passIndex {
-            return true
-        }
-        if passA.pass.passType == .draw, renderTargetDescriptors[passA.passIndex] === renderTargetDescriptors[passB.passIndex] {
-            return true
-        }
-        
-        return false
-    }
-    
-    static func generateCommandEncoderIndices(passes: [RenderPassRecord], renderTargetDescriptors: [MetalRenderTargetDescriptor?]) -> ([Int], [String], count: Int) {
-        var encoderIndex = 0
-        var passEncoderIndices = [Int](repeating: 0, count: passes.count)
-        
-        for (i, pass) in passes.enumerated().dropFirst() {
-            let previousPass = passes[i - 1]
-            assert(pass.passIndex != previousPass.passIndex)
-            
-            if pass.pass.passType != .draw || renderTargetDescriptors[previousPass.passIndex] !== renderTargetDescriptors[pass.passIndex] {
-                encoderIndex += 1
-            }
-            
-            passEncoderIndices[i] = encoderIndex
-        }
-        
-        let commandEncoderCount = encoderIndex + 1
-        
-        var commandEncoderNames = [String](repeating: "", count: commandEncoderCount)
-        
-        var startIndex = 0
-        for i in 0..<commandEncoderCount {
-            let endIndex = passEncoderIndices[startIndex...].firstIndex(where: { $0 != i }) ?? passEncoderIndices.endIndex
-            
-            if endIndex - startIndex <= 3 {
-                let applicablePasses = passes[startIndex..<endIndex].lazy.map { $0.pass.name }.joined(separator: ", ")
-                commandEncoderNames[i] = applicablePasses
-            } else {
-                commandEncoderNames[i] = "[\(passes[startIndex].pass.name)...\(passes[endIndex - 1].pass.name)] (\(endIndex - startIndex) passes)"
-            }
-            startIndex = endIndex
-        }
-        
-        return (passEncoderIndices, commandEncoderNames, encoderIndex + 1)
-    }
-    
     func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : MetalTextureUsageProperties], resourceCommands: [MetalFrameResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> FGMTLRenderCommandEncoder? {
         if descriptor === previousRenderTarget, let renderEncoder = self.renderEncoder {
             return renderEncoder
@@ -451,13 +405,6 @@ public final class FGMTLThreadRenderCommandEncoder {
             case .waitForFence(let fence, let beforeStages):
                 self.waitForFence(fence.fence, beforeStages: beforeStages)
                 
-            case .waitForHeapAliasingFences(let resource, _, let beforeStages):
-                resourceMap.transientRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
-                    for fence in fenceStates where fence.isValid {
-                        self.waitForFence(fence.fence, beforeStages: beforeStages)
-                    }
-                })
-                
             case .useResource(let resource, let usage, let stages):
                 var mtlResource : MTLResource
                 
@@ -645,13 +592,6 @@ public final class FGMTLComputeCommandEncoder {
             case .waitForFence(let fence, _):
                 self.waitForFence(fence.fence)
                 
-            case .waitForHeapAliasingFences(let resource, _, _):
-                resourceMap.transientRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
-                    for fence in fenceStates where fence.isValid {
-                        self.waitForFence(fence.fence)
-                    }
-                })
-                
             case .useResource(let resource, let usage, _):
                 var mtlResource : MTLResource
                 
@@ -800,13 +740,6 @@ public final class FGMTLBlitCommandEncoder {
                 
             case .waitForFence(let fence, _):
                 self.waitForFence(fence.fence)
-                
-            case .waitForHeapAliasingFences(let resource, _, _):
-                resourceMap.transientRegistry.withHeapAliasingFencesIfPresent(for: resource, perform: { fenceStates in
-                    for fence in fenceStates where fence.isValid {
-                        self.waitForFence(fence.fence)
-                    }
-                })
                 
             case .useResource:
                 break
