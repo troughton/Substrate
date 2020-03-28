@@ -80,6 +80,14 @@ struct MetalFrameResourceMap {
             return transientRegistry[texture]!
         }
     }
+ 
+    subscript(textureReference texture: Texture) -> MTLTextureReference {
+        if texture._usesPersistentRegistry {
+            return persistentRegistry[textureReference: texture]!
+        } else {
+            return transientRegistry[textureReference: texture]!
+        }
+    }
     
     subscript(buffer: _ArgumentBuffer) -> MTLBufferReference {
         if buffer._usesPersistentRegistry {
@@ -101,7 +109,7 @@ struct MetalFrameResourceMap {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateBufferIfNeeded(buffer) }
+            return transientRegistry.accessLock.withLock { transientRegistry.allocateBufferIfNeeded(buffer, forceGPUPrivate: false) }
         }
     }
     
@@ -109,7 +117,7 @@ struct MetalFrameResourceMap {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: MetalTextureUsageProperties(texture.descriptor.usageHint))! }
+            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: MetalTextureUsageProperties(texture.descriptor.usageHint), forceGPUPrivate: false)! }
         }
     }
     
@@ -546,7 +554,7 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, properties: MetalTextureUsageProperties) -> MTLTexture? {
+    public func allocateTexture(_ texture: Texture, properties: MetalTextureUsageProperties, forceGPUPrivate: Bool) -> MTLTexture? {
         if texture.flags.contains(.windowHandle) {
             // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
             self.textureReferences[texture] = MTLTextureReference(windowTexture: ())
@@ -662,7 +670,7 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateBuffer(_ buffer: Buffer) -> MTLBufferReference? {
+    public func allocateBuffer(_ buffer: Buffer, forceGPUPrivate: Bool) -> MTLBufferReference? {
         var options = MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode)
         if buffer.descriptor.usageHint.contains(.textureView) {
             options.remove(.frameGraphTrackedHazards) // FIXME: workaround for a bug in Metal where setting hazardTrackingModeUntracked on a MTLTextureDescriptor doesn't stick
@@ -694,20 +702,20 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateBufferIfNeeded(_ buffer: Buffer) -> MTLBufferReference {
+    public func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> MTLBufferReference {
         if let mtlBuffer = self.bufferReferences[buffer] {
             return mtlBuffer
         }
-        return self.allocateBuffer(buffer)!
+        return self.allocateBuffer(buffer, forceGPUPrivate: forceGPUPrivate)!
     }
     
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, usage: MetalTextureUsageProperties) -> MTLTexture? {
+    public func allocateTextureIfNeeded(_ texture: Texture, usage: MetalTextureUsageProperties, forceGPUPrivate: Bool) -> MTLTexture? {
         if let mtlTexture = self.textureReferences[texture]?.texture {
             assert(mtlTexture.pixelFormat == MTLPixelFormat(texture.descriptor.pixelFormat))
             return mtlTexture
         }
-        return self.allocateTexture(texture, properties: usage)
+        return self.allocateTexture(texture, properties: usage, forceGPUPrivate: forceGPUPrivate)
     }
     
     func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [FenceDependency], MetalContextWaitEvent) {

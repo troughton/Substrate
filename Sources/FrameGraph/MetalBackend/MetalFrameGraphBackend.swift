@@ -40,7 +40,8 @@ enum MetalPreFrameResourceCommands {
         
         switch self {
         case .materialiseBuffer(let buffer):
-            resourceRegistry.allocateBufferIfNeeded(buffer)
+            // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
+            resourceRegistry.allocateBufferIfNeeded(buffer, forceGPUPrivate: !buffer._usesPersistentRegistry && buffer._deferredSliceActions.isEmpty)
             
             let waitEvent = buffer.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(buffer)] : resourceRegistry.bufferWaitEvents[buffer]
             
@@ -48,7 +49,8 @@ enum MetalPreFrameResourceCommands {
             buffer.applyDeferredSliceActions()
             
         case .materialiseTexture(let texture, let usage):
-            resourceRegistry.allocateTextureIfNeeded(texture, usage: usage)
+            // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
+            resourceRegistry.allocateTextureIfNeeded(texture, usage: usage, forceGPUPrivate: !texture._usesPersistentRegistry)
             if let textureWaitEvent = (texture.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(texture)] : resourceRegistry.textureWaitEvents[texture]) {
                 waitEventValues[queueIndex] = max(textureWaitEvent.waitValue, waitEventValues[queueIndex])
             } else {
@@ -112,18 +114,17 @@ enum MetalPreFrameResourceCommands {
 
 enum MetalFrameResourceCommands {
     // These commands need to be executed during render pass execution and do not modify the MetalResourceRegistry.
-    case useResource(Resource, usage: MTLResourceUsage, stages: MTLRenderStages)
-    case memoryBarrier(Resource, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
-    case updateFence(MetalFenceHandle, afterStages: MTLRenderStages)
-    case waitForFence(MetalFenceHandle, beforeStages: MTLRenderStages)
+    case useResource(Resource, usage: MTLResourceUsage, stages: MTLRenderStages, allowReordering: Bool)
+    case memoryBarrier(Resource, scope: MTLBarrierScope, afterStages: MTLRenderStages, beforeCommand: Int, beforeStages: MTLRenderStages) // beforeCommand is the command that this memory barrier must have been executed before.
 }
 
 enum MetalCompactedFrameResourceCommands {
     // These commands need to be executed during render pass execution and do not modify the MetalResourceRegistry.
     case useResources(UnsafeMutableBufferPointer<MTLResource>, usage: MTLResourceUsage, stages: MTLRenderStages)
-    case memoryBarrier(scope: MTLBarrierScope, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
-    case updateFence(Unmanaged<MTLFence>, afterStages: MTLRenderStages)
-    case waitForFence(Unmanaged<MTLFence>, beforeStages: MTLRenderStages)
+    case resourceMemoryBarrier(resources: UnsafeMutableBufferPointer<MTLResource>, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
+    case scopedMemoryBarrier(scope: MTLBarrierScope, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
+    case updateFence(MetalFenceHandle, afterStages: MTLRenderStages)
+    case waitForFence(MetalFenceHandle, beforeStages: MTLRenderStages)
 }
 
 struct MetalPreFrameResourceCommand : Comparable {
@@ -154,13 +155,27 @@ struct MetalPreFrameResourceCommand : Comparable {
 struct MetalFrameResourceCommand : Comparable {
     var command : MetalFrameResourceCommands
     var index : Int
-    var order : PerformOrder
     
     public static func ==(lhs: MetalFrameResourceCommand, rhs: MetalFrameResourceCommand) -> Bool {
-        return lhs.index == rhs.index && lhs.order == rhs.order
+        return lhs.index == rhs.index
     }
     
     public static func <(lhs: MetalFrameResourceCommand, rhs: MetalFrameResourceCommand) -> Bool {
+        if lhs.index < rhs.index { return true }
+        return false
+    }
+}
+
+struct MetalCompactedResourceCommand : Comparable {
+    var command : MetalCompactedFrameResourceCommands
+    var index : Int
+    var order : PerformOrder
+    
+    public static func ==(lhs: MetalCompactedResourceCommand, rhs: MetalCompactedResourceCommand) -> Bool {
+        return lhs.index == rhs.index && lhs.order == rhs.order
+    }
+    
+    public static func <(lhs: MetalCompactedResourceCommand, rhs: MetalCompactedResourceCommand) -> Bool {
         if lhs.index < rhs.index { return true }
         if lhs.index == rhs.index, lhs.order < rhs.order {
             return true
@@ -184,6 +199,36 @@ struct MetalTextureUsageProperties {
     
     init(_ usage: TextureUsage) {
         self.init(usage: MTLTextureUsage(usage), canBeMemoryless: false)
+    }
+}
+
+struct UseResourceKey: Hashable {
+    var stages: MTLRenderStages
+    var usage: MTLResourceUsage
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(stages.rawValue)
+        hasher.combine(usage.rawValue)
+    }
+    
+    static func ==(lhs: UseResourceKey, rhs: UseResourceKey) -> Bool {
+        return lhs.stages == rhs.stages && lhs.usage == rhs.usage
+    }
+}
+
+struct MetalResidentResource: Hashable, Equatable {
+    var resource: Unmanaged<MTLResource>
+    var stages: MTLRenderStages
+    var usage: MTLResourceUsage
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(resource.toOpaque())
+        hasher.combine(stages.rawValue)
+        hasher.combine(usage.rawValue)
+    }
+    
+    static func ==(lhs: MetalResidentResource, rhs: MetalResidentResource) -> Bool {
+        return lhs.resource.toOpaque() == rhs.resource.toOpaque() && lhs.stages == rhs.stages && lhs.usage == rhs.usage
     }
 }
 
@@ -233,8 +278,9 @@ final class MetalFrameGraphContext : _FrameGraphContext {
     }
     
     var resourceRegistryPreFrameCommands = [MetalPreFrameResourceCommand]()
-    
     var resourceCommands = [MetalFrameResourceCommand]()
+    var compactedResourceCommands = [MetalCompactedResourceCommand]()
+    
     var renderTargetTextureProperties = [Texture : MetalTextureUsageProperties]()
     var commandEncoderDependencies = DependencyTable<Dependency?>(capacity: 1, defaultValue: nil)
     
@@ -254,51 +300,45 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             
             if usages.isEmpty { continue }
             
+            var resourceIsRenderTarget = false
+            
             do {
                 // Track resource residency.
-                
-                var commandIndex = Int.max
-                var previousPass : RenderPassRecord? = nil
-                var resourceUsage : MTLResourceUsage = []
-                var resourceStages : MTLRenderStages = []
+                var previousEncoderIndex: Int = 0
+                var previousUsageType: MTLResourceUsage = []
+                var previousUsageStages: RenderStages = []
                 
                 for usage in usages
                     where usage.renderPassRecord.isActive &&
                         usage.renderPassRecord.pass.passType != .external &&
-                        /* usage.inArgumentBuffer && */
-                        usage.stages != .cpuBeforeRender &&
-                        !usage.type.isRenderTarget {
-                            
-                            defer { previousPass = usage.renderPassRecord }
-                            
-                            if let previousPassUnwrapped = previousPass, frameCommandInfo.encoderIndex(for: previousPassUnwrapped) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
-                                self.resourceCommands.append(MetalFrameResourceCommand(command: .useResource(resource, usage: resourceUsage, stages: resourceStages), index: commandIndex, order: .before))
-                                previousPass = nil
+                        usage.inArgumentBuffer &&
+                        usage.stages != .cpuBeforeRender {
+                            if usage.type.isRenderTarget {
+                                resourceIsRenderTarget = true
+                                continue
                             }
                             
-                            if previousPass == nil {
-                                resourceUsage = []
-                                resourceStages = []
-                                commandIndex = usage.commandRange.lowerBound
-                            } else {
-                                commandIndex = min(commandIndex, usage.commandRange.lowerBound)
-                            }
-                            
+                            let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
+                        
+                            var computedUsageType: MTLResourceUsage = []
                             if resourceType == .texture, usage.type == .read {
-                                resourceUsage.formUnion(.sample)
+                                computedUsageType.formUnion(.sample)
                             }
                             if usage.isRead {
-                                resourceUsage.formUnion(.read)
+                                computedUsageType.formUnion(.read)
                             }
                             if usage.isWrite {
-                                resourceUsage.formUnion(.write)
+                                computedUsageType.formUnion(.write)
                             }
                             
-                            resourceStages.formUnion(MTLRenderStages(usage.stages))
-                }
-                
-                if previousPass != nil {
-                    self.resourceCommands.append(MetalFrameResourceCommand(command: .useResource(resource, usage: resourceUsage, stages: resourceStages), index: commandIndex, order: .before))
+                            if computedUsageType != previousUsageType || usage.stages != previousUsageStages || usageEncoderIndex != previousEncoderIndex {
+                                self.resourceCommands.append(MetalFrameResourceCommand(command: .useResource(resource, usage: computedUsageType, stages: MTLRenderStages(usage.stages), allowReordering: !resourceIsRenderTarget && usageEncoderIndex != previousEncoderIndex), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
+                                                                                       index: usage.commandRange.lowerBound))
+                            }
+                            
+                            previousUsageType = computedUsageType
+                            previousEncoderIndex = usageEncoderIndex
+                            previousUsageStages = usage.stages
                 }
             }
             
@@ -364,7 +404,19 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                     if !(previousUsage.type.isRenderTarget && (usage.type == .writeOnlyRenderTarget || usage.type == .readWriteRenderTarget)) {
                         assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
                         assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
-                        self.resourceCommands.append(MetalFrameResourceCommand(command: .memoryBarrier(Resource(resource), afterStages: MTLRenderStages(previousUsage.stages.last), beforeStages: MTLRenderStages(usage.stages.first)), index: usage.commandRange.lowerBound, order: .before))
+                        var scope: MTLBarrierScope = []
+                        if previousUsage.type.isRenderTarget || usage.type.isRenderTarget {
+                            scope.formUnion(.renderTargets)
+                        }
+                        if resource.type == .texture {
+                            scope.formUnion(.textures)
+                        } else if resource.type == .buffer || resource.type == .argumentBuffer || resource.type == .argumentBufferArray {
+                            scope.formUnion(.buffers)
+                        } else {
+                            assertionFailure()
+                        }
+                        
+                        self.resourceCommands.append(MetalFrameResourceCommand(command: .memoryBarrier(Resource(resource), scope: scope, afterStages: MTLRenderStages(previousUsage.stages), beforeCommand: usage.commandRange.lowerBound, beforeStages: MTLRenderStages(usage.stages)), index: previousUsage.commandRange.last!))
                             
                     }
                 }
@@ -612,23 +664,147 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                         let commandBufferSignalIndex = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[dependency.wait.encoderIndex].commandBufferIndex)
                         
                         let fence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: commandBufferSignalIndex)
-                        self.resourceCommands.append(MetalFrameResourceCommand(command: .updateFence(fence, afterStages: MTLRenderStages(dependency.signal.stages)), index: dependency.signal.index, order: .after))
-                        self.resourceCommands.append(MetalFrameResourceCommand(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.wait.stages)), index: dependency.wait.index, order: .before))
+                        self.compactedResourceCommands.append(MetalCompactedResourceCommand(command: .updateFence(fence, afterStages: MTLRenderStages(dependency.signal.stages)), index: dependency.signal.index, order: .after))
+                        self.compactedResourceCommands.append(MetalCompactedResourceCommand(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.wait.stages)), index: dependency.wait.index, order: .before))
                     }
                 }
             }
         }
         
+        self.compactResourceCommands(commandInfo: frameCommandInfo)
+    }
+    
+    static var resourceCommandArrayTag: TaggedHeap.Tag {
+        return UInt64(bitPattern: Int64("MetalFrameGraph Compacted Resource Commands".hashValue))
+    }
+    
+    func compactResourceCommands(commandInfo: MetalFrameCommandInfo) {
+        guard !self.resourceCommands.isEmpty else { return }
         self.resourceCommands.sort()
+        
+        let allocator = ThreadLocalTagAllocator(tag: Self.resourceCommandArrayTag)
+        
+        var currentEncoderIndex = 0
+        var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
+        
+        
+        var barrierResources: [Unmanaged<MTLResource>] = []
+        barrierResources.reserveCapacity(8) // we use memoryBarrier(resource) for up to eight resources, and memoryBarrier(scope) otherwise.
+        
+        var barrierScope: MTLBarrierScope = []
+        var barrierAfterStages: MTLRenderStages = []
+        var barrierBeforeStages: MTLRenderStages = []
+        var barrierLastIndex: Int = .max
+        
+        var encoderResidentResources = Set<MetalResidentResource>()
+        
+        var encoderUseResourceCommandIndex: Int = .max
+        var encoderUseResources = [UseResourceKey: [Unmanaged<MTLResource>]]()
+        
+        let addBarrier = {
+            if barrierResources.count <= 8 {
+                let memory = allocator.allocate(capacity: barrierResources.count) as UnsafeMutablePointer<Unmanaged<MTLResource>>
+                memory.assign(from: barrierResources, count: barrierResources.count)
+                let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: barrierResources.count)
+                
+                self.compactedResourceCommands.append(.init(command: .resourceMemoryBarrier(resources: bufferPointer, afterStages: barrierAfterStages, beforeStages: barrierBeforeStages), index: barrierLastIndex, order: .before))
+            } else {
+                self.compactedResourceCommands.append(.init(command: .scopedMemoryBarrier(scope: barrierScope, afterStages: barrierAfterStages, beforeStages: barrierBeforeStages), index: barrierLastIndex, order: .before))
+            }
+            barrierResources.removeAll(keepingCapacity: true)
+            barrierScope = []
+            barrierAfterStages = []
+            barrierBeforeStages = []
+            barrierLastIndex = .max
+        }
+        
+        let useResources = {
+            for (key, resources) in encoderUseResources where !resources.isEmpty {
+                let memory = allocator.allocate(capacity: resources.count) as UnsafeMutablePointer<Unmanaged<MTLResource>>
+                memory.assign(from: resources, count: resources.count)
+                let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: resources.count)
+                
+                self.compactedResourceCommands.append(.init(command: .useResources(bufferPointer, usage: key.usage, stages: key.stages), index: encoderUseResourceCommandIndex, order: .before))
+            }
+            encoderUseResourceCommandIndex = .max
+            encoderUseResources.removeAll(keepingCapacity: true)
+        }
+        
+        let getResource: (Resource) -> Unmanaged<MTLResource> = { resource in
+             if let buffer = resource.buffer {
+                return unsafeBitCast(self.resourceMap[buffer]._buffer, to: Unmanaged<MTLResource>.self)
+             } else if let texture = resource.texture {
+                return unsafeBitCast(self.resourceMap[textureReference: texture]._texture, to: Unmanaged<MTLResource>.self)
+             } else if let argumentBuffer = resource.argumentBuffer {
+                return unsafeBitCast(self.resourceMap[argumentBuffer]._buffer, to: Unmanaged<MTLResource>.self)
+             }
+            fatalError()
+        }
+        
+        for command in resourceCommands {
+            if command.index >= barrierLastIndex {
+                addBarrier()
+            }
+            
+            while !currentEncoder.commandRange.contains(command.index) {
+                currentEncoderIndex += 1
+                currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
+                
+                useResources()
+                
+                assert(barrierScope == [])
+                assert(barrierResources.isEmpty)
+            }
+
+            // Strategy:
+            // useResource should be batched together by usage to as early as possible in the encoder.
+            // memoryBarriers should be as late as possible.
+            switch command.command {
+            case .useResource(let resource, let usage, let stages, let allowReordering):
+                let mtlResource = getResource(resource)
+                
+                if !allowReordering {
+                    let memory = allocator.allocate(capacity: 1) as UnsafeMutablePointer<Unmanaged<MTLResource>>
+                    memory.initialize(to: mtlResource)
+                    let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: 1)
+                    self.compactedResourceCommands.append(.init(command: .useResources(bufferPointer, usage: usage, stages: stages), index: command.index, order: .before))
+                } else {
+                    let key = MetalResidentResource(resource: mtlResource, stages: stages, usage: usage)
+                    let (inserted, _) = encoderResidentResources.insert(key)
+                    if inserted {
+                        encoderUseResources[UseResourceKey(stages: stages, usage: usage), default: []].append(mtlResource)
+                        encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
+                    }
+                }
+                
+            case .memoryBarrier(let resource, let scope, let afterStages, let beforeCommand, let beforeStages):
+                if barrierResources.count < 8 {
+                    barrierResources.append(getResource(resource))
+                }
+                barrierScope.formUnion(scope)
+                barrierAfterStages.formUnion(afterStages)
+                barrierBeforeStages.formUnion(beforeStages)
+                barrierLastIndex = min(beforeCommand, barrierLastIndex)
+            }
+        }
+        
+        if barrierLastIndex < .max {
+            addBarrier()
+        }
+        
+        self.compactedResourceCommands.sort()
+        self.resourceCommands.removeAll(keepingCapacity: true)
     }
     
     public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {
         self.resourceRegistry.prepareFrame()
         
         defer {
+            TaggedHeap.free(tag: Self.resourceCommandArrayTag)
+            
             self.resourceRegistry.cycleFrames()
 
-            self.resourceCommands.removeAll(keepingCapacity: true)
+            self.compactedResourceCommands.removeAll(keepingCapacity: true)
             self.renderTargetTextureProperties.removeAll(keepingCapacity: true)
             
             assert(self.backend.activeContext === self)
@@ -653,10 +829,10 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                     commandEncoder.encoder.label = encoderInfo.name
                 }
                 
-                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                commandEncoder.executePass(passRecord, resourceCommands: compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
                 
             case .draw:
-                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: encoderInfo.renderTargetDescriptor!, textureUsages: self.renderTargetTextureProperties, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches) else {
+                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: encoderInfo.renderTargetDescriptor!, textureUsages: self.renderTargetTextureProperties, resourceMap: self.resourceMap, stateCaches: backend.stateCaches) else {
                     if _isDebugAssertConfiguration() {
                         print("Warning: skipping pass \(passRecord.pass.name) since the drawable for the render target could not be retrieved.")
                     }
@@ -667,18 +843,18 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                     commandEncoder.label = encoderInfo.name
                 }
                 
-                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                commandEncoder.executePass(passRecord, resourceCommands: compactedResourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             case .compute:
                 let commandEncoder = encoderManager.computeCommandEncoder()
                 if commandEncoder.encoder.label == nil {
                     commandEncoder.encoder.label = encoderInfo.name
                 }
                 
-                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                commandEncoder.executePass(passRecord, resourceCommands: compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
                 
             case .external:
                 let commandEncoder = encoderManager.externalCommandEncoder()
-                commandEncoder.executePass(passRecord, resourceCommands: resourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                commandEncoder.executePass(passRecord, resourceCommands: compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
                 
             case .cpu:
                 break

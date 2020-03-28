@@ -27,7 +27,7 @@ final class MetalEncoderManager {
         self.resourceMap = resourceMap
     }
     
-    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : MetalTextureUsageProperties], resourceCommands: [MetalFrameResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> FGMTLRenderCommandEncoder? {
+    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : MetalTextureUsageProperties], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> FGMTLRenderCommandEncoder? {
         if descriptor === previousRenderTarget, let renderEncoder = self.renderEncoder {
             return renderEncoder
         } else {
@@ -109,7 +109,7 @@ public final class FGMTLParallelRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         if pass.commandRange!.count < FGMTLParallelRenderCommandEncoder.commandCountThreshold {
             if let currentEncoder = currentEncoder {
                 currentEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
@@ -149,22 +149,9 @@ public final class FGMTLParallelRenderCommandEncoder {
 public final class FGMTLThreadRenderCommandEncoder {
     let encoder: MTLRenderCommandEncoder
     
-    struct FenceWaitKey : Hashable {
-        var fence : ObjectIdentifier
-        var stages : MTLRenderStages.RawValue
-        
-        init(fence: MTLFence, stages: MTLRenderStages) {
-            self.fence = ObjectIdentifier(fence)
-            self.stages = stages.rawValue
-        }
-    }
-    
     let renderPassDescriptor : MTLRenderPassDescriptor
     var pipelineDescriptor : RenderPipelineDescriptor? = nil
     private let baseBufferOffsets : UnsafeMutablePointer<Int> // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
-    
-    var updatedFences = Set<ObjectIdentifier>()
-    var waitedOnFences = Set<FenceWaitKey>()
     
     init(encoder: MTLRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor) {
         self.encoder = encoder
@@ -187,7 +174,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
@@ -385,61 +372,40 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
+    func checkResourceCommands(_ resourceCommands: [MetalCompactedResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
             switch resourceCommands[resourceCommandIndex].command {
                 
-            case .memoryBarrier(let resource, let afterStages, let beforeStages):
-                if let texture = resource.texture {
-                    self.memoryBarrier(resource: resourceMap[texture], afterStages: afterStages, beforeStages: beforeStages)
-                } else if let buffer = resource.buffer {
-                    self.memoryBarrier(resource: resourceMap[buffer].buffer, afterStages: afterStages, beforeStages: beforeStages)
-                }
+            case .resourceMemoryBarrier(let resources, let afterStages, let beforeStages):
+                encoder.__memoryBarrier(resources: resources.baseAddress!, count: resources.count, after: afterStages, before: beforeStages)
+                
+            case .scopedMemoryBarrier(let scope, let afterStages, let beforeStages):
+                encoder.memoryBarrier(scope: scope, after: afterStages, before: beforeStages)
                 
             case .updateFence(let fence, let afterStages):
-                // TODO: We can combine together multiple fences that update at the same time.
                 self.updateFence(fence.fence, afterStages: afterStages)
                 
             case .waitForFence(let fence, let beforeStages):
                 self.waitForFence(fence.fence, beforeStages: beforeStages)
                 
-            case .useResource(let resource, let usage, let stages):
-                var mtlResource : MTLResource
-                
-                if let texture = resource.texture {
-                    mtlResource = resourceMap[texture]
-                } else if let buffer = resource.buffer {
-                    mtlResource = resourceMap[buffer].buffer
-                } else if let argumentBuffer = resource.argumentBuffer {
-                    mtlResource = resourceMap[argumentBuffer].buffer
-                } else {
-                    preconditionFailure()
-                }
-                
+            case .useResources(let resources, let usage, let stages):
                 if #available(iOS 13.0, macOS 10.15, *) {
-                    encoder.use(mtlResource, usage: usage, stages: stages)
+                    encoder.use(resources.baseAddress!, count: resources.count, usage: usage, stages: stages)
                 } else {
-                    encoder.useResource(mtlResource, usage: usage)
+                    encoder.__use(resources.baseAddress!, count: resources.count, usage: usage)
                 }
             }
         }
     }
     
     func waitForFence(_ fence: MTLFence, beforeStages: MTLRenderStages?) {
-        let fenceWaitKey = FGMTLThreadRenderCommandEncoder.FenceWaitKey(fence: fence, stages: beforeStages!)
-        if self.waitedOnFences.contains(fenceWaitKey) || self.updatedFences.contains(ObjectIdentifier(fence)) {
-            return
-        }
-        
         #if os(macOS)
         encoder.waitForFence(fence, before: beforeStages!)
         #else
         encoder.wait(for: fence, before: beforeStages!)
         #endif
-        
-        self.waitedOnFences.insert(fenceWaitKey)
     }
     
     func updateFence(_ fence: MTLFence, afterStages: MTLRenderStages?) {
@@ -448,13 +414,6 @@ public final class FGMTLThreadRenderCommandEncoder {
         #else
         encoder.update(fence, after: afterStages!)
         #endif
-        
-        self.updatedFences.insert(ObjectIdentifier(fence))
-    }
-    
-    func memoryBarrier(resource: MTLResource, afterStages: MTLRenderStages?, beforeStages: MTLRenderStages?) {
-        var resource = resource
-        encoder.__memoryBarrier(resources: &resource, count: 1, after: afterStages!, before: beforeStages!)
     }
 }
 
@@ -463,9 +422,6 @@ public final class FGMTLComputeCommandEncoder {
     
     var pipelineDescriptor : ComputePipelineDescriptor? = nil
     private let baseBufferOffsets : UnsafeMutablePointer<Int> // 31, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
-    
-    var updatedFences = Set<ObjectIdentifier>()
-    var waitedOnFences = Set<ObjectIdentifier>()
     
     init(encoder: MTLComputeCommandEncoder) {
         self.encoder = encoder
@@ -478,7 +434,7 @@ public final class FGMTLComputeCommandEncoder {
         self.baseBufferOffsets.deallocate()
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
@@ -572,62 +528,29 @@ public final class FGMTLComputeCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
+    func checkResourceCommands(_ resourceCommands: [MetalCompactedResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
             switch resourceCommands[resourceCommandIndex].command {
                 
-            case .memoryBarrier(let resource, _, _):
-                if let texture = resource.texture {
-                    self.memoryBarrier(resource: resourceMap[texture])
-                } else if let buffer = resource.buffer {
-                    self.memoryBarrier(resource: resourceMap[buffer].buffer)
-                }
+            case .resourceMemoryBarrier(let resources, _, _):
+                encoder.__memoryBarrier(resources: resources.baseAddress!, count: resources.count)
+
+            case .scopedMemoryBarrier(let scope, _, _):
+                encoder.memoryBarrier(scope: scope)
                 
             case .updateFence(let fence, _):
-                // TODO: We can combine together multiple fences that update at the same time.
-                self.updateFence(fence.fence)
+                encoder.updateFence(fence.fence)
                 
             case .waitForFence(let fence, _):
-                self.waitForFence(fence.fence)
+                encoder.waitForFence(fence.fence)
                 
-            case .useResource(let resource, let usage, _):
-                var mtlResource : MTLResource
-                
-                if let texture = resource.texture {
-                    mtlResource = resourceMap[texture]
-                } else if let buffer = resource.buffer {
-                    mtlResource = resourceMap[buffer].buffer
-                } else if let argumentBuffer = resource.argumentBuffer {
-                    mtlResource = resourceMap[argumentBuffer].buffer
-                } else {
-                    preconditionFailure()
-                }
-                
-                encoder.useResource(mtlResource, usage: usage)
+            case .useResources(let resources, let usage, _):
+                encoder.__use(resources.baseAddress!, count: resources.count, usage: usage)
             }
             
         }
-    }
-    
-    func waitForFence(_ fence: MTLFence) {
-        if self.waitedOnFences.contains(ObjectIdentifier(fence)) || self.updatedFences.contains(ObjectIdentifier(fence)) {
-            return
-        }
-        encoder.waitForFence(fence)
-        
-        self.waitedOnFences.insert(ObjectIdentifier(fence))
-    }
-    
-    func updateFence(_ fence: MTLFence) {
-        encoder.updateFence(fence)
-        self.updatedFences.insert(ObjectIdentifier(fence))
-    }
-    
-    func memoryBarrier(resource: MTLResource) {
-        var resource = resource
-        encoder.__memoryBarrier(resources: &resource, count: 1)
     }
     
     func endEncoding() {
@@ -646,7 +569,7 @@ public final class FGMTLBlitCommandEncoder {
         self.encoder = encoder
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
@@ -721,49 +644,22 @@ public final class FGMTLBlitCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
+    func checkResourceCommands(_ resourceCommands: [MetalCompactedResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
             switch resourceCommands[resourceCommandIndex].command {
-                
-            case .memoryBarrier(let resource, _, _):
-                if let texture = resource.texture {
-                    self.memoryBarrier(resource: resourceMap[texture])
-                } else if let buffer = resource.buffer {
-                    self.memoryBarrier(resource: resourceMap[buffer].buffer)
-                }
+            case .resourceMemoryBarrier, .scopedMemoryBarrier, .useResources:
+                break
                 
             case .updateFence(let fence, _):
-                // TODO: We can combine together multiple fences that update at the same time.
-                self.updateFence(fence.fence)
+                encoder.updateFence(fence.fence)
                 
             case .waitForFence(let fence, _):
-                self.waitForFence(fence.fence)
-                
-            case .useResource:
-                break
+                encoder.waitForFence(fence.fence)
             }
             
         }
-    }
-    
-    func waitForFence(_ fence: MTLFence) {
-        if self.waitedOnFences.contains(ObjectIdentifier(fence)) || self.updatedFences.contains(ObjectIdentifier(fence)) {
-            return
-        }
-        encoder.waitForFence(fence)
-        
-        self.waitedOnFences.insert(ObjectIdentifier(fence))
-    }
-    
-    func updateFence(_ fence: MTLFence) {
-        encoder.updateFence(fence)
-        self.updatedFences.insert(ObjectIdentifier(fence))
-    }
-    
-    func memoryBarrier(resource: MTLResource) {
-        
     }
     
     func endEncoding() {
@@ -780,16 +676,9 @@ final class FGMTLExternalCommandEncoder {
         self.commandBuffer = commandBuffer
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalFrameResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
-        // if _isDebugAssertConfiguration() {
-        //     let resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
-        //     assert(resourceCommands[resourceCommandIndex].index >= pass.commandRange!.upperBound) // External encoders shouldn't have any resource commands.
-        // }
-        
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
         for (_, command) in zip(pass.commandRange!, pass.commands) {
-//            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap, encoder: ())
             self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
-//            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap, encoder: ())
         }
     }
     
@@ -816,22 +705,6 @@ final class FGMTLExternalCommandEncoder {
         default:
             break
         }
-    }
-    
-    func waitForFence(_ fence: MTLFence, beforeStages: MTLRenderStages?, encoder: FGMTLExternalCommandEncoder.Encoder) {
-        
-    }
-    
-    func updateFence(_ fence: MTLFence, afterStages: MTLRenderStages?, encoder: FGMTLExternalCommandEncoder.Encoder) {
-        
-    }
-    
-    func memoryBarrier(resource: MTLResource, afterStages: MTLRenderStages?, beforeStages: MTLRenderStages?, encoder: FGMTLExternalCommandEncoder.Encoder) {
-        
-    }
-    
-    func endEncoding() {
-        
     }
     
 }

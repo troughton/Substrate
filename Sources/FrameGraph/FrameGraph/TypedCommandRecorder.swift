@@ -85,6 +85,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     
     var pipelineDescriptorChanged : Bool = false
     var depthStencilDescriptorChanged : Bool = false
+    var hasSetPushConstants : Bool = false
     
     public var pipeline : TypedRenderPipelineDescriptor<R> {
         didSet {
@@ -106,7 +107,14 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     
     public var pushConstants : R.PushConstants {
         didSet {
-            self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, path: RenderBackend.pushConstantPath)
+            withUnsafeBytes(of: oldValue, { oldValue in
+                withUnsafeBytes(of: self.pushConstants, { pushConstants in
+                    if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) == 0 {
+                        self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, path: RenderBackend.pushConstantPath)
+                        hasSetPushConstants = true
+                    }
+                })
+            })
         }
     }
     
@@ -307,6 +315,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     @usableFromInline let encoder : ComputeCommandEncoder
     
     var pipelineDescriptorChanged : Bool = false
+    var hasSetPushConstants : Bool = false
     
     var descriptorSetChangeMask : UInt8 = 0
     
@@ -318,7 +327,14 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     
     public var pushConstants : R.PushConstants {
         didSet {
-            self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, path: RenderBackend.pushConstantPath)
+            withUnsafeBytes(of: oldValue, { oldValue in
+                withUnsafeBytes(of: self.pushConstants, { pushConstants in
+                    if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) == 0 {
+                        self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, path: RenderBackend.pushConstantPath)
+                        hasSetPushConstants = true
+                    }
+                })
+            })
         }
     }
     
