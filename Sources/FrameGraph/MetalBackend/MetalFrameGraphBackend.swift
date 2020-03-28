@@ -802,6 +802,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         if barrierLastIndex < .max {
             addBarrier()
         }
+        useResources()
         
         self.compactedResourceCommands.sort()
         self.resourceCommands.removeAll(keepingCapacity: true)
