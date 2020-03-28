@@ -606,55 +606,8 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         // Process the dependencies, joining duplicates.
         do {
             
-            // Floyd-Warshall algorithm for finding the shortest path.
-            // https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm
             let commandEncoderCount = frameCommandInfo.commandEncoders.count
-            let maxDistance = commandEncoderCount + 1
-            
-            var distanceMatrix = DependencyTable<Int>(capacity: commandEncoderCount, defaultValue: maxDistance)
-            for sourceIndex in 0..<commandEncoderCount {
-                for dependentIndex in min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount {
-                    if self.commandEncoderDependencies.dependency(from: dependentIndex, on: sourceIndex) != nil {
-                        distanceMatrix.setDependency(from: dependentIndex, on: sourceIndex, to: 1)
-                    }
-                }
-            }
-            
-            for k in 0..<commandEncoderCount {
-                for i in min(k + 1, commandEncoderCount)..<commandEncoderCount {
-                    for j in min(i + 1, commandEncoderCount)..<commandEncoderCount {
-                        let candidateDistance = distanceMatrix.dependency(from: i, on: k) + distanceMatrix.dependency(from: j, on: i)
-                        if distanceMatrix.dependency(from: j, on: k) > candidateDistance {
-                            distanceMatrix.setDependency(from: j, on: k, to: candidateDistance)
-                        }
-                    }
-                }
-            }
-            
-            // Transitive reduction:
-            // https://stackoverflow.com/questions/1690953/transitive-reduction-algorithm-pseudocode
-            var reductionMatrix = DependencyTable<Bool>(capacity: commandEncoderCount, defaultValue: false)
-            for sourceIndex in 0..<commandEncoderCount {
-                for dependentIndex in min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount {
-                    if distanceMatrix.dependency(from: dependentIndex, on: sourceIndex) < maxDistance {
-                        reductionMatrix.setDependency(from: dependentIndex, on: sourceIndex, to: true)
-                    }
-                }
-            }
-            
-
-            for i in 0..<commandEncoderCount {
-                for j in 0..<i {
-                    if reductionMatrix.dependency(from: i, on: j) {
-                        for k in 0..<j {
-                            if reductionMatrix.dependency(from: j, on: k) {
-                                reductionMatrix.setDependency(from: i, on: k, to: false)
-                            }
-                        }
-                    }
-                }
-            }
-            
+            let reductionMatrix = self.commandEncoderDependencies.transitiveReduction(hasDependency: { $0 != nil })
             
             for sourceIndex in (0..<commandEncoderCount) { // sourceIndex always points to the producing pass.
                 let dependentRange = min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount

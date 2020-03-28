@@ -50,4 +50,44 @@ public struct DependencyTable<T> {
         let base = self.baseIndexForDependenciesFor(row: from)
         return self.storage[base + on]
     }
+    
+
+    @inlinable
+    public func transitiveReduction(hasDependency: (T) -> Bool) -> DependencyTable<Bool> {
+        // Floyd-Warshall algorithm for finding the shortest path.
+        // https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm{
+        var reductionMatrix = DependencyTable<Bool>(capacity: self.capacity, defaultValue: false)
+        for sourceIndex in 0..<self.capacity {
+            for dependentIndex in min(sourceIndex + 1, self.capacity)..<self.capacity {
+                if hasDependency(self.dependency(from: dependentIndex, on: sourceIndex)) {
+                    reductionMatrix.setDependency(from: dependentIndex, on: sourceIndex, to: true) // true
+                }
+            }
+        }
+        
+        for k in 0..<self.capacity {
+            for i in min(k + 1, self.capacity)..<self.capacity {
+                for j in min(i + 1, self.capacity)..<self.capacity {
+                    let candidatePath = reductionMatrix.dependency(from: i, on: k) && reductionMatrix.dependency(from: j, on: i)
+                    reductionMatrix.setDependency(from: j, on: k, to: reductionMatrix.dependency(from: j, on: k) || candidatePath)
+                }
+            }
+        }
+        
+        // Transitive reduction:
+        // https://stackoverflow.com/questions/1690953/transitive-reduction-algorithm-pseudocode
+        for i in 0..<self.capacity {
+            for j in 0..<i {
+                if reductionMatrix.dependency(from: i, on: j) {
+                    for k in 0..<j {
+                        if reductionMatrix.dependency(from: j, on: k) {
+                            reductionMatrix.setDependency(from: i, on: k, to: false)
+                        }
+                    }
+                }
+            }
+        }
+        
+        return reductionMatrix
+    }
 }
