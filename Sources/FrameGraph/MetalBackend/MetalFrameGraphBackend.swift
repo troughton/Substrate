@@ -24,7 +24,7 @@ enum MetalPreFrameResourceCommands {
     case waitForHeapAliasingFences(resource: Resource, waitDependency: FenceDependency)
     
     case waitForCommandBuffer(index: UInt64, queue: Queue)
-    case updateCommandBufferWaitIndex(Resource)
+    case updateCommandBufferWaitIndex(Resource, accessType: ResourceAccessType)
     
     var isMaterialiseNonArgumentBufferResource: Bool {
         switch self {
@@ -94,10 +94,8 @@ enum MetalPreFrameResourceCommands {
         case .waitForCommandBuffer(let index, let waitQueue):
             waitEventValues[Int(waitQueue.index)] = max(index, waitEventValues[Int(waitQueue.index)])
             
-        case .updateCommandBufferWaitIndex(let resource):
-            // TODO: split out reads and writes.
-            resource[waitIndexFor: queue, accessType: .read] = signalEventValue
-            resource[waitIndexFor: queue, accessType: .write] = signalEventValue
+        case .updateCommandBufferWaitIndex(let resource, let accessType):
+            resource[waitIndexFor: queue, accessType: accessType] = signalEventValue
             
         case .waitForHeapAliasingFences(let resource, let waitDependency):
             resourceRegistry.withHeapAliasingFencesIfPresent(for: resource.handle, perform: { fenceDependencies in
@@ -424,13 +422,6 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                     } else {
                         self.resourceRegistryPreFrameCommands.append(MetalPreFrameResourceCommand(command: .disposeResource(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
                     }
-                } else if resource.flags.contains(.persistent), (!resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised)) {
-                    for queue in QueueRegistry.allQueues {
-                        // TODO: separate out the wait index for the first read from the first write.
-                        let waitIndex = resource[waitIndexFor: queue, accessType: previousWrite != nil ? .readWrite : .read]
-                        self.resourceRegistryPreFrameCommands.append(MetalPreFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.last!, order: .before))
-                    }
-                    self.resourceRegistryPreFrameCommands.append(MetalPreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
                 }
                 
             } else if !resource.flags.contains(.persistent) || resource.flags.contains(.windowHandle) {
@@ -501,13 +492,25 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                         
                     }
                 }
-            } else if resource.flags.contains(.persistent), (!resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised)) {
+            }
+            
+            if resource.flags.intersection([.persistent, .historyBuffer]) != [], (!resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised)) {
                 for queue in QueueRegistry.allQueues {
                     // TODO: separate out the wait index for the first read from the first write.
                     let waitIndex = resource[waitIndexFor: queue, accessType: previousWrite != nil ? .readWrite : .read]
                     self.resourceRegistryPreFrameCommands.append(MetalPreFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.last!, order: .before))
                 }
-                self.resourceRegistryPreFrameCommands.append(MetalPreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                
+                if lastUsage.isWrite {
+                    self.resourceRegistryPreFrameCommands.append(MetalPreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                } else {
+                    if let lastWrite = previousWrite {
+                        self.resourceRegistryPreFrameCommands.append(MetalPreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), passIndex: lastWrite.renderPassRecord.passIndex, index: lastWrite.commandRange.last!, order: .after))
+                    }
+                    for read in readsSinceLastWrite {
+                        self.resourceRegistryPreFrameCommands.append(MetalPreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .write), passIndex: read.renderPassRecord.passIndex, index: read.commandRange.last!, order: .after))
+                    }
+                }
             }
             
             if resourceRegistry.isAliasedHeapResource(resource: resource), !canBeMemoryless {
