@@ -56,20 +56,18 @@ public struct DependencyTable<T> {
     public func transitiveReduction(hasDependency: (T) -> Bool) -> DependencyTable<Bool> {
         // Floyd-Warshall algorithm for finding the shortest path.
         // https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm{
+        
         var reductionMatrix = DependencyTable<Bool>(capacity: self.capacity, defaultValue: false)
-        for sourceIndex in 0..<self.capacity {
-            for dependentIndex in min(sourceIndex + 1, self.capacity)..<self.capacity {
-                if hasDependency(self.dependency(from: dependentIndex, on: sourceIndex)) {
-                    reductionMatrix.setDependency(from: dependentIndex, on: sourceIndex, to: true) // true
-                }
-            }
+        for i in 0..<self.storage.count {
+            reductionMatrix.storage[i] = hasDependency(self.storage[i])
         }
         
         for k in 0..<self.capacity {
             for i in min(k + 1, self.capacity)..<self.capacity {
-                for j in min(i + 1, self.capacity)..<self.capacity {
-                    let candidatePath = reductionMatrix.dependency(from: i, on: k) && reductionMatrix.dependency(from: j, on: i)
-                    reductionMatrix.setDependency(from: j, on: k, to: reductionMatrix.dependency(from: j, on: k) || candidatePath)
+                if reductionMatrix.dependency(from: i, on: k) {
+                    for j in min(i + 1, self.capacity)..<self.capacity {
+                        reductionMatrix.setDependency(from: j, on: k, to: reductionMatrix.dependency(from: j, on: k) || reductionMatrix.dependency(from: j, on: i))
+                    }
                 }
             }
         }
@@ -80,9 +78,7 @@ public struct DependencyTable<T> {
             for j in 0..<i {
                 if reductionMatrix.dependency(from: i, on: j) {
                     for k in 0..<j {
-                        if reductionMatrix.dependency(from: j, on: k) {
-                            reductionMatrix.setDependency(from: i, on: k, to: false)
-                        }
+                        reductionMatrix.setDependency(from: i, on: k, to: !reductionMatrix.dependency(from: j, on: k) && reductionMatrix.dependency(from: i, on: k))
                     }
                 }
             }
