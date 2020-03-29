@@ -1,14 +1,15 @@
 import CAtomics
 
 extension UInt {
+    @inlinable
     public subscript(bit at: Int) -> Bool {
         get {
-            return (self >> at) & 0b1 != 0
+            return (self &>> at) & 0b1 != 0
         } set {
             if newValue {
-                self |= (1 << at)
+                self |= (1 &<< at)
             } else {
-                self &= ~(1 << at)
+                self &= ~(1 &<< at)
             }
         }
     }
