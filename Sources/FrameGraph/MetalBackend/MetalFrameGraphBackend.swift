@@ -232,6 +232,18 @@ struct MetalResidentResource: Hashable, Equatable {
     }
 }
 
+extension MTLRenderStages {
+    var first: MTLRenderStages {
+        if self.contains(.vertex) { return .vertex }
+        return self
+    }
+    
+    var last: MTLRenderStages {
+        if self.contains(.fragment) { return .fragment }
+        return self
+    }
+}
+
 final class MetalFrameGraphContext : _FrameGraphContext {
     public var accessSemaphore: Semaphore
     
@@ -671,9 +683,9 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 memory.assign(from: barrierResources, count: barrierResources.count)
                 let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: barrierResources.count)
                 
-                self.compactedResourceCommands.append(.init(command: .resourceMemoryBarrier(resources: bufferPointer, afterStages: barrierAfterStages, beforeStages: barrierBeforeStages), index: barrierLastIndex, order: .before))
+                self.compactedResourceCommands.append(.init(command: .resourceMemoryBarrier(resources: bufferPointer, afterStages: barrierAfterStages.last, beforeStages: barrierBeforeStages.first), index: barrierLastIndex, order: .before))
             } else {
-                self.compactedResourceCommands.append(.init(command: .scopedMemoryBarrier(scope: barrierScope, afterStages: barrierAfterStages, beforeStages: barrierBeforeStages), index: barrierLastIndex, order: .before))
+                self.compactedResourceCommands.append(.init(command: .scopedMemoryBarrier(scope: barrierScope, afterStages: barrierAfterStages.last, beforeStages: barrierBeforeStages.first), index: barrierLastIndex, order: .before))
             }
             barrierResources.removeAll(keepingCapacity: true)
             barrierScope = []
