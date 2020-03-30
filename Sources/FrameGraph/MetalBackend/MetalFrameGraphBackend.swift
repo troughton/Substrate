@@ -316,7 +316,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             
             do {
                 // Track resource residency.
-                var previousEncoderIndex: Int = 0
+                var previousEncoderIndex: Int = -1
                 var previousUsageType: MTLResourceUsage = []
                 var previousUsageStages: RenderStages = []
                 
