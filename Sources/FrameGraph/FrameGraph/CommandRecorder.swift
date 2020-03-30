@@ -370,8 +370,6 @@ public class ResourceBindingEncoder : CommandEncoder {
     let resourceBindingCommands : ExpandingBuffer<(FunctionArgumentKey, FrameGraphCommand)>
     var resourceBindingCommandCountLastUpdate = 0
 
-    // The UnsafeMutableRawPointer points to the args parameterising the command.
-    // It enables us to go back and change the command during recording (e.g. with a setBufferOffset after a setBuffer)
     @usableFromInline
     var boundResources : HashMap<ResourceBindingPath, BoundResource>
     
@@ -380,6 +378,13 @@ public class ResourceBindingEncoder : CommandEncoder {
     // ended.
     @usableFromInline
     var untrackedBoundResources : HashMap<ResourceBindingPath, BoundResource>
+    
+    // Tracks the UAV resources that are read-write – that is, they are both read and written to and therefore require barriers
+    // between draws/dispatches.
+    // This is overly conservative in the case where non-overlapping regions are read from and written to; however, in that case
+    // the computation is usually done in a single dispatch.
+    @usableFromInline
+    var boundUAVResources : HashSet<ResourceBindingPath>
     
     // The following methods and variables are helpers for updateResourceUsages.
     // They're contained on the object rather than as local variables to minimised allocations and retain-release traffic.
@@ -390,6 +395,7 @@ public class ResourceBindingEncoder : CommandEncoder {
     deinit {
         self.boundResources.deinit()
         self.untrackedBoundResources.deinit()
+        self.boundUAVResources.deinit()
     }
     
     @usableFromInline
@@ -412,6 +418,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.startCommandIndex = self.commandRecorder.nextCommandIndex
         
         self.boundResources = HashMap(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
+        self.boundUAVResources = HashSet(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         self.untrackedBoundResources = HashMap(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         self.pendingArgumentBuffersByKey = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         self.pendingArgumentBuffers = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
@@ -736,10 +743,15 @@ public class ResourceBindingEncoder : CommandEncoder {
                 
                 // Optimisation: if the pipeline state hasn't changed, these are the only resources we need to consider, so look up their reflection data immediately.
                 // This only applies for render commands, since we may need to insert memory barriers between compute and blit commands.
-                if self is RenderCommandEncoder, !self.pipelineStateChanged,
+                if !self.pipelineStateChanged,
                     let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
                     self.commandRecorder.commands.append(command)
                     let node = self.resourceUsages.resourceUsageNode(for: identifier, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset)
+                    if reflection.usageType.isUAVReadWrite {
+                        self.boundUAVResources.insert(key: bindingPath)
+                    } else {
+                        self.boundUAVResources.remove(key: bindingPath)
+                    }
                     return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usageNode: node, isInArgumentBuffer: false, consistentUsageAssumed: false)
                 } else {
                     return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usageNode: nil, isInArgumentBuffer: false, consistentUsageAssumed: false)
@@ -803,7 +815,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                 
                 // Optimisation: if the pipeline state hasn't changed, these are the only resources we need to consider, so look up their reflection data immediately.
                 // This only applies for render commands, since we may need to insert memory barriers between compute and blit commands.
-                if self is RenderCommandEncoder, !self.pipelineStateChanged,
+                if !self.pipelineStateChanged,
                     let reflection = pipelineReflection.argumentReflection(at: argumentBufferPath), reflection.isActive {
                     argumentBuffer.encoder = pipelineReflection.argumentBufferEncoder(at: argumentBufferPath)!
 //                    print("Encoder for \(argumentBuffer.label ?? "unnamed arg buffer") is \(argumentBuffer.encoder!)")
@@ -820,6 +832,13 @@ public class ResourceBindingEncoder : CommandEncoder {
                     }
                     
                     let node = self.resourceUsages.resourceUsageNode(for: argumentBuffer.handle, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset)
+                    
+                    if reflection.usageType.isUAVReadWrite {
+                        self.boundUAVResources.insert(key: argumentBufferPath)
+                    } else {
+                        self.boundUAVResources.remove(key: argumentBufferPath)
+                    }
+                    
                     return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usageNode: node, isInArgumentBuffer: false, consistentUsageAssumed: false)
                 } else {
                     return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usageNode: nil, isInArgumentBuffer: false, consistentUsageAssumed: false)
@@ -883,6 +902,11 @@ public class ResourceBindingEncoder : CommandEncoder {
                     // Optimisation: if the pipeline state hasn't changed, these are the only resources we need to consider, so look up their reflection data immediately.
                     if !self.pipelineStateChanged, let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
                         let node = self.resourceUsages.resourceUsageNode(for: identifier, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, inArgumentBuffer: true, firstCommandOffset: firstCommandOffset)
+                        if reflection.usageType.isUAVReadWrite {
+                            self.boundUAVResources.insert(key: bindingPath)
+                        } else {
+                            self.boundUAVResources.remove(key: bindingPath)
+                        }
                         return BoundResource(resource: Resource(handle: identifier), bindingCommand: nil, usageNode: node, isInArgumentBuffer: true, consistentUsageAssumed: assumeConsistentUsage)
                     } else {
                         return BoundResource(resource: Resource(handle: identifier), bindingCommand: nil, usageNode: nil, isInArgumentBuffer: true, consistentUsageAssumed: assumeConsistentUsage)
@@ -893,10 +917,12 @@ public class ResourceBindingEncoder : CommandEncoder {
         
         self.pendingArgumentBuffers.removeRange(argumentBufferProcessingRange)
         
-        if self.pipelineStateChanged || !(self is RenderCommandEncoder) {
+        if self.pipelineStateChanged {
             // Only update tracked bound resources, not any members of untrackedBoundResources
             // We should also bind any resources that haven't been yet bound – if the pipeline state changed, we may have skipped binding earlier
             // and intended to have it done here instead.
+            
+            self.boundUAVResources.removeAll()
             
             self.boundResources.forEachMutating { bindingPath, /* inout */ boundResource, /* inout */ deleteEntry in
                 if let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
@@ -941,7 +967,9 @@ public class ResourceBindingEncoder : CommandEncoder {
                     
                     assert(!boundResource.resource.usages.isEmpty)
                     
-                    if boundResource.consistentUsageAssumed {
+                    if reflection.usageType.isUAVReadWrite {
+                        self.boundUAVResources.insertUnique(key: bindingPath) // Guaranteed to not be present since we cleared boundUAVResources before this block.
+                    } else if boundResource.consistentUsageAssumed {
                         deleteEntry = true // Delete the entry from this HashMap
                         self.untrackedBoundResources.insertUnique(key: bindingPath, value: boundResource)
                     }
@@ -956,6 +984,16 @@ public class ResourceBindingEncoder : CommandEncoder {
                         boundResource.usageNode = nil
                     }
                 }
+            }
+        } else {
+            self.boundUAVResources.forEach { bindingPath in
+                self.boundResources.withValue(forKey: bindingPath, perform: { boundResourcePtr, _ in
+                    let boundResource = boundResourcePtr.pointee
+                    let usage = boundResource.usageNode!.pointee.element
+                    let node = self.resourceUsages.resourceUsageNode(for: boundResource.resource.handle, encoder: self, usageType: usage.type, stages: usage.stages, inArgumentBuffer: boundResource.isInArgumentBuffer, firstCommandOffset: firstCommandOffset)
+                    boundResourcePtr.pointee.usageNode = node
+                })
+                
             }
         }
         

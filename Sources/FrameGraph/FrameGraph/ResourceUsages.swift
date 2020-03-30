@@ -247,6 +247,16 @@ extension ResourceUsageType {
     }
     
     @inlinable
+    public var isUAVReadWrite : Bool {
+        switch self {
+        case .readWrite:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    @inlinable
     static func areMergeable(_ typeA: ResourceUsageType, _ typeB: ResourceUsageType) -> Bool {
         // We can only merge resources of the same type, and we can only merge writes if they're contained within a render target.
         return typeA == typeB &&
