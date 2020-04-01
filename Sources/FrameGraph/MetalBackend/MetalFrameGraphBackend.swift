@@ -706,6 +706,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             }
             encoderUseResourceCommandIndex = .max
             encoderUseResources.removeAll(keepingCapacity: true)
+            encoderResidentResources.removeAll(keepingCapacity: true)
         }
         
         let getResource: (Resource) -> Unmanaged<MTLResource> = { resource in
@@ -751,8 +752,8 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                     let (inserted, _) = encoderResidentResources.insert(key)
                     if inserted {
                         encoderUseResources[UseResourceKey(stages: stages, usage: usage), default: []].append(mtlResource)
-                        encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
                     }
+                    encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
                 }
                 
             case .memoryBarrier(let resource, let scope, let afterStages, let beforeCommand, let beforeStages):
