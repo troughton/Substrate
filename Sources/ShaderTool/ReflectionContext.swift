@@ -346,7 +346,8 @@ final class RenderPass {
     }
     
     func addEntryPoint(_ entryPoint: EntryPoint, compiler: SPIRVCompiler) -> Bool {
-        assert(!self.entryPoints.contains(entryPoint))
+        guard !self.entryPoints.contains(entryPoint) else { return true }
+        
         guard compiler.setEntryPoint(entryPoint) else { return false }
         
         self.entryPoints.append(entryPoint)

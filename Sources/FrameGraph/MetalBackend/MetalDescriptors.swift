@@ -24,12 +24,13 @@ extension MTLHeapDescriptor {
             switch descriptor.type {
             case .automaticPlacement:
                 self.type = .automatic
-                #if os(iOS)
+            #if os(iOS) || os(tvOS) || os(watchOS)
             case .sparseTexture:
                 self.type = .sparse
-                #endif
+            #else
             default:
                 self.type = .automatic
+            #endif
             }
         }
         self.storageMode = MTLStorageMode(descriptor.storageMode)

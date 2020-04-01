@@ -379,10 +379,18 @@ public final class FGMTLThreadRenderCommandEncoder {
             switch resourceCommands[resourceCommandIndex].command {
                 
             case .resourceMemoryBarrier(let resources, let afterStages, let beforeStages):
+                #if os(macOS)
                 encoder.__memoryBarrier(resources: resources.baseAddress!, count: resources.count, after: afterStages, before: beforeStages)
+                #else
+                break
+                #endif
                 
             case .scopedMemoryBarrier(let scope, let afterStages, let beforeStages):
+                #if os(macOS)
                 encoder.memoryBarrier(scope: scope, after: afterStages, before: beforeStages)
+                #else
+                break
+                #endif
                 
             case .updateFence(let fence, let afterStages):
                 self.updateFence(fence.fence, afterStages: afterStages)
@@ -401,19 +409,11 @@ public final class FGMTLThreadRenderCommandEncoder {
     }
     
     func waitForFence(_ fence: MTLFence, beforeStages: MTLRenderStages?) {
-        #if os(macOS)
         encoder.waitForFence(fence, before: beforeStages!)
-        #else
-        encoder.wait(for: fence, before: beforeStages!)
-        #endif
     }
     
     func updateFence(_ fence: MTLFence, afterStages: MTLRenderStages?) {
-        #if os(macOS)
         encoder.updateFence(fence, after: afterStages!)
-        #else
-        encoder.update(fence, after: afterStages!)
-        #endif
     }
 }
 

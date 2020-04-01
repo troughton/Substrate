@@ -121,11 +121,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         var textureOpt : MTLTextureReference? = nil
         if availableSize >= sizeAndAlign.size {
             assert(descriptor.usage != .unknown)
-            #if os(macOS)
             textureOpt = MTLTextureReference(texture: Unmanaged.passRetained(self.heap!.makeTexture(descriptor: descriptor)!))
-            #else
-            textureOpt = MTLTextureReference(texture: Unmanaged.passRetained(self.heap!.makeTexture(descriptor: descriptor)))
-            #endif
         }
         guard let texture = textureOpt else {
             self.reserveCapacity((self.heap?.size.roundedUpToMultiple(of: sizeAndAlign.align) ?? 0) + sizeAndAlign.size)
@@ -146,11 +142,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         let availableSize = self.heap?.maxAvailableSize(alignment: sizeAndAlign.align) ?? 0
         var bufferOpt : MTLBufferReference? = nil
         if availableSize >= sizeAndAlign.size {
-            #if os(macOS)
             bufferOpt = MTLBufferReference(buffer: Unmanaged.passRetained(self.heap!.makeBuffer(length: length, options: options)!), offset: 0)
-            #else
-            bufferOpt = MTLBufferReference(buffer: Unmanaged.passRetained(self.heap!.makeBuffer(length: length, options: options)), offset: 0)
-            #endif
         }
         guard let buffer = bufferOpt else {
             self.reserveCapacity((self.heap?.size.roundedUpToMultiple(of: sizeAndAlign.align) ?? 0) + sizeAndAlign.size)

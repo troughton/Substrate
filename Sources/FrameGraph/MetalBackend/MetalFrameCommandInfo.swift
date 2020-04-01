@@ -112,7 +112,7 @@ struct MetalFrameCommandInfo {
     }
     
     public func encoder(for passIndex: Int) -> CommandEncoderInfo {
-        for (i, encoder) in self.commandEncoders.enumerated() {
+        for encoder in self.commandEncoders {
             if encoder.passRange.contains(passIndex) {
                 return encoder
             }

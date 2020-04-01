@@ -284,7 +284,7 @@ final class ShaderCompiler {
 
                     print("\(target): Compiling \(entryPoint.name) in \(file.url.lastPathComponent) to SPIR-V")
                     
-                    let task = try self.dxcDriver.compile(sourceFile: file.url, destinationFile: tempFileURL, entryPoint: entryPoint.name, type: entryPoint.type)
+                    let task = try self.dxcDriver.compile(sourceFile: file.url, destinationFile: tempFileURL, entryPoint: entryPoint.name, type: entryPoint.type, target: target)
                     task.waitUntilExit()
                     guard task.terminationStatus == 0 else { print("Error compiling entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
                     

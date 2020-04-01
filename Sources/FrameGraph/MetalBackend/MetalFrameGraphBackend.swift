@@ -417,9 +417,11 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                         assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
                         assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
                         var scope: MTLBarrierScope = []
+                        #if os(macOS)
                         if previousUsage.type.isRenderTarget || usage.type.isRenderTarget {
                             scope.formUnion(.renderTargets)
                         }
+                        #endif
                         if resource.type == .texture {
                             scope.formUnion(.textures)
                         } else if resource.type == .buffer || resource.type == .argumentBuffer || resource.type == .argumentBufferArray {
