@@ -9,3 +9,4 @@ xcuserdata/
 *.spv
 Config/windows_build.config
 .swiftpm
+/build

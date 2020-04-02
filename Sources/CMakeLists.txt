@@ -1,0 +1,6 @@
+include_directories(FrameGraphCExtras/include)
+
+add_subdirectory(FrameGraphCExtras)
+add_subdirectory(FrameGraphUtilities)
+add_subdirectory(FrameGraph)
+

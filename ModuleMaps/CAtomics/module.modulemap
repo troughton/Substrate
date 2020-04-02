@@ -1,0 +1,4 @@
+module CAtomics {
+    umbrella header "../../swift-atomics/Sources/CAtomics/include/CAtomics.h"
+    export *
+}
