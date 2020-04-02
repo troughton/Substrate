@@ -10,6 +10,18 @@ import Foundation
 import SwiftFrameGraph
 import stb_image
 
+extension StorageMode {
+    public static var preferredForLoadedImage: StorageMode {
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+        // Shared is preferred on iOS since then the file can be loaded directly into GPU accessible memory without an intermediate buffer.
+        return .shared
+        #else
+        // For GPUs with dedicated memory, only keeping a copy on the GPU is preferable.
+        return .private
+        #endif
+    }
+}
+
 extension Texture {
     
     fileprivate func copyData<T>(from textureData: TextureData<T>, mipmapped: Bool) throws {
@@ -22,7 +34,7 @@ extension Texture {
         }
     }
     
-    public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .managed, usageHint: TextureUsage = .shaderRead) throws {
+    public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .preferredForLoadedImage, usageHint: TextureUsage = .shaderRead) throws {
         let pixelFormat: PixelFormat
         
         if url.pathExtension.lowercased() == "exr" {
