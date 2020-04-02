@@ -17,6 +17,12 @@ extension MTLResourceOptions {
     }
 }
 
+#if targetEnvironment(macCatalyst)
+@objc protocol MTLBufferShim: MTLResource {
+    func didModifyRange(_ range: NSRange)
+}
+#endif
+
 final class MetalBackend : _RenderBackendProtocol {
     let device : MTLDevice
     let resourceRegistry : MetalPersistentResourceRegistry
@@ -87,7 +93,7 @@ final class MetalBackend : _RenderBackendProtocol {
     }
     
     public var isDepth24Stencil8PixelFormatSupported: Bool {
-        #if os(macOS)
+        #if os(macOS) || targetEnvironment(macCatalyst)
         return self.device.isDepth24Stencil8PixelFormatSupported
         #else
         return false
@@ -104,12 +110,16 @@ final class MetalBackend : _RenderBackendProtocol {
     }
     
     @usableFromInline func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
-        #if os(macOS)
+        #if os(macOS) || targetEnvironment(macCatalyst)
         if range.isEmpty { return }
         if buffer.descriptor.storageMode == .managed {
             let mtlBuffer = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
             let offsetRange = (range.lowerBound + mtlBuffer.offset)..<(range.upperBound + mtlBuffer.offset)
+            #if targetEnvironment(macCatalyst)
+            unsafeBitCast(mtlBuffer.buffer, to: MTLBufferShim.self).didModifyRange(NSMakeRange(offsetRange.lowerBound, offsetRange.count))
+            #else
             mtlBuffer.buffer.didModifyRange(offsetRange)
+            #endif
         }
         #endif
     }

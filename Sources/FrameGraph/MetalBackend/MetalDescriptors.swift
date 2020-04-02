@@ -24,7 +24,7 @@ extension MTLHeapDescriptor {
             switch descriptor.type {
             case .automaticPlacement:
                 self.type = .automatic
-            #if os(iOS) || os(tvOS) || os(watchOS)
+            #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
             case .sparseTexture:
                 self.type = .sparse
             #else

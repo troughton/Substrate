@@ -80,7 +80,7 @@ public struct TextureDescriptor {
         
     }
 
-    public init(texture2DWithFormat pixelFormat: PixelFormat, width: Int, height: Int, mipmapped: Bool, storageMode: StorageMode = .managed, usageHint: TextureUsage = []) {
+    public init(texture2DWithFormat pixelFormat: PixelFormat, width: Int, height: Int, mipmapped: Bool, storageMode: StorageMode = .private, usageHint: TextureUsage = []) {
         var descriptor = TextureDescriptor()
         descriptor.pixelFormat = pixelFormat
         descriptor.textureType = .type2D
@@ -92,7 +92,7 @@ public struct TextureDescriptor {
         self = descriptor
     }
     
-    public init(textureCubeWithFormat pixelFormat: PixelFormat, size: Int, mipmapped: Bool, storageMode: StorageMode = .managed, usageHint: TextureUsage = []) {
+    public init(textureCubeWithFormat pixelFormat: PixelFormat, size: Int, mipmapped: Bool, storageMode: StorageMode = .private, usageHint: TextureUsage = []) {
         var descriptor = TextureDescriptor()
         descriptor.pixelFormat = pixelFormat
         descriptor.textureType = .typeCube

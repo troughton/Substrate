@@ -33,7 +33,7 @@ public enum TaggedHeap {
     static var blocksByTag : [Tag : BitSet]! = nil
     static var freeBitsets : [BitSet]! = nil
     
-    #if os(macOS)
+    #if os(macOS) || targetEnvironment(macCatalyst)
     public static let defaultHeapCapacity = 512 * 1024 * 1024 // 2 * 1024 * 1024 * 1024
     #else
     public static let defaultHeapCapacity = 256 * 1024 * 1024

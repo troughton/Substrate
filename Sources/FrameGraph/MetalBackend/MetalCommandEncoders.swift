@@ -379,14 +379,14 @@ public final class FGMTLThreadRenderCommandEncoder {
             switch resourceCommands[resourceCommandIndex].command {
                 
             case .resourceMemoryBarrier(let resources, let afterStages, let beforeStages):
-                #if os(macOS)
+                #if os(macOS) || targetEnvironment(macCatalyst)
                 encoder.__memoryBarrier(resources: resources.baseAddress!, count: resources.count, after: afterStages, before: beforeStages)
                 #else
                 break
                 #endif
                 
             case .scopedMemoryBarrier(let scope, let afterStages, let beforeStages):
-                #if os(macOS)
+                #if os(macOS) || targetEnvironment(macCatalyst)
                 encoder.memoryBarrier(scope: scope, after: afterStages, before: beforeStages)
                 #else
                 break
@@ -618,21 +618,21 @@ public final class FGMTLBlitCommandEncoder {
             encoder.generateMipmaps(for: resourceMap[texture])
             
         case .synchroniseTexture(let textureHandle):
-            #if os(macOS)
+            #if os(macOS) || targetEnvironment(macCatalyst)
             encoder.synchronize(resource: resourceMap[textureHandle])
             #else
             break
             #endif
             
         case .synchroniseTextureSlice(let args):
-            #if os(macOS)
+            #if os(macOS) || targetEnvironment(macCatalyst)
             encoder.synchronize(texture: resourceMap[args.pointee.texture], slice: Int(args.pointee.slice), level: Int(args.pointee.level))
             #else
             break
             #endif
             
         case .synchroniseBuffer(let buffer):
-            #if os(macOS)
+            #if os(macOS) || targetEnvironment(macCatalyst)
             let buffer = resourceMap[buffer]
             encoder.synchronize(resource: buffer.buffer)
             #else

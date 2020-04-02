@@ -73,7 +73,7 @@ extension StorageMode {
             self = .managed
         case .private:
             self = .private
-        #if os(iOS) || os(tvOS) || os(watchOS)
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         case .memoryless:
             self = .private
         #endif
@@ -126,12 +126,12 @@ extension ResourceType {
             self = .texture
         case .threadgroupMemory:
             self = .threadgroupMemory
-            #if os(iOS)
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         case .imageblockData:
             self = .imageblockData
         case .imageblock:
             self = .imageblock
-            #endif
+        #endif
         @unknown default:
             fatalError()
         }
@@ -397,7 +397,7 @@ extension MTLResourceOptions {
         case .shared:
             self.formUnion(.storageModeShared)
         case .managed:
-            #if os(macOS)
+            #if os(macOS) || targetEnvironment(macCatalyst)
             self.formUnion(.storageModeManaged)
             #else
             self.formUnion(.storageModeShared)
@@ -467,7 +467,7 @@ extension MTLStorageMode {
         case .shared:
             self = .shared
         case .managed:
-        #if os(macOS)
+        #if os(macOS) || targetEnvironment(macCatalyst)
             self = .managed
         #else
             self = .shared

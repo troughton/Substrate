@@ -394,14 +394,14 @@ final class MetalTransientResourceRegistry {
     private let frameSharedBufferAllocator : MetalTemporaryBufferAllocator
     private let frameSharedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
     
-    #if os(macOS)
+    #if os(macOS) || targetEnvironment(macCatalyst)
     private let frameManagedBufferAllocator : MetalTemporaryBufferAllocator
     private let frameManagedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
     #endif
     
     private let historyBufferAllocator : MetalPoolResourceAllocator
     
-    #if !os(macOS)
+    #if !os(macOS) && !targetEnvironment(macCatalyst)
     private let memorylessTextureAllocator : MetalPoolResourceAllocator
     #endif
     
@@ -434,7 +434,7 @@ final class MetalTransientResourceRegistry {
         self.frameSharedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 256 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
         self.frameSharedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
         
-        #if os(macOS)
+        #if os(macOS) || targetEnvironment(macCatalyst)
         self.frameManagedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 1024 * 1024, options: [.storageModeManaged, .frameGraphTrackedHazards])
         self.frameManagedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeManaged, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
         self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
@@ -484,7 +484,7 @@ final class MetalTransientResourceRegistry {
             return self.historyBufferAllocator
         }
         
-        #if os(iOS)
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         if storageMode == .memoryless {
             return self.memorylessTextureAllocator
         }
@@ -512,7 +512,7 @@ final class MetalTransientResourceRegistry {
         case .private:
             return self.privateAllocator
         case .managed:
-            #if os(macOS)
+            #if os(macOS) || targetEnvironment(macCatalyst)
             switch cacheMode {
             case .writeCombined:
                 return self.frameManagedWriteCombinedBufferAllocator
@@ -563,7 +563,7 @@ final class MetalTransientResourceRegistry {
         
         let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage)
         
-        #if os(iOS)
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         if properties.canBeMemoryless {
             descriptor.storageMode = .memoryless
             descriptor.resourceOptions.formUnion(.storageModeMemoryless)
@@ -922,10 +922,10 @@ final class MetalTransientResourceRegistry {
         self.frameSharedBufferAllocator.cycleFrames()
         self.frameSharedWriteCombinedBufferAllocator.cycleFrames()
         
-        #if os(macOS)
+        #if os(macOS) || targetEnvironment(macCatalyst)
         self.frameManagedBufferAllocator.cycleFrames()
         self.frameManagedWriteCombinedBufferAllocator.cycleFrames()
-        #elseif os(iOS)
+        #elseif os(iOS) || os(tvOS) || os(watchOS)
         self.memorylessTextureAllocator.cycleFrames()
         #endif
         

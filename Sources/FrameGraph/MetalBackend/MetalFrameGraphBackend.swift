@@ -186,13 +186,13 @@ struct MetalCompactedResourceCommand : Comparable {
 
 struct MetalTextureUsageProperties {
     var usage : MTLTextureUsage
-    #if os(iOS)
+    #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
     var canBeMemoryless : Bool
     #endif
     
     init(usage: MTLTextureUsage, canBeMemoryless: Bool = false) {
         self.usage = usage
-        #if os(iOS)
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         self.canBeMemoryless = canBeMemoryless
         #endif
     }
@@ -417,7 +417,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                         assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
                         assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
                         var scope: MTLBarrierScope = []
-                        #if os(macOS)
+                        #if os(macOS) || targetEnvironment(macCatalyst)
                         if previousUsage.type.isRenderTarget || usage.type.isRenderTarget {
                             scope.formUnion(.renderTargets)
                         }
@@ -469,7 +469,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             
             let historyBufferUseFrame = resource.flags.contains(.historyBuffer) && resource.stateFlags.contains(.initialised)
             
-            #if os(iOS)
+            #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
             var canBeMemoryless = false
             #else
             let canBeMemoryless = false
@@ -526,7 +526,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                         textureUsage.formUnion(.pixelFormatView)
                     }
                     
-                    #if os(iOS) || os(tvOS) || os(watchOS)
+                    #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
                     canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
                         && textureUsage == .renderTarget
                         && !frameCommandInfo.storedTextures.contains(texture)
@@ -860,7 +860,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             if let commandBuffer = commandBuffer {
                 // Only contains drawables applicable to the render passes in the command buffer...
                 for drawable in self.resourceRegistry.frameDrawables {
-                    #if os(iOS)
+                    #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
                     commandBuffer.present(drawable, afterMinimumDuration: 1.0 / 60.0)
                     #else
                     commandBuffer.present(drawable)

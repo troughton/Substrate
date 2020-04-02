@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 12/07/19.
 //
 
-#if canImport(Metal)
+#if canImport(Metal) && !targetEnvironment(macCatalyst)
 
 import Metal
 

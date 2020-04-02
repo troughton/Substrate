@@ -14,9 +14,9 @@ enum Target : Hashable, CaseIterable {
     case vulkan
     
     static var defaultTarget : Target {
-#if os(iOS) || os(tvOS) || os(watchOS)
+#if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         return .iOSMetal
-#elseif os(macOS)
+#elseif os(macOS) || targetEnvironment(macCatalyst)
         return .macOSMetal
 #else
         return .vulkan
