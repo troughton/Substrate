@@ -1,0 +1,4 @@
+module FrameGraphCExtras {
+    umbrella header "../../Sources/FrameGraphCExtras/include/FrameGraphCExtras.h"
+    export *
+}

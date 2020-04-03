@@ -34,6 +34,8 @@ install(TARGETS CAtomics
 
 include(CTest)
 
+include_directories(ModuleMaps/FrameGraphCExtras)
+
 add_subdirectory(Sources)
 
 
