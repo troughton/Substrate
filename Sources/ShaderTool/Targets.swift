@@ -112,6 +112,7 @@ final class MetalCompiler : TargetCompiler {
                 spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_VERSION, makeMSLVersion(major: 2, minor: 1, patch: 0))
                 spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ARGUMENT_BUFFERS, 1)
                 spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FORCE_ACTIVE_ARGUMENT_BUFFER_RESOURCES, 1)
+                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_IOS_FRAMEBUFFER_FETCH_SUBPASS, 1)
                 spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, self.target == .iOSMetal ? SPVC_MSL_PLATFORM_IOS.rawValue : SPVC_MSL_PLATFORM_MACOS.rawValue)
                 
                 spvc_compiler_install_compiler_options(compiler.compiler, options)
