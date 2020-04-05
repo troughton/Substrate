@@ -20,6 +20,34 @@ extension RawRepresentable where Self.RawValue == String {
     }
 }
 
+#if canImport(Metal)
+import Metal
+
+public struct MetalIndexedFunctionArgument : FunctionArgumentKey {
+    public var type: MTLArgumentType
+    public var index : Int
+    public var stages : RenderStages
+    
+    @inlinable
+    public init(type: MTLArgumentType, index: Int, stages: RenderStages) {
+        self.type = type
+        self.index = index
+        self.stages = stages
+    }
+    
+    @inlinable
+    public var stringValue : String {
+        return "\(type)_arg\(index)"
+    }
+    
+    @inlinable
+    public func bindingPath(arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath? {
+        return ResourceBindingPath(stages: MTLRenderStages(self.stages), type: self.type, argumentBufferIndex: nil, index: self.index + arrayIndex)
+    }
+}
+#endif
+
+
 public struct FunctionArgumentCodingKey : FunctionArgumentKey {
     public let codingKey : CodingKey
     
@@ -62,7 +90,7 @@ extension String : FunctionArgumentKey {
 public protocol ArgumentBufferEncodable {
     static var activeStages : RenderStages { get }
     
-    func encode(into argBuffer: _ArgumentBuffer, setIndex: Int)
+    func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?)
 }
 
 public struct _ArgumentBuffer : ResourceProtocol {

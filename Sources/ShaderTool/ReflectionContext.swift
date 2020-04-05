@@ -346,11 +346,11 @@ final class RenderPass {
     }
     
     func addEntryPoint(_ entryPoint: EntryPoint, compiler: SPIRVCompiler) -> Bool {
-        guard !self.entryPoints.contains(entryPoint) else { return true }
-        
         guard compiler.setEntryPoint(entryPoint) else { return false }
         
-        self.entryPoints.append(entryPoint)
+        if !self.entryPoints.contains(entryPoint) {
+            self.entryPoints.append(entryPoint)
+        }
         
         for constant in compiler.functionConstants {
             let insertionPoint = self.functionConstants.firstIndex(where: { $0.index >= constant.index }) ?? self.functionConstants.count
@@ -370,9 +370,14 @@ final class RenderPass {
         }
         
         for resource in compiler.boundResources {
+            if resource.viewType == .inputAttachment, compiler.file.target == .iOSMetal {
+                continue // No explicit bindings for input attachments no iOS Metal.
+            }
+            
             let insertionPoint = self.boundResources.firstIndex(where: { $0.binding >= resource.binding }) ?? self.boundResources.count
             if insertionPoint < self.boundResources.count && self.boundResources[insertionPoint] == resource {
                 self.boundResources[insertionPoint].stages.formUnion(resource.stages)
+                self.boundResources[insertionPoint].platformBindings.formUnion(resource.platformBindings)
                 continue
             }
             

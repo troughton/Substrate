@@ -112,7 +112,7 @@ final class DescriptorSet {
         
         stream.newLine()
         
-        stream.print("public func encode(into argBuffer: _ArgumentBuffer, setIndex: Int) {")
+        stream.print("public func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder? = nil) {")
 
         // Metal 
         do {
@@ -148,17 +148,42 @@ final class DescriptorSet {
                     stream.print("if let resource = self.\(resource.name) {")
                 }
                 
-                stream.print("argBuffer.bindings.append(")
-                
-                switch resource.type {
-                case .texture:
-                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index)\(arrayIndexString), type: .texture), .texture(resource))")
-                case .sampler:
-                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index)\(arrayIndexString), type: .sampler), .sampler(resource))")
-                default:
-                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index)\(arrayIndexString), type: .buffer), .buffer(resource, offset: self.$\(resource.name).offset))")
+                let addArgBufferBinding = { (stream: inout ReflectionPrinter, index: Int) in
+                    stream.print("argBuffer.bindings.append(")
+                    
+                    switch resource.type {
+                    case .texture:
+                        stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(index)\(arrayIndexString), type: .texture), .texture(resource))")
+                    case .sampler:
+                        stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(index)\(arrayIndexString), type: .sampler), .sampler(resource))")
+                    default:
+                        stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(index)\(arrayIndexString), type: .buffer), .buffer(resource, offset: self.$\(resource.name).offset))")
+                    }
+                    stream.print(")")
                 }
-                stream.print(")")
+                
+                if resource.platformBindings.macOSMetalIndex != resource.platformBindings.iOSMetalIndex {
+                    stream.print("#if os(macOS) || targetEnvironment(macCatalyst)")
+                    
+                    let index = resource.platformBindings.macOSMetalIndex.map { Int($0) } ?? resource.binding.index
+                    addArgBufferBinding(&stream, index)
+                    
+                    stream.print("#else")
+                    // Storage images (i.e. read-write textures) aren't permitted in argument buffers, so we need to bind directly on the encoder.
+                    if resource.viewType == .storageImage, let index = resource.platformBindings.iOSMetalIndex {
+                        stream.print("if let bindingEncoder = bindingEncoder {")
+                        stream.print("bindingEncoder.setTexture(resource, at: MetalIndexedFunctionArgument(type: .texture, index: \(index)\(arrayIndexString), stages: \(resource.stages)))")
+                        stream.print("}")
+                    } else {
+                        let index = resource.platformBindings.iOSMetalIndex.map { Int($0) } ?? resource.binding.index
+                        addArgBufferBinding(&stream, index)
+                    }
+                    stream.print("#endif")
+                } else {
+                    let index = resource.platformBindings.macOSMetalIndex.map { Int($0) } ?? resource.binding.index
+                    addArgBufferBinding(&stream, index)
+                }
+               
                 stream.print("}")
                 
                 if resource.binding.arrayLength > 1 {
