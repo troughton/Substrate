@@ -14,9 +14,9 @@ import CAtomics
 enum MetalPreFrameResourceCommands {
     
     // These commands mutate the MetalResourceRegistry and should be executed before render pass execution:
-    case materialiseBuffer(Buffer)
-    case materialiseTexture(Texture, usage: MetalTextureUsageProperties)
-    case materialiseTextureView(Texture, usage: MetalTextureUsageProperties)
+    case materialiseBuffer(Buffer, usage: BufferUsage)
+    case materialiseTexture(Texture, usage: TextureUsageProperties)
+    case materialiseTextureView(Texture, usage: TextureUsageProperties)
     case materialiseArgumentBuffer(_ArgumentBuffer)
     case materialiseArgumentBufferArray(_ArgumentBufferArray)
     case disposeResource(Resource)
@@ -184,13 +184,13 @@ struct MetalCompactedResourceCommand : Comparable {
     }
 }
 
-struct MetalTextureUsageProperties {
-    var usage : MTLTextureUsage
+struct TextureUsageProperties {
+    var usage : TextureUsage
     #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
     var canBeMemoryless : Bool
     #endif
     
-    init(usage: MTLTextureUsage, canBeMemoryless: Bool = false) {
+    init(usage: TextureUsage, canBeMemoryless: Bool = false) {
         self.usage = usage
         #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         self.canBeMemoryless = canBeMemoryless
@@ -293,7 +293,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
     var resourceCommands = [MetalFrameResourceCommand]()
     var compactedResourceCommands = [MetalCompactedResourceCommand]()
     
-    var renderTargetTextureProperties = [Texture : MetalTextureUsageProperties]()
+    var renderTargetTextureProperties = [Texture : TextureUsageProperties]()
     var commandEncoderDependencies = DependencyTable<Dependency?>(capacity: 1, defaultValue: nil)
     
     /// - param storedTextures: textures that are stored as part of a render target (and therefore can't be memoryless on iOS)
@@ -530,9 +530,9 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                     canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
                         && textureUsage == .renderTarget
                         && !frameCommandInfo.storedTextures.contains(texture)
-                    let properties = MetalTextureUsageProperties(usage: textureUsage, canBeMemoryless: canBeMemoryless)
+                    let properties = TextureUsageProperties(usage: textureUsage, canBeMemoryless: canBeMemoryless)
                     #else
-                    let properties = MetalTextureUsageProperties(usage: textureUsage)
+                    let properties = TextureUsageProperties(usage: textureUsage)
                     #endif
                     
                     assert(properties.usage != .unknown)

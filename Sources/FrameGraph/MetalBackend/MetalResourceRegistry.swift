@@ -117,7 +117,7 @@ struct MetalFrameResourceMap {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: MetalTextureUsageProperties(texture.descriptor.usageHint), forceGPUPrivate: false)! }
+            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: TextureUsageProperties(texture.descriptor.usageHint), forceGPUPrivate: false)! }
         }
     }
     
@@ -180,7 +180,7 @@ final class MetalPersistentResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, properties: MetalTextureUsageProperties) -> MTLTexture? {
+    public func allocateTexture(_ texture: Texture, properties: TextureUsageProperties) -> MTLTexture? {
         precondition(texture._usesPersistentRegistry)
         
         if texture.flags.contains(.windowHandle) {
@@ -554,7 +554,7 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, properties: MetalTextureUsageProperties, forceGPUPrivate: Bool) -> MTLTexture? {
+    public func allocateTexture(_ texture: Texture, properties: TextureUsageProperties, forceGPUPrivate: Bool) -> MTLTexture? {
         if texture.flags.contains(.windowHandle) {
             // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
             self.textureReferences[texture] = MTLTextureReference(windowTexture: ())
@@ -596,7 +596,7 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTextureView(_ texture: Texture, properties: MetalTextureUsageProperties) -> MTLTexture? {
+    public func allocateTextureView(_ texture: Texture, properties: TextureUsageProperties) -> MTLTexture? {
         assert(texture.flags.intersection([.persistent, .windowHandle, .externalOwnership]) == [])
         
         let mtlTexture : MTLTexture
@@ -710,7 +710,7 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, usage: MetalTextureUsageProperties, forceGPUPrivate: Bool) -> MTLTexture? {
+    public func allocateTextureIfNeeded(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> MTLTexture? {
         if let mtlTexture = self.textureReferences[texture]?.texture {
             assert(mtlTexture.pixelFormat == MTLPixelFormat(texture.descriptor.pixelFormat))
             return mtlTexture

@@ -27,7 +27,7 @@ final class MetalEncoderManager {
         self.resourceMap = resourceMap
     }
     
-    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : MetalTextureUsageProperties], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> FGMTLRenderCommandEncoder? {
+    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : TextureUsageProperties], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> FGMTLRenderCommandEncoder? {
         if descriptor === previousRenderTarget, let renderEncoder = self.renderEncoder {
             return renderEncoder
         } else {

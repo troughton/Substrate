@@ -54,7 +54,7 @@ final class MetalBackend : _RenderBackendProtocol {
     
     @usableFromInline func materialisePersistentTexture(_ texture: Texture) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateTexture(texture, properties: MetalTextureUsageProperties(texture.descriptor.usageHint)) != nil
+            return self.resourceRegistry.allocateTexture(texture, properties: TextureUsageProperties(texture.descriptor.usageHint)) != nil
         }
     }
     
