@@ -172,6 +172,15 @@ public enum FrameGraphCommand {
     case encodeRayIntersectionRayCountBuffer(UnsafePointer<EncodeRayIntersectionRayCountBufferArgs>)
     
     #endif
+    
+    var isDrawCommand: Bool {
+        switch self {
+        case .drawPrimitives, .drawIndexedPrimitives:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 
