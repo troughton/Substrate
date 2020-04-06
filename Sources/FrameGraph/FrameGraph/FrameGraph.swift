@@ -249,6 +249,7 @@ public protocol FrameGraphContext : class {
 protocol _FrameGraphContext : FrameGraphContext {
     var transientRegistryIndex : Int { get }
     var accessSemaphore : Semaphore { get }
+    var frameGraphQueue: Queue { get }
     func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
     func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void)
 }
@@ -328,6 +329,10 @@ public final class FrameGraph {
     
     deinit {
         TransientRegistryManager.free(self.transientRegistryIndex)
+    }
+    
+    public var queue: Queue {
+        return self.context.frameGraphQueue
     }
     
     public static func initialise() {

@@ -35,13 +35,14 @@ enum ResourceViewType {
     case pushConstantBlock
     case image
     case storageImage
+    case inputAttachment
     case sampler
     
     var frameGraphTypeName : String {
         switch self {
         case .uniformBuffer, .storageBuffer:
             return "Buffer"
-        case .image, .storageImage:
+        case .image, .storageImage, .inputAttachment:
             return "Texture"
         case .sampler:
             return "SamplerDescriptor"
@@ -54,7 +55,7 @@ enum ResourceViewType {
         switch self {
         case .uniformBuffer, .storageBuffer, .pushConstantBlock:
             return .buffer
-        case .image, .storageImage:
+        case .image, .storageImage, .inputAttachment:
             return .texture
         case .sampler:
             return .sampler
@@ -75,11 +76,13 @@ enum ResourceViewType {
             return SPVC_RESOURCE_TYPE_STORAGE_IMAGE
         case .sampler:
             return SPVC_RESOURCE_TYPE_SEPARATE_SAMPLERS
+        case .inputAttachment:
+            return SPVC_RESOURCE_TYPE_SUBPASS_INPUT
         }
     }
     
     static var boundTypes : [ResourceViewType] {
-        return [.uniformBuffer, .storageBuffer, .image, .storageImage, .sampler]
+        return [.uniformBuffer, .storageBuffer, .image, .storageImage, .inputAttachment, .sampler]
     }
 }
 
@@ -92,6 +95,19 @@ struct Binding : Equatable, Comparable {
         if lhs.set < rhs.set { return true }
         if lhs.set == rhs.set && lhs.index < rhs.index { return true }
         return false
+    }
+}
+
+struct PlatformBindings {
+    var macOSMetalIndex: UInt32?
+    var iOSMetalIndex: UInt32?
+    
+    mutating func formUnion(_ other: PlatformBindings) {
+        assert(self.macOSMetalIndex == nil || other.macOSMetalIndex == nil || self.macOSMetalIndex == other.macOSMetalIndex)
+        self.macOSMetalIndex = self.macOSMetalIndex ?? other.macOSMetalIndex
+        
+        assert(self.iOSMetalIndex == nil || other.iOSMetalIndex == nil || self.iOSMetalIndex == other.iOSMetalIndex)
+        self.iOSMetalIndex = self.iOSMetalIndex ?? other.iOSMetalIndex
     }
 }
 
@@ -119,13 +135,15 @@ struct Resource : Equatable {
     var name : String
     var stages : RenderStages
     var viewType : ResourceViewType
+    var platformBindings : PlatformBindings
     
-    init(type: SPIRVType, binding: Binding, name: String, stage: RenderStages, viewType: ResourceViewType) {
+    init(type: SPIRVType, binding: Binding, name: String, stage: RenderStages, viewType: ResourceViewType, platformBindings: PlatformBindings) {
         self.type = type
         self.binding = binding
         self.name = name
         self.stages = stage
         self.viewType = viewType
+        self.platformBindings = platformBindings
     }
     
     init(compiler: SPIRVCompiler, resource: spvc_reflected_resource, type: ResourceType, stage: RenderStages, viewType: ResourceViewType) {
@@ -140,17 +158,23 @@ struct Resource : Equatable {
         
         let name = String(cString: spvc_compiler_get_name(compiler.compiler, resource.id)) // String(cString: resource.name)
         let set = Int(spvc_compiler_get_decoration(compiler.compiler, resource.id, SpvDecorationDescriptorSet))
-        var binding = Int(spvc_compiler_get_decoration(compiler.compiler, resource.id, SpvDecorationBinding))
+        let binding = Int(spvc_compiler_get_decoration(compiler.compiler, resource.id, SpvDecorationBinding))
         let arrayLength = Int(spvc_type_get_array_dimension(resourceTypeHandle, 0))
+        
+        var platformBindings = PlatformBindings()
         
         if compiler.file.target == .macOSMetal || compiler.file.target == .iOSMetal {
             let assignedIndex = spvc_compiler_msl_get_automatic_resource_binding(compiler.compiler, resource.id)
             if assignedIndex != .max {
-                binding = Int(assignedIndex)
+                if compiler.file.target == .macOSMetal {
+                    platformBindings.macOSMetalIndex = assignedIndex
+                } else {
+                    platformBindings.iOSMetalIndex = assignedIndex
+                }
             }
         }
         
-        self.init(type: type, binding: Binding(set: set, index: binding, arrayLength: arrayLength), name: name, stage: stage, viewType: viewType)
+        self.init(type: type, binding: Binding(set: set, index: binding, arrayLength: arrayLength), name: name, stage: stage, viewType: viewType, platformBindings: platformBindings)
     }
     
     static func ==(lhs: Resource, rhs: Resource) -> Bool {

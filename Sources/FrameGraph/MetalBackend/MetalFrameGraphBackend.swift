@@ -412,16 +412,37 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 
                 // Only insert a barrier for the first usage following a write.
                 if usage.isRead, previousUsage.isWrite,
-                    frameCommandInfo.encoderIndex(for: previousUsage.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord)  {
-                    if !(previousUsage.type.isRenderTarget && (usage.type == .writeOnlyRenderTarget || usage.type == .readWriteRenderTarget)) {
-                        assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
-                        assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
-                        var scope: MTLBarrierScope = []
-                        #if os(macOS) || targetEnvironment(macCatalyst)
-                        if previousUsage.type.isRenderTarget || usage.type.isRenderTarget {
-                            scope.formUnion(.renderTargets)
+                    frameCommandInfo.encoderIndex(for: previousUsage.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord),
+                    !(previousUsage.type.isRenderTarget && (usage.type == .writeOnlyRenderTarget || usage.type == .readWriteRenderTarget)) {
+                
+                    assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
+                    assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
+                    var scope: MTLBarrierScope = []
+                    
+                    #if os(macOS) || targetEnvironment(macCatalyst)
+                    let isRTBarrier = previousUsage.type.isRenderTarget || usage.type.isRenderTarget
+                    if isRTBarrier {
+                        scope.formUnion(.renderTargets)
+                    }
+                    #else
+                    let isRTBarrier = false
+                    #endif
+                    
+                    if isRTBarrier, usage._renderPass.toOpaque() == previousUsage._renderPass.toOpaque(), previousUsage.commandRange.upperBound > usage.commandRange.lowerBound {
+                        // We have overlapping usages, so we need to insert a render target barrier before every draw.
+                        let applicableRange = max(previousUsage.commandRangeInPass.lowerBound, usage.commandRangeInPass.lowerBound)..<min(previousUsage.commandRangeInPass.upperBound, usage.commandRangeInPass.upperBound)
+                        
+                        let commands = usage.renderPassRecord.commands!
+                        let passCommandRange = usage.renderPassRecord.commandRange!
+                        for i in applicableRange {
+                            let command = commands[i]
+                            if command.isDrawCommand {
+                                let commandIndex = i + passCommandRange.lowerBound
+                                self.resourceCommands.append(MetalFrameResourceCommand(command: .memoryBarrier(Resource(resource), scope: scope, afterStages: MTLRenderStages(previousUsage.stages), beforeCommand: commandIndex, beforeStages: MTLRenderStages(usage.stages)), index: commandIndex))
+                            }
                         }
-                        #endif
+                        
+                    } else {
                         if resource.type == .texture {
                             scope.formUnion(.textures)
                         } else if resource.type == .buffer || resource.type == .argumentBuffer || resource.type == .argumentBufferArray {
@@ -431,7 +452,6 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                         }
                         
                         self.resourceCommands.append(MetalFrameResourceCommand(command: .memoryBarrier(Resource(resource), scope: scope, afterStages: MTLRenderStages(previousUsage.stages), beforeCommand: usage.commandRange.lowerBound, beforeStages: MTLRenderStages(usage.stages)), index: previousUsage.commandRange.last!))
-                            
                     }
                 }
                 
@@ -680,7 +700,12 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         var encoderUseResources = [UseResourceKey: [Unmanaged<MTLResource>]]()
         
         let addBarrier = {
-            if barrierResources.count <= 8 {
+            #if os(macOS) || targetEnvironment(macCatalyst)
+            let isRTBarrier = barrierScope.contains(.renderTargets)
+            #else
+            let isRTBarrier = false
+            #endif
+            if barrierResources.count <= 8, !isRTBarrier {
                 let memory = allocator.allocate(capacity: barrierResources.count) as UnsafeMutablePointer<Unmanaged<MTLResource>>
                 memory.assign(from: barrierResources, count: barrierResources.count)
                 let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: barrierResources.count)
@@ -721,7 +746,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         }
         
         for command in resourceCommands {
-            if command.index >= barrierLastIndex {
+            if command.index > barrierLastIndex {
                 addBarrier()
             }
             
