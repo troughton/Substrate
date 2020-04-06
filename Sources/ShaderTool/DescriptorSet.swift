@@ -172,7 +172,7 @@ final class DescriptorSet {
                     // Storage images (i.e. read-write textures) aren't permitted in argument buffers, so we need to bind directly on the encoder.
                     if resource.viewType == .storageImage, let index = resource.platformBindings.iOSMetalIndex {
                         stream.print("if let bindingEncoder = bindingEncoder {")
-                        stream.print("bindingEncoder.setTexture(resource, at: MetalIndexedFunctionArgument(type: .texture, index: \(index)\(arrayIndexString), stages: \(resource.stages)))")
+                        stream.print("bindingEncoder.setTexture(resource, key: MetalIndexedFunctionArgument(type: .texture, index: \(index)\(arrayIndexString), stages: \(resource.stages)))")
                         stream.print("}")
                     } else {
                         let index = resource.platformBindings.iOSMetalIndex.map { Int($0) } ?? resource.binding.index
