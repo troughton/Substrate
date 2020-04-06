@@ -9,7 +9,7 @@
 
 import Metal
 
-final class MetalRenderTargetDescriptor {
+final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var descriptor : RenderTargetDescriptor
     var renderPasses = [DrawRenderPass]()
     

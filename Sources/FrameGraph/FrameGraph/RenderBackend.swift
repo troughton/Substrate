@@ -48,6 +48,14 @@ public protocol RenderBackendProtocol : class {
 }
 
 @usableFromInline
+protocol BackendRenderTargetDescriptor: class {
+    init(renderPass: DrawRenderPass)
+    var descriptor: RenderTargetDescriptor { get }
+    func descriptorMergedWithPass(_ pass: DrawRenderPass, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> Self
+    func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture])
+}
+
+@usableFromInline
 protocol _RenderBackendProtocol : RenderBackendProtocol {
     func materialisePersistentTexture(_ texture: Texture) -> Bool
     func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
@@ -75,6 +83,10 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     
     var pushConstantPath : ResourceBindingPath { get }
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
+}
+
+protocol SpecificRenderBackend {
+    associatedtype RenderTargetDescriptor: BackendRenderTargetDescriptor
 }
 
 public struct RenderBackend {

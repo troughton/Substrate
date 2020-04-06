@@ -191,7 +191,7 @@ final class MetalPersistentResourceRegistry {
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
         
-        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage)
+        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: MTLTextureUsage(properties.usage))
         
         let mtlTexture : MTLTextureReference
         if let heap = texture.heap {
@@ -476,7 +476,7 @@ final class MetalTransientResourceRegistry {
         self.argumentBufferArrayWaitEvents.prepareFrame()
     }
     
-    func allocatorForTexture(storageMode: MTLStorageMode, flags: ResourceFlags, textureParams: (PixelFormat, MTLTextureUsage)) -> MetalTextureAllocator {
+    func allocatorForTexture(storageMode: MTLStorageMode, flags: ResourceFlags, textureParams: (PixelFormat, TextureUsage)) -> MetalTextureAllocator {
         assert(!flags.contains(.persistent))
         
         if flags.contains(.historyBuffer) {
@@ -561,7 +561,7 @@ final class MetalTransientResourceRegistry {
             return nil
         }
         
-        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage)
+        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: MTLTextureUsage(properties.usage))
         
         #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         if properties.canBeMemoryless {
