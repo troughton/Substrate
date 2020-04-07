@@ -1,14 +1,14 @@
 //
-//  File.swift
+//  ResourceCommandGenerator.swift
 //  
 //
 //  Created by Thomas Roughton on 6/04/20.
 //
 
-import Foundation
+import FrameGraphUtilities
 
 
-enum PreFrameResourceCommands {
+enum PreFrameResourceCommands<Backend: SpecificRenderBackend> {
     
     // These commands mutate the ResourceRegistry and should be executed before render pass execution:
     case materialiseBuffer(Buffer, usage: BufferUsage)
@@ -162,8 +162,7 @@ struct FrameResourceCommand : Comparable {
     }
 }
 
-final class ResourceCommandGenerator {
-    
+final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     
     var resourceRegistryPreFrameCommands = [PreFrameResourceCommand]()
     var resourceCommands = [FrameResourceCommand]()

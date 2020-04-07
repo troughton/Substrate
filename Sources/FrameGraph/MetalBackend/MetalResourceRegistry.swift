@@ -129,7 +129,9 @@ struct MetalFrameResourceMap {
     }
 }
 
-final class MetalPersistentResourceRegistry {
+final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
+    typealias Backend = MetalBackend
+    
     var accessLock = ReaderWriterLock()
     
     var heapReferences = PersistentResourceMap<Heap, MTLHeap>()
@@ -373,7 +375,7 @@ final class MetalPersistentResourceRegistry {
 }
 
 
-final class MetalTransientResourceRegistry {
+final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     let persistentRegistry : MetalPersistentResourceRegistry
     var accessLock = SpinLock()
     
@@ -476,7 +478,7 @@ final class MetalTransientResourceRegistry {
         self.argumentBufferArrayWaitEvents.prepareFrame()
     }
     
-    func allocatorForTexture(storageMode: MTLStorageMode, flags: ResourceFlags, textureParams: (PixelFormat, TextureUsage)) -> MetalTextureAllocator {
+    func allocatorForTexture(storageMode: MTLStorageMode, flags: ResourceFlags, textureParams: (PixelFormat, MTLTextureUsage)) -> MetalTextureAllocator {
         assert(!flags.contains(.persistent))
         
         if flags.contains(.historyBuffer) {
@@ -570,7 +572,7 @@ final class MetalTransientResourceRegistry {
         }
         #endif
         
-        let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
+        let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, MTLTextureUsage(properties.usage)))
         let (mtlTexture, fences, waitEvent) = allocator.collectTextureWithDescriptor(descriptor)
         
         if let label = texture.label {
@@ -605,7 +607,7 @@ final class MetalTransientResourceRegistry {
         switch texture.textureViewBaseInfo! {
         case .buffer(let bufferInfo):
             let mtlBuffer = self[buffer: baseResource.handle]!
-            let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: properties.usage)
+            let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: MTLTextureUsage(properties.usage))
             mtlTexture = mtlBuffer.resource.makeTexture(descriptor: descriptor, offset: bufferInfo.offset, bytesPerRow: bufferInfo.bytesPerRow)!
         case .texture(let textureInfo):
             let baseTexture = self[texture: baseResource.handle]!
@@ -702,7 +704,7 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> MTLBufferReference {
+    public func allocateBufferIfNeeded(_ buffer: Buffer, usage: BufferUsage, forceGPUPrivate: Bool) -> MTLBufferReference {
         if let mtlBuffer = self.bufferReferences[buffer] {
             return mtlBuffer
         }

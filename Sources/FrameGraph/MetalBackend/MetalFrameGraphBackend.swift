@@ -293,7 +293,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         return UInt64(bitPattern: Int64("FrameGraph Compacted Resource Commands".hashValue))
     }
     
-    func compactResourceCommands(commandInfo: FrameCommandInfo) {
+    func compactResourceCommands(commandInfo: FrameCommandInfo<) {
         guard !self.resourceCommands.isEmpty else { return }
         self.resourceCommands.sort()
         

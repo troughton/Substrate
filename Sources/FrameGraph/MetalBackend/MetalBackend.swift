@@ -23,7 +23,15 @@ extension MTLResourceOptions {
 }
 #endif
 
-final class MetalBackend : _RenderBackendProtocol {
+final class MetalBackend : SpecificRenderBackend {
+    typealias BufferReference = MTLBufferReference
+    typealias TextureReference = MTLTextureReference
+    typealias ArgumentBufferReference = MTLBufferReference
+    typealias ArgumentBufferArrayReference = MTLBufferReference
+    
+    typealias TransientResourceRegistry = MetalTransientResourceRegistry
+    typealias PersistentResourceRegistry = MetalPersistentResourceRegistry
+    
     let device : MTLDevice
     let resourceRegistry : MetalPersistentResourceRegistry
     let stateCaches : MetalStateCaches
