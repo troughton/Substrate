@@ -167,6 +167,7 @@ final class ReflectionContext {
                         print("Warning: cannot merge \(sourcePass.name) with \(pass.name) since resources \(pass.boundResources[i]) and \(sourcePass.boundResources[j]) share the same binding but are different.")
                         return false
                     }
+                    pass.boundResources[i].stages.formUnion(sourcePass.boundResources[j].stages)
                     
                     i += 1
                     j += 1
