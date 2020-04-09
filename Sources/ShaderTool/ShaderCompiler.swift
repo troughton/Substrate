@@ -150,7 +150,7 @@ final class ShaderCompiler {
     let targets : [Target]
     
     let dxcDriver : DXCDriver
-    let spirvOptDriver : SPIRVOptDriver
+    let spirvOptDriver : SPIRVOptDriver?
     
     let context = SPIRVContext()
     let reflectionContext = ReflectionContext()
@@ -168,7 +168,12 @@ final class ShaderCompiler {
         self.targets = targets
 
         self.dxcDriver = try DXCDriver()
-        self.spirvOptDriver = try SPIRVOptDriver()
+        
+        if targets.contains(where: { $0.needsHLSLLegalization }) {
+            self.spirvOptDriver = try SPIRVOptDriver()
+        } else {
+            self.spirvOptDriver = nil
+        }
         
         guard FileManager.default.fileExists(atPath: self.sourceDirectory.path) else {
             throw ShaderCompilerError.missingSourceDirectory(self.sourceDirectory)
@@ -284,15 +289,16 @@ final class ShaderCompiler {
 
                     print("\(target): Compiling \(entryPoint.name) in \(file.url.lastPathComponent) to SPIR-V")
                     
-                    let task = try self.dxcDriver.compile(sourceFile: file.url, destinationFile: tempFileURL, entryPoint: entryPoint.name, type: entryPoint.type, target: target)
+                    let task = try self.dxcDriver.compile(sourceFile: file.url, destinationFile: target.needsHLSLLegalization ? tempFileURL : spvFileURL, entryPoint: entryPoint.name, type: entryPoint.type, target: target)
                     task.waitUntilExit()
                     guard task.terminationStatus == 0 else { print("Error compiling entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
                     
-                    let optimisationTask = try self.spirvOptDriver.optimise(sourceFile: tempFileURL, destinationFile: spvFileURL)
-                    optimisationTask.waitUntilExit()
-                    guard optimisationTask.terminationStatus == 0 else { print("Error optimising entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
-                    
-                    try? FileManager.default.removeItem(at: tempFileURL)
+                    if target.needsHLSLLegalization {
+                        let optimisationTask = try self.spirvOptDriver!.optimise(sourceFile: tempFileURL, destinationFile: spvFileURL)
+                        optimisationTask.waitUntilExit()
+                        guard optimisationTask.terminationStatus == 0 else { print("Error optimising entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
+                        try? FileManager.default.removeItem(at: tempFileURL)
+                    }
                     
                     spvFileURL.removeCachedResourceValue(forKey: .contentModificationDateKey)
                     
