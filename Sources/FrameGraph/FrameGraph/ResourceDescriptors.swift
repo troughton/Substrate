@@ -23,7 +23,7 @@ public enum TextureType : UInt {
     case typeTextureBuffer
 }
 
-public struct TextureUsage : OptionSet {
+public struct TextureUsage : OptionSet, Hashable {
     public let rawValue : UInt
     
     @inlinable
@@ -47,7 +47,7 @@ public struct TextureUsage : OptionSet {
     public static let blitDestination: TextureUsage = TextureUsage(rawValue: 64)
 }
 
-public struct BufferUsage : OptionSet {
+public struct BufferUsage : OptionSet, Hashable {
     public let rawValue : UInt
     
     @inlinable
@@ -74,7 +74,7 @@ public struct BufferUsage : OptionSet {
     public static let textureView = BufferUsage(rawValue: 128)
 }
 
-public struct TextureDescriptor {
+public struct TextureDescriptor: Hashable {
     
     public init() {
         
@@ -139,7 +139,7 @@ public struct TextureDescriptor {
     }
 }
 
-public struct BufferDescriptor {
+public struct BufferDescriptor: Hashable {
     public var length : Int = 0
     public var storageMode : StorageMode
     public var cacheMode : CPUCacheMode
