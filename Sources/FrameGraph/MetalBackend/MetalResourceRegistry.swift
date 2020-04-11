@@ -486,11 +486,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, properties: TextureUsageProperties, forceGPUPrivate: Bool) -> MTLTextureReference? {
+    public func allocateTexture(_ texture: Texture, properties: TextureUsageProperties, forceGPUPrivate: Bool) -> MTLTextureReference {
         if texture.flags.contains(.windowHandle) {
             // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
             self.textureReferences[texture] = MTLTextureReference(windowTexture: ())
-            return nil
+            return MTLTextureReference(windowTexture: ())
         }
         
         let descriptor = MTLTextureDescriptor(texture.descriptor, usage: MTLTextureUsage(properties.usage))
@@ -646,7 +646,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             assert(mtlTexture.texture.pixelFormat == MTLPixelFormat(texture.descriptor.pixelFormat))
             return mtlTexture
         }
-        return self.allocateTexture(texture, properties: usage, forceGPUPrivate: forceGPUPrivate)!
+        return self.allocateTexture(texture, properties: usage, forceGPUPrivate: forceGPUPrivate)
     }
     
     func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {

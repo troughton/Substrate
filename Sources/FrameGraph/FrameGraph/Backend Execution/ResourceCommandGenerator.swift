@@ -31,7 +31,7 @@ struct ContextWaitEvent {
     var waitValue : UInt64 = 0
 }
 
-enum PreFramecommands {
+enum PreFrameCommands {
     
     // These commands mutate the ResourceRegistry and should be executed before render pass execution:
     case materialiseBuffer(Buffer, usage: BufferUsage)
@@ -140,14 +140,14 @@ struct BarrierScope: OptionSet {
     static let renderTargets: BarrierScope = BarrierScope(rawValue: 1 << 2)
 }
 
-enum Framecommands {
+enum FrameResourceCommands {
     // These commands need to be executed during render pass execution and do not modify the ResourceRegistry.
     case useResource(Resource, usage: ResourceUsageType, stages: RenderStages, allowReordering: Bool)
     case memoryBarrier(Resource, scope: BarrierScope, afterStages: RenderStages, beforeCommand: Int, beforeStages: RenderStages) // beforeCommand is the command that this memory barrier must have been executed before.
 }
 
 struct PreFrameResourceCommand : Comparable {
-    var command : PreFramecommands
+    var command : PreFrameCommands
     var passIndex : Int
     var index : Int
     var order : PerformOrder
@@ -172,7 +172,7 @@ struct PreFrameResourceCommand : Comparable {
 }
 
 struct FrameResourceCommand : Comparable {
-    var command : Framecommands
+    var command : FrameResourceCommands
     var index : Int
     
     public static func ==(lhs: FrameResourceCommand, rhs: FrameResourceCommand) -> Bool {
@@ -513,10 +513,12 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
         }
         
-        self.preFrameCommands.sort()
+        self.commands.sort()
     }
     
     func executePreFrameCommands(queue: Queue, resourceMap: FrameResourceMap<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+        
+        self.preFrameCommands.sort()
         for command in self.preFrameCommands {
             let encoderIndex = frameCommandInfo.encoderIndex(for: command.passIndex)
             let commandBufferIndex = frameCommandInfo.commandEncoders[encoderIndex].commandBufferIndex

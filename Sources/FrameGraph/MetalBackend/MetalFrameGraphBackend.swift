@@ -167,7 +167,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         }
     }
     
-    func compactResourceCommands(commandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>) {
+    func generateCompactedResourceCommands(commandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>) {
         guard !commandGenerator.commands.isEmpty else { return }
         
         self.generateFenceCommands(frameCommandInfo: commandInfo, commandGenerator: commandGenerator)
@@ -328,6 +328,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         var frameCommandInfo = FrameCommandInfo<MetalBackend>(passes: passes, resourceUsages: resourceUsages, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
         self.commandGenerator.generateCommands(passes: passes, resourceUsages: resourceUsages, transientRegistry: self.resourceRegistry, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.executePreFrameCommands(queue: self.frameGraphQueue, resourceMap: self.resourceMap, frameCommandInfo: &frameCommandInfo)
+        self.generateCompactedResourceCommands(commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator)
         
         func executePass(_ passRecord: RenderPassRecord, i: Int, encoderInfo: FrameCommandInfo<MetalBackend>.CommandEncoderInfo, encoderManager: MetalEncoderManager) {
             switch passRecord.pass.passType {
