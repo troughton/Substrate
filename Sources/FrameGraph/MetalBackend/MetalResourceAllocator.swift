@@ -17,13 +17,13 @@ protocol MetalResourceAllocator {
 
 
 protocol MetalTextureAllocator : MetalResourceAllocator {
-    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [FenceDependency], MetalContextWaitEvent)
-    func depositTexture(_ texture: MTLTextureReference, fences: [FenceDependency], waitEvent: MetalContextWaitEvent)
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [FenceDependency], ContextWaitEvent)
+    func depositTexture(_ texture: MTLTextureReference, fences: [FenceDependency], waitEvent: ContextWaitEvent)
 }
 
 protocol MetalBufferAllocator : MetalResourceAllocator {
-    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [FenceDependency], MetalContextWaitEvent)
-    func depositBuffer(_ buffer: MTLBufferReference, fences: [FenceDependency], waitEvent: MetalContextWaitEvent)
+    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent)
+    func depositBuffer(_ buffer: MTLBufferReference, fences: [FenceDependency], waitEvent: ContextWaitEvent)
 }
 
 

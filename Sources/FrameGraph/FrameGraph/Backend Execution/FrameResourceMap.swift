@@ -25,14 +25,6 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
             return transientRegistry[texture]!
         }
     }
- 
-    subscript(textureReference texture: Texture) -> Backend.TextureReference {
-        if texture._usesPersistentRegistry {
-            return persistentRegistry[textureReference: texture]!
-        } else {
-            return transientRegistry[textureReference: texture]!
-        }
-    }
     
     subscript(buffer: _ArgumentBuffer) -> Backend.ArgumentBufferReference {
         if buffer._usesPersistentRegistry {
@@ -50,6 +42,10 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
+    subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference {
+        return persistentRegistry[sampler]
+    }
+    
     func bufferForCPUAccess(_ buffer: Buffer) -> Backend.BufferReference {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
@@ -62,7 +58,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: TextureUsageProperties(texture.descriptor.usageHint), forceGPUPrivate: false)! }
+            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: TextureUsageProperties(texture.descriptor.usageHint), forceGPUPrivate: false) }
         }
     }
     

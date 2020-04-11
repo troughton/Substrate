@@ -17,6 +17,13 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     associatedtype TextureReference
     associatedtype ArgumentBufferReference
     associatedtype ArgumentBufferArrayReference
+    associatedtype SamplerReference
+    
+    static var requiresResourceResidencyTracking: Bool { get }
+    static var requiresBufferUsage: Bool { get }
+    
+    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: ArgumentBufferReference, resourceMap: FrameResourceMap<Self>)
+    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: ArgumentBufferArrayReference, resourceMap: FrameResourceMap<Self>)
 }
 
 protocol BackendRenderTargetDescriptor: class {
@@ -29,24 +36,48 @@ protocol BackendRenderTargetDescriptor: class {
 protocol ResourceRegistry: class {
     associatedtype Backend: SpecificRenderBackend
     
-    associatedtype PersistentResourceRegistry: ResourceRegistry
-    associatedtype TransientResourceRegistry: ResourceRegistry
+    subscript(buffer: Buffer) -> Backend.BufferReference? { get }
+    subscript(texture: Texture) -> Backend.TextureReference? { get }
+    subscript(argumentBuffer: _ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
+    subscript(argumentBufferArray: _ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get }
     
-    
-    subscript(buffer: Buffer) -> Backend.BufferReference? { get set }
-    subscript(texture: Texture) -> Backend.TextureReference? { get set }
-    subscript(argumentBuffer: _ArgumentBuffer) -> Backend.ArgumentBufferReference? { get set }
-    subscript(argumentBufferArray: _ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get set }
+    func allocateArgumentBufferIfNeeded(_ buffer: _ArgumentBuffer) -> Backend.ArgumentBufferReference
+    func allocateArgumentBufferArrayIfNeeded(_ buffer: _ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference
 }
 
-protocol BackendTransientResourceRegistry: ResourceRegistry where TransientResourceRegistry == Self {
+protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.TransientResourceRegistry == Self {
+    static func isAliasedHeapResource(resource: Resource) -> Bool
+    
     var accessLock: SpinLock { get set }
     
     func allocateBufferIfNeeded(_ buffer: Buffer, usage: BufferUsage, forceGPUPrivate: Bool) -> Backend.BufferReference
     func allocateTextureIfNeeded(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> Backend.TextureReference
-    func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: PersistentResourceRegistry) throws -> Backend.TextureReference
+    func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: Backend.PersistentResourceRegistry) throws -> Backend.TextureReference
+    func allocateTextureView(_ texture: Texture, properties: TextureUsageProperties) -> Backend.TextureReference
+    
+    func setDisposalFences(on resource: Resource, to fences: [FenceDependency])
+    func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent)
+    func disposeBuffer(_ buffer: Buffer, waitEvent: ContextWaitEvent)
+    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, waitEvent: ContextWaitEvent)
+    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, waitEvent: ContextWaitEvent)
+    
+    func withHeapAliasingFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout [FenceDependency]) -> Void)
+    
+    var textureWaitEvents: TransientResourceMap<Texture, ContextWaitEvent> { get }
+    var bufferWaitEvents: TransientResourceMap<Buffer, ContextWaitEvent> { get }
+    var argumentBufferWaitEvents: TransientResourceMap<_ArgumentBuffer, ContextWaitEvent> { get }
+    var argumentBufferArrayWaitEvents: TransientResourceMap<_ArgumentBufferArray, ContextWaitEvent> { get }
+    var historyBufferResourceWaitEvents: [Resource : ContextWaitEvent] { get }
 }
 
-protocol BackendPersistentResourceRegistry: ResourceRegistry where PersistentResourceRegistry == Self {
+protocol BackendPersistentResourceRegistry: ResourceRegistry where Backend.PersistentResourceRegistry == Self {
+    subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference { get }
     
+    func allocateBuffer(_ buffer: Buffer, usage: BufferUsage) -> Backend.BufferReference?
+    func allocateTexture(_ texture: Texture, usage: TextureUsageProperties) -> Backend.TextureReference?
+    
+    func disposeTexture(_ texture: Texture)
+    func disposeBuffer(_ buffer: Buffer)
+    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer)
+    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray)
 }

@@ -24,13 +24,17 @@ extension MTLResourceOptions {
 #endif
 
 final class MetalBackend : SpecificRenderBackend {
+
     typealias BufferReference = MTLBufferReference
     typealias TextureReference = MTLTextureReference
     typealias ArgumentBufferReference = MTLBufferReference
     typealias ArgumentBufferArrayReference = MTLBufferReference
+    typealias SamplerReference = MTLSamplerState
     
     typealias TransientResourceRegistry = MetalTransientResourceRegistry
     typealias PersistentResourceRegistry = MetalPersistentResourceRegistry
+    
+    typealias RenderTargetDescriptor = MetalRenderTargetDescriptor
     
     let device : MTLDevice
     let resourceRegistry : MetalPersistentResourceRegistry
@@ -62,7 +66,7 @@ final class MetalBackend : SpecificRenderBackend {
     
     @usableFromInline func materialisePersistentTexture(_ texture: Texture) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateTexture(texture, properties: TextureUsageProperties(texture.descriptor.usageHint)) != nil
+            return self.resourceRegistry.allocateTexture(texture, usage: TextureUsageProperties(texture.descriptor.usageHint)) != nil
         }
     }
     
@@ -72,7 +76,7 @@ final class MetalBackend : SpecificRenderBackend {
     
     @usableFromInline func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateBuffer(buffer) != nil
+            return self.resourceRegistry.allocateBuffer(buffer, usage: buffer.descriptor.usageHint) != nil
         }
     }
     
@@ -153,25 +157,25 @@ final class MetalBackend : SpecificRenderBackend {
         assert(texture.flags.contains(.persistent) || self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
         
         let mtlTexture = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
-        mtlTexture.getBytes(bytes, bytesPerRow: bytesPerRow, from: MTLRegion(region), mipmapLevel: mipmapLevel)
+        mtlTexture.texture.getBytes(bytes, bytesPerRow: bytesPerRow, from: MTLRegion(region), mipmapLevel: mipmapLevel)
     }
     
     @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
         assert(texture.flags.contains(.persistent) || self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
         
         let mtlTexture = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
-        mtlTexture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
+        mtlTexture.texture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
     }
     
     @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
         assert(texture.flags.contains(.persistent) || self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a FrameGraph RenderPass.")
                
         let mtlTexture = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
-        mtlTexture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
+        mtlTexture.texture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
     }
     
     @usableFromInline
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection? {
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: SwiftFrameGraph.RenderTargetDescriptor) -> PipelineReflection? {
         return self.stateCaches.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
     }
     
@@ -187,6 +191,26 @@ final class MetalBackend : SpecificRenderBackend {
     @usableFromInline func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath {
         let stages = MTLRenderStages(stages)
         return ResourceBindingPath(stages: stages, type: .buffer, argumentBufferIndex: nil, index: index + 1) // Push constants go at index 0
+    }
+    
+    // MARK: - SpecificRenderBackend conformance
+    
+    static var requiresResourceResidencyTracking: Bool {
+        // Metal requires useResource calls for all untracked resources.
+        return true
+    }
+
+    static var requiresBufferUsage: Bool {
+        // Metal does not track buffer usages.
+        return false
+    }
+    
+    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
+        argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
+    }
+    
+    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
+        argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
 }
 

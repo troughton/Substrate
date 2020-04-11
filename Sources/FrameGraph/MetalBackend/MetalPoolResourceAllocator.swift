@@ -16,10 +16,10 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
     
     struct ResourceReference<R> {
         let resource : R
-        var waitEvent : MetalContextWaitEvent
+        var waitEvent : ContextWaitEvent
         var framesUnused : Int = 0
         
-        init(resource: R, waitEvent: MetalContextWaitEvent) {
+        init(resource: R, waitEvent: ContextWaitEvent) {
             self.resource = resource
             self.waitEvent = waitEvent
         }
@@ -43,7 +43,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         self.textures = [[ResourceReference<MTLTextureReference>]](repeating: [ResourceReference<MTLTextureReference>](), count: numFrames)
     }
     
-    private func textureFittingDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, MetalContextWaitEvent)? {
+    private func textureFittingDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, ContextWaitEvent)? {
         
         for (i, textureRef) in self.textures[currentIndex].enumerated() {
             if descriptor.textureType       == textureRef.resource.texture.textureType &&
@@ -65,7 +65,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         return nil
     }
     
-    private func bufferWithLength(_ length: Int, resourceOptions: MTLResourceOptions) -> (MTLBufferReference, MetalContextWaitEvent)? {
+    private func bufferWithLength(_ length: Int, resourceOptions: MTLResourceOptions) -> (MTLBufferReference, ContextWaitEvent)? {
         var bestIndex = -1
         var bestLength = Int.max
         
@@ -85,23 +85,23 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         }
     }
     
-    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [FenceDependency], MetalContextWaitEvent) {
+    func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [FenceDependency], ContextWaitEvent) {
         if let texture = self.textureFittingDescriptor(descriptor) {
             return (texture.0, [], texture.1)
         } else {
-            return (MTLTextureReference(texture: Unmanaged.passRetained(device.makeTexture(descriptor: descriptor)!)), [], MetalContextWaitEvent())
+            return (MTLTextureReference(texture: Unmanaged.passRetained(device.makeTexture(descriptor: descriptor)!)), [], ContextWaitEvent())
         }
     }
     
-    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [FenceDependency], MetalContextWaitEvent) {
+    func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {
         if let buffer = self.bufferWithLength(length, resourceOptions: options) {
             return (buffer.0, [], buffer.1)
         } else {
-            return (MTLBufferReference(buffer: Unmanaged.passRetained(device.makeBuffer(length: length, options: options)!), offset: 0), [], MetalContextWaitEvent())
+            return (MTLBufferReference(buffer: Unmanaged.passRetained(device.makeBuffer(length: length, options: options)!), offset: 0), [], ContextWaitEvent())
         }
     }
     
-    func depositBuffer(_ buffer: MTLBufferReference, fences: [FenceDependency], waitEvent: MetalContextWaitEvent) {
+    func depositBuffer(_ buffer: MTLBufferReference, fences: [FenceDependency], waitEvent: ContextWaitEvent) {
         assert(fences.isEmpty)
         let resourceRef = ResourceReference(resource: buffer, waitEvent: waitEvent)
         // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.
@@ -110,7 +110,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         self.buffersUsedThisFrame.append(resourceRef)
     }
     
-    func depositTexture(_ texture: MTLTextureReference, fences: [FenceDependency], waitEvent: MetalContextWaitEvent) {
+    func depositTexture(_ texture: MTLTextureReference, fences: [FenceDependency], waitEvent: ContextWaitEvent) {
         assert(fences.isEmpty)
         let resourceRef = ResourceReference(resource: texture, waitEvent: waitEvent)
         // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.
