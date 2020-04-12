@@ -20,7 +20,6 @@ public final class CommandBufferResources {
 
     var renderPass : VulkanRenderPass? = nil
     
-    var fences = [VkFence?]()
     var buffers = [VulkanBuffer]()
     var bufferView = [VulkanBufferView]()
     var images = [VulkanImage]()
@@ -52,16 +51,6 @@ public final class CommandBufferResources {
     deinit {
         for semaphore in self.waitSemaphores {
             device.semaphorePool.depositSemaphore(semaphore.vkSemaphore)
-        }
-
-        if !self.fences.isEmpty {
-            self.fences.withUnsafeBufferPointer { fences in
-                _ = vkResetFences(self.device.vkDevice, UInt32(fences.count), fences.baseAddress).check()
-            }
-        }
-
-        for fence in fences {
-            device.fencePool.depositFence(fence!)
         }
         
         // VulkanBuffers are reference counted

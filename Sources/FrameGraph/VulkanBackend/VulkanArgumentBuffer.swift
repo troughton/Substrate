@@ -43,7 +43,7 @@ final class VulkanArgumentBuffer {
 
 extension VulkanArgumentBuffer {
     
-    func encodeArguments(from buffer: _ArgumentBuffer, pipelineReflection: VulkanPipelineReflection, resourceMap: VulkanFrameResourceMap, stateCaches: VulkanStateCaches) {
+    func encodeArguments(from buffer: _ArgumentBuffer, pipelineReflection: VulkanPipelineReflection, resourceMap: FrameResourceMap<VulkanBackend>, stateCaches: VulkanStateCaches) {
         var descriptorWrites = [VkWriteDescriptorSet]()
 
         let bufferInfoSentinel = UnsafePointer<VkDescriptorBufferInfo>(bitPattern: 0x10)
@@ -75,7 +75,7 @@ extension VulkanArgumentBuffer {
 
             switch binding {
             case .texture(let texture):
-                let image = resourceMap[texture]
+                let image = resourceMap[texture].image
 
                 self.images.append(image)
             
@@ -105,7 +105,7 @@ extension VulkanArgumentBuffer {
 
             case .sampler(let descriptor):
                 var imageInfo = VkDescriptorImageInfo()
-                imageInfo.sampler = stateCaches[descriptor]
+                imageInfo.sampler = resourceMap[descriptor]
             
                 descriptorWrite.pImageInfo = imageInfoSentinel
                 imageInfos.append(imageInfo)

@@ -11,31 +11,13 @@ import Metal
 import FrameGraphUtilities
 import CAtomics
 
-enum MetalCompactedFrameResourceCommands {
+enum MetalCompactedResourceCommandType {
     // These commands need to be executed during render pass execution and do not modify the MetalResourceRegistry.
     case useResources(UnsafeMutableBufferPointer<MTLResource>, usage: MTLResourceUsage, stages: MTLRenderStages)
     case resourceMemoryBarrier(resources: UnsafeMutableBufferPointer<MTLResource>, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
     case scopedMemoryBarrier(scope: MTLBarrierScope, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
     case updateFence(MetalFenceHandle, afterStages: MTLRenderStages)
     case waitForFence(MetalFenceHandle, beforeStages: MTLRenderStages)
-}
-
-struct MetalCompactedResourceCommand : Comparable {
-    var command : MetalCompactedFrameResourceCommands
-    var index : Int
-    var order : PerformOrder
-    
-    public static func ==(lhs: MetalCompactedResourceCommand, rhs: MetalCompactedResourceCommand) -> Bool {
-        return lhs.index == rhs.index && lhs.order == rhs.order
-    }
-    
-    public static func <(lhs: MetalCompactedResourceCommand, rhs: MetalCompactedResourceCommand) -> Bool {
-        if lhs.index < rhs.index { return true }
-        if lhs.index == rhs.index, lhs.order < rhs.order {
-            return true
-        }
-        return false
-    }
 }
 
 struct UseResourceKey: Hashable {
@@ -86,7 +68,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
     let backend : MetalBackend
     let resourceRegistry : MetalTransientResourceRegistry
     let commandGenerator: ResourceCommandGenerator<MetalBackend>
-    var compactedResourceCommands = [MetalCompactedResourceCommand]()
+    var compactedResourceCommands = [CompactedResourceCommand<MetalCompactedResourceCommandType>]()
     
     var queueCommandBufferIndex : UInt64 = 0
     let syncEvent : MTLEvent
@@ -158,11 +140,11 @@ final class MetalFrameGraphContext : _FrameGraphContext {
             let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[sourceIndex].commandBufferIndex)
             let fence = MetalFenceHandle(label: label, queue: self.frameGraphQueue, commandBufferIndex: commandBufferSignalValue)
             
-            self.compactedResourceCommands.append(MetalCompactedResourceCommand(command: .updateFence(fence, afterStages: signalStages), index: signalIndex, order: .after))
+            self.compactedResourceCommands.append(CompactedResourceCommand<MetalCompactedResourceCommandType>(command: .updateFence(fence, afterStages: signalStages), index: signalIndex, order: .after))
             
             for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
                 let dependency = dependencies.dependency(from: dependentIndex, on: sourceIndex)!
-                self.compactedResourceCommands.append(MetalCompactedResourceCommand(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.wait.stages)), index: dependency.wait.index, order: .before))
+                self.compactedResourceCommands.append(CompactedResourceCommand<MetalCompactedResourceCommandType>(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.wait.stages)), index: dependency.wait.index, order: .before))
             }
         }
     }
@@ -341,7 +323,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                 commandEncoder.executePass(passRecord, resourceCommands: compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
                 
             case .draw:
-                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: encoderInfo.renderTargetDescriptor!, textureUsages: self.commandGenerator.renderTargetTextureProperties, resourceMap: self.resourceMap, stateCaches: backend.stateCaches) else {
+                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: encoderInfo.renderTargetDescriptor!, textureUsages: self.commandGenerator.renderTargetTextureProperties) else {
                     if _isDebugAssertConfiguration() {
                         print("Warning: skipping pass \(passRecord.pass.name) since the drawable for the render target could not be retrieved.")
                     }

@@ -52,7 +52,7 @@ final class VulkanSubpass {
     }
 }
 
-final class VulkanRenderTargetDescriptor {
+final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var descriptor : RenderTargetDescriptor
     var renderPasses = [RenderPassRecord]()
     
@@ -189,16 +189,16 @@ final class VulkanRenderTargetDescriptor {
         return true
     }
     
-    func descriptorMergedWithPass(_ pass: RenderPassRecord, resourceUsages: ResourceUsages) -> VulkanRenderTargetDescriptor {
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> VulkanRenderTargetDescriptor {
         if self.tryMerge(withPass: pass) {
             return self
         } else {
-            self.finalise(resourceUsages: resourceUsages)
+            self.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
             return VulkanRenderTargetDescriptor(renderPass: pass)
         }
     }
     
-    private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, attachmentIndex: RenderTargetAttachmentIndex, resourceUsages: ResourceUsages) -> (VkAttachmentLoadOp, VkAttachmentStoreOp) {
+    private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, attachmentIndex: RenderTargetAttachmentIndex, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> (VkAttachmentLoadOp, VkAttachmentStoreOp) {
         // Logic for usages:
         //
         //
@@ -278,22 +278,26 @@ final class VulkanRenderTargetDescriptor {
         
         let storeAction : VkAttachmentStoreOp = isLastUsage ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE
         
+        if storeAction == VK_ATTACHMENT_STORE_OP_STORE {
+            storedTextures.append(attachment.texture)
+        }
+        
         return (loadAction, storeAction)
     }
     
-    func finalise(resourceUsages: ResourceUsages) {
+    func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture]) {
         // Compute load and store actions for all attachments.
         self.colorActions = self.descriptor.colorAttachments.enumerated().map { (i, attachment) in
             guard let attachment = attachment else { return (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE) }
-            return self.loadAndStoreActions(for: attachment, attachmentIndex: .color(i), resourceUsages: resourceUsages)
+            return self.loadAndStoreActions(for: attachment, attachmentIndex: .color(i), resourceUsages: resourceUsages, storedTextures: &storedTextures)
         }
         
         if let depthAttachment = self.descriptor.depthAttachment {
-            self.depthActions = self.loadAndStoreActions(for: depthAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages)
+            self.depthActions = self.loadAndStoreActions(for: depthAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, storedTextures: &storedTextures)
         }
         
         if let stencilAttachment = self.descriptor.stencilAttachment {
-            self.stencilActions = self.loadAndStoreActions(for: stencilAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages)
+            self.stencilActions = self.loadAndStoreActions(for: stencilAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, storedTextures: &storedTextures)
         }
     }
 }

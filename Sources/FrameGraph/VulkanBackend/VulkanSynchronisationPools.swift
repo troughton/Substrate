@@ -141,40 +141,6 @@ final class VulkanSemaphorePool {
             vkDestroySemaphore(self.device.vkDevice, semaphore, nil)
         }
     }
-    
-}
-
-final class VulkanFencePool {
-    let device : VulkanDevice
-    
-    private var unusedFences = [VkFence]()
-    
-    init(device: VulkanDevice) {
-        self.device = device
-    }
-    
-    public func allocateFence() -> VkFence {
-        var fence : VkFence? = nil
-        fence = self.unusedFences.popLast()
-        
-        if fence == nil {
-            var createInfo = VkFenceCreateInfo(sType: VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, pNext: nil, flags: 0)
-            vkCreateFence(self.device.vkDevice, &createInfo, nil, &fence)
-        }
-        
-        return fence!
-    }
-    
-    public func depositFence(_ fence: VkFence) {
-        self.unusedFences.append(fence)
-    }
-    
-    deinit {
-        for fence in self.unusedFences {
-            vkDestroyFence(self.device.vkDevice, fence, nil)
-        }
-    }
-    
 }
 
 #endif // canImport(Vulkan)

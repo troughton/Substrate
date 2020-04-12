@@ -14,13 +14,13 @@ protocol VulkanResourceAllocator {
 }
 
 protocol VulkanImageAllocator : VulkanResourceAllocator {
-    func collectImage(descriptor: VulkanImageDescriptor) -> (VkImageReference, [VulkanEventHandle], VulkanContextWaitSemaphore)
-    func depositImage(_ image: VkImageReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore)
+    func collectImage(descriptor: VulkanImageDescriptor) -> (VkImageReference, [FenceDependency], ContextWaitEvent)
+    func depositImage(_ image: VkImageReference, events: [FenceDependency], waitSemaphore: ContextWaitEvent)
 }
 
 protocol VulkanBufferAllocator : VulkanResourceAllocator {
-    func collectBuffer(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, [VulkanEventHandle], VulkanContextWaitSemaphore)
-    func depositBuffer(_ buffer: VkBufferReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore)
+    func collectBuffer(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, [FenceDependency], ContextWaitEvent)
+    func depositBuffer(_ buffer: VkBufferReference, events: [FenceDependency], waitSemaphore: ContextWaitEvent)
 }
 
 

@@ -13,9 +13,9 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
     let device: VulkanDevice
     
     let commandBufferResources: CommandBufferResources
-    let resourceMap: VulkanFrameResourceMap
+    let resourceMap: FrameResourceMap<VulkanBackend>
     
-    public init(device: VulkanDevice, commandBuffer: CommandBufferResources, resourceMap: VulkanFrameResourceMap) {
+    public init(device: VulkanDevice, commandBuffer: CommandBufferResources, resourceMap: FrameResourceMap<VulkanBackend>) {
         self.device = device
         self.commandBufferResources = commandBuffer
         self.resourceMap = resourceMap
@@ -25,7 +25,7 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
         return .copy
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [VulkanFrameResourceCommand]) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>]) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
          
          for (i, command) in zip(pass.commandRange!, pass.commands) {
@@ -51,7 +51,7 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             
         case .copyBufferToTexture(let args):
             let source = resourceMap[args.pointee.sourceBuffer]
-            let destination = resourceMap[args.pointee.destinationTexture]
+            let destination = resourceMap[args.pointee.destinationTexture].image
 
             let regions = destination.descriptor.allAspects.map { aspect -> VkBufferImageCopy in
                 let layers = VkImageSubresourceLayers(aspectMask: aspect, mipLevel: args.pointee.destinationLevel, baseArrayLayer: args.pointee.destinationSlice, layerCount: 1)
@@ -89,7 +89,7 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             
         case .generateMipmaps(let texture):
             print("Generating mipmaps for \(texture)")
-            self.generateMipmaps(image: resourceMap[texture])
+            self.generateMipmaps(image: resourceMap[texture].image)
             
         case .synchroniseTexture(let textureHandle):
             fatalError("GPU to CPU synchronisation of managed resources is unimplemented on Vulkan.")

@@ -225,9 +225,9 @@ extension PixelFormat {
 extension VkImageType {
     public init(_ type: TextureType) {
         switch type {
-        case .type1D, .type1DArray:
+        case .type1D, .type1DArray, .typeTextureBuffer:
             self = VK_IMAGE_TYPE_1D
-        case .type2D, .type2DArray, .type2DMultisample, .typeCube, .typeCubeArray:
+        case .type2D, .type2DArray, .type2DMultisample, .typeCube, .typeCubeArray, .type2DMultisampleArray:
             self = VK_IMAGE_TYPE_2D
         case .type3D:
             self = VK_IMAGE_TYPE_3D
@@ -244,7 +244,7 @@ extension VkImageViewType {
             self = VK_IMAGE_VIEW_TYPE_1D_ARRAY
         case .type2D, .type2DMultisample:
             self = VK_IMAGE_VIEW_TYPE_2D
-        case .type2DArray:
+        case .type2DArray, .type2DMultisampleArray:
             self = VK_IMAGE_VIEW_TYPE_2D_ARRAY
         case .type3D:
             self = VK_IMAGE_VIEW_TYPE_3D
@@ -252,7 +252,9 @@ extension VkImageViewType {
             self = VK_IMAGE_VIEW_TYPE_CUBE
         case .typeCubeArray:
             self = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY
-        }
+        case .typeTextureBuffer:
+            self = VK_IMAGE_VIEW_TYPE_1D
+}
     }
 }
 
@@ -698,10 +700,10 @@ extension VkSamplerCreateInfo {
 }
 
 extension VkPipelineMultisampleStateCreateInfo {
-    public init(_ descriptor: RenderPipelineDescriptor) {
+    public init(_ descriptor: RenderPipelineDescriptor, sampleCount: Int) {
         self.init()
         self.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
-        self.rasterizationSamples = VkSampleCountFlagBits(rawValue: VkSampleCountFlagBits.RawValue(descriptor.rasterSampleCount))
+        self.rasterizationSamples = VkSampleCountFlagBits(rawValue: VkSampleCountFlagBits.RawValue(sampleCount))
         self.sampleShadingEnable = false
         self.minSampleShading = 1.0
         self.pSampleMask = nil

@@ -29,6 +29,25 @@ struct TextureUsageProperties {
 /// The value to wait for on the event associated with this FrameGraph context.
 struct ContextWaitEvent {
     var waitValue : UInt64 = 0
+    var afterStages : RenderStages = []
+}
+
+struct CompactedResourceCommand<T> : Comparable {
+    var command : T
+    var index : Int
+    var order : PerformOrder
+    
+    public static func ==(lhs: CompactedResourceCommand<T>, rhs: CompactedResourceCommand<T>) -> Bool {
+        return lhs.index == rhs.index && lhs.order == rhs.order
+    }
+    
+    public static func <(lhs: CompactedResourceCommand<T>, rhs: CompactedResourceCommand<T>) -> Bool {
+        if lhs.index < rhs.index { return true }
+        if lhs.index == rhs.index, lhs.order < rhs.order {
+            return true
+        }
+        return false
+    }
 }
 
 enum PreFrameCommands {
@@ -39,7 +58,7 @@ enum PreFrameCommands {
     case materialiseTextureView(Texture, usage: TextureUsageProperties)
     case materialiseArgumentBuffer(_ArgumentBuffer)
     case materialiseArgumentBufferArray(_ArgumentBufferArray)
-    case disposeResource(Resource)
+    case disposeResource(Resource, afterStages: RenderStages)
     
     case waitForHeapAliasingFences(resource: Resource, waitDependency: FenceDependency)
     
@@ -78,7 +97,7 @@ enum PreFrameCommands {
             }
             
         case .materialiseTextureView(let texture, let usage):
-            _ = resourceRegistry.allocateTextureView(texture, properties: usage)
+            _ = resourceRegistry.allocateTextureView(texture, usage: usage)
             
         case .materialiseArgumentBuffer(let argumentBuffer):
             let argBufferReference : Backend.ArgumentBufferReference
@@ -101,8 +120,8 @@ enum PreFrameCommands {
             }
             Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, resourceMap: resourceMap)
             
-        case .disposeResource(let resource):
-            let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue)
+        case .disposeResource(let resource, let afterStages):
+            let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)
             if let buffer = resource.buffer {
                 resourceRegistry.disposeBuffer(buffer, waitEvent: disposalWaitEvent)
             } else if let texture = resource.texture {
@@ -391,7 +410,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
                 
                 if !resource.flags.contains(.persistent), !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
-                    self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                    self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
                 }
                 
             } else if !resource.flags.contains(.persistent) || resource.flags.contains(.windowHandle) {
@@ -418,7 +437,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                     
                     if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
-                        self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                        self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
                     }
                     
                 } else if let texture = resource.texture {
@@ -467,7 +486,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                     
                     if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
-                        self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                        self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
                         
                     }
                 }

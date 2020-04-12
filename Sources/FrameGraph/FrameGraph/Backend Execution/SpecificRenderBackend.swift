@@ -27,9 +27,9 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
 }
 
 protocol BackendRenderTargetDescriptor: class {
-    init(renderPass: DrawRenderPass)
+    init(renderPass: RenderPassRecord)
     var descriptor: RenderTargetDescriptor { get }
-    func descriptorMergedWithPass(_ pass: DrawRenderPass, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> Self
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> Self
     func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture])
 }
 
@@ -53,7 +53,7 @@ protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.Transi
     func allocateBufferIfNeeded(_ buffer: Buffer, usage: BufferUsage, forceGPUPrivate: Bool) -> Backend.BufferReference
     func allocateTextureIfNeeded(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> Backend.TextureReference
     func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: Backend.PersistentResourceRegistry) throws -> Backend.TextureReference
-    func allocateTextureView(_ texture: Texture, properties: TextureUsageProperties) -> Backend.TextureReference
+    func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties) -> Backend.TextureReference
     
     func setDisposalFences(on resource: Resource, to fences: [FenceDependency])
     func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent)

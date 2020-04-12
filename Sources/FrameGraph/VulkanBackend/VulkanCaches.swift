@@ -21,7 +21,6 @@ final class VulkanStateCaches {
     
     private var vertexInputStates = [VertexDescriptor : VertexInputStateCreateInfo]()
     private var functionSpecialisationStates = [FunctionConstants : SpecialisationInfo]()
-    private var samplers = [SamplerDescriptor : VkSampler]()
     private var currentPipelineReflection : VulkanPipelineReflection? = nil
     private var renderPipelines = [RenderPipelineCacheKey : VkPipeline?]()
     private var computePipelines = [VulkanComputePipelineDescriptor : VkPipeline?]()
@@ -122,21 +121,6 @@ final class VulkanStateCaches {
         let info = VertexInputStateCreateInfo(descriptor: descriptor)
         self.vertexInputStates[descriptor] = info
         return info
-    }
-    
-    public subscript(samplerDescriptor: SamplerDescriptor) -> VkSampler {
-        if let sampler = self.samplers[samplerDescriptor] {
-            return sampler
-        }
-        
-        var samplerCreateInfo = VkSamplerCreateInfo(descriptor: samplerDescriptor)
-        
-        var sampler : VkSampler? = nil
-        vkCreateSampler(self.device.vkDevice, &samplerCreateInfo, nil, &sampler)
-        
-        self.samplers[samplerDescriptor] = sampler
-        
-        return sampler!
     }
     
     public func reflection(for descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> VulkanPipelineReflection {

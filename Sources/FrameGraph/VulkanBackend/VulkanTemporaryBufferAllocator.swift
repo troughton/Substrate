@@ -101,12 +101,12 @@ class VulkanTemporaryBufferAllocator : VulkanBufferAllocator {
         return self.arenas[self.currentIndex].allocate(bytes: bytes, alignedTo: 256)
     }
     
-    func collectBuffer(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, [VulkanEventHandle], VulkanContextWaitSemaphore) {
+    func collectBuffer(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, [FenceDependency], ContextWaitEvent) {
         let (buffer, offset) = self.allocate(bytes: Int(descriptor.size))
-        return (VkBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset), [], VulkanContextWaitSemaphore(waitValue: self.waitSemaphoreValue))
+        return (VkBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset), [], ContextWaitEvent(waitValue: self.waitSemaphoreValue))
     }
     
-    func depositBuffer(_ buffer: VkBufferReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore) {
+    func depositBuffer(_ buffer: VkBufferReference, events: [FenceDependency], waitSemaphore: ContextWaitEvent) {
         assert(events.isEmpty)
         self.nextFrameWaitSemaphoreValue = max(self.waitSemaphoreValue, waitSemaphore.waitValue)
     }

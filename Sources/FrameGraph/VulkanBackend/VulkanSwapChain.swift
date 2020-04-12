@@ -176,7 +176,7 @@ public class VulkanSwapChain : SwapChain {
         self.createSwapChain(drawableSize: drawableSize)
     }
     
-    func nextImage(descriptor: TextureDescriptor) -> (VulkanImage, VulkanContextWaitSemaphore) {
+    func nextImage(descriptor: TextureDescriptor) -> (VulkanImage, VkSemaphore) {
         if self.swapChain == nil {
             self.createSwapChain(drawableSize: descriptor.size)
         } else if descriptor.size != self.currentDrawableSize {

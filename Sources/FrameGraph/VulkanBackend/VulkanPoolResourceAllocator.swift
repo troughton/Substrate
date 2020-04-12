@@ -13,10 +13,10 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
  
     struct ResourceReference<R> {
         let resource : R
-        var waitSemaphore : VulkanContextWaitSemaphore
+        var waitSemaphore : ContextWaitEvent
         var framesUnused : Int = 0
         
-        init(resource: R, waitSemaphore: VulkanContextWaitSemaphore) {
+        init(resource: R, waitSemaphore: ContextWaitEvent) {
             self.resource = resource
             self.waitSemaphore = waitSemaphore
         }
@@ -45,7 +45,7 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
     }
   
     
-    private func imageFitting(descriptor: VulkanImageDescriptor) -> (VkImageReference, VulkanContextWaitSemaphore)? {
+    private func imageFitting(descriptor: VulkanImageDescriptor) -> (VkImageReference, ContextWaitEvent)? {
         
         for (i, imageRef) in self.images[currentIndex].enumerated() {
             if imageRef.resource.image.matches(descriptor: descriptor) {
@@ -57,7 +57,7 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
         return nil
     }
     
-    private func bufferFitting(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, VulkanContextWaitSemaphore)? {
+    private func bufferFitting(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, ContextWaitEvent)? {
         var bestIndex = -1
         var bestLength = UInt64.max
         
@@ -76,7 +76,7 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
         }
     }
 
-    func collectImage(descriptor: VulkanImageDescriptor) -> (VkImageReference, [VulkanEventHandle], VulkanContextWaitSemaphore) {
+    func collectImage(descriptor: VulkanImageDescriptor) -> (VkImageReference, [FenceDependency], ContextWaitEvent) {
         if let image = self.imageFitting(descriptor: descriptor) {
             return (image.0, [], image.1)
         } else {
@@ -92,11 +92,11 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
             
             let vulkanImage = VulkanImage(device: self.device, image: image!, allocator: self.allocator, allocation: allocation!, descriptor: descriptor)
             return (VkImageReference(image: Unmanaged.passRetained(vulkanImage)),
-                    [], VulkanContextWaitSemaphore())
+                    [], ContextWaitEvent())
         }
     }
     
-    func depositImage(_ image: VkImageReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore) {
+    func depositImage(_ image: VkImageReference, events: [FenceDependency], waitSemaphore: ContextWaitEvent) {
         assert(events.isEmpty)
         // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.
         // This slightly increases memory usage but greatly simplifies resource tracking, and besides, heaps should be used instead
@@ -104,7 +104,7 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
         self.imagesUsedThisFrame.append(ResourceReference(resource: image, waitSemaphore: waitSemaphore))
     }
     
-    func collectBuffer(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, [VulkanEventHandle], VulkanContextWaitSemaphore) {
+    func collectBuffer(descriptor: VulkanBufferDescriptor) -> (VkBufferReference, [FenceDependency], ContextWaitEvent) {
         if let buffer = self.bufferFitting(descriptor: descriptor) {
             return (buffer.0, [], buffer.1)
         } else {
@@ -121,11 +121,11 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
             
             let vulkanBuffer = VulkanBuffer(device: self.device, buffer: buffer!, allocator: self.allocator, allocation: allocation!, allocationInfo: allocationInfo, descriptor: descriptor)
             return (VkBufferReference(buffer: Unmanaged.passRetained(vulkanBuffer), offset: 0),
-                    [], VulkanContextWaitSemaphore())
+                    [], ContextWaitEvent())
         }
     }
     
-    func depositBuffer(_ buffer: VkBufferReference, events: [VulkanEventHandle], waitSemaphore: VulkanContextWaitSemaphore) {
+    func depositBuffer(_ buffer: VkBufferReference, events: [FenceDependency], waitSemaphore: ContextWaitEvent) {
         assert(events.isEmpty)
         // Delay returning the resource to the pool until the start of the next frame so we don't need to track hazards within the frame.
         // This slightly increases memory usage but greatly simplifies resource tracking, and besides, heaps should be used instead

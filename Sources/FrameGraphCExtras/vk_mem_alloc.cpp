@@ -4,5 +4,4 @@
 
 #include "include/vk_mem_alloc.h"
 
-
 #endif // __has_include(<vulkan/vulkan.h>)

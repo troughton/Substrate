@@ -27,7 +27,7 @@ final class MetalEncoderManager {
         self.resourceMap = resourceMap
     }
     
-    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : TextureUsageProperties], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) -> FGMTLRenderCommandEncoder? {
+    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : TextureUsageProperties]) -> FGMTLRenderCommandEncoder? {
         if descriptor === previousRenderTarget, let renderEncoder = self.renderEncoder {
             return renderEncoder
         } else {
@@ -109,7 +109,7 @@ public final class FGMTLParallelRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         if pass.commandRange!.count < FGMTLParallelRenderCommandEncoder.commandCountThreshold {
             if let currentEncoder = currentEncoder {
                 currentEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
@@ -174,7 +174,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
@@ -372,7 +372,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalCompactedResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -434,7 +434,7 @@ public final class FGMTLComputeCommandEncoder {
         self.baseBufferOffsets.deallocate()
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
@@ -528,7 +528,7 @@ public final class FGMTLComputeCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalCompactedResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -569,7 +569,7 @@ public final class FGMTLBlitCommandEncoder {
         self.encoder = encoder
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
@@ -644,7 +644,7 @@ public final class FGMTLBlitCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalCompactedResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -676,7 +676,7 @@ final class FGMTLExternalCommandEncoder {
         self.commandBuffer = commandBuffer
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         for (_, command) in zip(pass.commandRange!, pass.commands) {
             self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
         }

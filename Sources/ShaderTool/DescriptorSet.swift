@@ -212,7 +212,7 @@ final class DescriptorSet {
                     stream.print("assert(resource.binding.set == setIndex)")
 
                     stream.print("argBuffer.bindings.append(")
-                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: 0), .buffer(resource.wrappedValue, offset: resource.offset))")
+                    stream.print("(ResourceBindingPath(set: setIndex, binding: \(resource.binding.index), arrayIndex: 0), .buffer(resource.wrappedValue, offset: resource.offset))")
                     
                     stream.print(")")
                     stream.print("}")
@@ -234,11 +234,11 @@ final class DescriptorSet {
                 
                 switch resource.type {
                 case .texture:
-                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .texture(resource))")
+                    stream.print("(ResourceBindingPath(set: setIndex, binding: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .texture(resource))")
                 case .sampler:
-                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .sampler(resource))")
+                    stream.print("(ResourceBindingPath(set: setIndex, binding: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .sampler(resource))")
                 default:
-                    stream.print("(ResourceBindingPath(set: setIndex, index: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .buffer(resource, offset: self.$\(resource.name).offset))")
+                    stream.print("(ResourceBindingPath(set: setIndex, binding: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .buffer(resource, offset: self.$\(resource.name).offset))")
                 }
                 
                 stream.print(")")

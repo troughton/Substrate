@@ -24,6 +24,10 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         self.renderPasses.append(renderPass)
     }
     
+    convenience init(renderPass: RenderPassRecord) {
+        self.init(renderPass: renderPass.pass as! DrawRenderPass)
+    }
+    
     func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ desc: inout D?, with new: D?) -> Bool {
         guard let descriptor = desc else {
             desc = new
@@ -81,6 +85,10 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         
         return true
     }
+    
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
+        return self.descriptorMergedWithPass(pass.pass as! DrawRenderPass, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+     }
     
     func descriptorMergedWithPass(_ pass: DrawRenderPass, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
         if self.tryMerge(withPass: pass) {
