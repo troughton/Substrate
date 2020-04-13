@@ -75,7 +75,7 @@ enum Target : Hashable, CaseIterable {
     var needsHLSLLegalization: Bool {
         switch self {
         case .macOSMetal, .iOSMetal:
-            return true
+            return false
         case .vulkan:
             return true
         }
