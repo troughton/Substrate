@@ -20,7 +20,7 @@ struct MetalFrameCommandInfo {
         var passRange: Range<Int>
         var commandRange: Range<Int>
         
-        var queueCommandWaitIndices: QueueCommandIndices // NOT YET INITIALISED
+        var queueCommandWaitIndices: QueueCommandIndices
         
         var usesWindowTexture: Bool
     }
