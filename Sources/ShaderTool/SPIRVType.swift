@@ -137,7 +137,7 @@ indirect enum SPIRVType : Hashable {
             if ["AffineMatrix"].contains(name) {
                 return true
             }
-            if name.starts(with: "type_StructuredBuffer"),
+            if (name.starts(with: "type_StructuredBuffer") || name.starts(with: "type_RWStructuredBuffer")),
                 members.count == 1,
                 members[0].type.isKnownSwiftType {
                 return true

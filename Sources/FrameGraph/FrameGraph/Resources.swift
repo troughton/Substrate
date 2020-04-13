@@ -845,7 +845,7 @@ public struct Buffer : ResourceProtocol {
     
     public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
-            guard self.flags.contains(.persistent) else { return 0 }
+            guard self._usesPersistentRegistry else { return 0 }
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
             if type == .read {
                 return PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)]
@@ -854,12 +854,13 @@ public struct Buffer : ResourceProtocol {
             }
         }
         nonmutating set {
-            guard self.flags.contains(.persistent) else { return }
+            guard self._usesPersistentRegistry else { return }
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
             
-            if type == .read {
+            if type == .read || type == .readWrite {
                 PersistentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)] = newValue
-            } else {
+            }
+            if type == .write || type == .readWrite {
                 PersistentBufferRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)] = newValue
             }
         }
@@ -1126,12 +1127,13 @@ public struct Texture : ResourceProtocol {
             }
         }
         nonmutating set {
-            guard self.flags.contains(.persistent) else { return }
+            guard self._usesPersistentRegistry else { return }
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
             
-            if type == .read {
+            if type == .read || type == .readWrite {
                 PersistentTextureRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)] = newValue
-            } else {
+            }
+            if type == .write || type == .readWrite {
                 PersistentTextureRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)] = newValue
             }
         }

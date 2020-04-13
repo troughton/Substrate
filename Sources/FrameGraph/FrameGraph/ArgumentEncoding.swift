@@ -348,7 +348,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
     
     public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
-            guard self.flags.contains(.persistent) else { return 0 }
+            guard self._usesPersistentRegistry else { return 0 }
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
             if type == .read {
                 return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)]
@@ -357,12 +357,13 @@ public struct _ArgumentBuffer : ResourceProtocol {
             }
         }
         nonmutating set {
-            guard self.flags.contains(.persistent) else { return }
+            guard self._usesPersistentRegistry else { return }
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
             
-            if type == .read {
+            if type == .read || type == .readWrite {
                 PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)] = newValue
-            } else {
+            }
+            if type == .write || type == .readWrite {
                 PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)] = newValue
             }
         }
