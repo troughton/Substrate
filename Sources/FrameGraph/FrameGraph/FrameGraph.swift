@@ -19,6 +19,9 @@ public protocol RenderPass : class {
 }
 
 extension RenderPass {
+    public var name: String {
+        return String(reflecting: type(of: self))
+    }
     
     public var readResources : [Resource] { return [] }
     public var writtenResources : [Resource] { return [] }

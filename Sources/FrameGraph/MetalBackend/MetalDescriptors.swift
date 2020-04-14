@@ -107,7 +107,7 @@ extension MTLRenderPassAttachmentDescriptor {
 }
 
 extension MTLRenderPassColorAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
+    convenience init(_ descriptor: ColorAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         
@@ -118,7 +118,7 @@ extension MTLRenderPassColorAttachmentDescriptor {
 }
 
 extension MTLRenderPassDepthAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
+    convenience init(_ descriptor: DepthAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         
@@ -130,7 +130,7 @@ extension MTLRenderPassDepthAttachmentDescriptor {
 }
 
 extension MTLRenderPassStencilAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
+    convenience init(_ descriptor: StencilAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         

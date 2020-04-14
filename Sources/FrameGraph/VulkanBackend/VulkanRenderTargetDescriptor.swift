@@ -215,7 +215,7 @@ final class VulkanRenderTargetDescriptor {
         // Then, figure out dependencies; self-dependency if it's used as both an input and output attachment (implying GENERAL layout),
         // or inter-pass dependencies otherwise.
         
-        let isDepthStencil = (attachment is RenderTargetDepthAttachmentDescriptor) || (attachment is RenderTargetStencilAttachmentDescriptor)
+        let isDepthStencil = (attachment is DepthAttachmentDescriptor) || (attachment is StencilAttachmentDescriptor)
         
         let renderPassRange = Range(self.renderPasses.first!.passIndex...self.renderPasses.last!.passIndex)
         assert(renderPassRange.count == self.renderPasses.count)

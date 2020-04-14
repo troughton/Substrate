@@ -36,10 +36,19 @@ public protocol RenderTargetAttachmentDescriptor {
     var resolveDepthPlane : Int { get set }
 }
 
-public struct RenderTargetColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
+public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
 
-    public init(texture: Texture) {
+    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0, clearColor: ClearColor? = nil,
+                resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
         self.texture = texture
+        self.level = level
+        self.slice = slice
+        self.depthPlane = depthPlane
+        self.clearColor = clearColor
+        self.resolveTexture = resolveTexture
+        self.resolveLevel = resolveLevel
+        self.resolveSlice = resolveSlice
+        self.resolveDepthPlane = resolveDepthPlane
     }
     
     public var texture: Texture
@@ -78,10 +87,19 @@ public struct RenderTargetColorAttachmentDescriptor : RenderTargetAttachmentDesc
     
 }
 
-public struct RenderTargetDepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
+public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
     
-    public init(texture: Texture) {
+    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0, clearDepth: Double? = nil,
+                resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
         self.texture = texture
+        self.level = level
+        self.slice = slice
+        self.depthPlane = depthPlane
+        self.clearDepth = clearDepth
+        self.resolveTexture = resolveTexture
+        self.resolveLevel = resolveLevel
+        self.resolveSlice = resolveSlice
+        self.resolveDepthPlane = resolveDepthPlane
     }
     
     public var texture: Texture
@@ -119,10 +137,19 @@ public struct RenderTargetDepthAttachmentDescriptor : RenderTargetAttachmentDesc
     public var resolveDepthPlane : Int = 0
 }
 
-public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
+public struct StencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
     
-    public init(texture: Texture) {
+    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0, clearStencil: UInt32? = nil,
+                resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
         self.texture = texture
+        self.level = level
+        self.slice = slice
+        self.depthPlane = depthPlane
+        self.clearStencil = clearStencil
+        self.resolveTexture = resolveTexture
+        self.resolveLevel = resolveLevel
+        self.resolveSlice = resolveSlice
+        self.resolveDepthPlane = resolveDepthPlane
     }
     
     public var texture: Texture
@@ -161,6 +188,11 @@ public struct RenderTargetStencilAttachmentDescriptor : RenderTargetAttachmentDe
 }
 
 
+// For compatibility with old FrameGraph versions:
+public typealias RenderTargetColorAttachmentDescriptor = ColorAttachmentDescriptor
+public typealias RenderTargetDepthAttachmentDescriptor = DepthAttachmentDescriptor
+public typealias RenderTargetStencilAttachmentDescriptor = StencilAttachmentDescriptor
+
 public struct RenderTargetDescriptor : Hashable {
     
     @inlinable
@@ -169,17 +201,17 @@ public struct RenderTargetDescriptor : Hashable {
     }
     
     @inlinable
-    public init(colorAttachments: [RenderTargetColorAttachmentDescriptor?] = [], depthAttachment: RenderTargetDepthAttachmentDescriptor? = nil, stencilAttachment: RenderTargetStencilAttachmentDescriptor? = nil) {
+    public init(colorAttachments: [ColorAttachmentDescriptor?] = [], depthAttachment: DepthAttachmentDescriptor? = nil, stencilAttachment: StencilAttachmentDescriptor? = nil) {
         self.colorAttachments = colorAttachments
         self.depthAttachment = depthAttachment
         self.stencilAttachment = stencilAttachment
     }
     
-    public var colorAttachments : [RenderTargetColorAttachmentDescriptor?]
+    public var colorAttachments : [ColorAttachmentDescriptor?]
     
-    public var depthAttachment : RenderTargetDepthAttachmentDescriptor? = nil
+    public var depthAttachment : DepthAttachmentDescriptor? = nil
     
-    public var stencilAttachment : RenderTargetStencilAttachmentDescriptor? = nil
+    public var stencilAttachment : StencilAttachmentDescriptor? = nil
     
     public var visibilityResultBuffer: Buffer? = nil
     
@@ -202,7 +234,15 @@ public struct RenderTargetDescriptor : Hashable {
         return width == .max ? Size(length: 1) : Size(width: width, height: height, depth: 1)
     }
     
-    public static func areMergeable(_ descriptorA: RenderTargetDescriptor, _ descriptorB: RenderTargetDescriptor) -> Bool {
+    public var width: Int {
+        return self.size.width
+    }
+    
+    public var height: Int {
+        return self.size.height
+    }
+    
+    static func areMergeable(_ descriptorA: RenderTargetDescriptor, _ descriptorB: RenderTargetDescriptor) -> Bool {
         if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment, depthA.texture != depthB.texture || depthB.wantsClear {
             return false
         }
