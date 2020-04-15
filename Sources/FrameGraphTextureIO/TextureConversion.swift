@@ -11,16 +11,6 @@ import SwiftFrameGraph
 import tinyexr
 
 @inlinable
-func srgbToLinear(_ colour: Float) -> Float {
-    return colour <= 0.04045 ? (colour / 12.92) : pow((colour + 0.055) / 1.055, 2.4)
-}
-
-@inlinable
-func linearToSRGB(_ colour: Float) -> Float {
-    return colour <= 0.0031308 ? (colour * 12.92) : (1.055 * pow(colour, 1.0 / 2.4) - 0.055)
-}
-
-@inlinable
 func clamp<T: Comparable>(_ val: T, min minValue: T, max maxValue: T) -> T {
     return min(max(val, minValue), maxValue)
 }
@@ -74,6 +64,32 @@ public enum TextureLoadingError : Error {
 public enum TextureColourSpace : String, Codable, Hashable {
     case sRGB
     case linearSRGB
+
+    @inlinable
+    public func fromLinearSRGB(_ colour: Float) -> Float {
+        switch self {
+        case .sRGB:
+            return colour <= 0.04045 ? (colour / 12.92) : pow((colour + 0.055) / 1.055, 2.4)
+        case .linearSRGB:
+            return colour
+        }
+    }
+
+    @inlinable
+    public func toLinearSRGB(_ colour: Float) -> Float {
+        switch self {
+        case .sRGB:
+            return colour <= 0.04045 ? (colour / 12.92) : pow((colour + 0.055) / 1.055, 2.4)
+        case .linearSRGB:
+            return colour
+        }
+    }
+    
+    @inlinable
+    public static func convert(_ value: Float, from: TextureColourSpace, to: TextureColourSpace) -> Float {
+        let inLinearSRGB = from.toLinearSRGB(value)
+        return to.fromLinearSRGB(inLinearSRGB)
+    }
 }
 
 public enum TextureEdgeWrapMode {
@@ -100,8 +116,8 @@ public final class TextureData<T> {
     public let width : Int
     public let height : Int
     public let channels : Int
-    public let colourSpace : TextureColourSpace
-    public let premultipliedAlpha: Bool
+    public var colourSpace : TextureColourSpace
+    public var premultipliedAlpha: Bool
     
     public let data : UnsafeMutablePointer<T>
     let deallocateFunc : ((UnsafeMutablePointer<T>) -> Void)?
@@ -415,6 +431,11 @@ extension TextureData where T == Float {
                 
             }
         }
+    }
+    
+    public func convert(toColourSpace: TextureColourSpace) {
+        self.apply({ TextureColourSpace.convert($0, from: self.colourSpace, to: toColourSpace) }, channelRange: self.channels == 4 ? 0..<3 : 0..<self.channels)
+        self.colourSpace = toColourSpace
     }
     
     public var averageValue : SIMD4<Float> {
