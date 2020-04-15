@@ -404,7 +404,6 @@ extension TextureData where T == Float {
                     }
                 }
             } else {
-                let channelHeader = header.channels[c]
                 image.images.withMemoryRebound(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels)) { src in
                     for y in 0..<self.height {
                         for x in 0..<self.width {
