@@ -25,14 +25,6 @@ extension VulkanCommandEncoder {
         return self.commandBufferResources.commandBuffer
     }
     
-    var eventPool : VulkanEventPool.QueuePool {
-        return self.device.eventPool.poolForQueue(self.queueFamily)
-    }
-    
-    var semaphorePool : VulkanSemaphorePool {
-        return self.device.semaphorePool
-    }
-    
     func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }

@@ -49,10 +49,6 @@ public final class CommandBufferResources {
     }
     
     deinit {
-        for semaphore in self.waitSemaphores {
-            device.semaphorePool.depositSemaphore(semaphore.vkSemaphore)
-        }
-        
         // VulkanBuffers are reference counted
         // VulkanBufferViews are reference counted
         // VulkanImages are reference counted

@@ -55,9 +55,9 @@ public class VulkanSwapChain : SwapChain {
     
     private(set) var swapChain : VkSwapchainKHR? = nil
     private(set) var images : [VulkanImage] = []
-
-    private var currentImageIndex : Int? = nil
+    private var imageSemaphores : [VkSemaphore] = []
     
+    private var currentImageIndex : Int? = nil
     
     public var format: PixelFormat {
         return PixelFormat(self.surfaceFormat.format)
@@ -164,6 +164,13 @@ public class VulkanSwapChain : SwapChain {
             image.swapchainImageIndex = i
             return image
         }
+        
+        self.imageSemaphores = images.indices.map { _ in
+            var semaphore: VkSemaphore? = nil
+            var createInfo = VkSemaphoreCreateInfo(sType: VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, pNext: nil, flags: 0)
+            vkCreateSemaphore(self.device.vkDevice, &createInfo, nil, &semaphore)
+            return semaphore!
+        }
     }
     
     private func cleanupSwapChain() {
@@ -184,13 +191,13 @@ public class VulkanSwapChain : SwapChain {
             self.recreateSwapChain(drawableSize: descriptor.size)
         }
         
+        // TODO: reset the semaphores before usage (e.g. signal them
         var imageIndex = 0 as UInt32
-        let semaphore = self.device.semaphorePool.allocateSemaphore()
+        let semaphore = self.imageSemaphores[Int(imageIndex)]
         let result = vkAcquireNextImageKHR(device.vkDevice, self.swapChain, UInt64.max, semaphore, nil, &imageIndex)
         
         if result == VK_ERROR_OUT_OF_DATE_KHR {
             self.recreateSwapChain(drawableSize: descriptor.size)
-            self.device.semaphorePool.depositSemaphore(semaphore)
             return self.nextImage(descriptor: descriptor)
         } else if result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR {
             fatalError("Failed to acquire swap chain image.")
@@ -199,7 +206,7 @@ public class VulkanSwapChain : SwapChain {
         let image = self.images[Int(imageIndex)]
         self.currentImageIndex = Int(imageIndex)
         
-        fatalError("Need to return the VkSemaphore to wait on for this image. As of Vulkan 1.2, we still need to use binary semaphores for images, whereas everything else (including VulkanContextWaitSemaphores) should use counting semaphores.")
+        return (image, semaphore)
     }
     
     func submit() {

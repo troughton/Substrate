@@ -85,6 +85,7 @@ final class VulkanEventRegistry {
     }
     
     func delete(at index: UInt32) {
+        vkResetEvent(self.device, self.events[Int(index)])
         self.freeIndices.append(index)
     }
 
