@@ -730,7 +730,7 @@ extension VkPrimitiveTopology {
 }
 
 extension VkAttachmentDescription {
-    public init(pixelFormat: PixelFormat, renderTargetDescriptor: RenderTargetColorAttachmentDescriptor, actions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
+    public init(pixelFormat: PixelFormat, renderTargetDescriptor: ColorAttachmentDescriptor, actions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
         self.init()
         self.flags = 0
         self.format = VkFormat(pixelFormat: pixelFormat)
@@ -743,7 +743,7 @@ extension VkAttachmentDescription {
         self.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     }
     
-    public init(pixelFormat: PixelFormat, renderTargetDescriptor: RenderTargetDepthAttachmentDescriptor, depthActions: (VkAttachmentLoadOp, VkAttachmentStoreOp), stencilActions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
+    public init(pixelFormat: PixelFormat, renderTargetDescriptor: DepthAttachmentDescriptor, depthActions: (VkAttachmentLoadOp, VkAttachmentStoreOp), stencilActions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
         self.init()
         self.flags = 0
         self.format = VkFormat(pixelFormat: pixelFormat)

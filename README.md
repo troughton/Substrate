@@ -138,7 +138,7 @@ final class DebugDrawPass : DrawRenderPass {
         self.viewUniforms = viewUniforms
 
         var renderTargetDesc = RenderTargetDescriptor(identifierType: ScreenRenderTargetIndex.self)
-        renderTargetDesc[ScreenRenderTargetIndex.display] = RenderTargetColorAttachmentDescriptor(texture: outputTexture)
+        renderTargetDesc[ScreenRenderTargetIndex.display] = ColorAttachmentDescriptor(texture: outputTexture)
         renderTargetDesc[ScreenRenderTargetIndex.display]!.clearColor = ClearColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1.0)
 	self.renderTargetDescriptor = renderTargetDesc
     }

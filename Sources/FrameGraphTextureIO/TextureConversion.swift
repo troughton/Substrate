@@ -11,16 +11,6 @@ import SwiftFrameGraph
 import tinyexr
 
 @inlinable
-func srgbToLinear(_ colour: Float) -> Float {
-    return colour <= 0.04045 ? (colour / 12.92) : pow((colour + 0.055) / 1.055, 2.4)
-}
-
-@inlinable
-func linearToSRGB(_ colour: Float) -> Float {
-    return colour <= 0.0031308 ? (colour * 12.92) : (1.055 * pow(colour, 1.0 / 2.4) - 0.055)
-}
-
-@inlinable
 func clamp<T: Comparable>(_ val: T, min minValue: T, max maxValue: T) -> T {
     return min(max(val, minValue), maxValue)
 }
@@ -49,9 +39,22 @@ public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>
     return I(exactly: rescaled.rounded(.toNearestOrAwayFromZero))!
 }
 
+@inlinable
+public func snormToFloat<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ c: I) -> Float {
+    if c == I.min {
+        return -1.0
+    }
+    return Float(c) / Float(I.max)
+}
+
+@inlinable
+public func unormToFloat<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ c: I) -> Float {
+    return Float(c) / Float(I.max)
+}
+
 public enum TextureLoadingError : Error {
     case invalidFile(URL)
-    case exrParseError(URL, String)
+    case exrParseError(String)
     case unsupportedMultipartEXR(URL)
     case invalidChannelCount(URL, Int)
     case privateTextureRequiresFrameGraph
@@ -61,6 +64,32 @@ public enum TextureLoadingError : Error {
 public enum TextureColourSpace : String, Codable, Hashable {
     case sRGB
     case linearSRGB
+
+    @inlinable
+    public func fromLinearSRGB(_ colour: Float) -> Float {
+        switch self {
+        case .sRGB:
+            return colour <= 0.04045 ? (colour / 12.92) : pow((colour + 0.055) / 1.055, 2.4)
+        case .linearSRGB:
+            return colour
+        }
+    }
+
+    @inlinable
+    public func toLinearSRGB(_ colour: Float) -> Float {
+        switch self {
+        case .sRGB:
+            return colour <= 0.04045 ? (colour / 12.92) : pow((colour + 0.055) / 1.055, 2.4)
+        case .linearSRGB:
+            return colour
+        }
+    }
+    
+    @inlinable
+    public static func convert(_ value: Float, from: TextureColourSpace, to: TextureColourSpace) -> Float {
+        let inLinearSRGB = from.toLinearSRGB(value)
+        return to.fromLinearSRGB(inLinearSRGB)
+    }
 }
 
 public enum TextureEdgeWrapMode {
@@ -87,8 +116,8 @@ public final class TextureData<T> {
     public let width : Int
     public let height : Int
     public let channels : Int
-    public let colourSpace : TextureColourSpace
-    public let premultipliedAlpha: Bool
+    public var colourSpace : TextureColourSpace
+    public var premultipliedAlpha: Bool
     
     public let data : UnsafeMutablePointer<T>
     let deallocateFunc : ((UnsafeMutablePointer<T>) -> Void)?
@@ -117,6 +146,19 @@ public final class TextureData<T> {
         self.deallocateFunc = deallocateFunc
     }
     
+    public init(_ texture: TextureData<T>) {
+        self.width = texture.width
+        self.height = texture.height
+        self.channels = texture.channels
+        
+        self.data = .allocate(capacity: texture.width * texture.height * texture.channels)
+        self.data.initialize(from: texture.data, count: texture.width * texture.height * texture.channels)
+        
+        self.colourSpace = texture.colourSpace
+        self.premultipliedAlpha = texture.premultipliedAlpha
+        self.deallocateFunc = nil
+    }
+    
     deinit {
         if let deallocateFunc = self.deallocateFunc {
             deallocateFunc(self.data)
@@ -126,7 +168,19 @@ public final class TextureData<T> {
     }
     
     @inlinable
-    public subscript(x x: Int, y y: Int, channel channel: Int) -> T? {
+    public subscript(x: Int, y: Int, channel channel: Int) -> T {
+        get {
+            precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channels)
+            return self.data[y * self.width * self.channels + x * self.channels + channel]
+        }
+        set {
+            precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channels)
+            self.data[y * self.width * self.channels + x * self.channels + channel] = newValue
+        }
+    }
+    
+    @inlinable
+    public subscript(checked x: Int, y: Int, channel channel: Int) -> T? {
         guard x >= 0, y >= 0, channel >= 0,
             x < self.width, y < self.height, channel < self.channels else {
                 return nil
@@ -269,7 +323,7 @@ extension TextureData where T == Float {
             self.init(width: Int(width), height: Int(height), channels: Int(channels), colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
             
             for i in 0..<dataCount {
-                self.data[i] = (Float(data[i]) + 0.5) / Float(UInt16.max)
+                self.data[i] = unormToFloat(data[i])
             }
             
         } else {
@@ -279,18 +333,18 @@ extension TextureData where T == Float {
             self.init(width: Int(width), height: Int(height), channels: Int(channels), colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
             
             for i in 0..<dataCount {
-                self.data[i] = (Float(data[i]) + 0.5) / Float(UInt8.max)
+                self.data[i] = unormToFloat(data[i])
             }
         }
     }
     
     convenience init(exrAt url: URL, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false) throws {
-        var error : UnsafePointer<CChar>? = nil
-        
         var header = EXRHeader()
         InitEXRHeader(&header)
         var image = EXRImage()
         InitEXRImage(&image)
+        
+        var error: UnsafePointer<CChar>? = nil
         
         defer {
             FreeEXRImage(&image)
@@ -299,31 +353,34 @@ extension TextureData where T == Float {
         }
         
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
-        let result = data.withUnsafeBytes { data -> Int32 in
-            let memory = data.baseAddress!.assumingMemoryBound(to: UInt8.self)
+        try data.withUnsafeBytes { data in
+            
+            let memory = data.bindMemory(to: UInt8.self)
             
             var version = EXRVersion()
-            var result = ParseEXRVersionFromMemory(&version, memory, data.count)
+            var result = ParseEXRVersionFromMemory(&version, memory.baseAddress, memory.count)
             if result != TINYEXR_SUCCESS {
-                return result
+                throw TextureLoadingError.exrParseError("Unable to parse EXR version")
             }
             
-            result = ParseEXRHeaderFromMemory(&header, &version, memory, data.count, &error)
+            result = ParseEXRHeaderFromMemory(&header, &version, memory.baseAddress, memory.count, &error)
             if result != TINYEXR_SUCCESS {
-                return result
+                throw TextureLoadingError.exrParseError(String(cString: error!))
             }
             
             for i in 0..<Int(header.num_channels) {
                 header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT
             }
             
-            return LoadEXRImageFromMemory(&image, &header, memory, data.count, &error)
-        }
-        if result != TINYEXR_SUCCESS {
-            print("Error loading texture at \(url): \(String(cString: error!))")
+            result = LoadEXRImageFromMemory(&image, &header, memory.baseAddress, memory.count, &error)
+            if result != TINYEXR_SUCCESS {
+                throw TextureLoadingError.exrParseError(String(cString: error!))
+            }
         }
         
         self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
+        self.data.initialize(repeating: 0.0, count: self.width * self.height * self.channels)
+        
         
         for c in 0..<Int(image.num_channels) {
             let channelIndex : Int
@@ -342,37 +399,43 @@ extension TextureData where T == Float {
             
             if header.tiled != 0 {
                 for it in 0..<Int(image.num_tiles) {
-                    for j in 0..<header.tile_size_y {
-                        for i in 0..<header.tile_size_x {
-                            let ii =
-                                image.tiles![it].offset_x * header.tile_size_x + i
-                            let jj =
-                                image.tiles![it].offset_y * header.tile_size_y + j
-                            let idx = Int(ii + jj * image.width)
-                            
-                            // out of region check.
-                            if ii >= image.width || jj >= image.height {
-                                continue;
+                    image.tiles![it].images.withMemoryRebound(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels)) { src in
+                        for j in 0..<header.tile_size_y {
+                            for i in 0..<header.tile_size_x {
+                                let ii =
+                                    image.tiles![it].offset_x * header.tile_size_x + i
+                                let jj =
+                                    image.tiles![it].offset_y * header.tile_size_y + j
+                                let idx = Int(ii + jj * image.width)
+                                
+                                // out of region check.
+                                if ii >= image.width || jj >= image.height {
+                                    continue;
+                                }
+                                let srcIdx = Int(i + j * header.tile_size_x)
+                                
+                                self.data[self.channels * idx + channelIndex] = src[c][srcIdx]
                             }
-                            let srcIdx = Int(i + j * header.tile_size_x)
-                            
-                            let src = UnsafeRawPointer(image.tiles![it].images)!.assumingMemoryBound(to: UnsafePointer<Float>.self)
-                            self.data[self.channels * idx + channelIndex] = src[c][srcIdx]
                         }
                     }
                 }
             } else {
-                let channelHeader = header.channels[c]
-                let src = UnsafeRawPointer(image.images)!.assumingMemoryBound(to: UnsafePointer<Float>.self)
-                
-                for y in 0..<self.height - Int(channelHeader.pad.1) {
-                    for x in 0..<self.width - Int(channelHeader.pad.0) {
-                        let i = y &* self.width &+ x
-                        self.data[self.channels &* i + channelIndex] = src[c][i]
+                image.images.withMemoryRebound(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels)) { src in
+                    for y in 0..<self.height {
+                        for x in 0..<self.width {
+                            let i = y &* self.width &+ x
+                            self.data[self.channels &* i + channelIndex] = src[c][i]
+                        }
                     }
                 }
+                
             }
         }
+    }
+    
+    public func convert(toColourSpace: TextureColourSpace) {
+        self.apply({ TextureColourSpace.convert($0, from: self.colourSpace, to: toColourSpace) }, channelRange: self.channels == 4 ? 0..<3 : 0..<self.channels)
+        self.colourSpace = toColourSpace
     }
     
     public var averageValue : SIMD4<Float> {
