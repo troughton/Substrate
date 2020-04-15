@@ -358,9 +358,20 @@ public final class FrameGraph {
         self.renderPasses.append(RenderPassRecord(pass: renderPass, passIndex: self.renderPasses.count))
     }
     
+    public func addBlitCallbackPass(file: String = #file, line: Int = #line,
+                                    execute: @escaping (BlitCommandEncoder) -> Void) {
+        self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
+    }
+    
     public func addBlitCallbackPass(name: String,
                                     execute: @escaping (BlitCommandEncoder) -> Void) {
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
+    }
+    
+    public func addDrawCallbackPass(file: String = #file, line: Int = #line,
+                                    descriptor: RenderTargetDescriptor,
+                                    execute: @escaping (RenderCommandEncoder) -> Void) {
+        self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor, execute: execute))
     }
     
     public func addDrawCallbackPass(name: String,
@@ -369,16 +380,34 @@ public final class FrameGraph {
         self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor, execute: execute))
     }
     
+    public func addDrawCallbackPass<R>(file: String = #file, line: Int = #line,
+                                       descriptor: RenderTargetDescriptor,
+                                       reflection: R.Type,
+                                       execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+        self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor, reflection: reflection, execute: execute))
+    }
+    
     public func addDrawCallbackPass<R>(name: String,
                                        descriptor: RenderTargetDescriptor,
                                        reflection: R.Type,
                                        execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
         self.addPass(ReflectableCallbackDrawRenderPass(name: name, descriptor: descriptor, reflection: reflection, execute: execute))
     }
+
+    public func addComputeCallbackPass(file: String = #file, line: Int = #line,
+                                       execute: @escaping (ComputeCommandEncoder) -> Void) {
+        self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
+    }
     
     public func addComputeCallbackPass(name: String,
                                        execute: @escaping (ComputeCommandEncoder) -> Void) {
         self.addPass(CallbackComputeRenderPass(name: name, execute: execute))
+    }
+
+    public func addComputeCallbackPass<R>(file: String = #file, line: Int = #line,
+                                          reflection: R.Type,
+                                          execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
+        self.addPass(ReflectableCallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", reflection: reflection, execute: execute))
     }
     
     public func addComputeCallbackPass<R>(name: String,
@@ -387,9 +416,19 @@ public final class FrameGraph {
         self.addPass(ReflectableCallbackComputeRenderPass(name: name, reflection: reflection, execute: execute))
     }
     
+    public func addCPUCallbackPass(file: String = #file, line: Int = #line,
+                                   execute: @escaping () -> Void) {
+        self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
+    }
+    
     public func addCPUCallbackPass(name: String,
                                    execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: name, execute: execute))
+    }
+    
+    public func addExternalCallbackPass(file: String = #file, line: Int = #line,
+                                        execute: @escaping (ExternalCommandEncoder) -> Void) {
+        self.addPass(CallbackExternalRenderPass(name: "Anonymous External Encoder Pass at \(file):\(line)", execute: execute))
     }
     
     public func addExternalCallbackPass(name: String,
