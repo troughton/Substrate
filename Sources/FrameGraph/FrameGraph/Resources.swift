@@ -690,12 +690,12 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public subscript<T>(byteRange range: Range<Int>, as type: T.Type) -> BufferSlice<T> {
-        return self[byteRange: range, as: type, accessType: .readWrite]
+    public subscript<T>(as type: T.Type, accessType accessType: ResourceAccessType = .readWrite) -> BufferSlice<T> {
+        return self[byteRange: self.range, as: type, accessType: .readWrite]
     }
     
     @inlinable
-    public subscript<T>(byteRange range: Range<Int>, as type: T.Type, accessType accessType: ResourceAccessType) -> BufferSlice<T> {
+    public subscript<T>(byteRange range: Range<Int>, as type: T.Type, accessType accessType: ResourceAccessType = .readWrite) -> BufferSlice<T> {
         self.waitForCPUAccess(accessType: accessType)
         return BufferSlice(buffer: self, range: range, accessType: accessType)
     }
