@@ -80,6 +80,20 @@ public struct TextureDescriptor: Hashable {
         
     }
 
+    public init(type: TextureType, format: PixelFormat, width: Int, height: Int = 1, depth: Int = 1, mipmapped: Bool, storageMode: StorageMode = .private, usage: TextureUsage = []) {
+        self.init()
+        
+        self.pixelFormat = format
+        self.textureType = type
+        self.width = width
+        self.height = type == .typeCube ? width : height
+        self.depth = depth
+        self.mipmapLevelCount = mipmapped ? 1 + Int(floor(log2(Double(max(width, height))))) : 1
+        self.storageMode = storageMode
+        self.usageHint = usage
+    }
+    
+    @available(*, deprecated, message: "Use TextureDescriptor(type:) instead.")
     public init(texture2DWithFormat pixelFormat: PixelFormat, width: Int, height: Int, mipmapped: Bool, storageMode: StorageMode = .private, usageHint: TextureUsage = []) {
         var descriptor = TextureDescriptor()
         descriptor.pixelFormat = pixelFormat
@@ -92,6 +106,7 @@ public struct TextureDescriptor: Hashable {
         self = descriptor
     }
     
+    @available(*, deprecated, message: "Use TextureDescriptor(type:) instead.")
     public init(textureCubeWithFormat pixelFormat: PixelFormat, size: Int, mipmapped: Bool, storageMode: StorageMode = .private, usageHint: TextureUsage = []) {
         var descriptor = TextureDescriptor()
         descriptor.pixelFormat = pixelFormat

@@ -34,7 +34,7 @@ extension Texture {
         }
     }
     
-    public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .preferredForLoadedImage, usageHint: TextureUsage = .shaderRead) throws {
+    public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
         let pixelFormat: PixelFormat
         
         if url.pathExtension.lowercased() == "exr" {
@@ -50,7 +50,7 @@ extension Texture {
                 throw TextureLoadingError.invalidChannelCount(url, textureData.channels)
             }
             
-            let descriptor = TextureDescriptor(texture2DWithFormat: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usageHint: usageHint)
+            let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
             self = Texture(descriptor: descriptor, flags: .persistent)
             
             try self.copyData(from: textureData, mipmapped: mipmapped)
@@ -85,7 +85,7 @@ extension Texture {
                     throw TextureLoadingError.invalidChannelCount(url, textureData.channels)
                 }
                 
-                let descriptor = TextureDescriptor(texture2DWithFormat: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usageHint: usageHint)
+                let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                 self = Texture(descriptor: descriptor, flags: .persistent)
                 
                 try self.copyData(from: textureData, mipmapped: mipmapped)
@@ -105,7 +105,7 @@ extension Texture {
                     throw TextureLoadingError.invalidChannelCount(url, textureData.channels)
                 }
                 
-                let descriptor = TextureDescriptor(texture2DWithFormat: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usageHint: usageHint)
+                let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                 self = Texture(descriptor: descriptor, flags: .persistent)
                 
                 try self.copyData(from: textureData, mipmapped: mipmapped)
@@ -124,7 +124,7 @@ extension Texture {
                     throw TextureLoadingError.invalidChannelCount(url, textureData.channels)
                 }
                 
-                let descriptor = TextureDescriptor(texture2DWithFormat: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usageHint: usageHint)
+                let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                 self = Texture(descriptor: descriptor, flags: .persistent)
                 
                 try self.copyData(from: textureData, mipmapped: mipmapped)

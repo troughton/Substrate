@@ -1224,7 +1224,7 @@ public struct Texture : ResourceProtocol {
         }
     }
     
-    public static let invalid = Texture(descriptor: TextureDescriptor(texture2DWithFormat: .r32Float, width: 1, height: 1, mipmapped: false, storageMode: .private, usageHint: .shaderRead), flags: .persistent)
+    public static let invalid = Texture(descriptor: TextureDescriptor(type: .type2D, format: .r32Float, width: 1, height: 1, mipmapped: false, storageMode: .private, usage: .shaderRead), flags: .persistent)
     
 }
 
