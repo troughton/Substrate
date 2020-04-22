@@ -39,7 +39,6 @@ final class MetalStateCaches {
     
     let defaultDepthState : MTLDepthStencilState
     private var depthStates = [(DepthStencilDescriptor, MTLDepthStencilState)]()
-    private var samplerStates = [(SamplerDescriptor, MTLSamplerState)]()
     
     public init(device: MTLDevice, libraryPath: String?) {
         self.device = device
@@ -228,18 +227,6 @@ final class MetalStateCaches {
     
     public func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> MetalPipelineReflection? {
         return self.reflection(for: descriptor)?.0
-    }
-    
-    public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
-        if let (_, state) = self.samplerStates.first(where: { $0.0 == descriptor }) {
-            return state
-        }
-        
-        let mtlDescriptor = MTLSamplerDescriptor(descriptor)
-        let state = self.device.makeSamplerState(descriptor: mtlDescriptor)!
-        self.samplerStates.append((descriptor, state))
-        
-        return state
     }
     
     public subscript(descriptor: DepthStencilDescriptor) -> MTLDepthStencilState {

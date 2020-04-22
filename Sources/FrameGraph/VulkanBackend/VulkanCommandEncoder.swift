@@ -16,7 +16,7 @@ protocol VulkanCommandEncoder : class {
     var queueFamily : QueueFamily { get }
     
     var commandBufferResources: CommandBufferResources { get }
-    var resourceMap : VulkanFrameResourceMap { get }
+    var resourceMap : FrameResourceMap<VulkanBackend> { get }
 }
 
 extension VulkanCommandEncoder {
@@ -25,54 +25,20 @@ extension VulkanCommandEncoder {
         return self.commandBufferResources.commandBuffer
     }
     
-    var eventPool : VulkanEventPool.QueuePool {
-        return self.device.eventPool.poolForQueue(self.queueFamily)
-    }
-    
-    var semaphorePool : VulkanSemaphorePool {
-        return self.device.semaphorePool
-    }
-    
-    func checkResourceCommands(_ resourceCommands: [VulkanFrameResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
             switch resourceCommands[resourceCommandIndex].command {
             case .signalEvent(let event, let afterStages):
-                vkCmdSetEvent(self.commandBufferResources.commandBuffer, event.event, VkPipelineStageFlags(afterStages))
+                vkCmdSetEvent(self.commandBufferResources.commandBuffer, event, VkPipelineStageFlags(afterStages))
                 
-            case .waitForEvent(let event, let barrierInfo):
-                var vkEvent = event.event as VkEvent?
+            case .waitForEvents(let events, let sourceStages, let destinationStages, let memoryBarriers, let bufferMemoryBarriers, let imageMemoryBarriers):
                 
-                switch barrierInfo.barrier {
-                case .texture(let textureHandle, var imageBarrier):
-                    let texture = self.resourceMap[textureHandle]
-                    imageBarrier.image = texture.vkImage
-                    vkCmdWaitEvents(self.commandBufferResources.commandBuffer, 1, &vkEvent, VkPipelineStageFlags(barrierInfo.sourceMask), VkPipelineStageFlags(barrierInfo.destinationMask), 0, nil, 0, nil, 1, &imageBarrier)
-                    vkCmdResetEvent(self.commandBufferResources.commandBuffer, vkEvent, VkPipelineStageFlags(barrierInfo.destinationMask))
-                    
-                    texture.layout = imageBarrier.newLayout
-                case .buffer(let bufferHandle, var bufferBarrier):
-                    let buffer = self.resourceMap[bufferHandle]
-                    bufferBarrier.buffer = buffer.buffer.vkBuffer
-                    vkCmdWaitEvents(self.commandBufferResources.commandBuffer, 1, &vkEvent, VkPipelineStageFlags(barrierInfo.sourceMask), VkPipelineStageFlags(barrierInfo.destinationMask), 0, nil, 1, &bufferBarrier, 0, nil)
-                    vkCmdResetEvent(self.commandBufferResources.commandBuffer, vkEvent, VkPipelineStageFlags(barrierInfo.destinationMask))
-                }
+                vkCmdWaitEvents(self.commandBuffer, UInt32(events.count), events.baseAddress, VkPipelineStageFlags(sourceStages), VkPipelineStageFlags(destinationStages), UInt32(memoryBarriers.count), memoryBarriers.baseAddress, UInt32(bufferMemoryBarriers.count), bufferMemoryBarriers.baseAddress, UInt32(imageMemoryBarriers.count), imageMemoryBarriers.baseAddress)
                 
-            case .pipelineBarrier(let barrier):
-                switch barrier.barrier {
-                case .buffer(let bufferHandle, var barrierInfo):
-                    let buffer = self.resourceMap[bufferHandle]
-                    barrierInfo.buffer = buffer.buffer.vkBuffer
-                    vkCmdPipelineBarrier(self.commandBufferResources.commandBuffer, VkPipelineStageFlags(barrier.sourceMask), VkPipelineStageFlags(barrier.destinationMask), 0, 0, nil, 1, &barrierInfo, 0, nil)
-                    
-                case .texture(let textureHandle, var barrierInfo):
-                    let texture = self.resourceMap[textureHandle]
-                    barrierInfo.image = texture.vkImage
-                    vkCmdPipelineBarrier(self.commandBufferResources.commandBuffer, VkPipelineStageFlags(barrier.sourceMask), VkPipelineStageFlags(barrier.destinationMask), 0, 0, nil, 0, nil, 1, &barrierInfo)
-                    
-                    texture.layout = barrierInfo.newLayout
-                }
+            case .pipelineBarrier(let sourceStages, let destinationStages, let dependencyFlags, let memoryBarriers, let bufferMemoryBarriers, let imageMemoryBarriers):
+                vkCmdPipelineBarrier(self.commandBuffer, VkPipelineStageFlags(sourceStages), VkPipelineStageFlags(destinationStages), VkDependencyFlags(dependencyFlags), UInt32(memoryBarriers.count), memoryBarriers.baseAddress, UInt32(bufferMemoryBarriers.count), bufferMemoryBarriers.baseAddress, UInt32(imageMemoryBarriers.count), imageMemoryBarriers.baseAddress)
             }
         }
     }
@@ -156,33 +122,37 @@ final class EncoderManager {
         }
     }
     
-    func endEncoding(completion: @escaping () -> Void) {
+    func endEncoding() {
         self.endEncoding(for: self.renderEncoder)
         self.endEncoding(for: self.computeEncoder)
         self.endEncoding(for: self.blitEncoder)
         
-        for queue in self.device.queues {
-            let fence = self.device.fencePool.allocateFence()
-            self.commandBufferResources[0].fences.append(fence)
-            queue.submit(fence: fence)
-        }
-        
         let device = frameGraph.backend.device.vkDevice
         
-        let fences = self.commandBufferResources[0].fences
+        fatalError()
         
-        DispatchQueue.global().async {
-            fences.withUnsafeBufferPointer { fences in
-                vkWaitForFences(device, UInt32(fences.count), fences.baseAddress, true, UInt64.max).check()
-            }
-            // DispatchQueue.main.async {
-            // FIXME: re-entrancy to the main thread seems broken in Windows Dispatch.
-            // However, 'completion' is safe since it's only a semaphore signal.
-            completion()
-            // }
-            
-            self.frameGraph.markCommandBufferResourcesCompleted(self.commandBufferResources)
-        }
+//        for queue in self.device.queues {
+//            let fence = self.device.fencePool.allocateFence()
+//            self.commandBufferResources[0].fences.append(fence)
+//            queue.submit(fence: fence)
+//        }
+//        
+//        
+//        let fences = self.commandBufferResources[0].fences
+//        
+//        DispatchQueue.global().async {
+//            var waitInfo = VkSemaphoreWaitInfo()
+//            waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO
+//            waitInfo.semaphoreCount = 1
+//            
+//            vkWaitSemaphores(device, <#T##pWaitInfo: UnsafePointer<VkSemaphoreWaitInfo>!##UnsafePointer<VkSemaphoreWaitInfo>!#>, .max).check()
+//            fences.withUnsafeBufferPointer { fences in
+//                vkWaitForFences(device, UInt32(fences.count), fences.baseAddress, true, UInt64.max).check()
+//            }
+//            completion()
+//            
+//            self.frameGraph.markCommandBufferResourcesCompleted(self.commandBufferResources)
+//        }
     }
 }
 

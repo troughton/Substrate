@@ -9,7 +9,7 @@
 
 import Metal
 
-final class MetalRenderTargetDescriptor {
+final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var descriptor : RenderTargetDescriptor
     var renderPasses = [DrawRenderPass]()
     
@@ -22,6 +22,10 @@ final class MetalRenderTargetDescriptor {
     init(renderPass: DrawRenderPass) {
         self.descriptor = renderPass.renderTargetDescriptor
         self.renderPasses.append(renderPass)
+    }
+    
+    convenience init(renderPass: RenderPassRecord) {
+        self.init(renderPass: renderPass.pass as! DrawRenderPass)
     }
     
     func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ desc: inout D?, with new: D?) -> Bool {
@@ -81,6 +85,10 @@ final class MetalRenderTargetDescriptor {
         
         return true
     }
+    
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
+        return self.descriptorMergedWithPass(pass.pass as! DrawRenderPass, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+     }
     
     func descriptorMergedWithPass(_ pass: DrawRenderPass, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
         if self.tryMerge(withPass: pass) {

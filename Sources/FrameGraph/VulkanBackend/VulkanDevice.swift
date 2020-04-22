@@ -202,10 +202,6 @@ public final class VulkanDevice {
     public let physicalDevice : VulkanPhysicalDevice
     let vkDevice : VkDevice
     
-    private(set) var eventPool : VulkanEventPool! = nil
-    private(set) var semaphorePool : VulkanSemaphorePool! = nil
-    private(set) var fencePool : VulkanFencePool! = nil
-    
     private(set) var queues : [VulkanQueue] = []
     
     init?(physicalDevice: VulkanPhysicalDevice) {
@@ -262,10 +258,6 @@ public final class VulkanDevice {
         
         if device == nil { return nil }
         self.vkDevice = device!
-        
-        self.eventPool = VulkanEventPool(device: self)
-        self.semaphorePool = VulkanSemaphorePool(device: self)
-        self.fencePool = VulkanFencePool(device: self)
         
         let queueIndices = physicalDevice.queueFamilyIndices
         

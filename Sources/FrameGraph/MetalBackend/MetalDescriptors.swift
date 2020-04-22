@@ -88,15 +88,15 @@ extension MTLSamplerDescriptor {
 
 
 extension MTLRenderPassAttachmentDescriptor {
-    func fill(from descriptor: RenderTargetAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
+    func fill(from descriptor: RenderTargetAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
         
         let texture = descriptor.texture
-        self.texture = try resourceMap.renderTargetTexture(texture)
+        self.texture = try resourceMap.renderTargetTexture(texture).texture
         self.level = descriptor.level
         self.slice = descriptor.slice
         self.depthPlane = descriptor.depthPlane
         
-        self.resolveTexture = try descriptor.resolveTexture.map { try resourceMap.renderTargetTexture($0) }
+        self.resolveTexture = try descriptor.resolveTexture.map { try resourceMap.renderTargetTexture($0).texture }
         self.resolveLevel = descriptor.resolveLevel
         self.resolveSlice = descriptor.resolveSlice
         self.resolveDepthPlane = descriptor.resolveDepthPlane
@@ -107,7 +107,7 @@ extension MTLRenderPassAttachmentDescriptor {
 }
 
 extension MTLRenderPassColorAttachmentDescriptor {
-    convenience init(_ descriptor: ColorAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
+    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         
@@ -118,7 +118,7 @@ extension MTLRenderPassColorAttachmentDescriptor {
 }
 
 extension MTLRenderPassDepthAttachmentDescriptor {
-    convenience init(_ descriptor: DepthAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
+    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         
@@ -130,7 +130,7 @@ extension MTLRenderPassDepthAttachmentDescriptor {
 }
 
 extension MTLRenderPassStencilAttachmentDescriptor {
-    convenience init(_ descriptor: StencilAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: MetalFrameResourceMap) throws {
+    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         
@@ -141,7 +141,7 @@ extension MTLRenderPassStencilAttachmentDescriptor {
 }
 
 extension MTLRenderPassDescriptor {
-    convenience init(_ descriptorWrapper: MetalRenderTargetDescriptor, resourceMap: MetalFrameResourceMap) throws {
+    convenience init(_ descriptorWrapper: MetalRenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>) throws {
         self.init()
         let descriptor = descriptorWrapper.descriptor
         

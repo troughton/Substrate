@@ -34,8 +34,8 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     private var frameBuffers = [Unmanaged<MTLBuffer>]()
     private var frameTextures = [Unmanaged<MTLTexture>]()
 
-    private var waitEventValue : UInt64 = 0
-    private var nextFrameWaitEventValue : UInt64 = 0
+    private var waitEvent : ContextWaitEvent = .init()
+    private var nextFrameWaitEvent : ContextWaitEvent = .init()
     
     let device : MTLDevice
     
@@ -58,7 +58,8 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     }
     
     public func cycleFrames() {
-        self.waitEventValue = self.nextFrameWaitEventValue
+        self.waitEvent = self.nextFrameWaitEvent
+        self.nextFrameWaitEvent = .init()
         
         for i in (1..<MetalHeapResourceAllocator.historyFrames).reversed() {
             self.frameMemoryUsages[i] = self.frameMemoryUsages[i - 1]
@@ -90,7 +91,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         return self.aliasingFences
     }
     
-    private func depositResource(_ resource: MTLResource, fences: [FenceDependency], waitEvent: MetalContextWaitEvent) {
+    private func depositResource(_ resource: MTLResource, fences: [FenceDependency], waitEvent: ContextWaitEvent) {
         let aliasingIndex = self.resourceAliasingIndices.removeValue(forKey: ObjectIdentifier(resource))!
 
         guard resource.heap === self.heap else {
@@ -112,10 +113,15 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         resource.makeAliasable()
 
         self.nextAliasingIndex += 1
-        self.nextFrameWaitEventValue = waitEvent.waitValue
+        
+        if self.nextFrameWaitEvent.waitValue < waitEvent.waitValue {
+            self.nextFrameWaitEvent = waitEvent
+        } else {
+            self.nextFrameWaitEvent.afterStages.formUnion(waitEvent.afterStages)
+        }
     }
     
-    public func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [FenceDependency], MetalContextWaitEvent) {
+    public func collectTextureWithDescriptor(_ descriptor: MTLTextureDescriptor) -> (MTLTextureReference, [FenceDependency], ContextWaitEvent) {
         let sizeAndAlign = self.device.heapTextureSizeAndAlign(descriptor: descriptor)
         let availableSize = self.heap?.maxAvailableSize(alignment: sizeAndAlign.align) ?? 0
         var textureOpt : MTLTextureReference? = nil
@@ -129,15 +135,15 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         }
         
         let fences = self.useResource(texture.resource)
-        return (texture, fences, MetalContextWaitEvent(waitValue: self.waitEventValue))
+        return (texture, fences, self.waitEvent)
     }
     
-    public func depositTexture(_ texture: MTLTextureReference, fences: [FenceDependency], waitEvent: MetalContextWaitEvent) {
+    public func depositTexture(_ texture: MTLTextureReference, fences: [FenceDependency], waitEvent: ContextWaitEvent) {
         self.depositResource(texture.resource, fences: fences, waitEvent: waitEvent)
         self.frameTextures.append(texture._texture)
     }
     
-    public func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [FenceDependency], MetalContextWaitEvent) {
+    public func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {
         let sizeAndAlign = self.device.heapBufferSizeAndAlign(length: length, options: options)
         let availableSize = self.heap?.maxAvailableSize(alignment: sizeAndAlign.align) ?? 0
         var bufferOpt : MTLBufferReference? = nil
@@ -152,10 +158,10 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         self.nextAliasingIndex += 1
         
         let fences = self.useResource(buffer.resource)
-        return (buffer, fences, MetalContextWaitEvent(waitValue: self.waitEventValue))
+        return (buffer, fences, self.waitEvent)
     }
     
-    public func depositBuffer(_ buffer: MTLBufferReference, fences: [FenceDependency], waitEvent: MetalContextWaitEvent) {
+    public func depositBuffer(_ buffer: MTLBufferReference, fences: [FenceDependency], waitEvent: ContextWaitEvent) {
         self.depositResource(buffer.resource, fences: fences, waitEvent: waitEvent)
         self.frameBuffers.append(buffer._buffer)
     }

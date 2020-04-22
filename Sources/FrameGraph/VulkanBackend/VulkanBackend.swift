@@ -12,7 +12,17 @@ import FrameGraphCExtras
 import FrameGraphUtilities
 import Foundation
 
-public final class VulkanBackend : _RenderBackendProtocol {
+public final class VulkanBackend : SpecificRenderBackend {
+    typealias BufferReference = VkBufferReference
+    typealias TextureReference = VkImageReference
+    typealias ArgumentBufferReference = VulkanArgumentBuffer
+    typealias ArgumentBufferArrayReference = VulkanArgumentBuffer
+    typealias SamplerReference = VkSampler
+    
+    typealias TransientResourceRegistry = VulkanTransientResourceRegistry
+    typealias PersistentResourceRegistry = VulkanPersistentResourceRegistry
+    
+    typealias RenderTargetDescriptor = VulkanRenderTargetDescriptor
     
     public var api: RenderAPI {
         return .vulkan
@@ -27,13 +37,15 @@ public final class VulkanBackend : _RenderBackendProtocol {
     
     var activeContext : VulkanFrameGraphContext? = nil
     
+    var queueSyncSemaphores = [VkSemaphore?](repeating: nil, count: QueueRegistry.maxQueues)
+    
     public init(instance: VulkanInstance, surface: VkSurfaceKHR, shaderLibraryURL: URL) {
         self.vulkanInstance = instance
         let physicalDevice = self.vulkanInstance.createSystemDefaultDevice(surface: surface)!
         
         self.device = VulkanDevice(physicalDevice: physicalDevice)!
         
-        self.resourceRegistry = VulkanPersistentResourceRegistry(device: self.device)
+        self.resourceRegistry = VulkanPersistentResourceRegistry(instance: instance, device: self.device)
         self.shaderLibrary = try! VulkanShaderLibrary(device: self.device, url: shaderLibraryURL)
         self.stateCaches = VulkanStateCaches(device: self.device, shaderLibrary: self.shaderLibrary)
         
@@ -51,16 +63,14 @@ public final class VulkanBackend : _RenderBackendProtocol {
     }
     
     public func materialisePersistentTexture(_ texture: Texture) -> Bool {
-        let usage = VkImageUsageFlagBits(texture.descriptor.usageHint, pixelFormat: texture.descriptor.pixelFormat)
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateTexture(texture, usage: usage, sharingMode: VulkanSharingMode(usage: usage, queueIndices: self.device.physicalDevice.queueFamilyIndices), initialLayout: VK_IMAGE_LAYOUT_UNDEFINED) != nil
+            return self.resourceRegistry.allocateTexture(texture, usage: TextureUsageProperties(usage: texture.descriptor.usageHint)) != nil
         }
     }
     
     public func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
-        let usage = VkBufferUsageFlagBits(buffer.descriptor.usageHint)
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateBuffer(buffer, usage: usage, sharingMode: VulkanSharingMode(usage: usage, queueIndices: self.device.physicalDevice.queueFamilyIndices)) != nil
+            return self.resourceRegistry.allocateBuffer(buffer, usage: buffer.descriptor.usageHint) != nil
         }
     }
     
@@ -113,7 +123,7 @@ public final class VulkanBackend : _RenderBackendProtocol {
                 let bufferReference = resourceRegistry[buffer]
                 return bufferReference?.buffer.vkBuffer
             } else if let texture = resource.texture {
-                return resourceRegistry[texture]?.vkImage
+                return resourceRegistry[texture]?.image.vkImage
             }
             return nil
         }
@@ -128,7 +138,7 @@ public final class VulkanBackend : _RenderBackendProtocol {
     }
     
     @usableFromInline
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection? {
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: SwiftFrameGraph.RenderTargetDescriptor) -> PipelineReflection? {
         return self.stateCaches.reflection(for: descriptor, renderTarget: renderTarget)
     }
     
@@ -171,6 +181,24 @@ public final class VulkanBackend : _RenderBackendProtocol {
     @usableFromInline
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath {
         return ResourceBindingPath(argumentBuffer: UInt32(index))
+    }
+    
+    // MARK: - SpecificRenderBackend conformance
+    
+    static var requiresResourceResidencyTracking: Bool {
+        return false
+    }
+    
+    static var requiresBufferUsage: Bool {
+        return true
+    }
+    
+    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
+        fatalError()
+    }
+    
+    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
+        fatalError()
     }
 }
 

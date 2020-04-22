@@ -348,7 +348,7 @@ extension ArgumentReflection {
             renderAPIStages.formUnion(.fragment)
         }
 
-        self.init(isActive: true, type: resourceType, bindingPath: resource.bindingPath, usageType: usageType, stages: renderAPIStages)
+        self.init(type: resourceType, bindingPath: resource.bindingPath, usageType: usageType, activeStages: renderAPIStages)
     }
 }
 

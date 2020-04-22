@@ -85,7 +85,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         rasterisationState.depthBiasSlopeFactor = 0
         rasterisationState.lineWidth = 1.0
         
-        var multisampleState = VkPipelineMultisampleStateCreateInfo(self.descriptor)
+        var multisampleState = VkPipelineMultisampleStateCreateInfo(self.descriptor, sampleCount: 1)
         multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
         multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
         multisampleState.sampleShadingEnable = false
@@ -242,7 +242,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     let stateCaches : VulkanStateCaches
     let commandBufferResources : CommandBufferResources
     let renderTarget : VulkanRenderTargetDescriptor
-    let resourceMap: VulkanFrameResourceMap
+    let resourceMap: FrameResourceMap<VulkanBackend>
     
     var renderPass : VulkanRenderPass! = nil
     var currentDrawRenderPass : DrawRenderPass! = nil
@@ -251,7 +251,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     
     var boundVertexBuffers = [Buffer?](repeating: nil, count: 8)
     
-    public init(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: CommandBufferResources, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: VulkanFrameResourceMap) {
+    public init(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: CommandBufferResources, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: FrameResourceMap<VulkanBackend>) {
         self.device = device
         self.renderTarget = renderTarget
         self.commandBufferResources = commandBufferResources
@@ -365,7 +365,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             vkCmdEndRenderPass(self.commandBuffer)
 
             for (texture, layout) in self.renderTarget.finalLayouts {
-                self.resourceMap[texture].layout = layout
+                self.resourceMap[texture].image.layout = layout
             }
 
             return false
@@ -377,7 +377,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     }
     
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [VulkanFrameResourceCommand], passRenderTarget: RenderTargetDescriptor) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>], passRenderTarget: RenderTargetDescriptor) {
         try! self.beginPass(pass)
         defer { _ = self.endPass(pass) }
         

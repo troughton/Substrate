@@ -15,19 +15,19 @@ final class MetalEncoderManager {
     static let useParallelEncoding = false
     
     private let commandBuffer : MTLCommandBuffer
-    private let resourceMap : MetalFrameResourceMap
+    private let resourceMap : FrameResourceMap<MetalBackend>
     private var previousRenderTarget : MetalRenderTargetDescriptor? = nil
     
     private var renderEncoder : FGMTLRenderCommandEncoder? = nil
     private var computeEncoder : FGMTLComputeCommandEncoder? = nil
     private var blitEncoder : FGMTLBlitCommandEncoder? = nil
     
-    init(commandBuffer: MTLCommandBuffer, resourceMap: MetalFrameResourceMap) {
+    init(commandBuffer: MTLCommandBuffer, resourceMap: FrameResourceMap<MetalBackend>) {
         self.commandBuffer = commandBuffer
         self.resourceMap = resourceMap
     }
     
-    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : MetalTextureUsageProperties], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) -> FGMTLRenderCommandEncoder? {
+    func renderCommandEncoder(descriptor: MetalRenderTargetDescriptor, textureUsages: [Texture : TextureUsageProperties]) -> FGMTLRenderCommandEncoder? {
         if descriptor === previousRenderTarget, let renderEncoder = self.renderEncoder {
             return renderEncoder
         } else {
@@ -109,7 +109,7 @@ public final class FGMTLParallelRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         if pass.commandRange!.count < FGMTLParallelRenderCommandEncoder.commandCountThreshold {
             if let currentEncoder = currentEncoder {
                 currentEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
@@ -174,7 +174,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
@@ -192,7 +192,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         self.encoder.endEncoding()
     }
     
-    func executeCommand(_ command: FrameGraphCommand, encoder: MTLRenderCommandEncoder, renderTarget: RenderTargetDescriptor, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: FrameGraphCommand, encoder: MTLRenderCommandEncoder, renderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         switch command {
         case .clearRenderTargets:
             break
@@ -300,7 +300,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             }
             
         case .setTexture(let args):
-            let mtlTexture = resourceMap[args.pointee.texture]
+            let mtlTexture = resourceMap[args.pointee.texture].texture
             
             let mtlBindingPath = args.pointee.bindingPath
             let stages = mtlBindingPath.stages
@@ -312,7 +312,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             }
             
         case .setSamplerState(let args):
-            let state = stateCaches[args.pointee.descriptor]
+            let state = resourceMap[args.pointee.descriptor]
             
             let mtlBindingPath = args.pointee.bindingPath
             let stages = mtlBindingPath.stages
@@ -372,7 +372,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalCompactedResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -434,7 +434,7 @@ public final class FGMTLComputeCommandEncoder {
         self.baseBufferOffsets.deallocate()
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
@@ -444,7 +444,7 @@ public final class FGMTLComputeCommandEncoder {
         }
     }
     
-    func executeCommand(_ command: FrameGraphCommand, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: FrameGraphCommand, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         switch command {
         case .insertDebugSignpost(let cString):
             encoder.insertDebugSignpost(String(cString: cString))
@@ -495,11 +495,11 @@ public final class FGMTLComputeCommandEncoder {
         case .setTexture(let args):
             let mtlBindingPath = args.pointee.bindingPath
             let mtlTexture = resourceMap[args.pointee.texture]
-            encoder.setTexture(mtlTexture, index: mtlBindingPath.bindIndex)
+            encoder.setTexture(mtlTexture.texture, index: mtlBindingPath.bindIndex)
             
         case .setSamplerState(let args):
             let mtlBindingPath = args.pointee.bindingPath
-            let state = stateCaches[args.pointee.descriptor]
+            let state = resourceMap[args.pointee.descriptor]
             encoder.setSamplerState(state, index: mtlBindingPath.bindIndex)
             
         case .dispatchThreads(let args):
@@ -528,7 +528,7 @@ public final class FGMTLComputeCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalCompactedResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -569,7 +569,7 @@ public final class FGMTLBlitCommandEncoder {
         self.encoder = encoder
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
@@ -579,7 +579,7 @@ public final class FGMTLBlitCommandEncoder {
         }
     }
     
-    func executeCommand(_ command: FrameGraphCommand, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: FrameGraphCommand, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         switch command {
         case .insertDebugSignpost(let cString):
             encoder.insertDebugSignpost(String(cString: cString))
@@ -595,7 +595,7 @@ public final class FGMTLBlitCommandEncoder {
             
         case .copyBufferToTexture(let args):
             let sourceBuffer = resourceMap[args.pointee.sourceBuffer]
-            encoder.copy(from: sourceBuffer.buffer, sourceOffset: Int(args.pointee.sourceOffset) + sourceBuffer.offset, sourceBytesPerRow: Int(args.pointee.sourceBytesPerRow), sourceBytesPerImage: Int(args.pointee.sourceBytesPerImage), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture], destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin), options: MTLBlitOption(args.pointee.options))
+            encoder.copy(from: sourceBuffer.buffer, sourceOffset: Int(args.pointee.sourceOffset) + sourceBuffer.offset, sourceBytesPerRow: Int(args.pointee.sourceBytesPerRow), sourceBytesPerImage: Int(args.pointee.sourceBytesPerImage), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture].texture, destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin), options: MTLBlitOption(args.pointee.options))
             
         case .copyBufferToBuffer(let args):
             let sourceBuffer = resourceMap[args.pointee.sourceBuffer]
@@ -604,10 +604,10 @@ public final class FGMTLBlitCommandEncoder {
             
         case .copyTextureToBuffer(let args):
             let destinationBuffer = resourceMap[args.pointee.destinationBuffer]
-            encoder.copy(from: resourceMap[args.pointee.sourceTexture], sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: destinationBuffer.buffer, destinationOffset: Int(args.pointee.destinationOffset) + destinationBuffer.offset, destinationBytesPerRow: Int(args.pointee.destinationBytesPerRow), destinationBytesPerImage: Int(args.pointee.destinationBytesPerImage), options: MTLBlitOption(args.pointee.options))
+            encoder.copy(from: resourceMap[args.pointee.sourceTexture].texture, sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: destinationBuffer.buffer, destinationOffset: Int(args.pointee.destinationOffset) + destinationBuffer.offset, destinationBytesPerRow: Int(args.pointee.destinationBytesPerRow), destinationBytesPerImage: Int(args.pointee.destinationBytesPerImage), options: MTLBlitOption(args.pointee.options))
             
         case .copyTextureToTexture(let args):
-            encoder.copy(from: resourceMap[args.pointee.sourceTexture], sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture], destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin))
+            encoder.copy(from: resourceMap[args.pointee.sourceTexture].texture, sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture].texture, destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin))
             
         case .fillBuffer(let args):
             let buffer = resourceMap[args.pointee.buffer]
@@ -615,18 +615,18 @@ public final class FGMTLBlitCommandEncoder {
             encoder.fill(buffer: buffer.buffer, range: range, value: args.pointee.value)
             
         case .generateMipmaps(let texture):
-            encoder.generateMipmaps(for: resourceMap[texture])
+            encoder.generateMipmaps(for: resourceMap[texture].texture)
             
         case .synchroniseTexture(let textureHandle):
             #if os(macOS) || targetEnvironment(macCatalyst)
-            encoder.synchronize(resource: resourceMap[textureHandle])
+            encoder.synchronize(resource: resourceMap[textureHandle].texture)
             #else
             break
             #endif
             
         case .synchroniseTextureSlice(let args):
             #if os(macOS) || targetEnvironment(macCatalyst)
-            encoder.synchronize(texture: resourceMap[args.pointee.texture], slice: Int(args.pointee.slice), level: Int(args.pointee.level))
+            encoder.synchronize(texture: resourceMap[args.pointee.texture].texture, slice: Int(args.pointee.slice), level: Int(args.pointee.level))
             #else
             break
             #endif
@@ -644,7 +644,7 @@ public final class FGMTLBlitCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [MetalCompactedResourceCommand], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: MetalFrameResourceMap) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -676,13 +676,13 @@ final class FGMTLExternalCommandEncoder {
         self.commandBuffer = commandBuffer
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [MetalCompactedResourceCommand], resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         for (_, command) in zip(pass.commandRange!, pass.commands) {
             self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
         }
     }
     
-    func executeCommand(_ command: FrameGraphCommand, resourceMap: MetalFrameResourceMap, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: FrameGraphCommand, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         switch command {
         case .encodeRayIntersection(let args):
             let intersector = args.pointee.intersector.takeUnretainedValue()

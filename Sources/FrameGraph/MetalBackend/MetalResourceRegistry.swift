@@ -11,11 +11,6 @@ import Metal
 import MetalKit
 import FrameGraphUtilities
 
-/// The value to wait for on the event associated with this FrameGraph context.
-struct MetalContextWaitEvent {
-    var waitValue : UInt64 = 0
-}
-
 protocol MTLResourceReference {
     associatedtype Resource : MTLResource
     var resource : Resource { get }
@@ -61,75 +56,10 @@ struct MTLTextureReference : MTLResourceReference {
     }
 }
 
-struct MetalFrameResourceMap {
-    let persistentRegistry : MetalPersistentResourceRegistry
-    let transientRegistry : MetalTransientResourceRegistry
+final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     
-    subscript(buffer: Buffer) -> MTLBufferReference {
-        if buffer._usesPersistentRegistry {
-            return persistentRegistry[buffer]!
-        } else {
-            return transientRegistry[buffer]!
-        }
-    }
+    typealias Backend = MetalBackend
     
-    subscript(texture: Texture) -> MTLTexture {
-        if texture._usesPersistentRegistry {
-            return persistentRegistry[texture]!
-        } else {
-            return transientRegistry[texture]!
-        }
-    }
- 
-    subscript(textureReference texture: Texture) -> MTLTextureReference {
-        if texture._usesPersistentRegistry {
-            return persistentRegistry[textureReference: texture]!
-        } else {
-            return transientRegistry[textureReference: texture]!
-        }
-    }
-    
-    subscript(buffer: _ArgumentBuffer) -> MTLBufferReference {
-        if buffer._usesPersistentRegistry {
-            return persistentRegistry[buffer]!
-        } else {
-            return transientRegistry[buffer]!
-        }
-    }
-    
-    subscript(buffer: _ArgumentBufferArray) -> MTLBufferReference {
-        if buffer._usesPersistentRegistry {
-            return persistentRegistry[buffer]!
-        } else {
-            return transientRegistry[buffer]!
-        }
-    }
-    
-    func bufferForCPUAccess(_ buffer: Buffer) -> MTLBufferReference {
-        if buffer._usesPersistentRegistry {
-            return persistentRegistry[buffer]!
-        } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateBufferIfNeeded(buffer, forceGPUPrivate: false) }
-        }
-    }
-    
-    func textureForCPUAccess(_ texture: Texture) -> MTLTexture {
-        if texture._usesPersistentRegistry {
-            return persistentRegistry[texture]!
-        } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: MetalTextureUsageProperties(texture.descriptor.usageHint), forceGPUPrivate: false)! }
-        }
-    }
-    
-    func renderTargetTexture(_ texture: Texture) throws -> MTLTexture {
-        if texture.flags.contains(.windowHandle) {
-            return try self.transientRegistry.allocateWindowHandleTexture(texture, persistentRegistry: persistentRegistry)
-        }
-        return self[texture]
-    }
-}
-
-final class MetalPersistentResourceRegistry {
     var accessLock = ReaderWriterLock()
     
     var heapReferences = PersistentResourceMap<Heap, MTLHeap>()
@@ -139,6 +69,8 @@ final class MetalPersistentResourceRegistry {
     var argumentBufferArrayReferences = PersistentResourceMap<_ArgumentBufferArray, MTLBufferReference>() 
     
     var windowReferences = [Texture : CAMetalLayer]()
+    
+    var samplerReferences = [SamplerDescriptor : MTLSamplerState]()
     
     private let device : MTLDevice
     
@@ -180,7 +112,7 @@ final class MetalPersistentResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, properties: MetalTextureUsageProperties) -> MTLTexture? {
+    public func allocateTexture(_ texture: Texture, usage: TextureUsageProperties) -> MTLTextureReference? {
         precondition(texture._usesPersistentRegistry)
         
         if texture.flags.contains(.windowHandle) {
@@ -191,7 +123,7 @@ final class MetalPersistentResourceRegistry {
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
         
-        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage)
+        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: MTLTextureUsage(usage.usage))
         
         let mtlTexture : MTLTextureReference
         if let heap = texture.heap {
@@ -213,11 +145,11 @@ final class MetalPersistentResourceRegistry {
         assert(self.textureReferences[texture] == nil)
         self.textureReferences[texture] = mtlTexture
         
-        return mtlTexture.texture
+        return mtlTexture
     }
     
     @discardableResult
-    public func allocateBuffer(_ buffer: Buffer) -> MTLBufferReference? {
+    public func allocateBuffer(_ buffer: Buffer, usage: BufferUsage) -> MTLBufferReference? {
         precondition(buffer._usesPersistentRegistry)
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
@@ -306,28 +238,12 @@ final class MetalPersistentResourceRegistry {
         }
     }
     
-    public subscript(texture: Texture) -> MTLTexture? {
-        return self.textureReferences[texture]?.texture
-    }
-
-    public subscript(texture texture: Texture.Handle) -> MTLTexture? {
-        return self.textureReferences[Texture(handle: texture)]!.texture
-    }
-
-    public subscript(textureReference texture: Texture) -> MTLTextureReference? {
-        return self.textureReferences[texture]!
-    }
-
-    public subscript(textureReference texture: Texture.Handle) -> MTLTextureReference? {
-        return self.textureReferences[Texture(handle: texture)]!
+    public subscript(texture: Texture) -> MTLTextureReference? {
+        return self.textureReferences[texture]
     }
 
     public subscript(buffer: Buffer) -> MTLBufferReference? {
         return self.bufferReferences[buffer]
-    }
-
-    public subscript(buffer buffer: Buffer.Handle) -> MTLBufferReference? {
-        return self.bufferReferences[Buffer(handle: buffer)]
     }
 
     public subscript(argumentBuffer: _ArgumentBuffer) -> MTLBufferReference? {
@@ -336,6 +252,19 @@ final class MetalPersistentResourceRegistry {
 
     public subscript(argumentBufferArray: _ArgumentBufferArray) -> MTLBufferReference? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
+    }
+    
+    
+    public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
+        if let state = self.samplerReferences[descriptor] {
+            return state
+        }
+        
+        let mtlDescriptor = MTLSamplerDescriptor(descriptor)
+        let state = self.device.makeSamplerState(descriptor: mtlDescriptor)!
+        self.samplerReferences[descriptor] = state
+        
+        return state
     }
 
     func disposeHeap(_ heap: Heap) {
@@ -373,7 +302,10 @@ final class MetalPersistentResourceRegistry {
 }
 
 
-final class MetalTransientResourceRegistry {
+final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
+    
+    typealias Backend = MetalBackend
+    
     let persistentRegistry : MetalPersistentResourceRegistry
     var accessLock = SpinLock()
     
@@ -382,11 +314,11 @@ final class MetalTransientResourceRegistry {
     private var argumentBufferReferences : TransientResourceMap<_ArgumentBuffer, MTLBufferReference>
     private var argumentBufferArrayReferences : TransientResourceMap<_ArgumentBufferArray, MTLBufferReference>
     
-    var textureWaitEvents : TransientResourceMap<Texture, MetalContextWaitEvent>
-    var bufferWaitEvents : TransientResourceMap<Buffer, MetalContextWaitEvent>
-    var argumentBufferWaitEvents : TransientResourceMap<_ArgumentBuffer, MetalContextWaitEvent>
-    var argumentBufferArrayWaitEvents : TransientResourceMap<_ArgumentBufferArray, MetalContextWaitEvent>
-    var historyBufferResourceWaitEvents = [Resource : MetalContextWaitEvent]() // since history buffers use the persistent (rather than transient) resource maps.
+    var textureWaitEvents : TransientResourceMap<Texture, ContextWaitEvent>
+    var bufferWaitEvents : TransientResourceMap<Buffer, ContextWaitEvent>
+    var argumentBufferWaitEvents : TransientResourceMap<_ArgumentBuffer, ContextWaitEvent>
+    var argumentBufferArrayWaitEvents : TransientResourceMap<_ArgumentBufferArray, ContextWaitEvent>
+    var historyBufferResourceWaitEvents = [Resource : ContextWaitEvent]() // since history buffers use the persistent (rather than transient) resource maps.
     
     private var heapResourceUsageFences = [Resource : [FenceDependency]]()
     private var heapResourceDisposalFences = [Resource : [FenceDependency]]()
@@ -538,7 +470,7 @@ final class MetalTransientResourceRegistry {
         return self.frameArgumentBufferAllocator
     }
     
-    func isAliasedHeapResource(resource: Resource) -> Bool {
+    static func isAliasedHeapResource(resource: Resource) -> Bool {
         let flags = resource.flags
         let storageMode : StorageMode = resource.storageMode
         
@@ -554,14 +486,14 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, properties: MetalTextureUsageProperties, forceGPUPrivate: Bool) -> MTLTexture? {
+    public func allocateTexture(_ texture: Texture, properties: TextureUsageProperties, forceGPUPrivate: Bool) -> MTLTextureReference {
         if texture.flags.contains(.windowHandle) {
             // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
             self.textureReferences[texture] = MTLTextureReference(windowTexture: ())
-            return nil
+            return MTLTextureReference(windowTexture: ())
         }
         
-        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage)
+        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: MTLTextureUsage(properties.usage))
         
         #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         if properties.canBeMemoryless {
@@ -570,7 +502,7 @@ final class MetalTransientResourceRegistry {
         }
         #endif
         
-        let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
+        let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, MTLTextureUsage(properties.usage)))
         let (mtlTexture, fences, waitEvent) = allocator.collectTextureWithDescriptor(descriptor)
         
         if let label = texture.label {
@@ -592,11 +524,11 @@ final class MetalTransientResourceRegistry {
             self.heapResourceUsageFences[Resource(texture)] = fences
         }
         
-        return mtlTexture.texture
+        return mtlTexture
     }
     
     @discardableResult
-    public func allocateTextureView(_ texture: Texture, properties: MetalTextureUsageProperties) -> MTLTexture? {
+    public func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties) -> MTLTextureReference {
         assert(texture.flags.intersection([.persistent, .windowHandle, .externalOwnership]) == [])
         
         let mtlTexture : MTLTexture
@@ -604,29 +536,29 @@ final class MetalTransientResourceRegistry {
         let baseResource = texture.baseResource!
         switch texture.textureViewBaseInfo! {
         case .buffer(let bufferInfo):
-            let mtlBuffer = self[buffer: baseResource.handle]!
-            let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: properties.usage)
+            let mtlBuffer = self[baseResource.buffer!]!
+            let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: MTLTextureUsage(usage.usage))
             mtlTexture = mtlBuffer.resource.makeTexture(descriptor: descriptor, offset: bufferInfo.offset, bytesPerRow: bufferInfo.bytesPerRow)!
         case .texture(let textureInfo):
-            let baseTexture = self[texture: baseResource.handle]!
+            let baseTexture = self[baseResource.texture!]!
             if textureInfo.levels.lowerBound == -1 || textureInfo.slices.lowerBound == -1 {
                 assert(textureInfo.levels.lowerBound == -1 && textureInfo.slices.lowerBound == -1)
-                mtlTexture = baseTexture.makeTextureView(pixelFormat: MTLPixelFormat(textureInfo.pixelFormat))!
+                mtlTexture = baseTexture.texture.makeTextureView(pixelFormat: MTLPixelFormat(textureInfo.pixelFormat))!
             } else {
-                mtlTexture = baseTexture.makeTextureView(pixelFormat: MTLPixelFormat(textureInfo.pixelFormat), textureType: MTLTextureType(textureInfo.textureType), levels: textureInfo.levels, slices: textureInfo.slices)!
+                mtlTexture = baseTexture.texture.makeTextureView(pixelFormat: MTLPixelFormat(textureInfo.pixelFormat), textureType: MTLTextureType(textureInfo.textureType), levels: textureInfo.levels, slices: textureInfo.slices)!
             }
         }
         
         assert(self.textureReferences[texture] == nil)
-        self.textureReferences[texture] = MTLTextureReference(texture: Unmanaged.passRetained(mtlTexture))
-        return mtlTexture
+        let textureReference = MTLTextureReference(texture: Unmanaged.passRetained(mtlTexture))
+        self.textureReferences[texture] = textureReference
+        return textureReference
     }
     
     @discardableResult
-    public func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: MetalPersistentResourceRegistry) throws -> MTLTexture {
-        precondition( texture.flags.contains(.windowHandle))
+    public func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: MetalPersistentResourceRegistry) throws -> MTLTextureReference {
+        precondition(texture.flags.contains(.windowHandle))
         
-        var mtlTexture : MTLTexture! = nil
         var error : RenderTargetTextureError? = nil
         
         // Retrieving the drawable needs to be done on the main thread.
@@ -636,8 +568,7 @@ final class MetalTransientResourceRegistry {
         FrameGraph.jobManager.syncOnMainThread {
              autoreleasepool {
                 // The texture reference should always be present but the texture itself might not be.
-                if let texture = self.textureReferences[texture]!._texture {
-                    mtlTexture = texture.takeUnretainedValue()
+                if self.textureReferences[texture]!._texture != nil {
                     return
                 }
                 
@@ -651,7 +582,6 @@ final class MetalTransientResourceRegistry {
                 if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
                     self.frameDrawables.append(mtlDrawable)
                     self.textureReferences[texture]!._texture = Unmanaged.passUnretained(drawableTexture) // since it's owned by the MTLDrawable
-                    mtlTexture = drawableTexture
                     return
                 } else {
                     // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
@@ -665,7 +595,7 @@ final class MetalTransientResourceRegistry {
         if let error = error {
             throw error
         } else {
-            return mtlTexture
+            return self.textureReferences[texture]!
         }
     }
     
@@ -702,23 +632,24 @@ final class MetalTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> MTLBufferReference {
+    public func allocateBufferIfNeeded(_ buffer: Buffer, usage: BufferUsage, forceGPUPrivate: Bool) -> MTLBufferReference {
         if let mtlBuffer = self.bufferReferences[buffer] {
             return mtlBuffer
         }
         return self.allocateBuffer(buffer, forceGPUPrivate: forceGPUPrivate)!
     }
     
+    
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, usage: MetalTextureUsageProperties, forceGPUPrivate: Bool) -> MTLTexture? {
-        if let mtlTexture = self.textureReferences[texture]?.texture {
-            assert(mtlTexture.pixelFormat == MTLPixelFormat(texture.descriptor.pixelFormat))
+    public func allocateTextureIfNeeded(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> MTLTextureReference {
+        if let mtlTexture = self.textureReferences[texture] {
+            assert(mtlTexture.texture.pixelFormat == MTLPixelFormat(texture.descriptor.pixelFormat))
             return mtlTexture
         }
         return self.allocateTexture(texture, properties: usage, forceGPUPrivate: forceGPUPrivate)
     }
     
-    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [FenceDependency], MetalContextWaitEvent) {
+    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {
 //        #if os(macOS)
 //        let options : MTLResourceOptions = [.storageModeManaged, .frameGraphTrackedHazards]
 //        #else
@@ -782,28 +713,12 @@ final class MetalTransientResourceRegistry {
         }
     }
     
-    public subscript(texture: Texture) -> MTLTexture? {
-        return self.textureReferences[texture]?.texture
-    }
-
-    public subscript(texture texture: Texture.Handle) -> MTLTexture? {
-        return self.textureReferences[Texture(handle: texture)]!.texture
-    }
-
-    public subscript(textureReference texture: Texture) -> MTLTextureReference? {
-        return self.textureReferences[texture]!
-    }
-
-    public subscript(textureReference texture: Texture.Handle) -> MTLTextureReference? {
-        return self.textureReferences[Texture(handle: texture)]!
+    public subscript(texture: Texture) -> MTLTextureReference? {
+        return self.textureReferences[texture]
     }
 
     public subscript(buffer: Buffer) -> MTLBufferReference? {
         return self.bufferReferences[buffer]
-    }
-
-    public subscript(buffer buffer: Buffer.Handle) -> MTLBufferReference? {
-        return self.bufferReferences[Buffer(handle: buffer)]
     }
 
     public subscript(argumentBuffer: _ArgumentBuffer) -> MTLBufferReference? {
@@ -820,12 +735,12 @@ final class MetalTransientResourceRegistry {
         perform(&self.heapResourceUsageFences[resource, default: []])
     }
     
-    func setDisposalFences<R : ResourceProtocol>(on resource: R, to fences: [FenceDependency]) {
-        assert(self.isAliasedHeapResource(resource: Resource(resource)))
-        self.heapResourceDisposalFences[Resource(resource)] = fences
+    func setDisposalFences(on resource: Resource, to fences: [FenceDependency]) {
+        assert(Self.isAliasedHeapResource(resource: resource))
+        self.heapResourceDisposalFences[resource] = fences
     }
     
-    func disposeTexture(_ texture: Texture, waitEvent: MetalContextWaitEvent) {
+    func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent) {
         // We keep the reference around until the end of the frame since allocation/disposal is all processed ahead of time.
         
         let textureRef : MTLTextureReference?
@@ -846,7 +761,7 @@ final class MetalTransientResourceRegistry {
             }
             
             var fences : [FenceDependency] = []
-            if self.isAliasedHeapResource(resource: Resource(texture)) {
+            if Self.isAliasedHeapResource(resource: Resource(texture)) {
                 fences = self.heapResourceDisposalFences[Resource(texture)] ?? []
             }
             
@@ -855,7 +770,7 @@ final class MetalTransientResourceRegistry {
         }
     }
     
-    func disposeBuffer(_ buffer: Buffer, waitEvent: MetalContextWaitEvent) {
+    func disposeBuffer(_ buffer: Buffer, waitEvent: ContextWaitEvent) {
         // We keep the reference around until the end of the frame since allocation/disposal is all processed ahead of time.
         
         let bufferRef : MTLBufferReference?
@@ -869,7 +784,7 @@ final class MetalTransientResourceRegistry {
         
         if let mtlBuffer = bufferRef {
             var fences : [FenceDependency] = []
-            if self.isAliasedHeapResource(resource: Resource(buffer)) {
+            if Self.isAliasedHeapResource(resource: Resource(buffer)) {
                 fences = self.heapResourceDisposalFences[Resource(buffer)] ?? []
             }
             
@@ -878,23 +793,18 @@ final class MetalTransientResourceRegistry {
         }
     }
     
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, waitEvent: MetalContextWaitEvent) {
+    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, waitEvent: ContextWaitEvent) {
         if let mtlBuffer = self.argumentBufferReferences[buffer] {
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)
         }
     }
     
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, waitEvent: MetalContextWaitEvent) {
+    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, waitEvent: ContextWaitEvent) {
         if let mtlBuffer = self.argumentBufferArrayReferences[buffer] {
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)
         }
-    }
-    
-    func registerInitialisedHistoryBufferForDisposal(resource: Resource) {
-        assert(resource.flags.contains(.historyBuffer) && resource.stateFlags.contains(.initialised))
-        resource.dispose() // This will dispose it in the FrameGraph persistent allocator, which will in turn call dispose here at the end of the frame.
     }
     
     func clearDrawables() {

@@ -226,6 +226,23 @@ extension ArgumentReflection {
 
 //MARK: To Metal
 
+extension MTLBarrierScope {
+    init(_ barrierScope: BarrierScope) {
+        self = []
+        if barrierScope.contains(.buffers) {
+            self.formUnion(.buffers)
+        }
+        if barrierScope.contains(.textures) {
+            self.formUnion(.textures)
+        }
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        if barrierScope.contains(.renderTargets) {
+            self.formUnion(.renderTargets)
+        }
+        #endif
+    }
+}
+
 extension MTLBlendFactor {
     public init(_ blendFactor: BlendFactor) {
         self.init(rawValue: blendFactor.rawValue)!

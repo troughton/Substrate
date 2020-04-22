@@ -8,13 +8,13 @@
 import Foundation
 
 
-struct MetalFrameCommandInfo {
+struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     
     struct CommandEncoderInfo {
         var name: String
         var type: RenderPassType
         
-        var renderTargetDescriptor: MetalRenderTargetDescriptor?
+        var renderTargetDescriptor: Backend.RenderTargetDescriptor?
         var commandBufferIndex: Int
         
         var passRange: Range<Int>
@@ -36,7 +36,7 @@ struct MetalFrameCommandInfo {
         self.baseCommandBufferSignalValue = initialCommandBufferSignalValue
         
         var storedTextures = [Texture]()
-        let renderTargetDescriptors = MetalFrameCommandInfo.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+        let renderTargetDescriptors = FrameCommandInfo.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages, storedTextures: &storedTextures)
         self.storedTextures = storedTextures
         
         assert(passes.enumerated().allSatisfy({ $0 == $1.passIndex }))
@@ -131,16 +131,16 @@ struct MetalFrameCommandInfo {
     // Generates a render target descriptor, if applicable, for each pass.
     // MetalRenderTargetDescriptor is a reference type, so we can check if two passes share a render target
     // (and therefore MTLRenderCommandEncoder)
-    private static func generateRenderTargetDescriptors(passes: [RenderPassRecord], resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> [MetalRenderTargetDescriptor?] {
-        var descriptors = [MetalRenderTargetDescriptor?](repeating: nil, count: passes.count)
+    private static func generateRenderTargetDescriptors(passes: [RenderPassRecord], resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> [Backend.RenderTargetDescriptor?] {
+        var descriptors = [Backend.RenderTargetDescriptor?](repeating: nil, count: passes.count)
         
-        var currentDescriptor : MetalRenderTargetDescriptor? = nil
+        var currentDescriptor : Backend.RenderTargetDescriptor? = nil
         for (i, passRecord) in passes.enumerated() {
-            if let renderPass = passRecord.pass as? DrawRenderPass {
+            if passRecord.pass.passType == .draw {
                 if let descriptor = currentDescriptor {
-                    currentDescriptor = descriptor.descriptorMergedWithPass(renderPass, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+                    currentDescriptor = descriptor.descriptorMergedWithPass(passRecord, resourceUsages: resourceUsages, storedTextures: &storedTextures)
                 } else {
-                    currentDescriptor = MetalRenderTargetDescriptor(renderPass: renderPass)
+                    currentDescriptor = Backend.RenderTargetDescriptor(renderPass: passRecord)
                 }
             } else {
                 currentDescriptor?.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)

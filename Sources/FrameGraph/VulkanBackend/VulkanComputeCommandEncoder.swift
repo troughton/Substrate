@@ -94,13 +94,13 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
     
     let device : VulkanDevice
     let commandBufferResources: CommandBufferResources
-    let resourceMap: VulkanFrameResourceMap
+    let resourceMap: FrameResourceMap<VulkanBackend>
     let stateCaches : VulkanStateCaches
     
     var bindingManager : ResourceBindingManager! = nil
     var pipelineState : PipelineState! = nil
     
-    public init(device: VulkanDevice, commandBuffer: CommandBufferResources, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: VulkanFrameResourceMap) {
+    public init(device: VulkanDevice, commandBuffer: CommandBufferResources, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: FrameResourceMap<VulkanBackend>) {
         self.device = device
         self.commandBufferResources = commandBuffer
         self.stateCaches = caches
@@ -144,7 +144,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
         self.bindingManager.bindDescriptorSets()
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [VulkanFrameResourceCommand]) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>]) {
          var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {

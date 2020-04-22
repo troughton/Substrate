@@ -141,7 +141,7 @@ final class ResourceBindingManager {
             descriptorWrite.descriptorType = VkDescriptorType(resource.type, dynamic: false)!
             descriptorWrite.dstSet = self.mutableSet
             
-            let image = bindingManager.resourceMap[texture]
+            let image = bindingManager.resourceMap[texture].image
             bindingManager.commandBufferResources.images.append(image)
             
             var imageInfo = VkDescriptorImageInfo()
@@ -168,7 +168,7 @@ final class ResourceBindingManager {
             descriptorWrite.dstSet = self.mutableSet
             
             var imageInfo = VkDescriptorImageInfo()
-            imageInfo.sampler = bindingManager.stateCaches[descriptor]
+            imageInfo.sampler = bindingManager.resourceMap[descriptor]
             
             withUnsafePointer(to: &imageInfo) { imageInfo in
                 descriptorWrite.pImageInfo = imageInfo
@@ -200,7 +200,7 @@ final class ResourceBindingManager {
         return self.encoder.device
     }
     
-    var resourceMap : VulkanFrameResourceMap {
+    var resourceMap : FrameResourceMap<VulkanBackend> {
         return self.encoder.resourceMap
     }
     
