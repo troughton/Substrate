@@ -176,6 +176,7 @@ final class MetalDriver {
         let arguments = ["-sdk", target.metalSDK!,
                          "metal", "-c", "-ffast-math",
                          "-Wno-unused-const-variable", // Ignore warnings for unused function constants
+                         "-Wno-unused-variable", // Ignore warnings for unused variables
             "-gline-tables-only", debug ? "-MO" : "-O",
             target.metalTargetVersion!,
             sourceFile.path,

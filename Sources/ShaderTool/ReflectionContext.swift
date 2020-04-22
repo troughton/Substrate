@@ -389,7 +389,7 @@ final class RenderPass {
             self.boundResources.insert(resource, at: insertionPoint)
         }
         
-        self.attachmentCount = max(self.attachmentCount, compiler.attachments.count)
+        self.attachmentCount = max(self.attachmentCount, compiler.attachments.max(by: { $0.index < $1.index }).map { $0.index + 1 } ?? 0)
         
         return true
     }

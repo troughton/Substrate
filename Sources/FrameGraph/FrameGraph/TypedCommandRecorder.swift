@@ -180,7 +180,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.set6 = R.Set6()
         self.set7 = R.Set7()
         
-        self.pipeline = TypedRenderPipelineDescriptor(attachmentCount: R.attachmentCount)
+        self.pipeline = TypedRenderPipelineDescriptor(attachmentCount: encoder.drawRenderPass.renderTargetDescriptor.colorAttachments.count)
         self.encoder.depthStencilDescriptor = DepthStencilDescriptor()
     }
     
