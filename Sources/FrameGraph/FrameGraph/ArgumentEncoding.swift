@@ -95,7 +95,8 @@ public protocol ArgumentBufferEncodable {
 
 public struct _ArgumentBuffer : ResourceProtocol {
     
-    public let handle : Handle
+    @usableFromInline let _handle : UnsafeRawPointer
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public enum ArgumentResource {
         case buffer(Buffer, offset: Int)
@@ -106,8 +107,8 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     public init(handle: Handle) {
-        assert(handle == .max || Resource(handle: handle).type == .argumentBuffer)
-        self.handle = handle
+        assert(Resource(handle: handle).type == .argumentBuffer)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     @inlinable
@@ -125,7 +126,8 @@ public struct _ArgumentBuffer : ResourceProtocol {
             index = TransientArgumentBufferRegistry.instances[frameGraph.transientRegistryIndex].allocate(flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         assert(self.encoder == nil)
     }
     
@@ -138,7 +140,8 @@ public struct _ArgumentBuffer : ResourceProtocol {
             index = TransientArgumentBufferRegistry.instances[sourceArray.transientRegistryIndex].allocate(flags: flags, sourceArray: sourceArray)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         assert(self.encoder == nil)
     }
     
@@ -388,12 +391,13 @@ public struct _ArgumentBuffer : ResourceProtocol {
 }
 
 public struct _ArgumentBufferArray : ResourceProtocol {
-    public let handle : Handle
+    @usableFromInline let _handle : UnsafeRawPointer
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     @inlinable
     public init(handle: Handle) {
-        assert(handle == .max || Resource(handle: handle).type == .argumentBufferArray)
-        self.handle = handle
+        assert(Resource(handle: handle).type == .argumentBufferArray)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     init(frameGraph: FrameGraph? = nil, flags: ResourceFlags = []) {
@@ -409,7 +413,8 @@ public struct _ArgumentBufferArray : ResourceProtocol {
             index = TransientArgumentBufferArrayRegistry.instances[frameGraph.transientRegistryIndex].allocate(flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBufferArray.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBufferArray.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     public func dispose() {

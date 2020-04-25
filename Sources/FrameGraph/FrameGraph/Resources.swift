@@ -132,18 +132,18 @@ extension ResourceProtocol {
 }
 
 public struct Resource : ResourceProtocol, Hashable {
-    public let handle : Handle
+    @usableFromInline let _handle : UnsafeRawPointer
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     @inlinable
     public init<R : ResourceProtocol>(_ resource: R) {
-        self.handle = resource.handle
+        self._handle = UnsafeRawPointer(bitPattern: UInt(resource.handle))!
     }
     
     @inlinable
     public init(handle: Handle) {
-        assert(handle == .max || ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: handle.bits(in: Self.typeBitsRange))) != nil)
-        
-        self.handle = handle
+        assert(ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: handle.bits(in: Self.typeBitsRange))) != nil)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     @inlinable
@@ -384,8 +384,6 @@ public struct Resource : ResourceProtocol, Hashable {
             break
         }
     }
-    
-    public static let invalidResource = Resource(handle: .max)
 }
 
 extension Resource : CustomHashable {
@@ -498,12 +496,13 @@ extension ResourceProtocol {
 }
 
 public struct Heap : ResourceProtocol {
-    public let handle : Handle
+    @usableFromInline let _handle : UnsafeRawPointer
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     @inlinable
     public init(handle: Handle) {
-        assert(handle == .max || Resource(handle: handle).type == .heap)
-        self.handle = handle
+        assert(Resource(handle: handle).type == .heap)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     @inlinable
@@ -516,7 +515,8 @@ public struct Heap : ResourceProtocol {
         let flags : ResourceFlags = .persistent
         
         let index = HeapRegistry.instance.allocate(descriptor: descriptor)
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.heap.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.heap.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
         if !RenderBackend.materialiseHeap(self) {
             self.dispose()
@@ -597,12 +597,13 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-    public let handle : Handle
+    @usableFromInline let _handle : UnsafeRawPointer
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     @inlinable
     public init(handle: Handle) {
-        assert(handle == .max || Resource(handle: handle).type == .buffer)
-        self.handle = handle
+        assert(Resource(handle: handle).type == .buffer)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     @inlinable
@@ -622,7 +623,8 @@ public struct Buffer : ResourceProtocol {
             index = TransientBufferRegistry.instances[frameGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.buffer.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.buffer.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
@@ -652,7 +654,8 @@ public struct Buffer : ResourceProtocol {
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         
         let index = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.buffer.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.buffer.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
         if !RenderBackend.materialisePersistentBuffer(self) {
             self.dispose()
@@ -795,7 +798,7 @@ public struct Buffer : ResourceProtocol {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
             let heap = PersistentBufferRegistry.instance.chunks[chunkIndex].heaps[indexInChunk]
-            return heap.handle == Resource.invalidResource.handle ? nil : heap
+            return heap
         } else {
             return nil
         }
@@ -931,12 +934,13 @@ public struct Texture : ResourceProtocol {
         }
     }
     
-    public let handle : Handle
+    @usableFromInline let _handle : UnsafeRawPointer
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     @inlinable
     public init(handle: Handle) {
-        assert(handle == .max || Resource(handle: handle).type == .texture)
-        self.handle = handle
+        assert(Resource(handle: handle).type == .texture)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     @inlinable
@@ -951,7 +955,8 @@ public struct Texture : ResourceProtocol {
             index = TransientTextureRegistry.instances[frameGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
@@ -966,7 +971,8 @@ public struct Texture : ResourceProtocol {
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         
         let index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
         if !RenderBackend.materialisePersistentTexture(self) {
             self.dispose()
@@ -986,7 +992,8 @@ public struct Texture : ResourceProtocol {
             index = TransientTextureRegistry.instances[frameGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
         
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
@@ -999,7 +1006,8 @@ public struct Texture : ResourceProtocol {
         let flags : ResourceFlags = .resourceView
         
         let index = TransientTextureRegistry.instances[base.transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base)
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     @inlinable
@@ -1007,7 +1015,8 @@ public struct Texture : ResourceProtocol {
         let flags : ResourceFlags = .resourceView
     
         let index = TransientTextureRegistry.instances[base.transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base)
-        self.handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     @inlinable
@@ -1088,7 +1097,7 @@ public struct Texture : ResourceProtocol {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
             let heap = PersistentTextureRegistry.instance.chunks[chunkIndex].heaps[indexInChunk]
-            return heap.handle == Resource.invalidResource.handle ? nil : heap
+            return heap
         } else {
             return nil
         }

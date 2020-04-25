@@ -14,7 +14,7 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
     
     public typealias Index = Int
     
-    @usableFromInline var keys : UnsafeMutablePointer<R>! = nil
+    @usableFromInline var keys : UnsafeMutablePointer<R?>! = nil
     @usableFromInline var values : UnsafeMutablePointer<V>! = nil
     @usableFromInline var capacity = 0
     
@@ -47,8 +47,8 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
         
         let oldCapacity = self.capacity
         
-        let newKeys : UnsafeMutablePointer<R> = Allocator.allocate(capacity: capacity, allocator: self.allocator)
-        newKeys.initialize(repeating: R(handle: Resource.invalidResource.handle), count: capacity)
+        let newKeys : UnsafeMutablePointer<R?> = Allocator.allocate(capacity: capacity, allocator: self.allocator)
+        newKeys.initialize(repeating: nil, count: capacity)
         
         let newValues : UnsafeMutablePointer<V> = Allocator.allocate(capacity: capacity, allocator: self.allocator)
         
@@ -60,7 +60,7 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
         self.values = newValues
         
         for index in 0..<oldCapacity {
-            if oldKeys.unsafelyUnwrapped[index].handle != Resource.invalidResource.handle {
+            if oldKeys.unsafelyUnwrapped[index] != nil {
                 let sourceKey = oldKeys!.advanced(by: index).move()
                 
                 self.keys.advanced(by: index).initialize(to: sourceKey)
@@ -77,7 +77,7 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
     
     public func `deinit`() {
         for bucket in 0..<self.capacity {
-            if self.keys[bucket].handle != Resource.invalidResource.handle {
+            if self.keys[bucket] != nil {
                 self.values.advanced(by: bucket).deinitialize(count: 1)
             }
         }
@@ -118,7 +118,7 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
             self.reserveCapacity()
             
             if let newValue = newValue {
-                if self.keys[resource.index] != R(handle: Resource.invalidResource.handle) {
+                if self.keys[resource.index] != nil {
                     self.values[resource.index] = newValue
                 } else {
                     self.values.advanced(by: resource.index).initialize(to: newValue)
@@ -126,11 +126,11 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
                 
                 self.keys[resource.index] = resource
             } else {
-                if self.keys[resource.index] != R(handle: Resource.invalidResource.handle) {
+                if self.keys[resource.index] != nil {
                     self.values.advanced(by: resource.index).deinitialize(count: 1)
                 }
                 
-                self.keys[resource.index] = R(handle: Resource.invalidResource.handle)
+                self.keys[resource.index] = nil
             }
         }
     }
@@ -153,7 +153,7 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
                 return nil
             }
             
-            self.keys[resource.index] = R(handle: Resource.invalidResource.handle)
+            self.keys[resource.index] = nil
             return self.values.advanced(by: resource.index).move()
         } else {
             return nil
@@ -163,8 +163,8 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
     @inlinable
     public mutating func removeAll() {
         for bucket in 0..<self.capacity {
-            if self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
-                self.keys[bucket] = R(handle: Resource.invalidResource.handle)
+            if self.keys[bucket] != nil {
+                self.keys[bucket] = nil
                 self.values.advanced(by: bucket).deinitialize(count: 1)
             }
         }
@@ -173,9 +173,9 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
     @inlinable
     public mutating func removeAll(iterating iterator: (R, V, _ isPersistent: Bool) -> Void) {
         for bucket in 0..<self.capacity {
-            if self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
-                iterator(self.keys[bucket], self.values[bucket], false)
-                self.keys[bucket] = R(handle: Resource.invalidResource.handle)
+            if let key = self.keys[bucket] {
+                iterator(key, self.values[bucket], false)
+                self.keys[bucket] = nil
                 self.values.advanced(by: bucket).deinitialize(count: 1)
             }
         }
@@ -184,19 +184,20 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
     @inlinable
     public func forEach(_ body: ((R, V)) throws -> Void) rethrows {
         for bucket in 0..<self.capacity {
-            if self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
-                try body((self.keys[bucket], self.values[bucket]))
+            if let key = self.keys[bucket] {
+                try body((key, self.values[bucket]))
             }
         }
     }
     
     @inlinable
     public mutating func forEachMutating(_ body: (R, inout V, _ deleteEntry: inout Bool) throws -> Void) rethrows {
-        for bucket in 0..<self.capacity where self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
+        for bucket in 0..<self.capacity {
+            guard let key = self.keys[bucket] else { continue }
             var deleteEntry = false
-            try body(self.keys[bucket], &self.values[bucket], &deleteEntry)
+            try body(key, &self.values[bucket], &deleteEntry)
             if deleteEntry {
-                self.keys[bucket] = R(handle: Resource.invalidResource.handle)
+                self.keys[bucket] = nil
                 self.values.advanced(by: bucket).deinitialize(count: 1)
             }
         }
@@ -219,7 +220,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     public typealias Index = Int
     
-    @usableFromInline var keys : UnsafeMutablePointer<R>! = nil
+    @usableFromInline var keys : UnsafeMutablePointer<R?>! = nil
     
     @usableFromInline var values : UnsafeMutablePointer<V>! = nil
     
@@ -274,8 +275,8 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
         
         let oldCapacity = self.capacity
         
-        let newKeys : UnsafeMutablePointer<R> = Allocator.allocate(capacity: capacity, allocator: self.allocator)
-        newKeys.initialize(repeating: R(handle: Resource.invalidResource.handle), count: capacity)
+        let newKeys : UnsafeMutablePointer<R?> = Allocator.allocate(capacity: capacity, allocator: self.allocator)
+        newKeys.initialize(repeating: nil, count: capacity)
         
         let newValues : UnsafeMutablePointer<V> = Allocator.allocate(capacity: capacity, allocator: self.allocator)
         
@@ -287,7 +288,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
         self.values = newValues
         
         for index in 0..<oldCapacity {
-            if oldKeys.unsafelyUnwrapped[index].handle != Resource.invalidResource.handle {
+            if oldKeys.unsafelyUnwrapped[index] != nil {
                 let sourceKey = oldKeys!.advanced(by: index).move()
                 
                 self.keys.advanced(by: index).initialize(to: sourceKey)
@@ -303,7 +304,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     public func `deinit`() {
         for bucket in 0..<self.capacity {
-            if self.keys[bucket].handle != Resource.invalidResource.handle {
+            if self.keys[bucket] != nil {
                 self.values.advanced(by: bucket).deinitialize(count: 1)
             }
         }
@@ -342,7 +343,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
             assert(resource.index < self.capacity)
             
             if let newValue = newValue {
-                if self.keys[resource.index] != R(handle: Resource.invalidResource.handle) {
+                if self.keys[resource.index] != nil {
                     self.values[resource.index] = newValue
                 } else {
                     self.values.advanced(by: resource.index).initialize(to: newValue)
@@ -350,11 +351,11 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
                 
                 self.keys[resource.index] = resource
             } else {
-                if self.keys[resource.index] != R(handle: Resource.invalidResource.handle) {
+                if self.keys[resource.index] != nil {
                     self.values.advanced(by: resource.index).deinitialize(count: 1)
                 }
                 
-                self.keys[resource.index] = R(handle: Resource.invalidResource.handle)
+                self.keys[resource.index] = nil
             }
         }
     }
@@ -379,7 +380,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
                 return nil
             }
             
-            self.keys[resource.index] = R(handle: Resource.invalidResource.handle)
+            self.keys[resource.index] = nil
             return self.values.advanced(by: resource.index).move()
         }
         
@@ -388,8 +389,8 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     @inlinable
     public mutating func removeAll() {
         for bucket in 0..<self.count {
-            if self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
-                self.keys[bucket] = R(handle: Resource.invalidResource.handle)
+            if self.keys[bucket] != nil {
+                self.keys[bucket] = nil
                 self.values.advanced(by: bucket).deinitialize(count: 1)
             }
         }
@@ -398,9 +399,9 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     @inlinable
     public mutating func removeAll(iterating iterator: (R, V, _ isPersistent: Bool) -> Void) {
         for bucket in 0..<self.count {
-            if self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
-                iterator(self.keys[bucket], self.values[bucket], false)
-                self.keys[bucket] = R(handle: Resource.invalidResource.handle)
+            if let key = self.keys[bucket] {
+                iterator(key, self.values[bucket], false)
+                self.keys[bucket] = nil
                 self.values.advanced(by: bucket).deinitialize(count: 1)
             }
         }
@@ -409,19 +410,20 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     @inlinable
     public func forEach(_ body: ((R, V)) throws -> Void) rethrows {
         for bucket in 0..<self.count {
-            if self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
-                try body((self.keys[bucket], self.values[bucket]))
+            if let key = self.keys[bucket] {
+                try body((key, self.values[bucket]))
             }
         }
     }
     
     @inlinable
     public mutating func forEachMutating(_ body: (R, inout V, _ deleteEntry: inout Bool) throws -> Void) rethrows {
-        for bucket in 0..<self.count where self.keys[bucket] != R(handle: Resource.invalidResource.handle) {
+        for bucket in 0..<self.count {
+            guard let key = self.keys[bucket] else { continue }
             var deleteEntry = false
-            try body(self.keys[bucket], &self.values[bucket], &deleteEntry)
+            try body(key, &self.values[bucket], &deleteEntry)
             if deleteEntry {
-                self.keys[bucket] = R(handle: Resource.invalidResource.handle)
+                self.keys[bucket] = nil
                 self.values.advanced(by: bucket).deinitialize(count: 1)
             }
         }
