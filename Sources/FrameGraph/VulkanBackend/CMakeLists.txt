@@ -32,6 +32,5 @@ target_sources(SwiftFrameGraph PRIVATE
   VulkanResourceRegistry.swift
   VulkanShaderModule.swift 
   VulkanSwapChain.swift
-  VulkanSynchronisationPools.swift
   VulkanTemporaryBufferAllocator.swift
 )

@@ -1,13 +1,11 @@
 
-target_sources(SwiftFrameGraph PRIVATE 
-  FenceDependency.swift
+target_sources(SwiftFrameGraph PRIVATE
   MetalBackend.swift
   MetalCaches.swift
   MetalCommandEncoders.swift
   MetalConversion.swift
   MetalDescriptors.swift
   MetalFenceRegistry.swift
-  MetalFrameCommandInfo.swift
   MetalFrameGraphBackend.swift
   MetalHeapResourceAllocator.swift
   MetalPipelineReflection.swift

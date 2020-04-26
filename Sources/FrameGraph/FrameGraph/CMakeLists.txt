@@ -1,3 +1,4 @@
+add_subdirectory(BackendExecution)
 
 target_sources(SwiftFrameGraph PRIVATE 
   ArgumentEncoder.swift
@@ -12,6 +13,7 @@ target_sources(SwiftFrameGraph PRIVATE
   GPUResourceUploader.swift
   PipelineReflection.swift
   Queue.swift
+  RefCountedResource.swift
   RenderBackend.swift
   RenderPipeline.swift
   RenderTargetDescriptor.swift

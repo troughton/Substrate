@@ -1,9 +1,14 @@
-
-
 add_library(SwiftFrameGraph)
 
 add_subdirectory(FrameGraph)
-add_subdirectory(MetalBackend)
+
+if (APPLE)
+    add_subdirectory(MetalBackend)
+endif()
+
+if (Vulkan_FOUND)
+    add_subdirectory(VulkanBackend)
+endif()
 
 target_link_libraries(SwiftFrameGraph PRIVATE
   CAtomics FrameGraphUtilities FrameGraphCExtras)

@@ -18,6 +18,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL Windows OR CMAKE_SYSTEM_NAME STREQUAL Darwin)
   option(BUILD_SHARED_LIBS "Build shared libraries by default" YES)
 endif()
 
+find_package(Vulkan)
 
 # Add CAtomics
 include_directories(swift-atomics/Sources/CAtomics/include)
