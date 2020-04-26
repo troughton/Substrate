@@ -13,10 +13,8 @@ import Metal
 import AppKit
 import Cocoa
 import OpenGL
-public typealias PlatformGLContext = NSOpenGLContext
 #elseif os(iOS) || os(tvOS) || os(watchOS)
 import UIKit
-public typealias PlatformGLContext = EAGLContext
 #endif
 
 import CoreVideo
@@ -54,6 +52,8 @@ let GL_R32F : GLuint = 0x822E
 let GL_DEPTH_COMPONENT : GLuint = 0x1902
 #endif
 
+@available(OSX, deprecated: 10.14)
+@available(iOS, deprecated: 12.0)
 public final class OpenGLMetalInteropTexture {
     // Table of equivalent formats across CoreVideo, Metal, and OpenGL
     #if os(iOS) || os(tvOS)
@@ -72,6 +72,12 @@ public final class OpenGLMetalInteropTexture {
         MetalGLTextureFormatInfo( kCVPixelFormatType_64RGBAHalf,          .rgba16Float,     GL_RGBA,           GL_RGBA,     GL_HALF_FLOAT ),
         MetalGLTextureFormatInfo( kCVPixelFormatType_DepthFloat32,        .r32Float,        GL_R32F,           GL_R,        GL_FLOAT ),
     ]
+    #endif
+    
+    #if os(macOS)
+    public typealias PlatformGLContext = NSOpenGLContext
+    #elseif os(iOS) || os(tvOS) || os(watchOS)
+    public typealias PlatformGLContext = EAGLContext
     #endif
     
     static func textureFormatInfoFromMetalPixelFormat(_ pixelFormat: MTLPixelFormat) -> MetalGLTextureFormatInfo? {
