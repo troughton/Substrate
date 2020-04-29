@@ -69,7 +69,7 @@ public enum TextureColourSpace : String, Codable, Hashable {
     public func fromLinearSRGB(_ colour: Float) -> Float {
         switch self {
         case .sRGB:
-            return colour <= 0.04045 ? (colour / 12.92) : pow((colour + 0.055) / 1.055, 2.4)
+            return colour <= 0.0031308 ? (12.92 * colour) : (1.055 * pow(colour, 1.0 / 2.4) - 0.055)
         case .linearSRGB:
             return colour
         }
@@ -87,6 +87,8 @@ public enum TextureColourSpace : String, Codable, Hashable {
     
     @inlinable
     public static func convert(_ value: Float, from: TextureColourSpace, to: TextureColourSpace) -> Float {
+        if from == to { return value }
+        
         let inLinearSRGB = from.toLinearSRGB(value)
         return to.fromLinearSRGB(inLinearSRGB)
     }
@@ -480,6 +482,10 @@ extension TextureData where T == Float {
     }
     
     public func convert(toColourSpace: TextureColourSpace) {
+        if toColourSpace == self.colourSpace {
+            return
+        }
+        
         self.apply({ TextureColourSpace.convert($0, from: self.colourSpace, to: toColourSpace) }, channelRange: self.channels == 4 ? 0..<3 : 0..<self.channels)
         self.colourSpace = toColourSpace
     }
