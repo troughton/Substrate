@@ -123,6 +123,7 @@ public final class TextureData<T> {
     let deallocateFunc : ((UnsafeMutablePointer<T>) -> Void)?
     
     public init(width: Int, height: Int, channels: Int, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false) {
+        precondition(width >= 1 && height >= 1 && channels >= 1)
         self.width = width
         self.height = height
         self.channels = channels
@@ -135,6 +136,8 @@ public final class TextureData<T> {
     }
     
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+        precondition(width >= 1 && height >= 1 && channels >= 1)
+        
         self.width = width
         self.height = height
         self.channels = channels
@@ -214,12 +217,33 @@ public final class TextureData<T> {
         }
     }
     
+    public func cropped(originX: Int, originY: Int, width: Int, height: Int) -> TextureData<T> {
+        precondition(originX >= 0 && originY >= 0)
+        precondition(originX + width <= self.width && originY + height <= self.height)
+        
+        if width == self.width && height == self.height {
+            return self
+        }
+        
+        let result = TextureData<T>(width: width, height: height, channels: self.channels, colourSpace: self.colourSpace, premultipliedAlpha: self.premultipliedAlpha)
+        
+        for y in 0..<height {
+            for x in 0..<width {
+                for c in 0..<self.channels {
+                    result[x, y, channel: c] = self[x + originX, y + originY, channel: c]
+                }
+            }
+        }
+        
+        return result
+    }
+    
     public func resize(width: Int, height: Int, wrapMode: TextureEdgeWrapMode) -> TextureData<T> {
         if width == self.width && height == self.height {
             return self
         }
         
-        let result = TextureData<T>(width: width, height: height, channels: self.channels, colourSpace: self.colourSpace, premultipliedAlpha: premultipliedAlpha)
+        let result = TextureData<T>(width: width, height: height, channels: self.channels, colourSpace: self.colourSpace, premultipliedAlpha: self.premultipliedAlpha)
         
         var flags : Int32 = 0
         if self.premultipliedAlpha {
@@ -278,6 +302,28 @@ public final class TextureData<T> {
         }
         
         return results
+    }
+}
+
+extension TextureData where T: SIMDScalar {
+    @inlinable
+    public subscript(x: Int, y: Int) -> SIMD4<T> {
+        get {
+            precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
+            
+            var result = SIMD4<T>()
+            for i in 0..<min(self.channels, 4) {
+                result[i] = self.data[y * self.width * self.channels + x * self.channels + i]
+            }
+            return result
+        }
+        set {
+            precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
+            
+            for i in 0..<min(self.channels, 4) {
+                self.data[y * self.width * self.channels + x * self.channels + i] = newValue[i]
+            }
+        }
     }
 }
 
@@ -436,6 +482,20 @@ extension TextureData where T == Float {
     public func convert(toColourSpace: TextureColourSpace) {
         self.apply({ TextureColourSpace.convert($0, from: self.colourSpace, to: toColourSpace) }, channelRange: self.channels == 4 ? 0..<3 : 0..<self.channels)
         self.colourSpace = toColourSpace
+    }
+    
+    public func premultiplyAlpha() {
+        guard !self.premultipliedAlpha, self.channels == 4 else { return }
+        
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                for c in 0..<3 {
+                    self[x, y, channel: c] *= self[x, y, channel: 3]
+                }
+            }
+        }
+        
+        self.premultipliedAlpha = true
     }
     
     public var averageValue : SIMD4<Float> {

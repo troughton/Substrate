@@ -43,7 +43,7 @@ extension TextureData {
         switch saveFormat {
         case .png:
             guard T.self == UInt8.self else { throw SaveError.unexpectedDataFormat(found: T.self, required: UInt8.self) }
-            result = stbi_write_png(filePath, Int32(self.width), Int32(self.height), Int32(self.channels), self.data as! UnsafeMutablePointer<UInt8>, Int32(self.width * 4))
+            result = stbi_write_png(filePath, Int32(self.width), Int32(self.height), Int32(self.channels), self.data as! UnsafeMutablePointer<UInt8>, Int32(self.width * self.channels))
         case .hdr:
             guard T.self == Float.self else { throw SaveError.unexpectedDataFormat(found: T.self, required: Float.self) }
             result = stbi_write_hdr(filePath, Int32(self.width), Int32(self.height), Int32(self.channels), self.data as! UnsafeMutablePointer<Float>)
