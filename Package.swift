@@ -13,7 +13,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/glessard/swift-atomics", from: "6.0.1"),
-        .package(url: "https://github.com/troughton/SPIRV-Cross-SPM", from: "0.33.0"),
+        .package(url: "https://github.com/troughton/SPIRV-Cross-SPM", from: "0.33.1"),
         .package(url: "https://github.com/sharplet/Regex", from: "2.1.0"),
         .package(url: "https://github.com/troughton/Cstb", from: "1.0.3"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "0.0.1"),

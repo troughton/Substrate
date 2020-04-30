@@ -168,30 +168,35 @@ extension ReflectionPrinter {
             print("}")
             newLine()
             
-            print("public struct PushConstants : NoArgConstructable {")
-            
-            for constant in pass.pushConstants {
-                print("public var \(constant.name): \(constant.type.name) = \(constant.type.defaultInitialiser)")
+            if pass.pushConstants.count == 1, !pass.pushConstants.first!.type.isKnownSwiftType {
+                print("public typealias PushConstants = \(pass.pushConstants.first!.type.name)")
+            } else {
+                print("public struct PushConstants : NoArgConstructable {")
+                
+                for constant in pass.pushConstants {
+                    print("public var \(constant.name): \(constant.type.name) = \(constant.type.defaultInitialiser)")
+                }
+                newLine()
+                
+                print("@inlinable")
+                print("public init() {}")
+                newLine()
+                
+                let argumentList = pass.pushConstants.map { constant in
+                    return "\(constant.name): \(constant.type.name)"
+                }.joined(separator: ", ")
+                
+                print("@inlinable")
+                print("public init(\(argumentList)) {")
+                
+                for constant in pass.pushConstants {
+                    print("self.\(constant.name) = \(constant.name)")
+                }
+                
+                print("}")
+                print("}")
             }
-            newLine()
             
-            print("@inlinable")
-            print("public init() {}")
-            newLine()
-            
-            let argumentList = pass.pushConstants.map { constant in
-                return "\(constant.name): \(constant.type.name)"
-            }.joined(separator: ", ")
-            
-            print("@inlinable")
-            print("public init(\(argumentList)) {")
-            
-            for constant in pass.pushConstants {
-                print("self.\(constant.name) = \(constant.name)")
-            }
-            
-            print("}")
-            print("}")
             newLine()
         }
         
