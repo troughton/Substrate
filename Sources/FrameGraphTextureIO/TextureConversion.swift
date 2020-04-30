@@ -58,6 +58,7 @@ public enum TextureLoadingError : Error {
     case unsupportedMultipartEXR(URL)
     case invalidChannelCount(URL, Int)
     case privateTextureRequiresFrameGraph
+    case invalidTextureDataFormat(URL, Any.Type)
     case noSupportedPixelFormat
 }
 
@@ -336,6 +337,25 @@ extension TextureData where T == UInt8 {
         for i in 0..<(self.width * self.height * self.channels) {
             self.data[i] = floatToUnorm(texture.data[i], type: UInt8.self)
         }
+    }
+}
+
+extension TextureData where T == UInt16 {
+    public convenience init(fileAt url: URL, colourSpace: TextureColourSpace, premultipliedAlpha: Bool) throws {
+        var width : Int32 = 0
+        var height : Int32 = 0
+        var componentsPerPixel : Int32 = 0
+        guard stbi_info(url.path, &width, &height, &componentsPerPixel) != 0 else {
+            throw TextureLoadingError.invalidFile(url)
+        }
+        
+        let channels = componentsPerPixel
+        
+        guard let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
+            throw TextureLoadingError.invalidTextureDataFormat(url, T.self)
+        }
+        
+        self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
     }
 }
 
