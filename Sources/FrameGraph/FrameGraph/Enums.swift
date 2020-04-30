@@ -8,7 +8,7 @@
 
 import Swift
 
-public enum BlendFactor : UInt, Hashable {
+public enum BlendFactor : UInt, Hashable, Codable {
     
     case zero
     
@@ -49,7 +49,7 @@ public enum BlendFactor : UInt, Hashable {
     case oneMinusSource1Alpha
 }
 
-public enum BlendOperation : UInt, Hashable {
+public enum BlendOperation : UInt, Hashable, Codable {
     
     case add
     
@@ -62,7 +62,7 @@ public enum BlendOperation : UInt, Hashable {
     case max
 }
 
-public struct ColorWriteMask : OptionSet, Hashable {
+public struct ColorWriteMask : OptionSet, Hashable, Codable {
     
     public var rawValue: UInt
     
@@ -400,7 +400,7 @@ extension PixelFormat {
 }
 
 @available(OSX 10.11, *)
-public enum CPUCacheMode : UInt {
+public enum CPUCacheMode : UInt, Hashable, Codable {
     
     
     case defaultCache
@@ -408,13 +408,13 @@ public enum CPUCacheMode : UInt {
     case writeCombined
 }
 
-public enum StorageMode : UInt {
+public enum StorageMode : UInt, Hashable, Codable {
     case shared
     case managed
     case `private`
 }
 
-public struct BlitOption : OptionSet {
+public struct BlitOption : OptionSet, Hashable, Codable {
     public static let  depthFromDepthStencil = BlitOption(rawValue: 1 << 0)
     public static let  stencilFromDepthStencil = BlitOption(rawValue: 1 << 1)
     
@@ -426,7 +426,7 @@ public struct BlitOption : OptionSet {
     }
 }
 
-public enum PrimitiveType : UInt {
+public enum PrimitiveType : UInt, Hashable, Codable {
     
     case point
     
@@ -439,7 +439,7 @@ public enum PrimitiveType : UInt {
     case triangleStrip
 }
 
-public enum DataType : UInt {
+public enum DataType : UInt, Hashable, Codable {
     
     case none
     
@@ -516,7 +516,7 @@ public enum DataType : UInt {
     case bool4
 }
 
-public enum VertexFormat : UInt {
+public enum VertexFormat : UInt, Hashable, Codable {
     
     
     case invalid
@@ -617,12 +617,12 @@ public enum VertexFormat : UInt {
     case uint1010102Normalized
 }
 
-public enum IndexType : UInt {
+public enum IndexType : UInt, Hashable, Codable {
     case uint16
     case uint32
 }
 
-public enum CullMode : UInt {
+public enum CullMode : UInt, Hashable, Codable {
     
     
     case none
@@ -632,7 +632,7 @@ public enum CullMode : UInt {
     case back
 }
 
-public enum Winding : UInt {
+public enum Winding : UInt, Hashable, Codable {
     
     
     case clockwise
@@ -640,7 +640,7 @@ public enum Winding : UInt {
     case counterClockwise
 }
 
-public enum DepthClipMode : UInt {
+public enum DepthClipMode : UInt, Hashable, Codable {
     
     
     case clip
@@ -648,7 +648,7 @@ public enum DepthClipMode : UInt {
     case clamp
 }
 
-public enum TriangleFillMode : UInt {
+public enum TriangleFillMode : UInt, Hashable, Codable {
     
     
     case fill
@@ -656,7 +656,7 @@ public enum TriangleFillMode : UInt {
     case lines
 }
 
-public enum CompareFunction : UInt {
+public enum CompareFunction : UInt, Hashable, Codable {
     
     
     case never
@@ -676,7 +676,7 @@ public enum CompareFunction : UInt {
     case always
 }
 
-public enum StencilOperation : UInt {
+public enum StencilOperation : UInt, Hashable, Codable {
     
     
     case keep
@@ -696,7 +696,7 @@ public enum StencilOperation : UInt {
     case decrementWrap
 }
 
-public struct Viewport {
+public struct Viewport : Hashable, Codable {
     
     public var originX: Double
     
@@ -721,7 +721,7 @@ public struct Viewport {
 }
 
 
-public struct ClearColor : Hashable {
+public struct ClearColor : Hashable, Codable {
     
     public var red: Double
     
@@ -746,11 +746,7 @@ public struct ClearColor : Hashable {
     }
 }
 
-/*!
- @struct Origin
- @abstract Identify a pixel in an image. Origin is ususally used as the upper-left corner of a region of a texture.
- */
-public struct Origin {
+public struct Origin : Hashable, Codable {
     
     public var x: Int
     
@@ -771,11 +767,7 @@ public struct Origin {
     }
 }
 
-/*!
- @typedef Size
- @abstract A set of dimensions to declare the size of an object such as a compute kernel work group or grid.
- */
-public struct Size : Hashable {
+public struct Size : Hashable, Codable {
     
     public var width: Int
     
@@ -803,7 +795,7 @@ public struct Size : Hashable {
     }
 }
 
-public struct Region {
+public struct Region : Hashable, Codable {
     
     public var origin: Origin
     
@@ -825,7 +817,7 @@ public struct Region {
     }
 }
 
-public struct ScissorRect : Equatable {
+public struct ScissorRect : Hashable, Codable {
     
     public var x : Int = 0
     public var y : Int = 0
