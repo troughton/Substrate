@@ -61,8 +61,21 @@ extension TextureData {
             
             guard T.self == UInt8.self || T.self == UInt16.self else { throw SaveError.unexpectedDataFormat(found: T.self, required: [UInt8.self, UInt16.self]) }
             
-            let errorCode = self.data.withMemoryRebound(to: UInt8.self, capacity: self.width * self.height * self.channels * MemoryLayout<T>.stride) { pixelData in
-                return lodepng_encode_file(filePath, pixelData, UInt32(self.width), UInt32(self.height), colourType, UInt32(MemoryLayout<T>.size * 8))
+            let errorCode: UInt32
+            if let sourceData = self.data as? UnsafeMutablePointer<UInt16> {
+                let bigEndian = UnsafeMutablePointer<UInt16>.allocate(capacity: self.width * self.height * self.channels)
+                
+                for i in 0..<self.width * self.height * self.channels {
+                    bigEndian[i] = sourceData[i].bigEndian
+                }
+                errorCode = bigEndian.withMemoryRebound(to: UInt8.self, capacity: self.width * self.height * self.channels * MemoryLayout<T>.stride) { pixelData in
+                    return lodepng_encode_file(filePath, pixelData, UInt32(self.width), UInt32(self.height), colourType, UInt32(MemoryLayout<T>.size * 8))
+                }
+                
+            } else {
+                errorCode = self.data.withMemoryRebound(to: UInt8.self, capacity: self.width * self.height * self.channels * MemoryLayout<T>.stride) { pixelData in
+                    return lodepng_encode_file(filePath, pixelData, UInt32(self.width), UInt32(self.height), colourType, UInt32(MemoryLayout<T>.size * 8))
+                }
             }
             
             if errorCode != 0 {
