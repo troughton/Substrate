@@ -4,3 +4,5 @@ add_subdirectory(FrameGraphCExtras)
 add_subdirectory(FrameGraphUtilities)
 add_subdirectory(FrameGraph)
 
+add_subdirectory(CNativeFileDialog)
+add_subdirectory(AppFramework)
