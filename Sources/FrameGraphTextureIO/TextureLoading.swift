@@ -28,8 +28,9 @@ extension Texture {
         let mips = mipmapped ? textureData.generateMipChain(wrapMode: .wrap, compressedBlockSize: 1) : [textureData]
                        
         for (i, data) in mips.enumerated() {
-            GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: data.data, bytesPerRow: data.width * data.channels * MemoryLayout<T>.size, onUploadCompleted: { [data] _, _ in
-                _ = data
+            let storage = data.storage
+            GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: storage.data.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [storage] _, _ in
+                _ = storage
             })
         }
     }
@@ -39,7 +40,7 @@ extension Texture {
         
         if url.pathExtension.lowercased() == "exr" {
             let textureData = try TextureData<Float>(exrAt: url, colourSpace: colourSpace)
-            switch textureData.channels {
+            switch textureData.channelCount {
             case 1:
                 pixelFormat = .r32Float
             case 2:
@@ -47,7 +48,7 @@ extension Texture {
             case 4:
                 pixelFormat = .rgba32Float
             default:
-                throw TextureLoadingError.invalidChannelCount(url, textureData.channels)
+                throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
             }
             
             let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
@@ -74,7 +75,7 @@ extension Texture {
                 let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, channels)!
                 let textureData = TextureData<Float>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
                 
-                switch textureData.channels {
+                switch textureData.channelCount {
                 case 1:
                     pixelFormat = .r32Float
                 case 2:
@@ -82,7 +83,7 @@ extension Texture {
                 case 4:
                     pixelFormat = .rgba32Float
                 default:
-                    throw TextureLoadingError.invalidChannelCount(url, textureData.channels)
+                    throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
                 }
                 
                 let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
@@ -94,7 +95,7 @@ extension Texture {
                 let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, channels)!
                 let textureData = TextureData<UInt16>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
                 
-                switch textureData.channels {
+                switch textureData.channelCount {
                 case 1:
                     pixelFormat = .r16Unorm
                 case 2:
@@ -102,7 +103,7 @@ extension Texture {
                 case 4:
                     pixelFormat = .rgba16Unorm
                 default:
-                    throw TextureLoadingError.invalidChannelCount(url, textureData.channels)
+                    throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
                 }
                 
                 let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
@@ -113,7 +114,7 @@ extension Texture {
                 let data = stbi_load(url.path, &width, &height, &componentsPerPixel, channels)!
                 let textureData = TextureData<UInt8>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
                 
-                switch textureData.channels {
+                switch textureData.channelCount {
                 case 1:
                     pixelFormat = colourSpace == .sRGB ? .r8Unorm_sRGB : .r8Unorm
                 case 2:
@@ -121,7 +122,7 @@ extension Texture {
                 case 4:
                     pixelFormat = colourSpace == .sRGB ? .rgba8Unorm_sRGB : .rgba8Unorm
                 default:
-                    throw TextureLoadingError.invalidChannelCount(url, textureData.channels)
+                    throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
                 }
                 
                 let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)

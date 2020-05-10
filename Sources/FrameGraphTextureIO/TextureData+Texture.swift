@@ -17,15 +17,16 @@ extension Texture {
     
         for (i, data) in mips.enumerated() {
             let bytesPerRow = Double(data.width * pixelFormat.rowsPerBlock) * pixelFormat.bytesPerPixel
-            GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: data.data, bytesPerRow: Int(bytesPerRow), onUploadCompleted: { [data] _, _ in
-                _ = data
+            let storage = data.storage
+            GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: storage.data.baseAddress!, bytesPerRow: Int(bytesPerRow), onUploadCompleted: { [storage] _, _ in
+                _ = storage
             })
         }
     }
 }
 
 extension TextureData {
-    public convenience init(texture: Texture, hasPremultipliedAlpha: Bool = false) {
+    public init(texture: Texture, hasPremultipliedAlpha: Bool = false) {
         let pixelFormat = texture.descriptor.pixelFormat
         assert(pixelFormat.bytesPerPixel == Double(MemoryLayout<T>.stride * pixelFormat.channelCount))
         assert(texture.descriptor.textureType == .type2D)
@@ -33,12 +34,12 @@ extension TextureData {
         
         self.init(width: texture.width, height: texture.height,
                   channels: pixelFormat.channelCount, colourSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, premultipliedAlpha: hasPremultipliedAlpha)
-        texture.copyBytes(to: self.data, bytesPerRow: self.width * self.channels * MemoryLayout<T>.stride,
+        texture.copyBytes(to: self.storage.data.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride,
                           region: Region(x: 0, y: 0, width: texture.width, height: texture.height),
                           mipmapLevel: 0)
         
         if pixelFormat == .bgra8Unorm_sRGB {
-            let buffer = self.data as! UnsafeMutablePointer<UInt8>
+            let buffer = self.storage.data.baseAddress as! UnsafeMutablePointer<UInt8>
             let texturePixels = texture.width * texture.height
             
             for i in 0..<texturePixels {

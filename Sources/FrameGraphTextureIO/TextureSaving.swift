@@ -46,7 +46,7 @@ extension TextureData {
         case .png:
             
             let colourType: LodePNGColorType
-            switch self.channels {
+            switch self.channelCount {
             case 1:
                 colourType = LCT_GREY
             case 2:
@@ -56,25 +56,25 @@ extension TextureData {
             case 4:
                 colourType = LCT_RGBA
             default:
-                throw SaveError.invalidChannelCount(self.channels)
+                throw SaveError.invalidChannelCount(self.channelCount)
             }
             
             guard T.self == UInt8.self || T.self == UInt16.self else { throw SaveError.unexpectedDataFormat(found: T.self, required: [UInt8.self, UInt16.self]) }
             
             let errorCode: UInt32
-            if let sourceData = self.data as? UnsafeMutablePointer<UInt16> {
-                let bigEndian = UnsafeMutablePointer<UInt16>.allocate(capacity: self.width * self.height * self.channels)
+            if let sourceData = self.storage.data as? UnsafeMutableBufferPointer<UInt16> {
+                let bigEndian = UnsafeMutablePointer<UInt16>.allocate(capacity: self.width * self.height * self.channelCount)
                 
-                for i in 0..<self.width * self.height * self.channels {
+                for i in 0..<self.width * self.height * self.channelCount {
                     bigEndian[i] = sourceData[i].bigEndian
                 }
-                errorCode = bigEndian.withMemoryRebound(to: UInt8.self, capacity: self.width * self.height * self.channels * MemoryLayout<T>.stride) { pixelData in
+                errorCode = bigEndian.withMemoryRebound(to: UInt8.self, capacity: self.width * self.height * self.channelCount * MemoryLayout<T>.stride) { pixelData in
                     return lodepng_encode_file(filePath, pixelData, UInt32(self.width), UInt32(self.height), colourType, UInt32(MemoryLayout<T>.size * 8))
                 }
                 
             } else {
-                errorCode = self.data.withMemoryRebound(to: UInt8.self, capacity: self.width * self.height * self.channels * MemoryLayout<T>.stride) { pixelData in
-                    return lodepng_encode_file(filePath, pixelData, UInt32(self.width), UInt32(self.height), colourType, UInt32(MemoryLayout<T>.size * 8))
+                errorCode = self.storage.data.withMemoryRebound(to: UInt8.self) { pixelData in
+                    return lodepng_encode_file(filePath, pixelData.baseAddress, UInt32(self.width), UInt32(self.height), colourType, UInt32(MemoryLayout<T>.size * 8))
                 }
             }
             
@@ -84,19 +84,19 @@ extension TextureData {
             result = errorCode == 0 ? 1 : 0
         case .hdr:
             guard T.self == Float.self else { throw SaveError.unexpectedDataFormat(found: T.self, required: [Float.self]) }
-            result = stbi_write_hdr(filePath, Int32(self.width), Int32(self.height), Int32(self.channels), self.data as! UnsafeMutablePointer<Float>)
+            result = stbi_write_hdr(filePath, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress as! UnsafeMutablePointer<Float>)
         case .bmp:
             guard T.self == UInt8.self else { throw SaveError.unexpectedDataFormat(found: T.self, required: [UInt8.self]) }
-            result = stbi_write_bmp(filePath, Int32(self.width), Int32(self.height), Int32(self.channels), self.data as! UnsafeMutablePointer<UInt8>)
+            result = stbi_write_bmp(filePath, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress as! UnsafeMutablePointer<UInt8>)
         case .tga:
             guard T.self == UInt8.self else { throw SaveError.unexpectedDataFormat(found: T.self, required: [UInt8.self]) }
-            result = stbi_write_tga(filePath, Int32(self.width), Int32(self.height), Int32(self.channels), self.data as! UnsafeMutablePointer<UInt8>)
+            result = stbi_write_tga(filePath, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress as! UnsafeMutablePointer<UInt8>)
         case .jpg:
             guard T.self == UInt8.self else { throw SaveError.unexpectedDataFormat(found: T.self, required: [UInt8.self]) }
-            result = stbi_write_jpg(filePath, Int32(self.width), Int32(self.height), Int32(self.channels), self.data as! UnsafeMutablePointer<UInt8>, /* quality = */ 90)
+            result = stbi_write_jpg(filePath, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress as! UnsafeMutablePointer<UInt8>, /* quality = */ 90)
         case .exr:
             guard T.self == Float.self else { throw SaveError.unexpectedDataFormat(found: T.self, required: [Float.self]) }
-            let exrResult = SaveEXR(self.data as! UnsafeMutablePointer<Float>, Int32(self.width), Int32(self.height), Int32(self.channels), 0, filePath, &error)
+            let exrResult = SaveEXR(self.storage.data.baseAddress as! UnsafeMutablePointer<Float>, Int32(self.width), Int32(self.height), Int32(self.channelCount), 0, filePath, &error)
             result = exrResult == 0 ? 1 : 0
         }
         
