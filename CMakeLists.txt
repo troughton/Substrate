@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 3.15.1)
 
-project(SwiftFrameGraph LANGUAGES C Swift)
+project(SwiftFrameGraph LANGUAGES C CXX Swift)
 
 # place all modules into `swift` in the root of the build tree
 set(CMAKE_Swift_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/swift)
@@ -37,6 +37,8 @@ include(CTest)
 
 include_directories(ModuleMaps/FrameGraphCExtras)
 
+add_subdirectory(SwiftMath) 
+add_subdirectory(swiftimgui)
 add_subdirectory(Sources)
 
 

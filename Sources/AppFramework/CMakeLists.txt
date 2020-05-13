@@ -11,7 +11,7 @@ target_sources(AppFramework PRIVATE
 )
 
 target_link_libraries(AppFramework PRIVATE
-  SwiftFrameGraph CNativeFileDialog ImGui FrameGraphUtilities SwiftMath)
+  SwiftFrameGraph CNativeFileDialog CImGui FrameGraphUtilities _NumericsShims RealModule SwiftMath)
 
 install(TARGETS AppFramework
   ARCHIVE DESTINATION lib
