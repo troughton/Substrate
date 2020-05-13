@@ -186,9 +186,7 @@ public struct TextureData<T> {
     @inlinable
     mutating func ensureUniqueness() {
         if !isKnownUniquelyReferenced(&self.storage) {
-            let oldStorage = self.storage
-            self.storage = .init(elementCount: self.width * self.height * self.channelCount)
-            _ = self.storage.data.initialize(from: oldStorage.data)
+            self.storage = .init(copying: self.storage.data)
         }
     }
     
@@ -546,6 +544,7 @@ extension TextureData where T == Float {
     
     public mutating func premultiplyAlpha() {
         guard !self.premultipliedAlpha, self.channelCount == 4 else { return }
+        self.ensureUniqueness()
         
         for y in 0..<self.height {
             for x in 0..<self.width {
