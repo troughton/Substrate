@@ -306,7 +306,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     for previousRead in readsSinceLastWrite where frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
                         let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
                         let onEncoder = frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord)
-                        let dependency = Dependency(dependentUsage: usage, dependentEncoder: onEncoder, passUsage: previousRead, passEncoder: fromEncoder)
+                        let dependency = Dependency(producingUsage: previousRead, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
                         
                         commandEncoderDependencies.setDependency(from: fromEncoder,
                                                                  on: onEncoder,
@@ -362,7 +362,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 if (usage.isRead || usage.isWrite), let previousWrite = previousWrite, frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
                     let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
                     let onEncoder = frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord)
-                    let dependency = Dependency(dependentUsage: usage, dependentEncoder: onEncoder, passUsage: previousWrite, passEncoder: fromEncoder)
+                    let dependency = Dependency(producingUsage: previousWrite, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
                     
                     commandEncoderDependencies.setDependency(from: fromEncoder,
                                                              on: onEncoder,

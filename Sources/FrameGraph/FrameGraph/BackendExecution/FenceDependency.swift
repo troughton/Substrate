@@ -18,9 +18,10 @@ struct Dependency {
     var signal : FenceDependency
     var wait : FenceDependency
     
-    init(dependentUsage: ResourceUsage, dependentEncoder: Int, passUsage: ResourceUsage, passEncoder: Int) {
-        self.signal = FenceDependency(encoderIndex: passEncoder, index: passUsage.commandRange.last!, stages: passUsage.stages)
-        self.wait = FenceDependency(encoderIndex: dependentEncoder, index: dependentUsage.commandRange.lowerBound, stages: dependentUsage.stages)
+    init(producingUsage: ResourceUsage, producingEncoder: Int, consumingUsage: ResourceUsage, consumingEncoder: Int) {
+        precondition(consumingEncoder > producingEncoder)
+        self.signal = FenceDependency(encoderIndex: producingEncoder, index: producingUsage.commandRange.last!, stages: producingUsage.stages)
+        self.wait = FenceDependency(encoderIndex: consumingEncoder, index: consumingUsage.commandRange.lowerBound, stages: consumingUsage.stages)
     }
     
     init(signal: FenceDependency, wait: FenceDependency) {

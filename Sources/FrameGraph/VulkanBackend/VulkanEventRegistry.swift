@@ -45,6 +45,7 @@ final class VulkanEventRegistry {
     public static let instance = VulkanEventRegistry()
     
     public let allocator : ResizingAllocator
+    public var activeIndices = [UInt32]()
     public var freeIndices = RingBuffer<UInt32>()
     public var maxIndex : UInt32 = 0
     
@@ -80,6 +81,7 @@ final class VulkanEventRegistry {
         }
 
         self.commandBufferIndices[Int(index)] = (queue, commandBufferIndex)
+        self.activeIndices.append(index)
         
         return VulkanEventHandle(index: index)
     }
@@ -90,9 +92,14 @@ final class VulkanEventRegistry {
     }
 
     func clearCompletedEvents() {
-        for i in 0..<Int(self.maxIndex) {
-            if self.commandBufferIndices[i].1 <= self.commandBufferIndices[i].0.lastCompletedCommand {
-                self.delete(at: UInt32(i))
+        var i = 0
+        while i < self.activeIndices.count {
+            let index = self.activeIndices[i]
+            if self.commandBufferIndices[Int(index)].1 <= self.commandBufferIndices[Int(index)].0.lastCompletedCommand {
+                self.delete(at: index)
+                self.activeIndices.remove(at: i, preservingOrder: false)
+            } else {
+                i += 1
             }
         }
     }
