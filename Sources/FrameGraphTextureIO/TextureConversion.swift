@@ -361,12 +361,32 @@ extension TextureData where T: SIMDScalar {
     }
 }
 
-extension TextureData where T == UInt8 {
-    public init(_ texture: TextureData<Float>) {
-        self.init(width: texture.width, height: texture.height, channels: texture.channelCount, colourSpace: texture.colourSpace, premultipliedAlpha: texture.premultipliedAlpha)
+extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
+    @inlinable
+    public init(_ data: TextureData<Float>) {
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colourSpace: data.colourSpace, premultipliedAlpha: data.premultipliedAlpha)
         
-        for i in 0..<(self.width * self.height * self.channelCount) {
-            self.storage.data[i] = floatToUnorm(texture.storage.data[i], type: UInt8.self)
+        self.withUnsafeMutableBufferPointer { dest in
+            data.withUnsafeBufferPointer { source in
+                for (i, sourceVal) in source.enumerated() {
+                    dest[i] = floatToUnorm(sourceVal, type: T.self)
+                }
+            }
+        }
+    }
+}
+
+extension TextureData where T: BinaryInteger & FixedWidthInteger & SignedInteger {
+    @inlinable
+    public init(_ data: TextureData<Float>) {
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colourSpace: data.colourSpace, premultipliedAlpha: data.premultipliedAlpha)
+        
+        self.withUnsafeMutableBufferPointer { dest in
+            data.withUnsafeBufferPointer { source in
+                for (i, sourceVal) in source.enumerated() {
+                    dest[i] = floatToSnorm(sourceVal, type: T.self)
+                }
+            }
         }
     }
 }
@@ -391,6 +411,33 @@ extension TextureData where T == UInt16 {
 }
 
 extension TextureData where T == Float {
+    
+    @inlinable
+    public init<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ data: TextureData<I>) {
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colourSpace: data.colourSpace, premultipliedAlpha: data.premultipliedAlpha)
+        
+        self.withUnsafeMutableBufferPointer { dest in
+            data.withUnsafeBufferPointer { source in
+                for (i, sourceVal) in source.enumerated() {
+                    dest[i] = snormToFloat(sourceVal)
+                }
+            }
+        }
+    }
+    
+    @inlinable
+    public init<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ data: TextureData<I>) {
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colourSpace: data.colourSpace, premultipliedAlpha: data.premultipliedAlpha)
+        
+        self.withUnsafeMutableBufferPointer { dest in
+            data.withUnsafeBufferPointer { source in
+                for (i, sourceVal) in source.enumerated() {
+                    dest[i] = unormToFloat(sourceVal)
+                }
+            }
+        }
+    }
+    
     public init(fileAt url: URL, colourSpace: TextureColourSpace, premultipliedAlpha: Bool) throws {
         if url.pathExtension.lowercased() == "exr" {
             try self.init(exrAt: url, colourSpace: colourSpace)
