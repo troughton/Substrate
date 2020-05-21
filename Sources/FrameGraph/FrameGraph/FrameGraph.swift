@@ -689,20 +689,6 @@ public final class FrameGraph {
             }
         }
         
-        // Transitive dependencies: everything that has a dependency on us also has a transitive dependency on everything we have a dependency on.
-        //        for sourcePass in 1..<max(1, activePasses.count - 1) { // Nothing can depend on the last pass.
-        //            for possibleDependentPass in (sourcePass + 1)..<activePasses.count {
-        //                if activePassDependencies.dependency(from: possibleDependentPass, on: sourcePass) != .none {
-        //                    // Introduce a transitive dependency.
-        //                    for sourceDependency in 0..<sourcePass {
-        //                        if activePassDependencies.dependency(from: sourcePass, on: sourceDependency) != .none, dependencyTable.dependency(from: sourcePass, on: sourceDependency) == .none {
-        //                            activePassDependencies.setDependency(from: possibleDependentPass, on: sourceDependency, to: .transitive)
-        //                        }
-        //                    }
-        //                }
-        //            }
-        //        }
-        
         return (activePasses, activePassDependencies)
     }
     
@@ -711,6 +697,15 @@ public final class FrameGraph {
     }
     
     public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
+        guard !self.renderPasses.isEmpty else {
+            onSubmission?()
+            onGPUCompletion?()
+            
+            self.submissionNotifyQueue.forEach { $0() }
+            self.submissionNotifyQueue.removeAll(keepingCapacity: true)
+            
+            return
+        }
         
         FrameGraph.activeFrameGraphSemaphore.wait()
         FrameGraph.activeFrameGraph = self
