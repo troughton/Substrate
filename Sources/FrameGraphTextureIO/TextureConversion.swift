@@ -589,9 +589,12 @@ extension TextureData where T == Float {
         self.colourSpace = toColourSpace
     }
     
-    public mutating func premultiplyAlpha() {
+    public mutating func convertToPremultipliedAlpha() {
         guard !self.premultipliedAlpha, self.channelCount == 4 else { return }
         self.ensureUniqueness()
+        
+        let sourceColourSpace = self.colourSpace
+        self.convert(toColourSpace: .linearSRGB)
         
         for y in 0..<self.height {
             for x in 0..<self.width {
@@ -601,7 +604,29 @@ extension TextureData where T == Float {
             }
         }
         
+        self.convert(toColourSpace: sourceColourSpace)
         self.premultipliedAlpha = true
+    }
+    
+    public mutating func convertToPostmultipliedAlpha() {
+        guard self.premultipliedAlpha, self.channelCount == 4 else { return }
+        self.ensureUniqueness()
+        
+        let sourceColourSpace = self.colourSpace
+        self.convert(toColourSpace: .linearSRGB)
+        
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                for c in 0..<3 {
+                    self[x, y, channel: c] /= self[x, y, channel: 3]
+                    self[x, y, channel: c] = clamp(self[x, y, channel: c], min: 0.0, max: 1.0)
+                }
+            }
+        }
+        
+        self.convert(toColourSpace: sourceColourSpace)
+        
+        self.premultipliedAlpha = false
     }
     
     public var averageValue : SIMD4<Float> {
