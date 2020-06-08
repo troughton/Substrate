@@ -10,6 +10,16 @@
 import Metal
 import FrameGraphUtilities
 
+final class MetalArgumentEncoder {
+    let encoder: MTLArgumentEncoder
+    let bindingIndexCount: Int
+    
+    init(encoder: MTLArgumentEncoder, bindingIndexCount: Int) {
+        self.encoder = encoder
+        self.bindingIndexCount = bindingIndexCount
+    }
+}
+
 final class MetalPipelineReflection : PipelineReflection {
     
     struct BindingPathCacheKey : Hashable, CustomHashable {
@@ -28,7 +38,7 @@ final class MetalPipelineReflection : PipelineReflection {
     let reflectionCacheValues : UnsafePointer<ArgumentReflection>
     
     let argumentEncoderCount : Int
-    let argumentEncoders : UnsafeMutablePointer<MTLArgumentEncoder?>
+    let argumentEncoders : UnsafeMutablePointer<MetalArgumentEncoder?>
     
     deinit {
         self.bindingPathCache.deinit()
@@ -40,7 +50,7 @@ final class MetalPipelineReflection : PipelineReflection {
         self.argumentEncoders.deallocate()
     }
     
-    init(bindingPathCache: HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MTLArgumentEncoder?>, argumentEncoderCount: Int) {
+    init(bindingPathCache: HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MetalArgumentEncoder?>, argumentEncoderCount: Int) {
         self.bindingPathCache = bindingPathCache
         
         let sortedReflectionCache = reflectionCache.sorted(by: { $0.key.value < $1.key.value })
@@ -67,7 +77,7 @@ final class MetalPipelineReflection : PipelineReflection {
         var reflectionCache = [ResourceBindingPath : ArgumentReflection]()
         
         let argumentEncoderCount = fragmentFunction != nil ? 62 : 31 // maximum buffer slots per stage.
-        let argumentEncoders = UnsafeMutablePointer<MTLArgumentEncoder?>.allocate(capacity: argumentEncoderCount)
+        let argumentEncoders = UnsafeMutablePointer<MetalArgumentEncoder?>.allocate(capacity: argumentEncoderCount)
         argumentEncoders.initialize(repeating: nil, count: argumentEncoderCount)
         
         renderReflection.vertexArguments?.forEach { arg in
@@ -87,7 +97,7 @@ final class MetalPipelineReflection : PipelineReflection {
         var reflectionCache = [ResourceBindingPath : ArgumentReflection]()
         
         let argumentEncoderCount = 31 // maximum buffer slots per stage.
-        let argumentEncoders = UnsafeMutablePointer<MTLArgumentEncoder?>.allocate(capacity: argumentEncoderCount)
+        let argumentEncoders = UnsafeMutablePointer<MetalArgumentEncoder?>.allocate(capacity: argumentEncoderCount)
         argumentEncoders.initialize(repeating: nil, count: argumentEncoderCount)
         
         computeReflection.arguments.forEach { arg in
@@ -96,7 +106,7 @@ final class MetalPipelineReflection : PipelineReflection {
         self.init(bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentEncoders: argumentEncoders, argumentEncoderCount: argumentEncoderCount)
     }
     
-    static func fillCaches(function: MTLFunction, argument: MTLArgument, stages: RenderStages, bindingPathCache: inout HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: inout [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MTLArgumentEncoder?>) {
+    static func fillCaches(function: MTLFunction, argument: MTLArgument, stages: RenderStages, bindingPathCache: inout HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: inout [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MetalArgumentEncoder?>) {
         guard argument.type == .buffer || argument.type == .texture || argument.type == .sampler else {
             return
         }
@@ -130,11 +140,15 @@ final class MetalPipelineReflection : PipelineReflection {
         
         if let elementStruct = argument.bufferPointerType?.elementStructType() {
             var isArgumentBuffer = false
+            var argumentBufferBindingCount = 0
             
             let metalArgBufferPath = rootPath
             for member in elementStruct.members {
                 if member.offset < 0 {
                     isArgumentBuffer = true
+                    
+                    let arrayLength = member.arrayType()?.arrayLength ?? 1
+                    argumentBufferBindingCount = max(member.argumentIndex + arrayLength, argumentBufferBindingCount)
                 }
 
                 // Ignore pipeline stages for resources contained within argument buffers.
@@ -170,7 +184,7 @@ final class MetalPipelineReflection : PipelineReflection {
             }
             
             if isArgumentBuffer {
-                argumentEncoders[rootPath.index] = function.makeArgumentEncoder(bufferIndex: rootPath.index)
+                argumentEncoders[rootPath.index] = MetalArgumentEncoder(encoder: function.makeArgumentEncoder(bufferIndex: rootPath.index), bindingIndexCount: argumentBufferBindingCount)
             }
         }
     }

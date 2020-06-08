@@ -200,8 +200,8 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             return mtlArgumentBuffer
         }
         
-        let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-        let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
+        let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
+        let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encoder.encodedLength)
         
         self.argumentBufferReferences[argumentBuffer] = storage
         
@@ -214,13 +214,13 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             return mtlArgumentBuffer
         }
         
-        let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!).takeUnretainedValue()
-        let storage = self.allocateArgumentBufferStorage(for: argumentBufferArray, encodedLength: argEncoder.encodedLength * argumentBufferArray._bindings.count)
+        let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!).takeUnretainedValue()
+        let storage = self.allocateArgumentBufferStorage(for: argumentBufferArray, encodedLength: argEncoder.encoder.encodedLength * argumentBufferArray._bindings.count)
         
         for (i, argumentBuffer) in argumentBufferArray._bindings.enumerated() {
             guard let argumentBuffer = argumentBuffer else { continue }
             
-            let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encodedLength)
+            let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encoder.encodedLength)
             self.argumentBufferReferences[argumentBuffer] = localStorage
         }
         
@@ -670,8 +670,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             return mtlArgumentBuffer
         }
         
-        let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encodedLength)
+        let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
+        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argEncoder.encoder.encodedLength)
         assert(fences.isEmpty)
         
         self.argumentBufferReferences[argumentBuffer] = storage
@@ -686,14 +686,14 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             return mtlArgumentBuffer
         }
         
-        let argEncoder = Unmanaged<MTLArgumentEncoder>.fromOpaque(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!).takeUnretainedValue()
-        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBufferArray, encodedLength: argEncoder.encodedLength * argumentBufferArray._bindings.count)
+        let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!).takeUnretainedValue()
+        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBufferArray, encodedLength: argEncoder.encoder.encodedLength * argumentBufferArray._bindings.count)
         assert(fences.isEmpty)
         
         for (i, argumentBuffer) in argumentBufferArray._bindings.enumerated() {
             guard let argumentBuffer = argumentBuffer else { continue }
             
-            let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encodedLength)
+            let localStorage = MTLBufferReference(buffer: storage._buffer, offset: storage.offset + i * argEncoder.encoder.encodedLength)
             self.argumentBufferReferences[argumentBuffer] = localStorage
             self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
         }
