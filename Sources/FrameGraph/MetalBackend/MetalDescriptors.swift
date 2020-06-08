@@ -52,7 +52,7 @@ extension MTLStencilDescriptor {
 }
 
 extension MTLDepthStencilDescriptor {
-    convenience init(_ descriptor : DepthStencilDescriptor) {
+    convenience init(_ descriptor: DepthStencilDescriptor) {
         self.init()
         
         self.backFaceStencil = MTLStencilDescriptor(descriptor.backFaceStencil)

@@ -1372,7 +1372,15 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 return
         }
         
-        let descriptor = descriptor ?? DepthStencilDescriptor()
+        var descriptor = descriptor ?? DepthStencilDescriptor()
+        if self.drawRenderPass.renderTargetDescriptor.depthAttachment == nil {
+            descriptor.depthCompareFunction = .always
+            descriptor.isDepthWriteEnabled = false
+        }
+        if self.drawRenderPass.renderTargetDescriptor.stencilAttachment == nil {
+            descriptor.frontFaceStencil = .init()
+            descriptor.backFaceStencil = .init()
+        }
         
         self.depthStencilDescriptor = descriptor
         self.depthStencilStateChanged = true
