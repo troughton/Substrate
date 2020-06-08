@@ -1142,24 +1142,24 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             guard let attachment = attachment else { continue }
             self.resourceUsages.registerResource(Resource(attachment.texture))
             
-            needsClearCommand = needsClearCommand || attachment.wantsClear
-            let usageNode = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: attachment.wantsClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: 0)
+            needsClearCommand = needsClearCommand || renderPass.colorClearOperation(attachmentIndex: i).isClear
+            let usageNode = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: renderPass.colorClearOperation(attachmentIndex: i).isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: 0)
             self.renderTargetAttachmentUsages[.color(i)] = usageNode
         }
         
         if let depthAttachment = renderPass.renderTargetDescriptor.depthAttachment {
             self.resourceUsages.registerResource(Resource(depthAttachment.texture))
             
-            needsClearCommand = needsClearCommand || depthAttachment.wantsClear
-            let usageNode = self.resourceUsages.resourceUsageNode(for: depthAttachment.texture.handle, encoder: self, usageType: depthAttachment.wantsClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
+            needsClearCommand = needsClearCommand || renderPass.depthClearOperation.isClear
+            let usageNode = self.resourceUsages.resourceUsageNode(for: depthAttachment.texture.handle, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
             self.renderTargetAttachmentUsages[.depth] = usageNode
         }
         
         if let stencilAttachment = renderPass.renderTargetDescriptor.stencilAttachment {
             self.resourceUsages.registerResource(Resource(stencilAttachment.texture))
             
-            needsClearCommand = needsClearCommand || stencilAttachment.wantsClear
-            let usageNode = self.resourceUsages.resourceUsageNode(for: stencilAttachment.texture.handle, encoder: self, usageType: stencilAttachment.wantsClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
+            needsClearCommand = needsClearCommand || renderPass.stencilClearOperation.isClear
+            let usageNode = self.resourceUsages.resourceUsageNode(for: stencilAttachment.texture.handle, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
             self.renderTargetAttachmentUsages[.stencil] = usageNode
         }
         

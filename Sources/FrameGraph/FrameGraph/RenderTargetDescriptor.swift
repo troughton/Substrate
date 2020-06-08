@@ -17,12 +17,6 @@ public protocol RenderTargetAttachmentDescriptor {
     
     var depthPlane: Int { get set }
     
-    var wantsClear : Bool { get }
-    
-    /// If true, this texture's previous contents will not be loaded,
-    /// and will be overwritten when the attachment is stored.
-    var fullyOverwritesContents : Bool { get set }
-    
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     var resolveTexture : Texture? { get set }
     
@@ -38,13 +32,12 @@ public protocol RenderTargetAttachmentDescriptor {
 
 public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
 
-    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0, clearColor: ClearColor? = nil,
+    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
                 resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
         self.texture = texture
         self.level = level
         self.slice = slice
         self.depthPlane = depthPlane
-        self.clearColor = clearColor
         self.resolveTexture = resolveTexture
         self.resolveLevel = resolveLevel
         self.resolveSlice = resolveSlice
@@ -61,17 +54,6 @@ public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hash
     
     /// The depth plane of the texture to be used for rendering.
     public var depthPlane: Int = 0
-    
-    /// The color to clear this attachment to.
-    public var clearColor : ClearColor? = nil
-    
-    /// If true, this texture's previous contents will not be loaded,
-    /// and will be overwritten when the attachment is stored.
-    public var fullyOverwritesContents : Bool = false
-    
-    public var wantsClear: Bool {
-        return self.clearColor != nil
-    }
     
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     public var resolveTexture : Texture? = nil
@@ -89,13 +71,12 @@ public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hash
 
 public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
     
-    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0, clearDepth: Double? = nil,
+    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
                 resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
         self.texture = texture
         self.level = level
         self.slice = slice
         self.depthPlane = depthPlane
-        self.clearDepth = clearDepth
         self.resolveTexture = resolveTexture
         self.resolveLevel = resolveLevel
         self.resolveSlice = resolveSlice
@@ -112,17 +93,6 @@ public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hash
 
     /// The depth plane of the texture to be used for rendering.
     public var depthPlane: Int = 0
-    
-    /// The depth to clear this attachment to.
-    public var clearDepth : Double? = nil
-    
-    /// If true, this texture's previous contents will not be loaded,
-    /// and will be overwritten when the attachment is stored.
-    public var fullyOverwritesContents : Bool = false
-    
-    public var wantsClear : Bool {
-        return self.clearDepth != nil
-    }
     
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     public var resolveTexture : Texture? = nil
@@ -139,13 +109,12 @@ public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hash
 
 public struct StencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
     
-    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0, clearStencil: UInt32? = nil,
+    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
                 resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
         self.texture = texture
         self.level = level
         self.slice = slice
         self.depthPlane = depthPlane
-        self.clearStencil = clearStencil
         self.resolveTexture = resolveTexture
         self.resolveLevel = resolveLevel
         self.resolveSlice = resolveSlice
@@ -163,17 +132,6 @@ public struct StencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, Ha
     /// The depth plane of the texture to be used for rendering.
     public var depthPlane: Int = 0
     
-    /// The stencil value to clear this attachment to.
-    public var clearStencil : UInt32? = nil
-    
-    /// If true, this texture's previous contents will not be loaded,
-    /// and will be overwritten when the attachment is stored.
-    public var fullyOverwritesContents : Bool = false
-    
-    public var wantsClear : Bool {
-        return self.clearStencil != nil
-    }
-    
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     public var resolveTexture : Texture? = nil
     
@@ -187,6 +145,92 @@ public struct StencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, Ha
     public var resolveDepthPlane : Int = 0
 }
 
+protocol ClearOperation {
+    var isClear: Bool { get }
+    var isKeep: Bool { get }
+    var isDiscard: Bool { get }
+}
+
+public enum ColorClearOperation: ClearOperation {
+    case discard
+    case keep
+    case clear(ClearColor)
+    
+    var isClear: Bool {
+        if case .clear = self {
+            return true
+        }
+        return false
+    }
+    
+    var isDiscard: Bool {
+        if case .discard = self {
+            return true
+        }
+        return false
+    }
+    
+    var isKeep: Bool {
+        if case .keep = self {
+            return true
+        }
+        return false
+    }
+}
+
+public enum DepthClearOperation: ClearOperation {
+    case discard
+    case keep
+    case clear(Double)
+    
+    var isClear: Bool {
+        if case .clear = self {
+            return true
+        }
+        return false
+    }
+    
+    var isDiscard: Bool {
+        if case .discard = self {
+            return true
+        }
+        return false
+    }
+    
+    var isKeep: Bool {
+        if case .keep = self {
+            return true
+        }
+        return false
+    }
+}
+
+public enum StencilClearOperation: ClearOperation {
+    case discard
+    case keep
+    case clear(UInt32)
+    
+    var isClear: Bool {
+        if case .clear = self {
+            return true
+        }
+        return false
+    }
+    
+    var isDiscard: Bool {
+        if case .discard = self {
+            return true
+        }
+        return false
+    }
+    
+    var isKeep: Bool {
+        if case .keep = self {
+            return true
+        }
+        return false
+    }
+}
 
 // For compatibility with old FrameGraph versions:
 public typealias RenderTargetColorAttachmentDescriptor = ColorAttachmentDescriptor
@@ -242,12 +286,15 @@ public struct RenderTargetDescriptor : Hashable {
         return self.size.height
     }
     
-    static func areMergeable(_ descriptorA: RenderTargetDescriptor, _ descriptorB: RenderTargetDescriptor) -> Bool {
-        if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment, depthA.texture != depthB.texture || depthB.wantsClear {
+    static func descriptorsAreMergeable(passA: DrawRenderPass, passB: DrawRenderPass) -> Bool {
+        let descriptorA = passA.renderTargetDescriptor
+        let descriptorB = passB.renderTargetDescriptor
+        
+        if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment, depthA.texture != depthB.texture || passB.depthClearOperation.isClear  {
             return false
         }
         
-        if let stencilA = descriptorA.stencilAttachment, let stencilB = descriptorB.stencilAttachment, stencilA.texture != stencilB.texture || stencilB.wantsClear {
+        if let stencilA = descriptorA.stencilAttachment, let stencilB = descriptorB.stencilAttachment, stencilA.texture != stencilB.texture || passB.stencilClearOperation.isClear {
             return false
         }
         
@@ -256,7 +303,7 @@ public struct RenderTargetDescriptor : Hashable {
         }
         
         for i in 0..<min(descriptorA.colorAttachments.count, descriptorB.colorAttachments.count) {
-            if let colorA = descriptorA.colorAttachments[i], let colorB = descriptorB.colorAttachments[i], colorA.texture != colorB.texture || colorB.wantsClear {
+            if let colorA = descriptorA.colorAttachments[i], let colorB = descriptorB.colorAttachments[i], colorA.texture != colorB.texture || passB.colorClearOperation(attachmentIndex: i).isClear {
                 return false
             }
         }

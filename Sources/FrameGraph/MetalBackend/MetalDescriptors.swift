@@ -107,36 +107,27 @@ extension MTLRenderPassAttachmentDescriptor {
 }
 
 extension MTLRenderPassColorAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
+    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, clearColor: MTLClearColor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
-        
-        if let clearColor = descriptor.clearColor {
-            self.clearColor = MTLClearColor(clearColor)
-        }
+        self.clearColor = clearColor
     }
 }
 
 extension MTLRenderPassDepthAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
+    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, clearDepth: Double, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
-        
-        if let clearDepth = descriptor.clearDepth {
-            self.clearDepth = clearDepth
-        }
+        self.clearDepth = clearDepth
         
     }
 }
 
 extension MTLRenderPassStencilAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
+    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, clearStencil: UInt32, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
-        
-        if let clearStencil = descriptor.clearStencil {
-            self.clearStencil = clearStencil
-        }
+        self.clearStencil = clearStencil
     }
 }
 
@@ -147,15 +138,15 @@ extension MTLRenderPassDescriptor {
         
         for (i, attachment) in descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
-            self.colorAttachments[i] = try MTLRenderPassColorAttachmentDescriptor(attachment, actions: descriptorWrapper.colorActions[i], resourceMap: resourceMap)
+            self.colorAttachments[i] = try MTLRenderPassColorAttachmentDescriptor(attachment, clearColor: descriptorWrapper.clearColors[i], actions: descriptorWrapper.colorActions[i], resourceMap: resourceMap)
         }
         
         if let depthAttachment = descriptor.depthAttachment {
-            self.depthAttachment = try MTLRenderPassDepthAttachmentDescriptor(depthAttachment, actions: descriptorWrapper.depthActions, resourceMap: resourceMap)
+            self.depthAttachment = try MTLRenderPassDepthAttachmentDescriptor(depthAttachment, clearDepth: descriptorWrapper.clearDepth, actions: descriptorWrapper.depthActions, resourceMap: resourceMap)
         }
         
         if let stencilAttachment = descriptor.stencilAttachment {
-            self.stencilAttachment = try MTLRenderPassStencilAttachmentDescriptor(stencilAttachment, actions: descriptorWrapper.stencilActions, resourceMap: resourceMap)
+            self.stencilAttachment = try MTLRenderPassStencilAttachmentDescriptor(stencilAttachment, clearStencil: descriptorWrapper.clearStencil, actions: descriptorWrapper.stencilActions, resourceMap: resourceMap)
         }
         
         if let visibilityBuffer = descriptor.visibilityResultBuffer {

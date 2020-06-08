@@ -34,11 +34,31 @@ protocol ReflectableRenderPass {
 public protocol DrawRenderPass : RenderPass {
     var renderTargetDescriptor : RenderTargetDescriptor { get }
     func execute(renderCommandEncoder: RenderCommandEncoder)
+    
+    func colorClearOperation(attachmentIndex: Int) -> ColorClearOperation
+    var depthClearOperation: DepthClearOperation { get }
+    var stencilClearOperation: StencilClearOperation { get }
 }
 
 extension DrawRenderPass {
+    @inlinable
     public var passType : RenderPassType {
         return .draw
+    }
+    
+    @inlinable
+    public func colorClearOperation(attachmentIndex: Int) -> ColorClearOperation {
+        return .keep
+    }
+    
+    @inlinable
+    public var depthClearOperation : DepthClearOperation {
+        return .keep
+    }
+    
+    @inlinable
+    public var stencilClearOperation : StencilClearOperation {
+        return .keep
     }
 }
 
@@ -47,6 +67,7 @@ public protocol ComputeRenderPass : RenderPass {
 }
 
 extension ComputeRenderPass {
+    @inlinable
     public var passType : RenderPassType {
         return .compute
     }
@@ -57,6 +78,7 @@ public protocol CPURenderPass : RenderPass {
 }
 
 extension CPURenderPass {
+    @inlinable
     public var passType : RenderPassType {
         return .cpu
     }
@@ -67,6 +89,7 @@ public protocol BlitRenderPass : RenderPass {
 }
 
 extension BlitRenderPass {
+    @inlinable
     public var passType : RenderPassType {
         return .blit
     }
@@ -77,6 +100,7 @@ public protocol ExternalRenderPass : RenderPass {
 }
 
 extension ExternalRenderPass {
+    @inlinable
     public var passType : RenderPassType {
         return .external
     }
@@ -110,12 +134,29 @@ extension ReflectableComputeRenderPass {
 final class CallbackDrawRenderPass : DrawRenderPass {
     public let name : String
     public let renderTargetDescriptor: RenderTargetDescriptor
+    public let colorClearOperations: [ColorClearOperation]
+    public let depthClearOperation: DepthClearOperation
+    public let stencilClearOperation: StencilClearOperation
     public let executeFunc : (RenderCommandEncoder) -> Void
     
-    public init(name: String, descriptor: RenderTargetDescriptor, execute: @escaping (RenderCommandEncoder) -> Void) {
+    public init(name: String, descriptor: RenderTargetDescriptor,
+                colorClearOperations: [ColorClearOperation],
+                depthClearOperation: DepthClearOperation,
+                stencilClearOperation: StencilClearOperation,
+                execute: @escaping (RenderCommandEncoder) -> Void) {
         self.name = name
         self.renderTargetDescriptor = descriptor
+        self.colorClearOperations = colorClearOperations
+        self.depthClearOperation = depthClearOperation
+        self.stencilClearOperation = stencilClearOperation
         self.executeFunc = execute
+    }
+    
+    public func colorClearOperation(attachmentIndex: Int) -> ColorClearOperation {
+        if attachmentIndex < self.colorClearOperations.count {
+            return self.colorClearOperations[attachmentIndex]
+        }
+        return .keep
     }
     
     public func execute(renderCommandEncoder: RenderCommandEncoder) {
@@ -126,12 +167,29 @@ final class CallbackDrawRenderPass : DrawRenderPass {
 final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : ReflectableDrawRenderPass {
     public let name : String
     public let renderTargetDescriptor: RenderTargetDescriptor
+    public let colorClearOperations: [ColorClearOperation]
+    public let depthClearOperation: DepthClearOperation
+    public let stencilClearOperation: StencilClearOperation
     public let executeFunc : (TypedRenderCommandEncoder<R>) -> Void
     
-    public init(name: String, descriptor: RenderTargetDescriptor, reflection: R.Type, execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+    public init(name: String, descriptor: RenderTargetDescriptor,
+                colorClearOperations: [ColorClearOperation],
+                depthClearOperation: DepthClearOperation,
+                stencilClearOperation: StencilClearOperation,
+                reflection: R.Type, execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
         self.name = name
         self.renderTargetDescriptor = descriptor
+        self.colorClearOperations = colorClearOperations
+        self.depthClearOperation = depthClearOperation
+        self.stencilClearOperation = stencilClearOperation
         self.executeFunc = execute
+    }
+    
+    public func colorClearOperation(attachmentIndex: Int) -> ColorClearOperation {
+        if attachmentIndex < self.colorClearOperations.count {
+            return self.colorClearOperations[attachmentIndex]
+        }
+        return .keep
     }
     
     public func execute(renderCommandEncoder: TypedRenderCommandEncoder<R>) {
@@ -370,28 +428,48 @@ public final class FrameGraph {
     
     public func addDrawCallbackPass(file: String = #file, line: Int = #line,
                                     descriptor: RenderTargetDescriptor,
+                                    colorClearOperations: [ColorClearOperation] = [],
+                                    depthClearOperation: DepthClearOperation = .keep,
+                                    stencilClearOperation: StencilClearOperation = .keep,
                                     execute: @escaping (RenderCommandEncoder) -> Void) {
-        self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor, execute: execute))
+        self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
+                                            colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                            execute: execute))
     }
     
     public func addDrawCallbackPass(name: String,
                                     descriptor: RenderTargetDescriptor,
+                                    colorClearOperations: [ColorClearOperation] = [],
+                                    depthClearOperation: DepthClearOperation = .keep,
+                                    stencilClearOperation: StencilClearOperation = .keep,
                                     execute: @escaping (RenderCommandEncoder) -> Void) {
-        self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor, execute: execute))
+        self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor,
+                                            colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                            execute: execute))
     }
     
     public func addDrawCallbackPass<R>(file: String = #file, line: Int = #line,
                                        descriptor: RenderTargetDescriptor,
+                                       colorClearOperations: [ColorClearOperation] = [],
+                                       depthClearOperation: DepthClearOperation = .keep,
+                                       stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
                                        execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
-        self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor, reflection: reflection, execute: execute))
+        self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
+                                                       colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                                       reflection: reflection, execute: execute))
     }
     
     public func addDrawCallbackPass<R>(name: String,
                                        descriptor: RenderTargetDescriptor,
+                                       colorClearOperations: [ColorClearOperation] = [],
+                                       depthClearOperation: DepthClearOperation = .keep,
+                                       stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
                                        execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
-        self.addPass(ReflectableCallbackDrawRenderPass(name: name, descriptor: descriptor, reflection: reflection, execute: execute))
+        self.addPass(ReflectableCallbackDrawRenderPass(name: name, descriptor: descriptor,
+        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+        reflection: reflection, execute: execute))
     }
 
     public func addComputeCallbackPass(file: String = #file, line: Int = #line,
@@ -542,10 +620,10 @@ public final class FrameGraph {
         if renderPasses[i].isActive, !addedToList[i] {
             addedToList[i] = true
             
-            if let targetRenderTargetDescriptor = (renderPasses[i].pass as? DrawRenderPass)?.renderTargetDescriptor {
+            if let targetPass = renderPasses[i].pass as? DrawRenderPass {
                 // First process all passes that can't share the same render target...
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? DrawRenderPass)?.renderTargetDescriptor,RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
+                    if let otherPass = renderPasses[j].pass as? DrawRenderPass, RenderTargetDescriptor.descriptorsAreMergeable(passA: otherPass, passB: targetPass) {
                     } else {
                         computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
                     }
@@ -553,7 +631,7 @@ public final class FrameGraph {
                 
                 // ... and then process those which can.
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherRenderTargetDescriptor = (renderPasses[j].pass as? DrawRenderPass)?.renderTargetDescriptor,RenderTargetDescriptor.areMergeable(otherRenderTargetDescriptor, targetRenderTargetDescriptor) {
+                    if let otherPass = renderPasses[j].pass as? DrawRenderPass, RenderTargetDescriptor.descriptorsAreMergeable(passA: otherPass, passB: targetPass) {
                         computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
                     }
                 }
