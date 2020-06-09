@@ -312,7 +312,7 @@ protocol _FrameGraphContext : FrameGraphContext {
     var accessSemaphore : Semaphore { get }
     var frameGraphQueue: Queue { get }
     func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
-    func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void)
+    func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping (_ gpuTime: Double) -> Void)
 }
 
 public enum FrameGraphTagType : UInt64 {
@@ -362,6 +362,7 @@ public final class FrameGraph {
     public static private(set) var globalSubmissionIndex : UInt64 = 0
     private var previousFrameCompletionTime : UInt64 = 0
     public private(set) var lastFrameRenderDuration = 1000.0 / 60.0
+    public private(set) var lastFrameGPUTime = 1000.0 / 60.0
     
     var submissionNotifyQueue = [() -> Void]()
     let context : _FrameGraphContext
@@ -833,7 +834,9 @@ public final class FrameGraph {
             // Compilation is finished, so reset that tag.
             TaggedHeap.free(tag: FrameGraphTagType.frameGraphCompilation.tag)
             
-            let completion = {
+            let completion: (Double) -> Void = { gpuTime in
+                self.lastFrameGPUTime = gpuTime
+                
                 let completionTime = DispatchTime.now().uptimeNanoseconds
                 let elapsed = completionTime - self.previousFrameCompletionTime
                 self.previousFrameCompletionTime = completionTime

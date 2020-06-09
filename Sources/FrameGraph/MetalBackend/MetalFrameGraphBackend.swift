@@ -286,7 +286,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         self.compactedResourceCommands.sort()
     }
     
-    public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {
+    public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, resourceUsages: ResourceUsages, completion: @escaping (Double) -> Void) {
         self.resourceRegistry.prepareFrame()
         
         defer {
@@ -302,7 +302,7 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         }
         
         if passes.isEmpty {
-            completion()
+            completion(0.0)
             self.accessSemaphore.signal()
             return
         }
@@ -364,6 +364,8 @@ final class MetalFrameGraphContext : _FrameGraphContext {
         
         var committedCommandBufferCount = 0
         var previousCommandEncoderIndex = -1
+        
+        var gpuStartTime: Double = 0.0
 
         func processCommandBuffer() {
             encoderManager?.endEncoding()
@@ -398,8 +400,15 @@ final class MetalFrameGraphContext : _FrameGraphContext {
                         print("Error executing command buffer \(queueCBIndex): \(error)")
                     }
                     self.frameGraphQueue.lastCompletedCommand = queueCBIndex
+                    if cbIndex == 0, #available(OSX 10.15, *) {
+                        gpuStartTime = commandBuffer.gpuStartTime
+                    }
                     if cbIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
-                        completion()
+                        var gpuEndTime = gpuStartTime
+                        if #available(OSX 10.15, *) {
+                            gpuEndTime = commandBuffer.gpuEndTime
+                        }
+                        completion((gpuEndTime - gpuStartTime) * 1000.0)
                         self.accessSemaphore.signal()
                     }
                 }
