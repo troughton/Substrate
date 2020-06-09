@@ -450,6 +450,45 @@ public class ResourceUsages {
         assert(resource.type != .argumentBuffer || !usageType.isWrite, "Read-write argument buffers are currently unsupported.")
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
+        if resource.flags.contains(.persistent) {
+            if let textureUsage = resource.texture?.descriptor.usageHint {
+                if usageType.isRead {
+                    assert(textureUsage.contains(.shaderRead))
+                }
+                if usageType.isRenderTarget {
+                    assert(textureUsage.contains(.renderTarget))
+                }
+                if usageType == .write || usageType == .readWrite {
+                    assert(textureUsage.contains(.shaderWrite))
+                }
+                if usageType == .blitSource {
+                    assert(textureUsage.contains(.blitSource))
+                }
+                if usageType == .blitDestination {
+                    assert(textureUsage.contains(.blitDestination))
+                }
+            } else if let bufferUsage = resource.buffer?.descriptor.usageHint {
+                if usageType == .read {
+                    assert(bufferUsage.contains(.shaderRead))
+                }
+                if usageType == .write || usageType == .readWrite {
+                    assert(bufferUsage.contains(.shaderWrite))
+                }
+                if usageType == .blitSource {
+                    assert(bufferUsage.contains(.blitSource))
+                }
+                if usageType == .blitDestination {
+                    assert(bufferUsage.contains(.blitDestination))
+                }
+                if usageType == .vertexBuffer {
+                    assert(bufferUsage.contains(.vertexBuffer))
+                }
+                if usageType == .indexBuffer {
+                    assert(bufferUsage.contains(.indexBuffer))
+                }
+            }
+        }
+        
         let (usagePtr, isNew) = resource.usages.nextNodeWithUsage(type: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, commandOffset: firstCommandOffset, renderPass: encoder.unmanagedPassRecord, allocator: self.usageNodeAllocator)
         
         // For each resource, is the resource usage different from what is was previously used for?

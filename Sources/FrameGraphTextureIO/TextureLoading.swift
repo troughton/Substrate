@@ -37,6 +37,7 @@ extension Texture {
     
     public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
         let pixelFormat: PixelFormat
+        let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         
         if url.pathExtension.lowercased() == "exr" {
             let textureData = try TextureData<Float>(exrAt: url, colourSpace: colourSpace)

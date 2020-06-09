@@ -10,7 +10,8 @@ import SwiftFrameGraph
 extension Texture {
     /// Uploads a TextureData to a GPU texture using the GPUResourceUploader.
     public init<T>(data textureData: TextureData<T>, pixelFormat: PixelFormat, mipmapped: Bool = false, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
-        let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage.union(.blitDestination))
+        let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
+        let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
         self = Texture(descriptor: descriptor, flags: flags)
         
         let mips = mipmapped ? textureData.generateMipChain(wrapMode: .wrap, compressedBlockSize: pixelFormat.rowsPerBlock) : [textureData]
