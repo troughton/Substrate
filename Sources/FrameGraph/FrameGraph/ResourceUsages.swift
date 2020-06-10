@@ -452,7 +452,7 @@ public class ResourceUsages {
         
         if resource.flags.contains(.persistent) {
             if let textureUsage = resource.texture?.descriptor.usageHint {
-                if usageType.isRead {
+                if usageType == .read {
                     assert(textureUsage.contains(.shaderRead))
                 }
                 if usageType.isRenderTarget {
