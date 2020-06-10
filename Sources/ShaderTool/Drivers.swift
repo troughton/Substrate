@@ -114,7 +114,16 @@ final class DXCDriver {
     }
     
     func compile(sourceFile: URL, destinationFile: URL, entryPoint: String, type: ShaderType, target: Target) throws -> Process {
-        let arguments = ["-enable-16bit-types", "-E", entryPoint, "-D" + target.targetDefine, "-fspv-target-env=vulkan1.1", "-fspv-reflect", "-T", type.shaderModel, "-spirv", "-fcgl", "-Vd", sourceFile.path, "-Fo", destinationFile.path]
+        let arguments = ["-enable-16bit-types",
+                         "-E", entryPoint,
+                         "-D" + target.targetDefine,
+                         "-D" + "EntryPoint_\(entryPoint)",
+                         "-fspv-target-env=vulkan1.1",
+                         "-fspv-reflect",
+                         "-T", type.shaderModel,
+                         "-spirv", "-fcgl",
+                         "-Vd", sourceFile.path,
+                         "-Fo", destinationFile.path]
         return try Process.run(self.url, arguments: arguments, terminationHandler: nil)
     }
 }
