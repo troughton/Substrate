@@ -289,7 +289,6 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             var previousWrite = firstUsage.isWrite ? firstUsage : nil
             
             if Backend.TransientResourceRegistry.isAliasedHeapResource(resource: resource) {
-                assert(firstUsage.isWrite || firstUsage.type == .unusedRenderTarget, "Heap resource \(resource) is read from without ever being written to.")
                 let fenceDependency = FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, stages: firstUsage.stages)
                 self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource, waitDependency: fenceDependency), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.lowerBound, order: .before))
                 
