@@ -53,7 +53,7 @@ protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.Transi
     func allocateBufferIfNeeded(_ buffer: Buffer, usage: BufferUsage, forceGPUPrivate: Bool) -> Backend.BufferReference
     func allocateTextureIfNeeded(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> Backend.TextureReference
     func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: Backend.PersistentResourceRegistry) throws -> Backend.TextureReference
-    func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties) -> Backend.TextureReference
+    func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties, resourceMap: FrameResourceMap<Backend>) -> Backend.TextureReference
     
     func setDisposalFences(on resource: Resource, to fences: [FenceDependency])
     func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent)

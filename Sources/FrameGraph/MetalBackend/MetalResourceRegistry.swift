@@ -528,7 +528,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties) -> MTLTextureReference {
+    public func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties, resourceMap: FrameResourceMap<Backend>) -> MTLTextureReference {
         assert(texture.flags.intersection([.persistent, .windowHandle, .externalOwnership]) == [])
         
         let mtlTexture : MTLTexture
@@ -536,11 +536,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         let baseResource = texture.baseResource!
         switch texture.textureViewBaseInfo! {
         case .buffer(let bufferInfo):
-            let mtlBuffer = self[baseResource.buffer!]!
+            let mtlBuffer = resourceMap[baseResource.buffer!]
             let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: MTLTextureUsage(usage.usage))
             mtlTexture = mtlBuffer.resource.makeTexture(descriptor: descriptor, offset: bufferInfo.offset, bytesPerRow: bufferInfo.bytesPerRow)!
         case .texture(let textureInfo):
-            let baseTexture = self[baseResource.texture!]!
+            let baseTexture = resourceMap[baseResource.texture!]
             if textureInfo.levels.lowerBound == -1 || textureInfo.slices.lowerBound == -1 {
                 assert(textureInfo.levels.lowerBound == -1 && textureInfo.slices.lowerBound == -1)
                 mtlTexture = baseTexture.texture.makeTextureView(pixelFormat: MTLPixelFormat(textureInfo.pixelFormat))!

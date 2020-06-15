@@ -97,7 +97,7 @@ enum PreFrameCommands {
             }
             
         case .materialiseTextureView(let texture, let usage):
-            _ = resourceRegistry.allocateTextureView(texture, usage: usage)
+            _ = resourceRegistry.allocateTextureView(texture, usage: usage, resourceMap: resourceMap)
             
         case .materialiseArgumentBuffer(let argumentBuffer):
             let argBufferReference : Backend.ArgumentBufferReference
