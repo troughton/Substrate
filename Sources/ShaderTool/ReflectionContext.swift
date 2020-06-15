@@ -222,13 +222,16 @@ final class ReflectionContext {
         
         for set in self.descriptorSets where set.passes.count > 1 {
             set.name = set.passes.map { $0.name }.sorted().joined() + "Set\( String(set.resources[0].binding.set))" // FIXME: what if the resources are in different sets for each pass?
+        }
+        
+        for set in self.descriptorSets.lazy.filter({ $0.passes.count > 1 }).sorted(by: { $0.name! < $1.name! }) {
             set.printStruct(to: &printer, typeLookup: typeLookup, setIndex: -1)
         }
         
         printer.print("// MARK: - Render Passes")
         printer.newLine()
         
-        for pass in self.renderPasses.values {
+        for pass in self.renderPasses.values.sorted(by: { $0.name < $1.name }) {
             printer.print(pass: pass, typeLookup: typeLookup)
             printer.newLine()
         }
