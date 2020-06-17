@@ -68,7 +68,7 @@ final class SPIRVCompiler {
     }
     
     func compiledSource() throws -> String {
-        if self.file.target == .macOSMetal || self.file.target == .iOSMetal {
+        if self.file.target.isMetal {
             
             // Set the push constant at buffer(0) and all argument buffers after it.
             var binding = spvc_msl_resource_binding()

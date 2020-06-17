@@ -8,19 +8,28 @@
 import Foundation
 import SPIRV_Cross
 
-enum Target : Hashable, CaseIterable {
-    case macOSMetal
-    case iOSMetal
-    case vulkan
+enum Target : Hashable {
+    case macOSMetal(deploymentTarget: String)
+    case iOSMetal(deploymentTarget: String)
+    case vulkan(spvVersion: String)
     
     static var defaultTarget : Target {
 #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-        return .iOSMetal
+        return .iOSMetal(deploymentTarget: "12.0")
 #elseif os(macOS) || targetEnvironment(macCatalyst)
-        return .macOSMetal
+        return .macOSMetal(deploymentTarget: "10.14")
 #else
         return .vulkan
 #endif
+    }
+    
+    var isMetal: Bool {
+        switch self {
+        case .macOSMetal, .iOSMetal:
+            return true
+        default:
+            return false
+        }
     }
     
     var spvcBackend : spvc_backend {
@@ -82,6 +91,19 @@ enum Target : Hashable, CaseIterable {
     }
 }
 
+extension Target: CustomStringConvertible {
+    var description: String {
+        switch self {
+        case .iOSMetal(let deploymentTarget):
+            return "Metal (iOS \(deploymentTarget))"
+        case .macOSMetal(let deploymentTarget):
+            return "Metal (macOS \(deploymentTarget))"
+        case .vulkan(let spvVersion):
+            return "Vulkan (SPIR-V \(spvVersion))"
+        }
+    }
+}
+
 enum CompilerError : Error {
     case shaderErrors
     case libraryGenerationFailed(Error)
@@ -96,7 +118,7 @@ final class MetalCompiler : TargetCompiler {
     let driver : MetalDriver
     
     init(target: Target) {
-        precondition(target == .macOSMetal || target == .iOSMetal)
+        precondition(target.isMetal)
         self.target = target
         self.driver = MetalDriver(target: target)!
     }
@@ -122,7 +144,11 @@ final class MetalCompiler : TargetCompiler {
                 spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ARGUMENT_BUFFERS, 1)
                 spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FORCE_ACTIVE_ARGUMENT_BUFFER_RESOURCES, 1)
                 spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_IOS_FRAMEBUFFER_FETCH_SUBPASS, 1)
-                spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, self.target == .iOSMetal ? SPVC_MSL_PLATFORM_IOS.rawValue : SPVC_MSL_PLATFORM_MACOS.rawValue)
+                if case .iOSMetal = self.target {
+                    spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, SPVC_MSL_PLATFORM_IOS.rawValue)
+                } else {
+                    spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, SPVC_MSL_PLATFORM_MACOS.rawValue)
+                }
                 
                 spvc_compiler_install_compiler_options(compiler.compiler, options)
             }

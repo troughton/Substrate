@@ -374,8 +374,8 @@ final class RenderPass {
         }
         
         for resource in compiler.boundResources {
-            if resource.viewType == .inputAttachment, compiler.file.target == .iOSMetal {
-                continue // No explicit bindings for input attachments no iOS Metal.
+            if resource.viewType == .inputAttachment, case .iOSMetal = compiler.file.target {
+                continue // No explicit bindings for input attachments on iOS Metal.
             }
             
             let insertionPoint = self.boundResources.firstIndex(where: { $0.binding >= resource.binding }) ?? self.boundResources.count

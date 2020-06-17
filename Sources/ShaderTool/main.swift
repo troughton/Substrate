@@ -10,12 +10,15 @@ enum ArgumentError: Error {
 extension Target: ExpressibleByArgument {
     init?(argument: String) {
         let lowercasedArg = argument.lowercased()
+        let versionStartIndex = lowercasedArg.firstIndex(where: { $0.isNumber })
+        let version = versionStartIndex.map { String(lowercasedArg[$0...]) }
+        
         if lowercasedArg.starts(with: "macos") {
-            self = .macOSMetal
+            self = .macOSMetal(deploymentTarget: version ?? "10.14")
         } else if lowercasedArg.starts(with: "ios") {
-            self = .iOSMetal
+            self = .iOSMetal(deploymentTarget: version ?? "12.0")
         } else if lowercasedArg == "vulkan" {
-            self = .vulkan
+            self = .vulkan(spvVersion: version ?? "1.0")
         } else {
             return nil
         }

@@ -160,10 +160,10 @@ extension Target {
     
     fileprivate var metalTargetVersion : String? {
         switch self {
-        case .macOSMetal:
-            return "-mmacosx-version-min=10.14"
-        case .iOSMetal:
-            return "-mios-version-min=12.0"
+        case .macOSMetal(let deploymentTarget):
+            return "-mmacosx-version-min=\(deploymentTarget)"
+        case .iOSMetal(let deploymentTarget):
+            return "-mios-version-min=\(deploymentTarget)"
         default:
             return nil
         }
@@ -175,21 +175,32 @@ final class MetalDriver {
     let target : Target
     
     init?(target: Target) {
-        guard target == .macOSMetal || target == .iOSMetal else { return nil }
+        switch target {
+        case .iOSMetal, .macOSMetal:
+            break
+        default:
+            return nil
+        }
         
         self.url = URL(fileURLWithPath: "/usr/bin/xcrun")
         self.target = target
     }
     
     func compileToAIR(sourceFile: URL, destinationFile: URL, withDebugInformation debug: Bool) throws -> Process {
-        let arguments = ["-sdk", target.metalSDK!,
+        var arguments = ["-sdk", target.metalSDK!,
                          "metal", "-c", "-ffast-math",
                          "-Wno-unused-const-variable", // Ignore warnings for unused function constants
                          "-Wno-unused-variable", // Ignore warnings for unused variables
-            "-gline-tables-only", debug ? "-MO" : "-O",
+            ]
+        if debug {
+            arguments.append(contentsOf: ["-gline-tables-only", "-MO"])
+        } else {
+            arguments.append("-O")
+        }
+        arguments.append(contentsOf: [
             target.metalTargetVersion!,
             sourceFile.path,
-            "-o", destinationFile.path]
+            "-o", destinationFile.path])
         
         return try Process.run(self.url, arguments: arguments, terminationHandler: nil)
     }
