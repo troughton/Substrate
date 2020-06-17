@@ -106,7 +106,7 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
         
         var newDescriptor = descriptor
-        newDescriptor.colorAttachments.append(contentsOf: pass.renderTargetDescriptor.colorAttachments.dropFirst(descriptor.colorAttachments.count))
+        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: pass.renderTargetDescriptor.colorAttachments.count - descriptor.colorAttachments.count))
         
         for i in 0..<min(newDescriptor.colorAttachments.count, pass.renderTargetDescriptor.colorAttachments.count) {
             if !self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: pass.renderTargetDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
