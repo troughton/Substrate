@@ -69,7 +69,7 @@ extension ReflectionPrinter {
         
         print("public enum \(stageName) : String {")
         
-        for entryPoint in filteredEntryPoints {
+        for entryPoint in filteredEntryPoints.sorted(by: { $0.name < $1.name }) {
             let name = entryPoint.name
             let entryPointFunctionNameStart = name.lastIndex(of: "_").map { name.index(after: $0) } ?? name.startIndex
             var enumCaseName = String(name[entryPointFunctionNameStart...])
