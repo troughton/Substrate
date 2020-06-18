@@ -11,7 +11,7 @@ import SPIRV_Cross
 enum Target : Hashable {
     case macOSMetal(deploymentTarget: String)
     case iOSMetal(deploymentTarget: String)
-    case vulkan(spvVersion: String)
+    case vulkan(version: String)
     
     static var defaultTarget : Target {
 #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
@@ -19,7 +19,7 @@ enum Target : Hashable {
 #elseif os(macOS) || targetEnvironment(macCatalyst)
         return .macOSMetal(deploymentTarget: "10.14")
 #else
-        return .vulkan
+        return .vulkan(version: "1.1")
 #endif
     }
     
@@ -98,8 +98,8 @@ extension Target: CustomStringConvertible {
             return "Metal (iOS \(deploymentTarget))"
         case .macOSMetal(let deploymentTarget):
             return "Metal (macOS \(deploymentTarget))"
-        case .vulkan(let spvVersion):
-            return "Vulkan (SPIR-V \(spvVersion))"
+        case .vulkan(let version):
+            return "Vulkan (v\(version))"
         }
     }
 }

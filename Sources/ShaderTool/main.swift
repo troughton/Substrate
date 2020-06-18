@@ -18,7 +18,7 @@ extension Target: ExpressibleByArgument {
         } else if lowercasedArg.starts(with: "ios") {
             self = .iOSMetal(deploymentTarget: version ?? "12.0")
         } else if lowercasedArg == "vulkan" {
-            self = .vulkan(spvVersion: version ?? "1.0")
+            self = .vulkan(version: version ?? "1.1")
         } else {
             return nil
         }
