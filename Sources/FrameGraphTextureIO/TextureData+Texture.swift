@@ -27,21 +27,23 @@ extension Texture {
 }
 
 extension TextureData {
-    public init(texture: Texture, hasPremultipliedAlpha: Bool = false) {
+    public init(texture: Texture, mipmapLevel: Int = 0, hasPremultipliedAlpha: Bool = false) {
         let pixelFormat = texture.descriptor.pixelFormat
         assert(pixelFormat.bytesPerPixel == Double(MemoryLayout<T>.stride * pixelFormat.channelCount))
         assert(texture.descriptor.textureType == .type2D)
         assert(texture.storageMode != .private)
         
-        self.init(width: texture.width, height: texture.height,
+        self.init(width: texture.width >> mipmapLevel, height: texture.height >> mipmapLevel,
                   channels: pixelFormat.channelCount, colourSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, premultipliedAlpha: hasPremultipliedAlpha)
+        
+        texture.waitForCPUAccess(accessType: .read)
         texture.copyBytes(to: self.storage.data.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride,
-                          region: Region(x: 0, y: 0, width: texture.width, height: texture.height),
-                          mipmapLevel: 0)
+                          region: Region(x: 0, y: 0, width: self.width, height: self.height),
+                          mipmapLevel: mipmapLevel)
         
         if pixelFormat == .bgra8Unorm_sRGB {
             let buffer = self.storage.data.baseAddress as! UnsafeMutablePointer<UInt8>
-            let texturePixels = texture.width * texture.height
+            let texturePixels = self.width * self.height
             
             for i in 0..<texturePixels {
                 let bufferPtr = buffer.advanced(by: 4 * i)
