@@ -29,7 +29,7 @@ extension ImGui {
         if Int(platformIO.pointee.Monitors.Capacity) < screens.count {
             let newData = igMemAlloc(screens.count * MemoryLayout<ImGuiPlatformMonitor>.size)
             if platformIO.pointee.Monitors.Data != nil {
-                memcpy(newData, platformIO.pointee.Monitors.Data, Int(platformIO.pointee.Monitors.Size) * MemoryLayout<ImGuiPlatformMonitor>.size)
+                newData?.copyMemory(from: platformIO.pointee.Monitors.Data, byteCount: Int(platformIO.pointee.Monitors.Size) * MemoryLayout<ImGuiPlatformMonitor>.size)
                 igMemFree(platformIO.pointee.Monitors.Data)
             }
             platformIO.pointee.Monitors.Data = newData?.assumingMemoryBound(to: ImGuiPlatformMonitor.self)

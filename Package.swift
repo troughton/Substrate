@@ -43,10 +43,13 @@ let package = Package(
                 .apt(["sdl2"]),
             ]
         ),
+        .systemLibrary(
+            name: "Vulkan"
+        ),
         .target(name: "CNativeFileDialog"),
         .target(
             name: "AppFramework",
-            dependencies: ["FrameGraphUtilities", "SwiftFrameGraph", "SwiftMath", "ImGui", "CNativeFileDialog"]),
+            dependencies: ["CSDL2", "FrameGraphUtilities", "SwiftFrameGraph", "SwiftMath", "ImGui", "CNativeFileDialog"]),
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14
 )

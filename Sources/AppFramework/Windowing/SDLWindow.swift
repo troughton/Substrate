@@ -106,7 +106,7 @@ open class SDLWindow : Window {
     @Cached public var texture : Texture
     
     public var textureDescriptor : TextureDescriptor {
-        return TextureDescriptor(type: .type2D, format: self.swapChain.pixelFormat, width: Int(self.drawableSize.width), height: Int(self.drawableSize.height), mipmapped: false)
+        return TextureDescriptor(type: .type2D, format: self.swapChain.format, width: Int(self.drawableSize.width), height: Int(self.drawableSize.height), mipmapped: false)
     }
     
     public func cycleFrames() {

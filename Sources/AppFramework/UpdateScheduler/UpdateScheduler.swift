@@ -15,17 +15,12 @@ public protocol UpdateScheduler {
 #if canImport(CSDL2)
 
 public final class SDLUpdateScheduler : UpdateScheduler  {
-    public var shouldQuit : Bool = false
+    public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowFrameGraph: FrameGraph) {
+        let application = SDLApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowFrameGraph: windowFrameGraph)
     
-    init() {
-    }
-    
-    public func start(updateLoop: @escaping () -> Void) {
-        updateLoop()
-    }
-    
-    public func waitUntilUpdate() {
-        // Don't wait; just proceed as quickly as possible
+        while !application.inputManager.shouldQuit {
+            application.update()
+        }
     }
 }
 
