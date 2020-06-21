@@ -49,7 +49,7 @@ let package = Package(
         .target(name: "CNativeFileDialog"),
         .target(
             name: "AppFramework",
-            dependencies: ["CSDL2", "FrameGraphUtilities", "SwiftFrameGraph", "SwiftMath", "ImGui", "CNativeFileDialog"]),
+            dependencies: ["FrameGraphUtilities", "SwiftFrameGraph", "SwiftMath", "ImGui", "CNativeFileDialog"]),
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14
 )

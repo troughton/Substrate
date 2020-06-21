@@ -24,7 +24,6 @@ extension MTLResourceOptions {
 #endif
 
 final class MetalBackend : SpecificRenderBackend {
-
     typealias BufferReference = MTLBufferReference
     typealias TextureReference = MTLTextureReference
     typealias ArgumentBufferReference = MTLBufferReference
@@ -34,13 +33,18 @@ final class MetalBackend : SpecificRenderBackend {
     typealias TransientResourceRegistry = MetalTransientResourceRegistry
     typealias PersistentResourceRegistry = MetalPersistentResourceRegistry
     
+    typealias CommandBuffer = MetalCommandBuffer
     typealias RenderTargetDescriptor = MetalRenderTargetDescriptor
+    typealias Event = MTLEvent
+    typealias BackendQueue = MTLCommandQueue
+    
+    typealias CompactedResourceCommandType = MetalCompactedResourceCommandType
     
     let device : MTLDevice
     let resourceRegistry : MetalPersistentResourceRegistry
     let stateCaches : MetalStateCaches
     
-    var activeContext : MetalFrameGraphContext? = nil
+    var activeContext : FrameGraphContextImpl<MetalBackend>? = nil
     
     var queueSyncEvents = [MTLEvent?](repeating: nil, count: QueueRegistry.maxQueues)
     
@@ -58,9 +62,11 @@ final class MetalBackend : SpecificRenderBackend {
         return self.device
     }
     
-    @usableFromInline func setActiveContext(_ context: MetalFrameGraphContext) {
-        assert(self.activeContext == nil)
-        self.stateCaches.checkForLibraryReload()
+    func setActiveContext(_ context: FrameGraphContextImpl<MetalBackend>?) {
+        assert(self.activeContext == nil || context == nil)
+        if context != nil {
+            self.stateCaches.checkForLibraryReload()
+        }
         self.activeContext = context
     }
     
@@ -212,6 +218,204 @@ final class MetalBackend : SpecificRenderBackend {
     static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
+    
+    func makeQueue() -> MTLCommandQueue {
+        return self.device.makeCommandQueue()!
+    }
+
+    func makeSyncEvent(for queue: Queue) -> MTLEvent {
+        let event = self.device.makeEvent()!
+        self.queueSyncEvents[Int(queue.index)] = event
+        return event
+    }
+    
+    func syncEvent(for queue: Queue) -> MTLEvent? {
+        return self.queueSyncEvents[Int(queue.index)]
+    }
+    
+
+    func freeSyncEvent(for queue: Queue) {
+        assert(self.queueSyncEvents[Int(queue.index)] != nil)
+        self.queueSyncEvents[Int(queue.index)] = nil
+    }
+
+    func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> MetalTransientResourceRegistry {
+        return MetalTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
+    }
+
+
+    func generateFenceCommands(queue: Queue, frameCommandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>, compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
+        // MARK: - Generate the fences
+        
+        let dependencies = commandGenerator.commandEncoderDependencies
+        
+        let commandEncoderCount = frameCommandInfo.commandEncoders.count
+        let reductionMatrix = dependencies.transitiveReduction(hasDependency: { $0 != nil })
+        
+        for sourceIndex in (0..<commandEncoderCount) { // sourceIndex always points to the producing pass.
+            let dependentRange = min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount
+            
+            var signalStages : MTLRenderStages = []
+            var signalIndex = -1
+            for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
+                let dependency = dependencies.dependency(from: dependentIndex, on: sourceIndex)!
+                signalStages.formUnion(MTLRenderStages(dependency.signal.stages))
+                signalIndex = max(signalIndex, dependency.signal.index)
+            }
+            
+            if signalIndex < 0 { continue }
+            
+            let label = "Encoder \(sourceIndex) Fence"
+            let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[sourceIndex].commandBufferIndex)
+            let fence = MetalFenceHandle(label: label, queue: queue, commandBufferIndex: commandBufferSignalValue)
+            
+            compactedResourceCommands.append(CompactedResourceCommand<MetalCompactedResourceCommandType>(command: .updateFence(fence, afterStages: signalStages), index: signalIndex, order: .after))
+            
+            for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
+                let dependency = dependencies.dependency(from: dependentIndex, on: sourceIndex)!
+                compactedResourceCommands.append(CompactedResourceCommand<MetalCompactedResourceCommandType>(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.wait.stages)), index: dependency.wait.index, order: .before))
+            }
+        }
+    }
+
+    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<MetalBackend>, commandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>, into compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
+        guard !commandGenerator.commands.isEmpty else { return }
+        assert(compactedResourceCommands.isEmpty)
+        
+        self.generateFenceCommands(queue: queue, frameCommandInfo: commandInfo, commandGenerator: commandGenerator, compactedResourceCommands: &compactedResourceCommands)
+        
+        
+        let allocator = ThreadLocalTagAllocator(tag: FrameGraphContextImpl<MetalBackend>.resourceCommandArrayTag)
+        
+        var currentEncoderIndex = 0
+        var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
+        
+        
+        var barrierResources: [Unmanaged<MTLResource>] = []
+        barrierResources.reserveCapacity(8) // we use memoryBarrier(resource) for up to eight resources, and memoryBarrier(scope) otherwise.
+        
+        var barrierScope: MTLBarrierScope = []
+        var barrierAfterStages: MTLRenderStages = []
+        var barrierBeforeStages: MTLRenderStages = []
+        var barrierLastIndex: Int = .max
+        
+        var encoderResidentResources = Set<MetalResidentResource>()
+        
+        var encoderUseResourceCommandIndex: Int = .max
+        var encoderUseResources = [UseResourceKey: [Unmanaged<MTLResource>]]()
+        
+        let addBarrier: (inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) -> Void = { compactedResourceCommands in
+            #if os(macOS) || targetEnvironment(macCatalyst)
+            let isRTBarrier = barrierScope.contains(.renderTargets)
+            #else
+            let isRTBarrier = false
+            #endif
+            if barrierResources.count <= 8, !isRTBarrier {
+                let memory = allocator.allocate(capacity: barrierResources.count) as UnsafeMutablePointer<Unmanaged<MTLResource>>
+                memory.assign(from: barrierResources, count: barrierResources.count)
+                let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: barrierResources.count)
+                
+                compactedResourceCommands.append(.init(command: .resourceMemoryBarrier(resources: bufferPointer, afterStages: barrierAfterStages.last, beforeStages: barrierBeforeStages.first), index: barrierLastIndex, order: .before))
+            } else {
+                compactedResourceCommands.append(.init(command: .scopedMemoryBarrier(scope: barrierScope, afterStages: barrierAfterStages.last, beforeStages: barrierBeforeStages.first), index: barrierLastIndex, order: .before))
+            }
+            barrierResources.removeAll(keepingCapacity: true)
+            barrierScope = []
+            barrierAfterStages = []
+            barrierBeforeStages = []
+            barrierLastIndex = .max
+        }
+        
+        let useResources: (inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) -> Void = { compactedResourceCommands in
+            for (key, resources) in encoderUseResources where !resources.isEmpty {
+                let memory = allocator.allocate(capacity: resources.count) as UnsafeMutablePointer<Unmanaged<MTLResource>>
+                memory.assign(from: resources, count: resources.count)
+                let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: resources.count)
+                
+                compactedResourceCommands.append(.init(command: .useResources(bufferPointer, usage: key.usage, stages: key.stages), index: encoderUseResourceCommandIndex, order: .before))
+            }
+            encoderUseResourceCommandIndex = .max
+            encoderUseResources.removeAll(keepingCapacity: true)
+            encoderResidentResources.removeAll(keepingCapacity: true)
+        }
+        
+        let getResource: (Resource) -> Unmanaged<MTLResource> = { resource in
+            if let buffer = resource.buffer {
+                return unsafeBitCast(resourceMap[buffer]._buffer, to: Unmanaged<MTLResource>.self)
+            } else if let texture = resource.texture {
+                return unsafeBitCast(resourceMap[texture]._texture, to: Unmanaged<MTLResource>.self)
+            } else if let argumentBuffer = resource.argumentBuffer {
+                return unsafeBitCast(resourceMap[argumentBuffer]._buffer, to: Unmanaged<MTLResource>.self)
+            }
+            fatalError()
+        }
+        
+        for command in commandGenerator.commands {
+            if command.index > barrierLastIndex {
+                addBarrier(&compactedResourceCommands)
+            }
+            
+            while !currentEncoder.commandRange.contains(command.index) {
+                currentEncoderIndex += 1
+                currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
+                
+                useResources(&compactedResourceCommands)
+                
+                assert(barrierScope == [])
+                assert(barrierResources.isEmpty)
+            }
+            
+            // Strategy:
+            // useResource should be batched together by usage to as early as possible in the encoder.
+            // memoryBarriers should be as late as possible.
+            switch command.command {
+            case .useResource(let resource, let usage, let stages, let allowReordering):
+                let mtlResource = getResource(resource)
+                
+                var computedUsageType: MTLResourceUsage = []
+                if resource.type == .texture, usage == .read {
+                    computedUsageType.formUnion(.sample)
+                }
+                if usage.isRead {
+                    computedUsageType.formUnion(.read)
+                }
+                if usage.isWrite {
+                    computedUsageType.formUnion(.write)
+                }
+                
+                if !allowReordering {
+                    let memory = allocator.allocate(capacity: 1) as UnsafeMutablePointer<Unmanaged<MTLResource>>
+                    memory.initialize(to: mtlResource)
+                    let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: 1)
+                    compactedResourceCommands.append(.init(command: .useResources(bufferPointer, usage: computedUsageType, stages: MTLRenderStages(stages)), index: command.index, order: .before))
+                } else {
+                    let key = MetalResidentResource(resource: mtlResource, stages: MTLRenderStages(stages), usage: computedUsageType)
+                    let (inserted, _) = encoderResidentResources.insert(key)
+                    if inserted {
+                        encoderUseResources[UseResourceKey(stages: MTLRenderStages(stages), usage: computedUsageType), default: []].append(mtlResource)
+                    }
+                    encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
+                }
+                
+            case .memoryBarrier(let resource, let scope, let afterStages, let beforeCommand, let beforeStages):
+                if barrierResources.count < 8 {
+                    barrierResources.append(getResource(resource))
+                }
+                barrierScope.formUnion(MTLBarrierScope(scope))
+                barrierAfterStages.formUnion(MTLRenderStages(afterStages))
+                barrierBeforeStages.formUnion(MTLRenderStages(beforeStages))
+                barrierLastIndex = min(beforeCommand, barrierLastIndex)
+            }
+        }
+        
+        if barrierLastIndex < .max {
+            addBarrier(&compactedResourceCommands)
+        }
+        useResources(&compactedResourceCommands)
+        
+        compactedResourceCommands.sort()
+    }
+
 }
 
 #endif // canImport(Metal)

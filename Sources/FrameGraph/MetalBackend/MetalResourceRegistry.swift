@@ -57,7 +57,6 @@ struct MTLTextureReference : MTLResourceReference {
 }
 
 final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
-    
     typealias Backend = MetalBackend
     
     var accessLock = ReaderWriterLock()
@@ -299,6 +298,12 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             mtlBuffer._buffer.release()
         }
     }
+    
+    func cycleFrames() {
+        // No-op for now.
+        // Once we have unretained references we need to dispose any enqueued disposals here.
+    }
+    
 }
 
 

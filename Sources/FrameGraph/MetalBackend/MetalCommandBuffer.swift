@@ -1,0 +1,133 @@
+//
+//  MetalCommandBuffer.swift
+//  SwiftFrameGraph
+//
+//  Created by Thomas Roughton on 21/06/20.
+//
+
+#if canImport(Metal)
+import Metal
+import FrameGraphUtilities
+
+final class MetalCommandBuffer: BackendCommandBuffer {
+    typealias Backend = MetalBackend
+    
+    let backend: MetalBackend
+    let commandBuffer: MTLCommandBuffer
+    let commandInfo: FrameCommandInfo<MetalBackend>
+    let textureUsages: [Texture: TextureUsageProperties]
+    let resourceMap: FrameResourceMap<MetalBackend>
+    let compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]
+    
+    init(backend: MetalBackend,
+         queue: MTLCommandQueue,
+         commandInfo: FrameCommandInfo<Backend>,
+         textureUsages: [Texture: TextureUsageProperties],
+         resourceMap: FrameResourceMap<MetalBackend>,
+         compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
+        self.backend = backend
+        self.commandBuffer = queue.makeCommandBuffer()!
+        self.commandInfo = commandInfo
+        self.textureUsages = textureUsages
+        self.resourceMap = resourceMap
+        self.compactedResourceCommands = compactedResourceCommands
+    }
+    
+    var gpuStartTime: Double {
+        if #available(OSX 10.15, *) {
+            return self.commandBuffer.gpuStartTime
+        } else {
+            return 0.0
+        }
+    }
+    
+    var gpuEndTime: Double {
+        if #available(OSX 10.15, *) {
+            return self.commandBuffer.gpuEndTime
+        } else {
+            return 0.0
+        }
+    }
+    
+    func encodeCommands(encoderIndex: Int) {
+        let encoderManager = MetalEncoderManager(commandBuffer: self.commandBuffer, resourceMap: self.resourceMap)
+        
+        let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
+        
+        for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
+            switch passRecord.pass.passType {
+            case .blit:
+                let commandEncoder = encoderManager.blitCommandEncoder()
+                if commandEncoder.encoder.label == nil {
+                    commandEncoder.encoder.label = encoderInfo.name
+                }
+                
+                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                
+            case .draw:
+                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: encoderInfo.renderTargetDescriptor!, textureUsages: self.textureUsages) else {
+                    if _isDebugAssertConfiguration() {
+                        print("Warning: skipping pass \(passRecord.pass.name) since the drawable for the render target could not be retrieved.")
+                    }
+                    
+                    return
+                }
+                if commandEncoder.label == nil {
+                    commandEncoder.label = encoderInfo.name
+                }
+                
+                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+            case .compute:
+                let commandEncoder = encoderManager.computeCommandEncoder()
+                if commandEncoder.encoder.label == nil {
+                    commandEncoder.encoder.label = encoderInfo.name
+                }
+                
+                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                
+            case .external:
+                let commandEncoder = encoderManager.externalCommandEncoder()
+                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                
+            case .cpu:
+                break
+            }
+        }
+        
+        encoderManager.endEncoding()
+    }
+    
+    func waitForEvent(_ event: MTLEvent, value: UInt64) {
+        self.commandBuffer.encodeWaitForEvent(event, value: value)
+    }
+    
+    func signalEvent(_ event: MTLEvent, value: UInt64) {
+        self.commandBuffer.encodeSignalEvent(event, value: value)
+    }
+    
+    func presentSwapchains(resourceRegistry: MetalTransientResourceRegistry) {
+        // Only contains drawables applicable to the render passes in the command buffer...
+        for drawable in resourceRegistry.frameDrawables {
+            #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+            self.commandBuffer.present(drawable, afterMinimumDuration: 1.0 / 60.0)
+            #else
+            self.commandBuffer.present(drawable)
+            #endif
+        }
+        // because we reset the list after each command buffer submission.
+        resourceRegistry.clearDrawables()
+    }
+    
+    func commit(onCompletion: @escaping (MetalCommandBuffer) -> Void) {
+        self.commandBuffer.addCompletedHandler { _ in
+            onCompletion(self)
+        }
+        self.commandBuffer.commit()
+    }
+    
+    var error: Error? {
+        return self.commandBuffer.error
+    }
+}
+
+#endif

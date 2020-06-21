@@ -27,12 +27,14 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     
     let baseCommandBufferSignalValue: UInt64
     
+    let passes: [RenderPassRecord]
     var commandEncoders: [CommandEncoderInfo]
     
     // storedTextures contain all textures that are stored to (i.e. textures that aren't eligible to be memoryless on iOS).
     var storedTextures: [Texture]
     
     init(passes: [RenderPassRecord], resourceUsages: ResourceUsages, initialCommandBufferSignalValue: UInt64) {
+        self.passes = passes
         self.baseCommandBufferSignalValue = initialCommandBufferSignalValue
         
         var storedTextures = [Texture]()

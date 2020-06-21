@@ -380,7 +380,7 @@ public final class FrameGraph {
         switch RenderBackend._backend.api {
 #if canImport(Metal)
         case .metal:
-            self.context = MetalFrameGraphContext(backend: RenderBackend._backend as! MetalBackend, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
+            self.context = FrameGraphContextImpl<MetalBackend>(backend: RenderBackend._backend as! MetalBackend, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
 #endif
 #if canImport(Vulkan)
         case .vulkan:

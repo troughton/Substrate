@@ -9,6 +9,11 @@ import FrameGraphUtilities
 
 protocol SpecificRenderBackend: _RenderBackendProtocol {
     associatedtype RenderTargetDescriptor: BackendRenderTargetDescriptor
+    associatedtype CommandBuffer: BackendCommandBuffer where CommandBuffer.Backend == Self
+    
+    associatedtype BackendQueue
+    associatedtype Event
+    associatedtype CompactedResourceCommandType
     
     associatedtype TransientResourceRegistry: BackendTransientResourceRegistry where TransientResourceRegistry.Backend == Self
     associatedtype PersistentResourceRegistry: BackendPersistentResourceRegistry where PersistentResourceRegistry.Backend == Self
@@ -22,6 +27,18 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     static var requiresResourceResidencyTracking: Bool { get }
     static var requiresBufferUsage: Bool { get }
     
+    func makeQueue() -> BackendQueue
+    func makeSyncEvent(for queue: Queue) -> Event
+    func freeSyncEvent(for queue: Queue)
+    func syncEvent(for queue: Queue) -> Event?
+    
+    func setActiveContext(_ context: FrameGraphContextImpl<Self>?)
+    
+    var resourceRegistry: PersistentResourceRegistry { get }
+    func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> TransientResourceRegistry
+    
+    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<Self>, commandInfo: FrameCommandInfo<Self>, commandGenerator: ResourceCommandGenerator<Self>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>])
+    
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: ArgumentBufferReference, resourceMap: FrameResourceMap<Self>)
     static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: ArgumentBufferArrayReference, resourceMap: FrameResourceMap<Self>)
 }
@@ -33,6 +50,29 @@ protocol BackendRenderTargetDescriptor: class {
     func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture])
 }
 
+protocol BackendCommandBuffer: class {
+    associatedtype Backend: SpecificRenderBackend
+    
+    init(backend: Backend,
+         queue: Backend.BackendQueue,
+         commandInfo: FrameCommandInfo<Backend>,
+         textureUsages: [Texture: TextureUsageProperties],
+         resourceMap: FrameResourceMap<Backend>,
+         compactedResourceCommands: [CompactedResourceCommand<Backend.CompactedResourceCommandType>])
+    
+    func encodeCommands(encoderIndex: Int)
+    
+    func waitForEvent(_ event: Backend.Event, value: UInt64)
+    func signalEvent(_ event: Backend.Event, value: UInt64)
+    func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry)
+    func commit(onCompletion: @escaping (Self) -> Void)
+    
+    var gpuStartTime: Double { get }
+    var gpuEndTime: Double { get }
+    
+    var error: Error? { get }
+}
+
 protocol ResourceRegistry: class {
     associatedtype Backend: SpecificRenderBackend
     
@@ -41,6 +81,8 @@ protocol ResourceRegistry: class {
     subscript(argumentBuffer: _ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
     subscript(argumentBufferArray: _ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get }
     
+    func prepareFrame()
+    func cycleFrames()
     func allocateArgumentBufferIfNeeded(_ buffer: _ArgumentBuffer) -> Backend.ArgumentBufferReference
     func allocateArgumentBufferArrayIfNeeded(_ buffer: _ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference
 }
