@@ -44,7 +44,7 @@ extension VulkanCommandEncoder {
     }
     
     func endEncoding() {
-        vkEndCommandBuffer(self.commandBufferResources.commandBuffer)
+        vkEndCommandBuffer(self.commandBuffer)
     }
 }
 
@@ -128,8 +128,8 @@ final class EncoderManager {
         self.endEncoding(for: self.blitEncoder)
         
         let device = frameGraph.backend.device.vkDevice
-        
-        fatalError()
+
+        print("Error: synchronisation for endEncoding \(#file):\(#line) is not implemented.")
         
 //        for queue in self.device.queues {
 //            let fence = self.device.fencePool.allocateFence()

@@ -209,7 +209,7 @@ public class VulkanSwapChain : SwapChain {
         return (image, semaphore)
     }
     
-    func submit() {
+    func submit(waitSemaphore: VkSemaphore?) {
         guard let imageIndex = self.currentImageIndex else {
             fatalError("VulkanSwapChain.submit() called without matching nextImage(). Aborting.")
         }
@@ -219,11 +219,9 @@ public class VulkanSwapChain : SwapChain {
         var presentInfo = VkPresentInfoKHR();
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
-        var semaphore : VkSemaphore? = nil
-        fatalError("Need to provide a semaphore to wait on (if appropriate).")
-        presentInfo.waitSemaphoreCount = semaphore == nil ? 0 : 1
+        presentInfo.waitSemaphoreCount = waitSemaphore == nil ? 0 : 1
         
-        withUnsafePointer(to: &semaphore) { semaphorePtr in
+        withUnsafePointer(to: waitSemaphore) { semaphorePtr in
             presentInfo.pWaitSemaphores = semaphorePtr
             
             var swapChain = self.swapChain as VkSwapchainKHR?
