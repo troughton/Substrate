@@ -300,7 +300,8 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     }
     
     private func beginPass(_ pass: RenderPassRecord) throws {
-        self.currentDrawRenderPass = (pass.pass as! DrawRenderPass)        
+        let drawPass = pass.pass as! DrawRenderPass
+        self.currentDrawRenderPass = drawPass       
         self.pipelineState.hasChanged = true
         
         let renderTargetSize = renderTarget.descriptor.size
@@ -315,17 +316,11 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             
             var clearValues = [VkClearValue]()
             if renderTarget.descriptor.depthAttachment != nil || renderTarget.descriptor.stencilAttachment != nil {
-                let clearDepth = renderTarget.descriptor.depthAttachment?.clearDepth ?? 0.0
-                let clearStencil = renderTarget.descriptor.stencilAttachment?.clearStencil ?? 0
-                clearValues.append(VkClearValue(depthStencil: VkClearDepthStencilValue(depth: Float(clearDepth), stencil: clearStencil)))
+                clearValues.append(VkClearValue(depthStencil: VkClearDepthStencilValue(depth: Float(renderTarget.clearDepth), stencil: renderTarget.clearStencil)))
             }
             
-            for colorAttachment in renderTarget.descriptor.colorAttachments {
-                if let clearColor = colorAttachment?.clearColor {
-                    clearValues.append(VkClearValue(color: VkClearColorValue(float32: (Float(clearColor.red), Float(clearColor.green), Float(clearColor.blue), Float(clearColor.alpha)))))
-                } else {
-                    clearValues.append(VkClearValue())
-                }
+            for clearColor in self.renderTarget.clearColors {
+                clearValues.append(VkClearValue(color: clearColor))
             }
             
             clearValues.withUnsafeBufferPointer { clearValues in

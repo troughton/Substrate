@@ -416,7 +416,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties) -> VkImageReference {
+    public func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties, resourceMap: FrameResourceMap<VulkanBackend>) -> VkImageReference {
         fatalError("Unimplemented")
     }
     

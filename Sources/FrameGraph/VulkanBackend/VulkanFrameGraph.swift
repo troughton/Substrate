@@ -115,7 +115,7 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
         fatalError()
     }
     
-    public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping () -> Void) {
+    public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping (Double) -> Void) {
         self.clearInactiveCommandBufferResources()
         self.resourceRegistry.prepareFrame()
         
@@ -132,7 +132,7 @@ public final class VulkanFrameGraphContext : _FrameGraphContext {
         }
         
         if passes.isEmpty {
-            completion()
+            completion(0.0)
             self.accessSemaphore.signal()
             return
         }
