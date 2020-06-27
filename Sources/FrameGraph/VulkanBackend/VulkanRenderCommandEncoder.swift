@@ -149,13 +149,11 @@ struct VulkanRenderPipelineDescriptor : Hashable {
 class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     
     class PipelineState {
-        let bindingManager : ResourceBindingManager
         let shaderLibrary : VulkanShaderLibrary
         var hasChanged = true
         
-        init(shaderLibrary: VulkanShaderLibrary, bindingManager: ResourceBindingManager) {
+        init(shaderLibrary: VulkanShaderLibrary) {
             self.shaderLibrary = shaderLibrary
-            self.bindingManager = bindingManager
         }
         
         var descriptor : RenderPipelineDescriptor! = nil {
@@ -222,7 +220,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             if let layout = _layout {
                 return layout
             }
-            _layout = self.shaderLibrary.pipelineLayout(for: .graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction), bindingManager: self.bindingManager)
+            _layout = self.shaderLibrary.pipelineLayout(for: .graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction))
             return _layout
         }
 
@@ -240,26 +238,24 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     
     let device : VulkanDevice
     let stateCaches : VulkanStateCaches
-    let commandBufferResources : CommandBufferResources
+    let commandBufferResources : VulkanCommandBuffer
     let renderTarget : VulkanRenderTargetDescriptor
     let resourceMap: FrameResourceMap<VulkanBackend>
     
     var renderPass : VulkanRenderPass! = nil
     var currentDrawRenderPass : DrawRenderPass! = nil
-    var bindingManager : ResourceBindingManager! = nil
     var pipelineState : PipelineState! = nil
     
     var boundVertexBuffers = [Buffer?](repeating: nil, count: 8)
     
-    public init(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: CommandBufferResources, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: FrameResourceMap<VulkanBackend>) {
+    public init?(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: VulkanCommandBuffer, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: FrameResourceMap<VulkanBackend>) {
         self.device = device
         self.renderTarget = renderTarget
         self.commandBufferResources = commandBufferResources
         self.stateCaches = caches
         self.resourceMap = resourceMap
         
-        self.bindingManager = ResourceBindingManager(encoder: self)
-        self.pipelineState = PipelineState(shaderLibrary: shaderLibrary, bindingManager: bindingManager)
+        self.pipelineState = PipelineState(shaderLibrary: shaderLibrary)
     }
     
     var queueFamily: QueueFamily {
@@ -295,8 +291,6 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
                                             pipelineReflection: self.pipelineState.pipelineReflection]
             vkCmdBindPipeline(self.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline)
         }
-        
-        self.bindingManager.bindDescriptorSets()
     }
     
     private func beginPass(_ pass: RenderPassRecord) throws {
@@ -437,19 +431,32 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             vkCmdBindDescriptorSets(self.commandBuffer, self.bindPoint, self.pipelineLayout, bindingPath.set, 1, &set, 0, nil)
 
         case .setBytes(let args):
-            self.bindingManager.setBytes(args: args)
+            let bindingPath = args.pointee.bindingPath
+            let bytes = args.pointee.bytes
+            let length = args.pointee.length
+            
+            let resourceInfo = self.pipelineReflection[bindingPath]
+            
+            switch resourceInfo.type {
+            case .pushConstantBuffer:
+                assert(resourceInfo.bindingRange.count == length, "The push constant size and the setBytes length must match.")
+                vkCmdPushConstants(self.commandBuffer, self.pipelineLayout, VkShaderStageFlags(resourceInfo.accessedStages), resourceInfo.bindingRange.lowerBound, length, bytes)
+                
+            default:
+                fatalError("Need to implement VK_EXT_inline_uniform_block or else fall back to a temporary staging buffer")
+            }
             
         case .setBufferOffset(let args):
-            self.bindingManager.setBufferOffset(args: args)
+            fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
             
         case .setBuffer(let args):
-            self.bindingManager.setBuffer(args: args)
+            fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
             
         case .setTexture(let args):
-            self.bindingManager.setTexture(args: args)
+            fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
             
         case .setSamplerState(let args):
-            self.bindingManager.setSamplerState(args: args)
+            fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
             
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value

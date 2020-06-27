@@ -60,6 +60,8 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     let device : VulkanDevice
     let vmaAllocator : VmaAllocator
     
+    let descriptorPool: VulkanDescriptorPool
+    
     var heapReferences = PersistentResourceMap<Heap, VulkanHeap>()
     var textureReferences = PersistentResourceMap<Texture, VkImageReference>()
     var bufferReferences = PersistentResourceMap<Buffer, VkBufferReference>()
@@ -80,6 +82,8 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         var allocator : VmaAllocator? = nil
         vmaCreateAllocator(&allocatorInfo, &allocator)
         self.vmaAllocator = allocator!
+        
+        self.descriptorPool = VulkanDescriptorPool(device: device, incrementalRelease: true)
         
         self.prepareFrame()
         VulkanEventRegistry.instance.device = self.device.vkDevice
@@ -280,6 +284,10 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
             _ = vkBuffer
         }
     }
+    
+    func cycleFrames() {
+        // No-op for now, but should dispose command buffer resources.
+    }
 }
 
 
@@ -307,9 +315,15 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     private let privateResourceAllocator : VulkanPoolResourceAllocator
     private let temporaryBufferAllocator : VulkanTemporaryBufferAllocator
     
+    private let descriptorPools: [VulkanDescriptorPool]
+    
+    public let inflightFrameCount: Int
+    private var activeFrameIndex: Int = 0
+    
     public private(set) var frameSwapChains : [VulkanSwapChain] = []
     
     public init(device: VulkanDevice, inflightFrameCount: Int, transientRegistryIndex: Int, persistentRegistry: VulkanPersistentResourceRegistry) {
+        self.inflightFrameCount = inflightFrameCount
         self.persistentRegistry = persistentRegistry
         
         self.textureReferences = .init(transientRegistryIndex: transientRegistryIndex)
@@ -325,6 +339,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.uploadResourceAllocator = VulkanPoolResourceAllocator(device: device, allocator: persistentRegistry.vmaAllocator, memoryUsage: VMA_MEMORY_USAGE_CPU_TO_GPU, numFrames: inflightFrameCount)
         self.privateResourceAllocator = VulkanPoolResourceAllocator(device: device, allocator: persistentRegistry.vmaAllocator, memoryUsage: VMA_MEMORY_USAGE_GPU_ONLY, numFrames: 1)
         self.temporaryBufferAllocator = VulkanTemporaryBufferAllocator(numFrames: inflightFrameCount, allocator: persistentRegistry.vmaAllocator, device: device)
+        
+        self.descriptorPools = (0..<inflightFrameCount).map { _ in VulkanDescriptorPool(device: device, incrementalRelease: false) }
         
         self.prepareFrame()
     }
@@ -349,6 +365,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         
         self.textureWaitEvents.prepareFrame()
         self.bufferWaitEvents.prepareFrame()
+        
+        self.descriptorPools[self.activeFrameIndex].resetDescriptorPool()
     }
 
     func allocatorForBuffer(storageMode: StorageMode, flags: ResourceFlags) -> VulkanBufferAllocator {
@@ -489,6 +507,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         
         let layout = VkDescriptorSetLayout(argumentBuffer.encoder!)
+        
         fatalError()
 //        let argumentBuffer = VulkanArgumentBuffer(arguments: argumentBuffer, bindingPath: bindingPath, commandBufferResources: commandBufferResources, pipelineReflection: pipelineReflection, stateCaches: stateCaches)
 //
@@ -497,11 +516,11 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     @discardableResult
     func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray) -> VulkanArgumentBuffer {
-        if let vkArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
-            return vkArgumentBuffer
-        }
-        
-        let layout = VkDescriptorSetLayout(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!)
+//        if let vkArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
+//            return vkArgumentBuffer
+//        }
+//        
+//        let layout = VkDescriptorSetLayout(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!)
        
         fatalError("Argument buffer arrays are currently unsupported on Vulkan.")
     }
@@ -628,6 +647,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.uploadResourceAllocator.cycleFrames()
         self.privateResourceAllocator.cycleFrames()
         self.temporaryBufferAllocator.cycleFrames()
+        
+        self.activeFrameIndex = (self.activeFrameIndex &+ 1) % self.inflightFrameCount
     }
 }
 
@@ -737,7 +758,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
 //        return self.allocateTexture(texture, descriptor: texture.descriptor, flags: texture.flags, usage: usage, sharingMode: sharingMode, initialLayout: initialLayout)
 //    }
 //
-//    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, bindingPath: ResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches) -> VulkanArgumentBuffer {
+//    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, bindingPath: ResourceBindingPath, commandBufferResources: VulkanCommandBuffer, pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches) -> VulkanArgumentBuffer {
 //        if let vulkanArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
 //            return vulkanArgumentBuffer
 //        }

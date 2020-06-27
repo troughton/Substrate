@@ -290,10 +290,7 @@ struct VulkanImageDescriptor : Equatable {
         createInfo.initialLayout = self.initialLayout
         
         switch self.sharingMode {
-        case .concurrent(let queueFamily):
-        
-            let queueIndices = device.physicalDevice.queueFamilyIndices(for: queueFamily)
-            
+        case .concurrent(let queueIndices):
             if queueIndices.count == 1 {
                 fallthrough
             } else {

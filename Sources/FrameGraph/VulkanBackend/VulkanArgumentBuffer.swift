@@ -19,25 +19,12 @@ final class VulkanArgumentBuffer {
     private var images = [VulkanImage]()
     private var buffers = [VulkanBuffer]()
     
-    public init(arguments: _ArgumentBuffer, bindingPath: ResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, stateCaches: VulkanStateCaches) {
-        self.device = commandBufferResources.device
+    public init(descriptorSet: VkDescriptorSet, bindingPath: ResourceBindingPath, commandBufferResources: VulkanCommandBuffer, pipelineReflection: VulkanPipelineReflection, stateCaches: VulkanStateCaches) {
+        self.device = commandBufferResources.backend.device
 
-        let layout = pipelineReflection.descriptorSetLayout(set: bindingPath.set, dynamicBuffers: []).vkLayout
+        let layout = pipelineReflection.descriptorSetLayout(set: bindingPath.set).vkLayout
         
         self.isTransient = !arguments.flags.contains(.persistent)
-
-        if self.isTransient {
-            self.descriptorSet = commandBufferResources.descriptorPool.allocateSet(layout: layout)
-            commandBufferResources.descriptorSets.append(self.descriptorSet)
-        } else {
-            fatalError("Persistent argument buffers unimplemented on Vulkan.")
-        }
-    }
-
-    deinit {
-        if !self.isTransient {
-            fatalError("Need to return the set to the pool.")
-        }
     }
 }
 

@@ -6,7 +6,7 @@ target_sources(SwiftFrameGraph PRIVATE
   VulkanBlitCommandEncoder.swift
   VulkanBuffer.swift
   VulkanCaches.swift
-  VulkanCommandBufferResources.swift
+  VulkanVulkanCommandBuffer.swift
   VulkanCommandEncoder.swift
   VulkanCommandPool.swift
   VulkanComputeCommandEncoder.swift

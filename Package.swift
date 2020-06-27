@@ -25,8 +25,8 @@ let package = Package(
     targets: [
         // FrameGraph
         .target(name: "FrameGraphTextureIO", dependencies: ["SwiftFrameGraph", "stb_image", "stb_image_resize", "stb_image_write", "tinyexr", "LodePNG"]),
-        .target(name: "FrameGraphCExtras"),
-        .target(name: "SwiftFrameGraph", dependencies: ["FrameGraphUtilities", "FrameGraphCExtras", "SwiftAtomics", "SPIRV-Cross"], path: "Sources/FrameGraph"),
+        .target(name: "FrameGraphCExtras", dependencies: ["Vulkan"]),
+        .target(name: "SwiftFrameGraph", dependencies: ["FrameGraphUtilities", "FrameGraphCExtras", "SwiftAtomics", "SPIRV-Cross", "Vulkan"], path: "Sources/FrameGraph"),
         .target(name: "FrameGraphUtilities", dependencies: ["SwiftAtomics"]),
     
         // ShaderTool

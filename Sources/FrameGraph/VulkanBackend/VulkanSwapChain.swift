@@ -49,13 +49,14 @@ public class VulkanSwapChain : SwapChain {
     let surface : VkSurfaceKHR
     
     var surfaceFormat : VkSurfaceFormatKHR! = nil
-    let presentQueue : VkQueue
+    let presentQueue: VulkanDeviceQueue
 
     private var needsRecreateSwapChain = false
     
     private(set) var swapChain : VkSwapchainKHR? = nil
     private(set) var images : [VulkanImage] = []
-    private var imageSemaphores : [VkSemaphore] = []
+    private var imageAcquisitionSemaphores : [VkSemaphore] = []
+    private var imagePresentationSemaphores : [VkSemaphore] = []
     
     private var currentImageIndex : Int? = nil
     
@@ -66,10 +67,8 @@ public class VulkanSwapChain : SwapChain {
     public init(device: VulkanDevice, surface: VkSurfaceKHR) {
         self.device = device
         self.surface = surface
-
-        var presentQueue : VkQueue? = nil
-        vkGetDeviceQueue(device.vkDevice, UInt32(device.physicalDevice.queueFamilyIndices.present), 0, &presentQueue)
-        self.presentQueue = presentQueue!
+        let presentQueueFamily = device.queueFamilyIndex(capabilities: .present, requiredCapability: .present)
+        self.presentQueue = device.queues.first(where: { $0.familyIndex == presentQueueFamily })!
     }
 
     private var currentDrawableSize = Size()
@@ -113,19 +112,20 @@ public class VulkanSwapChain : SwapChain {
         createInfo.presentMode = presentMode
         createInfo.clipped = true
         
-        let queueIndices = device.physicalDevice.queueFamilyIndices
-        let queueFamilyIndices = [ UInt32(queueIndices.graphics), UInt32(queueIndices.present) ]
+        let renderQueueIndex = device.queueFamilyIndex(capabilities: [.render, .present], requiredCapability: .render)
+        let presentQueueIndex = device.queueFamilyIndex(capabilities: [.render, .present], requiredCapability: .present)
+        let queueFamilyIndices = [ UInt32(renderQueueIndex), UInt32(presentQueueIndex) ]
         
         let sharingMode : VulkanSharingMode
-        if queueIndices.graphics != queueIndices.present {
-            sharingMode = .concurrent([.graphics, .present])
+        if renderQueueIndex != presentQueueIndex {
+            sharingMode = .concurrent(queueFamilyIndices: [UInt32(renderQueueIndex), UInt32(presentQueueIndex)])
         } else {
             sharingMode = .exclusive
         }
         
         var swapChain : VkSwapchainKHR? = nil
         queueFamilyIndices.withUnsafeBufferPointer { queueFamilyIndices in
-            if queueIndices.graphics != queueIndices.present {
+            if renderQueueIndex != presentQueueIndex {
                 createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT
                 createInfo.queueFamilyIndexCount = 2
                 createInfo.pQueueFamilyIndices = queueFamilyIndices.baseAddress
@@ -165,7 +165,14 @@ public class VulkanSwapChain : SwapChain {
             return image
         }
         
-        self.imageSemaphores = images.indices.map { _ in
+        self.imageAcquisitionSemaphores = images.indices.map { _ in
+            var semaphore: VkSemaphore? = nil
+            var createInfo = VkSemaphoreCreateInfo(sType: VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, pNext: nil, flags: 0)
+            vkCreateSemaphore(self.device.vkDevice, &createInfo, nil, &semaphore)
+            return semaphore!
+        }
+        
+        self.imagePresentationSemaphores = images.indices.map { _ in
             var semaphore: VkSemaphore? = nil
             var createInfo = VkSemaphoreCreateInfo(sType: VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, pNext: nil, flags: 0)
             vkCreateSemaphore(self.device.vkDevice, &createInfo, nil, &semaphore)
@@ -183,7 +190,7 @@ public class VulkanSwapChain : SwapChain {
         self.createSwapChain(drawableSize: drawableSize)
     }
     
-    func nextImage(descriptor: TextureDescriptor) -> (VulkanImage, VkSemaphore) {
+    func nextImage(descriptor: TextureDescriptor) -> (VulkanImage, acquisitionSemaphore: VkSemaphore) {
         if self.swapChain == nil {
             self.createSwapChain(drawableSize: descriptor.size)
         } else if descriptor.size != self.currentDrawableSize {
@@ -191,9 +198,9 @@ public class VulkanSwapChain : SwapChain {
             self.recreateSwapChain(drawableSize: descriptor.size)
         }
         
-        // TODO: reset the semaphores before usage (e.g. signal them
+        // TODO: reset the semaphores before usage (e.g. signal them)
         var imageIndex = 0 as UInt32
-        let semaphore = self.imageSemaphores[Int(imageIndex)]
+        let semaphore = self.imageAcquisitionSemaphores[Int(imageIndex)]
         let result = vkAcquireNextImageKHR(device.vkDevice, self.swapChain, UInt64.max, semaphore, nil, &imageIndex)
         
         if result == VK_ERROR_OUT_OF_DATE_KHR {
@@ -209,7 +216,11 @@ public class VulkanSwapChain : SwapChain {
         return (image, semaphore)
     }
     
-    func submit(waitSemaphore: VkSemaphore?) {
+    var presentationSemaphore: VkSemaphore {
+        return self.imagePresentationSemaphores[self.currentImageIndex!]
+    }
+    
+    func submit() {
         guard let imageIndex = self.currentImageIndex else {
             fatalError("VulkanSwapChain.submit() called without matching nextImage(). Aborting.")
         }
@@ -219,9 +230,9 @@ public class VulkanSwapChain : SwapChain {
         var presentInfo = VkPresentInfoKHR();
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
-        presentInfo.waitSemaphoreCount = waitSemaphore == nil ? 0 : 1
+        presentInfo.waitSemaphoreCount = 1
         
-        withUnsafePointer(to: waitSemaphore) { semaphorePtr in
+        withUnsafePointer(to: self.presentationSemaphore as VkSemaphore?) { semaphorePtr in
             presentInfo.pWaitSemaphores = semaphorePtr
             
             var swapChain = self.swapChain as VkSwapchainKHR?
@@ -234,7 +245,7 @@ public class VulkanSwapChain : SwapChain {
                 withUnsafePointer(to: &imageIndex) { imageIndex in
                     presentInfo.pImageIndices = imageIndex
                     
-                    let result = vkQueuePresentKHR(presentQueue, &presentInfo)
+                    let result = vkQueuePresentKHR(presentQueue.vkQueue, &presentInfo)
                     if result == VK_ERROR_OUT_OF_DATE_KHR /*|| result == VK_SUBOPTIMAL_KHR*/ {
                         self.cleanupSwapChain()
                         self.createSwapChain(drawableSize: self.currentDrawableSize)

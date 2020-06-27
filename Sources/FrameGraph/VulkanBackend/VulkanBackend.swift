@@ -24,6 +24,12 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     typealias RenderTargetDescriptor = VulkanRenderTargetDescriptor
     
+    typealias CompactedResourceCommandType = VulkanCompactedResourceCommandType
+    typealias Event = VkSemaphore
+    typealias BackendQueue = VulkanDeviceQueue
+    typealias InterEncoderDependencyType = FineDependency
+    typealias CommandBuffer = VulkanCommandBuffer
+    
     public var api: RenderAPI {
         return .vulkan
     }
@@ -35,7 +41,7 @@ public final class VulkanBackend : SpecificRenderBackend {
     let shaderLibrary : VulkanShaderLibrary
     let stateCaches : VulkanStateCaches
     
-    var activeContext : VulkanFrameGraphContext? = nil
+    var activeContext : FrameGraphContextImpl<VulkanBackend>? = nil
     
     var queueSyncSemaphores = [VkSemaphore?](repeating: nil, count: QueueRegistry.maxQueues)
     
@@ -56,8 +62,8 @@ public final class VulkanBackend : SpecificRenderBackend {
         self.resourceRegistry.registerWindowTexture(texture: texture, context: context)
     }
     
-    @usableFromInline func setActiveContext(_ context: VulkanFrameGraphContext) {
-        assert(self.activeContext == nil)
+    func setActiveContext(_ context: FrameGraphContextImpl<VulkanBackend>?) {
+        assert(self.activeContext == nil || context == nil)
 //        self.stateCaches.checkForLibraryReload()
         self.activeContext = context
     }
@@ -199,6 +205,33 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
         fatalError()
+    }
+    
+    func makeSyncEvent(for queue: Queue) -> Event {
+        var semaphoreTypeCreateInfo = VkSemaphoreTypeCreateInfo()
+        semaphoreTypeCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO
+        semaphoreTypeCreateInfo.initialValue = 0
+        semaphoreTypeCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE
+        
+        var semaphore: VkSemaphore? = nil
+        withUnsafePointer(to: semaphoreTypeCreateInfo) { semaphoreTypeCreateInfo in
+            var semaphoreCreateInfo = VkSemaphoreCreateInfo()
+            semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+            semaphoreCreateInfo.pNext = UnsafeRawPointer(semaphoreTypeCreateInfo)
+            vkCreateSemaphore(self.device.vkDevice, &semaphoreCreateInfo, nil, &semaphore)
+        }
+        self.queueSyncSemaphores[Int(queue.index)] = semaphore
+        return semaphore!
+    }
+    
+    func syncEvent(for queue: Queue) -> VkSemaphore? {
+        return self.queueSyncSemaphores[Int(queue.index)]
+    }
+    
+    func freeSyncEvent(for queue: Queue) {
+        assert(self.queueSyncSemaphores[Int(queue.index)] != nil)
+        vkDestroySemaphore(self.device.vkDevice, self.queueSyncSemaphores[Int(queue.index)], nil)
+        self.queueSyncSemaphores[Int(queue.index)] = nil
     }
 }
 

@@ -39,11 +39,6 @@ struct FunctionSpecialisation {
     var name : String = ""
 }
 
-struct DescriptorSetLayoutKey : Hashable {
-    var set : UInt32
-    var dynamicBuffers : BitSet
-}
-
 extension String : CustomHashable {
     public var customHashValue: Int {
         return self.hashValue
@@ -58,7 +53,7 @@ final class VulkanPipelineReflection : PipelineReflection {
     let activeStagesForSets : [UInt32 : VkShaderStageFlagBits]
     let lastSet : UInt32?
     
-    private var layouts = [DescriptorSetLayoutKey : VulkanDescriptorSetLayout]()
+    private var layouts = [UInt32 : VulkanDescriptorSetLayout]()
     
     let bindingPathCache : HashMap<String, ResourceBindingPath>
     
@@ -180,9 +175,8 @@ final class VulkanPipelineReflection : PipelineReflection {
         return self.resources[bindingPath]!
     }
 
-    public func descriptorSetLayout(set: UInt32, dynamicBuffers: BitSet) -> VulkanDescriptorSetLayout {
-        let key = DescriptorSetLayoutKey(set: set, dynamicBuffers: dynamicBuffers)
-        if let layout = self.layouts[key] {
+    public func descriptorSetLayout(set: UInt32) -> VulkanDescriptorSetLayout {
+        if let layout = self.layouts[set] {
             return layout
         }
         let descriptorResources : [ShaderResource] = resources.values.compactMap { resource in
@@ -193,19 +187,19 @@ final class VulkanPipelineReflection : PipelineReflection {
         }
         let activeStages = self.activeStagesForSets[set] ?? []
         
-        let layout = VulkanDescriptorSetLayout(set: set, device: self.device, resources: descriptorResources, stages: activeStages, dynamicBuffers: dynamicBuffers)
-        self.layouts[key] = layout
+        let layout = VulkanDescriptorSetLayout(set: set, device: self.device, resources: descriptorResources, stages: activeStages)
+        self.layouts[set] = layout
         return layout
     }
     
-    func vkDescriptorSetLayouts(bindingManager: ResourceBindingManager) -> [VkDescriptorSetLayout?] {
+    var vkDescriptorSetLayouts: [VkDescriptorSetLayout?] {
         guard let lastSet = self.lastSet else {
             return []
         } 
 
         var layouts = [VkDescriptorSetLayout?]()
         for set in 0...lastSet {
-            let layout = self.descriptorSetLayout(set: set, dynamicBuffers: bindingManager.existingManagerForSet(set)?.dynamicBuffers ?? [])
+            let layout = self.descriptorSetLayout(set: set)
             layouts.append(layout.vkLayout)
         }
         return layouts
@@ -376,8 +370,8 @@ extension VkDescriptorType {
 }
 
 extension VkDescriptorSetLayoutBinding {
-    init?(resource: ShaderResource, stages: VkShaderStageFlagBits, isDynamic: Bool) {
-        guard let descriptorType = VkDescriptorType(resource.type, dynamic: isDynamic) else {
+    init?(resource: ShaderResource, stages: VkShaderStageFlagBits) {
+        guard let descriptorType = VkDescriptorType(resource.type, dynamic: false) else {
             return nil
         }
         
@@ -395,7 +389,7 @@ public class VulkanDescriptorSetLayout {
     let vkLayout : VkDescriptorSetLayout
     let set : UInt32
     
-    init(set: UInt32, device: VulkanDevice, resources: [ShaderResource], stages: VkShaderStageFlagBits, dynamicBuffers: BitSet) {
+    init(set: UInt32, device: VulkanDevice, resources: [ShaderResource], stages: VkShaderStageFlagBits) {
         self.device = device
         self.set = set
         
@@ -404,7 +398,7 @@ public class VulkanDescriptorSetLayout {
         layoutCreateInfo.flags = 0
         
         let bindings = resources.enumerated().compactMap { (i, resource) in 
-            VkDescriptorSetLayoutBinding(resource: resource, stages: stages, isDynamic: dynamicBuffers.contains(BitSet(element: i))) 
+            VkDescriptorSetLayoutBinding(resource: resource, stages: stages) 
         }
 
         layoutCreateInfo.bindingCount = UInt32(bindings.count)
@@ -416,7 +410,6 @@ public class VulkanDescriptorSetLayout {
             vkCreateDescriptorSetLayout(device.vkDevice, &layoutCreateInfo, nil, &layout)
             return layout!
         }
-        
     }
     
     deinit {
@@ -545,7 +538,7 @@ public class VulkanShaderLibrary {
         spvc_context_destroy(self.spvcContext)
     }
     
-    func pipelineLayout(for key: PipelineLayoutKey, bindingManager: ResourceBindingManager) -> VkPipelineLayout {
+    func pipelineLayout(for key: PipelineLayoutKey) -> VkPipelineLayout {
         if let layout = self.pipelineLayoutCache[key] { // FIXME: we also need to take into account whether the /descriptor set layouts/ are identical.
             return layout
         }
@@ -554,7 +547,7 @@ public class VulkanShaderLibrary {
         createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
         
         let reflection = self.reflection(for: key)
-        let setLayouts : [VkDescriptorSetLayout?] = reflection.vkDescriptorSetLayouts(bindingManager: bindingManager)
+        let setLayouts : [VkDescriptorSetLayout?] = reflection.vkDescriptorSetLayouts
 
         var pushConstantRanges = [VkPushConstantRange]()
         for resource in reflection.resources.values where resource.bindingPath.isPushConstant {

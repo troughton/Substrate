@@ -12,10 +12,10 @@ import FrameGraphCExtras
 class VulkanBlitCommandEncoder : VulkanCommandEncoder {
     let device: VulkanDevice
     
-    let commandBufferResources: CommandBufferResources
+    let commandBufferResources: VulkanCommandBuffer
     let resourceMap: FrameResourceMap<VulkanBackend>
     
-    public init(device: VulkanDevice, commandBuffer: CommandBufferResources, resourceMap: FrameResourceMap<VulkanBackend>) {
+    public init(device: VulkanDevice, commandBuffer: VulkanCommandBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
         self.device = device
         self.commandBufferResources = commandBuffer
         self.resourceMap = resourceMap

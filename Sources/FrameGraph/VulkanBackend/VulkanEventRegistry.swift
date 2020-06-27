@@ -29,7 +29,11 @@ struct VulkanEventHandle : Equatable {
     
     var event : VkEvent {
         assert(self.isValid)
-        return VulkanEventRegistry.instance.events[Int(self.index)]
+        return VulkanEventRegistry.instance.events[Int(self.index)]!
+    }
+    
+    var eventPointer: UnsafePointer<VkEvent?> {
+        return UnsafePointer(VulkanEventRegistry.instance.events.advanced(by: Int(self.index)))
     }
     
     var commandBufferIndex : UInt64 {
@@ -51,7 +55,7 @@ final class VulkanEventRegistry {
     
     public var device : VkDevice! = nil
     
-    public var events : UnsafeMutablePointer<VkEvent>
+    public var events : UnsafeMutablePointer<VkEvent?>
     public var commandBufferIndices : UnsafeMutablePointer<(Queue, UInt64)> // On the queue
     
     public init() {

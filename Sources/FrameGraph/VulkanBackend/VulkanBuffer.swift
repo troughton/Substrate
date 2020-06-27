@@ -33,9 +33,7 @@ struct VulkanBufferDescriptor : Equatable {
         createInfo.usage = VkBufferCreateFlags(self.usageFlags)
         
         switch self.sharingMode {
-        case .concurrent(let queueFamilies):
-            let queueIndices = device.physicalDevice.queueFamilyIndices(for: queueFamilies)
-            
+        case .concurrent(let queueIndices):
             if queueIndices.count == 1 {
                 fallthrough
             } else {

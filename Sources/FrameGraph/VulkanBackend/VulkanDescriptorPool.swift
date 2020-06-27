@@ -22,9 +22,22 @@ public final class VulkanDescriptorPool {
         self.usesIncrementalRelease = incrementalRelease
         
         var poolSizes = [VkDescriptorPoolSize]()
-        for typeIndex in VK_DESCRIPTOR_TYPE_BEGIN_RANGE.rawValue...VK_DESCRIPTOR_TYPE_END_RANGE.rawValue {
+        
+        let descriptorTypes = [VK_DESCRIPTOR_TYPE_SAMPLER,
+                     VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                     VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                     VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+                     VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
+                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+                     VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+                     VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT]
+        
+        for type in descriptorTypes {
             var descriptorPoolSize = VkDescriptorPoolSize()
-            descriptorPoolSize.type = VkDescriptorType(rawValue: typeIndex)
+            descriptorPoolSize.type = type
             descriptorPoolSize.descriptorCount = VulkanDescriptorPool.maxSetsPerPool
             poolSizes.append(descriptorPoolSize)
         }
@@ -34,8 +47,8 @@ public final class VulkanDescriptorPool {
             var descriptorPoolCreateInfo = VkDescriptorPoolCreateInfo()
             descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
             descriptorPoolCreateInfo.flags = incrementalRelease ? VkDescriptorPoolCreateFlags(VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT) : 0
-            descriptorPoolCreateInfo.maxSets = VulkanDescriptorPool.maxSetsPerPool * UInt32(VK_DESCRIPTOR_TYPE_RANGE_SIZE.rawValue)
-            descriptorPoolCreateInfo.poolSizeCount = UInt32(VK_DESCRIPTOR_TYPE_RANGE_SIZE.rawValue)
+            descriptorPoolCreateInfo.maxSets = VulkanDescriptorPool.maxSetsPerPool * UInt32(descriptorTypes.count)
+            descriptorPoolCreateInfo.poolSizeCount = UInt32(descriptorTypes.count)
             descriptorPoolCreateInfo.pPoolSizes = poolSizes.baseAddress
 
             var descriptorPool : VkDescriptorPool? = nil
@@ -46,6 +59,10 @@ public final class VulkanDescriptorPool {
             
             return descriptorPool!
         }
+    }
+    
+    deinit {
+        vkDestroyDescriptorPool(device.vkDevice, self.vkDescriptorPool, nil)
     }
     
     public func allocateSet(layout: VkDescriptorSetLayout) -> VkDescriptorSet {
@@ -64,14 +81,16 @@ public final class VulkanDescriptorPool {
         return set!
     }
     
-    public func freeDescriptorSets(_ descriptorSets: inout [VkDescriptorSet?]) {
-        if self.usesIncrementalRelease {
-            guard !descriptorSets.isEmpty else {
-                return
-            }
-            vkFreeDescriptorSets(self.device.vkDevice, self.vkDescriptorPool, UInt32(descriptorSets.count), &descriptorSets)
-        } else {
-            vkResetDescriptorPool(self.device.vkDevice, self.vkDescriptorPool, 0)
+    // Used for descriptor pools for transient resources.
+    public func resetDescriptorPool() {
+        vkResetDescriptorPool(self.device.vkDevice, self.vkDescriptorPool, 0)
+    }
+    
+    // Used for persistent descriptor sets.
+    public func freeDescriptorSet(_ descriptorSet: VkDescriptorSet) {
+        precondition(self.usesIncrementalRelease)
+        withUnsafePointer(to: descriptorSet as VkDescriptorSet?) {
+            vkFreeDescriptorSets(self.device.vkDevice, self.vkDescriptorPool, 1, $0).check()
         }
     }
 }
