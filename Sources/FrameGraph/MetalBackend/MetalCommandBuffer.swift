@@ -50,51 +50,55 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     }
     
     func encodeCommands(encoderIndex: Int) {
-        let encoderManager = MetalEncoderManager(commandBuffer: self.commandBuffer, resourceMap: self.resourceMap)
-        
         let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
         
-        for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-            switch passRecord.pass.passType {
-            case .blit:
-                let commandEncoder = encoderManager.blitCommandEncoder()
-                if commandEncoder.encoder.label == nil {
-                    commandEncoder.encoder.label = encoderInfo.name
-                }
-                
-                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
-                
-            case .draw:
-                guard let commandEncoder = encoderManager.renderCommandEncoder(descriptor: encoderInfo.renderTargetDescriptor!, textureUsages: self.textureUsages) else {
-                    if _isDebugAssertConfiguration() {
-                        print("Warning: skipping pass \(passRecord.pass.name) since the drawable for the render target could not be retrieved.")
-                    }
-                    
-                    return
-                }
-                if commandEncoder.label == nil {
-                    commandEncoder.label = encoderInfo.name
-                }
-                
-                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
-            case .compute:
-                let commandEncoder = encoderManager.computeCommandEncoder()
-                if commandEncoder.encoder.label == nil {
-                    commandEncoder.encoder.label = encoderInfo.name
-                }
-                
-                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
-                
-            case .external:
-                let commandEncoder = encoderManager.externalCommandEncoder()
-                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
-                
-            case .cpu:
-                break
+        switch encoderInfo.type {
+        case .draw:
+            let mtlDescriptor : MTLRenderPassDescriptor
+            do {
+                mtlDescriptor = try MTLRenderPassDescriptor(encoderInfo.renderTargetDescriptor!, resourceMap: self.resourceMap)
+            } catch {
+                print("Error creating pass descriptor: \(error)")
+                return
             }
+            
+            let renderEncoder : FGMTLRenderCommandEncoder = /* MetalEncoderManager.useParallelEncoding ? FGMTLParallelRenderCommandEncoder(encoder: commandBuffer.makeParallelRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor) : */ FGMTLThreadRenderCommandEncoder(encoder: commandBuffer.makeRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor)
+            renderEncoder.encoder.label = encoderInfo.name
+            
+            for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
+                renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+            }
+            renderEncoder.endEncoding()
+            
+        case .compute:
+            let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: .concurrent)!
+            let computeEncoder = FGMTLComputeCommandEncoder(encoder: mtlComputeEncoder)
+            computeEncoder.encoder.label = encoderInfo.name
+            
+            for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
+                computeEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+            }
+            computeEncoder.endEncoding()
+            
+        case .blit:
+            let blitEncoder = FGMTLBlitCommandEncoder(encoder: commandBuffer.makeBlitCommandEncoder()!)
+            blitEncoder.encoder.label = encoderInfo.name
+            
+            for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
+                blitEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+            }
+            blitEncoder.endEncoding()
+            
+        case .external:
+            let commandEncoder = FGMTLExternalCommandEncoder(commandBuffer: self.commandBuffer)
+            
+            for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
+                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+            }
+            
+        case .cpu:
+            break
         }
-        
-        encoderManager.endEncoding()
     }
     
     func waitForEvent(_ event: MTLEvent, value: UInt64) {

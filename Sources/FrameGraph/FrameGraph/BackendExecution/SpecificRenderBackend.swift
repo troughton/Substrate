@@ -24,6 +24,8 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     associatedtype ArgumentBufferArrayReference
     associatedtype SamplerReference
     
+    associatedtype InterEncoderDependencyType: Dependency
+    
     static var requiresResourceResidencyTracking: Bool { get }
     static var requiresBufferUsage: Bool { get }
     

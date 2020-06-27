@@ -50,7 +50,7 @@ struct CompactedResourceCommand<T> : Comparable {
     }
 }
 
-enum PreFrameCommands {
+enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
     
     // These commands mutate the ResourceRegistry and should be executed before render pass execution:
     case materialiseBuffer(Buffer, usage: BufferUsage)
@@ -165,8 +165,8 @@ enum FrameResourceCommands {
     case memoryBarrier(Resource, scope: BarrierScope, afterStages: RenderStages, beforeCommand: Int, beforeStages: RenderStages) // beforeCommand is the command that this memory barrier must have been executed before.
 }
 
-struct PreFrameResourceCommand : Comparable {
-    var command : PreFrameCommands
+struct PreFrameResourceCommand<Dependency: SwiftFrameGraph.Dependency> : Comparable {
+    var command : PreFrameCommands<Dependency>
     var passIndex : Int
     var index : Int
     var order : PerformOrder
@@ -205,7 +205,9 @@ struct FrameResourceCommand : Comparable {
 }
 
 final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
-    private var preFrameCommands = [PreFrameResourceCommand]()
+    typealias Dependency = Backend.InterEncoderDependencyType
+    
+    private var preFrameCommands = [PreFrameResourceCommand<Dependency>]()
     var commands = [FrameResourceCommand]()
     
     var renderTargetTextureProperties = [Texture : TextureUsageProperties]()
@@ -305,7 +307,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     for previousRead in readsSinceLastWrite where frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
                         let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
                         let onEncoder = frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord)
-                        let dependency = Dependency(producingUsage: previousRead, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
+                        let dependency = Dependency(resource: resource, producingUsage: previousRead, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
                         
                         commandEncoderDependencies.setDependency(from: fromEncoder,
                                                                  on: onEncoder,
@@ -361,7 +363,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 if (usage.isRead || usage.isWrite), let previousWrite = previousWrite, frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
                     let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
                     let onEncoder = frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord)
-                    let dependency = Dependency(producingUsage: previousWrite, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
+                    let dependency = Dependency(resource: resource, producingUsage: previousWrite, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
                     
                     commandEncoderDependencies.setDependency(from: fromEncoder,
                                                              on: onEncoder,

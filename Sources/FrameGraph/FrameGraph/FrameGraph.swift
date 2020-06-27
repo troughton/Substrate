@@ -369,7 +369,7 @@ public final class FrameGraph {
     
     public let transientRegistryIndex : Int
     
-    public init(inflightFrameCount: Int, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384, transientArgumentBufferArrayCapacity: Int = 1024) {
+    public init(inflightFrameCount: Int, capabilities: QueueCapabilities = .all, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384, transientArgumentBufferArrayCapacity: Int = 1024) {
         
         self.transientRegistryIndex = TransientRegistryManager.allocate()
         
@@ -380,7 +380,7 @@ public final class FrameGraph {
         switch RenderBackend._backend.api {
 #if canImport(Metal)
         case .metal:
-            self.context = FrameGraphContextImpl<MetalBackend>(backend: RenderBackend._backend as! MetalBackend, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
+            self.context = FrameGraphContextImpl<MetalBackend>(backend: RenderBackend._backend as! MetalBackend, capabilities: capabilities, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
 #endif
 #if canImport(Vulkan)
         case .vulkan:
@@ -404,26 +404,40 @@ public final class FrameGraph {
     /// Useful for creating resources that may be used later in the frame.
     public func insertEarlyBlitPass(name: String,
                                     execute: @escaping (BlitCommandEncoder) -> Void)  {
+        assert(self.queue.capabilities.contains(.blit))
         self.renderPasses.insert(RenderPassRecord(pass: CallbackBlitRenderPass(name: name, execute: execute),
                                                   passIndex: 0), at: 0)
     }
     
     public func insertEarlyBlitPass(_ pass: BlitRenderPass)  {
+        assert(self.queue.capabilities.contains(.blit))
         self.renderPasses.insert(RenderPassRecord(pass: pass,
                                                   passIndex: 0), at: 0)
     }
     
     public func addPass(_ renderPass: RenderPass)  {
+        switch renderPass.passType {
+        case .draw:
+            assert(self.queue.capabilities.contains(.render))
+        case .compute:
+            assert(self.queue.capabilities.contains(.compute))
+        case .blit:
+            assert(self.queue.capabilities.contains(.blit))
+        default:
+            break
+        }
         self.renderPasses.append(RenderPassRecord(pass: renderPass, passIndex: self.renderPasses.count))
     }
     
     public func addBlitCallbackPass(file: String = #file, line: Int = #line,
                                     execute: @escaping (BlitCommandEncoder) -> Void) {
+        assert(self.queue.capabilities.contains(.blit))
         self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
     }
     
     public func addBlitCallbackPass(name: String,
                                     execute: @escaping (BlitCommandEncoder) -> Void) {
+        assert(self.queue.capabilities.contains(.blit))
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
     
@@ -433,6 +447,7 @@ public final class FrameGraph {
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
                                     execute: @escaping (RenderCommandEncoder) -> Void) {
+        assert(self.queue.capabilities.contains(.render))
         self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                             execute: execute))
@@ -444,6 +459,7 @@ public final class FrameGraph {
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
                                     execute: @escaping (RenderCommandEncoder) -> Void) {
+        assert(self.queue.capabilities.contains(.render))
         self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                             execute: execute))
@@ -456,6 +472,7 @@ public final class FrameGraph {
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
                                        execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+        assert(self.queue.capabilities.contains(.render))
         self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
                                                        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                                        reflection: reflection, execute: execute))
@@ -468,6 +485,7 @@ public final class FrameGraph {
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
                                        execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+        assert(self.queue.capabilities.contains(.render))
         self.addPass(ReflectableCallbackDrawRenderPass(name: name, descriptor: descriptor,
         colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
         reflection: reflection, execute: execute))
@@ -475,23 +493,27 @@ public final class FrameGraph {
 
     public func addComputeCallbackPass(file: String = #file, line: Int = #line,
                                        execute: @escaping (ComputeCommandEncoder) -> Void) {
+        assert(self.queue.capabilities.contains(.compute))
         self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
     }
     
     public func addComputeCallbackPass(name: String,
                                        execute: @escaping (ComputeCommandEncoder) -> Void) {
+        assert(self.queue.capabilities.contains(.compute))
         self.addPass(CallbackComputeRenderPass(name: name, execute: execute))
     }
 
     public func addComputeCallbackPass<R>(file: String = #file, line: Int = #line,
                                           reflection: R.Type,
                                           execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
+        assert(self.queue.capabilities.contains(.compute))
         self.addPass(ReflectableCallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", reflection: reflection, execute: execute))
     }
     
     public func addComputeCallbackPass<R>(name: String,
                                           reflection: R.Type,
                                           execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
+        assert(self.queue.capabilities.contains(.compute))
         self.addPass(ReflectableCallbackComputeRenderPass(name: name, reflection: reflection, execute: execute))
     }
     

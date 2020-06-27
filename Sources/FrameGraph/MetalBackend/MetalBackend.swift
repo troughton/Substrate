@@ -24,6 +24,7 @@ extension MTLResourceOptions {
 #endif
 
 final class MetalBackend : SpecificRenderBackend {
+
     typealias BufferReference = MTLBufferReference
     typealias TextureReference = MTLTextureReference
     typealias ArgumentBufferReference = MTLBufferReference
@@ -39,6 +40,7 @@ final class MetalBackend : SpecificRenderBackend {
     typealias BackendQueue = MTLCommandQueue
     
     typealias CompactedResourceCommandType = MetalCompactedResourceCommandType
+    typealias InterEncoderDependencyType = CoarseDependency
     
     let device : MTLDevice
     let resourceRegistry : MetalPersistentResourceRegistry
@@ -242,7 +244,6 @@ final class MetalBackend : SpecificRenderBackend {
     func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> MetalTransientResourceRegistry {
         return MetalTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
     }
-
 
     func generateFenceCommands(queue: Queue, frameCommandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>, compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
         // MARK: - Generate the fences

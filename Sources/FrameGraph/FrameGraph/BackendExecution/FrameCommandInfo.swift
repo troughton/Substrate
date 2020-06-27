@@ -16,6 +16,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
         
         var renderTargetDescriptor: Backend.RenderTargetDescriptor?
         var commandBufferIndex: Int
+        var queueFamilyIndex: Int // corresponding to the Vulkan concept of queue families; this indicates whether e.g. the encoder is executed on the main render queue vs async compute etc.
         
         var passRange: Range<Int>
         var commandRange: Range<Int>
@@ -56,9 +57,10 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
                 }
                 
                 let type = passes[passRange.first!].pass.passType
+                let queueFamilyIndex = 0 // TODO: correctly compute this for Vulkan.
                 
                 if let previousEncoder = commandEncoders.last,
-                previousEncoder.usesWindowTexture != usesWindowTexture || previousEncoder.type != type {
+                   previousEncoder.usesWindowTexture != usesWindowTexture || previousEncoder.type != type || previousEncoder.queueFamilyIndex != queueFamilyIndex {
                     commandBufferIndex += 1
                 }
                 
@@ -66,6 +68,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
                                                           type: passes[passRange.first!].pass.passType,
                                                           renderTargetDescriptor: renderTargetDescriptors[passRange.lowerBound],
                                                           commandBufferIndex: commandBufferIndex,
+                                                          queueFamilyIndex: queueFamilyIndex,
                                                           passRange: passRange,
                                                           commandRange: passes[passRange.first!].commandRange!.lowerBound..<passes[passRange.last!].commandRange!.upperBound,
                                                           queueCommandWaitIndices: QueueCommandIndices(repeating: 0),

@@ -8,12 +8,27 @@
 import FrameGraphUtilities
 import CAtomics
 
+public struct QueueCapabilities : OptionSet {
+    public let rawValue: Int
+    
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+    
+    public static let render = QueueCapabilities(rawValue: 1 << 0)
+    public static let compute = QueueCapabilities(rawValue: 1 << 1)
+    public static let blit = QueueCapabilities(rawValue: 1 << 2)
+    public static let present = QueueCapabilities(rawValue: 1 << 3)
+    
+    public static var all : QueueCapabilities = [.render, .compute, .blit, .present]
+}
 
 public final class QueueRegistry {
     public static let instance = QueueRegistry()
     
     public static let maxQueues = UInt8.bitWidth
     
+    public let queueCapabilities : UnsafeMutablePointer<QueueCapabilities>
     public let lastSubmittedCommands : UnsafeMutablePointer<AtomicUInt64>
     public let lastCompletedCommands : UnsafeMutablePointer<AtomicUInt64>
     
@@ -21,6 +36,7 @@ public final class QueueRegistry {
     var lock = SpinLock()
     
     public init() {
+        self.queueCapabilities = .allocate(capacity: Self.maxQueues)
         self.lastSubmittedCommands = .allocate(capacity: Self.maxQueues)
         self.lastCompletedCommands = .allocate(capacity: Self.maxQueues)
     }
@@ -34,7 +50,7 @@ public final class QueueRegistry {
         return IteratorSequence(QueueIterator())
     }
     
-    public func allocate() -> UInt8 {
+    public func allocate(capabilities: QueueCapabilities) -> UInt8 {
         return self.lock.withLock {
             for i in 0..<self.allocatedQueues.bitWidth {
                 if self.allocatedQueues & (1 << i) == 0 {
@@ -86,12 +102,16 @@ public struct Queue : Equatable {
         self.index = index
     }
     
-    init() {
-        self.index = QueueRegistry.instance.allocate()
+    init(capabilities: QueueCapabilities) {
+        self.index = QueueRegistry.instance.allocate(capabilities: capabilities)
     }
     
     func dispose() {
         QueueRegistry.instance.dispose(self)
+    }
+    
+    public var capabilities: QueueCapabilities {
+        return QueueRegistry.instance.queueCapabilities[Int(self.index)]
     }
     
     public internal(set) var lastSubmittedCommand : UInt64 {

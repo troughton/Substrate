@@ -27,10 +27,10 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
     
     var compactedResourceCommands = [CompactedResourceCommand<Backend.CompactedResourceCommandType>]()
        
-    public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
+    public init(backend: Backend, capabilities: QueueCapabilities, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
         self.commandQueue = backend.makeQueue()
-        self.frameGraphQueue = Queue()
+        self.frameGraphQueue = Queue(capabilities: capabilities)
         self.transientRegistryIndex = transientRegistryIndex
         self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount)
         self.accessSemaphore = Semaphore(value: Int32(inflightFrameCount))
