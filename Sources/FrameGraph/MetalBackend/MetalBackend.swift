@@ -157,7 +157,7 @@ final class MetalBackend : SpecificRenderBackend {
                 assert(bufferReference == nil || bufferReference?.offset == 0)
                 return bufferReference?.buffer
             } else if let texture = resource.texture {
-                return resourceRegistry[texture]
+                return resourceRegistry[texture]?.texture
             }
             return nil
         }

@@ -610,6 +610,9 @@ final class FGMTLExternalCommandEncoder {
     
     func executeCommand(_ command: FrameGraphCommand, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         switch command {
+        case .encodeExternalCommand(let closure):
+            closure.takeUnretainedValue().command(Unmanaged.passUnretained(self.commandBuffer).toOpaque())
+            
         case .encodeRayIntersection(let args):
             let intersector = args.pointee.intersector.takeUnretainedValue()
             
