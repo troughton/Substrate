@@ -123,7 +123,7 @@ final class DescriptorSet {
                 stream.print("#endif // canImport(Metal)")
             }
 
-            for resource in self.resources where resource.stages != [] {
+            for resource in self.resources {
                 if resource.viewType == .uniformBuffer {
                     // @BufferBacked property
                     
@@ -151,7 +151,18 @@ final class DescriptorSet {
                 let addArgBufferBinding = { (stream: inout ReflectionPrinter, index: Int) in
                     stream.print("argBuffer.bindings.append(")
                     
-                    switch resource.type {
+                    var type = resource.type
+                    if case .array(let elementType, let length) = type {
+                        switch elementType {
+                        case  .buffer, .texture, .sampler:
+                            assert(length == resource.binding.arrayLength)
+                            type = elementType
+                        default:
+                            break
+                        }
+                    }
+                    
+                    switch type {
                     case .texture:
                         stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(index)\(arrayIndexString), type: .texture), .texture(resource))")
                     case .sampler:
@@ -159,6 +170,7 @@ final class DescriptorSet {
                     default:
                         stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(index)\(arrayIndexString), type: .buffer), .buffer(resource, offset: self.$\(resource.name).offset))")
                     }
+                    
                     stream.print(")")
                 }
                 
@@ -203,7 +215,7 @@ final class DescriptorSet {
                 stream.print("#endif // canImport(Vulkan)")
             }
 
-            for resource in self.resources where resource.stages != [] {
+            for resource in self.resources {
                 if resource.viewType == .uniformBuffer {
                     // @BufferBacked property
                     

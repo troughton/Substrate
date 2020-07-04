@@ -31,7 +31,7 @@ public struct LinkedNode<T> {
     }
 }
 
-public typealias ResourceUsageNodePtr = UnsafeMutablePointer<LinkedNode<ResourceUsage>>
+@usableFromInline typealias ResourceUsageNodePtr = UnsafeMutablePointer<LinkedNode<ResourceUsage>>
 
 extension UnsafeMutablePointer where Pointee == LinkedNode<ResourceUsage> {
     @inlinable
@@ -53,7 +53,7 @@ public struct ResourceUsagesList : Sequence {
     }
     
     @inlinable
-    public static func createNode(usage: ResourceUsage, allocator: TagAllocator.ThreadView) -> ResourceUsageNodePtr {
+    static func createNode(usage: ResourceUsage, allocator: TagAllocator.ThreadView) -> ResourceUsageNodePtr {
         let node = allocator.allocate(capacity: 1) as ResourceUsageNodePtr
         node.initialize(to: LinkedNode(value: usage, sortIndex: usage.renderPassRecord.passIndex))
         return node
@@ -61,7 +61,7 @@ public struct ResourceUsagesList : Sequence {
     
     // This doesn't need any special synchronisation since nodes can only be merged within a render pass.
     @inlinable
-    public func nextNodeWithUsage(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, commandOffset: Int, renderPass: Unmanaged<RenderPassRecord>, allocator: TagAllocator.ThreadView) -> (ResourceUsageNodePtr, isNew: Bool) {
+    func nextNodeWithUsage(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, commandOffset: Int, renderPass: Unmanaged<RenderPassRecord>, allocator: TagAllocator.ThreadView) -> (ResourceUsageNodePtr, isNew: Bool) {
         let passIndex = renderPass.takeUnretainedValue().passIndex
         if let tail = self.findNode(passIndex: passIndex), tail.pointee.sortIndex == passIndex {
             assert(tail.pointee.element._renderPass.toOpaque() == renderPass.toOpaque())
@@ -76,7 +76,8 @@ public struct ResourceUsagesList : Sequence {
         return (ResourceUsagesList.createNode(usage: ResourceUsage(type: type, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandOffset, renderPass: renderPass), allocator: allocator), true)
     }
     
-    public func findNode(passIndex: Int) -> ResourceUsageNodePtr? {
+    @inlinable
+    func findNode(passIndex: Int) -> ResourceUsageNodePtr? {
         // Find the last node for which the pass index is > passIndex
         // We need to return the pointer to the node for which we need to set the next pointer on.
         
@@ -89,7 +90,7 @@ public struct ResourceUsagesList : Sequence {
     }
     
     @inlinable
-    public var first : ResourceUsage {
+    var first : ResourceUsage {
         get {
             return self.head!.pointee.element
         }
@@ -99,7 +100,7 @@ public struct ResourceUsagesList : Sequence {
     }
     
     @inlinable
-    public var firstActiveUsage : ResourceUsage? {
+    var firstActiveUsage : ResourceUsage? {
         for usage in self {
             if usage.renderPassRecord.isActive, usage.type != .unusedRenderTarget, usage.type != .unusedArgumentBuffer {
                 return usage
@@ -120,7 +121,7 @@ public struct ResourceUsagesList : Sequence {
         var nextNode : ResourceUsageNodePtr?
         
         @inlinable
-        public init(nextNode: ResourceUsageNodePtr?) {
+        init(nextNode: ResourceUsageNodePtr?) {
             self.nextNode = nextNode
         }
         
@@ -276,7 +277,7 @@ public struct ResourceUsage {
     
     
     @inlinable
-    public init(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: Unmanaged<RenderPassRecord>?) {
+    init(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: Unmanaged<RenderPassRecord>?) {
         self.type = type
         self.stages = stages
         self._renderPass = renderPass
@@ -285,7 +286,7 @@ public struct ResourceUsage {
     }
     
     @inlinable
-    public var renderPassRecord : RenderPassRecord {
+    var renderPassRecord : RenderPassRecord {
         return _renderPass.takeUnretainedValue()
     }
     
@@ -312,7 +313,7 @@ public struct ResourceUsage {
     
     /// - returns: The new usage, if the usage couldn't be merged with self.
     @inlinable
-    public mutating func mergeOrCreateNewUsage(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: Unmanaged<RenderPassRecord>) -> ResourceUsage? {
+    mutating func mergeOrCreateNewUsage(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: Unmanaged<RenderPassRecord>) -> ResourceUsage? {
         assert(self._renderPass.toOpaque() == renderPass.toOpaque())
         
         if type == .inputAttachment && self.type.isRenderTarget { // Transform a resource read within a render target into a readWriteRenderTarget.
@@ -393,7 +394,8 @@ extension UInt64 : CustomHashable {
 
 // Responsible for holding a per-thread allocator for Resource usage nodes, along with keeping track of all resources seen on this thread.
 // Can safely switch between multiple render passes being executed on the same thread (e.g. in different fibres).
-public class ResourceUsages {
+@usableFromInline
+class ResourceUsages {
     
     @usableFromInline
     unowned(unsafe) var frameGraph: FrameGraph! = nil

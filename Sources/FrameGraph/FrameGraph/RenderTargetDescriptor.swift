@@ -265,14 +265,14 @@ public struct RenderTargetDescriptor : Hashable {
         var width = Int.max
         var height = Int.max
         
-        width = min(self.depthAttachment?.texture.width ?? .max, width)
-        height = min(self.depthAttachment?.texture.height ?? .max, height)
-        width = min(self.stencilAttachment?.texture.width ?? .max, width)
-        height = min(self.stencilAttachment?.texture.height ?? .max, height)
+        width = min(self.depthAttachment.map { $0.texture.width >> $0.level } ?? .max, width)
+        height = min(self.depthAttachment.map { $0.texture.height >> $0.level } ?? .max, height)
+        width = min(self.stencilAttachment.map { $0.texture.width >> $0.level } ?? .max, width)
+        height = min(self.stencilAttachment.map { $0.texture.height >> $0.level } ?? .max, height)
         
         for attachment in self.colorAttachments {
-            width = min(attachment?.texture.width ?? .max, width)
-            height = min(attachment?.texture.height ?? .max, height)
+            width = min(attachment.map { $0.texture.width >> $0.level } ?? .max, width)
+            height = min(attachment.map { $0.texture.height >> $0.level } ?? .max, height)
         }
         
         return width == .max ? Size(length: 1) : Size(width: width, height: height, depth: 1)

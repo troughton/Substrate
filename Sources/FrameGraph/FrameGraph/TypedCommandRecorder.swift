@@ -489,19 +489,23 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
 }
 
 extension TypedComputeCommandEncoder : CommandEncoder {
-    public var passRecord: RenderPassRecord {
+    @usableFromInline
+    var passRecord: RenderPassRecord {
         return self.encoder.passRecord
     }
     
-    public var commandRecorder: FrameGraphCommandRecorder {
+    @usableFromInline
+    var commandRecorder: FrameGraphCommandRecorder {
         return self.encoder.commandRecorder
     }
     
-    public var startCommandIndex: Int {
+    @usableFromInline
+    var startCommandIndex: Int {
         return self.encoder.startCommandIndex
     }
     
-    public func endEncoding() {
+    @usableFromInline
+    func endEncoding() {
         self.encoder.endEncoding()
     }
 }

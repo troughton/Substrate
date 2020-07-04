@@ -257,7 +257,17 @@ extension SPIRVType : CustomStringConvertible {
             let memberDeclarations = members.map { "public var \($0.name): \($0.type.name) = \($0.type.defaultInitialiser)" }
             let memberArguments = members.map { "\($0.name): \($0.type.name)" }
             let memberAssignments = members.map { "self.\($0.name) = \($0.name)" }
-            return """
+            
+            // Until SE-0283 is implemented (https://github.com/apple/swift-evolution/blob/master/proposals/0283-tuples-are-equatable-comparable-hashable.md), we need
+            // to manually implement hashable/equatable conformances for all types containing tuples.
+            let needsManualHashableEquatable = members.contains(where: {
+                if case .array = $0.type { return true }
+                return false
+            })
+            
+            
+            
+            var structDef = """
             @frozen
             public struct \(self.name) : Hashable, NoArgConstructable {
                 \(memberDeclarations.joined(separator: "\n    "))
@@ -269,8 +279,44 @@ extension SPIRVType : CustomStringConvertible {
                 public init(\(memberArguments.joined(separator: ", "))) {
                     \(memberAssignments.joined(separator: "\n        "))
                 }
-            }
+            
             """
+            if needsManualHashableEquatable {
+                let memberEqualityChecks = members.map { "lhs.\($0.name) == rhs.\($0.name)" }
+                var memberHashFunctions = [String]()
+                for member in members {
+                    if case .array(_, let length) = member.type {
+                        for i in 0..<length {
+                            memberHashFunctions.append("hasher.combine(\(member.name).\(i))")
+                        }
+                    } else {
+                        memberHashFunctions.append("hasher.combine(\(member.name))")
+                    }
+                }
+                let equatableConformance = """
+                    
+                    @inlinable
+                    public static func ==(lhs: \(self.name), rhs: \(self.name)) -> Bool {
+                        return \(memberEqualityChecks.joined(separator: " &&\n        "))
+                    }
+
+                """
+                
+                let hashableConformance = """
+                    
+                    @inlinable
+                    public func hash(into hasher: inout Hasher) {
+                        \(memberHashFunctions.joined(separator: "\n        "))
+                    }
+
+                """
+                
+                structDef += equatableConformance
+                structDef += hashableConformance
+            }
+            
+            structDef += "}"
+            return structDef
         default:
             return self.name
         }
@@ -332,9 +378,14 @@ extension SPIRVType {
                 }
             }
 
-            let arrayDimensions = Int(spvc_type_get_num_array_dimensions(type))
-            if arrayDimensions > 1 {
-                self = .array(element: self, length: arrayDimensions)
+            let arrayDimensions = spvc_type_get_num_array_dimensions(type)
+            if arrayDimensions >= 1 {
+                for dimension in (0..<arrayDimensions) {
+                    let arrayLength = Int(spvc_type_get_array_dimension(type, dimension))
+                    if arrayLength > 1 || dimension > 0 {
+                        self = .array(element: self, length: arrayLength)
+                    }
+                }
             }
         }
     }

@@ -26,7 +26,15 @@ final class MetalCommandBuffer: BackendCommandBuffer {
          resourceMap: FrameResourceMap<MetalBackend>,
          compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
         self.backend = backend
-        self.commandBuffer = queue.makeCommandBuffer()!
+    
+        if backend.enableValidation, #available(OSX 10.16, iOS 14.0, *) {
+            let commandBufferDescriptor = MTLCommandBufferDescriptor()
+            commandBufferDescriptor.errorOptions = .encoderExecutionStatus
+            self.commandBuffer = queue.makeCommandBuffer(descriptor: commandBufferDescriptor)!
+        } else {
+            self.commandBuffer = queue.makeCommandBuffer()!
+        }
+        
         self.commandInfo = commandInfo
         self.textureUsages = textureUsages
         self.resourceMap = resourceMap

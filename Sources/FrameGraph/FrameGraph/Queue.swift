@@ -56,6 +56,7 @@ public final class QueueRegistry {
                 if self.allocatedQueues & (1 << i) == 0 {
                     self.allocatedQueues |= (1 << i)
                     
+                    self.queueCapabilities.advanced(by: i).initialize(to: capabilities)
                     CAtomicsStore(self.lastSubmittedCommands.advanced(by: i), 0, .relaxed)
                     CAtomicsStore(self.lastCompletedCommands.advanced(by: i), 0, .relaxed)
                     

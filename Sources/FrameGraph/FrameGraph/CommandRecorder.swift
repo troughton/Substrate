@@ -9,8 +9,16 @@
 import FrameGraphUtilities
 import Foundation
 
+#if canImport(Metal)
+import Metal
+#endif
+
 #if canImport(MetalPerformanceShaders)
 import MetalPerformanceShaders
+#endif
+
+#if canImport(Vulkan)
+import Vulkan
 #endif
 
 public protocol Releasable {
@@ -27,7 +35,8 @@ public final class ReferenceBox<T> {
     }
 }
 
-public final class ComputePipelineDescriptorBox {
+@usableFromInline
+final class ComputePipelineDescriptorBox {
     public var pipelineDescriptor : ComputePipelineDescriptor
     public fileprivate(set) var threadGroupSizeIsMultipleOfThreadExecutionWidth = true
     
@@ -37,6 +46,17 @@ public final class ComputePipelineDescriptorBox {
     }
 }
 
+@usableFromInline
+final class ExternalCommandBox {
+    @usableFromInline let command: (UnsafeRawPointer) -> Void
+    
+    @inlinable
+    init(command: @escaping (UnsafeRawPointer) -> Void) {
+        self.command = command
+    }
+}
+
+
 // We're skipping management functions here (fences, most resource synchronisation etc.) since they
 // should be taken care of automatically by the frame graph/resource transitions.
 //
@@ -44,7 +64,8 @@ public final class ComputePipelineDescriptorBox {
 // We're also only allowing a 64 bit payload, since FrameGraphCommand will be sized to fit
 // its biggest member (so if you add a struct...)
 //
-public enum FrameGraphCommand {
+@usableFromInline
+enum FrameGraphCommand {
     
     // General
     
@@ -159,6 +180,8 @@ public enum FrameGraphCommand {
     
     // External:
     
+    case encodeExternalCommand(Unmanaged<ExternalCommandBox>)
+    
     #if canImport(MetalPerformanceShaders)
     
     @available(OSX 10.14, *)
@@ -183,13 +206,12 @@ public enum FrameGraphCommand {
     }
 }
 
-
-public final class FrameGraphCommandRecorder {
-    public let renderPassScratchAllocator : ThreadLocalTagAllocator
-    public let commands : ExpandingBuffer<FrameGraphCommand> // Lifetime: FrameGraph compilation (copied to another array for the backend).
-    public var dataAllocator : TagAllocator.ThreadView // Lifetime: FrameGraph execution.
-    @usableFromInline
-    let unmanagedReferences : ExpandingBuffer<Releasable> // Lifetime: FrameGraph execution.
+@usableFromInline
+final class FrameGraphCommandRecorder {
+    @usableFromInline let renderPassScratchAllocator : ThreadLocalTagAllocator
+    @usableFromInline let commands : ExpandingBuffer<FrameGraphCommand> // Lifetime: FrameGraph compilation (copied to another array for the backend).
+    @usableFromInline var dataAllocator : TagAllocator.ThreadView // Lifetime: FrameGraph execution.
+    @usableFromInline let unmanagedReferences : ExpandingBuffer<Releasable> // Lifetime: FrameGraph execution.
     
     @inlinable
     init(renderPassScratchAllocator: ThreadLocalTagAllocator, frameGraphExecutionAllocator: TagAllocator.ThreadView, unmanagedReferences: ExpandingBuffer<Releasable>) {
@@ -262,7 +284,8 @@ public final class FrameGraphCommandRecorder {
     
 }
 
-public protocol CommandEncoder : class {
+@usableFromInline
+protocol CommandEncoder : class {
     var passRecord : RenderPassRecord { get }
     var unmanagedPassRecord : Unmanaged<RenderPassRecord> { get }
     
@@ -337,7 +360,8 @@ extension CommandEncoder {
 
 public class ResourceBindingEncoder : CommandEncoder {
     
-    public struct BoundResource {
+    @usableFromInline
+    struct BoundResource {
         public var resource : Resource
         public var bindingCommand : UnsafeMutableRawPointer?
         public var usageNode : ResourceUsageNodePtr?
@@ -346,14 +370,15 @@ public class ResourceBindingEncoder : CommandEncoder {
         public var consistentUsageAssumed : Bool
     }
     
-    public let commandRecorder : FrameGraphCommandRecorder
-    public let passRecord: RenderPassRecord
-    public let startCommandIndex : Int
+    @usableFromInline let commandRecorder : FrameGraphCommandRecorder
+    @usableFromInline let passRecord: RenderPassRecord
+    @usableFromInline let startCommandIndex : Int
     
     @usableFromInline
     let resourceUsages : ResourceUsages
     
-    public enum _ArgumentBufferType {
+    @usableFromInline
+    enum _ArgumentBufferType {
         case standalone
         case inArray(index: Int, bindingArgs: UnsafeMutablePointer<FrameGraphCommand.SetArgumentBufferArrayArgs>)
         
@@ -1581,10 +1606,10 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
 
 public final class BlitCommandEncoder : CommandEncoder {
 
-    public let commandRecorder : FrameGraphCommandRecorder
-    public let passRecord: RenderPassRecord
-    public let startCommandIndex: Int
-    public let resourceUsages : ResourceUsages
+    @usableFromInline let commandRecorder : FrameGraphCommandRecorder
+    @usableFromInline let passRecord: RenderPassRecord
+    @usableFromInline let startCommandIndex: Int
+    let resourceUsages : ResourceUsages
     let blitRenderPass : BlitRenderPass
     
     init(commandRecorder: FrameGraphCommandRecorder, resourceUsages: ResourceUsages, renderPass: BlitRenderPass, passRecord: RenderPassRecord) {
@@ -1676,10 +1701,10 @@ public final class BlitCommandEncoder : CommandEncoder {
 
 public final class ExternalCommandEncoder : CommandEncoder {
     
-    public let commandRecorder : FrameGraphCommandRecorder
-    public let passRecord: RenderPassRecord
-    public let startCommandIndex: Int
-    public let resourceUsages : ResourceUsages
+    @usableFromInline let commandRecorder : FrameGraphCommandRecorder
+    @usableFromInline let passRecord: RenderPassRecord
+    @usableFromInline let startCommandIndex: Int
+    @usableFromInline let resourceUsages : ResourceUsages
     let externalRenderPass : ExternalRenderPass
     
     init(commandRecorder: FrameGraphCommandRecorder, resourceUsages: ResourceUsages, renderPass: ExternalRenderPass, passRecord: RenderPassRecord) {
@@ -1703,6 +1728,29 @@ public final class ExternalCommandEncoder : CommandEncoder {
             commandRecorder.setLabel(label)
         }
     }
+    
+    @inlinable
+    func encodeCommand(usingResources resources: [(Resource, ResourceUsageType)], _ command: @escaping (_ commandBuffer: UnsafeRawPointer) -> Void) {
+        let commandBox = Unmanaged.passRetained(ExternalCommandBox(command: command))
+        self.commandRecorder.unmanagedReferences.append(commandBox)
+        
+        for (resource, usageType) in resources {
+            resourceUsages.addResourceUsage(for: resource, commandIndex: self.nextCommandOffset, encoder: self, usageType: usageType, stages: .compute, inArgumentBuffer: false)
+        }
+        
+        commandRecorder.record(FrameGraphCommand.encodeExternalCommand(commandBox))
+    }
+    
+    #if canImport(Metal)
+    
+    @inlinable
+    public func encodeToMetalCommandBuffer(usingResources resources: [(Resource, ResourceUsageType)], _ command: @escaping (_ commandBuffer: MTLCommandBuffer) -> Void) {
+        self.encodeCommand(usingResources: resources, { (cmdBuffer) in
+            command(Unmanaged<MTLCommandBuffer>.fromOpaque(cmdBuffer).takeUnretainedValue())
+        })
+    }
+    
+    #endif
     
     #if canImport(MetalPerformanceShaders)
     

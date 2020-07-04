@@ -275,13 +275,14 @@ public enum RenderPassType {
     case external // Using things like Metal Performance Shaders.
 }
 
-public final class RenderPassRecord {
-    public let pass : RenderPass
-    public var commands : ExpandingBuffer<FrameGraphCommand>! = nil
-    public /* internal(set) */ var commandRange : Range<Int>?
-    public /* internal(set) */ var passIndex : Int
-    public /* internal(set) */ var isActive : Bool
-    public /* internal(set) */ var usesWindowTexture : Bool = false
+@usableFromInline
+final class RenderPassRecord {
+    @usableFromInline let pass : RenderPass
+    @usableFromInline var commands : ExpandingBuffer<FrameGraphCommand>! = nil
+    @usableFromInline /* internal(set) */ var commandRange : Range<Int>?
+    @usableFromInline /* internal(set) */ var passIndex : Int
+    @usableFromInline /* internal(set) */ var isActive : Bool
+    @usableFromInline /* internal(set) */ var usesWindowTexture : Bool = false
     
     init(pass: RenderPass, passIndex: Int) {
         self.pass = pass

@@ -45,15 +45,17 @@ final class MetalBackend : SpecificRenderBackend {
     let device : MTLDevice
     let resourceRegistry : MetalPersistentResourceRegistry
     let stateCaches : MetalStateCaches
+    let enableValidation : Bool
     
     var activeContext : FrameGraphContextImpl<MetalBackend>? = nil
     
     var queueSyncEvents = [MTLEvent?](repeating: nil, count: QueueRegistry.maxQueues)
     
-    public init(libraryPath: String? = nil) {
+    public init(libraryPath: String? = nil, enableValidation: Bool = true) {
         self.device = MTLCreateSystemDefaultDevice()!
         self.stateCaches = MetalStateCaches(device: self.device, libraryPath: libraryPath)
         self.resourceRegistry = MetalPersistentResourceRegistry(device: device)
+        self.enableValidation = enableValidation
     }
     
     public var api : RenderAPI {
@@ -155,7 +157,7 @@ final class MetalBackend : SpecificRenderBackend {
                 assert(bufferReference == nil || bufferReference?.offset == 0)
                 return bufferReference?.buffer
             } else if let texture = resource.texture {
-                return resourceRegistry[texture]
+                return resourceRegistry[texture]?.texture
             }
             return nil
         }

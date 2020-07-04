@@ -174,7 +174,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             if stages.contains(.vertex) {
                 encoder.setVertexBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
             }
-            if stages.contains(.fragment) {
+            if stages.contains(.fragment) || self.pipelineDescriptor?.fragmentFunction == nil { // If we currently have no fragment function, but later set one after binding an argument buffer, that argument buffer should also be bound for the fragment function.
                 encoder.setFragmentBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
             }
             
@@ -610,6 +610,9 @@ final class FGMTLExternalCommandEncoder {
     
     func executeCommand(_ command: FrameGraphCommand, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
         switch command {
+        case .encodeExternalCommand(let closure):
+            closure.takeUnretainedValue().command(Unmanaged.passUnretained(self.commandBuffer).toOpaque())
+            
         case .encodeRayIntersection(let args):
             let intersector = args.pointee.intersector.takeUnretainedValue()
             
