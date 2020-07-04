@@ -29,7 +29,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     static var requiresResourceResidencyTracking: Bool { get }
     static var requiresBufferUsage: Bool { get }
     
-    func makeQueue() -> BackendQueue
+    func makeQueue(frameGraphQueue: Queue) -> BackendQueue
     func makeSyncEvent(for queue: Queue) -> Event
     func freeSyncEvent(for queue: Queue)
     func syncEvent(for queue: Queue) -> Event?

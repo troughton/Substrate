@@ -234,7 +234,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
         case .setStageInRegion(_):
             fatalError("Unimplemented.")
             
-        case .setThreadgroupMemoryLength(_):
+        case .setThreadgroupMemoryLength(_, _):
             fatalError("Unimplemented.")
             
         default:

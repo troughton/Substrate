@@ -13,18 +13,16 @@ import FrameGraphCExtras
 
 final class VulkanArgumentBuffer {
     let device : VulkanDevice
+    let layout: VkDescriptorSetLayout
     let descriptorSet : VkDescriptorSet
-    private let isTransient : Bool
 
     private var images = [VulkanImage]()
     private var buffers = [VulkanBuffer]()
     
-    public init(descriptorSet: VkDescriptorSet, bindingPath: ResourceBindingPath, commandBufferResources: VulkanCommandBuffer, pipelineReflection: VulkanPipelineReflection, stateCaches: VulkanStateCaches) {
-        self.device = commandBufferResources.backend.device
-
-        let layout = pipelineReflection.descriptorSetLayout(set: bindingPath.set).vkLayout
-        
-        self.isTransient = !arguments.flags.contains(.persistent)
+    public init(device: VulkanDevice, layout: VkDescriptorSetLayout, descriptorSet: VkDescriptorSet) {
+        self.device = device
+        self.layout = layout
+        self.descriptorSet = descriptorSet
     }
 }
 

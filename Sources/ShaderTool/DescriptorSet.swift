@@ -220,9 +220,6 @@ final class DescriptorSet {
                     // @BufferBacked property
                     
                     stream.print("if let resource = self.$\(resource.name).buffer {")
-                                    
-                    stream.print("assert(resource.binding.set == setIndex)")
-
                     stream.print("argBuffer.bindings.append(")
                     stream.print("(ResourceBindingPath(set: UInt32(setIndex), binding: \(resource.binding.index), arrayIndex: 0), .buffer(resource.wrappedValue, offset: resource.offset))")
                     
@@ -232,9 +229,20 @@ final class DescriptorSet {
                     continue
                 }
                 
+                var type = resource.type
+                if case .array(let elementType, let length) = type {
+                    switch elementType {
+                    case  .buffer, .texture, .sampler:
+                        assert(length == resource.binding.arrayLength)
+                        type = elementType
+                    default:
+                        break
+                    }
+                }
+                
                 let arrayIndexString : String
                 if resource.binding.arrayLength > 1 {
-                    arrayIndexString = "i"
+                    arrayIndexString = "UInt32(i)"
                     stream.print("for i in 0..<\(resource.binding.arrayLength) {")
                     stream.print("if let resource = self.\(resource.name)[i] {")
                 } else {
@@ -244,7 +252,7 @@ final class DescriptorSet {
                 
                 stream.print("argBuffer.bindings.append(")
                 
-                switch resource.type {
+                switch type {
                 case .texture:
                     stream.print("(ResourceBindingPath(set: UInt32(setIndex), binding: \(resource.binding.index), arrayIndex: \(arrayIndexString)), .texture(resource))")
                 case .sampler:

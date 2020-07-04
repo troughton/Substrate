@@ -43,9 +43,12 @@ let package = Package(
                 .apt(["sdl2"]),
             ]
         ),
-//        .systemLibrary(
-//            name: "Vulkan"
-//        ),
+        .systemLibrary(
+            name: "Vulkan",
+            providers: [
+                .brew(["vulkan-headers"])
+            ]
+        ),
         .target(name: "CNativeFileDialog"),
         .target(
             name: "AppFramework",

@@ -162,7 +162,7 @@ struct BarrierScope: OptionSet {
 enum FrameResourceCommands {
     // These commands need to be executed during render pass execution and do not modify the ResourceRegistry.
     case useResource(Resource, usage: ResourceUsageType, stages: RenderStages, allowReordering: Bool)
-    case memoryBarrier(Resource, scope: BarrierScope, afterStages: RenderStages, beforeCommand: Int, beforeStages: RenderStages) // beforeCommand is the command that this memory barrier must have been executed before.
+    case memoryBarrier(Resource, afterUsage: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsage: ResourceUsageType, beforeStages: RenderStages) // beforeCommand is the command that this memory barrier must have been executed before.
 }
 
 struct PreFrameResourceCommand<Dependency: SwiftFrameGraph.Dependency> : Comparable {
@@ -322,13 +322,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     
                     assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
                     assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
-                    var scope: BarrierScope = []
                     
                     #if os(macOS) || targetEnvironment(macCatalyst)
                     let isRTBarrier = previousUsage.type.isRenderTarget || usage.type.isRenderTarget
-                    if isRTBarrier {
-                        scope.formUnion(.renderTargets)
-                    }
                     #else
                     let isRTBarrier = false
                     #endif
@@ -343,20 +339,12 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                             let command = commands[i]
                             if command.isDrawCommand {
                                 let commandIndex = i + passCommandRange.lowerBound
-                                self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), scope: scope, afterStages: previousUsage.stages, beforeCommand: commandIndex, beforeStages: usage.stages), index: commandIndex))
+                                self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousUsage.type, afterStages: previousUsage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: commandIndex))
                             }
                         }
                         
                     } else {
-                        if resource.type == .texture {
-                            scope.formUnion(.textures)
-                        } else if resource.type == .buffer || resource.type == .argumentBuffer || resource.type == .argumentBufferArray {
-                            scope.formUnion(.buffers)
-                        } else {
-                            assertionFailure()
-                        }
-                        
-                        self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), scope: scope, afterStages: previousUsage.stages, beforeCommand: usage.commandRange.lowerBound, beforeStages: usage.stages), index: previousUsage.commandRange.last!))
+                        self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousUsage.type, afterStages: previousUsage.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages), index: previousUsage.commandRange.last!))
                     }
                 }
                 

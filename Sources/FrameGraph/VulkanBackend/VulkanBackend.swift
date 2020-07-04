@@ -207,6 +207,14 @@ public final class VulkanBackend : SpecificRenderBackend {
         fatalError()
     }
     
+    func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> VulkanTransientResourceRegistry {
+        return VulkanTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
+    }
+    
+    func makeQueue(frameGraphQueue: Queue) -> VulkanDeviceQueue {
+        return self.device.deviceQueue(capabilities: frameGraphQueue.capabilities, requiredCapability: frameGraphQueue.capabilities)
+    }
+    
     func makeSyncEvent(for queue: Queue) -> Event {
         var semaphoreTypeCreateInfo = VkSemaphoreTypeCreateInfo()
         semaphoreTypeCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO

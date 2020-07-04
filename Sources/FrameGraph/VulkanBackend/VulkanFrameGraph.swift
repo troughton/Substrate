@@ -29,7 +29,13 @@ extension VulkanBackend {
             var signalIndex = -1
             for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
                 let dependency = dependencies.dependency(from: dependentIndex, on: sourceIndex)!
-                signalStages.formUnion(VkPipelineStageFlagBits(dependency.signal.stages))
+                
+                for (resource, producingUsage, consumingUsage) in dependency.resources {
+                    let pixelFormat = resource.texture?.descriptor.pixelFormat ?? .invalid
+                    let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
+                    signalStages.formUnion(producingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: producingUsage.stages))
+                }
+                
                 signalIndex = max(signalIndex, dependency.signal.index)
             }
             
@@ -43,10 +49,7 @@ extension VulkanBackend {
             
             for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
                 let dependency = dependencies.dependency(from: dependentIndex, on: sourceIndex)!
-                let destinationStages = dependency.wait.stages
-                
-                let sourceEncoderType = frameCommandInfo.commandEncoders[sourceIndex].type
-                let destinationEncoderType = frameCommandInfo.commandEncoders[dependentIndex].type
+                var destinationStages: VkPipelineStageFlagBits = []
                 
                 var bufferBarriers = [VkBufferMemoryBarrier]()
                 var imageBarriers = [VkImageMemoryBarrier]()
@@ -54,6 +57,8 @@ extension VulkanBackend {
 //                assert(self.device.queueFamilyIndex(queue: queue, encoderType: sourceEncoderType) == self.device.queueFamilyIndex(queue: queue, encoderType: destinationEncoderType), "Queue ownership transfers must be handled with a pipeline barrier rather than an event")
                 
                 for (resource, producingUsage, consumingUsage) in dependency.resources {
+                    var isDepthOrStencil = false
+                    
                     if let buffer = resource.buffer {
                         var barrier = VkBufferMemoryBarrier()
                         barrier.buffer = resourceMap[buffer].buffer.vkBuffer
@@ -66,20 +71,23 @@ extension VulkanBackend {
                         bufferBarriers.append(barrier)
                     } else if let texture = resource.texture {
                         let pixelFormat = texture.descriptor.pixelFormat
+                        isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                         
                         var barrier = VkImageMemoryBarrier()
                         barrier.image = resourceMap[texture].image.vkImage
-                        barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil).rawValue
-                        barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil).rawValue
+                        barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
+                        barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
                         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
-                        barrier.oldLayout = producingUsage.type.imageLayout(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil)
-                        barrier.newLayout = consumingUsage.type.imageLayout(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil)
+                        barrier.oldLayout = producingUsage.type.imageLayout(isDepthOrStencil: isDepthOrStencil)
+                        barrier.newLayout = consumingUsage.type.imageLayout(isDepthOrStencil: isDepthOrStencil)
                         barrier.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
                         imageBarriers.append(barrier)
                     } else {
                         fatalError()
                     }
+                    
+                    destinationStages.formUnion(consumingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: consumingUsage.stages))
                 }
                 
                 let bufferBarriersPtr: UnsafeMutablePointer<VkBufferMemoryBarrier> = allocator.allocate(capacity: bufferBarriers.count)
@@ -89,7 +97,7 @@ extension VulkanBackend {
                 imageBarriersPtr.initialize(from: imageBarriers, count: imageBarriers.count)
                 
                 let command: VulkanCompactedResourceCommandType = .waitForEvents(UnsafeBufferPointer(start: fence.eventPointer, count: 1),
-                                                                                 sourceStages: signalStages, destinationStages: VkPipelineStageFlagBits(destinationStages),
+                                                                                 sourceStages: signalStages, destinationStages: destinationStages,
                                                                                  memoryBarriers: UnsafeBufferPointer<VkMemoryBarrier>(start: nil, count: 0),
                                                                                  bufferMemoryBarriers: UnsafeBufferPointer<VkBufferMemoryBarrier>(start: bufferBarriersPtr, count: bufferBarriers.count),
                                                                                  imageMemoryBarriers: UnsafeBufferPointer<VkImageMemoryBarrier>(start: imageBarriersPtr, count: imageBarriers.count))
@@ -115,7 +123,6 @@ extension VulkanBackend {
         var bufferBarriers = [VkBufferMemoryBarrier]()
         var imageBarriers = [VkImageMemoryBarrier]()
         
-        var barrierScope: VkAccessFlagBits = []
         var barrierAfterStages: VkPipelineStageFlagBits = []
         var barrierBeforeStages: VkPipelineStageFlagBits = []
         var barrierLastIndex: Int = .max
@@ -138,7 +145,6 @@ extension VulkanBackend {
 
             bufferBarriers.removeAll(keepingCapacity: true)
             imageBarriers.removeAll(keepingCapacity: true)
-            barrierScope = []
             barrierAfterStages = []
             barrierBeforeStages = []
             barrierLastIndex = .max
@@ -153,9 +159,6 @@ extension VulkanBackend {
                 currentEncoderIndex += 1
                 currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
                 
-                useResources(&compactedResourceCommands)
-                
-                assert(barrierScope == [])
                 assert(bufferBarriers.isEmpty)
                 assert(imageBarriers.isEmpty)
             }
@@ -171,62 +174,39 @@ extension VulkanBackend {
                     break
                 }
                 
-                let mtlResource = getResource(resource)
+                fatalError("TODO: check for layout transitions.")
                 
-                var computedUsageType: MTLResourceUsage = []
-                if resource.type == .texture, usage == .read {
-                    computedUsageType.formUnion(.sample)
-                }
-                if usage.isRead {
-                    computedUsageType.formUnion(.read)
-                }
-                if usage.isWrite {
-                    computedUsageType.formUnion(.write)
-                }
+            case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages):
+                var isDepthOrStencil = false
                 
-                if !allowReordering {
-                    let memory = allocator.allocate(capacity: 1) as UnsafeMutablePointer<Unmanaged<MTLResource>>
-                    memory.initialize(to: mtlResource)
-                    let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: 1)
-                    compactedResourceCommands.append(.init(command: .useResources(bufferPointer, usage: computedUsageType, stages: MTLRenderStages(stages)), index: command.index, order: .before))
-                } else {
-                    let key = MetalResidentResource(resource: mtlResource, stages: MTLRenderStages(stages), usage: computedUsageType)
-                    let (inserted, _) = encoderResidentResources.insert(key)
-                    if inserted {
-                        encoderUseResources[UseResourceKey(stages: MTLRenderStages(stages), usage: computedUsageType), default: []].append(mtlResource)
-                    }
-                    encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
-                }
-                
-            case .memoryBarrier(let resource, let scope, let afterStages, let beforeCommand, let beforeStages):
                 if let buffer = resource.buffer {
                     var barrier = VkBufferMemoryBarrier()
                     barrier.buffer = resourceMap[buffer].buffer.vkBuffer
                     barrier.offset = 0
                     barrier.size = VK_WHOLE_SIZE // TODO: track at a more fine-grained level.
-                    barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: false)
-                    barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: false)
+                    barrier.srcAccessMask = afterUsage.accessMask(isDepthOrStencil: false).rawValue
+                    barrier.dstAccessMask = beforeUsage.accessMask(isDepthOrStencil: false).rawValue
                     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                     bufferBarriers.append(barrier)
                 } else if let texture = resource.texture {
                     let pixelFormat = texture.descriptor.pixelFormat
+                    isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                     
                     var barrier = VkImageMemoryBarrier()
                     barrier.image = resourceMap[texture].image.vkImage
-                    barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil)
-                    barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil)
+                    barrier.srcAccessMask = afterUsage.accessMask(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil).rawValue
+                    barrier.dstAccessMask = beforeUsage.accessMask(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil).rawValue
                     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
-                    barrier.oldLayout = producingUsage.type.imageLayout(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil)
-                    barrier.newLayout = consumingUsage.type.imageLayout(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil)
+                    barrier.oldLayout = afterUsage.imageLayout(isDepthOrStencil: isDepthOrStencil)
+                    barrier.newLayout = beforeUsage.imageLayout(isDepthOrStencil: isDepthOrStencil)
                     barrier.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
                     imageBarriers.append(barrier)
                 }
                 
-                barrierScope.formUnion(VkAccessFlagBits(scope))
-                barrierAfterStages.formUnion(VkPipelineStageFlagBits(afterStages))
-                barrierBeforeStages.formUnion(VkPipelineStageFlagBits(beforeStages))
+                barrierAfterStages.formUnion(afterUsage.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: afterStages))
+                barrierBeforeStages.formUnion(beforeUsage.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: beforeStages))
                 barrierLastIndex = min(beforeCommand, barrierLastIndex)
             }
         }

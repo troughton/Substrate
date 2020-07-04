@@ -29,8 +29,8 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
        
     public init(backend: Backend, capabilities: QueueCapabilities, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
-        self.commandQueue = backend.makeQueue()
         self.frameGraphQueue = Queue(capabilities: capabilities)
+        self.commandQueue = backend.makeQueue(frameGraphQueue: self.frameGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
         self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount)
         self.accessSemaphore = Semaphore(value: Int32(inflightFrameCount))
