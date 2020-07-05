@@ -181,8 +181,6 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     
     @discardableResult
     func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer) -> VulkanArgumentBuffer {
-        fatalError()
-        
         if let baseArray = argumentBuffer.sourceArray {
             _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
             return self.argumentBufferReferences[argumentBuffer]!
@@ -191,12 +189,12 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
             return vkArgumentBuffer
         }
         
-        let buffer: VulkanArgumentBuffer
-//            buffer = VulkanArgumentBuffer(arguments: argumentBuffer,
-//                                          bindingPath: bindingPath,
-//                                          commandBufferResources: commandBufferResources,
-//                                          pipelineReflection: pipelineReflection,
-//                                          stateCaches: stateCaches)
+        let setLayout = VkDescriptorSetLayout(argumentBuffer.encoder!)
+        let set = self.descriptorPool.allocateSet(layout: setLayout)
+        
+        let buffer = VulkanArgumentBuffer(device: self.device,
+                                          layout: setLayout,
+                                          descriptorSet: set)
         
         self.argumentBufferReferences[argumentBuffer] = buffer
         
@@ -275,6 +273,8 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     func disposeArgumentBuffer(_ buffer: _ArgumentBuffer) {
         if let vkBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
             assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Vulkan FrameGraph backend.")
+            
+            self.descriptorPool.freeDescriptorSet(vkBuffer.descriptorSet)
             _ = vkBuffer
         }
     }
@@ -307,6 +307,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     var argumentBufferWaitEvents: TransientResourceMap<_ArgumentBuffer, ContextWaitEvent>
     var argumentBufferArrayWaitEvents: TransientResourceMap<_ArgumentBufferArray, ContextWaitEvent>
     var historyBufferResourceWaitEvents = [Resource : ContextWaitEvent]()
+    
     
     private var heapResourceUsageFences = [Resource : [FenceDependency]]()
     private var heapResourceDisposalFences = [Resource : [FenceDependency]]()
@@ -442,8 +443,17 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     public func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: VulkanPersistentResourceRegistry) throws -> VkImageReference {
         precondition(texture.flags.contains(.windowHandle))
         
-        let (image, semaphore) = self.persistentRegistry.windowReferences[texture]!.nextImage(descriptor: texture.descriptor)
-        fatalError()
+        FrameGraph.jobManager.syncOnMainThread {
+            if self.textureReferences[texture]!._image != nil {
+                return
+            }
+            
+            let swapChain = self.persistentRegistry.windowReferences.removeValue(forKey: texture)!
+            self.frameSwapChains.append(swapChain)
+            self.textureReferences[texture]!._image = Unmanaged.passUnretained(swapChain.nextImage(descriptor: texture.descriptor))
+        }
+        
+        return self.textureReferences[texture]!
     }
     
     @discardableResult
@@ -507,11 +517,13 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         
         let layout = VkDescriptorSetLayout(argumentBuffer.encoder!)
+        let set = self.descriptorPools[self.activeFrameIndex].allocateSet(layout: layout)
         
-        fatalError()
-//        let argumentBuffer = VulkanArgumentBuffer(arguments: argumentBuffer, bindingPath: bindingPath, commandBufferResources: commandBufferResources, pipelineReflection: pipelineReflection, stateCaches: stateCaches)
-//
-//        return argumentBuffer
+        let vkArgumentBuffer = VulkanArgumentBuffer(device: self.persistentRegistry.device, layout: layout, descriptorSet: set)
+        
+        self.argumentBufferReferences[argumentBuffer] = vkArgumentBuffer
+
+        return vkArgumentBuffer
     }
     
     @discardableResult

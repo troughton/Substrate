@@ -59,6 +59,7 @@ public class VulkanSwapChain : SwapChain {
     private var imagePresentationSemaphores : [VkSemaphore] = []
     
     private var currentImageIndex : Int? = nil
+    private var acquisitionSemaphoreIndex: Int = 0
     
     public var format: PixelFormat {
         return PixelFormat(self.surfaceFormat.format)
@@ -190,7 +191,7 @@ public class VulkanSwapChain : SwapChain {
         self.createSwapChain(drawableSize: drawableSize)
     }
     
-    func nextImage(descriptor: TextureDescriptor) -> (VulkanImage, acquisitionSemaphore: VkSemaphore) {
+    func nextImage(descriptor: TextureDescriptor) -> VulkanImage {
         if self.swapChain == nil {
             self.createSwapChain(drawableSize: descriptor.size)
         } else if descriptor.size != self.currentDrawableSize {
@@ -200,7 +201,8 @@ public class VulkanSwapChain : SwapChain {
         
         // TODO: reset the semaphores before usage (e.g. signal them)
         var imageIndex = 0 as UInt32
-        let semaphore = self.imageAcquisitionSemaphores[Int(imageIndex)]
+        let semaphore = self.imageAcquisitionSemaphores[self.acquisitionSemaphoreIndex]
+        
         let result = vkAcquireNextImageKHR(device.vkDevice, self.swapChain, UInt64.max, semaphore, nil, &imageIndex)
         
         if result == VK_ERROR_OUT_OF_DATE_KHR {
@@ -213,7 +215,11 @@ public class VulkanSwapChain : SwapChain {
         let image = self.images[Int(imageIndex)]
         self.currentImageIndex = Int(imageIndex)
         
-        return (image, semaphore)
+        return image
+    }
+
+    var acquisitionSemaphore: VkSemaphore {
+        return self.imageAcquisitionSemaphores[self.currentImageIndex!]
     }
     
     var presentationSemaphore: VkSemaphore {
@@ -224,7 +230,10 @@ public class VulkanSwapChain : SwapChain {
         guard let imageIndex = self.currentImageIndex else {
             fatalError("VulkanSwapChain.submit() called without matching nextImage(). Aborting.")
         }
-        defer { self.currentImageIndex = nil }
+        defer {
+            self.currentImageIndex = nil
+            self.acquisitionSemaphoreIndex = (self.acquisitionSemaphoreIndex + 1) % self.imageAcquisitionSemaphores.count
+        }
         let image = self.images[imageIndex]
         
         var presentInfo = VkPresentInfoKHR();

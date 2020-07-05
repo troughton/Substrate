@@ -9,11 +9,14 @@
 import Vulkan
 import FrameGraphCExtras
 import FrameGraphUtilities
+import Dispatch
 
 // Represents all resources that are associated with a particular command buffer
 // and should be freed once the command buffer has finished execution.
 public final class VulkanCommandBuffer: BackendCommandBuffer {
     typealias Backend = VulkanBackend
+    
+    static let semaphoreSignalQueue = DispatchQueue(label: "Vulkan Semaphore Signal Queue")
     
     let backend: VulkanBackend
     let queue: VulkanDeviceQueue
@@ -132,8 +135,9 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
         var submitInfo = VkSubmitInfo()
         submitInfo.commandBufferCount = 1
         
-        let waitSemaphores = self.waitSemaphores.map { $0.vkSemaphore as VkSemaphore? }
-        let waitDstStageMasks = self.waitSemaphores.map { VkPipelineStageFlags($0.stages) }
+        let waitSemaphores = self.waitSemaphores.map { $0.vkSemaphore as VkSemaphore? } + self.presentSwapchains.map { $0.acquisitionSemaphore }
+        var waitDstStageMasks = self.waitSemaphores.map { VkPipelineStageFlags($0.stages) }
+        waitDstStageMasks.append(contentsOf: repeatElement(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT.rawValue, count: self.presentSwapchains.count))
         
         // Add a binary semaphore to signal for each presentation swapchain.
         self.signalSemaphores.append(contentsOf: self.presentSwapchains.map { $0.presentationSemaphore })
@@ -165,7 +169,16 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
                             
                             vkQueueSubmit(self.queue.vkQueue, 1, &submitInfo, nil)
                             
-                            fatalError("Need to call onCompletion somehow – maybe have a dedicated callback thread? On the other hand, we're just signalling a semaphore anyway, so maybe a callback isn't the right approach.")
+                            Self.semaphoreSignalQueue.async {
+                                var waitInfo = VkSemaphoreWaitInfo()
+                                waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO
+                                waitInfo.pSemaphores = signalSemaphores.baseAddress
+                                waitInfo.pValues = UnsafePointer(self.signalSemaphoreSignalValues.buffer)
+                                waitInfo.semaphoreCount = UInt32(self.signalSemaphores.count)
+                                
+                                vkWaitSemaphores(self.queue.device.vkDevice, &waitInfo, .max)
+                                onCompletion(self)
+                            }
                         }
                     }
                 }

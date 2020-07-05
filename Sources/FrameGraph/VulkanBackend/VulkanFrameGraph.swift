@@ -119,6 +119,7 @@ extension VulkanBackend {
         
         var currentEncoderIndex = 0
         var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
+        var currentPassIndex = 0
         
         var bufferBarriers = [VkBufferMemoryBarrier]()
         var imageBarriers = [VkImageMemoryBarrier]()
@@ -155,6 +156,10 @@ extension VulkanBackend {
                 addBarrier(&compactedResourceCommands)
             }
             
+            while !commandInfo.passes[currentPassIndex].commandRange!.contains(command.index) {
+                currentPassIndex += 1
+            }
+            
             while !currentEncoder.commandRange.contains(command.index) {
                 currentEncoderIndex += 1
                 currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
@@ -174,10 +179,73 @@ extension VulkanBackend {
                     break
                 }
                 
-                fatalError("TODO: check for layout transitions.")
+                // TODO: check for layout transitions.
                 
             case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages):
-                var isDepthOrStencil = false
+                
+                let pixelFormat =  resource.texture?.descriptor.pixelFormat ?? .invalid
+                let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
+                
+                let sourceLayout = afterUsage.imageLayout(isDepthOrStencil: isDepthOrStencil)
+                let destinationLayout = beforeUsage.imageLayout(isDepthOrStencil: isDepthOrStencil)
+                
+                let sourceMask = afterUsage.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: afterStages)
+                let destinationMask = beforeUsage.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: beforeStages)
+                
+                let sourceAccessMask = afterUsage.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
+                let destinationAccessMask = beforeUsage.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
+                
+                if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor {
+                    var subpassDependency = VkSubpassDependency()
+                    subpassDependency.dependencyFlags = 0 // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
+                    if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(currentPassIndex) {
+                        subpassDependency.srcSubpass = UInt32(passUsageSubpass.index)
+                    } else {
+                        subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
+                    }
+                    subpassDependency.srcStageMask = sourceMask.rawValue
+                    subpassDependency.srcAccessMask = sourceAccessMask
+                    
+                    let dependentPass = commandInfo.passes[currentPassIndex...].first(where: { $0.commandRange!.contains(beforeCommand) })!
+                    if let destinationUsageSubpass = renderTargetDescriptor.subpassForPassIndex(dependentPass.passIndex) {
+                        subpassDependency.dstSubpass = UInt32(destinationUsageSubpass.index)
+                    } else {
+                        subpassDependency.dstSubpass = VK_SUBPASS_EXTERNAL
+                    }
+                    subpassDependency.dstStageMask = destinationMask.rawValue
+                    subpassDependency.dstAccessMask = destinationAccessMask
+
+                    // If the dependency is on an attachment, then we can let the subpass dependencies handle it, _unless_ both usages are in the same subpass.
+                    // Otherwise, an image should always be in the right layout when it's materialised. The only case it won't be is if it's used in one way in
+                    // a draw render pass (e.g. as a read texture) and then needs to transition layout before being used in a different type of pass.
+
+                    if subpassDependency.srcSubpass == subpassDependency.dstSubpass {
+                        precondition(resource.type == .texture, "We can only insert pipeline barriers within render passes for textures.")
+
+                        renderTargetDescriptor.addDependency(subpassDependency)
+                    } else if sourceLayout != destinationLayout, // guaranteed to not be a buffer since buffers have UNDEFINED image layouts above.
+                                !afterUsage.isRenderTarget, !beforeUsage.isRenderTarget {
+                        // We need to insert a pipeline barrier to handle a layout transition.
+                        // We can therefore avoid a subpass dependency in most cases.
+
+                        if subpassDependency.srcSubpass == VK_SUBPASS_EXTERNAL {
+                            // Insert a pipeline barrier before the start of the Render Command Encoder.
+                        } else if subpassDependency.dstSubpass == VK_SUBPASS_EXTERNAL {
+                            // Insert a pipeline barrier before the next command after the render command encoder ends.
+                        } else {
+                            // Insert a subpass self-dependency and a pipeline barrier.
+                            fatalError("This should have been handled by the subpassDependency.srcSubpass == subpassDependency.dstSubpass case.")
+
+                            // resourceCommands.append(VulkanFrameResourceCommand(command: .pipelineBarrier(memoryBarrierInfo), index: dependentCommandIndex, order: .before))
+                            // subpassDependency.srcSubpass = subpassDependency.dstSubpass
+                            // renderTargetDescriptor.addDependency(subpassDependency)
+                        }
+                    } else {
+                        // A subpass dependency should be enough to handle this case.
+                        renderTargetDescriptor.addDependency(subpassDependency)
+                        continue
+                    }
+                }
                 
                 if let buffer = resource.buffer {
                     var barrier = VkBufferMemoryBarrier()
@@ -190,13 +258,11 @@ extension VulkanBackend {
                     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                     bufferBarriers.append(barrier)
                 } else if let texture = resource.texture {
-                    let pixelFormat = texture.descriptor.pixelFormat
-                    isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                     
                     var barrier = VkImageMemoryBarrier()
                     barrier.image = resourceMap[texture].image.vkImage
-                    barrier.srcAccessMask = afterUsage.accessMask(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil).rawValue
-                    barrier.dstAccessMask = beforeUsage.accessMask(isDepthOrStencil: pixelFormat.isDepth || pixelFormat.isStencil).rawValue
+                    barrier.srcAccessMask = sourceAccessMask
+                    barrier.dstAccessMask = destinationAccessMask
                     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                     barrier.oldLayout = afterUsage.imageLayout(isDepthOrStencil: isDepthOrStencil)
@@ -205,8 +271,8 @@ extension VulkanBackend {
                     imageBarriers.append(barrier)
                 }
                 
-                barrierAfterStages.formUnion(afterUsage.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: afterStages))
-                barrierBeforeStages.formUnion(beforeUsage.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: beforeStages))
+                barrierAfterStages.formUnion(sourceMask)
+                barrierBeforeStages.formUnion(destinationMask)
                 barrierLastIndex = min(beforeCommand, barrierLastIndex)
             }
         }
