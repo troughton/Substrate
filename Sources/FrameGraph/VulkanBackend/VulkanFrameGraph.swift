@@ -20,7 +20,7 @@ extension VulkanBackend {
         let commandEncoderCount = frameCommandInfo.commandEncoders.count
         let reductionMatrix = dependencies.transitiveReduction(hasDependency: { $0 != nil })
         
-        let allocator = ThreadLocalTagAllocator(tag: FrameGraphContextImpl<MetalBackend>.resourceCommandArrayTag)
+        let allocator = ThreadLocalTagAllocator(tag: FrameGraphContextImpl<VulkanBackend>.resourceCommandArrayTag)
         
         for sourceIndex in (0..<commandEncoderCount) { // sourceIndex always points to the producing pass.
             let dependentRange = min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount
