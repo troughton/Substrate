@@ -36,7 +36,7 @@ public final class VulkanPhysicalDevice {
     public let queueCapabilities : [QueueCapabilities]
     let queueFamilies: [VkQueueFamilyProperties]
     
-    init(device: VkPhysicalDevice, surface: VkSurfaceKHR) {
+    init(device: VkPhysicalDevice) {
         self.vkDevice = device
         
         var queueFamilyCount = 0 as UInt32
@@ -59,10 +59,11 @@ public final class VulkanPhysicalDevice {
                 capabilities.insert(.blit)
             }
             
-            var presentSupport = false as VkBool32
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, UInt32(i), surface, &presentSupport)
+            // var presentSupport = false as VkBool32
+            // vkGetPhysicalDeviceSurfaceSupportKHR(device, UInt32(i), surface, &presentSupport)
             
-            if presentSupport != VK_FALSE {
+            if queueFlags.contains(VK_QUEUE_GRAPHICS_BIT) {
+                // FIXME: presentation support may vary between devices.
                 capabilities.insert(.present)
             }
             
@@ -128,6 +129,7 @@ public final class VulkanDevice {
             
             queueCreateInfos.withUnsafeBufferPointer { queueCreateInfos in
                 createInfo.queueCreateInfoCount = UInt32(queueCreateInfos.count)
+                createInfo.pQueueCreateInfos = queueCreateInfos.baseAddress
                 
                 withUnsafePointer(to: deviceFeatures) { deviceFeatures in
                     createInfo.pEnabledFeatures = deviceFeatures;

@@ -45,9 +45,9 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     var queueSyncSemaphores = [VkSemaphore?](repeating: nil, count: QueueRegistry.maxQueues)
     
-    public init(instance: VulkanInstance, surface: VkSurfaceKHR, shaderLibraryURL: URL) {
+    public init(instance: VulkanInstance, shaderLibraryURL: URL) {
         self.vulkanInstance = instance
-        let physicalDevice = self.vulkanInstance.createSystemDefaultDevice(surface: surface)!
+        let physicalDevice = self.vulkanInstance.createSystemDefaultDevice()!
         
         self.device = VulkanDevice(physicalDevice: physicalDevice)!
         

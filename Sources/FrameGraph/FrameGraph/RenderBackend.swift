@@ -98,8 +98,8 @@ public struct RenderBackend {
 #endif
 #if canImport(Vulkan)
         case .vulkan:
-            let instance = VulkanInstance(applicationName: applicationName, applicationVersion: VulkanVersion(major: 0, minor: 0, patch: 1), engineName: "SwiftFrameGraph", engineVersion: VulkanVersion(major: 3, minor: 0, patch: 1))
-            fatalError()
+            let instance = VulkanInstance(applicationName: applicationName, applicationVersion: VulkanVersion(major: 0, minor: 0, patch: 1), engineName: "SwiftFrameGraph", engineVersion: VulkanVersion(major: 3, minor: 0, patch: 1))!
+            _backend = VulkanBackend(instance: instance, shaderLibraryURL: URL(fileURLWithPath: libraryPath!))
 #endif
         }
     }

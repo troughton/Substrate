@@ -59,17 +59,16 @@ public final class VulkanInstance {
             return nil
         }
         
-        var extensions = [
+        var extensions: [String] = [
             VK_KHR_SURFACE_EXTENSION_NAME,
         ]
-#if VK_USE_PLATFORM_WIN32_KHR
+#if os(Windows)
         extensions.append(VK_KHR_WIN32_SURFACE_EXTENSION_NAME)
 #endif
-
 #if VK_USE_PLATFORM_XCB_KHR
         extensions.append(VK_KHR_XCB_SURFACE_EXTENSION_NAME)
 #endif
-#if VK_USE_PLATFORM_XLIB_KHR
+#if os(Linux)
         extensions.append(VK_KHR_XLIB_SURFACE_EXTENSION_NAME)
 #endif
         
@@ -77,11 +76,26 @@ public final class VulkanInstance {
             extensions.append(VK_EXT_DEBUG_REPORT_EXTENSION_NAME)
         }
         
+        var extensionCStringPointers = [UnsafePointer<CChar>?]()
+        extensionCStringPointers.reserveCapacity(extensions.count)
+        
+        let extensionsLength = extensions.reduce(0, { $0 + $1.utf8.count + 1 })
+        let extensionBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: extensionsLength)
+        extensionBuffer.initialize(repeating: 0, count: extensionsLength)
+        var extensionCursor = extensionBuffer
+        defer { extensionBuffer.deallocate() }
+
         for ext in extensions {
-            if !availableExtensions.contains(where: { $0.extensionNameStr == ext }) {
+            guard  availableExtensions.contains(where: { $0.extensionNameStr == ext }) else {
                 print("Could not find instance extension named \(ext)!")
                 return nil
             }
+            extensionCStringPointers.append(extensionCursor)
+            for char in ext.utf8 {
+                extensionCursor.pointee = CChar(char)
+                extensionCursor += 1
+            }
+            extensionCursor += 1
         }
 
         var instance : VkInstance! = nil
@@ -119,9 +133,15 @@ public final class VulkanInstance {
                     layerNames.withUnsafeBufferPointer { layerNames in
                         instanceCreateInfo.enabledLayerCount = UInt32(layerNames.count)
                         instanceCreateInfo.ppEnabledLayerNames = layerNames.baseAddress
-                        
-                        if !vkCreateInstance(&instanceCreateInfo, nil, &instance).check() {
-                            print("Could not create Vulkan instance!")
+
+                        extensionCStringPointers.withUnsafeBufferPointer { extensions in
+                            instanceCreateInfo.ppEnabledExtensionNames = extensions.baseAddress
+                            instanceCreateInfo.enabledExtensionCount = UInt32(extensions.count)
+                            
+                            if !vkCreateInstance(&instanceCreateInfo, nil, &instance).check() {
+                                print("Could not create Vulkan instance!")
+                            }
+
                         }
                     }
                 }
@@ -175,7 +195,7 @@ public final class VulkanInstance {
         // vkCmdPushDescriptorSetKHR = unsafeBitCast(vkGetInstanceProcAddr(instance, "vkCmdPushDescriptorSetKHR"), to: VkCmdPushDescriptorSetKHRFunc.self)
     }
     
-    public func copyAllDevices(surface: VkSurfaceKHR) -> [VulkanPhysicalDevice] {
+    public func copyAllDevices() -> [VulkanPhysicalDevice] {
         var deviceCount = 0 as UInt32
         vkEnumeratePhysicalDevices(self.instance, &deviceCount, nil)
         
@@ -186,11 +206,27 @@ public final class VulkanInstance {
         var devices = [VkPhysicalDevice?](repeating: nil, count: Int(deviceCount))
         vkEnumeratePhysicalDevices(self.instance, &deviceCount, &devices)
         
-        return devices.map { VulkanPhysicalDevice(device: $0!, surface: surface) }
+        return devices.map { VulkanPhysicalDevice(device: $0!) }
     }
     
-    public func createSystemDefaultDevice(surface: VkSurfaceKHR) -> VulkanPhysicalDevice? {
-        return self.copyAllDevices(surface: surface).first
+    public func createSystemDefaultDevice() -> VulkanPhysicalDevice? {
+        let devices = self.copyAllDevices()
+        
+        let properties = devices.map { device -> VkPhysicalDeviceProperties in
+            var properties = VkPhysicalDeviceProperties()
+            vkGetPhysicalDeviceProperties(device.vkDevice, &properties)
+            return properties
+        }
+
+        if let discreteGPUIndex = properties.firstIndex(where: { $0.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU }) {
+            return devices[discreteGPUIndex]
+        }
+
+        if let integratedGPUIndex = properties.firstIndex(where: { $0.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU }) {
+            return devices[integratedGPUIndex]
+        }
+
+        return devices.first
     }
 }
 

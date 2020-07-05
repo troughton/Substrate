@@ -385,7 +385,7 @@ public final class FrameGraph {
 #endif
 #if canImport(Vulkan)
         case .vulkan:
-            fatalError()
+            self.context = FrameGraphContextImpl<VulkanBackend>(backend: RenderBackend._backend as! VulkanBackend, capabilities: capabilities, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
 #endif
         }
     }
