@@ -28,10 +28,6 @@ extension VkExtensionProperties {
     }
 }
 
-func vkMakeVersion(major: UInt32, minor: UInt32, patch: UInt32) -> UInt32 {
-    return major << 22 | minor << 12 | patch
-}
-
 
 extension VkResult {
     @discardableResult

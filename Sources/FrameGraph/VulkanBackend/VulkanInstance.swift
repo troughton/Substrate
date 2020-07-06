@@ -18,6 +18,8 @@ public struct VulkanVersion {
     public init(major: Int, minor: Int, patch: Int) {
         self.value = (UInt32(major) << 22) | (UInt32(minor) << 12) | UInt32(patch)
     }
+
+    static let apiVersion = VulkanVersion(major: 1, minor: 2, patch: 0)
 }
 
 public final class VulkanInstance {
@@ -109,7 +111,7 @@ public final class VulkanInstance {
                 applicationInfo.pApplicationName = applicationName
                 applicationInfo.engineVersion = engineVersion.value
                 applicationInfo.applicationVersion = applicationVersion.value
-                applicationInfo.apiVersion = VulkanVersion(major: 1, minor: 1, patch: 0).value
+                applicationInfo.apiVersion = VulkanVersion.apiVersion.value
                 
                 withUnsafePointer(to: &applicationInfo) { applicationInfo in
                     var instanceCreateInfo = VkInstanceCreateInfo()

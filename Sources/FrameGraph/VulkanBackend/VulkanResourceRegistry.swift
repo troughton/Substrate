@@ -75,7 +75,8 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     public init(instance: VulkanInstance, device: VulkanDevice) {
         self.device = device
         
-        var allocatorInfo = VmaAllocatorCreateInfo(flags: 0, physicalDevice: device.physicalDevice.vkDevice, device: device.vkDevice, preferredLargeHeapBlockSize: 0, pAllocationCallbacks: nil, pDeviceMemoryCallbacks: nil, frameInUseCount: 0, pHeapSizeLimit: nil, pVulkanFunctions: nil, pRecordSettings: nil, instance: instance.instance, vulkanApiVersion: vkMakeVersion(major: 1, minor: 2, patch: 0))
+        var allocatorInfo = VmaAllocatorCreateInfo(flags: 0, physicalDevice: device.vkDevice, device: device.vkDevice, preferredLargeHeapBlockSize: 0, pAllocationCallbacks: nil, pDeviceMemoryCallbacks: nil, frameInUseCount: 0, pHeapSizeLimit: nil, pVulkanFunctions: nil, pRecordSettings: nil, instance: instance.instance, 
+                                                    vulkanApiVersion: VulkanVersion.apiVersion.value)
         allocatorInfo.device = device.vkDevice
         allocatorInfo.physicalDevice = device.physicalDevice.vkDevice
 
