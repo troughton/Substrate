@@ -104,7 +104,7 @@ public final class VulkanBackend : SpecificRenderBackend {
     }
     
     public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        fatalError()
+        self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: 0, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * region.size.height * region.size.depth)
     }
     
     public func dispose(texture: Texture) {
@@ -176,7 +176,39 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     @usableFromInline
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
-        fatalError("replaceTextureRegion is unimplemented on Vulkan")
+        
+        let textureReference = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
+        let image = textureReference.image
+
+        var data: UnsafeMutableRawPointer! = nil
+        vmaMapMemory(image.allocator!, image.allocation!, &data)
+
+        var subresource = VkImageSubresource()
+        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT.rawValue;
+        subresource.mipLevel = UInt32(mipmapLevel)
+        subresource.arrayLayer = UInt32(slice)
+
+        var layout = VkSubresourceLayout()
+        vkGetImageSubresourceLayout(self.device.vkDevice, image.vkImage, &subresource, &layout)
+
+        data += Int(layout.offset)
+
+        let bytesPerPixel = texture.descriptor.pixelFormat.bytesPerPixel
+
+        var sourcePointer = bytes
+        for z in region.origin.z..<region.origin.z + region.size.depth {
+            let zSliceData = data + z * Int(layout.depthPitch)
+            for row in region.origin.y..<region.origin.y + region.size.height {
+                let offsetInRow = Int(exactly: bytesPerPixel * Double(region.origin.x))!
+                let bytesInRow = Int(exactly: bytesPerPixel * Double(region.size.width))!
+                assert(bytesInRow == bytesPerRow)
+
+                (zSliceData + row * Int(layout.rowPitch) + offsetInRow).copyMemory(from: sourcePointer, byteCount: bytesInRow)
+                sourcePointer += bytesPerRow
+            }
+        }
+
+        vmaUnmapMemory(image.allocator!, image.allocation!)
     }
     
     @usableFromInline
