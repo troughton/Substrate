@@ -39,6 +39,12 @@ public class SDLApplication : Application {
     public init(delegate: ApplicationDelegate?, updateables: @autoclosure () -> [FrameUpdateable], updateScheduler: UpdateScheduler, windowFrameGraph: FrameGraph) {
         delegate?.applicationWillInitialise()
         
+        guard SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) == 0 else {
+            let error = String(cString: SDL_GetError())
+            fatalError("Unable to initialise SDL: \(error)")
+        }
+        print("Initialised SDL")
+        
         let updateables = updateables()
         precondition(!updateables.isEmpty)
         
