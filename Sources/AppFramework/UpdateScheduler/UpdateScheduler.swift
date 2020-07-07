@@ -19,7 +19,13 @@ public final class SDLUpdateScheduler : UpdateScheduler  {
         let application = SDLApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowFrameGraph: windowFrameGraph)
     
         while !application.inputManager.shouldQuit {
-            application.update()
+            #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+            autoreleasepool {
+            #endif
+                application.update()
+            #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+            }
+            #endif
         }
     }
 }

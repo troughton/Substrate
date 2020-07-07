@@ -149,8 +149,13 @@ public final class SDLInputManager : InputManager {
                     
                 case SDL_MOUSEMOTION:
                     let motion = event.motion
-                    inputState[.mouseX] = RawInputState(value: Float(motion.x), frame: frame)
-                    inputState[.mouseY] = RawInputState(value: Float(motion.y), frame: frame)
+                    
+                    var x = 0 as Int32
+                    var y = 0 as Int32
+                    SDL_GetGlobalMouseState(&x, &y)
+                    
+                    inputState[.mouseX] = RawInputState(value: Float(x), frame: frame)
+                    inputState[.mouseY] = RawInputState(value: Float(y), frame: frame)
                     inputState[.mouseXInWindow] = RawInputState(value: Float(motion.x), frame: frame)
                     inputState[.mouseYInWindow] = RawInputState(value: Float(motion.y), frame: frame)
                     inputState[.mouseXRelative] = RawInputState(value: Float(motion.xrel), frame: frame)
