@@ -124,18 +124,21 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
         }
         set {
             _dimensions = newValue
+            let position = self.position
             self.window.setContentSize(NSSize(width: Int(_dimensions.width), height: Int(_dimensions.height)))
+            self.position = position // Resizing happens from the bottom-left, whereas we want to maintain the position from the top-right.
         }
     }
     
     public var position: WindowPosition {
         get {
             let origin = self.window.frame.origin
-            return WindowPosition(Float(origin.x), Float(origin.y))
+            let size = self.window.frame.size
+            return WindowPosition(Float(origin.x), Float(origin.y + size.height))
         }
         
         set {
-            self.window.setFrameOrigin(NSPoint(x: CGFloat(newValue.x), y: CGFloat(newValue.y)))
+            self.window.setFrameTopLeftPoint(NSPoint(x: CGFloat(newValue.x), y: CGFloat(newValue.y)))
         }
     }
     

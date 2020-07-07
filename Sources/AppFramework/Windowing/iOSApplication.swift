@@ -26,9 +26,6 @@ final class CocoaInputManager : InputManagerInternal {
     
     func updateMousePosition(_ touch: UITouch) {
         var location = touch.preciseLocation(in: touch.window)
-        if let window = touch.window {
-            location.y = window.bounds.height - location.y
-        }
         
         inputState[.mouse][.mouseX] = RawInputState(value: Float(location.x), frame: self.frame)
         inputState[.mouse][.mouseY] = RawInputState(value: Float(location.y), frame: self.frame)
@@ -55,7 +52,7 @@ final class CocoaInputManager : InputManagerInternal {
         let deltaY = location.y - previousLocation.y
         
         inputState[.mouse][.mouseXRelative] = RawInputState(value: Float(deltaX), frame: self.frame)
-        inputState[.mouse][.mouseYRelative] = RawInputState(value: Float(-deltaY), frame: self.frame)
+        inputState[.mouse][.mouseYRelative] = RawInputState(value: Float(deltaY), frame: self.frame)
     }
     
     func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {

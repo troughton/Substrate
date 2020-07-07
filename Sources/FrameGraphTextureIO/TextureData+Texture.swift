@@ -33,7 +33,7 @@ extension TextureData {
         assert(texture.descriptor.textureType == .type2D)
         assert(texture.storageMode != .private)
         
-        self.init(width: texture.width >> mipmapLevel, height: texture.height >> mipmapLevel,
+        self.init(width: max(texture.width >> mipmapLevel, 1), height: max(texture.height >> mipmapLevel, 1),
                   channels: pixelFormat.channelCount, colourSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, premultipliedAlpha: hasPremultipliedAlpha)
         
         texture.waitForCPUAccess(accessType: .read)

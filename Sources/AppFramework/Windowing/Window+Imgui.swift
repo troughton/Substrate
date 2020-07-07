@@ -24,7 +24,6 @@ extension ImGui {
         let platformIO = igGetPlatformIO()!
         
         let screens = Application.sharedApplication.screens
-        let mainScreenHeight = screens[0].dimensions.height
             
         if Int(platformIO.pointee.Monitors.Capacity) < screens.count {
             let newData = igMemAlloc(screens.count * MemoryLayout<ImGuiPlatformMonitor>.size)
@@ -38,9 +37,9 @@ extension ImGui {
         }
     
         for (i, screen) in screens.enumerated() {
-            let monitor = ImGuiPlatformMonitor(MainPos: ImVec2(x: screen.position.x, y: mainScreenHeight - (screen.position.y + screen.dimensions.height)),
+            let monitor = ImGuiPlatformMonitor(MainPos: ImVec2(x: screen.position.x, y: screen.position.y + screen.dimensions.height),
                                                MainSize: ImVec2(x: screen.dimensions.width, y: screen.dimensions.height),
-                                               WorkPos: ImVec2(x: screen.workspacePosition.x, y: mainScreenHeight - (screen.workspacePosition.y + screen.workspaceDimensions.height)),
+                                               WorkPos: ImVec2(x: screen.workspacePosition.x, y: screen.workspacePosition.y + screen.workspaceDimensions.height),
                                                WorkSize: ImVec2(x: screen.workspaceDimensions.width, y: screen.workspaceDimensions.height),
                                                DpiScale: screen.backingScaleFactor)
             platformIO.pointee.Monitors.Data[i] = monitor
@@ -95,27 +94,18 @@ extension ImGui {
         }
         
         platformIO.pointee.Platform_GetWindowPos = { (viewport) in
-            let mainScreenHeight = Application.sharedApplication.screens[0].dimensions.height
-            
             let window = viewport!.pointee.window
-            return ImVec2(x: window.position.x, y: mainScreenHeight - (window.position.y + window.dimensions.height))
+            return ImVec2(x: window.position.x, y: window.position.y)
         }
         
         platformIO.pointee.Platform_SetWindowPos = { (viewport, position) in
-            let mainScreenHeight = Application.sharedApplication.screens[0].dimensions.height
-            
-            let window = viewport!.pointee.window
-            window.position = WindowPosition(position.x, mainScreenHeight - (position.y + window.dimensions.height))
+            window.position = WindowPosition(position.x, position.y)
         }
         
         platformIO.pointee.Platform_SetWindowSize = { (viewport, size) in
-            // Setting the size conceptually takes place from the top left; we want to offset the
-            // frame's y origin by the difference in the size
-            
             let window = viewport!.pointee.window
             let oldHeight = window.dimensions.height
             window.dimensions = WindowSize(Float(size.x), Float(size.y))
-            window.position.y -= size.y - oldHeight
         }
         
         platformIO.pointee.Platform_GetWindowSize = { (viewport) in
@@ -161,7 +151,6 @@ extension ImGui {
     
     public static func beginFrame(windows: [Window], inputLayer: ImGuiInputLayer, deltaTime: Double) {
         let screens = self.updateScreens()
-        let mainScreenHeight = screens[0].dimensions.height
         
         let io = ImGui.io
         let oldMousePosition = ImGui.io.pointee.MousePos
@@ -194,9 +183,9 @@ extension ImGui {
             let focused = window.hasFocus
             if focused {
                 if io.pointee.WantSetMousePos {
-                    Application.sharedApplication.setCursorPosition(to: Vector2f(oldMousePosition.x, mainScreenHeight - oldMousePosition.y))
+                    Application.sharedApplication.setCursorPosition(to: Vector2f(oldMousePosition.x, oldMousePosition.y))
                 } else {
-                    io.pointee.MousePos = ImVec2(x: mousePosition.x, y: mainScreenHeight - mousePosition.y)
+                    io.pointee.MousePos = ImVec2(x: mousePosition.x, y: mousePosition.y)
                 }
                 
                 io.pointee.MouseWheel = inputLayer[.mouseScrollY].value
