@@ -404,7 +404,7 @@ public final class FrameGraph {
     
     /// Useful for creating resources that may be used later in the frame.
     public func insertEarlyBlitPass(name: String,
-                                    execute: @escaping (BlitCommandEncoder) -> Void)  {
+                                    _ execute: @escaping (BlitCommandEncoder) -> Void)  {
         assert(self.queue.capabilities.contains(.blit))
         self.renderPasses.insert(RenderPassRecord(pass: CallbackBlitRenderPass(name: name, execute: execute),
                                                   passIndex: 0), at: 0)
@@ -431,13 +431,13 @@ public final class FrameGraph {
     }
     
     public func addBlitCallbackPass(file: String = #file, line: Int = #line,
-                                    execute: @escaping (BlitCommandEncoder) -> Void) {
+                                    _ execute: @escaping (BlitCommandEncoder) -> Void) {
         assert(self.queue.capabilities.contains(.blit))
         self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
     }
     
     public func addBlitCallbackPass(name: String,
-                                    execute: @escaping (BlitCommandEncoder) -> Void) {
+                                    _ execute: @escaping (BlitCommandEncoder) -> Void) {
         assert(self.queue.capabilities.contains(.blit))
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
@@ -447,7 +447,7 @@ public final class FrameGraph {
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
-                                    execute: @escaping (RenderCommandEncoder) -> Void) {
+                                    _ execute: @escaping (RenderCommandEncoder) -> Void) {
         assert(self.queue.capabilities.contains(.render))
         self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
@@ -459,7 +459,7 @@ public final class FrameGraph {
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
-                                    execute: @escaping (RenderCommandEncoder) -> Void) {
+                                    _ execute: @escaping (RenderCommandEncoder) -> Void) {
         assert(self.queue.capabilities.contains(.render))
         self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
@@ -472,7 +472,7 @@ public final class FrameGraph {
                                        depthClearOperation: DepthClearOperation = .keep,
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
-                                       execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
         assert(self.queue.capabilities.contains(.render))
         self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
                                                        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
@@ -485,7 +485,7 @@ public final class FrameGraph {
                                        depthClearOperation: DepthClearOperation = .keep,
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
-                                       execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
         assert(self.queue.capabilities.contains(.render))
         self.addPass(ReflectableCallbackDrawRenderPass(name: name, descriptor: descriptor,
         colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
@@ -493,48 +493,48 @@ public final class FrameGraph {
     }
 
     public func addComputeCallbackPass(file: String = #file, line: Int = #line,
-                                       execute: @escaping (ComputeCommandEncoder) -> Void) {
+                                       _ execute: @escaping (ComputeCommandEncoder) -> Void) {
         assert(self.queue.capabilities.contains(.compute))
         self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
     }
     
     public func addComputeCallbackPass(name: String,
-                                       execute: @escaping (ComputeCommandEncoder) -> Void) {
+                                       _ execute: @escaping (ComputeCommandEncoder) -> Void) {
         assert(self.queue.capabilities.contains(.compute))
         self.addPass(CallbackComputeRenderPass(name: name, execute: execute))
     }
 
     public func addComputeCallbackPass<R>(file: String = #file, line: Int = #line,
                                           reflection: R.Type,
-                                          execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
+                                          _ execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
         assert(self.queue.capabilities.contains(.compute))
         self.addPass(ReflectableCallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", reflection: reflection, execute: execute))
     }
     
     public func addComputeCallbackPass<R>(name: String,
                                           reflection: R.Type,
-                                          execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
+                                          _ execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
         assert(self.queue.capabilities.contains(.compute))
         self.addPass(ReflectableCallbackComputeRenderPass(name: name, reflection: reflection, execute: execute))
     }
     
     public func addCPUCallbackPass(file: String = #file, line: Int = #line,
-                                   execute: @escaping () -> Void) {
+                                   _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
     }
     
     public func addCPUCallbackPass(name: String,
-                                   execute: @escaping () -> Void) {
+                                   _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: name, execute: execute))
     }
     
     public func addExternalCallbackPass(file: String = #file, line: Int = #line,
-                                        execute: @escaping (ExternalCommandEncoder) -> Void) {
+                                        _ execute: @escaping (ExternalCommandEncoder) -> Void) {
         self.addPass(CallbackExternalRenderPass(name: "Anonymous External Encoder Pass at \(file):\(line)", execute: execute))
     }
     
     public func addExternalCallbackPass(name: String,
-                                        execute: @escaping (ExternalCommandEncoder) -> Void) {
+                                        _ execute: @escaping (ExternalCommandEncoder) -> Void) {
         self.addPass(CallbackExternalRenderPass(name: name, execute: execute))
     }
     
