@@ -99,12 +99,12 @@ extension ImGui {
         }
         
         platformIO.pointee.Platform_SetWindowPos = { (viewport, position) in
+            let window = viewport!.pointee.window
             window.position = WindowPosition(position.x, position.y)
         }
         
         platformIO.pointee.Platform_SetWindowSize = { (viewport, size) in
             let window = viewport!.pointee.window
-            let oldHeight = window.dimensions.height
             window.dimensions = WindowSize(Float(size.x), Float(size.y))
         }
         
@@ -150,8 +150,8 @@ extension ImGui {
     }
     
     public static func beginFrame(windows: [Window], inputLayer: ImGuiInputLayer, deltaTime: Double) {
-        let screens = self.updateScreens()
-        
+        _ = self.updateScreens()
+
         let io = ImGui.io
         let oldMousePosition = ImGui.io.pointee.MousePos
         

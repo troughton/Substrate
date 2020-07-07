@@ -61,10 +61,6 @@ public class VulkanSwapChain : SwapChain {
     private var currentImageIndex : Int? = nil
     private var acquisitionSemaphoreIndex: Int = 0
     
-    public var format: PixelFormat {
-        return PixelFormat(self.surfaceFormat.format)
-    }
-    
     public init(device: VulkanDevice, surface: VkSurfaceKHR) {
         self.device = device
         self.surface = surface
@@ -74,13 +70,13 @@ public class VulkanSwapChain : SwapChain {
 
     private var currentDrawableSize = Size()
     
-    public var pixelFormat: PixelFormat {
+    public var format: PixelFormat {
         if let surfaceFormat = self.surfaceFormat {
             return PixelFormat(surfaceFormat.format)
         } else {
             let swapChainSupport = SwapChainSupportDetails(physicalDevice: device.physicalDevice.vkDevice, surface: surface)
             self.surfaceFormat = VulkanSwapChain.chooseSwapSurfaceFormat(availableFormats: swapChainSupport.formats)
-            return self.pixelFormat
+            return self.format
         }
     }
     

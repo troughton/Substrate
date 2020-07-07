@@ -73,6 +73,7 @@ open class SDLWindow : Window {
     
     public convenience init(id: Int, title: String, dimensions: WindowSize, frameGraph: FrameGraph) {
         let options : SDLWindowOptions =  [.shown, .resizeable, .allowHighDpi]
+        
         let sdlWindowPointer = SDL_CreateWindow(title, Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(dimensions.width), Int32(dimensions.height), options.rawValue)
         
         self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, frameGraph: frameGraph)

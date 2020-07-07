@@ -438,13 +438,13 @@ public class VulkanShaderModule {
         
         var shaderModule : VkShaderModule? = nil
         var parsedIR : spvc_parsed_ir? = nil
-        var compiler : spvc_compiler? = nil
-        spvc_context_create_compiler(spvcContext, SPVC_BACKEND_NONE, parsedIR, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler)
         
         data.withUnsafeBytes { codePointer in
             let spvCode = codePointer.bindMemory(to: SpvId.self)
-            let result = spvc_context_parse_spirv(spvcContext, spvCode.baseAddress, codePointer.count, &parsedIR)
-            assert(result == SPVC_SUCCESS)
+            let result = spvc_context_parse_spirv(spvcContext, spvCode.baseAddress, spvCode.count, &parsedIR)
+            if result != SPVC_SUCCESS {
+                preconditionFailure("Error parsing shader module: \(result)")
+            }
             
             var createInfo = VkShaderModuleCreateInfo()
             createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO
@@ -453,6 +453,9 @@ public class VulkanShaderModule {
             
             vkCreateShaderModule(device.vkDevice, &createInfo, nil, &shaderModule).check()
         }
+
+        var compiler : spvc_compiler? = nil
+        spvc_context_create_compiler(spvcContext, SPVC_BACKEND_NONE, parsedIR, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler)
         
         self.vkModule = shaderModule!
         self.compiler = compiler!
@@ -514,7 +517,7 @@ public class VulkanShaderLibrary {
         var functions = [String : VulkanShaderModule]()
 
         for file in resources {
-            if file.pathExtension == ".spv" {
+            if file.pathExtension == "spv" {
                 let shaderData = try Data(contentsOf: file, options: .mappedIfSafe)
         
                 let module = VulkanShaderModule(device: device, spvcContext: self.spvcContext, data: shaderData)
@@ -532,6 +535,8 @@ public class VulkanShaderLibrary {
 
         self.modules = modules
         self.functionsToModules = functions
+        print("Found functions \(functionsToModules)")
+        
     }
     
     deinit {

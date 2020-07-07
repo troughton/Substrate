@@ -21,10 +21,10 @@ public final class SDLUpdateScheduler : UpdateScheduler  {
         while !application.inputManager.shouldQuit {
             #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
             autoreleasepool {
-            #endif
                 application.update()
-            #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
             }
+            #else
+            application.update()
             #endif
         }
     }

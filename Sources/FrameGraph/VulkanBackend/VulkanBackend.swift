@@ -82,25 +82,16 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     public func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
         let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        let buffer = bufferReference.buffer
         
-        fatalError()
+        return buffer.map(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
     public func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         if range.isEmpty { return }
-        if buffer.descriptor.storageMode == .managed {
-            //            var memoryRange = VkMappedMemoryRange()
-            //            memoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE
-            //            memoryRange.memory = vkBuffer.memory
-            //            memoryRange.size = VkDeviceSize(range.count)
-            //            memoryRange.offset = VkDeviceSize(range.lowerBound)
-            //
-            //            vkFlushMappedMemoryRanges(self.device.vkDevice, 1, &memoryRange)
-            //        }
-            
-            fatalError()
-//            vkBuffer.unmapMemory(range: range)
-        }
+        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        let buffer = bufferReference.buffer
+        buffer.unmapMemory(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
     public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {

@@ -21,7 +21,8 @@ public class SDLVulkanWindow : SDLWindow {
     var vkSurface : VkSurfaceKHR? = nil
     
     public convenience init(id: Int, title: String, dimensions: WindowSize, windowFrameGraph: FrameGraph) {
-        let vulkanInstance = (RenderBackend.backend as! VulkanBackend).vulkanInstance
+        let vulkanBackend = RenderBackend.backend as! VulkanBackend
+        let vulkanInstance = vulkanBackend.vulkanInstance
         let options : SDLWindowOptions = [.allowHighDpi, .shown, .resizeable, .vulkan]
         let sdlWindowPointer = SDL_CreateWindow(title, Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(dimensions.width), Int32(dimensions.height), options.rawValue)
         self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, frameGraph: windowFrameGraph)
@@ -29,6 +30,8 @@ public class SDLVulkanWindow : SDLWindow {
         if SDL_Vulkan_CreateSurface(self.sdlWindowPointer, vulkanInstance.instance, &self.vkSurface) == SDL_FALSE {
             fatalError("Unable to create Vulkan surface: " + String(cString: SDL_GetError()))
         }
+
+        self.swapChain = VulkanSwapChain(device: vulkanBackend.device, surface: self.vkSurface!)
     }
 }
 
