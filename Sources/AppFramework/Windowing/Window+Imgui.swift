@@ -37,9 +37,9 @@ extension ImGui {
         }
     
         for (i, screen) in screens.enumerated() {
-            let monitor = ImGuiPlatformMonitor(MainPos: ImVec2(x: screen.position.x, y: screen.position.y + screen.dimensions.height),
+            let monitor = ImGuiPlatformMonitor(MainPos: ImVec2(x: screen.position.x, y: screen.position.y),
                                                MainSize: ImVec2(x: screen.dimensions.width, y: screen.dimensions.height),
-                                               WorkPos: ImVec2(x: screen.workspacePosition.x, y: screen.workspacePosition.y + screen.workspaceDimensions.height),
+                                               WorkPos: ImVec2(x: screen.workspacePosition.x, y: screen.workspacePosition.y),
                                                WorkSize: ImVec2(x: screen.workspaceDimensions.width, y: screen.workspaceDimensions.height),
                                                DpiScale: screen.backingScaleFactor)
             platformIO.pointee.Monitors.Data[i] = monitor

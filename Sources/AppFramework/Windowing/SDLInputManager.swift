@@ -328,7 +328,7 @@ extension InputSource {
         }
     }
     
-    init?(sdlKeyCode: Int, modifiers: SDLModifiers) {
+    init?(sdlKeyCode: SDL_KeyCode, modifiers: SDLModifiers) {
         switch sdlKeyCode {
             
         // special keys
@@ -698,7 +698,7 @@ extension InputSource {
         if useScanCode {
             self.init(sdlScanCode: keySymbol.scancode)
         } else {
-            self.init(sdlKeyCode: Int(keySymbol.sym), modifiers: SDLModifiers(rawValue: SDLModifiers.RawValue(keySymbol.mod)))
+            self.init(sdlKeyCode: SDL_KeyCode(rawValue: SDL_KeyCode.RawValue(keySymbol.sym)), modifiers: SDLModifiers(rawValue: SDLModifiers.RawValue(keySymbol.mod)))
         }
     }
     

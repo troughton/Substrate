@@ -62,6 +62,9 @@ public class SDLApplication : Application {
         fatalError("createWindow(title:dimensions:flags:frameGraph) is not implemented for non-Vulkan windows.")
     }
     
+    public override func setCursorPosition(to position: SIMD2<Float>) {
+        SDL_WarpMouseGlobal(Int32(position.x), Int32(position.y))
+    }
     deinit {
         SDL_Quit()
     }
