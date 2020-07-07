@@ -176,8 +176,12 @@ public final class CocoaInputManager : InputManagerInternal {
                 
                 inputState[.mouse][.mouseX] = RawInputState(value: Float(location.x), frame: frame)
                 inputState[.mouse][.mouseY] = RawInputState(value: Float(location.y), frame: frame)
-                inputState[.mouse][.mouseXInWindow] = RawInputState(value: Float(locationInWindow.x), frame: frame)
-                inputState[.mouse][.mouseYInWindow] = RawInputState(value: Float(locationInWindow.y), frame: frame)
+                
+                if let window = event.window {
+                    let windowHeight = window.frame.height
+                    inputState[.mouse][.mouseXInWindow] = RawInputState(value: Float(locationInWindow.x), frame: frame)
+                    inputState[.mouse][.mouseYInWindow] = RawInputState(value: Float(windowHeight - locationInWindow.y), frame: frame)
+                }
                 
                 mouseRelativeX += event.deltaX
                 mouseRelativeY += event.deltaY
@@ -210,7 +214,7 @@ public final class CocoaInputManager : InputManagerInternal {
         inputState[.mouse][.mouseScrollY] = RawInputState(value: Float(mouseScrollY), frame: frame)
         
         inputState[.mouse][.mouseXRelative] = RawInputState(value: Float(mouseRelativeX), frame: frame)
-        inputState[.mouse][.mouseYRelative] = RawInputState(value: Float(mouseRelativeY), frame: frame)
+        inputState[.mouse][.mouseYRelative] = RawInputState(value: Float(-mouseRelativeY), frame: frame)
         
         self.eventQueue.removeAll(keepingCapacity: true)
     }
