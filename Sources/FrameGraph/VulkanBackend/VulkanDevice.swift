@@ -76,6 +76,7 @@ public final class VulkanDevice {
     
     static let deviceExtensions : [StaticString] = [
         "VK_KHR_swapchain", // VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        "VK_KHR_timelne_semaphore"
     ]
     
     public let physicalDevice : VulkanPhysicalDevice
@@ -143,10 +144,25 @@ public final class VulkanDevice {
                         createInfo.ppEnabledExtensionNames = extensions.baseAddress
                         
                         createInfo.enabledLayerCount = 0
-                        
-                        if !vkCreateDevice(physicalDevice.vkDevice, &createInfo, nil, &device).check() {
-                            print("Failed to create Vulkan logical device!")
+
+                        var timelineSemaphore = VkPhysicalDeviceTimelineSemaphoreFeatures()
+                        timelineSemaphore.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES
+                        timelineSemaphore.timelineSemaphore = true
+
+                        withUnsafeMutablePointer(to: &timelineSemaphore) { timelineSemaphore in
+                            var deviceFeatures = VkPhysicalDeviceFeatures2()
+                            deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+                            deviceFeatures.pNext = UnsafeMutableRawPointer(timelineSemaphore)
+
+                            withUnsafePointer(to: deviceFeatures) { deviceFeatures in
+                                createInfo.pNext = UnsafeRawPointer(deviceFeatures)
+
+                                if !vkCreateDevice(physicalDevice.vkDevice, &createInfo, nil, &device).check() {
+                                    print("Failed to create Vulkan logical device!")
+                                }
+                            }
                         }
+                        
                     }
                 }
             }
@@ -160,6 +176,12 @@ public final class VulkanDevice {
         }
         
         self.queues = queues
+
+        var properties = VkPhysicalDeviceProperties2()
+        properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
+        vkGetPhysicalDeviceProperties2(self.physicalDevice.vkDevice, &properties)
+        
+        print("Vulkan Device API Version: \(properties.properties.apiVersion >> 22).\((properties.properties.apiVersion >> 12) & 0x3ff).\(properties.properties.apiVersion & 0xfff)")
     }
     
     deinit {
