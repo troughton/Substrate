@@ -250,20 +250,22 @@ public struct TextureData<T> {
         return try perform(self.storage.data)
     }
     
-    public func cropped(originX: Int, originY: Int, width: Int, height: Int) -> TextureData<T> {
-        precondition(originX >= 0 && originY >= 0)
-        precondition(originX + width <= self.width && originY + height <= self.height)
+    public func cropped(originX: Int, originY: Int, width: Int, height: Int, clampOutOfBounds: Bool = false) -> TextureData<T> {
+        precondition(clampOutOfBounds || (originX >= 0 && originY >= 0))
+        precondition(clampOutOfBounds || (originX + width <= self.width && originY + height <= self.height))
         
-        if width == self.width && height == self.height {
+        if width == self.width, height == self.height, originX == 0, originY == 0 {
             return self
         }
         
         var result = TextureData<T>(width: width, height: height, channels: self.channelCount, colourSpace: self.colourSpace, premultipliedAlpha: self.premultipliedAlpha)
         
         for y in 0..<height {
+            let clampedY = clampOutOfBounds ? clamp(y + originY, min: 0, max: self.height - 1) : (y + originY)
             for x in 0..<width {
+                let clampedX = clampOutOfBounds ? clamp(x + originX, min: 0, max: self.width - 1) : (x + originX)
                 for c in 0..<self.channelCount {
-                    result[x, y, channel: c] = self[x + originX, y + originY, channel: c]
+                    result[x, y, channel: c] = self[clampedX, clampedY, channel: c]
                 }
             }
         }
