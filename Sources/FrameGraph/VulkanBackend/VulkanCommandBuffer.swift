@@ -168,21 +168,22 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
                             submitInfo.pNext = UnsafeRawPointer(timelineInfo)
                             
                             vkQueueSubmit(self.queue.vkQueue, 1, &submitInfo, nil)
-                            
-                            Self.semaphoreSignalQueue.async {
-                                var waitInfo = VkSemaphoreWaitInfo()
-                                waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO
-                                waitInfo.pSemaphores = signalSemaphores.baseAddress
-                                waitInfo.pValues = UnsafePointer(self.signalSemaphoreSignalValues.buffer)
-                                waitInfo.semaphoreCount = UInt32(self.signalSemaphores.count)
-                                
-                                vkWaitSemaphores(self.queue.device.vkDevice, &waitInfo, .max)
-                                onCompletion(self)
-                            }
                         }
                     }
                 }
             }
+        }
+        Self.semaphoreSignalQueue.async {
+            self.signalSemaphores.withUnsafeBufferPointer { signalSemaphores in
+                var waitInfo = VkSemaphoreWaitInfo()
+                waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO
+                waitInfo.pSemaphores = signalSemaphores.baseAddress
+                waitInfo.pValues = UnsafePointer(self.signalSemaphoreSignalValues.buffer)
+                waitInfo.semaphoreCount = UInt32(self.signalSemaphoreSignalValues.count)
+                
+                vkWaitSemaphores(self.queue.device.vkDevice, &waitInfo, .max)
+            }
+            onCompletion(self)
         }
         
         

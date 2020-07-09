@@ -30,6 +30,7 @@ struct ShaderResource {
     var type : spvc_resource_type
     var bindingPath : ResourceBindingPath
     var bindingRange : Range<UInt32>
+    var arrayLength: Int
     var access : ResourceAccessType
     var accessedStages : VkShaderStageFlagBits
 }
@@ -77,20 +78,18 @@ final class VulkanPipelineReflection : PipelineReflection {
         var lastSet : UInt32? = nil
         
         for (functionName, compiler, executionModel) in functions {
-            print("Processing function \(functionName) with compiler \(compiler) and execution model \(executionModel)")
             spvc_compiler_set_entry_point(compiler, functionName, executionModel)
             let stage = VkShaderStageFlagBits(executionModel)!
             
             var spvcResources : spvc_resources! = nil
             spvc_compiler_create_shader_resources(compiler, &spvcResources)
             
-            let types : [spvc_resource_type] = [.uniformBuffer, .storageBuffer, .separateImage, .storageImage, .sampler, .pushConstantBuffer]
+            let types : [spvc_resource_type] = [.uniformBuffer, .storageBuffer, .sampledImage, .storageImage, .sampler, .pushConstantBuffer]
             
             for type in types {
                 var resourceList : UnsafePointer<spvc_reflected_resource>! = nil
                 var resourceCount = 0
                 spvc_resources_get_resource_list_for_type(spvcResources, type, &resourceList, &resourceCount)
-                print("\(type) has \(resourceCount) resources")
 
                 for resource in UnsafeBufferPointer(start: resourceList, count: resourceCount) {
 
@@ -103,7 +102,7 @@ final class VulkanPipelineReflection : PipelineReflection {
                     var bufferRangeCount = 0
                     spvc_compiler_get_active_buffer_ranges(compiler, resource.id, &bufferRanges, &bufferRangeCount)
                     
-                    var bufferRangesMin : Int = .max
+                    var bufferRangesMin : Int = Int(UInt32.max)
                     var bufferRangesMax : Int = 0
                     
                     for bufferRange in UnsafeBufferPointer(start: bufferRanges, count: bufferRangeCount) {
@@ -126,6 +125,7 @@ final class VulkanPipelineReflection : PipelineReflection {
                                        type: type,
                                        bindingPath: bindingPath,
                                        bindingRange: UInt32(bufferRangesMin)..<UInt32(bufferRangesMax),
+                                       arrayLength: 1, // FIXME: get this from SPIR-V
                                        access: access,
                                        accessedStages: stage)
                     ].accessedStages.formUnion(stage)
@@ -149,7 +149,6 @@ final class VulkanPipelineReflection : PipelineReflection {
             }
         }
         
-        print("Resources are \(resources)")
         self.resources = resources
         self.specialisations = functionSpecialisations
         self.activeStagesForSets = activeStagesForSets
@@ -314,13 +313,15 @@ extension ArgumentReflection {
         case .sampledImage, .storageImage, .subpassInput:
             resourceType = .texture
         default:
-            fatalError()
+            fatalError("Unsupported resource type \(resource.type)")
         }
         
         let usageType : ResourceUsageType
         switch (resource.access, resource.type) {
         case (_, .uniformBuffer):
             usageType = .constantBuffer
+        case (_, .sampler):
+            usageType = .sampler
         case (_, .subpassInput):
             usageType = .inputAttachment
         case (.read, _):
@@ -329,10 +330,6 @@ extension ArgumentReflection {
             usageType = .readWrite
         case (.write, _):
             usageType = .write
-        case (_, .sampler):
-            usageType = .sampler
-        default:
-            return nil
         }
 
         var renderAPIStages : RenderStages = []
@@ -357,6 +354,8 @@ extension VkDescriptorType {
             return nil
         case .sampledImage:
             self = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+        case .combinedImageSampler:
+            self = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
         case .sampler:
             self = VK_DESCRIPTOR_TYPE_SAMPLER
         case .storageBuffer:
@@ -384,7 +383,7 @@ extension VkDescriptorSetLayoutBinding {
         self.binding = resource.bindingPath.binding
         self.descriptorType = descriptorType
         self.stageFlags = VkShaderStageFlags(stages)
-        self.descriptorCount = 1 // FIXME: shouldn't be hard-coded, but instead should equal the number of elements in the array.
+        self.descriptorCount = UInt32(resource.arrayLength)
     }
 }
 
@@ -453,7 +452,7 @@ public class VulkanShaderModule {
             var createInfo = VkShaderModuleCreateInfo()
             createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO
             createInfo.pCode = spvCode.baseAddress
-            createInfo.codeSize = spvCode.count
+            createInfo.codeSize = spvCode.count * MemoryLayout<SpvId>.stride
             
             vkCreateShaderModule(device.vkDevice, &createInfo, nil, &shaderModule).check()
         }

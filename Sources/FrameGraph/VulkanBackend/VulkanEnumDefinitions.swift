@@ -15,9 +15,9 @@ extension spvc_resource_type {
     /// An image that can be loaded from, stored to, and used for atomic operations.
     static var storageImage : spvc_resource_type { return SPVC_RESOURCE_TYPE_STORAGE_IMAGE }
     /// An image that can be read or sampled from with a sampler
-    static var sampledImage : spvc_resource_type { return SPVC_RESOURCE_TYPE_SAMPLED_IMAGE }
-    /// An image that can be read or sampled from with a sampler
-    static var separateImage : spvc_resource_type { return SPVC_RESOURCE_TYPE_SEPARATE_IMAGE }
+    static var sampledImage : spvc_resource_type { return SPVC_RESOURCE_TYPE_SEPARATE_IMAGE }
+    /// An image combined with a sampler
+    static var combinedImageSampler : spvc_resource_type { return SPVC_RESOURCE_TYPE_SAMPLED_IMAGE }
     /// A variant of uniform buffers that's fast-pathed for updates (e.g. setBytes).
     static var pushConstantBuffer : spvc_resource_type { return SPVC_RESOURCE_TYPE_PUSH_CONSTANT }
     /// A sampler that can be used with multiple sampled images.
