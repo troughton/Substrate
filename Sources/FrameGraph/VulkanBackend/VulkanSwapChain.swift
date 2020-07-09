@@ -90,7 +90,8 @@ public class VulkanSwapChain : SwapChain {
 
         var imageCount = swapChainSupport.capabilities.minImageCount + 1
         if swapChainSupport.capabilities.maxImageCount > 0 && imageCount < swapChainSupport.capabilities.maxImageCount {
-            imageCount = swapChainSupport.capabilities.maxImageCount
+            imageCount = max(imageCount, 3)
+            imageCount = min(imageCount, swapChainSupport.capabilities.maxImageCount)
         }
         
         var createInfo = VkSwapchainCreateInfoKHR()

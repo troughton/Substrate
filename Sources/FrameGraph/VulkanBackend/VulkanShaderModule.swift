@@ -77,19 +77,21 @@ final class VulkanPipelineReflection : PipelineReflection {
         var lastSet : UInt32? = nil
         
         for (functionName, compiler, executionModel) in functions {
+            print("Processing function \(functionName) with compiler \(compiler) and execution model \(executionModel)")
             spvc_compiler_set_entry_point(compiler, functionName, executionModel)
             let stage = VkShaderStageFlagBits(executionModel)!
             
             var spvcResources : spvc_resources! = nil
             spvc_compiler_create_shader_resources(compiler, &spvcResources)
             
-            let types : [spvc_resource_type] = [.uniformBuffer, .storageBuffer, .sampledImage, .storageImage, .pushConstantBuffer]
+            let types : [spvc_resource_type] = [.uniformBuffer, .storageBuffer, .separateImage, .storageImage, .sampler, .pushConstantBuffer]
             
             for type in types {
                 var resourceList : UnsafePointer<spvc_reflected_resource>! = nil
                 var resourceCount = 0
                 spvc_resources_get_resource_list_for_type(spvcResources, type, &resourceList, &resourceCount)
-                
+                print("\(type) has \(resourceCount) resources")
+
                 for resource in UnsafeBufferPointer(start: resourceList, count: resourceCount) {
 
                     let set = spvc_compiler_get_decoration(compiler, resource.id, SpvDecorationDescriptorSet)
@@ -114,7 +116,7 @@ final class VulkanPipelineReflection : PipelineReflection {
                     let isWriteOnly = spvc_compiler_get_member_decoration(compiler, resource.base_type_id, 0, SpvDecorationNonReadable) != 0
                     let access : ResourceAccessType = isReadOnly ? .read : (isWriteOnly ? .write : .readWrite)
                     
-                    let bindingPath = ResourceBindingPath(set: set, binding: binding, arrayIndex: 0)
+                    let bindingPath = type == .pushConstantBuffer ? ResourceBindingPath.pushConstantPath : ResourceBindingPath(set: set, binding: binding, arrayIndex: 0)
 
                     let resourceName = String(cString: name!)
                     bindingPathCache[resourceName] = bindingPath
@@ -147,6 +149,7 @@ final class VulkanPipelineReflection : PipelineReflection {
             }
         }
         
+        print("Resources are \(resources)")
         self.resources = resources
         self.specialisations = functionSpecialisations
         self.activeStagesForSets = activeStagesForSets
@@ -172,6 +175,7 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     subscript(bindingPath: ResourceBindingPath) -> ShaderResource {
+        print("Fetching resource at set \(bindingPath.set), index: \(bindingPath.binding)")
         return self.resources[bindingPath]!
     }
 
@@ -204,7 +208,7 @@ final class VulkanPipelineReflection : PipelineReflection {
         }
         return layouts
     }
-    
+
     // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
     func reflectionCacheLinearSearch(_ path: ResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
         var i = 0
@@ -291,11 +295,11 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     func remapArgumentBufferPathForActiveStages(_ path: ResourceBindingPath) -> ResourceBindingPath {
-        fatalError()
+        return path // Paths don't differ by stage on Vulkan
     }
 
     func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer? {
-        fatalError("This should return the descriptor set layout and possibly some other information.")
+        return UnsafeRawPointer(self.descriptorSetLayout(set: path.set).vkLayout)
     }
 }
 
@@ -509,6 +513,10 @@ public class VulkanShaderLibrary {
         var context : spvc_context? = nil
         spvc_context_create(&context)
         self.spvcContext = context!
+
+        spvc_context_set_error_callback(context, { userData, error in
+            print("Error in SPVC Context: \(String(cString: error!))")
+        }, nil)
         
         let fileManager = FileManager.default
         let resources = try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [])

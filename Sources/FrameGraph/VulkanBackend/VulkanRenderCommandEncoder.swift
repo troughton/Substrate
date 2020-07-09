@@ -30,6 +30,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
     var depthStencil : DepthStencilDescriptor?
     var primitiveType: PrimitiveType
     var cullMode : CullMode
+    var fillMode : TriangleFillMode
     var depthClipMode : DepthClipMode
     var frontFaceWinding : Winding
     var layout : VkPipelineLayout
@@ -76,7 +77,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         rasterisationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
         rasterisationState.depthClampEnable = VkBool32(self.depthClipMode == .clamp)
         rasterisationState.rasterizerDiscardEnable = VkBool32(!self.descriptor.isRasterizationEnabled)
-        rasterisationState.polygonMode = VK_POLYGON_MODE_FILL
+        rasterisationState.polygonMode = VkPolygonMode(self.fillMode)
         rasterisationState.cullMode = VkCullModeFlags(self.cullMode)
         rasterisationState.frontFace = VkFrontFace(self.frontFaceWinding)
         rasterisationState.depthBiasEnable = true
@@ -158,7 +159,6 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         
         var descriptor : RenderPipelineDescriptor! = nil {
             didSet {
-                
                 let key = PipelineLayoutKey.graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction)
                 self.pipelineReflection = shaderLibrary.reflection(for: key)
                 
@@ -197,6 +197,14 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
                 }
             }
         }
+
+        var fillMode : TriangleFillMode = .fill {
+            didSet {
+                if oldValue != self.fillMode {
+                    self.hasChanged = true
+                }
+            }
+        }
         
         var depthClipMode : DepthClipMode = .clip {
             didSet {
@@ -229,6 +237,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
                                                   depthStencil: self.depthStencil,
                                                   primitiveType: self.primitiveType,
                                                   cullMode: self.cullMode,
+                                                  fillMode: self.fillMode,
                                                   depthClipMode: self.depthClipMode,
                                                   frontFaceWinding: self.frontFaceWinding,
                                                   layout: self.layout)
@@ -247,6 +256,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     var pipelineState : PipelineState! = nil
     
     var boundVertexBuffers = [Buffer?](repeating: nil, count: 8)
+    var enqueuedBindings = [FrameGraphCommand]()
     
     public init?(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: VulkanCommandBuffer, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: FrameResourceMap<VulkanBackend>) {
         self.device = device
@@ -277,8 +287,58 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     var pipelineReflection: VulkanPipelineReflection {
         return self.pipelineState.pipelineReflection
     }
+
     
     func prepareToDraw() {
+        assert(self.pipelineState.descriptor != nil, "No render pipeline descriptor is set.")
+
+        for binding in self.enqueuedBindings {
+            switch binding {
+            case .setArgumentBuffer(let args):
+                let bindingPath = args.pointee.bindingPath
+                
+                let argumentBuffer = args.pointee.argumentBuffer
+                let vkArgumentBuffer = resourceMap[argumentBuffer]
+
+                self.commandBufferResources.argumentBuffers.append(vkArgumentBuffer)
+
+                var set : VkDescriptorSet? = vkArgumentBuffer.descriptorSet
+                vkCmdBindDescriptorSets(self.commandBuffer, self.bindPoint, self.pipelineLayout, bindingPath.set, 1, &set, 0, nil)
+
+            case .setBytes(let args):
+                let bindingPath = args.pointee.bindingPath
+                let bytes = args.pointee.bytes
+                let length = args.pointee.length
+                
+                let resourceInfo = self.pipelineReflection[bindingPath]
+                
+                switch resourceInfo.type {
+                case .pushConstantBuffer:
+                    assert(resourceInfo.bindingRange.count == length, "The push constant size and the setBytes length must match.")
+                    vkCmdPushConstants(self.commandBuffer, self.pipelineLayout, VkShaderStageFlags(resourceInfo.accessedStages), resourceInfo.bindingRange.lowerBound, length, bytes)
+                    
+                default:
+                    fatalError("Need to implement VK_EXT_inline_uniform_block or else fall back to a temporary staging buffer")
+                }
+                
+            case .setBufferOffset(let args):
+                fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
+                
+            case .setBuffer(let args):
+                fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
+                
+            case .setTexture(let args):
+                fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
+                
+            case .setSamplerState(let args):
+                fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
+            
+            default:
+                preconditionFailure()
+            }
+        }
+        self.enqueuedBindings.removeAll(keepingCapacity: true)
+
         if self.pipelineState.hasChanged {
             defer {
                 self.pipelineState.hasChanged = false
@@ -419,44 +479,9 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             var offset = VkDeviceSize(offset) + VkDeviceSize(buffer.offset)
             vkCmdBindVertexBuffers(self.commandBuffer, index, 1, &vkBuffer, &offset)
             
-        case .setArgumentBuffer(let args):
-            let bindingPath = args.pointee.bindingPath
-            
-            let argumentBuffer = args.pointee.argumentBuffer
-            let vkArgumentBuffer = resourceMap[argumentBuffer]
-
-            self.commandBufferResources.argumentBuffers.append(vkArgumentBuffer)
-
-            var set : VkDescriptorSet? = vkArgumentBuffer.descriptorSet
-            vkCmdBindDescriptorSets(self.commandBuffer, self.bindPoint, self.pipelineLayout, bindingPath.set, 1, &set, 0, nil)
-
-        case .setBytes(let args):
-            let bindingPath = args.pointee.bindingPath
-            let bytes = args.pointee.bytes
-            let length = args.pointee.length
-            
-            let resourceInfo = self.pipelineReflection[bindingPath]
-            
-            switch resourceInfo.type {
-            case .pushConstantBuffer:
-                assert(resourceInfo.bindingRange.count == length, "The push constant size and the setBytes length must match.")
-                vkCmdPushConstants(self.commandBuffer, self.pipelineLayout, VkShaderStageFlags(resourceInfo.accessedStages), resourceInfo.bindingRange.lowerBound, length, bytes)
-                
-            default:
-                fatalError("Need to implement VK_EXT_inline_uniform_block or else fall back to a temporary staging buffer")
-            }
-            
-        case .setBufferOffset(let args):
-            fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
-            
-        case .setBuffer(let args):
-            fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
-            
-        case .setTexture(let args):
-            fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
-            
-        case .setSamplerState(let args):
-            fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
+        case .setArgumentBuffer, .setBytes, 
+            .setBufferOffset, .setBuffer, .setTexture, .setSamplerState:
+            self.enqueuedBindings.append(command)
             
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
@@ -488,6 +513,9 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         case .setCullMode(let cullMode):
             self.pipelineState.cullMode = cullMode
             
+        case .setTriangleFillMode(let fillMode):
+            self.pipelineState.fillMode = fillMode
+
         case .setDepthStencilDescriptor(let descriptorPtr):
             self.pipelineState.depthStencil = descriptorPtr.takeUnretainedValue().value
             

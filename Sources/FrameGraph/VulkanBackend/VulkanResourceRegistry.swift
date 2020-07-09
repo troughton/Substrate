@@ -394,7 +394,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> VkImageReference? {
+    public func allocateTexture(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> VkImageReference {
         let usage = VkImageUsageFlagBits(usage.usage, pixelFormat: texture.descriptor.pixelFormat)
         var descriptor = texture.descriptor
         let flags = texture.flags
@@ -408,7 +408,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         let waitEvent : ContextWaitEvent
         if texture.flags.contains(.windowHandle) {
             self.textureReferences[texture] = VkImageReference(windowTexture: ())
-            return nil
+            return VkImageReference(windowTexture: ())
         } else {
             let allocator = self.allocatorForImage(storageMode: descriptor.storageMode, flags: flags)
             (vkImage, events, waitEvent) = allocator.collectImage(descriptor: VulkanImageDescriptor(descriptor, usage: usage, sharingMode: .exclusive, initialLayout: VK_IMAGE_LAYOUT_UNDEFINED))
@@ -504,7 +504,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         if let vkTexture = self.textureReferences[texture] {
             return vkTexture
         }
-        return self.allocateTexture(texture, usage: usage, forceGPUPrivate: forceGPUPrivate)!
+        return self.allocateTexture(texture, usage: usage, forceGPUPrivate: forceGPUPrivate)
     }
     
     @discardableResult

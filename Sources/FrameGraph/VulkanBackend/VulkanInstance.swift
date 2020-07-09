@@ -19,7 +19,7 @@ public struct VulkanVersion {
         self.value = (UInt32(major) << 22) | (UInt32(minor) << 12) | UInt32(patch)
     }
 
-    static let apiVersion = VulkanVersion(major: 1, minor: 2, patch: 0)
+    static let apiVersion = VulkanVersion(major: 1, minor: 1, patch: 131)
 }
 
 public final class VulkanInstance {
@@ -29,14 +29,18 @@ public final class VulkanInstance {
     static let validationLayers : [StaticString] = [
         "VK_LAYER_LUNARG_standard_validation"
     ]
+
+    static let timelineSemaphoreLayers : [StaticString] = [
+        "VK_LAYER_KHRONOS_timeline_semaphore"
+    ]
     
-    static func validationLayersSupported(_ layers: [StaticString]) -> Bool {
+    static func areLayersSupported(_ layers: [StaticString]) -> Bool {
         var layerCount : UInt32 = 0
         vkEnumerateInstanceLayerProperties(&layerCount, nil).check()
         
         var availableLayers = [VkLayerProperties](repeating: .init(), count: Int(layerCount))
         vkEnumerateInstanceLayerProperties(&layerCount, &availableLayers)
-        
+
         for layerName in layers {
             let layerNameStr = layerName.description
             if !availableLayers.contains(where: { $0.layerNameStr == layerNameStr }) {
@@ -123,7 +127,7 @@ public final class VulkanInstance {
                     var layerNames = [UnsafePointer<CChar>?]()
                     
                     if _isDebugAssertConfiguration() {
-                        if !VulkanInstance.validationLayersSupported(VulkanInstance.validationLayers) {
+                        if !VulkanInstance.areLayersSupported(VulkanInstance.validationLayers) {
                             print("Vulkan validation layers are not supported.")
                         } else {
                             for layer in VulkanInstance.validationLayers {
@@ -131,6 +135,14 @@ public final class VulkanInstance {
                             }
                         }
                     }
+
+                     if !VulkanInstance.areLayersSupported(VulkanInstance.timelineSemaphoreLayers) {
+                            print("Vulkan timeline semaphore layers are not supported.")
+                        } else {
+                            for layer in VulkanInstance.timelineSemaphoreLayers {
+                                layerNames.append(UnsafeRawPointer(layer.utf8Start).assumingMemoryBound(to: CChar.self))
+                            }
+                        }
                     
                     layerNames.withUnsafeBufferPointer { layerNames in
                         instanceCreateInfo.enabledLayerCount = UInt32(layerNames.count)
@@ -153,7 +165,7 @@ public final class VulkanInstance {
         if instance == nil {
             return nil
         }
-        
+
         self.instance = instance
         
         if _isDebugAssertConfiguration() {
@@ -166,8 +178,8 @@ public final class VulkanInstance {
                 callbackCreateInfo.flags = ([VK_DEBUG_REPORT_ERROR_BIT_EXT,
                                              VK_DEBUG_REPORT_WARNING_BIT_EXT,
                                              VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT,
-                                             //                                      VK_DEBUG_REPORT_DEBUG_BIT_EXT,
-                    //                                      VK_DEBUG_REPORT_INFORMATION_BIT_EXT
+                                             VK_DEBUG_REPORT_DEBUG_BIT_EXT,
+                                             VK_DEBUG_REPORT_INFORMATION_BIT_EXT
                     ] as VkDebugReportFlagBitsEXT).rawValue
                 
                 callbackCreateInfo.pfnCallback = { flags, objectType, object,  location, messageCode, pLayerPrefix, pMessage, pUserData in
@@ -179,7 +191,11 @@ public final class VulkanInstance {
                 /* Register the callback */
                 if !vkCreateDebugReportCallbackEXT(instance, &callbackCreateInfo, nil, &self.debugCallback).check() {
                     print("Could not register Vulkan debug report callback.")
+                } else {
+                    print("Registered Vulkan debug callback.")
                 }
+            } else {
+                print("Could not find Vulkan debug report callback.")
             }
         }
         
