@@ -12,14 +12,34 @@ import FrameGraphCExtras
 // public typealias VkCmdPushDescriptorSetKHRFunc = @convention(c) (VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, UInt32, UInt32, UnsafePointer<VkWriteDescriptorSet>) -> Void
 // public fileprivate(set) var vkCmdPushDescriptorSetKHR : VkCmdPushDescriptorSetKHRFunc! = nil
 
-public struct VulkanVersion {
+public struct VulkanVersion: CustomStringConvertible {
     var value : UInt32
     
+    init(_ value: UInt32) {
+        self.value = value
+    }
+
     public init(major: Int, minor: Int, patch: Int) {
         self.value = (UInt32(major) << 22) | (UInt32(minor) << 12) | UInt32(patch)
     }
 
+    public var major: Int {
+        return Int(self.value >> 22)
+    }
+
+    public var minor: Int {
+        return Int((self.value >> 12) & 0b11_1111_1111)
+    }
+
+    public var patch: Int {
+        return Int(self.value & 0x0FFF)
+    }
+
     static let apiVersion = VulkanVersion(major: 1, minor: 1, patch: 131)
+
+    public var description: String {
+        return "\(self.major).\(self.minor).\(self.patch)"
+    }
 }
 
 public final class VulkanInstance {
@@ -28,10 +48,6 @@ public final class VulkanInstance {
 
     static let validationLayers : [StaticString] = [
         "VK_LAYER_LUNARG_standard_validation"
-    ]
-
-    static let timelineSemaphoreLayers : [StaticString] = [
-        "VK_LAYER_KHRONOS_timeline_semaphore"
     ]
     
     static func areLayersSupported(_ layers: [StaticString]) -> Bool {
@@ -135,14 +151,6 @@ public final class VulkanInstance {
                             }
                         }
                     }
-
-                     if !VulkanInstance.areLayersSupported(VulkanInstance.timelineSemaphoreLayers) {
-                            print("Vulkan timeline semaphore layers are not supported.")
-                        } else {
-                            for layer in VulkanInstance.timelineSemaphoreLayers {
-                                layerNames.append(UnsafeRawPointer(layer.utf8Start).assumingMemoryBound(to: CChar.self))
-                            }
-                        }
                     
                     layerNames.withUnsafeBufferPointer { layerNames in
                         instanceCreateInfo.enabledLayerCount = UInt32(layerNames.count)
@@ -179,7 +187,7 @@ public final class VulkanInstance {
                                              VK_DEBUG_REPORT_WARNING_BIT_EXT,
                                              VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT,
                                              VK_DEBUG_REPORT_DEBUG_BIT_EXT,
-                                              VK_DEBUG_REPORT_INFORMATION_BIT_EXT
+                                            // VK_DEBUG_REPORT_INFORMATION_BIT_EXT
                     ] as VkDebugReportFlagBitsEXT).rawValue
                 
                 callbackCreateInfo.pfnCallback = { flags, objectType, object,  location, messageCode, pLayerPrefix, pMessage, pUserData in

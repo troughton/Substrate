@@ -205,7 +205,6 @@ public class VulkanSwapChain : SwapChain {
         let semaphore = self.imageAcquisitionSemaphores[self.currentFrameIndex]
         
         let result = vkAcquireNextImageKHR(device.vkDevice, self.swapChain, UInt64.max, semaphore, nil, &imageIndex)
-        print("Image index is \(imageIndex) and acquisition semaphore index is \(self.currentFrameIndex)")
         
         if result == VK_ERROR_OUT_OF_DATE_KHR {
             print("Recreating the swap chain. Drawable size is \(descriptor.size)")

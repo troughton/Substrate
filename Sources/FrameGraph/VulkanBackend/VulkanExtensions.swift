@@ -10,21 +10,25 @@ import Vulkan
 import Foundation
 import FrameGraphCExtras
 
+extension String {
+    init<T>(cStringTuple: T) {
+        self = withUnsafePointer(to: cStringTuple) {
+            return $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout<T>.size / MemoryLayout<CChar>.stride) {
+                return String(cString: $0)
+            }
+        }
+    }
+}
+
 extension VkLayerProperties {
     var layerNameStr : String {
-        var layerName = self.layerName
-        return withUnsafePointer(to: &layerName.0) {
-            return String(cString: $0)
-        }
+        return String(cStringTuple: self.layerName)
     }
 }
 
 extension VkExtensionProperties {
     var extensionNameStr : String {
-        var extensionName = self.extensionName
-        return withUnsafePointer(to: &extensionName.0) {
-            return String(cString: $0)
-        }
+        return String(cStringTuple: self.extensionName)
     }
 }
 

@@ -86,7 +86,12 @@ public final class VulkanDevice {
     
     init?(physicalDevice: VulkanPhysicalDevice) {
         self.physicalDevice = physicalDevice
-        
+
+        do {
+            var properties = VkPhysicalDeviceProperties()
+            vkGetPhysicalDeviceProperties(physicalDevice.vkDevice, &properties)
+            print("Using VkPhysicalDevice \(String(cStringTuple: properties.deviceName)) with API version \(VulkanVersion(properties.apiVersion)) and driver version \(VulkanVersion(properties.driverVersion))")
+        }
         // Strategy: one render queue, as many async compute queues as we can get, and a couple of copy queues.
         
         var activeQueues = [(familyIndex: Int, queueIndex: Int)]()
@@ -176,12 +181,6 @@ public final class VulkanDevice {
         }
         
         self.queues = queues
-
-        var properties = VkPhysicalDeviceProperties2()
-        properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
-        vkGetPhysicalDeviceProperties2(self.physicalDevice.vkDevice, &properties)
-        
-        print("Vulkan Device API Version: \(properties.properties.apiVersion >> 22).\((properties.properties.apiVersion >> 12) & 0x3ff).\(properties.properties.apiVersion & 0xfff)")
     }
     
     deinit {
