@@ -59,7 +59,7 @@ public class VulkanSwapChain : SwapChain {
     private var imagePresentationSemaphores : [VkSemaphore] = []
     
     private var currentImageIndex : Int? = nil
-    private var acquisitionSemaphoreIndex: Int = 0
+    private var currentFrameIndex: Int = 0
     
     public init(device: VulkanDevice, surface: VkSurfaceKHR) {
         self.device = device
@@ -189,6 +189,10 @@ public class VulkanSwapChain : SwapChain {
     }
     
     func nextImage(descriptor: TextureDescriptor) -> VulkanImage {
+        guard self.currentImageIndex == nil else {
+            fatalError("VulkanSwapChain.nextImage() called without corresponding submit()")
+        }
+
         if self.swapChain == nil {
             self.createSwapChain(drawableSize: descriptor.size)
         } else if descriptor.size != self.currentDrawableSize {
@@ -198,11 +202,13 @@ public class VulkanSwapChain : SwapChain {
         
         // TODO: reset the semaphores before usage (e.g. signal them)
         var imageIndex = 0 as UInt32
-        let semaphore = self.imageAcquisitionSemaphores[self.acquisitionSemaphoreIndex]
+        let semaphore = self.imageAcquisitionSemaphores[self.currentFrameIndex]
         
         let result = vkAcquireNextImageKHR(device.vkDevice, self.swapChain, UInt64.max, semaphore, nil, &imageIndex)
+        print("Image index is \(imageIndex) and acquisition semaphore index is \(self.currentFrameIndex)")
         
         if result == VK_ERROR_OUT_OF_DATE_KHR {
+            print("Recreating the swap chain. Drawable size is \(descriptor.size)")
             self.recreateSwapChain(drawableSize: descriptor.size)
             return self.nextImage(descriptor: descriptor)
         } else if result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR {
@@ -216,11 +222,11 @@ public class VulkanSwapChain : SwapChain {
     }
 
     var acquisitionSemaphore: VkSemaphore {
-        return self.imageAcquisitionSemaphores[self.currentImageIndex!]
+        return self.imageAcquisitionSemaphores[self.currentFrameIndex]
     }
     
     var presentationSemaphore: VkSemaphore {
-        return self.imagePresentationSemaphores[self.currentImageIndex!]
+        return self.imagePresentationSemaphores[self.currentFrameIndex]
     }
     
     func submit() {
@@ -229,7 +235,7 @@ public class VulkanSwapChain : SwapChain {
         }
         defer {
             self.currentImageIndex = nil
-            self.acquisitionSemaphoreIndex = (self.acquisitionSemaphoreIndex + 1) % self.imageAcquisitionSemaphores.count
+            self.currentFrameIndex = (self.currentFrameIndex + 1) % self.imageAcquisitionSemaphores.count
         }
         let image = self.images[imageIndex]
         

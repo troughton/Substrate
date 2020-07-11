@@ -174,7 +174,6 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     subscript(bindingPath: ResourceBindingPath) -> ShaderResource {
-        print("Fetching resource at set \(bindingPath.set), index: \(bindingPath.binding)")
         return self.resources[bindingPath]!
     }
 

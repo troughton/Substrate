@@ -9,9 +9,12 @@
 import Vulkan
 import FrameGraphCExtras
 import FrameGraphUtilities
+import Dispatch
 
 /// Wraps a Vulkan queue.
 public final class VulkanDeviceQueue {
+    let commandBufferManagementQueue = DispatchQueue(label: "Vulkan Command Buffer Management")
+
     public let device: VulkanDevice
     public let vkQueue : VkQueue
     public let familyIndex: Int
@@ -47,7 +50,7 @@ public final class VulkanDeviceQueue {
     }
     
     public func allocateCommandBuffer() -> VkCommandBuffer {
-        if let commandBuffer = self.commandBuffers.popLast() {
+        if let commandBuffer = self.commandBufferManagementQueue.sync(execute: { self.commandBuffers.popLast() }) {
             vkResetCommandBuffer(commandBuffer, 0)
             return commandBuffer
         }
@@ -66,7 +69,9 @@ public final class VulkanDeviceQueue {
 
     public func depositCommandBuffer(_ commandBuffer: VkCommandBuffer) {
         // TODO: periodically reset all resources to the pool to avoid fragmentation/over-allocation using vkResetCommandPool
-        self.commandBuffers.append(commandBuffer)
+        self.commandBufferManagementQueue.sync {
+            self.commandBuffers.append(commandBuffer)
+        }
     }
 }
 

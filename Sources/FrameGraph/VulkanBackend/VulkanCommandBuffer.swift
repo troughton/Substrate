@@ -61,6 +61,10 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
         beginInfo.flags = VkCommandBufferUsageFlags(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)
         vkBeginCommandBuffer(self.commandBuffer, &beginInfo)
     }
+
+    deinit {
+        self.queue.depositCommandBuffer(self.commandBuffer)
+    }
     
     var gpuStartTime: Double {
         return 0.0
@@ -140,6 +144,7 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
         waitDstStageMasks.append(contentsOf: repeatElement(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT.rawValue, count: self.presentSwapchains.count))
         
         // Add a binary semaphore to signal for each presentation swapchain.
+        let signalTimelineSemaphoreCount = self.signalSemaphores.count
         self.signalSemaphores.append(contentsOf: self.presentSwapchains.map { $0.presentationSemaphore })
         self.signalSemaphoreSignalValues.append(repeating: 0, count: self.presentSwapchains.count)
         
@@ -167,21 +172,23 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
                         withUnsafePointer(to: timelineInfo) { timelineInfo in
                             submitInfo.pNext = UnsafeRawPointer(timelineInfo)
                             
-                            vkQueueSubmit(self.queue.vkQueue, 1, &submitInfo, nil)
+                            vkQueueSubmit(self.queue.vkQueue, 1, &submitInfo, nil).check()
                         }
                     }
                 }
             }
         }
+        print("Submitted command buffer \(self.signalSemaphoreSignalValues[0])")
         Self.semaphoreSignalQueue.async {
             self.signalSemaphores.withUnsafeBufferPointer { signalSemaphores in
                 var waitInfo = VkSemaphoreWaitInfo()
                 waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO
                 waitInfo.pSemaphores = signalSemaphores.baseAddress
                 waitInfo.pValues = UnsafePointer(self.signalSemaphoreSignalValues.buffer)
-                waitInfo.semaphoreCount = UInt32(self.signalSemaphoreSignalValues.count)
+                waitInfo.semaphoreCount = UInt32(signalTimelineSemaphoreCount)
                 
-                vkWaitSemaphores(self.queue.device.vkDevice, &waitInfo, .max)
+                vkWaitSemaphores(self.queue.device.vkDevice, &waitInfo, .max).check()
+                print("Command buffer \(self.signalSemaphoreSignalValues[0]) completed")
             }
             onCompletion(self)
         }
