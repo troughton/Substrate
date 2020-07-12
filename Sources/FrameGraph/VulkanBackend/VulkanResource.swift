@@ -16,41 +16,38 @@ struct ResourceSemaphore {
 
 enum VulkanSharingMode : Equatable {
     case exclusive
-    case concurrent(QueueFamilies)
+    case concurrent(queueFamilyIndices: [UInt32])
     
-    public init(usage: VkBufferUsageFlagBits, queueIndices: QueueFamilyIndices) {
-        var queueFamilies : QueueFamilies = []
-        if usage.contains(.indexBuffer) {
-            queueFamilies.formUnion(.graphics)
-        }
+    public init(usage: VkBufferUsageFlagBits, device: VulkanPhysicalDevice) {
+        var queueFamilies : QueueCapabilities = []
         if !usage.intersection([.uniformBuffer, .uniformTexelBuffer, .storageBuffer, .storageTexelBuffer, .indirectBuffer]).isEmpty {
-            queueFamilies.formUnion([.graphics, .compute])
+            queueFamilies.formUnion([.render, .compute])
         }
         if !usage.intersection([.vertexBuffer, .indexBuffer]).isEmpty {
-            queueFamilies.formUnion([.graphics])
+            queueFamilies.formUnion(.render)
         }
         if !usage.intersection([.transferSource, .transferDestination]).isEmpty {
-            queueFamilies.formUnion(.copy)
+            queueFamilies.formUnion(.blit)
         }
-        self.init(queueFamilies: queueFamilies, indices: queueIndices)
+        self.init(queueFamilies: queueFamilies)
     }
     
-    public init(usage: VkImageUsageFlagBits, queueIndices: QueueFamilyIndices) {
-        var queueFamilies : QueueFamilies = []
+    public init(usage: VkImageUsageFlagBits, device: VulkanPhysicalDevice) {
+        var queueFamilies : QueueCapabilities = []
         if !usage.intersection([.sampled, .storage]).isEmpty {
-            queueFamilies.formUnion([.graphics, .compute])
+            queueFamilies.formUnion([.render, .compute])
         }
         if !usage.intersection([.colorAttachment, .depthStencilAttachment, .inputAttachment, .transientAttachment]).isEmpty {
-            queueFamilies.formUnion([.graphics])
+            queueFamilies.formUnion(.render)
         }
         if !usage.intersection([.transferSource, .transferDestination]).isEmpty {
-            queueFamilies.formUnion(.copy)
+            queueFamilies.formUnion(.blit)
         }
-        self.init(queueFamilies: queueFamilies, indices: queueIndices)
+        self.init(queueFamilies: queueFamilies)
     }
     
-    public init(queueFamilies: QueueFamilies, indices: QueueFamilyIndices) {
-        self = queueFamilies.isSingleQueue(indices: indices) ? .exclusive : .concurrent(queueFamilies)
+    public init(queueFamilies: QueueCapabilities) {
+        self = .exclusive // FIXME: figure out how to manage queue sharing.
     }
 }
 

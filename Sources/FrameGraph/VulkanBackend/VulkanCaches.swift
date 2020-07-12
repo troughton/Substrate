@@ -10,19 +10,13 @@ import Vulkan
 import FrameGraphCExtras
 
 final class VulkanStateCaches {
-
-    private struct RenderPipelineCacheKey : Hashable {
-        var pipelineDescriptor : VulkanRenderPipelineDescriptor
-        var renderTargetDescriptor : RenderTargetDescriptor
-    }
-
     let device: VulkanDevice
     let shaderLibrary : VulkanShaderLibrary
     
     private var vertexInputStates = [VertexDescriptor : VertexInputStateCreateInfo]()
     private var functionSpecialisationStates = [FunctionConstants : SpecialisationInfo]()
     private var currentPipelineReflection : VulkanPipelineReflection? = nil
-    private var renderPipelines = [RenderPipelineCacheKey : VkPipeline?]()
+    private var renderPipelines = [VulkanRenderPipelineDescriptor : VkPipeline?]()
     private var computePipelines = [VulkanComputePipelineDescriptor : VkPipeline?]()
     
     public let pipelineCache : VkPipelineCache
@@ -48,22 +42,19 @@ final class VulkanStateCaches {
     }
     
     public subscript(pipelineDescriptor: VulkanRenderPipelineDescriptor, 
-                     renderPass renderPass: VulkanRenderPass, 
-                     subpass subpass: UInt32,
-                     renderTargetDescriptor renderTargetDescriptor: RenderTargetDescriptor,
-                     pipelineReflection pipelineReflection: VulkanPipelineReflection) -> VkPipeline? {
-        let cacheKey = RenderPipelineCacheKey(pipelineDescriptor: pipelineDescriptor, renderTargetDescriptor: renderTargetDescriptor)
-        if let pipeline = self.renderPipelines[cacheKey] {
+                     renderPass renderPass: VulkanRenderPass,
+                     subpass subpass: UInt32) -> VkPipeline? {
+        if let pipeline = self.renderPipelines[pipelineDescriptor] {
             return pipeline
         }
 
         var pipeline : VkPipeline? = nil
 
         // TODO: investigate pipeline derivatives within a render pass to optimise pipeline switching.
-        pipelineDescriptor.withVulkanPipelineCreateInfo(renderPass: renderPass, subpass: subpass, renderTargetDescriptor: renderTargetDescriptor, pipelineReflection: pipelineReflection, stateCaches: self) { createInfo in
-            vkCreateGraphicsPipelines(self.device.vkDevice, self.pipelineCache, 1, &createInfo, nil, &pipeline)
+        pipelineDescriptor.withVulkanPipelineCreateInfo(renderPass: renderPass, subpass: subpass, stateCaches: self) { createInfo in
+            vkCreateGraphicsPipelines(self.device.vkDevice, self.pipelineCache, 1, &createInfo, nil, &pipeline).check()
         }
-        self.renderPipelines[cacheKey] = pipeline
+        self.renderPipelines[pipelineDescriptor] = pipeline
 
         return pipeline
     }
@@ -77,7 +68,7 @@ final class VulkanStateCaches {
 
         // TODO: investigate pipeline derivatives within a render pass to optimise pipeline switching.
         pipelineDescriptor.withVulkanPipelineCreateInfo(pipelineReflection: pipelineReflection, stateCaches: self) { createInfo in
-            vkCreateComputePipelines(self.device.vkDevice, self.pipelineCache, 1, &createInfo, nil, &pipeline)
+            vkCreateComputePipelines(self.device.vkDevice, self.pipelineCache, 1, &createInfo, nil, &pipeline).check()
         }
         
         self.computePipelines[pipelineDescriptor] = pipeline

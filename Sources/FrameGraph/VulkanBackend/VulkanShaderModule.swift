@@ -30,6 +30,7 @@ struct ShaderResource {
     var type : spvc_resource_type
     var bindingPath : ResourceBindingPath
     var bindingRange : Range<UInt32>
+    var arrayLength: Int
     var access : ResourceAccessType
     var accessedStages : VkShaderStageFlagBits
 }
@@ -37,11 +38,6 @@ struct ShaderResource {
 struct FunctionSpecialisation {
     var index : Int = 0
     var name : String = ""
-}
-
-struct DescriptorSetLayoutKey : Hashable {
-    var set : UInt32
-    var dynamicBuffers : BitSet
 }
 
 extension String : CustomHashable {
@@ -55,10 +51,10 @@ final class VulkanPipelineReflection : PipelineReflection {
     
     let resources : [ResourceBindingPath : ShaderResource]
     let specialisations : [FunctionSpecialisation]
-    let activeStagesForSets : [UInt32 : VkShaderStageFlagBits]
+    let activeStagesForSets : [UInt32 : RenderStages]
     let lastSet : UInt32?
     
-    private var layouts = [DescriptorSetLayoutKey : VulkanDescriptorSetLayout]()
+    private var layouts = [UInt32 : VulkanDescriptorSetLayout]()
     
     let bindingPathCache : HashMap<String, ResourceBindingPath>
     
@@ -78,23 +74,43 @@ final class VulkanPipelineReflection : PipelineReflection {
         var resources = [ResourceBindingPath : ShaderResource]()
         var functionSpecialisations = [FunctionSpecialisation]()
         
-        var activeStagesForSets = [UInt32 : VkShaderStageFlagBits]()
+        var activeStagesForSets = [UInt32 : RenderStages]()
         var lastSet : UInt32? = nil
         
         for (functionName, compiler, executionModel) in functions {
+            let renderStage: RenderStages
+            switch executionModel {
+            case SpvExecutionModelVertex:
+                renderStage = .vertex
+            case SpvExecutionModelFragment:
+                renderStage = .fragment
+            case SpvExecutionModelGLCompute:
+                renderStage = .compute
+            default:
+                continue
+            }
+
             spvc_compiler_set_entry_point(compiler, functionName, executionModel)
             let stage = VkShaderStageFlagBits(executionModel)!
             
             var spvcResources : spvc_resources! = nil
             spvc_compiler_create_shader_resources(compiler, &spvcResources)
             
-            let types : [spvc_resource_type] = [.uniformBuffer, .storageBuffer, .sampledImage, .storageImage, .pushConstantBuffer]
+            let types : [spvc_resource_type] = [.uniformBuffer, .storageBuffer, .sampledImage, .storageImage, .sampler, .pushConstantBuffer]
             
             for type in types {
                 var resourceList : UnsafePointer<spvc_reflected_resource>! = nil
                 var resourceCount = 0
                 spvc_resources_get_resource_list_for_type(spvcResources, type, &resourceList, &resourceCount)
-                
+
+                let typeIsReadOnly: Bool
+                switch type {
+                case .uniformBuffer, .sampledImage, .sampler, .pushConstantBuffer:
+                    typeIsReadOnly = true
+                default:
+                    typeIsReadOnly = false
+                }
+
                 for resource in UnsafeBufferPointer(start: resourceList, count: resourceCount) {
 
                     let set = spvc_compiler_get_decoration(compiler, resource.id, SpvDecorationDescriptorSet)
@@ -106,7 +122,7 @@ final class VulkanPipelineReflection : PipelineReflection {
                     var bufferRangeCount = 0
                     spvc_compiler_get_active_buffer_ranges(compiler, resource.id, &bufferRanges, &bufferRangeCount)
                     
-                    var bufferRangesMin : Int = .max
+                    var bufferRangesMin : Int = Int(UInt32.max)
                     var bufferRangesMax : Int = 0
                     
                     for bufferRange in UnsafeBufferPointer(start: bufferRanges, count: bufferRangeCount) {
@@ -115,11 +131,12 @@ final class VulkanPipelineReflection : PipelineReflection {
                     }
                     if bufferRangesMax < bufferRangesMin { bufferRangesMax = bufferRangesMin }
                     
-                    let isReadOnly = spvc_compiler_get_member_decoration(compiler, resource.base_type_id, 0, SpvDecorationNonWritable) != 0
+                    let isReadOnly = typeIsReadOnly || spvc_compiler_get_member_decoration(compiler, resource.base_type_id, 0, SpvDecorationNonWritable) != 0
                     let isWriteOnly = spvc_compiler_get_member_decoration(compiler, resource.base_type_id, 0, SpvDecorationNonReadable) != 0
+                    assert(!(typeIsReadOnly && isWriteOnly))
                     let access : ResourceAccessType = isReadOnly ? .read : (isWriteOnly ? .write : .readWrite)
-                    
-                    let bindingPath = ResourceBindingPath(set: set, binding: binding, arrayIndex: 0)
+
+                    let bindingPath = type == .pushConstantBuffer ? ResourceBindingPath.pushConstantPath : ResourceBindingPath(set: set, binding: binding, arrayIndex: 0)
 
                     let resourceName = String(cString: name!)
                     bindingPathCache[resourceName] = bindingPath
@@ -129,16 +146,17 @@ final class VulkanPipelineReflection : PipelineReflection {
                                        type: type,
                                        bindingPath: bindingPath,
                                        bindingRange: UInt32(bufferRangesMin)..<UInt32(bufferRangesMax),
+                                       arrayLength: 1, // FIXME: get this from SPIR-V
                                        access: access,
                                        accessedStages: stage)
                     ].accessedStages.formUnion(stage)
-                    activeStagesForSets[bindingPath.set, default: []].formUnion(stage)
+
+                    activeStagesForSets[bindingPath.set, default: []].formUnion(renderStage)
                     
                     if type != .pushConstantBuffer {
                         lastSet = max(lastSet ?? 0, bindingPath.set)
                     }
                 }
-               
             }
             
             var specialisationConstantCount = 0
@@ -180,9 +198,8 @@ final class VulkanPipelineReflection : PipelineReflection {
         return self.resources[bindingPath]!
     }
 
-    public func descriptorSetLayout(set: UInt32, dynamicBuffers: BitSet) -> VulkanDescriptorSetLayout {
-        let key = DescriptorSetLayoutKey(set: set, dynamicBuffers: dynamicBuffers)
-        if let layout = self.layouts[key] {
+    public func descriptorSetLayout(set: UInt32) -> VulkanDescriptorSetLayout {
+        if let layout = self.layouts[set] {
             return layout
         }
         let descriptorResources : [ShaderResource] = resources.values.compactMap { resource in
@@ -193,24 +210,24 @@ final class VulkanPipelineReflection : PipelineReflection {
         }
         let activeStages = self.activeStagesForSets[set] ?? []
         
-        let layout = VulkanDescriptorSetLayout(set: set, device: self.device, resources: descriptorResources, stages: activeStages, dynamicBuffers: dynamicBuffers)
-        self.layouts[key] = layout
+        let layout = VulkanDescriptorSetLayout(set: set, pipelineReflection: self, resources: descriptorResources, stages: VkShaderStageFlagBits(activeStages))
+        self.layouts[set] = layout
         return layout
     }
     
-    func vkDescriptorSetLayouts(bindingManager: ResourceBindingManager) -> [VkDescriptorSetLayout?] {
+    var vkDescriptorSetLayouts: [VkDescriptorSetLayout?] {
         guard let lastSet = self.lastSet else {
             return []
         } 
 
         var layouts = [VkDescriptorSetLayout?]()
         for set in 0...lastSet {
-            let layout = self.descriptorSetLayout(set: set, dynamicBuffers: bindingManager.existingManagerForSet(set)?.dynamicBuffers ?? [])
+            let layout = self.descriptorSetLayout(set: set)
             layouts.append(layout.vkLayout)
         }
         return layouts
     }
-    
+
     // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
     func reflectionCacheLinearSearch(_ path: ResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
         var i = 0
@@ -251,6 +268,9 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
+        if path.isArgumentBuffer {
+            return ArgumentReflection(type: .argumentBuffer, bindingPath: path, usageType: .read, activeStages: self.activeStagesForSets[path.set] ?? [])
+        }
         return reflectionCacheLinearSearch(path, returnNearest: false)
     }
     
@@ -297,11 +317,12 @@ final class VulkanPipelineReflection : PipelineReflection {
     }
     
     func remapArgumentBufferPathForActiveStages(_ path: ResourceBindingPath) -> ResourceBindingPath {
-        fatalError()
+        return path // Paths don't differ by stage on Vulkan
     }
 
     func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer? {
-        fatalError("This should return the descriptor set layout and possibly some other information.")
+        let layout = self.descriptorSetLayout(set: path.set)
+        return UnsafeRawPointer(Unmanaged.passUnretained(layout).toOpaque())
     }
 }
 
@@ -316,13 +337,17 @@ extension ArgumentReflection {
         case .sampledImage, .storageImage, .subpassInput:
             resourceType = .texture
         default:
-            fatalError()
+            fatalError("Unsupported resource type \(resource.type)")
         }
         
         let usageType : ResourceUsageType
         switch (resource.access, resource.type) {
         case (_, .uniformBuffer):
             usageType = .constantBuffer
+        case (_, .sampledImage):
+            usageType = .read
+        case (_, .sampler):
+            usageType = .sampler
         case (_, .subpassInput):
             usageType = .inputAttachment
         case (.read, _):
@@ -331,10 +356,6 @@ extension ArgumentReflection {
             usageType = .readWrite
         case (.write, _):
             usageType = .write
-        case (_, .sampler):
-            usageType = .sampler
-        default:
-            return nil
         }
 
         var renderAPIStages : RenderStages = []
@@ -359,6 +380,8 @@ extension VkDescriptorType {
             return nil
         case .sampledImage:
             self = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+        case .combinedImageSampler:
+            self = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
         case .sampler:
             self = VK_DESCRIPTOR_TYPE_SAMPLER
         case .storageBuffer:
@@ -376,8 +399,8 @@ extension VkDescriptorType {
 }
 
 extension VkDescriptorSetLayoutBinding {
-    init?(resource: ShaderResource, stages: VkShaderStageFlagBits, isDynamic: Bool) {
-        guard let descriptorType = VkDescriptorType(resource.type, dynamic: isDynamic) else {
+    init?(resource: ShaderResource, stages: VkShaderStageFlagBits) {
+        guard let descriptorType = VkDescriptorType(resource.type, dynamic: false) else {
             return nil
         }
         
@@ -386,17 +409,17 @@ extension VkDescriptorSetLayoutBinding {
         self.binding = resource.bindingPath.binding
         self.descriptorType = descriptorType
         self.stageFlags = VkShaderStageFlags(stages)
-        self.descriptorCount = 1 // FIXME: shouldn't be hard-coded, but instead should equal the number of elements in the array.
+        self.descriptorCount = UInt32(resource.arrayLength)
     }
 }
 
 public class VulkanDescriptorSetLayout {
-    let device : VulkanDevice
+    unowned(unsafe) let pipelineReflection: VulkanPipelineReflection
     let vkLayout : VkDescriptorSetLayout
     let set : UInt32
     
-    init(set: UInt32, device: VulkanDevice, resources: [ShaderResource], stages: VkShaderStageFlagBits, dynamicBuffers: BitSet) {
-        self.device = device
+    init(set: UInt32, pipelineReflection: VulkanPipelineReflection, resources: [ShaderResource], stages: VkShaderStageFlagBits) {
+        self.pipelineReflection = pipelineReflection
         self.set = set
         
         var layoutCreateInfo = VkDescriptorSetLayoutCreateInfo()
@@ -404,7 +427,7 @@ public class VulkanDescriptorSetLayout {
         layoutCreateInfo.flags = 0
         
         let bindings = resources.enumerated().compactMap { (i, resource) in 
-            VkDescriptorSetLayoutBinding(resource: resource, stages: stages, isDynamic: dynamicBuffers.contains(BitSet(element: i))) 
+            VkDescriptorSetLayoutBinding(resource: resource, stages: stages) 
         }
 
         layoutCreateInfo.bindingCount = UInt32(bindings.count)
@@ -413,14 +436,13 @@ public class VulkanDescriptorSetLayout {
             layoutCreateInfo.pBindings = bindings.baseAddress
             
             var layout : VkDescriptorSetLayout?
-            vkCreateDescriptorSetLayout(device.vkDevice, &layoutCreateInfo, nil, &layout)
+            vkCreateDescriptorSetLayout(pipelineReflection.device.vkDevice, &layoutCreateInfo, nil, &layout)
             return layout!
         }
-        
     }
     
     deinit {
-        vkDestroyDescriptorSetLayout(self.device.vkDevice, self.vkLayout, nil)
+        vkDestroyDescriptorSetLayout(pipelineReflection.device.vkDevice, self.vkLayout, nil)
     }
 }
 
@@ -445,21 +467,24 @@ public class VulkanShaderModule {
         
         var shaderModule : VkShaderModule? = nil
         var parsedIR : spvc_parsed_ir? = nil
-        var compiler : spvc_compiler? = nil
-        spvc_context_create_compiler(spvcContext, SPVC_BACKEND_NONE, parsedIR, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler)
         
         data.withUnsafeBytes { codePointer in
             let spvCode = codePointer.bindMemory(to: SpvId.self)
-            let result = spvc_context_parse_spirv(spvcContext, spvCode.baseAddress, codePointer.count, &parsedIR)
-            assert(result == SPVC_SUCCESS)
+            let result = spvc_context_parse_spirv(spvcContext, spvCode.baseAddress, spvCode.count, &parsedIR)
+            if result != SPVC_SUCCESS {
+                preconditionFailure("Error parsing shader module: \(result)")
+            }
             
             var createInfo = VkShaderModuleCreateInfo()
             createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO
             createInfo.pCode = spvCode.baseAddress
-            createInfo.codeSize = spvCode.count
+            createInfo.codeSize = spvCode.count * MemoryLayout<SpvId>.stride
             
             vkCreateShaderModule(device.vkDevice, &createInfo, nil, &shaderModule).check()
         }
+
+        var compiler : spvc_compiler? = nil
+        spvc_context_create_compiler(spvcContext, SPVC_BACKEND_NONE, parsedIR, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, &compiler)
         
         self.vkModule = shaderModule!
         self.compiler = compiler!
@@ -509,10 +534,15 @@ public class VulkanShaderLibrary {
     public init(device: VulkanDevice, url: URL) throws {
         self.device = device
         self.url = url
+        print("Loading shader library at url \(url.path)")
 
         var context : spvc_context? = nil
         spvc_context_create(&context)
         self.spvcContext = context!
+
+        spvc_context_set_error_callback(context, { userData, error in
+            print("Error in SPVC Context: \(String(cString: error!))")
+        }, nil)
         
         let fileManager = FileManager.default
         let resources = try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [])
@@ -521,7 +551,7 @@ public class VulkanShaderLibrary {
         var functions = [String : VulkanShaderModule]()
 
         for file in resources {
-            if file.pathExtension == ".spv" {
+            if file.pathExtension == "spv" {
                 let shaderData = try Data(contentsOf: file, options: .mappedIfSafe)
         
                 let module = VulkanShaderModule(device: device, spvcContext: self.spvcContext, data: shaderData)
@@ -539,13 +569,14 @@ public class VulkanShaderLibrary {
 
         self.modules = modules
         self.functionsToModules = functions
+        
     }
     
     deinit {
         spvc_context_destroy(self.spvcContext)
     }
     
-    func pipelineLayout(for key: PipelineLayoutKey, bindingManager: ResourceBindingManager) -> VkPipelineLayout {
+    func pipelineLayout(for key: PipelineLayoutKey) -> VkPipelineLayout {
         if let layout = self.pipelineLayoutCache[key] { // FIXME: we also need to take into account whether the /descriptor set layouts/ are identical.
             return layout
         }
@@ -554,7 +585,7 @@ public class VulkanShaderLibrary {
         createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
         
         let reflection = self.reflection(for: key)
-        let setLayouts : [VkDescriptorSetLayout?] = reflection.vkDescriptorSetLayouts(bindingManager: bindingManager)
+        let setLayouts : [VkDescriptorSetLayout?] = reflection.vkDescriptorSetLayouts
 
         var pushConstantRanges = [VkPushConstantRange]()
         for resource in reflection.resources.values where resource.bindingPath.isPushConstant {

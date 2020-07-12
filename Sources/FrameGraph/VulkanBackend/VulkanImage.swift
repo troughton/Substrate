@@ -70,7 +70,6 @@ class VulkanImage {
     let allocator : VmaAllocator?
     let allocation : VmaAllocation?
     let descriptor : VulkanImageDescriptor
-    var layout : VkImageLayout
     
     var label : String? = nil
     
@@ -79,6 +78,10 @@ class VulkanImage {
     var defaultImageView : VulkanImageView! = nil
     var views = [ViewDescriptor : VulkanImageView]()
     
+    var layout : VkImageLayout
+    var lastUsageType: ResourceUsageType? = nil
+    var lastUsageStages: RenderStages = .cpuBeforeRender
+
     init(device: VulkanDevice, image: VkImage, allocator: VmaAllocator?, allocation: VmaAllocation?, descriptor: VulkanImageDescriptor) {
         self.device = device
         self.vkImage = image
@@ -290,10 +293,7 @@ struct VulkanImageDescriptor : Equatable {
         createInfo.initialLayout = self.initialLayout
         
         switch self.sharingMode {
-        case .concurrent(let queueFamily):
-        
-            let queueIndices = device.physicalDevice.queueFamilyIndices(for: queueFamily)
-            
+        case .concurrent(let queueIndices):
             if queueIndices.count == 1 {
                 fallthrough
             } else {

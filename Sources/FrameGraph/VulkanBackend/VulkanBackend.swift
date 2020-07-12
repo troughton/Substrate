@@ -24,6 +24,12 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     typealias RenderTargetDescriptor = VulkanRenderTargetDescriptor
     
+    typealias CompactedResourceCommandType = VulkanCompactedResourceCommandType
+    typealias Event = VkSemaphore
+    typealias BackendQueue = VulkanDeviceQueue
+    typealias InterEncoderDependencyType = FineDependency
+    typealias CommandBuffer = VulkanCommandBuffer
+    
     public var api: RenderAPI {
         return .vulkan
     }
@@ -35,13 +41,13 @@ public final class VulkanBackend : SpecificRenderBackend {
     let shaderLibrary : VulkanShaderLibrary
     let stateCaches : VulkanStateCaches
     
-    var activeContext : VulkanFrameGraphContext? = nil
+    var activeContext : FrameGraphContextImpl<VulkanBackend>? = nil
     
     var queueSyncSemaphores = [VkSemaphore?](repeating: nil, count: QueueRegistry.maxQueues)
     
-    public init(instance: VulkanInstance, surface: VkSurfaceKHR, shaderLibraryURL: URL) {
+    public init(instance: VulkanInstance, shaderLibraryURL: URL) {
         self.vulkanInstance = instance
-        let physicalDevice = self.vulkanInstance.createSystemDefaultDevice(surface: surface)!
+        let physicalDevice = self.vulkanInstance.createSystemDefaultDevice()!
         
         self.device = VulkanDevice(physicalDevice: physicalDevice)!
         
@@ -56,8 +62,8 @@ public final class VulkanBackend : SpecificRenderBackend {
         self.resourceRegistry.registerWindowTexture(texture: texture, context: context)
     }
     
-    @usableFromInline func setActiveContext(_ context: VulkanFrameGraphContext) {
-        assert(self.activeContext == nil)
+    func setActiveContext(_ context: FrameGraphContextImpl<VulkanBackend>?) {
+        assert(self.activeContext == nil || context == nil)
 //        self.stateCaches.checkForLibraryReload()
         self.activeContext = context
     }
@@ -76,29 +82,20 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     public func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
         let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        let buffer = bufferReference.buffer
         
-        fatalError()
+        return buffer.map(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
     public func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         if range.isEmpty { return }
-        if buffer.descriptor.storageMode == .managed {
-            //            var memoryRange = VkMappedMemoryRange()
-            //            memoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE
-            //            memoryRange.memory = vkBuffer.memory
-            //            memoryRange.size = VkDeviceSize(range.count)
-            //            memoryRange.offset = VkDeviceSize(range.lowerBound)
-            //
-            //            vkFlushMappedMemoryRanges(self.device.vkDevice, 1, &memoryRange)
-            //        }
-            
-            fatalError()
-//            vkBuffer.unmapMemory(range: range)
-        }
+        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        let buffer = bufferReference.buffer
+        buffer.unmapMemory(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
     public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        fatalError()
+        self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: 0, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * region.size.height * region.size.depth)
     }
     
     public func dispose(texture: Texture) {
@@ -170,7 +167,39 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     @usableFromInline
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
-        fatalError("replaceTextureRegion is unimplemented on Vulkan")
+        
+        let textureReference = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
+        let image = textureReference.image
+
+        var data: UnsafeMutableRawPointer! = nil
+        vmaMapMemory(image.allocator!, image.allocation!, &data)
+
+        var subresource = VkImageSubresource()
+        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT.rawValue;
+        subresource.mipLevel = UInt32(mipmapLevel)
+        subresource.arrayLayer = UInt32(slice)
+
+        var layout = VkSubresourceLayout()
+        vkGetImageSubresourceLayout(self.device.vkDevice, image.vkImage, &subresource, &layout)
+
+        data += Int(layout.offset)
+
+        let bytesPerPixel = texture.descriptor.pixelFormat.bytesPerPixel
+
+        var sourcePointer = bytes
+        for z in region.origin.z..<region.origin.z + region.size.depth {
+            let zSliceData = data + z * Int(layout.depthPitch)
+            for row in region.origin.y..<region.origin.y + region.size.height {
+                let offsetInRow = Int(exactly: bytesPerPixel * Double(region.origin.x))!
+                let bytesInRow = Int(exactly: bytesPerPixel * Double(region.size.width))!
+                assert(bytesInRow == bytesPerRow)
+
+                (zSliceData + row * Int(layout.rowPitch) + offsetInRow).copyMemory(from: sourcePointer, byteCount: bytesInRow)
+                sourcePointer += bytesPerRow
+            }
+        }
+
+        vmaUnmapMemory(image.allocator!, image.allocation!)
     }
     
     @usableFromInline
@@ -192,13 +221,52 @@ public final class VulkanBackend : SpecificRenderBackend {
     static var requiresBufferUsage: Bool {
         return true
     }
+
+    static var requiresTextureLayoutTransitions: Bool {
+        return true
+    }
     
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
-        fatalError()
+        storage.encodeArguments(from: argumentBuffer, resourceMap: resourceMap)
     }
     
     static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
         fatalError()
+    }
+    
+    func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> VulkanTransientResourceRegistry {
+        return VulkanTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
+    }
+    
+    func makeQueue(frameGraphQueue: Queue) -> VulkanDeviceQueue {
+        return self.device.deviceQueue(capabilities: frameGraphQueue.capabilities, requiredCapability: frameGraphQueue.capabilities)
+    }
+    
+    func makeSyncEvent(for queue: Queue) -> Event {
+        var semaphoreTypeCreateInfo = VkSemaphoreTypeCreateInfo()
+        semaphoreTypeCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO
+        semaphoreTypeCreateInfo.initialValue = 0
+        semaphoreTypeCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE
+        
+        var semaphore: VkSemaphore? = nil
+        withUnsafePointer(to: semaphoreTypeCreateInfo) { semaphoreTypeCreateInfo in
+            var semaphoreCreateInfo = VkSemaphoreCreateInfo()
+            semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+            semaphoreCreateInfo.pNext = UnsafeRawPointer(semaphoreTypeCreateInfo)
+            vkCreateSemaphore(self.device.vkDevice, &semaphoreCreateInfo, nil, &semaphore)
+        }
+        self.queueSyncSemaphores[Int(queue.index)] = semaphore
+        return semaphore!
+    }
+    
+    func syncEvent(for queue: Queue) -> VkSemaphore? {
+        return self.queueSyncSemaphores[Int(queue.index)]
+    }
+    
+    func freeSyncEvent(for queue: Queue) {
+        assert(self.queueSyncSemaphores[Int(queue.index)] != nil)
+        vkDestroySemaphore(self.device.vkDevice, self.queueSyncSemaphores[Int(queue.index)], nil)
+        self.queueSyncSemaphores[Int(queue.index)] = nil
     }
 }
 

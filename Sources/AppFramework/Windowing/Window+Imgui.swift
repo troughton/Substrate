@@ -37,9 +37,9 @@ extension ImGui {
         }
     
         for (i, screen) in screens.enumerated() {
-            let monitor = ImGuiPlatformMonitor(MainPos: ImVec2(x: screen.position.x, y: screen.position.y + screen.dimensions.height),
+            let monitor = ImGuiPlatformMonitor(MainPos: ImVec2(x: screen.position.x, y: screen.position.y),
                                                MainSize: ImVec2(x: screen.dimensions.width, y: screen.dimensions.height),
-                                               WorkPos: ImVec2(x: screen.workspacePosition.x, y: screen.workspacePosition.y + screen.workspaceDimensions.height),
+                                               WorkPos: ImVec2(x: screen.workspacePosition.x, y: screen.workspacePosition.y),
                                                WorkSize: ImVec2(x: screen.workspaceDimensions.width, y: screen.workspaceDimensions.height),
                                                DpiScale: screen.backingScaleFactor)
             platformIO.pointee.Monitors.Data[i] = monitor
@@ -53,7 +53,7 @@ extension ImGui {
         let (pixels, width, height, bytesPerPixel) = ImGui.getFontTexDataAsAlpha8()
         
         var textureDescriptor = TextureDescriptor(type: .type2D, format: .r8Unorm, width: width, height: height, mipmapped: false)
-        textureDescriptor.storageMode = .managed
+        textureDescriptor.storageMode = .shared
         textureDescriptor.usageHint = [.shaderRead]
         let fontTexture = Texture(descriptor: textureDescriptor, flags: .persistent)
         fontTexture.replace(region: Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, withBytes: pixels, bytesPerRow: width * bytesPerPixel)
@@ -99,12 +99,12 @@ extension ImGui {
         }
         
         platformIO.pointee.Platform_SetWindowPos = { (viewport, position) in
+            let window = viewport!.pointee.window
             window.position = WindowPosition(position.x, position.y)
         }
         
         platformIO.pointee.Platform_SetWindowSize = { (viewport, size) in
             let window = viewport!.pointee.window
-            let oldHeight = window.dimensions.height
             window.dimensions = WindowSize(Float(size.x), Float(size.y))
         }
         
@@ -150,8 +150,8 @@ extension ImGui {
     }
     
     public static func beginFrame(windows: [Window], inputLayer: ImGuiInputLayer, deltaTime: Double) {
-        let screens = self.updateScreens()
-        
+        _ = self.updateScreens()
+
         let io = ImGui.io
         let oldMousePosition = ImGui.io.pointee.MousePos
         

@@ -9,186 +9,55 @@
 import Vulkan
 import FrameGraphCExtras
 
-public enum QueueFamily : Int {
+enum QueueFamily : Int {
     case graphics
     case compute
     case copy
     case present
 }
 
-public struct QueueFamilies : OptionSet {
-    public let rawValue: Int
-    
-    public init(rawValue: Int) {
-        self.rawValue = rawValue
-    }
-    
-    public init(_ family: QueueFamily) {
+extension QueueCapabilities {
+    init(_ family: QueueFamily) {
         switch family {
-        case .graphics:
-            self = .graphics
+        case .graphics, .present:
+            self = .render
         case .compute:
             self = .compute
         case .copy:
-            self = .copy
-        case .present:
-            self = .present
+            self = .blit
         }
-    }
-    
-    public static let graphics = QueueFamilies(rawValue: 1 << 0)
-    public static let compute = QueueFamilies(rawValue: 1 << 1)
-    public static let copy = QueueFamilies(rawValue: 1 << 2)
-    public static let present = QueueFamilies(rawValue: 1 << 3)
-    
-    public static var all : QueueFamilies = [.graphics, .compute, .copy, .present]
-    
-    public func isSingleQueue(indices: QueueFamilyIndices) -> Bool {
-        var index : Int? = nil
-        if self.contains(.graphics) {
-            index = indices.graphics
-        }
-        if self.contains(.compute) {
-            if index != nil, indices.compute != index {
-                return false
-            } else {
-                index = indices.compute
-            }
-        }
-        if self.contains(.copy) {
-            if index != nil, indices.copy != index {
-                return false
-            } else {
-                index = indices.copy
-            }
-        }
-        if self.contains(.present) {
-            return false // FIXME: what should we do here?
-        }
-        return true
-        
     }
 }
 
-public struct QueueFamilyIndices {
-    public let graphics : Int
-    public let compute : Int
-    public let copy : Int
-    public let present : Int
+public final class VulkanPhysicalDevice {
+    public let vkDevice : VkPhysicalDevice
+    public let queueCapabilities : [QueueCapabilities]
+    let queueFamilies: [VkQueueFamilyProperties]
     
-    fileprivate init(device: VkPhysicalDevice, surface: VkSurfaceKHR) {
+    init(device: VkPhysicalDevice) {
+        self.vkDevice = device
         
         var queueFamilyCount = 0 as UInt32
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nil)
         
         var queueFamilies = [VkQueueFamilyProperties](repeating: VkQueueFamilyProperties(), count: Int(queueFamilyCount))
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, &queueFamilies)
+        self.queueFamilies = queueFamilies
         
-        var graphicsFamily = -1
-        var computeFamily = -1
-        var transferFamily = -1
-        var presentFamily = -1
-        
-        for (i, queueFamily) in queueFamilies.enumerated() {
-            if queueFamily.queueCount == 0 {
-                continue
+        self.queueCapabilities = queueFamilies.enumerated().map { (i, queueFamily) in
+            var capabilities: QueueCapabilities = []
+            let queueFlags = VkQueueFlagBits(queueFamily.queueFlags)
+            if queueFlags.contains(VK_QUEUE_GRAPHICS_BIT) {
+                capabilities.insert([.render, .blit])
+            }
+            if queueFlags.contains(VK_QUEUE_COMPUTE_BIT) {
+                capabilities.insert([.compute, .blit])
+            }
+            if queueFlags.contains(VK_QUEUE_TRANSFER_BIT) {
+                capabilities.insert(.blit)
             }
             
-            if VkQueueFlagBits(queueFamily.queueFlags).contains(VK_QUEUE_GRAPHICS_BIT) {
-                graphicsFamily = i
-            }
-            
-            if VkQueueFlagBits(queueFamily.queueFlags).contains(VK_QUEUE_COMPUTE_BIT) {
-                computeFamily = i
-            }
-            
-            if VkQueueFlagBits(queueFamily.queueFlags).contains(VK_QUEUE_TRANSFER_BIT) {
-                transferFamily = i
-            }
-            
-            var presentSupport = false as VkBool32
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, UInt32(i), surface, &presentSupport)
-            
-            if presentSupport != false {
-                presentFamily = i
-            }
-            
-            if graphicsFamily != -1 && computeFamily != -1 && presentFamily != -1 {
-                break
-            }
-        }
-        
-        if transferFamily == -1 { // Transfer family is optional as all graphics/compute queues implicitly support it.
-            transferFamily = graphicsFamily
-        }
-        
-        self.graphics = graphicsFamily
-        self.compute = computeFamily
-        self.copy = transferFamily
-        self.present = presentFamily
-    }
-}
-
-public final class VulkanPhysicalDevice {
-    public let vkDevice : VkPhysicalDevice
-    public let queueFamilyIndices : QueueFamilyIndices
-    
-    init(device: VkPhysicalDevice, surface: VkSurfaceKHR) {
-        self.vkDevice = device
-        self.queueFamilyIndices = QueueFamilyIndices(device: device, surface: surface)
-    }
-    
-    public func presentQueueIndex(surface: VkSurfaceKHR) -> Int? {
-        
-        var queueFamilyCount = 0 as UInt32
-        vkGetPhysicalDeviceQueueFamilyProperties(self.vkDevice, &queueFamilyCount, nil)
-        
-        var queueFamilies = [VkQueueFamilyProperties](repeating: VkQueueFamilyProperties(), count: Int(queueFamilyCount))
-        vkGetPhysicalDeviceQueueFamilyProperties(self.vkDevice, &queueFamilyCount, &queueFamilies)
-        
-        var bestIndex : Int? = nil
-        
-        for (i, queueFamily) in queueFamilies.enumerated() {
-        
-            var presentSupport = false as VkBool32
-            vkGetPhysicalDeviceSurfaceSupportKHR(self.vkDevice, UInt32(i), surface, &presentSupport)
-        
-            if queueFamily.queueCount > 0 && (presentSupport != false) {
-                if i == self.queueFamilyIndices.graphics { return i }
-                if bestIndex == nil { bestIndex = i }
-            }
-        }
-
-        return nil
-    }
-    
-    public func queueFamilyIndices(for families: QueueFamilies) -> [UInt32] {
-        var indices = Set<Int>()
-        if families.contains(.graphics) {
-            indices.insert(self.queueFamilyIndices.graphics)
-        }
-        if families.contains(.compute) {
-            indices.insert(self.queueFamilyIndices.compute)
-        }
-        if families.contains(.copy) {
-            indices.insert(self.queueFamilyIndices.copy)
-        }
-        if families.contains(.present) {
-            indices.insert(self.queueFamilyIndices.present)
-        }
-        return indices.map { UInt32($0) }
-    }
-    
-    public func queueFamilyIndex(renderPassType: RenderPassType) -> Int {
-        switch renderPassType {
-        case .draw:
-            return self.queueFamilyIndices.graphics
-        case .compute, .external:
-            return self.queueFamilyIndices.compute
-        case .blit:
-            return self.queueFamilyIndices.copy
-        case .cpu:
-            fatalError()
+            return capabilities
         }
     }
 }
@@ -197,17 +66,25 @@ public final class VulkanDevice {
     
     static let deviceExtensions : [StaticString] = [
         "VK_KHR_swapchain", // VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        "VK_KHR_timeline_semaphore"
     ]
     
     public let physicalDevice : VulkanPhysicalDevice
     let vkDevice : VkDevice
     
-    private(set) var queues : [VulkanQueue] = []
+    private(set) var queues : [VulkanDeviceQueue] = []
     
     init?(physicalDevice: VulkanPhysicalDevice) {
         self.physicalDevice = physicalDevice
+
+        do {
+            var properties = VkPhysicalDeviceProperties()
+            vkGetPhysicalDeviceProperties(physicalDevice.vkDevice, &properties)
+            print("Using VkPhysicalDevice \(String(cStringTuple: properties.deviceName)) with API version \(VulkanVersion(properties.apiVersion)) and driver version \(VulkanVersion(properties.driverVersion))")
+        }
+        // Strategy: one render queue, as many async compute queues as we can get, and a couple of copy queues.
         
-        let queueIndicesArray = physicalDevice.queueFamilyIndices(for: [.graphics, .compute, .copy])
+        var activeQueues = [(familyIndex: Int, queueIndex: Int)]()
         
         var device : VkDevice? = nil
         let queuePriority = 1.0 as Float
@@ -215,43 +92,68 @@ public final class VulkanDevice {
             
             var queueCreateInfos = [VkDeviceQueueCreateInfo]()
             
-            for queueFamily in queueIndicesArray {
+            var hasRenderQueue = false
+            
+            for (i, queueFamily) in physicalDevice.queueFamilies.enumerated() {
                 var queueCreateInfo = VkDeviceQueueCreateInfo()
                 queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO
-                queueCreateInfo.queueFamilyIndex = queueFamily
-                queueCreateInfo.queueCount = 1
+                queueCreateInfo.queueFamilyIndex = UInt32(i)
+                
                 queueCreateInfo.pQueuePriorities = queuePriorityPtr
-                queueCreateInfos.append(queueCreateInfo)
+                queueCreateInfo.queueCount = 1
+                
+                let queueFlags = VkQueueFlagBits(queueFamily.queueFlags)
+                if !hasRenderQueue, queueFlags.contains(VK_QUEUE_GRAPHICS_BIT) {
+                    hasRenderQueue = true
+                    queueCreateInfos.append(queueCreateInfo)
+                    activeQueues.append((i, 0))
+                } else if !queueFlags.contains(VK_QUEUE_GRAPHICS_BIT) {
+                    for j in 0..<queueFamily.queueCount {
+                        queueCreateInfos.append(queueCreateInfo)
+                        activeQueues.append((i, Int(j)))
+                    }
+                }
             }
-            
-            var deviceFeatures = VkPhysicalDeviceFeatures()
-            deviceFeatures.independentBlend = VkBool32(VK_TRUE)
-            deviceFeatures.depthClamp = VkBool32(VK_TRUE)
-            deviceFeatures.depthBiasClamp = VkBool32(VK_TRUE)
             
             var createInfo = VkDeviceCreateInfo()
             createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
             
             queueCreateInfos.withUnsafeBufferPointer { queueCreateInfos in
                 createInfo.queueCreateInfoCount = UInt32(queueCreateInfos.count)
+                createInfo.pQueueCreateInfos = queueCreateInfos.baseAddress
                 
-                withUnsafePointer(to: deviceFeatures) { deviceFeatures in
-                    createInfo.pEnabledFeatures = deviceFeatures;
                                    
-                    let extensions = VulkanDevice.deviceExtensions.map { ext -> UnsafePointer<CChar>? in
-                        return UnsafeRawPointer(ext.utf8Start).assumingMemoryBound(to: CChar.self)
-                    }
+                let extensions = VulkanDevice.deviceExtensions.map { ext -> UnsafePointer<CChar>? in
+                    return UnsafeRawPointer(ext.utf8Start).assumingMemoryBound(to: CChar.self)
+                }
+                
+                extensions.withUnsafeBufferPointer { extensions in
+                    createInfo.enabledExtensionCount = UInt32(extensions.count)
+                    createInfo.ppEnabledExtensionNames = extensions.baseAddress
                     
-                    extensions.withUnsafeBufferPointer { extensions in
-                        createInfo.enabledExtensionCount = UInt32(extensions.count)
-                        createInfo.ppEnabledExtensionNames = extensions.baseAddress
-                        
-                        createInfo.enabledLayerCount = 0
-                        
-                        if !vkCreateDevice(physicalDevice.vkDevice, &createInfo, nil, &device).check() {
-                            print("Failed to create Vulkan logical device!")
+                    createInfo.enabledLayerCount = 0
+
+                    var timelineSemaphore = VkPhysicalDeviceTimelineSemaphoreFeatures()
+                    timelineSemaphore.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES
+                    timelineSemaphore.timelineSemaphore = true
+
+                    withUnsafeMutablePointer(to: &timelineSemaphore) { timelineSemaphore in
+                        var deviceFeatures = VkPhysicalDeviceFeatures2()
+                        deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+                        deviceFeatures.features.independentBlend = VkBool32(VK_TRUE)
+                        deviceFeatures.features.depthClamp = VkBool32(VK_TRUE)
+                        deviceFeatures.features.depthBiasClamp = VkBool32(VK_TRUE)
+                        deviceFeatures.pNext = UnsafeMutableRawPointer(timelineSemaphore)
+
+                        withUnsafePointer(to: deviceFeatures) { deviceFeatures in
+                            createInfo.pNext = UnsafeRawPointer(deviceFeatures)
+
+                            if !vkCreateDevice(physicalDevice.vkDevice, &createInfo, nil, &device).check() {
+                                print("Failed to create Vulkan logical device!")
+                            }
                         }
                     }
+                    
                 }
             }
         }
@@ -259,24 +161,9 @@ public final class VulkanDevice {
         if device == nil { return nil }
         self.vkDevice = device!
         
-        let queueIndices = physicalDevice.queueFamilyIndices
-        
-        var queues = [VulkanQueue]()
-        let graphicsQueue = VulkanQueue(device: self, queueFamilies: .graphics)
-        queues.append(graphicsQueue)
-        
-        let computeQueue = queueIndices.compute == queueIndices.copy ? graphicsQueue : VulkanQueue(device: self, queueFamilies: .compute)
-        queues.append(computeQueue)
-        
-        let copyQueue : VulkanQueue
-        if queueIndices.copy == queueIndices.graphics {
-            copyQueue = graphicsQueue
-        } else if queueIndices.copy == queueIndices.compute {
-            copyQueue = computeQueue
-        } else {
-            copyQueue = VulkanQueue(device: self, queueFamilies: .copy)
+        let queues = activeQueues.map { (familyIndex, queueIndex) -> VulkanDeviceQueue in
+            return VulkanDeviceQueue(device: self, familyIndex: familyIndex, queueIndex: queueIndex)
         }
-        queues.append(copyQueue)
         
         self.queues = queues
     }
@@ -284,9 +171,47 @@ public final class VulkanDevice {
     deinit {
         vkDestroyDevice(self.vkDevice, nil)
     }
+    
+    public func queueFamilyIndex(capabilities: QueueCapabilities, requiredCapability: QueueCapabilities) -> Int {
+        assert(capabilities.contains(requiredCapability))
+        
+        // Check for an exact match first
+        if let familyIndex = self.physicalDevice.queueCapabilities.firstIndex(of: capabilities) {
+            return familyIndex
+        }
+        
+        // Then, check for a superset.
+        if let familyIndex = self.physicalDevice.queueCapabilities.firstIndex(where: { $0.contains(capabilities) }) {
+            return familyIndex
+        }
+        
+        // Check for an exact match
+        if let familyIndex = self.physicalDevice.queueCapabilities.firstIndex(of: requiredCapability) {
+            return familyIndex
+        }
+        
+        // Check for a superset.
+        if let familyIndex = self.physicalDevice.queueCapabilities.firstIndex(where: { $0.contains(requiredCapability) }) {
+            return familyIndex
+        }
+        
+        fatalError("No Vulkan queue supports the capability \(requiredCapability).")
+    }
+    
+    public func deviceQueue(capabilities: QueueCapabilities, requiredCapability: QueueCapabilities) -> VulkanDeviceQueue {
+        let familyIndex = self.queueFamilyIndex(capabilities: capabilities, requiredCapability: requiredCapability)
+        return self.queues.first(where: { $0.familyIndex == familyIndex })!
+    }
 
-    public func queueForFamily(_ queue: QueueFamily) -> VulkanQueue {
-        return self.queues[queue.rawValue]
+    public func presentQueue(surface: VkSurfaceKHR) -> VulkanDeviceQueue? {
+        for familyIndex in 0..<self.queues.count {
+            var supported: VkBool32 = 0
+            vkGetPhysicalDeviceSurfaceSupportKHR(self.physicalDevice.vkDevice, UInt32(familyIndex), surface, &supported).check()
+            if supported != VK_FALSE {
+                return self.queues.first(where: { $0.familyIndex == familyIndex })
+            }
+        }
+        return nil
     }
 }
 

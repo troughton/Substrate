@@ -21,14 +21,18 @@
 //
 
 
-#if __has_include(<vulkan/vulkan.h>)
+#if __has_include(<vulkan/vulkan.h>) || __has_include("/usr/local/include/vulkan/vulkan.h")
 
 #ifndef AMD_VULKAN_MEMORY_ALLOCATOR_H
 #define AMD_VULKAN_MEMORY_ALLOCATOR_H
 
 
 #ifndef VULKAN_H_
+#if __has_include(<vulkan/vulkan.h>)
     #include <vulkan/vulkan.h>
+#else
+    #include "/usr/local/include/vulkan/vulkan.h"
+#endif
 #endif
 
 #ifdef __cplusplus

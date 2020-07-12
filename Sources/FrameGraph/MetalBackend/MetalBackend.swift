@@ -214,6 +214,11 @@ final class MetalBackend : SpecificRenderBackend {
         // Metal does not track buffer usages.
         return false
     }
+
+    static var requiresTextureLayoutTransitions: Bool {
+        // Metal handles layout transitions through residency tracking.
+        return false 
+    }
     
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
@@ -223,7 +228,7 @@ final class MetalBackend : SpecificRenderBackend {
         argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
-    func makeQueue() -> MTLCommandQueue {
+    func makeQueue(frameGraphQueue: Queue) -> MTLCommandQueue {
         return self.device.makeCommandQueue()!
     }
 
@@ -400,11 +405,31 @@ final class MetalBackend : SpecificRenderBackend {
                     encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
                 }
                 
-            case .memoryBarrier(let resource, let scope, let afterStages, let beforeCommand, let beforeStages):
+            case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages):
+                
+                var scope: MTLBarrierScope = []
+                
+                #if os(macOS) || targetEnvironment(macCatalyst)
+                let isRTBarrier = afterUsage.isRenderTarget || beforeUsage.isRenderTarget
+                if isRTBarrier {
+                    scope.formUnion(.renderTargets)
+                }
+                #endif
+                
+                if !isRTBarrier {
+                    if resource.type == .texture {
+                        scope.formUnion(.textures)
+                    } else if resource.type == .buffer || resource.type == .argumentBuffer || resource.type == .argumentBufferArray {
+                        scope.formUnion(.buffers)
+                    } else {
+                        assertionFailure()
+                    }
+                }
+                
                 if barrierResources.count < 8 {
                     barrierResources.append(getResource(resource))
                 }
-                barrierScope.formUnion(MTLBarrierScope(scope))
+                barrierScope.formUnion(scope)
                 barrierAfterStages.formUnion(MTLRenderStages(afterStages))
                 barrierBeforeStages.formUnion(MTLRenderStages(beforeStages))
                 barrierLastIndex = min(beforeCommand, barrierLastIndex)

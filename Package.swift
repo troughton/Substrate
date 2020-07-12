@@ -25,8 +25,8 @@ let package = Package(
     targets: [
         // FrameGraph
         .target(name: "FrameGraphTextureIO", dependencies: ["SwiftFrameGraph", "stb_image", "stb_image_resize", "stb_image_write", "tinyexr", "LodePNG"]),
-        .target(name: "FrameGraphCExtras"),
-        .target(name: "SwiftFrameGraph", dependencies: ["FrameGraphUtilities", "FrameGraphCExtras", "SwiftAtomics", "SPIRV-Cross"], path: "Sources/FrameGraph"),
+        .target(name: "FrameGraphCExtras", dependencies: ["Vulkan"]),
+        .target(name: "SwiftFrameGraph", dependencies: ["FrameGraphUtilities", "FrameGraphCExtras", "SwiftAtomics", "SPIRV-Cross", "Vulkan"], path: "Sources/FrameGraph"),
         .target(name: "FrameGraphUtilities", dependencies: ["SwiftAtomics"]),
     
         // ShaderTool
@@ -43,13 +43,16 @@ let package = Package(
                 .apt(["sdl2"]),
             ]
         ),
-//        .systemLibrary(
-//            name: "Vulkan"
-//        ),
+        .systemLibrary(
+            name: "Vulkan",
+            providers: [
+                .brew(["vulkan-headers"])
+            ]
+        ),
         .target(name: "CNativeFileDialog"),
         .target(
             name: "AppFramework",
-            dependencies: ["FrameGraphUtilities", "SwiftFrameGraph", "SwiftMath", "ImGui", "CNativeFileDialog"]),
+            dependencies: ["FrameGraphUtilities", "SwiftFrameGraph", "SwiftMath", "ImGui", "CNativeFileDialog", "CSDL2", "Vulkan"]),
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14
 )

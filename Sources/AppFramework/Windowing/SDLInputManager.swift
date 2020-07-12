@@ -79,13 +79,14 @@ public final class SDLInputManager : InputManager {
         while SDL_PollEvent(&event) != 0 {
             let windowId = event.window.windowID
                     
-            let window = windows.first(where: { (window) -> Bool in
+            guard let window = windows.first(where: { (window) -> Bool in
                 return (window as! SDLWindow).sdlWindowId == windowId
-            }) as! SDLWindow?
+            }) as! SDLWindow? else {
+                continue
+            }
             
             if event.type == SDL_WINDOWEVENT.rawValue {
-                
-                window!.didReceiveEvent(event: event)
+                window.didReceiveEvent(event: event)
             } else {
                 switch SDL_EventType(rawValue: SDL_EventType.RawValue(event.type)) {
                     
@@ -149,8 +150,13 @@ public final class SDLInputManager : InputManager {
                     
                 case SDL_MOUSEMOTION:
                     let motion = event.motion
-                    inputState[.mouseX] = RawInputState(value: Float(motion.x), frame: frame)
-                    inputState[.mouseY] = RawInputState(value: Float(motion.y), frame: frame)
+                    
+                    var x = 0 as Int32
+                    var y = 0 as Int32
+                    SDL_GetGlobalMouseState(&x, &y)
+                    
+                    inputState[.mouseX] = RawInputState(value: Float(x), frame: frame)
+                    inputState[.mouseY] = RawInputState(value: Float(y), frame: frame)
                     inputState[.mouseXInWindow] = RawInputState(value: Float(motion.x), frame: frame)
                     inputState[.mouseYInWindow] = RawInputState(value: Float(motion.y), frame: frame)
                     inputState[.mouseXRelative] = RawInputState(value: Float(motion.xrel), frame: frame)
@@ -328,7 +334,7 @@ extension InputSource {
         }
     }
     
-    init?(sdlKeyCode: Int, modifiers: SDLModifiers) {
+    init?(sdlKeyCode: SDL_KeyCode, modifiers: SDLModifiers) {
         switch sdlKeyCode {
             
         // special keys
@@ -698,7 +704,7 @@ extension InputSource {
         if useScanCode {
             self.init(sdlScanCode: keySymbol.scancode)
         } else {
-            self.init(sdlKeyCode: Int(keySymbol.sym), modifiers: SDLModifiers(rawValue: SDLModifiers.RawValue(keySymbol.mod)))
+            self.init(sdlKeyCode: SDL_KeyCode(rawValue: SDL_KeyCode.RawValue(keySymbol.sym)), modifiers: SDLModifiers(rawValue: SDLModifiers.RawValue(keySymbol.mod)))
         }
     }
     

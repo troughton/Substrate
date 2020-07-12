@@ -12,11 +12,33 @@ import FrameGraphCExtras
 // public typealias VkCmdPushDescriptorSetKHRFunc = @convention(c) (VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, UInt32, UInt32, UnsafePointer<VkWriteDescriptorSet>) -> Void
 // public fileprivate(set) var vkCmdPushDescriptorSetKHR : VkCmdPushDescriptorSetKHRFunc! = nil
 
-public struct VulkanVersion {
+public struct VulkanVersion: CustomStringConvertible {
     var value : UInt32
     
+    init(_ value: UInt32) {
+        self.value = value
+    }
+
     public init(major: Int, minor: Int, patch: Int) {
         self.value = (UInt32(major) << 22) | (UInt32(minor) << 12) | UInt32(patch)
+    }
+
+    public var major: Int {
+        return Int(self.value >> 22)
+    }
+
+    public var minor: Int {
+        return Int((self.value >> 12) & 0b11_1111_1111)
+    }
+
+    public var patch: Int {
+        return Int(self.value & 0x0FFF)
+    }
+
+    static let apiVersion = VulkanVersion(major: 1, minor: 2, patch: 0)
+
+    public var description: String {
+        return "\(self.major).\(self.minor).\(self.patch)"
     }
 }
 
@@ -25,16 +47,16 @@ public final class VulkanInstance {
     var debugCallback : VkDebugReportCallbackEXT? = nil
 
     static let validationLayers : [StaticString] = [
-        "VK_LAYER_LUNARG_standard_validation"
+        "VK_LAYER_KHRONOS_validation",
     ]
     
-    static func validationLayersSupported(_ layers: [StaticString]) -> Bool {
+    static func areLayersSupported(_ layers: [StaticString]) -> Bool {
         var layerCount : UInt32 = 0
         vkEnumerateInstanceLayerProperties(&layerCount, nil).check()
         
         var availableLayers = [VkLayerProperties](repeating: .init(), count: Int(layerCount))
         vkEnumerateInstanceLayerProperties(&layerCount, &availableLayers)
-        
+
         for layerName in layers {
             let layerNameStr = layerName.description
             if !availableLayers.contains(where: { $0.layerNameStr == layerNameStr }) {
@@ -59,17 +81,16 @@ public final class VulkanInstance {
             return nil
         }
         
-        var extensions = [
+        var extensions: [String] = [
             VK_KHR_SURFACE_EXTENSION_NAME,
         ]
-#if VK_USE_PLATFORM_WIN32_KHR
+#if os(Windows)
         extensions.append(VK_KHR_WIN32_SURFACE_EXTENSION_NAME)
 #endif
-
 #if VK_USE_PLATFORM_XCB_KHR
         extensions.append(VK_KHR_XCB_SURFACE_EXTENSION_NAME)
 #endif
-#if VK_USE_PLATFORM_XLIB_KHR
+#if os(Linux)
         extensions.append(VK_KHR_XLIB_SURFACE_EXTENSION_NAME)
 #endif
         
@@ -77,11 +98,26 @@ public final class VulkanInstance {
             extensions.append(VK_EXT_DEBUG_REPORT_EXTENSION_NAME)
         }
         
+        var extensionCStringPointers = [UnsafePointer<CChar>?]()
+        extensionCStringPointers.reserveCapacity(extensions.count)
+        
+        let extensionsLength = extensions.reduce(0, { $0 + $1.utf8.count + 1 })
+        let extensionBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: extensionsLength)
+        extensionBuffer.initialize(repeating: 0, count: extensionsLength)
+        var extensionCursor = extensionBuffer
+        defer { extensionBuffer.deallocate() }
+
         for ext in extensions {
-            if !availableExtensions.contains(where: { $0.extensionNameStr == ext }) {
+            guard  availableExtensions.contains(where: { $0.extensionNameStr == ext }) else {
                 print("Could not find instance extension named \(ext)!")
                 return nil
             }
+            extensionCStringPointers.append(extensionCursor)
+            for char in ext.utf8 {
+                extensionCursor.pointee = CChar(char)
+                extensionCursor += 1
+            }
+            extensionCursor += 1
         }
 
         var instance : VkInstance! = nil
@@ -95,7 +131,7 @@ public final class VulkanInstance {
                 applicationInfo.pApplicationName = applicationName
                 applicationInfo.engineVersion = engineVersion.value
                 applicationInfo.applicationVersion = applicationVersion.value
-                applicationInfo.apiVersion = VulkanVersion(major: 1, minor: 1, patch: 0).value
+                applicationInfo.apiVersion = VulkanVersion.apiVersion.value
                 
                 withUnsafePointer(to: &applicationInfo) { applicationInfo in
                     var instanceCreateInfo = VkInstanceCreateInfo()
@@ -107,7 +143,7 @@ public final class VulkanInstance {
                     var layerNames = [UnsafePointer<CChar>?]()
                     
                     if _isDebugAssertConfiguration() {
-                        if !VulkanInstance.validationLayersSupported(VulkanInstance.validationLayers) {
+                        if !VulkanInstance.areLayersSupported(VulkanInstance.validationLayers) {
                             print("Vulkan validation layers are not supported.")
                         } else {
                             for layer in VulkanInstance.validationLayers {
@@ -119,9 +155,15 @@ public final class VulkanInstance {
                     layerNames.withUnsafeBufferPointer { layerNames in
                         instanceCreateInfo.enabledLayerCount = UInt32(layerNames.count)
                         instanceCreateInfo.ppEnabledLayerNames = layerNames.baseAddress
-                        
-                        if !vkCreateInstance(&instanceCreateInfo, nil, &instance).check() {
-                            print("Could not create Vulkan instance!")
+
+                        extensionCStringPointers.withUnsafeBufferPointer { extensions in
+                            instanceCreateInfo.ppEnabledExtensionNames = extensions.baseAddress
+                            instanceCreateInfo.enabledExtensionCount = UInt32(extensions.count)
+                            
+                            if !vkCreateInstance(&instanceCreateInfo, nil, &instance).check() {
+                                print("Could not create Vulkan instance!")
+                            }
+
                         }
                     }
                 }
@@ -131,7 +173,7 @@ public final class VulkanInstance {
         if instance == nil {
             return nil
         }
-        
+
         self.instance = instance
         
         if _isDebugAssertConfiguration() {
@@ -144,8 +186,8 @@ public final class VulkanInstance {
                 callbackCreateInfo.flags = ([VK_DEBUG_REPORT_ERROR_BIT_EXT,
                                              VK_DEBUG_REPORT_WARNING_BIT_EXT,
                                              VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT,
-                                             //                                      VK_DEBUG_REPORT_DEBUG_BIT_EXT,
-                    //                                      VK_DEBUG_REPORT_INFORMATION_BIT_EXT
+                                            //  VK_DEBUG_REPORT_DEBUG_BIT_EXT,
+                                            // VK_DEBUG_REPORT_INFORMATION_BIT_EXT
                     ] as VkDebugReportFlagBitsEXT).rawValue
                 
                 callbackCreateInfo.pfnCallback = { flags, objectType, object,  location, messageCode, pLayerPrefix, pMessage, pUserData in
@@ -157,7 +199,11 @@ public final class VulkanInstance {
                 /* Register the callback */
                 if !vkCreateDebugReportCallbackEXT(instance, &callbackCreateInfo, nil, &self.debugCallback).check() {
                     print("Could not register Vulkan debug report callback.")
+                } else {
+                    print("Registered Vulkan debug callback.")
                 }
+            } else {
+                print("Could not find Vulkan debug report callback.")
             }
         }
         
@@ -175,7 +221,7 @@ public final class VulkanInstance {
         // vkCmdPushDescriptorSetKHR = unsafeBitCast(vkGetInstanceProcAddr(instance, "vkCmdPushDescriptorSetKHR"), to: VkCmdPushDescriptorSetKHRFunc.self)
     }
     
-    public func copyAllDevices(surface: VkSurfaceKHR) -> [VulkanPhysicalDevice] {
+    public func copyAllDevices() -> [VulkanPhysicalDevice] {
         var deviceCount = 0 as UInt32
         vkEnumeratePhysicalDevices(self.instance, &deviceCount, nil)
         
@@ -186,11 +232,27 @@ public final class VulkanInstance {
         var devices = [VkPhysicalDevice?](repeating: nil, count: Int(deviceCount))
         vkEnumeratePhysicalDevices(self.instance, &deviceCount, &devices)
         
-        return devices.map { VulkanPhysicalDevice(device: $0!, surface: surface) }
+        return devices.map { VulkanPhysicalDevice(device: $0!) }
     }
     
-    public func createSystemDefaultDevice(surface: VkSurfaceKHR) -> VulkanPhysicalDevice? {
-        return self.copyAllDevices(surface: surface).first
+    public func createSystemDefaultDevice() -> VulkanPhysicalDevice? {
+        let devices = self.copyAllDevices()
+        
+        let properties = devices.map { device -> VkPhysicalDeviceProperties in
+            var properties = VkPhysicalDeviceProperties()
+            vkGetPhysicalDeviceProperties(device.vkDevice, &properties)
+            return properties
+        }
+
+        if let discreteGPUIndex = properties.firstIndex(where: { $0.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU }) {
+            return devices[discreteGPUIndex]
+        }
+
+        if let integratedGPUIndex = properties.firstIndex(where: { $0.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU }) {
+            return devices[integratedGPUIndex]
+        }
+
+        return devices.first
     }
 }
 

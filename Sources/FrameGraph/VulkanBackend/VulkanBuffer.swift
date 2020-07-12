@@ -33,9 +33,7 @@ struct VulkanBufferDescriptor : Equatable {
         createInfo.usage = VkBufferCreateFlags(self.usageFlags)
         
         switch self.sharingMode {
-        case .concurrent(let queueFamilies):
-            let queueIndices = device.physicalDevice.queueFamilyIndices(for: queueFamilies)
-            
+        case .concurrent(let queueIndices):
             if queueIndices.count == 1 {
                 fallthrough
             } else {
@@ -64,7 +62,8 @@ class VulkanBuffer {
     var label : String? = nil
     
     var hasBeenHostUpdated = false
-    
+    var isMapped = false // TODO: we should instead keep tracked of mapped ranges.
+
     init(device: VulkanDevice, buffer: VkBuffer, allocator: VmaAllocator, allocation: VmaAllocation, allocationInfo: VmaAllocationInfo, descriptor: VulkanBufferDescriptor) {
         self.device = device
         self.vkBuffer = buffer
@@ -78,10 +77,12 @@ class VulkanBuffer {
         var data : UnsafeMutableRawPointer? = nil
         vmaMapMemory(self.allocator, self.allocation, &data).check()
         self.hasBeenHostUpdated = true
+        self.isMapped = true
         return data! + range.lowerBound
     }
     
     func unmapMemory(range: Range<Int>) {
+        assert(self.isMapped)
 
         var memFlags = VkMemoryPropertyFlags()
         vmaGetMemoryTypeProperties(self.allocator, self.allocationInfo.memoryType, &memFlags);
@@ -95,6 +96,7 @@ class VulkanBuffer {
         }
 
         vmaUnmapMemory(self.allocator, self.allocation)
+        self.isMapped = false
     }
     
     func fits(descriptor: VulkanBufferDescriptor) -> Bool {

@@ -64,7 +64,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
     
     func renderTargetTexture(_ texture: Texture) throws -> Backend.TextureReference {
         if texture.flags.contains(.windowHandle) {
-            return try self.transientRegistry.allocateWindowHandleTexture(texture, persistentRegistry: persistentRegistry)
+            return try self.transientRegistry.allocateWindowHandleTexture(texture)
         }
         return self[texture]
     }

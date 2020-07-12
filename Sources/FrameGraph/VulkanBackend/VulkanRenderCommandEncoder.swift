@@ -25,16 +25,95 @@ struct DynamicStateCreateInfo {
     static let `default` = DynamicStateCreateInfo(states: [VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_BIAS, VK_DYNAMIC_STATE_BLEND_CONSTANTS, VK_DYNAMIC_STATE_STENCIL_REFERENCE])
 }
 
-struct VulkanRenderPipelineDescriptor : Hashable {
-    var descriptor : RenderPipelineDescriptor
-    var depthStencil : DepthStencilDescriptor?
-    var primitiveType: PrimitiveType
-    var cullMode : CullMode
-    var depthClipMode : DepthClipMode
-    var frontFaceWinding : Winding
-    var layout : VkPipelineLayout
+final class VulkanRenderPipelineDescriptor : Hashable {
 
-    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, subpass: UInt32, renderTargetDescriptor: RenderTargetDescriptor, pipelineReflection: VulkanPipelineReflection, stateCaches: VulkanStateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
+    let shaderLibrary : VulkanShaderLibrary
+    var hasChanged: Bool = false
+    var pipelineReflection : VulkanPipelineReflection! = nil
+
+    var descriptor : RenderPipelineDescriptor! = nil { 
+        didSet { 
+            let key = PipelineLayoutKey.graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction)
+            self.pipelineReflection = shaderLibrary.reflection(for: key)
+            self.layout = self.shaderLibrary.pipelineLayout(for: .graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction))
+            self.hasChanged = true 
+        } 
+    }
+
+    var depthStencil : DepthStencilDescriptor? = nil { didSet { self.hasChanged = hasChanged || depthStencil != oldValue } }
+    var primitiveType: PrimitiveType = .triangle { didSet { self.hasChanged = hasChanged || primitiveType != oldValue } }
+    var cullMode : CullMode = .none { didSet { self.hasChanged = hasChanged || cullMode != oldValue } }
+    var fillMode : TriangleFillMode = .fill { didSet { self.hasChanged = hasChanged || fillMode != oldValue } }
+    var depthClipMode : DepthClipMode = .clip { didSet { self.hasChanged = hasChanged || depthClipMode != oldValue } }
+    var frontFaceWinding : Winding = .clockwise { didSet { self.hasChanged = hasChanged || frontFaceWinding != oldValue } }
+    var layout: VkPipelineLayout! = nil { didSet { self.hasChanged = hasChanged || layout != oldValue } }
+
+    var renderTargetDescriptor: RenderTargetDescriptor! = nil { didSet { self.hasChanged = true } }
+
+    init(shaderLibrary: VulkanShaderLibrary) {
+        self.shaderLibrary = shaderLibrary
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(self.descriptor)
+        hasher.combine(self.depthStencil)
+        hasher.combine(self.primitiveType)
+        hasher.combine(self.cullMode)
+        hasher.combine(self.fillMode)
+        hasher.combine(self.depthClipMode)
+        hasher.combine(self.frontFaceWinding)
+        hasher.combine(self.layout)
+
+        for attachment in self.renderTargetDescriptor.colorAttachments {
+            hasher.combine(attachment?.texture.descriptor.pixelFormat)
+            hasher.combine(attachment?.texture.descriptor.sampleCount)
+            hasher.combine(attachment?.resolveTexture != nil)
+        }
+
+        hasher.combine(self.renderTargetDescriptor.depthAttachment?.texture.descriptor.pixelFormat)
+        hasher.combine(self.renderTargetDescriptor.depthAttachment?.texture.descriptor.sampleCount)
+        hasher.combine(self.renderTargetDescriptor.depthAttachment?.resolveTexture != nil)
+
+        hasher.combine(self.renderTargetDescriptor.stencilAttachment?.texture.descriptor.pixelFormat)
+        hasher.combine(self.renderTargetDescriptor.stencilAttachment?.texture.descriptor.sampleCount)
+        hasher.combine(self.renderTargetDescriptor.stencilAttachment?.resolveTexture != nil)
+    }
+
+    static func ==(lhs: VulkanRenderPipelineDescriptor, rhs: VulkanRenderPipelineDescriptor) -> Bool {
+        guard lhs.descriptor == rhs.descriptor else { return false }
+        guard lhs.depthStencil == rhs.depthStencil else { return false }
+        guard lhs.cullMode == rhs.cullMode else { return false }
+        guard lhs.fillMode == rhs.fillMode else { return false }
+        guard lhs.depthClipMode == rhs.depthClipMode else { return false }
+        guard lhs.frontFaceWinding == rhs.frontFaceWinding else { return false }
+        guard lhs.layout == rhs.layout else { return false }
+
+        for (attachmentA, attachmentB) in zip(lhs.renderTargetDescriptor.colorAttachments, rhs.renderTargetDescriptor.colorAttachments) {
+            guard attachmentA?.texture.descriptor.pixelFormat == attachmentB?.texture.descriptor.pixelFormat else { return false }
+            guard attachmentA?.texture.descriptor.sampleCount == attachmentB?.texture.descriptor.sampleCount else { return false }
+            guard (attachmentA?.resolveTexture != nil) == (attachmentB?.resolveTexture != nil) else { return false }
+        }
+
+        do {
+            let attachmentA = lhs.renderTargetDescriptor.depthAttachment
+            let attachmentB = rhs.renderTargetDescriptor.depthAttachment
+            guard attachmentA?.texture.descriptor.pixelFormat == attachmentB?.texture.descriptor.pixelFormat else { return false }
+            guard attachmentA?.texture.descriptor.sampleCount == attachmentB?.texture.descriptor.sampleCount else { return false }
+            guard (attachmentA?.resolveTexture != nil) == (attachmentB?.resolveTexture != nil) else { return false }
+        }
+
+        do {
+            let attachmentA = lhs.renderTargetDescriptor.stencilAttachment
+            let attachmentB = rhs.renderTargetDescriptor.stencilAttachment
+            guard attachmentA?.texture.descriptor.pixelFormat == attachmentB?.texture.descriptor.pixelFormat else { return false }
+            guard attachmentA?.texture.descriptor.sampleCount == attachmentB?.texture.descriptor.sampleCount else { return false }
+            guard (attachmentA?.resolveTexture != nil) == (attachmentB?.resolveTexture != nil) else { return false }
+        }
+
+        return true
+    }
+
+    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, subpass: UInt32, stateCaches: VulkanStateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
         
         var functionNames = [FixedSizeBuffer<CChar>]()
         
@@ -69,14 +148,19 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         
         var inputAssemblyState = VkPipelineInputAssemblyStateCreateInfo()
         inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
-        inputAssemblyState.primitiveRestartEnable = true
+        switch self.primitiveType {
+            case .point, .line, .triangle:
+                inputAssemblyState.primitiveRestartEnable = false // Disable primitive restart for list topologies.
+            default:
+                inputAssemblyState.primitiveRestartEnable = true
+        }
         inputAssemblyState.topology = VkPrimitiveTopology(self.primitiveType)
         
         var rasterisationState = VkPipelineRasterizationStateCreateInfo()
         rasterisationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
         rasterisationState.depthClampEnable = VkBool32(self.depthClipMode == .clamp)
         rasterisationState.rasterizerDiscardEnable = VkBool32(!self.descriptor.isRasterizationEnabled)
-        rasterisationState.polygonMode = VK_POLYGON_MODE_FILL
+        rasterisationState.polygonMode = VkPolygonMode(self.fillMode)
         rasterisationState.cullMode = VkCullModeFlags(self.cullMode)
         rasterisationState.frontFace = VkFrontFace(self.frontFaceWinding)
         rasterisationState.depthBiasEnable = true
@@ -137,7 +221,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
                 pipelineInfo.pViewportState = escapingPointer(to: &states.8)
             
                 pipelineInfo.renderPass = renderPass.vkPass
-                pipelineInfo.subpass = subpass
+                pipelineInfo.subpass = UInt32(subpass)
                 
                 withInfo(&pipelineInfo)
             }
@@ -148,118 +232,29 @@ struct VulkanRenderPipelineDescriptor : Hashable {
 
 class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     
-    class PipelineState {
-        let bindingManager : ResourceBindingManager
-        let shaderLibrary : VulkanShaderLibrary
-        var hasChanged = true
-        
-        init(shaderLibrary: VulkanShaderLibrary, bindingManager: ResourceBindingManager) {
-            self.shaderLibrary = shaderLibrary
-            self.bindingManager = bindingManager
-        }
-        
-        var descriptor : RenderPipelineDescriptor! = nil {
-            didSet {
-                
-                let key = PipelineLayoutKey.graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction)
-                self.pipelineReflection = shaderLibrary.reflection(for: key)
-                
-                _layout = nil // FIXME: we also need to invalidate the layout in the more subtle case where the descriptor layout changes.
-                
-                self.hasChanged = true
-            }
-        }
-        
-        var pipelineReflection : VulkanPipelineReflection! = nil
-        
-        var subpass : Int = 0 {
-            didSet {
-                self.hasChanged = true
-            }
-        }
-        
-        var depthStencil : DepthStencilDescriptor? = nil {
-            didSet {
-                self.hasChanged = true
-            }
-        }
-        
-        var primitiveType: PrimitiveType = .triangle {
-            didSet {
-                if oldValue != self.primitiveType {
-                    self.hasChanged = true
-                }
-            }
-        }
-        
-        var cullMode : CullMode = .none {
-            didSet {
-                if oldValue != self.cullMode {
-                    self.hasChanged = true
-                }
-            }
-        }
-        
-        var depthClipMode : DepthClipMode = .clip {
-            didSet {
-                if oldValue != self.depthClipMode {
-                    self.hasChanged = true
-                }
-            }
-        }
-        
-        var frontFaceWinding : Winding = .clockwise {
-            didSet {
-                if oldValue != self.frontFaceWinding {
-                    self.hasChanged = true
-                }
-            }
-        }
-        
-        private var _layout : VkPipelineLayout! = nil
-        
-        var layout : VkPipelineLayout {
-            if let layout = _layout {
-                return layout
-            }
-            _layout = self.shaderLibrary.pipelineLayout(for: .graphics(vertexShader: descriptor.vertexFunction!, fragmentShader: descriptor.fragmentFunction), bindingManager: self.bindingManager)
-            return _layout
-        }
-
-        var vulkanPipelineDescriptor : VulkanRenderPipelineDescriptor {
-            return VulkanRenderPipelineDescriptor(descriptor: self.descriptor,
-                                                  depthStencil: self.depthStencil,
-                                                  primitiveType: self.primitiveType,
-                                                  cullMode: self.cullMode,
-                                                  depthClipMode: self.depthClipMode,
-                                                  frontFaceWinding: self.frontFaceWinding,
-                                                  layout: self.layout)
-        }
-        
-    }
-    
     let device : VulkanDevice
     let stateCaches : VulkanStateCaches
-    let commandBufferResources : CommandBufferResources
+    let commandBufferResources : VulkanCommandBuffer
     let renderTarget : VulkanRenderTargetDescriptor
     let resourceMap: FrameResourceMap<VulkanBackend>
     
     var renderPass : VulkanRenderPass! = nil
     var currentDrawRenderPass : DrawRenderPass! = nil
-    var bindingManager : ResourceBindingManager! = nil
-    var pipelineState : PipelineState! = nil
+    var pipelineDescriptor : VulkanRenderPipelineDescriptor
     
     var boundVertexBuffers = [Buffer?](repeating: nil, count: 8)
+    var enqueuedBindings = [FrameGraphCommand]()
+
+    var subpass: Int = 0
     
-    public init(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: CommandBufferResources, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: FrameResourceMap<VulkanBackend>) {
+    public init?(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: VulkanCommandBuffer, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: FrameResourceMap<VulkanBackend>) {
         self.device = device
         self.renderTarget = renderTarget
         self.commandBufferResources = commandBufferResources
         self.stateCaches = caches
         self.resourceMap = resourceMap
         
-        self.bindingManager = ResourceBindingManager(encoder: self)
-        self.pipelineState = PipelineState(shaderLibrary: shaderLibrary, bindingManager: bindingManager)
+        self.pipelineDescriptor = VulkanRenderPipelineDescriptor(shaderLibrary: shaderLibrary)
     }
     
     var queueFamily: QueueFamily {
@@ -275,34 +270,83 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     }
     
     var pipelineLayout: VkPipelineLayout {
-        return self.pipelineState.layout
+        return self.pipelineDescriptor.layout
     }
     
     var pipelineReflection: VulkanPipelineReflection {
-        return self.pipelineState.pipelineReflection
+        return self.pipelineDescriptor.pipelineReflection
     }
+
     
     func prepareToDraw() {
-        if self.pipelineState.hasChanged {
+        assert(self.pipelineDescriptor.descriptor != nil, "No render pipeline descriptor is set.")
+
+        if self.pipelineDescriptor.hasChanged {
             defer {
-                self.pipelineState.hasChanged = false
+                self.pipelineDescriptor.hasChanged = false
             }
 
-            let pipeline = self.stateCaches[self.pipelineState.vulkanPipelineDescriptor, 
-                                            renderPass: self.renderPass, 
-                                            subpass: UInt32(self.pipelineState.subpass), 
-                                            renderTargetDescriptor: self.currentDrawRenderPass.renderTargetDescriptor,
-                                            pipelineReflection: self.pipelineState.pipelineReflection]
+            // Bind the pipeline before binding any resources.
+
+            let pipeline = self.stateCaches[self.pipelineDescriptor, 
+                                            renderPass: self.renderPass!, 
+                                            subpass: UInt32(self.subpass)]
             vkCmdBindPipeline(self.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline)
         }
-        
-        self.bindingManager.bindDescriptorSets()
+
+        for binding in self.enqueuedBindings {
+            switch binding {
+            case .setArgumentBuffer(let args):
+                let bindingPath = args.pointee.bindingPath
+                
+                let argumentBuffer = args.pointee.argumentBuffer
+                let vkArgumentBuffer = resourceMap[argumentBuffer]
+
+                self.commandBufferResources.argumentBuffers.append(vkArgumentBuffer)
+
+                var set : VkDescriptorSet? = vkArgumentBuffer.descriptorSet
+                vkCmdBindDescriptorSets(self.commandBuffer, self.bindPoint, self.pipelineLayout, bindingPath.set, 1, &set, 0, nil)
+
+            case .setBytes(let args):
+                let bindingPath = args.pointee.bindingPath
+                let bytes = args.pointee.bytes
+                let length = args.pointee.length
+                
+                let resourceInfo = self.pipelineReflection[bindingPath]
+                
+                switch resourceInfo.type {
+                case .pushConstantBuffer:
+                    assert(resourceInfo.bindingRange.count == length, "The push constant size and the setBytes length must match.")
+                    vkCmdPushConstants(self.commandBuffer, self.pipelineLayout, VkShaderStageFlags(resourceInfo.accessedStages), resourceInfo.bindingRange.lowerBound, length, bytes)
+                    
+                default:
+                    fatalError("Need to implement VK_EXT_inline_uniform_block or else fall back to a temporary staging buffer")
+                }
+                
+            case .setBufferOffset(let args):
+                fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
+                
+            case .setBuffer(let args):
+                fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
+                
+            case .setTexture(let args):
+                fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
+                
+            case .setSamplerState(let args):
+                fatalError("Currently unimplemented on Vulkan; should use vkCmdPushDescriptorSetKHR when implemented.")
+            
+            default:
+                preconditionFailure()
+            }
+        }
+        self.enqueuedBindings.removeAll(keepingCapacity: true)
     }
     
     private func beginPass(_ pass: RenderPassRecord) throws {
         let drawPass = pass.pass as! DrawRenderPass
-        self.currentDrawRenderPass = drawPass       
-        self.pipelineState.hasChanged = true
+        self.currentDrawRenderPass = drawPass    
+
+        self.pipelineDescriptor.renderTargetDescriptor = drawPass.renderTargetDescriptor
         
         let renderTargetSize = renderTarget.descriptor.size
         let renderTargetRect = VkRect2D(offset: VkOffset2D(x: 0, y: 0), extent: VkExtent2D(width: UInt32(renderTargetSize.width), height: UInt32(renderTargetSize.height)))
@@ -366,28 +410,44 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             return false
         } else if self.renderTarget.subpassForPassIndex(pass.passIndex) !== self.renderTarget.subpassForPassIndex(pass.passIndex + 1) {
             vkCmdNextSubpass(self.commandBuffer, VK_SUBPASS_CONTENTS_INLINE)
-            self.pipelineState.subpass += 1
+            self.subpass += 1
         }
         return true
     }
     
     
     func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>], passRenderTarget: RenderTargetDescriptor) {
-        try! self.beginPass(pass)
-        defer { _ = self.endPass(pass) }
-        
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
-       
+        
+        let firstCommandIndex = pass.commandRange!.first!
+        let lastCommandIndex = pass.commandRange!.last!
+
+        // Check for any commands that need to be executed before the render pass.
+        self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: firstCommandIndex)
+
+        try! self.beginPass(pass)
+
         // FIXME: need to insert this logic:
 //        if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
 //            encoder.setDepthStencilState(stateCaches.defaultDepthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
 //        }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i)
+            if i > firstCommandIndex {
+                self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i)
+            }
+            
             self.executeCommand(command)
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i)
+            
+            if i < lastCommandIndex {
+                self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i)
+            }
         }
+        
+        _ = self.endPass(pass) 
+        
+        // Check for any commands that need to be executed after the render pass.
+        self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: lastCommandIndex)
     }
     
     func executeCommand(_ command: FrameGraphCommand) {
@@ -425,44 +485,22 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             var offset = VkDeviceSize(offset) + VkDeviceSize(buffer.offset)
             vkCmdBindVertexBuffers(self.commandBuffer, index, 1, &vkBuffer, &offset)
             
-        case .setArgumentBuffer(let args):
-            let bindingPath = args.pointee.bindingPath
-            
-            let argumentBuffer = args.pointee.argumentBuffer
-            let vkArgumentBuffer = resourceMap[argumentBuffer]
-
-            self.commandBufferResources.argumentBuffers.append(vkArgumentBuffer)
-
-            var set : VkDescriptorSet? = vkArgumentBuffer.descriptorSet
-            vkCmdBindDescriptorSets(self.commandBuffer, self.bindPoint, self.pipelineLayout, bindingPath.set, 1, &set, 0, nil)
-
-        case .setBytes(let args):
-            self.bindingManager.setBytes(args: args)
-            
-        case .setBufferOffset(let args):
-            self.bindingManager.setBufferOffset(args: args)
-            
-        case .setBuffer(let args):
-            self.bindingManager.setBuffer(args: args)
-            
-        case .setTexture(let args):
-            self.bindingManager.setTexture(args: args)
-            
-        case .setSamplerState(let args):
-            self.bindingManager.setSamplerState(args: args)
+        case .setArgumentBuffer, .setBytes, 
+            .setBufferOffset, .setBuffer, .setTexture, .setSamplerState:
+            self.enqueuedBindings.append(command)
             
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
-            self.pipelineState.descriptor = descriptor
+            self.pipelineDescriptor.descriptor = descriptor
             
         case .drawPrimitives(let args):
-            self.pipelineState.primitiveType = args.pointee.primitiveType
+            self.pipelineDescriptor.primitiveType = args.pointee.primitiveType
             self.prepareToDraw()
             
             vkCmdDraw(self.commandBuffer, args.pointee.vertexCount, args.pointee.instanceCount, args.pointee.vertexStart, args.pointee.baseInstance)
             
         case .drawIndexedPrimitives(let args):
-            self.pipelineState.primitiveType = args.pointee.primitiveType
+            self.pipelineDescriptor.primitiveType = args.pointee.primitiveType
             
             let buffer = resourceMap[args.pointee.indexBuffer]
             vkCmdBindIndexBuffer(self.commandBuffer, buffer.buffer.vkBuffer, VkDeviceSize(args.pointee.indexBufferOffset) + VkDeviceSize(buffer.offset), VkIndexType(args.pointee.indexType))
@@ -476,20 +514,23 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             vkCmdSetViewport(self.commandBuffer, 0, 1, &viewport)
             
         case .setFrontFacing(let winding):
-            self.pipelineState.frontFaceWinding = winding
+            self.pipelineDescriptor.frontFaceWinding = winding
             
         case .setCullMode(let cullMode):
-            self.pipelineState.cullMode = cullMode
+            self.pipelineDescriptor.cullMode = cullMode
             
+        case .setTriangleFillMode(let fillMode):
+            self.pipelineDescriptor.fillMode = fillMode
+
         case .setDepthStencilDescriptor(let descriptorPtr):
-            self.pipelineState.depthStencil = descriptorPtr.takeUnretainedValue().value
+            self.pipelineDescriptor.depthStencil = descriptorPtr.takeUnretainedValue().value
             
         case .setScissorRect(let scissorPtr):
             var scissor = VkRect2D(scissorPtr.pointee)
             vkCmdSetScissor(self.commandBuffer, 0, 1, &scissor)
             
         case .setDepthClipMode(let mode):
-            self.pipelineState.depthClipMode = mode
+            self.pipelineDescriptor.depthClipMode = mode
             
         case .setDepthBias(let args):
             vkCmdSetDepthBias(self.commandBuffer, args.pointee.depthBias, args.pointee.clamp, args.pointee.slopeScale)

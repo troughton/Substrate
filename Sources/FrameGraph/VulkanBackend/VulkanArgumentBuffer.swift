@@ -13,37 +13,25 @@ import FrameGraphCExtras
 
 final class VulkanArgumentBuffer {
     let device : VulkanDevice
+    let layout: VulkanDescriptorSetLayout
     let descriptorSet : VkDescriptorSet
-    private let isTransient : Bool
 
     private var images = [VulkanImage]()
     private var buffers = [VulkanBuffer]()
     
-    public init(arguments: _ArgumentBuffer, bindingPath: ResourceBindingPath, commandBufferResources: CommandBufferResources, pipelineReflection: VulkanPipelineReflection, stateCaches: VulkanStateCaches) {
-        self.device = commandBufferResources.device
-
-        let layout = pipelineReflection.descriptorSetLayout(set: bindingPath.set, dynamicBuffers: []).vkLayout
-        
-        self.isTransient = !arguments.flags.contains(.persistent)
-
-        if self.isTransient {
-            self.descriptorSet = commandBufferResources.descriptorPool.allocateSet(layout: layout)
-            commandBufferResources.descriptorSets.append(self.descriptorSet)
-        } else {
-            fatalError("Persistent argument buffers unimplemented on Vulkan.")
-        }
-    }
-
-    deinit {
-        if !self.isTransient {
-            fatalError("Need to return the set to the pool.")
-        }
+    public init(device: VulkanDevice, layout: VulkanDescriptorSetLayout, descriptorSet: VkDescriptorSet) {
+        self.device = device
+        self.layout = layout
+        self.descriptorSet = descriptorSet
     }
 }
 
 extension VulkanArgumentBuffer {
     
-    func encodeArguments(from buffer: _ArgumentBuffer, pipelineReflection: VulkanPipelineReflection, resourceMap: FrameResourceMap<VulkanBackend>, stateCaches: VulkanStateCaches) {
+    func encodeArguments(from buffer: _ArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
+        let pipelineReflection = self.layout.pipelineReflection
+        let setIndex = self.layout.set
+
         var descriptorWrites = [VkWriteDescriptorSet]()
 
         let bufferInfoSentinel = UnsafePointer<VkDescriptorBufferInfo>(bitPattern: 0x10)
@@ -54,13 +42,10 @@ extension VulkanArgumentBuffer {
         var bufferInfos = [VkDescriptorBufferInfo]()
         var inlineBlocks = [VkWriteDescriptorSetInlineUniformBlockEXT]()
 
-        var setIndex = -1
-
         for (bindingPath, binding) in buffer.bindings {
             
-            assert(setIndex == -1 || setIndex == Int(bindingPath.set), "Resources in an argument buffer cannot be in different sets.")
-            setIndex = Int(bindingPath.set)
-
+            assert(setIndex == Int(bindingPath.set), "Resources in an argument buffer cannot be in different sets.")
+            
             let resource = pipelineReflection[bindingPath]
             
             var descriptorWrite = VkWriteDescriptorSet()
@@ -79,8 +64,15 @@ extension VulkanArgumentBuffer {
 
                 self.images.append(image)
             
+                let pixelFormat = texture.descriptor.pixelFormat
+                let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                 var imageInfo = VkDescriptorImageInfo()
-                imageInfo.imageLayout = image.layout
+                switch resource.access {
+                case .read:
+                    imageInfo.imageLayout = isDepthOrStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                case .readWrite, .write:
+                    imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL
+                }
                 imageInfo.imageView = image.defaultImageView.vkView
                 
                 descriptorWrite.pImageInfo = imageInfoSentinel

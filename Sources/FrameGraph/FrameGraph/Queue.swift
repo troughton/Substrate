@@ -18,9 +18,8 @@ public struct QueueCapabilities : OptionSet {
     public static let render = QueueCapabilities(rawValue: 1 << 0)
     public static let compute = QueueCapabilities(rawValue: 1 << 1)
     public static let blit = QueueCapabilities(rawValue: 1 << 2)
-    public static let present = QueueCapabilities(rawValue: 1 << 3)
     
-    public static var all : QueueCapabilities = [.render, .compute, .blit, .present]
+    public static var all : QueueCapabilities = [.render, .compute, .blit]
 }
 
 public final class QueueRegistry {
