@@ -56,6 +56,12 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
         self.textureUsages = textureUsages
         self.resourceMap = resourceMap
         self.compactedResourceCommands = compactedResourceCommands
+
+        
+        var beginInfo = VkCommandBufferBeginInfo()
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+        beginInfo.flags = VkCommandBufferUsageFlags(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)
+        vkBeginCommandBuffer(self.commandBuffer, &beginInfo).check()
     }
 
     deinit {
@@ -71,15 +77,6 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
     }
     
     func encodeCommands(encoderIndex: Int) {
-        var beginInfo = VkCommandBufferBeginInfo()
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
-        beginInfo.flags = VkCommandBufferUsageFlags(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)
-        vkBeginCommandBuffer(self.commandBuffer, &beginInfo).check()
-
-        defer { 
-            vkEndCommandBuffer(self.commandBuffer).check()
-        }
-
         let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
         
         switch encoderInfo.type {
@@ -134,7 +131,8 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
     }
     
     func commit(onCompletion: @escaping (VulkanCommandBuffer) -> Void) {
-        
+        vkEndCommandBuffer(self.commandBuffer).check()
+
         var submitInfo = VkSubmitInfo()
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO
 

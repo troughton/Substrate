@@ -79,13 +79,14 @@ public final class SDLInputManager : InputManager {
         while SDL_PollEvent(&event) != 0 {
             let windowId = event.window.windowID
                     
-            let window = windows.first(where: { (window) -> Bool in
+            guard let window = windows.first(where: { (window) -> Bool in
                 return (window as! SDLWindow).sdlWindowId == windowId
-            }) as! SDLWindow?
+            }) as! SDLWindow? else {
+                continue
+            }
             
             if event.type == SDL_WINDOWEVENT.rawValue {
-                
-                window!.didReceiveEvent(event: event)
+                window.didReceiveEvent(event: event)
             } else {
                 switch SDL_EventType(rawValue: SDL_EventType.RawValue(event.type)) {
                     

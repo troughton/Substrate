@@ -13,6 +13,21 @@ import ImGui
 import CSDL2
 import Foundation
 
+extension SDLWindowOptions {
+    init(_ flags: WindowCreationFlags) {
+        self = [.allowHighDpi]
+        if flags.contains(.borderless) {
+            self.formUnion(.borderless)
+        }
+        if !flags.contains(.hidden) {
+            self.formUnion(.shown)
+        }
+        if flags.contains(.resizable) {
+            self.formUnion(.resizeable)
+        }
+    }
+}
+
 #if canImport(Vulkan)
 
 import Vulkan
@@ -20,10 +35,11 @@ import Vulkan
 public class SDLVulkanWindow : SDLWindow {
     var vkSurface : VkSurfaceKHR? = nil
     
-    public convenience init(id: Int, title: String, dimensions: WindowSize, windowFrameGraph: FrameGraph) {
+    public convenience init(id: Int, title: String, dimensions: WindowSize, flags: WindowCreationFlags, windowFrameGraph: FrameGraph) {
         let vulkanBackend = RenderBackend.backend as! VulkanBackend
         let vulkanInstance = vulkanBackend.vulkanInstance
-        let options : SDLWindowOptions = [.allowHighDpi, .shown, .resizeable, .vulkan]
+        let options : SDLWindowOptions = [.allowHighDpi, .vulkan, SDLWindowOptions(flags)]
+
         let sdlWindowPointer = SDL_CreateWindow(title, Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(dimensions.width), Int32(dimensions.height), options.rawValue)
         self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, frameGraph: windowFrameGraph)
         
@@ -44,8 +60,8 @@ import AppKit
 public class SDLMetalWindow : SDLWindow {
     var metalView : SDL_MetalView? = nil
     
-    public convenience init(id: Int, title: String, dimensions: WindowSize, frameGraph: FrameGraph) {
-        let options : SDLWindowOptions = [.allowHighDpi, .shown, .resizeable]
+    public convenience init(id: Int, title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: FrameGraph) {
+        let options : SDLWindowOptions = [.allowHighDpi, SDLWindowOptions(flags)]
         let sdlWindowPointer = SDL_CreateWindow(title, Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(dimensions.width), Int32(dimensions.height), options.rawValue)
             
         self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, frameGraph: frameGraph)
@@ -83,7 +99,6 @@ public class SDLApplication : Application {
             let error = String(cString: SDL_GetError())
             fatalError("Unable to initialise SDL: \(error)")
         }
-        print("Initialised SDL")
         
         let updateables = updateables()
         precondition(!updateables.isEmpty)
@@ -96,13 +111,13 @@ public class SDLApplication : Application {
 
         #if canImport(Metal)
         if RenderBackend.api == .metal {
-            window = SDLMetalWindow(id: self.nextAvailableWindowId(), title: title, dimensions: dimensions, frameGraph: frameGraph)
+            window = SDLMetalWindow(id: self.nextAvailableWindowId(), title: title, dimensions: dimensions, flags: flags, frameGraph: frameGraph)
         }
         #endif
         
         #if canImport(Vulkan)
         if RenderBackend.api == .vulkan {
-            window = SDLVulkanWindow(id: self.nextAvailableWindowId(), title: title, dimensions: dimensions, windowFrameGraph: frameGraph)
+            window = SDLVulkanWindow(id: self.nextAvailableWindowId(), title: title, dimensions: dimensions, flags: flags, windowFrameGraph: frameGraph)
         }
         #endif
         

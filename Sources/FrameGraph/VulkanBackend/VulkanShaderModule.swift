@@ -569,7 +569,6 @@ public class VulkanShaderLibrary {
 
         self.modules = modules
         self.functionsToModules = functions
-        print("Found functions \(functionsToModules)")
         
     }
     

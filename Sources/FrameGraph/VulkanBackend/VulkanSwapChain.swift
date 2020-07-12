@@ -141,7 +141,6 @@ public class VulkanSwapChain : SwapChain {
         
         var images = [VkImage?](repeating: nil, count: Int(imageCount))
         vkGetSwapchainImagesKHR(device.vkDevice, swapChain, &imageCount, &images)
-        print("Swapchain created with \(images.count) images.")
         
         self.images = images.lazy.compactMap { $0 }.enumerated().map { (i, image) in
             var descriptor = VulkanImageDescriptor()
@@ -195,7 +194,6 @@ public class VulkanSwapChain : SwapChain {
         if self.swapChain == nil {
             self.createSwapChain(drawableSize: descriptor.size)
         } else if descriptor.size != self.currentDrawableSize {
-            print("Recreating the swap chain. Drawable size is \(descriptor.size)")
             self.recreateSwapChain(drawableSize: descriptor.size)
         }
         
@@ -205,7 +203,6 @@ public class VulkanSwapChain : SwapChain {
         let result = vkAcquireNextImageKHR(device.vkDevice, self.swapChain, UInt64.max, semaphore, nil, &imageIndex)
         
         if result == VK_ERROR_OUT_OF_DATE_KHR {
-            print("Recreating the swap chain. Drawable size is \(descriptor.size)")
             self.recreateSwapChain(drawableSize: descriptor.size)
             return self.nextImage(descriptor: descriptor)
         } else if result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR {

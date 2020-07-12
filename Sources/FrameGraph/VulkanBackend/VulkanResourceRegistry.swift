@@ -392,16 +392,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     @discardableResult
     public func allocateTexture(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> VkImageReference {
         if texture.flags.contains(.windowHandle) {    
-            FrameGraph.jobManager.syncOnMainThread {
-                if self.textureReferences[texture]?._image != nil {
-                    return
-                }
-                
-                let swapChain = self.persistentRegistry.windowReferences.removeValue(forKey: texture)!
-                self.frameSwapChains.append(swapChain)
-                self.textureReferences[texture] = VkImageReference(image: Unmanaged.passUnretained(swapChain.nextImage(descriptor: texture.descriptor)))
-            }
-            return self.textureReferences[texture]!
+            self.textureReferences[texture] = VkImageReference(windowTexture: ()) // We retrieve the swapchain image later.
+            return VkImageReference(windowTexture: ())
         }
 
         let usage = VkImageUsageFlagBits(usage.usage, pixelFormat: texture.descriptor.pixelFormat)
@@ -445,7 +437,16 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     public func allocateWindowHandleTexture(_ texture: Texture) throws -> VkImageReference {
         precondition(texture.flags.contains(.windowHandle))
         
-        // On Vulkan, we create/prepare the swapchain images ahead of time.
+        FrameGraph.jobManager.syncOnMainThread {
+            if self.textureReferences[texture]!._image != nil {
+                return
+            }
+            
+            let swapChain = self.persistentRegistry.windowReferences.removeValue(forKey: texture)!
+            self.frameSwapChains.append(swapChain)
+            self.textureReferences[texture] = VkImageReference(image: Unmanaged.passUnretained(swapChain.nextImage(descriptor: texture.descriptor)))
+        }
+
         return self.textureReferences[texture]!
     }
     
