@@ -56,7 +56,8 @@ final class SPIRVCompiler {
         
         var ir : spvc_parsed_ir! = nil
         let _ = spv.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) -> spvc_result in
-            return spvc_context_parse_spirv(context.spvContext, bytes.baseAddress?.assumingMemoryBound(to: SpvId.self), bytes.count / MemoryLayout<SpvId>.size, &ir)
+            let spv = bytes.bindMemory(to: SpvId.self)
+            return spvc_context_parse_spirv(context.spvContext, spv.baseAddress, spv.count, &ir)
         }
         guard ir != nil else { throw CompilerError.spirvParseFailed(context.lastErrorString) }
         
