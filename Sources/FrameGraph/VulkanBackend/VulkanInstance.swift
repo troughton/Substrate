@@ -35,7 +35,7 @@ public struct VulkanVersion: CustomStringConvertible {
         return Int(self.value & 0x0FFF)
     }
 
-    static let apiVersion = VulkanVersion(major: 1, minor: 1, patch: 131)
+    static let apiVersion = VulkanVersion(major: 1, minor: 2, patch: 0)
 
     public var description: String {
         return "\(self.major).\(self.minor).\(self.patch)"
@@ -47,7 +47,7 @@ public final class VulkanInstance {
     var debugCallback : VkDebugReportCallbackEXT? = nil
 
     static let validationLayers : [StaticString] = [
-        "VK_LAYER_LUNARG_standard_validation"
+        "VK_LAYER_KHRONOS_validation",
     ]
     
     static func areLayersSupported(_ layers: [StaticString]) -> Bool {
@@ -186,7 +186,7 @@ public final class VulkanInstance {
                 callbackCreateInfo.flags = ([VK_DEBUG_REPORT_ERROR_BIT_EXT,
                                              VK_DEBUG_REPORT_WARNING_BIT_EXT,
                                              VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT,
-                                             VK_DEBUG_REPORT_DEBUG_BIT_EXT,
+                                            //  VK_DEBUG_REPORT_DEBUG_BIT_EXT,
                                             // VK_DEBUG_REPORT_INFORMATION_BIT_EXT
                     ] as VkDebugReportFlagBitsEXT).rawValue
                 

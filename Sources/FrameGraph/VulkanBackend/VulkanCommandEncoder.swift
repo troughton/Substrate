@@ -33,18 +33,13 @@ extension VulkanCommandEncoder {
             case .signalEvent(let event, let afterStages):
                 vkCmdSetEvent(self.commandBufferResources.commandBuffer, event, VkPipelineStageFlags(afterStages))
                 
-            case .waitForEvents(let events, let sourceStages, let destinationStages, let memoryBarriers, let bufferMemoryBarriers, let imageMemoryBarriers):
-                
+            case .waitForEvents(let events, let sourceStages, let destinationStages, let memoryBarriers, let bufferMemoryBarriers, let imageMemoryBarriers):           
                 vkCmdWaitEvents(self.commandBuffer, UInt32(events.count), events.baseAddress, VkPipelineStageFlags(sourceStages), VkPipelineStageFlags(destinationStages), UInt32(memoryBarriers.count), memoryBarriers.baseAddress, UInt32(bufferMemoryBarriers.count), bufferMemoryBarriers.baseAddress, UInt32(imageMemoryBarriers.count), imageMemoryBarriers.baseAddress)
                 
             case .pipelineBarrier(let sourceStages, let destinationStages, let dependencyFlags, let memoryBarriers, let bufferMemoryBarriers, let imageMemoryBarriers):
                 vkCmdPipelineBarrier(self.commandBuffer, VkPipelineStageFlags(sourceStages), VkPipelineStageFlags(destinationStages), VkDependencyFlags(dependencyFlags), UInt32(memoryBarriers.count), memoryBarriers.baseAddress, UInt32(bufferMemoryBarriers.count), bufferMemoryBarriers.baseAddress, UInt32(imageMemoryBarriers.count), imageMemoryBarriers.baseAddress)
             }
         }
-    }
-    
-    func endEncoding() {
-        vkEndCommandBuffer(self.commandBuffer)
     }
 }
 

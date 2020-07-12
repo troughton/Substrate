@@ -19,14 +19,12 @@ enum QueueFamily : Int {
 extension QueueCapabilities {
     init(_ family: QueueFamily) {
         switch family {
-        case .graphics:
+        case .graphics, .present:
             self = .render
         case .compute:
             self = .compute
         case .copy:
             self = .blit
-        case .present:
-            self = .present
         }
     }
 }
@@ -57,14 +55,6 @@ public final class VulkanPhysicalDevice {
             }
             if queueFlags.contains(VK_QUEUE_TRANSFER_BIT) {
                 capabilities.insert(.blit)
-            }
-            
-            // var presentSupport = false as VkBool32
-            // vkGetPhysicalDeviceSurfaceSupportKHR(device, UInt32(i), surface, &presentSupport)
-            
-            if queueFlags.contains(VK_QUEUE_GRAPHICS_BIT) {
-                // FIXME: presentation support may vary between devices.
-                capabilities.insert(.present)
             }
             
             return capabilities
@@ -125,11 +115,6 @@ public final class VulkanDevice {
                 }
             }
             
-            var deviceFeatures = VkPhysicalDeviceFeatures()
-            deviceFeatures.independentBlend = VkBool32(VK_TRUE)
-            deviceFeatures.depthClamp = VkBool32(VK_TRUE)
-            deviceFeatures.depthBiasClamp = VkBool32(VK_TRUE)
-            
             var createInfo = VkDeviceCreateInfo()
             createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
             
@@ -137,38 +122,38 @@ public final class VulkanDevice {
                 createInfo.queueCreateInfoCount = UInt32(queueCreateInfos.count)
                 createInfo.pQueueCreateInfos = queueCreateInfos.baseAddress
                 
-                withUnsafePointer(to: deviceFeatures) { deviceFeatures in
-                    createInfo.pEnabledFeatures = deviceFeatures;
                                    
-                    let extensions = VulkanDevice.deviceExtensions.map { ext -> UnsafePointer<CChar>? in
-                        return UnsafeRawPointer(ext.utf8Start).assumingMemoryBound(to: CChar.self)
-                    }
+                let extensions = VulkanDevice.deviceExtensions.map { ext -> UnsafePointer<CChar>? in
+                    return UnsafeRawPointer(ext.utf8Start).assumingMemoryBound(to: CChar.self)
+                }
+                
+                extensions.withUnsafeBufferPointer { extensions in
+                    createInfo.enabledExtensionCount = UInt32(extensions.count)
+                    createInfo.ppEnabledExtensionNames = extensions.baseAddress
                     
-                    extensions.withUnsafeBufferPointer { extensions in
-                        createInfo.enabledExtensionCount = UInt32(extensions.count)
-                        createInfo.ppEnabledExtensionNames = extensions.baseAddress
-                        
-                        createInfo.enabledLayerCount = 0
+                    createInfo.enabledLayerCount = 0
 
-                        var timelineSemaphore = VkPhysicalDeviceTimelineSemaphoreFeatures()
-                        timelineSemaphore.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES
-                        timelineSemaphore.timelineSemaphore = true
+                    var timelineSemaphore = VkPhysicalDeviceTimelineSemaphoreFeatures()
+                    timelineSemaphore.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES
+                    timelineSemaphore.timelineSemaphore = true
 
-                        withUnsafeMutablePointer(to: &timelineSemaphore) { timelineSemaphore in
-                            var deviceFeatures = VkPhysicalDeviceFeatures2()
-                            deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
-                            deviceFeatures.pNext = UnsafeMutableRawPointer(timelineSemaphore)
+                    withUnsafeMutablePointer(to: &timelineSemaphore) { timelineSemaphore in
+                        var deviceFeatures = VkPhysicalDeviceFeatures2()
+                        deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+                        deviceFeatures.features.independentBlend = VkBool32(VK_TRUE)
+                        deviceFeatures.features.depthClamp = VkBool32(VK_TRUE)
+                        deviceFeatures.features.depthBiasClamp = VkBool32(VK_TRUE)
+                        deviceFeatures.pNext = UnsafeMutableRawPointer(timelineSemaphore)
 
-                            withUnsafePointer(to: deviceFeatures) { deviceFeatures in
-                                createInfo.pNext = UnsafeRawPointer(deviceFeatures)
+                        withUnsafePointer(to: deviceFeatures) { deviceFeatures in
+                            createInfo.pNext = UnsafeRawPointer(deviceFeatures)
 
-                                if !vkCreateDevice(physicalDevice.vkDevice, &createInfo, nil, &device).check() {
-                                    print("Failed to create Vulkan logical device!")
-                                }
+                            if !vkCreateDevice(physicalDevice.vkDevice, &createInfo, nil, &device).check() {
+                                print("Failed to create Vulkan logical device!")
                             }
                         }
-                        
                     }
+                    
                 }
             }
         }
@@ -216,6 +201,17 @@ public final class VulkanDevice {
     public func deviceQueue(capabilities: QueueCapabilities, requiredCapability: QueueCapabilities) -> VulkanDeviceQueue {
         let familyIndex = self.queueFamilyIndex(capabilities: capabilities, requiredCapability: requiredCapability)
         return self.queues.first(where: { $0.familyIndex == familyIndex })!
+    }
+
+    public func presentQueue(surface: VkSurfaceKHR) -> VulkanDeviceQueue? {
+        for familyIndex in 0..<self.queues.count {
+            var supported: VkBool32 = 0
+            vkGetPhysicalDeviceSurfaceSupportKHR(self.physicalDevice.vkDevice, UInt32(familyIndex), surface, &supported).check()
+            if supported != VK_FALSE {
+                return self.queues.first(where: { $0.familyIndex == familyIndex })
+            }
+        }
+        return nil
     }
 }
 

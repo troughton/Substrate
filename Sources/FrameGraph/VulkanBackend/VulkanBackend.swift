@@ -221,9 +221,13 @@ public final class VulkanBackend : SpecificRenderBackend {
     static var requiresBufferUsage: Bool {
         return true
     }
+
+    static var requiresTextureLayoutTransitions: Bool {
+        return true
+    }
     
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
-        fatalError()
+        storage.encodeArguments(from: argumentBuffer, resourceMap: resourceMap)
     }
     
     static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {

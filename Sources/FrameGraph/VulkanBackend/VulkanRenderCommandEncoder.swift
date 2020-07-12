@@ -148,7 +148,12 @@ final class VulkanRenderPipelineDescriptor : Hashable {
         
         var inputAssemblyState = VkPipelineInputAssemblyStateCreateInfo()
         inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
-        inputAssemblyState.primitiveRestartEnable = true
+        switch self.primitiveType {
+            case .point, .line, .triangle:
+                inputAssemblyState.primitiveRestartEnable = false // Disable primitive restart for list topologies.
+            default:
+                inputAssemblyState.primitiveRestartEnable = true
+        }
         inputAssemblyState.topology = VkPrimitiveTopology(self.primitiveType)
         
         var rasterisationState = VkPipelineRasterizationStateCreateInfo()
@@ -276,6 +281,19 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     func prepareToDraw() {
         assert(self.pipelineDescriptor.descriptor != nil, "No render pipeline descriptor is set.")
 
+        if self.pipelineDescriptor.hasChanged {
+            defer {
+                self.pipelineDescriptor.hasChanged = false
+            }
+
+            // Bind the pipeline before binding any resources.
+
+            let pipeline = self.stateCaches[self.pipelineDescriptor, 
+                                            renderPass: self.renderPass!, 
+                                            subpass: UInt32(self.subpass)]
+            vkCmdBindPipeline(self.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline)
+        }
+
         for binding in self.enqueuedBindings {
             switch binding {
             case .setArgumentBuffer(let args):
@@ -322,17 +340,6 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             }
         }
         self.enqueuedBindings.removeAll(keepingCapacity: true)
-
-        if self.pipelineDescriptor.hasChanged {
-            defer {
-                self.pipelineDescriptor.hasChanged = false
-            }
-
-            let pipeline = self.stateCaches[self.pipelineDescriptor, 
-                                            renderPass: self.renderPass!, 
-                                            subpass: UInt32(self.subpass)]
-            vkCmdBindPipeline(self.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline)
-        }
     }
     
     private func beginPass(_ pass: RenderPassRecord) throws {
@@ -410,21 +417,37 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     
     
     func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>], passRenderTarget: RenderTargetDescriptor) {
-        try! self.beginPass(pass)
-        defer { _ = self.endPass(pass) }
-        
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
-       
+        
+        let firstCommandIndex = pass.commandRange!.first!
+        let lastCommandIndex = pass.commandRange!.last!
+
+        // Check for any commands that need to be executed before the render pass.
+        self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: firstCommandIndex)
+
+        try! self.beginPass(pass)
+
         // FIXME: need to insert this logic:
 //        if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
 //            encoder.setDepthStencilState(stateCaches.defaultDepthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
 //        }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i)
+            if i > firstCommandIndex {
+                self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i)
+            }
+            
             self.executeCommand(command)
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i)
+            
+            if i < lastCommandIndex {
+                self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i)
+            }
         }
+        
+        _ = self.endPass(pass) 
+        
+        // Check for any commands that need to be executed after the render pass.
+        self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: lastCommandIndex)
     }
     
     func executeCommand(_ command: FrameGraphCommand) {

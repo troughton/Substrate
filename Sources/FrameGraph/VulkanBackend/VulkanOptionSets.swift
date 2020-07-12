@@ -112,7 +112,10 @@ extension VkBufferUsageFlagBits : OptionSet {
 }
 
 extension VkAccessFlagBits : OptionSet {}
+
 extension VkPipelineStageFlagBits : OptionSet {}
+
+extension VkCommandPoolCreateFlagBits : OptionSet {}
 
 extension VkQueueFlagBits : OptionSet {}
 

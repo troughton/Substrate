@@ -214,6 +214,11 @@ final class MetalBackend : SpecificRenderBackend {
         // Metal does not track buffer usages.
         return false
     }
+
+    static var requiresTextureLayoutTransitions: Bool {
+        // Metal handles layout transitions through residency tracking.
+        return false 
+    }
     
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)

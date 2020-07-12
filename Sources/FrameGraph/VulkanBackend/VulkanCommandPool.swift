@@ -35,7 +35,7 @@ public final class VulkanDeviceQueue {
         
         var commandPoolCreateInfo = VkCommandPoolCreateInfo()
         commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO
-        commandPoolCreateInfo.flags = VkCommandPoolCreateFlags(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT)
+        commandPoolCreateInfo.flags = VkCommandPoolCreateFlags([VK_COMMAND_POOL_CREATE_TRANSIENT_BIT, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT])
         commandPoolCreateInfo.queueFamilyIndex = UInt32(familyIndex)
         
         var commandPool: VkCommandPool? = nil
@@ -82,7 +82,6 @@ final class VulkanQueue {
     let renderQueue: VulkanDeviceQueue?
     let computeQueue: VulkanDeviceQueue?
     let blitQueue: VulkanDeviceQueue?
-    let presentationQueue: VulkanDeviceQueue?
     
     init(device: VulkanDevice, capabilities: QueueCapabilities) {
         self.device = device
@@ -102,11 +101,6 @@ final class VulkanQueue {
             self.blitQueue = device.deviceQueue(capabilities: capabilities, requiredCapability: .blit)
         } else {
             self.blitQueue = nil
-        }
-        if capabilities.contains(.present) {
-            self.presentationQueue = device.deviceQueue(capabilities: capabilities, requiredCapability: .present)
-        } else {
-            self.presentationQueue = nil
         }
     }
 }

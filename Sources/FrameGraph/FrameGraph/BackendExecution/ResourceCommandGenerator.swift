@@ -105,7 +105,7 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
                 argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
             } else {
                 argBufferReference = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
-                waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
+                waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
             Backend.fillArgumentBuffer(argumentBuffer, storage: argBufferReference, resourceMap: resourceMap)
             
@@ -116,7 +116,7 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
                 argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
             } else {
                 argBufferReference = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
-                waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents[argumentBuffer]!.waitValue, waitEventValues[queueIndex])
+                waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
             Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, resourceMap: resourceMap)
             
@@ -214,7 +214,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     var commandEncoderDependencies = DependencyTable<Dependency?>(capacity: 1, defaultValue: nil)
     
     func processResourceResidency(resource: Resource, frameCommandInfo: FrameCommandInfo<Backend>) {
-        guard Backend.requiresResourceResidencyTracking else { return }
+        guard resource.type == .texture || Backend.requiresResourceResidencyTracking else { return }
         
         var resourceIsRenderTarget = false
         do {
@@ -270,7 +270,6 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
                 previousUsage = usage
             } while !previousUsage.renderPassRecord.isActive || previousUsage.stages == .cpuBeforeRender
-            
             
             var firstUsage = previousUsage
             
@@ -485,9 +484,13 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 for queue in QueueRegistry.allQueues {
                     // TODO: separate out the wait index for the first read from the first write.
                     let waitIndex = resource[waitIndexFor: queue, accessType: previousWrite != nil ? .readWrite : .read]
-                    self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.last!, order: .before))
+                    self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.first!, order: .before))
                 }
                 
+                if resource.type == .texture, Backend.requiresTextureLayoutTransitions {
+                    self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: firstUsage.type, stages: firstUsage.stages, allowReordering: true), index: firstUsage.commandRange.first!))
+                }
+
                 if !resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised) {
                     if lastUsage.isWrite {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))

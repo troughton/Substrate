@@ -28,6 +28,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     
     static var requiresResourceResidencyTracking: Bool { get }
     static var requiresBufferUsage: Bool { get }
+    static var requiresTextureLayoutTransitions: Bool { get }
     
     func makeQueue(frameGraphQueue: Queue) -> BackendQueue
     func makeSyncEvent(for queue: Queue) -> Event
@@ -96,7 +97,7 @@ protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.Transi
     
     func allocateBufferIfNeeded(_ buffer: Buffer, usage: BufferUsage, forceGPUPrivate: Bool) -> Backend.BufferReference
     func allocateTextureIfNeeded(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> Backend.TextureReference
-    func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: Backend.PersistentResourceRegistry) throws -> Backend.TextureReference
+    func allocateWindowHandleTexture(_ texture: Texture) throws -> Backend.TextureReference
     func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties, resourceMap: FrameResourceMap<Backend>) -> Backend.TextureReference
     
     func setDisposalFences(on resource: Resource, to fences: [FenceDependency])
@@ -109,9 +110,14 @@ protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.Transi
     
     var textureWaitEvents: TransientResourceMap<Texture, ContextWaitEvent> { get }
     var bufferWaitEvents: TransientResourceMap<Buffer, ContextWaitEvent> { get }
-    var argumentBufferWaitEvents: TransientResourceMap<_ArgumentBuffer, ContextWaitEvent> { get }
-    var argumentBufferArrayWaitEvents: TransientResourceMap<_ArgumentBufferArray, ContextWaitEvent> { get }
+    var argumentBufferWaitEvents: TransientResourceMap<_ArgumentBuffer, ContextWaitEvent>? { get }
+    var argumentBufferArrayWaitEvents: TransientResourceMap<_ArgumentBufferArray, ContextWaitEvent>? { get }
     var historyBufferResourceWaitEvents: [Resource : ContextWaitEvent] { get }
+}
+
+extension BackendTransientResourceRegistry {
+    var argumentBufferWaitEvents: TransientResourceMap<_ArgumentBuffer, ContextWaitEvent>? { nil }
+    var argumentBufferArrayWaitEvents: TransientResourceMap<_ArgumentBufferArray, ContextWaitEvent>? { nil }
 }
 
 protocol BackendPersistentResourceRegistry: ResourceRegistry where Backend.PersistentResourceRegistry == Self {

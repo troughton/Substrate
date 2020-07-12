@@ -64,8 +64,7 @@ public class VulkanSwapChain : SwapChain {
     public init(device: VulkanDevice, surface: VkSurfaceKHR) {
         self.device = device
         self.surface = surface
-        let presentQueueFamily = device.queueFamilyIndex(capabilities: .present, requiredCapability: .present)
-        self.presentQueue = device.queues.first(where: { $0.familyIndex == presentQueueFamily })!
+        self.presentQueue = device.presentQueue(surface: surface)!
     }
 
     private var currentDrawableSize = Size()
@@ -110,8 +109,8 @@ public class VulkanSwapChain : SwapChain {
         createInfo.presentMode = presentMode
         createInfo.clipped = true
         
-        let renderQueueIndex = device.queueFamilyIndex(capabilities: [.render, .present], requiredCapability: .render)
-        let presentQueueIndex = device.queueFamilyIndex(capabilities: [.render, .present], requiredCapability: .present)
+        let renderQueueIndex = device.queueFamilyIndex(capabilities: [.render], requiredCapability: .render)
+        let presentQueueIndex = self.presentQueue.familyIndex
         let queueFamilyIndices = [ UInt32(renderQueueIndex), UInt32(presentQueueIndex) ]
         
         let sharingMode : VulkanSharingMode
@@ -200,7 +199,6 @@ public class VulkanSwapChain : SwapChain {
             self.recreateSwapChain(drawableSize: descriptor.size)
         }
         
-        // TODO: reset the semaphores before usage (e.g. signal them)
         var imageIndex = 0 as UInt32
         let semaphore = self.imageAcquisitionSemaphores[self.currentFrameIndex]
         

@@ -561,7 +561,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateWindowHandleTexture(_ texture: Texture, persistentRegistry: MetalPersistentResourceRegistry) throws -> MTLTextureReference {
+    public func allocateWindowHandleTexture(_ texture: Texture) throws -> MTLTextureReference {
         precondition(texture.flags.contains(.windowHandle))
         
         var error : RenderTargetTextureError? = nil
@@ -577,7 +577,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
                     return
                 }
                 
-                guard let windowReference = persistentRegistry.windowReferences.removeValue(forKey: texture),
+                guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
                     let mtlDrawable = windowReference.nextDrawable() else {
                     error = RenderTargetTextureError.unableToRetrieveDrawable(texture)
                     return

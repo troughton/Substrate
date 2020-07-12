@@ -53,7 +53,7 @@ extension ImGui {
         let (pixels, width, height, bytesPerPixel) = ImGui.getFontTexDataAsAlpha8()
         
         var textureDescriptor = TextureDescriptor(type: .type2D, format: .r8Unorm, width: width, height: height, mipmapped: false)
-        textureDescriptor.storageMode = .managed
+        textureDescriptor.storageMode = .shared
         textureDescriptor.usageHint = [.shaderRead]
         let fontTexture = Texture(descriptor: textureDescriptor, flags: .persistent)
         fontTexture.replace(region: Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, withBytes: pixels, bytesPerRow: width * bytesPerPixel)
