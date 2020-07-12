@@ -38,6 +38,10 @@ final class DefaultFrameGraphJobManager : FrameGraphJobManager {
     }
     
     public func syncOnMainThread(_ function: @escaping () -> Void) {
-        return function()
+        if !Thread.isMainThread {
+            DispatchQueue.main.sync { function() }
+        } else {
+            function()
+        }
     }
 }
