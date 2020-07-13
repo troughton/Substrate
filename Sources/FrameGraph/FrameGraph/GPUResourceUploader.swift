@@ -6,11 +6,23 @@
 //
 
 import FrameGraphUtilities
+import Dispatch
+
+extension DispatchSemaphore {
+    @inlinable
+    public func withSemaphore<T>(_ perform: () throws -> T) rethrows -> T {
+        self.wait()
+        let result = try perform()
+        self.signal()
+        return result
+    }
+}
 
 public final class GPUResourceUploader {
     // Useful to bypass uploading when running in GPU-less mode.
     public static var skipUpload = false
     
+    static let lock = DispatchSemaphore(value: 1)
     public internal(set) static var frameGraph : FrameGraph! = nil
     private static var enqueuedBytes = 0
     private static var maxUploadSize = 128 * 1024 * 1024
@@ -43,10 +55,16 @@ public final class GPUResourceUploader {
     }
     
     private init() {}
-    
-    public static func flush() {
+
+    private static func flushHoldingLock() {
         self.frameGraph.execute()
         self.enqueuedBytes = 0
+    }
+    
+    public static func flush() {
+        self.lock.withSemaphore {
+            self.flushHoldingLock()
+        }
     }
     
     public static func addUploadPass(stagingBufferLength: Int, pass: @escaping (RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) {
@@ -55,11 +73,15 @@ public final class GPUResourceUploader {
         }
         precondition(self.frameGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
-        if self.enqueuedBytes + stagingBufferLength >= self.maxUploadSize {
-            self.flush()
+        self.lock.withSemaphore {
+            if self.enqueuedBytes + stagingBufferLength >= self.maxUploadSize {
+                self.flushHoldingLock()
+            }
+            
+            frameGraph.addPass(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
+            self.enqueuedBytes += stagingBufferLength
         }
-        frameGraph.addPass(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
-        self.enqueuedBytes += stagingBufferLength
+            
     }
     
     public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int, onUploadCompleted: ((Buffer, UnsafeRawPointer) -> Void)? = nil) {
