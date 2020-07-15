@@ -101,6 +101,7 @@ public enum TextureEdgeWrapMode {
     case reflect
     case clamp
     
+    @inlinable
     var stbirMode : stbir_edge {
         switch self {
         case .zero:
@@ -122,7 +123,9 @@ final class TextureDataStorage<T> {
     
     @inlinable
     init(elementCount: Int) {
-        self.data = .allocate(capacity: elementCount)
+        let memory = UnsafeMutableRawBufferPointer.allocate(byteCount: elementCount * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment)
+        memory.initializeMemory(as: UInt8.self, repeating: 0)
+        self.data = memory.bindMemory(to: T.self)
         self.deallocateFunc = nil
     }
     
@@ -159,6 +162,7 @@ public struct TextureData<T> {
     @usableFromInline var storage: TextureDataStorage<T>
     
     public init(width: Int, height: Int, channels: Int, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false) {
+        precondition(_isPOD(T.self))
         precondition(width >= 1 && height >= 1 && channels >= 1)
         self.width = width
         self.height = height
@@ -249,7 +253,8 @@ public struct TextureData<T> {
         self.ensureUniqueness()
         return try perform(self.storage.data)
     }
-    
+
+    @inlinable
     public func cropped(originX: Int, originY: Int, width: Int, height: Int, clampOutOfBounds: Bool = false) -> TextureData<T> {
         precondition(clampOutOfBounds || (originX >= 0 && originY >= 0))
         precondition(clampOutOfBounds || (originX + width <= self.width && originY + height <= self.height))
@@ -273,6 +278,7 @@ public struct TextureData<T> {
         return result
     }
     
+    @inlinable
     public func resized(width: Int, height: Int, wrapMode: TextureEdgeWrapMode) -> TextureData<T> {
         if width == self.width && height == self.height {
             return self
