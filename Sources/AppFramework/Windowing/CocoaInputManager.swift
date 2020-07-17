@@ -65,7 +65,7 @@ public final class CocoaInputManager : InputManagerInternal {
     public func update(frame: UInt64, windows: [Window]) {
         let frame = UInt32(truncatingIfNeeded: frame)
         
-        self.handleEvents(frame: frame)
+        self.handleEvents(frame: frame, windows: windows)
         #if canImport(CSDL2) && !os(iOS)
         self.gamepadManager.update(frame: frame)
         #endif
@@ -102,7 +102,7 @@ public final class CocoaInputManager : InputManagerInternal {
         }
     }
     
-    private func handleEvents(frame: UInt32) {
+    private func handleEvents(frame: UInt32, windows: [Window]) {
         var mouseScrollX : CGFloat = 0.0
         var mouseScrollY : CGFloat = 0.0
         
@@ -171,20 +171,7 @@ public final class CocoaInputManager : InputManagerInternal {
             case .otherMouseDragged:
                 fallthrough
             case .mouseMoved:
-                let location = NSEvent.mouseLocation
-                let locationInWindow = event.locationInWindow
-                
-                inputState[.mouse][.mouseX] = RawInputState(value: Float(location.x), frame: frame)
-                inputState[.mouse][.mouseY] = RawInputState(value: Float(location.y), frame: frame)
-                
-                if let window = event.window {
-                    let windowHeight = window.frame.height
-                    inputState[.mouse][.mouseXInWindow] = RawInputState(value: Float(locationInWindow.x), frame: frame)
-                    inputState[.mouse][.mouseYInWindow] = RawInputState(value: Float(windowHeight - locationInWindow.y), frame: frame)
-                }
-                
-                mouseRelativeX += event.deltaX
-                mouseRelativeY += event.deltaY
+                break
             case .leftMouseDown:
                 fallthrough
             case .rightMouseDown:
@@ -210,11 +197,32 @@ public final class CocoaInputManager : InputManagerInternal {
             }
         }
         
+        let oldMouseLocationX = inputState[.mouseX].value
+        let oldMouseLocationY = inputState[.mouseY].value
+        
+        let mouseLocation = NSEvent.mouseLocation
+        let screenSize = NSScreen.screens[0].frame.size
+        
+        inputState[.mouse][.mouseX] = RawInputState(value: Float(mouseLocation.x), frame: frame)
+        inputState[.mouse][.mouseY] = RawInputState(value: Float(screenSize.height - mouseLocation.y), frame: frame)
+        
+        if let window = (windows.first(where: { $0.hasFocus }) as! CocoaWindow?)?.window {
+            let locationInWindow = window.mouseLocationOutsideOfEventStream
+            
+            let windowHeight = window.contentView!.frame.height
+            inputState[.mouse][.mouseXInWindow] = RawInputState(value: Float(locationInWindow.x), frame: frame)
+            inputState[.mouse][.mouseYInWindow] = RawInputState(value: Float(windowHeight - locationInWindow.y), frame: frame)
+        }
+        
+        
+        if frame > 0 {
+            inputState[.mouse][.mouseXRelative] = RawInputState(value: inputState[.mouse][.mouseX].value - oldMouseLocationX, frame: frame)
+            inputState[.mouse][.mouseYRelative] = RawInputState(value: inputState[.mouse][.mouseY].value - oldMouseLocationY, frame: frame)
+        }
+        
         inputState[.mouse][.mouseScrollX] = RawInputState(value: Float(mouseScrollX), frame: frame)
         inputState[.mouse][.mouseScrollY] = RawInputState(value: Float(mouseScrollY), frame: frame)
         
-        inputState[.mouse][.mouseXRelative] = RawInputState(value: Float(mouseRelativeX), frame: frame)
-        inputState[.mouse][.mouseYRelative] = RawInputState(value: Float(-mouseRelativeY), frame: frame)
         
         self.eventQueue.removeAll(keepingCapacity: true)
     }

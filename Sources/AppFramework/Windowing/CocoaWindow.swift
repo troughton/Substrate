@@ -102,7 +102,7 @@ public final class CocoaNSWindow : NSWindow {
 }
 
 public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
-    private let window : NSWindow
+    internal let window : NSWindow
     public let mtkView : MTKView
     public let device : MTLDevice
     
@@ -126,19 +126,30 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
             _dimensions = newValue
             let position = self.position
             self.window.setContentSize(NSSize(width: Int(_dimensions.width), height: Int(_dimensions.height)))
-            self.position = position // Resizing happens from the bottom-left, whereas we want to maintain the position from the top-right.
+            self.position = position // Resizing happens from the bottom left, whereas we want to maintain the position from the top left.
         }
     }
     
     public var position: WindowPosition {
         get {
-            let origin = self.window.frame.origin
-            let size = self.window.frame.size
-            return WindowPosition(Float(origin.x), Float(origin.y + size.height))
+            guard let screen = self.window.screen else { return WindowPosition(0, 0) }
+            
+            let frame = self.window.frame
+            
+            let screenTop = screen.frame.origin.y + screen.frame.height
+            let positionOnScreenY = Float(frame.origin.y) + self.dimensions.height // Excluding the title bar.
+            let positionY = Float(screenTop) - positionOnScreenY
+            return WindowPosition(Float(frame.origin.x), Float(positionY))
         }
         
         set {
-            self.window.setFrameTopLeftPoint(NSPoint(x: CGFloat(newValue.x), y: CGFloat(newValue.y)))
+            guard let screen = self.window.screen else { return }
+            
+            let yToTransform = newValue.y + self.dimensions.height // the bottom-left corner.
+            
+            let screenTop = screen.frame.origin.y + screen.frame.height
+            let positionOnScreenY = screenTop - CGFloat(yToTransform)
+            self.window.setFrameOrigin(NSPoint(x: CGFloat(newValue.x), y: CGFloat(positionOnScreenY)))
         }
     }
     
