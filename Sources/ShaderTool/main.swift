@@ -37,6 +37,9 @@ struct ShaderTool: ParsableCommand {
     
     @Flag(help: "Compile the shaders with debug information.")
     var debug: Bool
+    
+    @Flag(help: "Skip HLSL legalization (done using SPIRV-Opt). HLSL legalization is usually required, but some well-behaved sources may not need it and it may be easier to view the cross-compiled sources with it disabled.")
+    var skipHLSLLegalization: Bool
 
     func run() throws {
         let reflectionURL = URL(fileURLWithPath: reflectionFile)
@@ -48,7 +51,8 @@ struct ShaderTool: ParsableCommand {
         let compiler = try ShaderCompiler(directory: URL(fileURLWithPath: shaderDirectory),
                                           reflectionFile: reflectionURL,
                                           targets: target.isEmpty ? [Target.defaultTarget] : target,
-                                          compileWithDebugInfo: self.debug)
+                                          compileWithDebugInfo: self.debug,
+                                          legalizeHLSL: !self.skipHLSLLegalization)
         compiler.compile()
         compiler.generateReflection()
     }

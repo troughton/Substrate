@@ -89,15 +89,6 @@ enum Target : Hashable {
             return nil // We've already compiled to SPIR-V, so there's nothing else to do.
         }
     }
-    
-    var needsHLSLLegalization: Bool {
-        switch self {
-        case .macOSMetal, .iOSMetal:
-            return false
-        case .vulkan:
-            return true
-        }
-    }
 }
 
 extension Target: CustomStringConvertible {

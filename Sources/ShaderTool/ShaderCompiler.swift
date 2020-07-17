@@ -145,6 +145,7 @@ final class ShaderCompiler {
     let sourceDirectory : URL
     let reflectionFile : URL?
     let compileWithDebugInfo: Bool
+    let legalizeHLSL: Bool
     
     let sourceFiles : [DXCSourceFile]
     let targets : [Target]
@@ -159,17 +160,18 @@ final class ShaderCompiler {
     
     var spirvCompilers : [SPIRVCompiler] = []
     
-    init(directory: URL, reflectionFile: URL? = nil, targets: [Target] = [.defaultTarget], compileWithDebugInfo: Bool) throws {
+    init(directory: URL, reflectionFile: URL? = nil, targets: [Target] = [.defaultTarget], compileWithDebugInfo: Bool, legalizeHLSL: Bool) throws {
         self.baseDirectory = directory
         self.sourceDirectory = directory.appendingPathComponent("Source/RenderPasses")
         self.reflectionFile = reflectionFile
         self.compileWithDebugInfo = compileWithDebugInfo
+        self.legalizeHLSL = legalizeHLSL
         
         self.targets = targets
 
         self.dxcDriver = try DXCDriver()
         
-        if targets.contains(where: { $0.needsHLSLLegalization }) {
+        if self.legalizeHLSL {
             self.spirvOptDriver = try SPIRVOptDriver()
         } else {
             self.spirvOptDriver = nil
@@ -290,11 +292,11 @@ final class ShaderCompiler {
 
                     print("\(target): Compiling \(entryPoint.name) in \(file.url.lastPathComponent) to SPIR-V")
                     
-                    let task = try self.dxcDriver.compile(sourceFile: file.url, destinationFile: target.needsHLSLLegalization ? tempFileURL : spvFileURL, entryPoint: entryPoint.name, type: entryPoint.type, target: target)
+                    let task = try self.dxcDriver.compile(sourceFile: file.url, destinationFile: self.legalizeHLSL ? tempFileURL : spvFileURL, entryPoint: entryPoint.name, type: entryPoint.type, target: target)
                     task.waitUntilExit()
                     guard task.terminationStatus == 0 else { print("Error compiling entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
                     
-                    if target.needsHLSLLegalization {
+                    if self.legalizeHLSL {
                         let optimisationTask = try self.spirvOptDriver!.optimise(sourceFile: tempFileURL, destinationFile: spvFileURL)
                         optimisationTask.waitUntilExit()
                         guard optimisationTask.terminationStatus == 0 else { print("Error optimising entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
