@@ -51,24 +51,33 @@ enum Target : Hashable {
             return "TARGET_VULKAN"
         }
     }
+
+    var intermediatesDirectory : String {
+        switch self {
+        case .macOSMetal:
+            return "Intermediates/Metal-macOS"
+        case .iOSMetal:
+            return "Intermediates/Metal-iOS"
+        case .vulkan:
+            return self.outputDirectory
+        }
+    }
     
     var outputDirectory : String {
         switch self {
-        case .macOSMetal:
-            return "Metal"
-        case .iOSMetal:
-            return "Metal-iOS"
+        case .macOSMetal, .iOSMetal:
+            return "Compiled"
         case .vulkan:
-            return "Vulkan"
+            return "Compiled/Vulkan"
         }
     }
     
     var spirvDirectory : String {
         switch self {
         case .vulkan:
-            return self.outputDirectory
+            return self.intermediatesDirectory
         default:
-            return self.outputDirectory + "/SPIRV"
+            return self.intermediatesDirectory + "/SPIRV"
         }
     }
     
@@ -110,7 +119,7 @@ enum CompilerError : Error {
 }
 
 protocol TargetCompiler {
-    func compile(spirvCompilers: [SPIRVCompiler], sourceDirectory: URL, outputDirectory: URL, withDebugInformation debug: Bool) throws
+    func compile(spirvCompilers: [SPIRVCompiler], sourceDirectory: URL, workingDirectory: URL, outputDirectory: URL, withDebugInformation debug: Bool) throws
 }
 
 final class MetalCompiler : TargetCompiler {
@@ -127,12 +136,12 @@ final class MetalCompiler : TargetCompiler {
         return UInt32(major * 10000 + minor * 100 + patch)
     }
     
-    func compile(spirvCompilers: [SPIRVCompiler], sourceDirectory: URL, outputDirectory: URL, withDebugInformation debug: Bool) throws {
+    func compile(spirvCompilers: [SPIRVCompiler], sourceDirectory: URL, workingDirectory: URL, outputDirectory: URL, withDebugInformation debug: Bool) throws {
         var sourceFiles = [(metalSource: URL, airFile: URL)]()
         var needsRegenerateLibrary = false
         var hadErrors = false
         
-        let airDirectory = outputDirectory.appendingPathComponent("AIR")
+        let airDirectory = workingDirectory.appendingPathComponent("AIR")
         try FileManager.default.createDirectoryIfNeeded(at: airDirectory)
         
         for compiler in spirvCompilers where compiler.file.target == self.target {
@@ -155,7 +164,7 @@ final class MetalCompiler : TargetCompiler {
             
             let outputFileName = compiler.file.sourceFile.renderPass + "-" + compiler.file.entryPoint.name
             
-            var metalFileURL = outputDirectory.appendingPathComponent(outputFileName + ".metal")
+            var metalFileURL = workingDirectory.appendingPathComponent(outputFileName + ".metal")
             let airFileURL = airDirectory.appendingPathComponent(outputFileName + ".air")
             do {
                 // Generate the compiled source unconditionally, since we need it to compute bindings for reflection.
@@ -215,7 +224,13 @@ final class MetalCompiler : TargetCompiler {
         
         if needsRegenerateLibrary {
             do {
-                let metalLibraryPath = outputDirectory.appendingPathComponent("Library.metallib")
+                try FileManager.default.createDirectoryIfNeeded(at: outputDirectory)
+                let metalLibraryPath: URL
+                if case .macOSMetal = self.target {
+                    metalLibraryPath = outputDirectory.appendingPathComponent("Library-macOS.metallib")
+                } else {
+                    metalLibraryPath = outputDirectory.appendingPathComponent("Library-iOS.metallib")
+                }
                 print("\(self.target): Linking Metal library at \(metalLibraryPath.path)")
                 try self.driver.generateLibrary(airFiles: sourceFiles.map { $1 }, outputLibrary: metalLibraryPath).waitUntilExit()
             }

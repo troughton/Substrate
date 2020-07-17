@@ -242,7 +242,8 @@ final class ShaderCompiler {
                 
                 try compiler.compile(spirvCompilers: targetCompilers,
                                      sourceDirectory: self.baseDirectory.appendingPathComponent("Source"),
-                    outputDirectory: self.baseDirectory.appendingPathComponent(target.outputDirectory),
+                                     workingDirectory: self.baseDirectory.appendingPathComponent(target.intermediatesDirectory),
+                                     outputDirectory: self.baseDirectory.appendingPathComponent(target.outputDirectory),
                     withDebugInformation: self.compileWithDebugInfo)
                 
                 print()
