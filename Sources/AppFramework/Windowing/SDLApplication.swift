@@ -55,7 +55,7 @@ public class SDLVulkanWindow : SDLWindow {
 
 #if canImport(Metal)
 
-import AppKit
+import MetalKit
 
 public class SDLMetalWindow : SDLWindow {
     var metalView : SDL_MetalView? = nil
@@ -70,11 +70,22 @@ public class SDLMetalWindow : SDLWindow {
         
         #if os(macOS)
         let view = Unmanaged<NSView>.fromOpaque(self.metalView!).takeUnretainedValue()
-        
         let metalLayer = view.layer as! CAMetalLayer
+        
+        if view.window?.screen?.canRepresent(.p3) ?? false {
+            metalLayer.pixelFormat = .bgr10a2Unorm
+            metalLayer.colorspace = CGColorSpace(name: CGColorSpace.genericRGBLinear)
+        } else {
+            metalLayer.pixelFormat = .bgra8Unorm_srgb
+        }
+        #else
+        let view = Unmanaged<UIView>.fromOpaque(self.metalView!).takeUnretainedValue()
+        let metalLayer = view.layer as! CAMetalLayer
+        metalLayer.pixelFormat = .bgra8Unorm_srgb
+        #endif
+        
         metalLayer.device = (RenderBackend.renderDevice as! MTLDevice)
         self.swapChain = metalLayer
-        #endif
     }
     
     deinit {
