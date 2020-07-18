@@ -167,7 +167,7 @@ enum FrameResourceCommands {
 
 struct PreFrameResourceCommand<Dependency: SwiftFrameGraph.Dependency> : Comparable {
     var command : PreFrameCommands<Dependency>
-    var passIndex : Int
+    var encoderIndex : Int
     var index : Int
     var order : PerformOrder
     
@@ -291,7 +291,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
             if Backend.TransientResourceRegistry.isAliasedHeapResource(resource: resource) {
                 let fenceDependency = FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, stages: firstUsage.stages)
-                self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource, waitDependency: fenceDependency), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.lowerBound, order: .before))
+                self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource, waitDependency: fenceDependency), encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, order: .before))
                 
             }
             
@@ -390,15 +390,20 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             let canBeMemoryless = false
             #endif
             
+            let firstCommandEncoderIndex = frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord)
+            // We dispose at the end of a command encoder since resources can't alias against each other within a command encoder.
+            let lastCommandEncoderIndex = frameCommandInfo.encoderIndex(for: lastUsage.renderPassRecord)
+            let disposalIndex = frameCommandInfo.commandEncoders[lastCommandEncoderIndex].commandRange.last!
+            
             // Insert commands to materialise and dispose of the resource.
             if let argumentBuffer = resource.argumentBuffer {
                 // Unlike textures and buffers, we materialise persistent argument buffers at first use rather than immediately.
                 if !historyBufferUseFrame {
-                    self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseArgumentBuffer(argumentBuffer), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.lowerBound, order: .before))
+                    self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseArgumentBuffer(argumentBuffer), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
                 }
                 
                 if !resource.flags.contains(.persistent), !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
-                    self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                    self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), encoderIndex: lastCommandEncoderIndex, index: disposalIndex, order: .after))
                 }
                 
             } else if !resource.flags.contains(.persistent) || resource.flags.contains(.windowHandle) {
@@ -421,11 +426,11 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                     
                     if !historyBufferUseFrame {
-                        self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseBuffer(buffer, usage: bufferUsage), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.lowerBound, order: .before))
+                        self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseBuffer(buffer, usage: bufferUsage), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
                     }
                     
                     if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
-                        self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                        self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), encoderIndex: lastCommandEncoderIndex, index: disposalIndex, order: .after))
                     }
                     
                 } else if let texture = resource.texture {
@@ -467,14 +472,14 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     
                     if !historyBufferUseFrame {
                         if texture.isTextureView {
-                            self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseTextureView(texture, usage: properties), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.lowerBound, order: .before))
+                            self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseTextureView(texture, usage: properties), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
                         } else {
-                            self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseTexture(texture, usage: properties), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.lowerBound, order: .before))
+                            self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseTexture(texture, usage: properties), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
                         }
                     }
                     
                     if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
-                        self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                        self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), encoderIndex: lastCommandEncoderIndex, index: disposalIndex, order: .after))
                         
                     }
                 }
@@ -484,7 +489,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 for queue in QueueRegistry.allQueues {
                     // TODO: separate out the wait index for the first read from the first write.
                     let waitIndex = resource[waitIndexFor: queue, accessType: previousWrite != nil ? .readWrite : .read]
-                    self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), passIndex: firstUsage.renderPassRecord.passIndex, index: firstUsage.commandRange.first!, order: .before))
+                    self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.first!, order: .before))
                 }
                 
                 if resource.type == .texture, Backend.requiresTextureLayoutTransitions {
@@ -493,13 +498,13 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
 
                 if !resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised) {
                     if lastUsage.isWrite {
-                        self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), passIndex: lastUsage.renderPassRecord.passIndex, index: lastUsage.commandRange.last!, order: .after))
+                        self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), encoderIndex: lastCommandEncoderIndex, index: lastUsage.commandRange.last!, order: .after))
                     } else {
                         if let lastWrite = previousWrite {
-                            self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), passIndex: lastWrite.renderPassRecord.passIndex, index: lastWrite.commandRange.last!, order: .after))
+                            self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), encoderIndex: frameCommandInfo.encoderIndex(for: lastWrite.renderPassRecord), index: lastWrite.commandRange.last!, order: .after))
                         }
                         for read in readsSinceLastWrite {
-                            self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .write), passIndex: read.renderPassRecord.passIndex, index: read.commandRange.last!, order: .after))
+                            self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .write), encoderIndex: frameCommandInfo.encoderIndex(for: read.renderPassRecord), index: read.commandRange.last!, order: .after))
                         }
                     }
                 }
@@ -533,11 +538,10 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         
         self.preFrameCommands.sort()
         for command in self.preFrameCommands {
-            let encoderIndex = frameCommandInfo.encoderIndex(for: command.passIndex)
-            let commandBufferIndex = frameCommandInfo.commandEncoders[encoderIndex].commandBufferIndex
+            let commandBufferIndex = frameCommandInfo.commandEncoders[command.encoderIndex].commandBufferIndex
             command.command.execute(resourceRegistry: resourceMap.transientRegistry, resourceMap: resourceMap, queue: queue,
                                     encoderDependencies: &self.commandEncoderDependencies,
-                                    waitEventValues: &frameCommandInfo.commandEncoders[encoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
+                                    waitEventValues: &frameCommandInfo.commandEncoders[command.encoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
         }
         
         self.preFrameCommands.removeAll(keepingCapacity: true)
