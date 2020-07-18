@@ -282,14 +282,17 @@ extension SPIRVType : CustomStringConvertible {
             
             """
             if needsManualHashableEquatable {
-                let memberEqualityChecks = members.map { "lhs.\($0.name) == rhs.\($0.name)" }
+                
+                var memberEqualityChecks = [String]()
                 var memberHashFunctions = [String]()
                 for member in members {
                     if case .array(_, let length) = member.type {
                         for i in 0..<length {
+                            memberEqualityChecks.append("lhs.\(member.name).\(i) == rhs.\(member.name).\(i)")
                             memberHashFunctions.append("hasher.combine(\(member.name).\(i))")
                         }
                     } else {
+                        memberEqualityChecks.append("lhs.\(member.name) == rhs.\(member.name)")
                         memberHashFunctions.append("hasher.combine(\(member.name))")
                     }
                 }
