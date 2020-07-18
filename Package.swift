@@ -5,7 +5,7 @@ import PackageDescription
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
 let vulkanDependencies: [Target.Dependency] = []
 #else
-let vulkanDependencies: [Target.Dependency] = [.target(name: "Vulkan", condition: .when(platforms: [.linux, .windows]))]
+let vulkanDependencies: [Target.Dependency] = [.target(name: "Vulkan")]
 #endif
 
 let package = Package(
@@ -57,6 +57,18 @@ let package = Package(
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14
 )
+
+#if !(os(macOS) || os(iOS) || os(tvOS) || os(watchOS))
+package.targets.append(
+        .systemLibrary(
+            name: "Vulkan",
+            pkgConfig: "vulkan",
+            providers: [
+                .apt(["vulkan"]),
+            ]
+        )
+)
+#endif
 
 //#if !(os(macOS) || os(iOS) || os(tvOS) || os(watchOS))
 //package.targets.append(
