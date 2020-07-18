@@ -1,4 +1,4 @@
-// swift-tools-version:5.3
+// swift-tools-version:5.2
 
 import PackageDescription
 
@@ -49,7 +49,7 @@ let package = Package(
                 .apt(["sdl2"]),
             ]
         ),
-        .target(name: "CNativeFileDialog", exclude: ["CMakeLists.txt"], resources: [.copy("LICENSE")]),
+        .target(name: "CNativeFileDialog", exclude: ["CMakeLists.txt"]),
         .target(
             name: "AppFramework",
             dependencies: ["FrameGraphUtilities", "SwiftFrameGraph", "SwiftMath", .product(name: "ImGui", package: "SwiftImGui"), "CNativeFileDialog", "CSDL2"] + vulkanDependencies,
