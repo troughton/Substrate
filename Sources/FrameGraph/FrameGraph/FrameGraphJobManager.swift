@@ -9,11 +9,11 @@ public protocol FrameGraphJobManager : class {
     var threadIndex : Int { get }
     var threadCount : Int { get }
     
-    func dispatchSyncFrameGraph(_ function: @escaping () -> Void)
+    func dispatchSyncFrameGraph(_ function: () -> Void)
     
     func dispatchPassJob(_ function: @escaping () -> Void)
     func waitForAllPassJobs()
-    func syncOnMainThread(_ function: () -> Void)
+    func syncOnMainThread<T>(_ function: () throws -> T) rethrows -> T
 }
 
 final class DefaultFrameGraphJobManager : FrameGraphJobManager {
@@ -25,7 +25,7 @@ final class DefaultFrameGraphJobManager : FrameGraphJobManager {
         return 1
     }
     
-    public func dispatchSyncFrameGraph(_ function: @escaping () -> Void) {
+    public func dispatchSyncFrameGraph(_ function: () -> Void) {
         syncOnMainThread(function)
     }
     
@@ -37,11 +37,12 @@ final class DefaultFrameGraphJobManager : FrameGraphJobManager {
         
     }
     
-    public func syncOnMainThread(_ function: () -> Void) {
+    @inlinable
+    public func syncOnMainThread<T>(_ function: () throws -> T) rethrows -> T {
         if !Thread.isMainThread {
-            DispatchQueue.main.sync { function() }
+            return try DispatchQueue.main.sync { try function() }
         } else {
-            function()
+            return try function()
         }
     }
 }
