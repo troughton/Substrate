@@ -46,16 +46,18 @@ final class MetalBackend : SpecificRenderBackend {
     let resourceRegistry : MetalPersistentResourceRegistry
     let stateCaches : MetalStateCaches
     let enableValidation : Bool
+    let enableShaderHotReloading : Bool
     
     var activeContext : FrameGraphContextImpl<MetalBackend>? = nil
     
     var queueSyncEvents = [MTLEvent?](repeating: nil, count: QueueRegistry.maxQueues)
     
-    public init(libraryPath: String? = nil, enableValidation: Bool = true) {
+    public init(libraryPath: String? = nil, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
         self.device = MTLCreateSystemDefaultDevice()!
         self.stateCaches = MetalStateCaches(device: self.device, libraryPath: libraryPath)
         self.resourceRegistry = MetalPersistentResourceRegistry(device: device)
         self.enableValidation = enableValidation
+        self.enableShaderHotReloading = enableShaderHotReloading
     }
     
     public var api : RenderAPI {
@@ -68,7 +70,7 @@ final class MetalBackend : SpecificRenderBackend {
     
     func setActiveContext(_ context: FrameGraphContextImpl<MetalBackend>?) {
         assert(self.activeContext == nil || context == nil)
-        if context != nil {
+        if context != nil, self.enableShaderHotReloading {
             self.stateCaches.checkForLibraryReload()
         }
         self.activeContext = context

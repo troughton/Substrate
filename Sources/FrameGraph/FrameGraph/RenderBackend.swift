@@ -90,11 +90,11 @@ public struct RenderBackend {
         return _backend.api
     }
     
-    public static func initialise(api: RenderAPI, applicationName: String, libraryPath: String? = nil) {
+    public static func initialise(api: RenderAPI, applicationName: String, libraryPath: String? = nil, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
         switch api {
 #if canImport(Metal)
         case .metal:
-            _backend = MetalBackend(libraryPath: libraryPath)
+            _backend = MetalBackend(libraryPath: libraryPath, enableValidation: enableValidation, enableShaderHotReloading: enableShaderHotReloading)
 #endif
 #if canImport(Vulkan)
         case .vulkan:
