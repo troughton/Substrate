@@ -310,7 +310,7 @@ public protocol FrameGraphContext : class {
 // _FrameGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
 protocol _FrameGraphContext : FrameGraphContext {
     var transientRegistryIndex : Int { get }
-    var accessSemaphore : Semaphore { get }
+    var accessSemaphore : DispatchSemaphore { get }
     var frameGraphQueue: Queue { get }
     func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
     func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping (_ gpuTime: Double) -> Void)

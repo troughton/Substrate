@@ -7,9 +7,10 @@
 
 import FrameGraphUtilities
 import Foundation
+import Dispatch
 
 final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphContext {
-    public var accessSemaphore: Semaphore
+    public var accessSemaphore: DispatchSemaphore
        
     let backend: Backend
     let resourceRegistry: Backend.TransientResourceRegistry
@@ -33,7 +34,7 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
         self.commandQueue = backend.makeQueue(frameGraphQueue: self.frameGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
         self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount)
-        self.accessSemaphore = Semaphore(value: Int32(inflightFrameCount))
+        self.accessSemaphore = DispatchSemaphore(value: inflightFrameCount)
         
         self.commandGenerator = ResourceCommandGenerator()
         self.syncEvent = backend.makeSyncEvent(for: self.frameGraphQueue)
