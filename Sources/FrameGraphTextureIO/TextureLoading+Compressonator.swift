@@ -1,6 +1,7 @@
 
 #if canImport(Compressonator)
 import Compressonator
+import SwiftFrameGraph
 
 extension CMP_FORMAT {
     
