@@ -124,7 +124,32 @@ extension Texture {
                 try self.copyData(from: textureData, mipmapped: mipmapped)
             } else {
                 let data = stbi_load(url.path, &width, &height, &componentsPerPixel, channels)!
-                let textureData = TextureData<UInt8>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
+                var textureData = TextureData<UInt8>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
+                
+                if (colourSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
+                    var needsChannelExpansion = true
+                    #if os(iOS) || os(tvOS) || os(watchOS)
+                    if textureData.channelCount == 1 || textureData.channelCount == 2 {
+                        needsChannelExpansion = false
+                    }
+                    #endif
+                    if needsChannelExpansion {
+                        let sourceData = textureData
+                        textureData = TextureData<UInt8>(width: sourceData.width, height: sourceData.height, channels: 4, colourSpace: sourceData.colourSpace, premultipliedAlpha: sourceData.premultipliedAlpha)
+                        
+                        sourceData.forEachPixel { (x, y, channel, val) in
+                            if sourceData.channelCount == 1 {
+                                textureData[x, y] = SIMD4(val, val, val, .max)
+                            } else if channel == 1 {
+                                textureData[x, y, channel: 3] = val
+                            } else {
+                                for i in 0..<3 {
+                                    textureData[x, y, channel: i] = val
+                                }
+                            }
+                        }
+                    }
+                }
                 
                 switch textureData.channelCount {
                 case 1:

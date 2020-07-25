@@ -116,6 +116,39 @@ public enum TextureEdgeWrapMode {
     }
 }
 
+public enum TextureResizeFilter {
+    /// Mitchell for downscaling, and Catmull-Rom for upscaling
+    case `default`
+    /// A trapezoid with 1-pixel wide ramps, producing the same result as a box box for integer scale ratios
+    case box
+    /// On upsampling, produces same results as bilinear texture filtering
+    case triangle
+    /// The cubic b-spline (aka Mitchell-Netrevalli with B=1,C=0), gaussian-esque
+    case cubicSpline
+    /// An interpolating cubic spline
+    case catmullRom
+    /// Mitchell-Netrevalli filter with B=1/3, C=1/3
+    case mitchell
+    
+    @inlinable
+    var stbirFilter : stbir_filter {
+        switch self {
+        case .default:
+            return STBIR_FILTER_DEFAULT
+        case .box:
+            return STBIR_FILTER_BOX
+        case .triangle:
+            return STBIR_FILTER_TRIANGLE
+        case .cubicSpline:
+            return STBIR_FILTER_CUBICBSPLINE
+        case .catmullRom:
+            return STBIR_FILTER_CATMULLROM
+        case .mitchell:
+            return STBIR_FILTER_MITCHELL
+        }
+    }
+}
+
 @usableFromInline
 final class TextureDataStorage<T> {
     @usableFromInline let data : UnsafeMutableBufferPointer<T>
@@ -279,7 +312,7 @@ public struct TextureData<T> {
     }
     
     @inlinable
-    public func resized(width: Int, height: Int, wrapMode: TextureEdgeWrapMode) -> TextureData<T> {
+    public func resized(width: Int, height: Int, wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter = .default) -> TextureData<T> {
         if width == self.width && height == self.height {
             return self
         }
@@ -320,7 +353,7 @@ public struct TextureData<T> {
                      self.channelCount == 4 ? 3 : -1,
                      flags,
                      wrapMode.stbirMode, wrapMode.stbirMode,
-                     STBIR_FILTER_DEFAULT, STBIR_FILTER_DEFAULT,
+                     filter.stbirFilter, filter.stbirFilter,
                      colourSpace, nil)
         
         return result
