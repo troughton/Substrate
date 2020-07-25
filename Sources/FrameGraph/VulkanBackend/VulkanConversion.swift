@@ -169,7 +169,7 @@ extension PixelFormat {
         case VK_FORMAT_B8G8R8A8_SRGB:
             self = .bgra8Unorm_sRGB
         default:
-            fatalError("Unimplemented format conversion.")
+            fatalError("Unimplemented format conversion for VkFormat \(format).")
         }
     }
 }
@@ -762,16 +762,53 @@ extension VkFormat {
         switch pixelFormat {
         case .invalid:
             self = VK_FORMAT_UNDEFINED
+
+        case .r8Unorm:
+            self = VK_FORMAT_R8_UNORM
+        case .r8Snorm:
+            self = VK_FORMAT_R8_SNORM
+        case .r16Unorm:
+            self = VK_FORMAT_R16_UNORM
+        case .r16Snorm:
+            self = VK_FORMAT_R16_SNORM
+        case .r16Float:
+            self = VK_FORMAT_R16_SFLOAT
+        case .r32Float:
+            self = VK_FORMAT_R32_SFLOAT
+
+        case .rg8Unorm:
+            self = VK_FORMAT_R8G8_UNORM
+        case .rg8Snorm:
+            self = VK_FORMAT_R8G8_SNORM
+        case .rg16Unorm:
+            self = VK_FORMAT_R16G16_UNORM
+        case .rg16Snorm:
+            self = VK_FORMAT_R16G16_SNORM
+        case .rg16Float:
+            self = VK_FORMAT_R16G16_SFLOAT
+        case .rg32Float:
+            self = VK_FORMAT_R32G32_SFLOAT
+
+        case .rgba8Unorm:
+            self = VK_FORMAT_R8G8B8A8_UNORM
+        case .rgba8Unorm_sRGB:
+            self = VK_FORMAT_R8G8B8A8_SRGB
+        case .rgba8Snorm:
+            self = VK_FORMAT_R8G8B8A8_SNORM
+        case .rgba16Unorm:
+            self = VK_FORMAT_R16G16B16A16_UNORM
+        case .rgba16Snorm:
+            self = VK_FORMAT_R16G16B16A16_SNORM
+        case .rgba16Float:
+            self = VK_FORMAT_R16G16B16A16_SFLOAT
+        case .rgba32Float:
+            self = VK_FORMAT_R32G32B32A32_SFLOAT
+
         case .bgra8Unorm_sRGB:
             self = VK_FORMAT_B8G8R8A8_SRGB
         case .bgra8Unorm:
             self = VK_FORMAT_B8G8R8A8_UNORM
-        case .rgba8Unorm:
-            self = VK_FORMAT_R8G8B8A8_UNORM
-        case .rg16Float:
-            self = VK_FORMAT_R16G16_SFLOAT
-        case .rgba16Float:
-            self = VK_FORMAT_R16G16B16A16_SFLOAT
+      
         case .depth16Unorm:
             self = VK_FORMAT_D16_UNORM
         case .depth32Float:
@@ -780,10 +817,8 @@ extension VkFormat {
             self = VK_FORMAT_D24_UNORM_S8_UINT
         case .depth32Float_stencil8:
             self = VK_FORMAT_D32_SFLOAT_S8_UINT
-        case .r8Unorm:
-            self = VK_FORMAT_R8_UNORM
         default:
-            fatalError("Unimplemented format conversion.")
+            fatalError("Unimplemented format conversion for PixelFormat \(pixelFormat).")
         }
     }
 }
