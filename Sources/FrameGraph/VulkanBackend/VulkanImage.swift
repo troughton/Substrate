@@ -252,8 +252,6 @@ struct VulkanImageDescriptor : Equatable {
         if .typeCube == descriptor.textureType || .typeCubeArray == descriptor.textureType {
             self.flags = .cubeCompatible
             self.arrayLayers *= 6
-        } else if .type2DArray == descriptor.textureType {
-            self.flags = VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT_KHR
         } else {
             self.flags = []
         }
