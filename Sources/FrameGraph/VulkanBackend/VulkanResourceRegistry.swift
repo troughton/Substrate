@@ -489,6 +489,10 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         if let vkBuffer = self.bufferReferences[buffer] {
             return vkBuffer
         }
+        var usage = usage
+        if usage.isEmpty, !forceGPUPrivate {
+            usage = [.shaderRead, .blitSource]
+        }
         return self.allocateBuffer(buffer, usage: usage, forceGPUPrivate: forceGPUPrivate)
     }
     
