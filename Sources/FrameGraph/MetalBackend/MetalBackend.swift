@@ -128,6 +128,18 @@ final class MetalBackend : SpecificRenderBackend {
         return self.stateCaches.currentThreadExecutionWidth
     }
     
+    public var hasUnifiedMemory: Bool {
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+        return true
+        #else
+        if #available(OSX 10.15, *) {
+            return self.device.hasUnifiedMemory
+        } else {
+            return false
+        }
+        #endif
+    }
+    
     @usableFromInline func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
         let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
         return bufferReference.buffer.contents() + bufferReference.offset + range.lowerBound

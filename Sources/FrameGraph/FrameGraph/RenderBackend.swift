@@ -41,6 +41,7 @@ public protocol RenderBackendProtocol : class {
     
     var isDepth24Stencil8PixelFormatSupported : Bool { get }
     var threadExecutionWidth : Int { get }
+    var hasUnifiedMemory : Bool { get }
     
     var renderDevice : Any { get }
     
@@ -177,6 +178,11 @@ public struct RenderBackend {
     @inlinable
     public static var threadExecutionWidth : Int {
         return _backend.threadExecutionWidth
+    }
+    
+    @inlinable
+    public static var hasUnifiedMemory : Bool {
+        return _backend.hasUnifiedMemory
     }
     
     @inlinable

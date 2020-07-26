@@ -16,20 +16,7 @@ import Metal
 
 extension StorageMode {
     public static var preferredForLoadedImage: StorageMode {
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-        // Shared is preferred on iOS since then the file can be loaded directly into GPU accessible memory without an intermediate buffer.
-        return .shared
-        #elseif os(macOS)
-        if #available(OSX 10.15, *) {
-            let renderDevice = RenderBackend.renderDevice as! MTLDevice
-            return renderDevice.hasUnifiedMemory ? .managed : .private
-        } else {
-            return .private
-        }
-        #else
-        // For GPUs with dedicated memory, only keeping a copy on the GPU is preferable.
-        return .private
-        #endif
+        return RenderBackend.hasUnifiedMemory ? .managed : .private
     }
 }
 
