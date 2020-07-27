@@ -535,7 +535,6 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     }
     
     func executePreFrameCommands(queue: Queue, resourceMap: FrameResourceMap<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) {
-        
         self.preFrameCommands.sort()
         for command in self.preFrameCommands {
             let commandBufferIndex = frameCommandInfo.commandEncoders[command.encoderIndex].commandBufferIndex

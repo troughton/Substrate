@@ -52,10 +52,10 @@ final class MetalBackend : SpecificRenderBackend {
     
     var queueSyncEvents = [MTLEvent?](repeating: nil, count: QueueRegistry.maxQueues)
     
-    public init(libraryPath: String? = nil, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
-        self.device = MTLCreateSystemDefaultDevice()!
+    public init(device: MTLDevice?, libraryPath: String? = nil, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
+        self.device = device ?? MTLCreateSystemDefaultDevice()!
         self.stateCaches = MetalStateCaches(device: self.device, libraryPath: libraryPath)
-        self.resourceRegistry = MetalPersistentResourceRegistry(device: device)
+        self.resourceRegistry = MetalPersistentResourceRegistry(device: self.device)
         self.enableValidation = enableValidation
         self.enableShaderHotReloading = enableShaderHotReloading
     }
@@ -135,7 +135,7 @@ final class MetalBackend : SpecificRenderBackend {
         if #available(OSX 10.15, *) {
             return self.device.hasUnifiedMemory
         } else {
-            return false
+            return self.device.name.contains("Intel")
         }
         #endif
     }

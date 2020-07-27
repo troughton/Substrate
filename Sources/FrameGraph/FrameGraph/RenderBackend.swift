@@ -8,6 +8,13 @@
 
 import Foundation
 
+#if canImport(Metal)
+import Metal
+#endif
+#if canImport(Vulkan)
+import Vulkan
+#endif
+
 @usableFromInline
 protocol PipelineReflection : class {
     func bindingPath(argumentBuffer: _ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?
@@ -91,11 +98,11 @@ public struct RenderBackend {
         return _backend.api
     }
     
-    public static func initialise(api: RenderAPI, applicationName: String, libraryPath: String? = nil, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
+    public static func initialise(api: RenderAPI, applicationName: String, device: Any? = nil, libraryPath: String? = nil, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
         switch api {
 #if canImport(Metal)
         case .metal:
-            _backend = MetalBackend(libraryPath: libraryPath, enableValidation: enableValidation, enableShaderHotReloading: enableShaderHotReloading)
+            _backend = MetalBackend(device: device as! MTLDevice?, libraryPath: libraryPath, enableValidation: enableValidation, enableShaderHotReloading: enableShaderHotReloading)
 #endif
 #if canImport(Vulkan)
         case .vulkan:
