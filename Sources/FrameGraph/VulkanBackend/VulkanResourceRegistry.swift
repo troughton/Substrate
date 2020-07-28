@@ -111,7 +111,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         
         let usage = VkImageUsageFlagBits(usage.usage, pixelFormat: texture.descriptor.pixelFormat)
         let initialLayout = texture.descriptor.storageMode != .private ? VK_IMAGE_LAYOUT_PREINITIALIZED : VK_IMAGE_LAYOUT_UNDEFINED
-        let sharingMode = VulkanSharingMode.exclusive // FIXME: can we infer this?
+        let sharingMode = VulkanSharingMode(usage: usage, device: self.device) // FIXME: can we infer this?
         
         if texture.flags.contains(.windowHandle) {
             // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
@@ -151,7 +151,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         precondition(buffer._usesPersistentRegistry)
         
         let usage = VkBufferUsageFlagBits(usage)
-        let sharingMode = VulkanSharingMode.exclusive // FIXME: can we infer this?
+        let sharingMode = VulkanSharingMode(usage: usage, device: self.device) // FIXME: can we infer this?
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
         let descriptor = VulkanBufferDescriptor(buffer.descriptor, usage: usage, sharingMode: sharingMode)

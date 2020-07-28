@@ -18,7 +18,7 @@ enum VulkanSharingMode : Equatable {
     case exclusive
     case concurrent(queueFamilyIndices: [UInt32])
     
-    public init(usage: VkBufferUsageFlagBits, device: VulkanPhysicalDevice) {
+    public init(usage: VkBufferUsageFlagBits, device: VulkanDevice) {
         var queueFamilies : QueueCapabilities = []
         if !usage.intersection([.uniformBuffer, .uniformTexelBuffer, .storageBuffer, .storageTexelBuffer, .indirectBuffer]).isEmpty {
             queueFamilies.formUnion([.render, .compute])
@@ -29,10 +29,10 @@ enum VulkanSharingMode : Equatable {
         if !usage.intersection([.transferSource, .transferDestination]).isEmpty {
             queueFamilies.formUnion(.blit)
         }
-        self.init(queueFamilies: queueFamilies)
+        self.init(capabilities: queueFamilies, device: device)
     }
     
-    public init(usage: VkImageUsageFlagBits, device: VulkanPhysicalDevice) {
+    public init(usage: VkImageUsageFlagBits, device: VulkanDevice) {
         var queueFamilies : QueueCapabilities = []
         if !usage.intersection([.sampled, .storage]).isEmpty {
             queueFamilies.formUnion([.render, .compute])
@@ -43,11 +43,11 @@ enum VulkanSharingMode : Equatable {
         if !usage.intersection([.transferSource, .transferDestination]).isEmpty {
             queueFamilies.formUnion(.blit)
         }
-        self.init(queueFamilies: queueFamilies)
+        self.init(capabilities: queueFamilies, device: device)
     }
     
-    public init(queueFamilies: QueueCapabilities) {
-        self = .exclusive // FIXME: figure out how to manage queue sharing.
+    public init(capabilities: QueueCapabilities, device: VulkanDevice) {
+        self = .concurrent(queueFamilyIndices: device.queueFamilyIndices(capabilities: capabilities)) // FIXME: figure out how to manage queue sharing.
     }
 }
 

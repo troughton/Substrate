@@ -202,6 +202,16 @@ public final class VulkanDevice {
         let familyIndex = self.queueFamilyIndex(capabilities: capabilities, requiredCapability: requiredCapability)
         return self.queues.first(where: { $0.familyIndex == familyIndex })!
     }
+    
+    public func queueFamilyIndices(capabilities: QueueCapabilities) -> [UInt32] {
+        var indices = [UInt32]()
+        for (i, queueCapabilities) in self.physicalDevice.queueCapabilities.enumerated() {
+            if queueCapabilities.intersection(capabilities) != [] {
+                indices.append(UInt32(i))
+            }
+        }
+        return indices
+    }
 
     public func presentQueue(surface: VkSurfaceKHR) -> VulkanDeviceQueue? {
         for familyIndex in 0..<self.queues.count {
