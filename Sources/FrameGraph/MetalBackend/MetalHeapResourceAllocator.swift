@@ -52,6 +52,9 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         if (self.heap?.currentAllocatedSize ?? 0) < capacity {
             let descriptor = MTLHeapDescriptor()
             descriptor.size = max((self.heap?.currentAllocatedSize ?? 0) * 2, capacity)
+            if #available(OSX 10.15, iOS 13.0, tvOS 13.0, *) {
+                descriptor.hazardTrackingMode = .frameGraphTrackedHazards
+            }
             self.heap = self.device.makeHeap(descriptor: descriptor)!
             self.resetHeap()
         }

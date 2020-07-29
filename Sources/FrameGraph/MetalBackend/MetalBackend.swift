@@ -17,6 +17,14 @@ extension MTLResourceOptions {
     }
 }
 
+@available(OSX 10.15, iOS 13.0, tvOS 13.0, *)
+extension MTLHazardTrackingMode {
+    static var frameGraphTrackedHazards : MTLHazardTrackingMode {
+        // This gives us a convenient way to toggle whether the FrameGraph or Metal should handle resource tracking.
+        return .untracked
+    }
+}
+
 #if targetEnvironment(macCatalyst)
 @objc protocol MTLBufferShim: MTLResource {
     func didModifyRange(_ range: NSRange)
