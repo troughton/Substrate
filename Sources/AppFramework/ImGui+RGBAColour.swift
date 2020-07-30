@@ -1,5 +1,5 @@
 //
-//  ImGui+RGBAColour.swift
+//  ImGui+RGBAColor.swift
 //  LlamaCore
 //
 //  Created by Thomas Roughton on 26/08/19.
@@ -11,19 +11,19 @@ import SwiftMath
 
 extension ImGui {
     @discardableResult
-    public static func colorButton(descriptionId: String, color: RGBAColour, flags: ColorEditFlags = [], size: SIMD2<Float> = .zero) -> Bool {
+    public static func colorButton(descriptionId: String, color: RGBAColor, flags: ColorEditFlags = [], size: SIMD2<Float> = .zero) -> Bool {
         return self.colorButton(descriptionId: descriptionId, color: SIMD4(color), flags: flags, size: size)
     }
     
-    public static func colorEdit3(label: String, color: inout RGBColour, flags: ColorEditFlags) -> Bool {
+    public static func colorEdit3(label: String, color: inout RGBColor, flags: ColorEditFlags) -> Bool {
         var imColor = SIMD3(color)
-        defer { color = RGBColour(imColor.x, imColor.y, imColor.z) }
+        defer { color = RGBColor(imColor.x, imColor.y, imColor.z) }
         return self.colorEdit3(label: label, color: &imColor, flags: flags)
     }
     
-    public static func colorEdit4(label: String, color: inout RGBAColour, flags: ColorEditFlags) -> Bool {
+    public static func colorEdit4(label: String, color: inout RGBAColor, flags: ColorEditFlags) -> Bool {
         var imColor = SIMD4(color)
-        defer { color = RGBAColour(imColor.x, imColor.y, imColor.z, imColor.w) }
+        defer { color = RGBAColor(imColor.x, imColor.y, imColor.z, imColor.w) }
         return self.colorEdit4(label: label, color: &imColor, flags: flags)
     }
     

@@ -33,12 +33,12 @@ extension Texture {
         }
     }
     
-    public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColourSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
+    public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
         let pixelFormat: PixelFormat
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         
         if url.pathExtension.lowercased() == "exr" {
-            let textureData = try TextureData<Float>(exrAt: url, colourSpace: colourSpace)
+            let textureData = try TextureData<Float>(exrAt: url, colorSpace: colorSpace)
             switch textureData.channelCount {
             case 1:
                 pixelFormat = .r32Float
@@ -72,7 +72,7 @@ extension Texture {
             
             if isHDR {
                 let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, channels)!
-                let textureData = TextureData<Float>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
+                let textureData = TextureData<Float>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
                 
                 switch textureData.channelCount {
                 case 1:
@@ -92,7 +92,7 @@ extension Texture {
                 
             } else if is16Bit {
                 let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, channels)!
-                let textureData = TextureData<UInt16>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
+                let textureData = TextureData<UInt16>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
                 
                 switch textureData.channelCount {
                 case 1:
@@ -111,9 +111,9 @@ extension Texture {
                 try self.copyData(from: textureData, mipmapped: mipmapped)
             } else {
                 let data = stbi_load(url.path, &width, &height, &componentsPerPixel, channels)!
-                var textureData = TextureData<UInt8>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colourSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
+                var textureData = TextureData<UInt8>(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
                 
-                if (colourSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
+                if (colorSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
                     var needsChannelExpansion = true
                     #if os(iOS) || os(tvOS) || os(watchOS)
                     if textureData.channelCount == 1 || textureData.channelCount == 2 {
@@ -122,7 +122,7 @@ extension Texture {
                     #endif
                     if needsChannelExpansion {
                         let sourceData = textureData
-                        textureData = TextureData<UInt8>(width: sourceData.width, height: sourceData.height, channels: 4, colourSpace: sourceData.colourSpace, premultipliedAlpha: sourceData.premultipliedAlpha)
+                        textureData = TextureData<UInt8>(width: sourceData.width, height: sourceData.height, channels: 4, colorSpace: sourceData.colorSpace, premultipliedAlpha: sourceData.premultipliedAlpha)
                         
                         sourceData.forEachPixel { (x, y, channel, val) in
                             if sourceData.channelCount == 1 {
@@ -140,11 +140,11 @@ extension Texture {
                 
                 switch textureData.channelCount {
                 case 1:
-                    pixelFormat = colourSpace == .sRGB ? .r8Unorm_sRGB : .r8Unorm
+                    pixelFormat = colorSpace == .sRGB ? .r8Unorm_sRGB : .r8Unorm
                 case 2:
-                    pixelFormat = colourSpace == .sRGB ? .rg8Unorm_sRGB : .rg8Unorm
+                    pixelFormat = colorSpace == .sRGB ? .rg8Unorm_sRGB : .rg8Unorm
                 case 4:
-                    pixelFormat = colourSpace == .sRGB ? .rgba8Unorm_sRGB : .rgba8Unorm
+                    pixelFormat = colorSpace == .sRGB ? .rgba8Unorm_sRGB : .rgba8Unorm
                 default:
                     throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
                 }
@@ -155,5 +155,10 @@ extension Texture {
                 try self.copyData(from: textureData, mipmapped: mipmapped)
             }
         }
+    }
+    
+    @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:premultipliedAlpha:storageMode:usage:)")
+    public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColorSpace, premultipliedAlpha: Bool = false, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
+        try self.init(fileAt: url, mipmapped: mipmapped, colorSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, storageMode: storageMode, usage: usage)
     }
 }
