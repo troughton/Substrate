@@ -13,7 +13,11 @@ import Metal
 extension MTLResourceOptions {
     static var frameGraphTrackedHazards : MTLResourceOptions {
         // This gives us a convenient way to toggle whether the FrameGraph or Metal should handle resource tracking.
-        return .hazardTrackingModeUntracked
+        if #available(OSX 10.15, *) {
+            return .hazardTrackingModeTracked
+        } else {
+            return []
+        }
     }
 }
 
@@ -21,7 +25,7 @@ extension MTLResourceOptions {
 extension MTLHazardTrackingMode {
     static var frameGraphTrackedHazards : MTLHazardTrackingMode {
         // This gives us a convenient way to toggle whether the FrameGraph or Metal should handle resource tracking.
-        return .untracked
+        return .tracked
     }
 }
 

@@ -345,10 +345,10 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     private let frameArgumentBufferAllocator : MetalTemporaryBufferAllocator
     
     private let stagingTextureAllocator : MetalPoolResourceAllocator
-    private let privateAllocator : MetalHeapResourceAllocator
+    private let privateAllocator : MetalPoolResourceAllocator
     
-    private let colorRenderTargetAllocator : MetalHeapResourceAllocator
-    private let depthRenderTargetAllocator : MetalHeapResourceAllocator
+    private let colorRenderTargetAllocator : MetalPoolResourceAllocator
+    private let depthRenderTargetAllocator : MetalPoolResourceAllocator
     
     public private(set) var frameDrawables : [CAMetalDrawable] = []
     
@@ -380,9 +380,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.memorylessTextureAllocator = MetalPoolResourceAllocator(device: device, numFrames: 1)
         #endif
         
-        self.privateAllocator = MetalHeapResourceAllocator(device: device)
-        self.depthRenderTargetAllocator = MetalHeapResourceAllocator(device: device)
-        self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device)
+        self.privateAllocator = MetalPoolResourceAllocator(device: device)
+        self.depthRenderTargetAllocator = MetalPoolResourceAllocator(device: device)
+        self.colorRenderTargetAllocator = MetalPoolResourceAllocator(device: device)
         
         self.prepareFrame()
     }
@@ -476,18 +476,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     static func isAliasedHeapResource(resource: Resource) -> Bool {
-        let flags = resource.flags
-        let storageMode : StorageMode = resource.storageMode
-        
-        if flags.contains(.windowHandle) {
-            return false
-        }
-        
-        if flags.intersection([.persistent, .historyBuffer]) != [] {
-            return false
-        }
-        
-        return storageMode == .private
+        return false
     }
     
     @discardableResult

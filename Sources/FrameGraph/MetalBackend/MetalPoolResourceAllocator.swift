@@ -36,7 +36,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
     let numFrames : Int
     private var currentIndex : Int = 0
     
-    init(device: MTLDevice, numFrames: Int) {
+    init(device: MTLDevice, numFrames: Int = 1) {
         self.numFrames = numFrames
         self.device = device
         self.buffers = [[ResourceReference<MTLBufferReference>]](repeating: [ResourceReference<MTLBufferReference>](), count: numFrames)
