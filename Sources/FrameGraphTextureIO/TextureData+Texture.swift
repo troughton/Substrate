@@ -34,7 +34,7 @@ extension TextureData {
         assert(texture.storageMode != .private)
         
         self.init(width: max(texture.width >> mipmapLevel, 1), height: max(texture.height >> mipmapLevel, 1),
-                  channels: pixelFormat.channelCount, colourSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, premultipliedAlpha: hasPremultipliedAlpha)
+                  channels: pixelFormat.channelCount, colorSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, premultipliedAlpha: hasPremultipliedAlpha)
         
         texture.waitForCPUAccess(accessType: .read)
         texture.copyBytes(to: self.storage.data.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride,

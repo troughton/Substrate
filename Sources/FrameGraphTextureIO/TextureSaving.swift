@@ -45,16 +45,16 @@ extension TextureData {
         switch saveFormat {
         case .png:
             
-            let colourType: LodePNGColorType
+            let colorType: LodePNGColorType
             switch self.channelCount {
             case 1:
-                colourType = LCT_GREY
+                colorType = LCT_GREY
             case 2:
-                colourType = LCT_GREY_ALPHA
+                colorType = LCT_GREY_ALPHA
             case 3:
-                colourType = LCT_RGB
+                colorType = LCT_RGB
             case 4:
-                colourType = LCT_RGBA
+                colorType = LCT_RGBA
             default:
                 throw SaveError.invalidChannelCount(self.channelCount)
             }
@@ -69,12 +69,12 @@ extension TextureData {
                     bigEndian[i] = sourceData[i].bigEndian
                 }
                 errorCode = bigEndian.withMemoryRebound(to: UInt8.self, capacity: self.width * self.height * self.channelCount * MemoryLayout<T>.stride) { pixelData in
-                    return lodepng_encode_file(filePath, pixelData, UInt32(self.width), UInt32(self.height), colourType, UInt32(MemoryLayout<T>.size * 8))
+                    return lodepng_encode_file(filePath, pixelData, UInt32(self.width), UInt32(self.height), colorType, UInt32(MemoryLayout<T>.size * 8))
                 }
                 
             } else {
                 errorCode = self.storage.data.withMemoryRebound(to: UInt8.self) { pixelData in
-                    return lodepng_encode_file(filePath, pixelData.baseAddress, UInt32(self.width), UInt32(self.height), colourType, UInt32(MemoryLayout<T>.size * 8))
+                    return lodepng_encode_file(filePath, pixelData.baseAddress, UInt32(self.width), UInt32(self.height), colorType, UInt32(MemoryLayout<T>.size * 8))
                 }
             }
             
