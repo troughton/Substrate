@@ -196,7 +196,7 @@ final class MetalStateCaches {
             
             return state
         } catch {
-            print("MetalFrameGraph: Error creating compute render pipeline state: \(error)")
+            print("MetalFrameGraph: Error creating compute pipeline state for descriptor \(descriptor): \(error)")
             return nil
         }
     }
