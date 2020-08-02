@@ -15,14 +15,12 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     let backend: MetalBackend
     let commandBuffer: MTLCommandBuffer
     let commandInfo: FrameCommandInfo<MetalBackend>
-    let textureUsages: [Texture: TextureUsageProperties]
     let resourceMap: FrameResourceMap<MetalBackend>
     let compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]
     
     init(backend: MetalBackend,
          queue: MTLCommandQueue,
          commandInfo: FrameCommandInfo<Backend>,
-         textureUsages: [Texture: TextureUsageProperties],
          resourceMap: FrameResourceMap<MetalBackend>,
          compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
         self.backend = backend
@@ -36,7 +34,6 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         }
         
         self.commandInfo = commandInfo
-        self.textureUsages = textureUsages
         self.resourceMap = resourceMap
         self.compactedResourceCommands = compactedResourceCommands
     }

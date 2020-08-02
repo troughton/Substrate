@@ -28,7 +28,7 @@ final class VulkanArgumentBuffer {
 
 extension VulkanArgumentBuffer {
     
-    func encodeArguments(from buffer: _ArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
+    func encodeArguments(from buffer: _ArgumentBuffer, commandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
         let pipelineReflection = self.layout.pipelineReflection
         let setIndex = self.layout.set
 
@@ -67,12 +67,7 @@ extension VulkanArgumentBuffer {
                 let pixelFormat = texture.descriptor.pixelFormat
                 let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                 var imageInfo = VkDescriptorImageInfo()
-                switch resource.access {
-                case .read:
-                    imageInfo.imageLayout = isDepthOrStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                case .readWrite, .write:
-                    imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL
-                }
+                imageInfo.imageLayout = image.layout(fromCommandIndex: commandIndex)
                 imageInfo.imageView = image.defaultImageView.vkView
                 
                 descriptorWrite.pImageInfo = imageInfoSentinel

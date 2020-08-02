@@ -402,11 +402,6 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     private func endPass(_ pass: RenderPassRecord) -> Bool {
         if pass === self.renderTarget.renderPasses.last {
             vkCmdEndRenderPass(self.commandBuffer)
-
-            for (texture, layout) in self.renderTarget.finalLayouts {
-                self.resourceMap[texture].image.layout = layout
-            }
-
             return false
         } else if self.renderTarget.subpassForPassIndex(pass.passIndex) !== self.renderTarget.subpassForPassIndex(pass.passIndex + 1) {
             vkCmdNextSubpass(self.commandBuffer, VK_SUBPASS_CONTENTS_INLINE)

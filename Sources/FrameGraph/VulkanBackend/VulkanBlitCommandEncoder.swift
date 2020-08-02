@@ -30,12 +30,12 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
          
          for (i, command) in zip(pass.commandRange!, pass.commands) {
              self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i)
-             self.executeCommand(command)
+             self.executeCommand(command, commandIndex: i)
              self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i)
          }
     }
     
-    func executeCommand(_ command: FrameGraphCommand) {
+    func executeCommand(_ command: FrameGraphCommand, commandIndex: Int) {
         switch command {
         case .insertDebugSignpost(_):
             break
@@ -65,7 +65,7 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
                 
             }
             regions.withUnsafeBufferPointer { regions in
-                vkCmdCopyBufferToImage(self.commandBufferResources.commandBuffer, source.buffer.vkBuffer, destination.vkImage, destination.layout, UInt32(regions.count), regions.baseAddress)
+                vkCmdCopyBufferToImage(self.commandBufferResources.commandBuffer, source.buffer.vkBuffer, destination.vkImage, destination.layout(commandIndex: commandIndex), UInt32(regions.count), regions.baseAddress)
             }
             
         case .copyBufferToBuffer(let args):
@@ -130,7 +130,6 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
     /// POSTCONDITION: the image layout is VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     func generateMipmaps(image: VulkanImage) {
         assert(image.descriptor.usage.contains([.transferSource, .transferDestination, .sampled]))
-        assert(image.layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
         
         for i in 0..<image.descriptor.mipLevels {
             var region = VkImageBlit()

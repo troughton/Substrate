@@ -19,35 +19,35 @@ enum VulkanSharingMode : Equatable {
     case concurrent(queueFamilyIndices: [UInt32])
     
     public init(usage: VkBufferUsageFlagBits, device: VulkanDevice) {
-        var queueFamilies : QueueCapabilities = []
+        var queueFlags : VkQueueFlagBits = []
         if !usage.intersection([.uniformBuffer, .uniformTexelBuffer, .storageBuffer, .storageTexelBuffer, .indirectBuffer]).isEmpty {
-            queueFamilies.formUnion([.render, .compute])
+            queueFlags.formUnion([VK_QUEUE_GRAPHICS_BIT, VK_QUEUE_COMPUTE_BIT])
         }
         if !usage.intersection([.vertexBuffer, .indexBuffer]).isEmpty {
-            queueFamilies.formUnion(.render)
+            queueFlags.formUnion(VK_QUEUE_GRAPHICS_BIT)
         }
         if !usage.intersection([.transferSource, .transferDestination]).isEmpty {
-            queueFamilies.formUnion(.blit)
+            queueFlags.formUnion(VK_QUEUE_TRANSFER_BIT)
         }
-        self.init(capabilities: queueFamilies, device: device)
+        self.init(queueFlags: queueFlags, device: device)
     }
     
     public init(usage: VkImageUsageFlagBits, device: VulkanDevice) {
-        var queueFamilies : QueueCapabilities = []
+        var queueFlags : VkQueueFlagBits = []
         if !usage.intersection([.sampled, .storage]).isEmpty {
-            queueFamilies.formUnion([.render, .compute])
+            queueFlags.formUnion([VK_QUEUE_GRAPHICS_BIT, VK_QUEUE_COMPUTE_BIT])
         }
         if !usage.intersection([.colorAttachment, .depthStencilAttachment, .inputAttachment, .transientAttachment]).isEmpty {
-            queueFamilies.formUnion(.render)
+            queueFlags.formUnion(VK_QUEUE_GRAPHICS_BIT)
         }
         if !usage.intersection([.transferSource, .transferDestination]).isEmpty {
-            queueFamilies.formUnion(.blit)
+            queueFlags.formUnion(VK_QUEUE_TRANSFER_BIT)
         }
-        self.init(capabilities: queueFamilies, device: device)
+        self.init(queueFlags: queueFlags, device: device)
     }
     
-    public init(capabilities: QueueCapabilities, device: VulkanDevice) {
-        self = .concurrent(queueFamilyIndices: device.queueFamilyIndices(capabilities: capabilities)) // FIXME: figure out how to manage queue sharing.
+    public init(queueFlags: VkQueueFlagBits, device: VulkanDevice) {
+        self = .concurrent(queueFamilyIndices: device.queueFamilyIndices(matchingAnyOf: queueFlags)) // FIXME: figure out how to manage queue sharing.
     }
 }
 

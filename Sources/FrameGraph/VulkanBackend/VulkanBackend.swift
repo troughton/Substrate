@@ -26,7 +26,7 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     typealias CompactedResourceCommandType = VulkanCompactedResourceCommandType
     typealias Event = VkSemaphore
-    typealias BackendQueue = VulkanDeviceQueue
+    typealias BackendQueue = VulkanQueue
     typealias InterEncoderDependencyType = FineDependency
     typealias CommandBuffer = VulkanCommandBuffer
     
@@ -70,13 +70,13 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     public func materialisePersistentTexture(_ texture: Texture) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateTexture(texture, usage: TextureUsageProperties(usage: texture.descriptor.usageHint)) != nil
+            return self.resourceRegistry.allocateTexture(texture) != nil
         }
     }
     
     public func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateBuffer(buffer, usage: buffer.descriptor.usageHint) != nil
+            return self.resourceRegistry.allocateBuffer(buffer) != nil
         }
     }
     
@@ -221,15 +221,7 @@ public final class VulkanBackend : SpecificRenderBackend {
     static var requiresResourceResidencyTracking: Bool {
         return false
     }
-    
-    static var requiresBufferUsage: Bool {
-        return true
-    }
 
-    static var requiresTextureLayoutTransitions: Bool {
-        return true
-    }
-    
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
         storage.encodeArguments(from: argumentBuffer, resourceMap: resourceMap)
     }
@@ -242,8 +234,8 @@ public final class VulkanBackend : SpecificRenderBackend {
         return VulkanTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
     }
     
-    func makeQueue(frameGraphQueue: Queue) -> VulkanDeviceQueue {
-        return self.device.deviceQueue(capabilities: frameGraphQueue.capabilities, requiredCapability: frameGraphQueue.capabilities)
+    func makeQueue(frameGraphQueue: Queue) -> VulkanQueue {
+        return VulkanQueue(backend: self, device: self.device)
     }
     
     func makeSyncEvent(for queue: Queue) -> Event {

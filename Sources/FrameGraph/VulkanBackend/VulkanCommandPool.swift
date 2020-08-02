@@ -76,32 +76,19 @@ public final class VulkanDeviceQueue {
 }
 
 /// Wraps the FrameGraph abstraction of a queue, which may map to multiple Vulkan queues.
-final class VulkanQueue {
+final class VulkanQueue: BackendQueue {
+    typealias Backend = VulkanBackend
+    
+    let backend: VulkanBackend
     let device : VulkanDevice
     
-    let renderQueue: VulkanDeviceQueue?
-    let computeQueue: VulkanDeviceQueue?
-    let blitQueue: VulkanDeviceQueue?
-    
-    init(device: VulkanDevice, capabilities: QueueCapabilities) {
+    init(backend: VulkanBackend, device: VulkanDevice) {
+        self.backend = backend
         self.device = device
-        
-        assert(!capabilities.isEmpty)
-        if capabilities.contains(.render) {
-            self.renderQueue = device.deviceQueue(capabilities: capabilities, requiredCapability: .render)
-        } else {
-            self.renderQueue = nil
-        }
-        if capabilities.contains(.compute) {
-            self.computeQueue = device.deviceQueue(capabilities: capabilities, requiredCapability: .compute)
-        } else {
-            self.computeQueue = nil
-        }
-        if capabilities.contains(.blit) {
-            self.blitQueue = device.deviceQueue(capabilities: capabilities, requiredCapability: .blit)
-        } else {
-            self.blitQueue = nil
-        }
+    }
+    
+    func makeCommandBuffer(commandInfo: FrameCommandInfo<Backend>, resourceMap: FrameResourceMap<Backend>, compactedResourceCommands: [CompactedResourceCommand<Backend.CompactedResourceCommandType>]) -> VulkanCommandBuffer {
+        fatalError()
     }
 }
 

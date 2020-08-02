@@ -66,6 +66,11 @@ class VulkanImage {
         public var subresourceRange: VkImageSubresourceRange
     }
     
+    struct LayoutState {
+        var commandRange: Range<Int>
+        var layout: VkImageLayout
+    }
+    
     let vkImage : VkImage
     let allocator : VmaAllocator?
     let allocation : VmaAllocation?
@@ -78,9 +83,7 @@ class VulkanImage {
     var defaultImageView : VulkanImageView! = nil
     var views = [ViewDescriptor : VulkanImageView]()
     
-    var layout : VkImageLayout
-    var lastUsageType: ResourceUsageType? = nil
-    var lastUsageStages: RenderStages = .cpuBeforeRender
+    var frameLayouts: [LayoutState]
 
     init(device: VulkanDevice, image: VkImage, allocator: VmaAllocator?, allocation: VmaAllocation?, descriptor: VulkanImageDescriptor) {
         self.device = device
@@ -88,7 +91,7 @@ class VulkanImage {
         self.allocator = allocator
         self.allocation = allocation
         self.descriptor = descriptor
-        self.layout = descriptor.initialLayout
+        self.frameLayouts = [LayoutState(commandRange: -1..<0, layout: descriptor.initialLayout)]
         
         do {
             var createInfo = VkImageViewCreateInfo()
@@ -150,6 +153,35 @@ class VulkanImage {
     
     func matches(descriptor: VulkanImageDescriptor) -> Bool {
         return self.descriptor.matches(descriptor: descriptor)
+    }
+    
+    func computeFrameLayouts(usages: ResourceUsagesList, preserveLastLayout: Bool) {
+        let lastLayout = self.frameLayouts.last!
+        self.frameLayouts.removeAll(keepingCapacity: true)
+        self.frameLayouts.append(LayoutState(commandRange: -1..<0, layout: preserveLastLayout ? lastLayout.layout : VK_IMAGE_LAYOUT_UNDEFINED))
+        
+        let isDepthOrStencil = self.descriptor.allAspects.contains(where: { VkImageAspectFlagBits($0).intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != [] })
+        
+        for usage in usages {
+            let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil)
+            // Find the insertion location (since reads may be unordered in the usages list).
+            let insertionIndex = self.frameLayouts.firstIndex(where: { $0.commandRange.lowerBound > usage.commandRange.lowerBound }) ?? self.frameLayouts.endIndex
+            self.frameLayouts.insert(LayoutState(commandRange: usage.commandRange, layout: layout), at: insertionIndex)
+        }
+    }
+    
+    func layout(commandIndex: Int) -> VkImageLayout {
+        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) })?.layout else {
+            preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image")
+        }
+        return layout
+    }
+    
+    func layout(fromCommandIndex: Int) -> VkImageLayout {
+        guard let layout = self.frameLayouts.last(where: { fromCommandIndex >= $0.commandRange.lowerBound })?.layout else {
+            preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image")
+        }
+        return layout
     }
     
     subscript(viewDescriptor: ViewDescriptor) -> VulkanImageView {

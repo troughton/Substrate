@@ -50,7 +50,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateBufferIfNeeded(buffer, usage: buffer.descriptor.usageHint, forceGPUPrivate: false) }
+            return transientRegistry.accessLock.withLock { transientRegistry.allocateBufferIfNeeded(buffer, forceGPUPrivate: false) }
         }
     }
     
@@ -58,7 +58,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, usage: TextureUsageProperties(texture.descriptor.usageHint), forceGPUPrivate: false) }
+            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, forceGPUPrivate: false) }
         }
     }
     

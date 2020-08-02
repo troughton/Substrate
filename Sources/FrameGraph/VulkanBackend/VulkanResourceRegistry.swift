@@ -106,18 +106,19 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, usage: TextureUsageProperties) -> VkImageReference? {
+    public func allocateTexture(_ texture: Texture) -> VkImageReference? {
         precondition(texture._usesPersistentRegistry)
-        
-        let usage = VkImageUsageFlagBits(usage.usage, pixelFormat: texture.descriptor.pixelFormat)
-        let initialLayout = texture.descriptor.storageMode != .private ? VK_IMAGE_LAYOUT_PREINITIALIZED : VK_IMAGE_LAYOUT_UNDEFINED
-        let sharingMode = VulkanSharingMode(usage: usage, device: self.device) // FIXME: can we infer this?
         
         if texture.flags.contains(.windowHandle) {
             // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
             self.textureReferences[texture] = VkImageReference(windowTexture: ())
             return nil
         }
+        
+        let usage = VkImageUsageFlagBits(texture.descriptor.usageHint, pixelFormat: texture.descriptor.pixelFormat)
+        
+        let initialLayout = texture.descriptor.storageMode != .private ? VK_IMAGE_LAYOUT_PREINITIALIZED : VK_IMAGE_LAYOUT_UNDEFINED
+        let sharingMode = VulkanSharingMode(usage: usage, device: self.device) // FIXME: can we infer this?
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
         
@@ -147,10 +148,11 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     @discardableResult
-    public func allocateBuffer(_ buffer: Buffer, usage: BufferUsage) -> VkBufferReference? {
+    public func allocateBuffer(_ buffer: Buffer) -> VkBufferReference? {
         precondition(buffer._usesPersistentRegistry)
         
-        let usage = VkBufferUsageFlagBits(usage)
+        let usage = VkBufferUsageFlagBits(buffer.descriptor.usageHint)
+        
         let sharingMode = VulkanSharingMode(usage: usage, device: self.device) // FIXME: can we infer this?
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
@@ -251,6 +253,16 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         return vkSampler!
     }
     
+    func prepareBuffer(_ buffer: Buffer) {
+        fatalError("TODO: perform queue ownership transfers.")
+    }
+    
+    func prepareTexture(_ texture: Texture) {
+        let image = self[texture]!
+        image.image.computeFrameLayouts(usages: texture.usages, preserveLastLayout: true)
+        // TODO: perform queue ownership transfers and initial layout transitions.
+    }
+    
     func disposeHeap(_ heap: Heap) {
         self.heapReferences.removeValue(forKey: heap)
     }
@@ -287,7 +299,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     func cycleFrames() {
-        // No-op for now, but should dispose command buffer resources.
+        // TODO: we should dispose command buffer resources here.
     }
 }
 
@@ -390,13 +402,40 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> VkImageReference {
+    public func allocateTexture(_ texture: Texture, forceGPUPrivate: Bool) -> VkImageReference {
         if texture.flags.contains(.windowHandle) {    
             self.textureReferences[texture] = VkImageReference(windowTexture: ()) // We retrieve the swapchain image later.
             return VkImageReference(windowTexture: ())
         }
 
-        let usage = VkImageUsageFlagBits(usage.usage, pixelFormat: texture.descriptor.pixelFormat)
+        var imageUsage : VkImageUsageFlagBits = []
+        
+        let canBeTransient = texture.usages.allSatisfy({ $0.type.isRenderTarget })
+        if canBeTransient {
+            imageUsage.formUnion(VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)
+        }
+        let isDepthOrStencil = texture.descriptor.pixelFormat.isDepth || texture.descriptor.pixelFormat.isStencil
+        
+        // TODO: compute image layout transitions here.
+        for usage in texture.usages {
+            switch usage.type {
+            case .read:
+                imageUsage.formUnion(VK_IMAGE_USAGE_SAMPLED_BIT)
+            case .write, .readWrite:
+                imageUsage.formUnion(VK_IMAGE_USAGE_STORAGE_BIT)
+            case .readWriteRenderTarget, .writeOnlyRenderTarget:
+                imageUsage.formUnion(isDepthOrStencil ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+            case .inputAttachment, .inputAttachmentRenderTarget:
+                imageUsage.formUnion(VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)
+            case .blitSource:
+                imageUsage.formUnion(VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            case .blitDestination:
+                imageUsage.formUnion(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            default:
+                break
+            }
+        }
+        
         var descriptor = texture.descriptor
         let flags = texture.flags
         
@@ -405,7 +444,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         }
 
         let allocator = self.allocatorForImage(storageMode: descriptor.storageMode, flags: flags)
-        let (vkImage, events, waitEvent) = allocator.collectImage(descriptor: VulkanImageDescriptor(descriptor, usage: usage, sharingMode: .exclusive, initialLayout: VK_IMAGE_LAYOUT_UNDEFINED))
+        let (vkImage, events, waitEvent) = allocator.collectImage(descriptor: VulkanImageDescriptor(descriptor, usage: imageUsage, sharingMode: .exclusive, initialLayout: VK_IMAGE_LAYOUT_UNDEFINED))
         
         if let label = texture.label {
             vkImage.image.label = label
@@ -425,11 +464,12 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
             self.heapResourceUsageFences[Resource(texture)] = events
         }
         
+        vkImage.image.computeFrameLayouts(usages: texture.usages, preserveLastLayout: false)
         return vkImage
     }
     
     @discardableResult
-    public func allocateTextureView(_ texture: Texture, usage: TextureUsageProperties, resourceMap: FrameResourceMap<VulkanBackend>) -> VkImageReference {
+    public func allocateTextureView(_ texture: Texture, resourceMap: FrameResourceMap<VulkanBackend>) -> VkImageReference {
         fatalError("Unimplemented")
     }
     
@@ -451,8 +491,34 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateBuffer(_ buffer: Buffer, usage: BufferUsage, forceGPUPrivate: Bool) -> VkBufferReference {
-        let usage = VkBufferUsageFlagBits(usage)
+    public func allocateBuffer(_ buffer: Buffer, forceGPUPrivate: Bool) -> VkBufferReference {
+    
+        var bufferUsage: VkBufferUsageFlagBits = []
+        for usage in buffer.usages {
+            switch usage.type {
+            case .constantBuffer:
+                bufferUsage.formUnion(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+            case .read:
+                bufferUsage.formUnion([VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT])
+            case .write:
+                bufferUsage.formUnion([VK_BUFFER_USAGE_STORAGE_BUFFER_BIT])
+            case .readWrite:
+                bufferUsage.formUnion([VK_BUFFER_USAGE_STORAGE_BUFFER_BIT])
+            case .vertexBuffer:
+                bufferUsage.formUnion(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
+            case .indexBuffer:
+                bufferUsage.formUnion(VK_BUFFER_USAGE_INDEX_BUFFER_BIT)
+            case .blitSource:
+                bufferUsage.formUnion(VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
+            case .blitDestination:
+                bufferUsage.formUnion(VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            default:
+                break
+            }
+        }
+        if bufferUsage.isEmpty, !forceGPUPrivate {
+            bufferUsage = [VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT]
+        }
         
         var descriptor = buffer.descriptor
         
@@ -461,7 +527,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         
         let allocator = self.allocatorForBuffer(storageMode: forceGPUPrivate ? .private : buffer.descriptor.storageMode, flags: buffer.flags)
-        let (vkBuffer, events, waitSemaphore) = allocator.collectBuffer(descriptor: VulkanBufferDescriptor(descriptor, usage: usage, sharingMode: .exclusive))
+        let (vkBuffer, events, waitSemaphore) = allocator.collectBuffer(descriptor: VulkanBufferDescriptor(descriptor, usage: bufferUsage, sharingMode: .exclusive))
         
         if let label = buffer.label {
             vkBuffer.buffer.label = label
@@ -485,23 +551,19 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateBufferIfNeeded(_ buffer: Buffer, usage: BufferUsage, forceGPUPrivate: Bool) -> VkBufferReference {
+    public func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> VkBufferReference {
         if let vkBuffer = self.bufferReferences[buffer] {
             return vkBuffer
         }
-        var usage = usage
-        if usage.isEmpty, !forceGPUPrivate {
-            usage = [.shaderRead, .blitSource]
-        }
-        return self.allocateBuffer(buffer, usage: usage, forceGPUPrivate: forceGPUPrivate)
+        return self.allocateBuffer(buffer, forceGPUPrivate: forceGPUPrivate)
     }
     
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, usage: TextureUsageProperties, forceGPUPrivate: Bool) -> VkImageReference {
+    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool) -> VkImageReference {
         if let vkTexture = self.textureReferences[texture] {
             return vkTexture
         }
-        return self.allocateTexture(texture, usage: usage, forceGPUPrivate: forceGPUPrivate)
+        return self.allocateTexture(texture, forceGPUPrivate: forceGPUPrivate)
     }
     
     @discardableResult
@@ -645,8 +707,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     func cycleFrames() {
         // Clear all transient resources at the end of the frame.
-        
-        self.textureReferences.removeAll()
         self.bufferReferences.removeAll()
         self.argumentBufferReferences.removeAll()
         self.argumentBufferArrayReferences.removeAll()
@@ -661,197 +721,5 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.activeFrameIndex = (self.activeFrameIndex &+ 1) % self.inflightFrameCount
     }
 }
-
-//
-//public final class ResourceRegistry {
-//
-//    let accessQueue = DispatchQueue(label: "Resource Registry Access")
-//
-//    let commandPool : VulkanCommandPool
-//    
-//    var cpuDataCache = MemoryArena()
-//    private var frameCPUBufferContents = [Buffer : UnsafeMutableRawPointer]()
-//    
-//    private(set) var windowReferences = [Texture : VulkanSwapChain]()
-//    private var argumentBufferReferences = [Resource.Handle : VulkanArgumentBuffer]()
-//
-//    private var textureReferences = [Texture : VulkanImage]()
-//    private var bufferReferences = [Buffer : VulkanBuffer]()
-//    
-//    private let device : VulkanDevice
-//    private let vmaAllocator : VmaAllocator
-//    
-//    private var frameArgumentBuffers = [Resource.Handle]()
-//    
-//    private let uploadResourceAllocator : PoolResourceAllocator
-//    private let privateResourceAllocator : PoolResourceAllocator
-//    
-//    let temporaryBufferAllocator : TemporaryBufferAllocator
-//
-//    public var frameGraphHasResourceAccess = false
-//    
-//    public init(device: VulkanDevice, inflightFrameCount: Int) {
-//        self.device = device
-//        self.commandPool = VulkanCommandPool(device: device, inflightFrameCount: inflightFrameCount)
-//        
-//        var allocatorInfo = VmaAllocatorCreateInfo()
-//        allocatorInfo.device = device.vkDevice
-//        allocatorInfo.physicalDevice = device.physicalDevice.vkDevice
-//        
-//        var allocator : VmaAllocator? = nil
-//        vmaCreateAllocator(&allocatorInfo, &allocator)
-//        self.vmaAllocator = allocator!
-//        
-//        self.uploadResourceAllocator = PoolResourceAllocator(device: device, allocator: self.vmaAllocator, memoryUsage: VMA_MEMORY_USAGE_CPU_TO_GPU, numFrames: inflightFrameCount)
-//        self.privateResourceAllocator = PoolResourceAllocator(device: device, allocator: self.vmaAllocator, memoryUsage: VMA_MEMORY_USAGE_GPU_ONLY, numFrames: 1)
-//        self.temporaryBufferAllocator = TemporaryBufferAllocator(numFrames: inflightFrameCount, allocator: self.vmaAllocator, device: device)
-//    }
-//    
-//    deinit {
-//        vmaDestroyAllocator(self.vmaAllocator)
-//    }
-//    
-//    public func registerWindowTexture(texture: Texture, context: Any) {
-//        self.windowReferences[texture] = (context as! VulkanSwapChain)
-//    }
-//    
-//    func allocatorForResource(storageMode: StorageMode, flags: ResourceFlags) -> ResourceAllocator {
-//        switch storageMode {
-//        case .managed, .shared:
-//            return self.uploadResourceAllocator
-//        case .private:
-//            return self.privateResourceAllocator
-//        }
-//    }
-//    
-//    @discardableResult
-//    func allocateTexture(_ texture: Texture, descriptor: TextureDescriptor, flags: ResourceFlags, usage: VkImageUsageFlagBits, sharingMode: VulkanSharingMode, initialLayout: VkImageLayout) -> VulkanImage {
-//        let vkImage : VulkanImage
-//
-//        if flags.contains(.windowHandle) {
-//            vkImage = self.windowReferences[texture]!.nextImage(descriptor: descriptor)
-//        } else {
-//            let allocator = self.allocatorForResource(storageMode: descriptor.storageMode, flags: flags)
-//            vkImage = allocator.collectImage(descriptor: VulkanImageDescriptor(descriptor, usage: usage, sharingMode: sharingMode, initialLayout: initialLayout))
-//        }
-//        
-//        assert(self.textureReferences[texture] == nil)
-//        self.textureReferences[texture] = vkImage
-//        return vkImage
-//    }
-//    
-//    @discardableResult
-//    func allocateBuffer(_ buffer: Buffer, usage: VkBufferUsageFlagBits, sharingMode: VulkanSharingMode) -> VulkanBuffer {
-//        let allocator = self.allocatorForResource(storageMode: buffer.descriptor.storageMode, flags: buffer.flags)
-//        let vkBuffer = allocator.collectBuffer(descriptor: VulkanBufferDescriptor(buffer.descriptor, usage: usage, sharingMode: sharingMode))
-//
-//        assert(self.bufferReferences[buffer] == nil)
-//        self.bufferReferences[buffer] = vkBuffer
-//
-//        return vkBuffer
-//    }
-//    
-//    @discardableResult
-//    func allocateBufferIfNeeded(_ buffer: Buffer, usage: VkBufferUsageFlagBits, sharingMode: VulkanSharingMode) -> VulkanBuffer {
-//        if let vkBuffer = self.bufferReferences[buffer] {
-//            assert(vkBuffer.descriptor.size >= buffer.descriptor.length)
-//            return vkBuffer
-//        }
-//        return self.allocateBuffer(buffer, usage: usage, sharingMode: sharingMode)
-//    }
-//    
-//    @discardableResult
-//    func allocateTextureIfNeeded(_ texture: Texture, usage: VkImageUsageFlagBits, sharingMode: VulkanSharingMode, initialLayout: VkImageLayout) -> VulkanImage {
-//        if let vkTexture = self.textureReferences[texture] {
-//            return vkTexture
-//        }
-//        return self.allocateTexture(texture, descriptor: texture.descriptor, flags: texture.flags, usage: usage, sharingMode: sharingMode, initialLayout: initialLayout)
-//    }
-//
-//    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer, bindingPath: ResourceBindingPath, commandBufferResources: VulkanCommandBuffer, pipelineReflection: VulkanPipelineReflection, stateCaches: StateCaches) -> VulkanArgumentBuffer {
-//        if let vulkanArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
-//            return vulkanArgumentBuffer
-//        }
-//        
-//        let buffer = VulkanArgumentBuffer(arguments: argumentBuffer, 
-//                                          bindingPath: bindingPath, 
-//                                          commandBufferResources: commandBufferResources,
-//                                          pipelineReflection: pipelineReflection, 
-//                                          resourceRegistry: self, 
-//                                          stateCaches: stateCaches)
-//
-//        self.argumentBufferReferences[argumentBuffer] = buffer
-//        if !argumentBuffer.flags.contains(.persistent) {
-//            self.frameArgumentBuffers.append(argumentBuffer)
-//        }
-//        
-//        return buffer
-//    }
-//    
-//    // These subscript methods should only be called after 'allocate' has been called.
-//    // If you hit an error here, check if you forgot to make a resource persistent.
-//    subscript(texture: Texture) -> VulkanImage? {
-//        return self.textureReferences[texture]
-//    }
-//    
-//    subscript(texture handle: Texture.Handle) -> VulkanImage? {
-//        let texture = Texture(existingHandle: handle)
-//        if self.textureReferences[texture] == nil {
-//            fatalError("Texture \(texture) is not in registry.")
-//        }
-//        return self.textureReferences[texture]!
-//    }
-//    
-//    subscript(buffer: Buffer) -> VulkanBuffer? {
-//        return self.bufferReferences[buffer]
-//    }
-//    
-//    subscript(buffer buffer: Buffer.Handle) -> VulkanBuffer? {
-//        return self.bufferReferences[Buffer(existingHandle: buffer)]
-//    }
-//    
-//    public func disposeTexture(_ texture: Texture) {
-//        if let vkTexture = self.textureReferences.removeValue(forKey: texture), !texture.flags.contains(.windowHandle) {
-//            // assert(vkTexture.waitSemaphore == nil, "Texture \(texture.handle) with flags \(texture.flags), pixelFormat \(texture.descriptor.pixelFormat) is being disposed with an active waitSemaphore.")
-//            let allocator = self.allocatorForResource(storageMode: texture.descriptor.storageMode, flags: texture.flags)
-//            allocator.depositImage(vkTexture)
-//        }
-//    }
-//    
-//    public func disposeBuffer(_ buffer: Buffer) {
-//        if let vkBuffer = self.bufferReferences.removeValue(forKey: buffer) {
-//            assert(vkBuffer.waitSemaphore == nil)
-//            let allocator = self.allocatorForResource(storageMode: buffer.descriptor.storageMode, flags: buffer.flags)
-//            allocator.depositBuffer(vkBuffer)
-//        }
-//    }
-//
-//    public func disposeArgumentBuffer(_ buffer: _ArgumentBuffer) {
-//        // Only called if the buffer isn't persistent.
-//        self.argumentBufferReferences.removeValue(forKey: buffer)
-//    }
-//
-//    public func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray) {
-//        // Only called if the buffer isn't persistent.
-//        self.argumentBufferReferences.removeValue(forKey: buffer)
-//    }
-//
-//    
-//    public func cycleFrames() {
-//        self.commandPool.cycleFrames()
-//        
-//        self.cpuDataCache.reset()
-//        self.frameCPUBufferContents.removeAll(keepingCapacity: true)
-//
-//        while let argBuffer = self.frameArgumentBuffers.popLast() {
-//            self.argumentBufferReferences.removeValue(forKey: argBuffer)
-//        }
-//        
-//        self.uploadResourceAllocator.cycleFrames()
-//        self.privateResourceAllocator.cycleFrames()
-//        self.temporaryBufferAllocator.cycleFrames()
-//        self.windowReferences.removeAll(keepingCapacity: true)
-//    }
-//}
 
 #endif // canImport(Vulkan)

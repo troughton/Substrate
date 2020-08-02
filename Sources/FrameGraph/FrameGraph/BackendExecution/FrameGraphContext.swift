@@ -21,16 +21,16 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
     var queueCommandBufferIndex: UInt64 = 0
     let syncEvent: Backend.Event
        
-    let commandQueue: Backend.BackendQueue
+    let commandQueue: Backend.QueueImpl
        
     public let transientRegistryIndex: Int
     var frameGraphQueue: Queue
     
     var compactedResourceCommands = [CompactedResourceCommand<Backend.CompactedResourceCommandType>]()
        
-    public init(backend: Backend, capabilities: QueueCapabilities, inflightFrameCount: Int, transientRegistryIndex: Int) {
+    public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
-        self.frameGraphQueue = Queue(capabilities: capabilities)
+        self.frameGraphQueue = Queue()
         self.commandQueue = backend.makeQueue(frameGraphQueue: self.frameGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
         self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount)
@@ -143,10 +143,7 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
             }
             
             if commandBuffer == nil {
-                commandBuffer = Backend.CommandBuffer(backend: self.backend,
-                                                      queue: self.commandQueue,
-                                                      commandInfo: frameCommandInfo,
-                                                      textureUsages: self.commandGenerator.renderTargetTextureProperties,
+                commandBuffer = self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
                                                       resourceMap: resourceMap,
                                                       compactedResourceCommands: self.compactedResourceCommands)
             }

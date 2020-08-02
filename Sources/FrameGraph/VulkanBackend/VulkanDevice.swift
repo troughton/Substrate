@@ -16,22 +16,8 @@ enum QueueFamily : Int {
     case present
 }
 
-extension QueueCapabilities {
-    init(_ family: QueueFamily) {
-        switch family {
-        case .graphics, .present:
-            self = .render
-        case .compute:
-            self = .compute
-        case .copy:
-            self = .blit
-        }
-    }
-}
-
 public final class VulkanPhysicalDevice {
     public let vkDevice : VkPhysicalDevice
-    public let queueCapabilities : [QueueCapabilities]
     let queueFamilies: [VkQueueFamilyProperties]
     
     init(device: VkPhysicalDevice) {
@@ -42,23 +28,14 @@ public final class VulkanPhysicalDevice {
         
         var queueFamilies = [VkQueueFamilyProperties](repeating: VkQueueFamilyProperties(), count: Int(queueFamilyCount))
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, &queueFamilies)
-        self.queueFamilies = queueFamilies
         
-        self.queueCapabilities = queueFamilies.enumerated().map { (i, queueFamily) in
-            var capabilities: QueueCapabilities = []
-            let queueFlags = VkQueueFlagBits(queueFamily.queueFlags)
-            if queueFlags.contains(VK_QUEUE_GRAPHICS_BIT) {
-                capabilities.insert([.render, .blit])
+        for i in queueFamilies.indices {
+            if VkQueueFlagBits(queueFamilies[i].queueFlags).intersection([VK_QUEUE_GRAPHICS_BIT, VK_QUEUE_COMPUTE_BIT]) != [] {
+                queueFamilies[i].queueFlags |= VK_QUEUE_TRANSFER_BIT.rawValue // All queues support transfer operations.
             }
-            if queueFlags.contains(VK_QUEUE_COMPUTE_BIT) {
-                capabilities.insert([.compute, .blit])
-            }
-            if queueFlags.contains(VK_QUEUE_TRANSFER_BIT) {
-                capabilities.insert(.blit)
-            }
-            
-            return capabilities
         }
+        
+        self.queueFamilies = queueFamilies
     }
 }
 
@@ -172,41 +149,20 @@ public final class VulkanDevice {
         vkDestroyDevice(self.vkDevice, nil)
     }
     
-    public func queueFamilyIndex(capabilities: QueueCapabilities, requiredCapability: QueueCapabilities) -> Int {
-        assert(capabilities.contains(requiredCapability))
-        
-        // Check for an exact match first
-        if let familyIndex = self.physicalDevice.queueCapabilities.firstIndex(of: capabilities) {
-            return familyIndex
+    public func queueFamilyIndices(containingAllOf queueFlags: VkQueueFlagBits) -> [UInt32] {
+        return self.physicalDevice.queueFamilies.enumerated().compactMap { (i, queue) in
+            if VkQueueFlagBits(queue.queueFlags).contains(queueFlags) {
+                return UInt32(i)
+            } else {
+                return nil
+            }
         }
-        
-        // Then, check for a superset.
-        if let familyIndex = self.physicalDevice.queueCapabilities.firstIndex(where: { $0.contains(capabilities) }) {
-            return familyIndex
-        }
-        
-        // Check for an exact match
-        if let familyIndex = self.physicalDevice.queueCapabilities.firstIndex(of: requiredCapability) {
-            return familyIndex
-        }
-        
-        // Check for a superset.
-        if let familyIndex = self.physicalDevice.queueCapabilities.firstIndex(where: { $0.contains(requiredCapability) }) {
-            return familyIndex
-        }
-        
-        fatalError("No Vulkan queue supports the capability \(requiredCapability).")
     }
     
-    public func deviceQueue(capabilities: QueueCapabilities, requiredCapability: QueueCapabilities) -> VulkanDeviceQueue {
-        let familyIndex = self.queueFamilyIndex(capabilities: capabilities, requiredCapability: requiredCapability)
-        return self.queues.first(where: { $0.familyIndex == familyIndex })!
-    }
-    
-    public func queueFamilyIndices(capabilities: QueueCapabilities) -> [UInt32] {
+    public func queueFamilyIndices(matchingAnyOf queueFlags: VkQueueFlagBits) -> [UInt32] {
         var indices = [UInt32]()
-        for (i, queueCapabilities) in self.physicalDevice.queueCapabilities.enumerated() {
-            if queueCapabilities.intersection(capabilities) != [] {
+        for (i, queueFamily) in self.physicalDevice.queueFamilies.enumerated() {
+            if VkQueueFlagBits(queueFamily.queueFlags).intersection(queueFlags) != [] {
                 indices.append(UInt32(i))
             }
         }

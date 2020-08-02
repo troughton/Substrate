@@ -51,7 +51,7 @@ public final class GPUResourceUploader {
     
     public static func initialise(maxUploadSize: Int = 128 * 1024 * 1024) {
         self.maxUploadSize = maxUploadSize
-        self.frameGraph = FrameGraph(inflightFrameCount: 1, capabilities: .blit)
+        self.frameGraph = FrameGraph(inflightFrameCount: 1)
     }
     
     private init() {}

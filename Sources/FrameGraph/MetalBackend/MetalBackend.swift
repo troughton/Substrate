@@ -86,7 +86,7 @@ final class MetalBackend : SpecificRenderBackend {
     
     @usableFromInline func materialisePersistentTexture(_ texture: Texture) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateTexture(texture, usage: TextureUsageProperties(texture.descriptor.usageHint)) != nil
+            return self.resourceRegistry.allocateTexture(texture) != nil
         }
     }
     
@@ -96,7 +96,7 @@ final class MetalBackend : SpecificRenderBackend {
     
     @usableFromInline func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateBuffer(buffer, usage: buffer.descriptor.usageHint) != nil
+            return self.resourceRegistry.allocateBuffer(buffer) != nil
         }
     }
     
@@ -232,15 +232,6 @@ final class MetalBackend : SpecificRenderBackend {
         return true
     }
 
-    static var requiresBufferUsage: Bool {
-        // Metal does not track buffer usages.
-        return false
-    }
-
-    static var requiresTextureLayoutTransitions: Bool {
-        // Metal handles layout transitions through residency tracking.
-        return false 
-    }
     
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
@@ -250,8 +241,8 @@ final class MetalBackend : SpecificRenderBackend {
         argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
-    func makeQueue(frameGraphQueue: Queue) -> MTLCommandQueue {
-        return self.device.makeCommandQueue()!
+    func makeQueue(frameGraphQueue: Queue) -> MetalCommandQueue {
+        return MetalCommandQueue(backend: self, queue: self.device.makeCommandQueue()!)
     }
 
     func makeSyncEvent(for queue: Queue) -> MTLEvent {
