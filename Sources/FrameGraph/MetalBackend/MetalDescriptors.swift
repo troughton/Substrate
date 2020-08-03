@@ -39,7 +39,7 @@ extension MTLHeapDescriptor {
 }
 
 extension MTLStencilDescriptor {
-    convenience init(_ descriptor : StencilDescriptor) {
+    convenience init(_ descriptor: StencilDescriptor) {
         self.init()
         
         self.stencilCompareFunction = MTLCompareFunction(descriptor.stencilCompareFunction)
@@ -55,8 +55,14 @@ extension MTLDepthStencilDescriptor {
     convenience init(_ descriptor: DepthStencilDescriptor) {
         self.init()
         
-        self.backFaceStencil = MTLStencilDescriptor(descriptor.backFaceStencil)
-        self.frontFaceStencil = MTLStencilDescriptor(descriptor.frontFaceStencil)
+        if descriptor.backFaceStencil == descriptor.frontFaceStencil {
+            let stencilDescriptor = MTLStencilDescriptor(descriptor.backFaceStencil)
+            self.backFaceStencil = stencilDescriptor
+            self.frontFaceStencil = stencilDescriptor
+        } else {
+            self.backFaceStencil = MTLStencilDescriptor(descriptor.backFaceStencil)
+            self.frontFaceStencil = MTLStencilDescriptor(descriptor.frontFaceStencil)
+        }
         
         self.depthCompareFunction = MTLCompareFunction(descriptor.depthCompareFunction)
         self.isDepthWriteEnabled = descriptor.isDepthWriteEnabled
@@ -127,7 +133,14 @@ extension MTLRenderPassStencilAttachmentDescriptor {
     convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, clearStencil: UInt32, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
         self.init()
         try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
-        self.clearStencil = clearStencil
+        
+        switch self.texture!.pixelFormat {
+        case .stencil8, .x24_stencil8, .x32_stencil8, .depth24Unorm_stencil8, .depth32Float_stencil8:
+            self.clearStencil = clearStencil & 0xFF // NVIDIA drivers crash when clearStencil is non-representable by the stencil buffer's bit depth.
+        default:
+            self.clearStencil = clearStencil
+            break
+        }
     }
 }
 
