@@ -1509,7 +1509,6 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
     let computeRenderPass : ComputeRenderPass
     
     private var currentComputePipeline : ComputePipelineDescriptorBox? = nil
-    private var currentThreadExecutionWidth : Int = 0
     
     init(commandRecorder: FrameGraphCommandRecorder, resourceUsages: ResourceUsages, renderPass: ComputeRenderPass, passRecord: RenderPassRecord) {
         self.computeRenderPass = renderPass
@@ -1533,8 +1532,6 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
         
         self.pipelineStateChanged = true
         self.needsUpdateBindings = true
-        
-        self.currentThreadExecutionWidth = RenderBackend.threadExecutionWidth
 
         let pipelineBox = ComputePipelineDescriptorBox(descriptor)
         self.currentComputePipeline = pipelineBox
@@ -1542,6 +1539,11 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
         let box = Unmanaged.passRetained(pipelineBox)
         commandRecorder.unmanagedReferences.append(box)
         commandRecorder.record(.setComputePipelineDescriptor(box))
+    }
+    
+    /// The number of threads in a SIMD group/wave for the current pipeline state.
+    public var currentThreadExecutionWidth: Int {
+        return self.currentPipelineReflection?.threadExecutionWidth ?? 0
     }
     
     public func setStageInRegion(_ region: Region) {

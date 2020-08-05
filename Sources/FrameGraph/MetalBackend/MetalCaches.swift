@@ -33,7 +33,6 @@ final class MetalStateCaches {
     
     private var functionCache = [FunctionCacheKey : MTLFunction]()
     private var computeStates = [String : [(ComputePipelineDescriptor, Bool, MTLComputePipelineState, MetalPipelineReflection)]]() // Bool meaning threadgroupSizeIsMultipleOfThreadExecutionWidth
-    private(set) var currentThreadExecutionWidth : Int = 0
     
     private var renderStates = [RenderPipelineFunctionNames : [(MetalRenderPipelineDescriptor, MTLRenderPipelineState, MetalPipelineReflection)]]()
     
@@ -129,7 +128,8 @@ final class MetalStateCaches {
         do {
             let state = try self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.argumentInfo, .bufferTypeInfo], reflection: &reflection)
             
-            let pipelineReflection = MetalPipelineReflection(vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderReflection: reflection!)
+            // TODO: can we retrieve the thread execution width for render pipelines?
+            let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderReflection: reflection!)
             
             self.renderStates[lookupKey, default: []].append((metalDescriptor, state, pipelineReflection))
             
@@ -188,11 +188,9 @@ final class MetalStateCaches {
         do {
             let state = try self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.argumentInfo, .bufferTypeInfo], reflection: &reflection)
             
-            let pipelineReflection = MetalPipelineReflection(function: mtlDescriptor.computeFunction!, computeReflection: reflection!)
+            let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeReflection: reflection!)
             
             self.computeStates[descriptor.function, default: []].append((descriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth, state, pipelineReflection))
-            
-            self.currentThreadExecutionWidth = state.threadExecutionWidth
             
             return state
         } catch {

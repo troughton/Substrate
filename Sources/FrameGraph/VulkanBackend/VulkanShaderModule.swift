@@ -62,6 +62,8 @@ final class VulkanPipelineReflection : PipelineReflection {
     let reflectionCacheKeys : UnsafePointer<ResourceBindingPath>
     let reflectionCacheValues : UnsafePointer<ArgumentReflection>
     
+    let threadExecutionWidth: Int = 32 // FIXME: retrieve from device via VkPhysicalDeviceSubgroupProperties.
+    
     deinit {
         self.reflectionCacheKeys.deallocate()
         self.reflectionCacheValues.deallocate()

@@ -136,10 +136,6 @@ final class MetalBackend : SpecificRenderBackend {
         #endif
     }
     
-    public var threadExecutionWidth: Int {
-        return self.stateCaches.currentThreadExecutionWidth
-    }
-    
     public var hasUnifiedMemory: Bool {
         #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         return true

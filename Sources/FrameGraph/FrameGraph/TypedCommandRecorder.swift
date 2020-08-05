@@ -412,16 +412,20 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         }
     }
     
-    func updateEncoderState() {
-        defer {
-            self.pipelineDescriptorChanged = false
-            self.descriptorSetChangeMask = 0
-        }
-        
+    func updatePipelineState() {
         if self.pipelineDescriptorChanged {
             self.pipeline.flushConstants()
             self.encoder.setComputePipelineDescriptor(self.pipeline.descriptor)
+            self.pipelineDescriptorChanged = false
         }
+    }
+    
+    func updateEncoderState() {
+        defer {
+            self.descriptorSetChangeMask = 0
+        }
+        
+        self.updatePipelineState()
         
         if self.descriptorSetChangeMask != 0 {
             if (self.descriptorSetChangeMask & (1 << 0)) != 0 {
@@ -451,6 +455,12 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         }
     }
     
+    /// The number of threads in a SIMD group/wave for the current pipeline state.
+    public var currentThreadExecutionWidth: Int {
+        self.updatePipelineState()
+        return self.encoder.currentThreadExecutionWidth
+    }
+    
     public func pushDebugGroup(_ string: String) {
         self.encoder.pushDebugGroup(string)
     }
@@ -471,6 +481,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     public func setThreadgroupMemoryLength(_ length: Int, index: Int) {
         self.encoder.setThreadgroupMemoryLength(length, index: index)
     }
+    
     
     public func dispatchThreads(_ threadsPerGrid: Size, threadsPerThreadgroup: Size) {
         self.updateEncoderState()
