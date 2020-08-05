@@ -26,6 +26,8 @@ protocol PipelineReflection : class {
     func remapArgumentBufferPathForActiveStages(_ path: ResourceBindingPath) -> ResourceBindingPath
 
     func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer?
+    
+    var threadExecutionWidth: Int { get }
 }
 
 extension PipelineReflection {
@@ -47,7 +49,6 @@ public protocol RenderBackendProtocol : class {
     func backingResource(_ resource: Resource) -> Any?
     
     var isDepth24Stencil8PixelFormatSupported : Bool { get }
-    var threadExecutionWidth : Int { get }
     var hasUnifiedMemory : Bool { get }
     
     var renderDevice : Any { get }
@@ -180,11 +181,6 @@ public struct RenderBackend {
     @inlinable
     public static var isDepth24Stencil8PixelFormatSupported : Bool {
         return _backend.isDepth24Stencil8PixelFormatSupported
-    }
-    
-    @inlinable
-    public static var threadExecutionWidth : Int {
-        return _backend.threadExecutionWidth
     }
     
     @inlinable
