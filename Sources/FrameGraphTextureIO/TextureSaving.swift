@@ -224,6 +224,9 @@ extension TextureData where T == UInt8 {
     }
     
     public func writePNG(to url: URL, compressionSettings: PNGCompressionSettings = .default) throws {
+        var texture = self
+        texture.convertToPostmultipliedAlpha()
+        
         var lodePNGState = LodePNGState()
         lodepng_state_init(&lodePNGState)
         defer { lodepng_state_cleanup(&lodePNGState) }
@@ -237,7 +240,7 @@ extension TextureData where T == UInt8 {
         var outBuffer: UnsafeMutablePointer<UInt8>! = nil
         var outSize: Int = 0
         
-        let errorCode = lodepng_encode(&outBuffer, &outSize, self.storage.data.baseAddress, UInt32(self.width), UInt32(self.height), &lodePNGState)
+        let errorCode = lodepng_encode(&outBuffer, &outSize, texture.storage.data.baseAddress, UInt32(self.width), UInt32(self.height), &lodePNGState)
         
         if errorCode != 0 {
             let error = lodepng_error_text(errorCode)
@@ -257,7 +260,14 @@ extension TextureData where T == UInt8 {
 
 extension TextureData where T == UInt16 {
     public func writePNG(to url: URL, compressionSettings: PNGCompressionSettings = .default) throws {
-        let bigEndian = self.storage.data.map { $0.bigEndian }
+        var texture = self
+        texture.convertToPostmultipliedAlpha()
+        
+        texture.withUnsafeMutableBufferPointer { buffer in
+            for i in buffer.indices {
+                buffer[i] = buffer[i].bigEndian
+            }
+        }
         
         var lodePNGState = LodePNGState()
         lodepng_state_init(&lodePNGState)
@@ -272,7 +282,7 @@ extension TextureData where T == UInt16 {
         var outBuffer: UnsafeMutablePointer<UInt8>! = nil
         var outSize: Int = 0
         
-        let errorCode = bigEndian.withUnsafeBufferPointer { pixelData in
+        let errorCode = texture.withUnsafeBufferPointer { pixelData in
             return pixelData.withMemoryRebound(to: UInt8.self) {
                 return lodepng_encode(&outBuffer, &outSize, $0.baseAddress, UInt32(self.width), UInt32(self.height), &lodePNGState)
             }
