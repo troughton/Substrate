@@ -7,6 +7,7 @@
 
 #if canImport(Metal)
 import Metal
+import MetalKit
 import FrameGraphUtilities
 
 final class MetalCommandBuffer: BackendCommandBuffer {
@@ -18,6 +19,8 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     let textureUsages: [Texture: TextureUsageProperties]
     let resourceMap: FrameResourceMap<MetalBackend>
     let compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]
+    
+    var drawablesToPresentOnScheduled = [CAMetalDrawable]()
     
     init(backend: MetalBackend,
          queue: MTLCommandQueue,
@@ -120,6 +123,11 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     func presentSwapchains(resourceRegistry: MetalTransientResourceRegistry) {
         // Only contains drawables applicable to the render passes in the command buffer...
         for drawable in resourceRegistry.frameDrawables {
+            if drawable.layer.presentsWithTransaction {
+                self.drawablesToPresentOnScheduled.append(drawable)
+                continue
+            }
+            
             #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
             self.commandBuffer.present(drawable, afterMinimumDuration: 1.0 / 60.0)
             #else
@@ -135,6 +143,13 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             onCompletion(self)
         }
         self.commandBuffer.commit()
+        
+        if !self.drawablesToPresentOnScheduled.isEmpty {
+            self.commandBuffer.waitUntilScheduled()
+            for drawable in self.drawablesToPresentOnScheduled {
+                drawable.present()
+            }
+        }
     }
     
     var error: Error? {

@@ -437,6 +437,56 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
             }
         }
     }
+    
+    public mutating func convert(toColorSpace: TextureColorSpace) {
+        if toColorSpace == self.colorSpace {
+            return
+        }
+        
+        let sourceColorSpace = self.colorSpace
+        self.apply({ floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+        self.colorSpace = toColorSpace
+    }
+    
+    public mutating func convertToPremultipliedAlpha() {
+        guard !self.premultipliedAlpha, self.channelCount == 4 else { return }
+        self.ensureUniqueness()
+        
+        let sourceColorSpace = self.colorSpace
+        
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let alpha = unormToFloat(self[x, y, channel: 3])
+                for c in 0..<3 {
+                    let floatVal = unormToFloat(self[x, y, channel: c])
+                    let linearVal = TextureColourSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) * alpha
+                    self[x, y, channel: c] = floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self)
+                }
+            }
+        }
+        
+        self.premultipliedAlpha = true
+    }
+    
+    public mutating func convertToPostmultipliedAlpha() {
+        guard self.premultipliedAlpha, self.channelCount == 4 else { return }
+        self.ensureUniqueness()
+        
+        let sourceColorSpace = self.colorSpace
+        
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let alpha = unormToFloat(self[x, y, channel: 3])
+                for c in 0..<3 {
+                    let floatVal = unormToFloat(self[x, y, channel: c])
+                    let linearVal = clamp(TextureColourSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)
+                    self[x, y, channel: c] = floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self)
+                }
+            }
+        }
+        
+        self.premultipliedAlpha = false
+    }
 }
 
 extension TextureData where T: BinaryInteger & FixedWidthInteger & SignedInteger {
