@@ -53,17 +53,20 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             let source = resourceMap[args.pointee.sourceBuffer]
             let destination = resourceMap[args.pointee.destinationTexture].image
 
+            let bytesPerPixel = args.pointee.destinationTexture.descriptor.pixelFormat.bytesPerPixel
+
             let regions = destination.descriptor.allAspects.map { aspect -> VkBufferImageCopy in
                 let layers = VkImageSubresourceLayers(aspectMask: aspect, mipLevel: args.pointee.destinationLevel, baseArrayLayer: args.pointee.destinationSlice, layerCount: 1)
                 
                 return VkBufferImageCopy(bufferOffset: VkDeviceSize(args.pointee.sourceOffset) + VkDeviceSize(source.offset),
-                                         bufferRowLength: args.pointee.sourceBytesPerRow,
+                                         bufferRowLength: UInt32(Double(args.pointee.sourceBytesPerRow) / bytesPerPixel),
                                          bufferImageHeight: args.pointee.sourceBytesPerImage / args.pointee.sourceBytesPerRow,
                                          imageSubresource: layers,
                                          imageOffset: VkOffset3D(args.pointee.destinationOrigin),
                                          imageExtent: VkExtent3D(args.pointee.sourceSize))
                 
             }
+            
             regions.withUnsafeBufferPointer { regions in
                 vkCmdCopyBufferToImage(self.commandBufferResources.commandBuffer, source.buffer.vkBuffer, destination.vkImage, destination.layout, UInt32(regions.count), regions.baseAddress)
             }
