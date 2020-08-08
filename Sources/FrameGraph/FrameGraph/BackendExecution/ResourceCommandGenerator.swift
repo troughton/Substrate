@@ -56,8 +56,11 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend>(commandIndex: Int, resourceRegistry: Backend.TransientResourceRegistry, resourceMap: FrameResourceMap<Backend>, queue: Queue, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+    func execute<Backend: SpecificRenderBackend>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: FrameGraphContextImpl<Backend>, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+        let queue = context.frameGraphQueue
         let queueIndex = Int(queue.index)
+        let resourceMap = context.resourceMap
+        let resourceRegistry = context.resourceRegistry
         
         switch self {
         case .materialiseBuffer(let buffer):
@@ -104,10 +107,16 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
             
         case .preparePersistentResource(let resource):
             precondition(resource.flags.contains(.persistent))
+            let commandType: FrameResourceCommands?
             if let buffer = resource.buffer {
-                resourceMap.persistentRegistry.prepareBuffer(buffer)
+                commandType = resourceMap.persistentRegistry.prepareBuffer(buffer)
             } else if let texture = resource.texture {
-                resourceMap.persistentRegistry.prepareTexture(texture)
+                commandType = resourceMap.persistentRegistry.prepareTexture(texture)
+            } else {
+                commandType = nil
+            }
+            if let commandType = commandType {
+                commandGenerator.commands.append(.init(command: commandType, index: commandIndex))
             }
         case .disposeResource(let resource, let afterStages):
             let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)
@@ -470,16 +479,15 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             }
             
         }
-        
-        self.commands.sort()
     }
     
-    func executePreFrameCommands(queue: Queue, resourceMap: FrameResourceMap<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func executePreFrameCommands(context: FrameGraphContextImpl<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) {
         self.preFrameCommands.sort()
         for command in self.preFrameCommands {
             let commandBufferIndex = frameCommandInfo.commandEncoders[command.encoderIndex].commandBufferIndex
             command.command.execute(commandIndex: command.index,
-                                    resourceRegistry: resourceMap.transientRegistry, resourceMap: resourceMap, queue: queue,
+                                    commandGenerator: self,
+                                    context: context,
                                     encoderDependencies: &self.commandEncoderDependencies,
                                     waitEventValues: &frameCommandInfo.commandEncoders[command.encoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
         }

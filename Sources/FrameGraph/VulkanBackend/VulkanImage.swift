@@ -184,6 +184,14 @@ class VulkanImage {
         return layout
     }
     
+    var previousFrameLayout: VkImageLayout {
+        return self.frameLayouts[0].layout
+    }
+    
+    var firstLayoutInFrame: VkImageLayout {
+        return self.frameLayouts[1].layout
+    }
+    
     subscript(viewDescriptor: ViewDescriptor) -> VulkanImageView {
         if let view = self.views[viewDescriptor] {
             return view

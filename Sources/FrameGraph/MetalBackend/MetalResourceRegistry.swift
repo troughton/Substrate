@@ -281,12 +281,14 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return state
     }
     
-    func prepareBuffer(_ buffer: Buffer) {
+    func prepareBuffer(_ buffer: Buffer) -> FrameResourceCommands? {
         // No-op for Metal
+        return nil
     }
     
-    func prepareTexture(_ texture: Texture) {
+    func prepareTexture(_ texture: Texture) -> FrameResourceCommands? {
         // No-op for Metal
+        return nil
     }
 
     func disposeHeap(_ heap: Heap) {

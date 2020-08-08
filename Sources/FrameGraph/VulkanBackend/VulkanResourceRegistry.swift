@@ -253,14 +253,21 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         return vkSampler!
     }
     
-    func prepareBuffer(_ buffer: Buffer) {
-        fatalError("TODO: perform queue ownership transfers.")
+    func prepareBuffer(_ buffer: Buffer) -> FrameResourceCommands? {
+        // TODO: perform queue ownership transfers.
+        return nil
     }
     
-    func prepareTexture(_ texture: Texture) {
+    func prepareTexture(_ texture: Texture) -> FrameResourceCommands? {
         let image = self[texture]!
         image.image.computeFrameLayouts(usages: texture.usages, preserveLastLayout: true)
         // TODO: perform queue ownership transfers and initial layout transitions.
+        if image.image.previousFrameLayout != image.image.firstLayoutInFrame {
+            let firstUsage = texture.usages.first
+            return .memoryBarrier(Resource(texture), afterUsage: .unusedArgumentBuffer, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages)
+        } else {
+            return nil
+        }
     }
     
     func disposeHeap(_ heap: Heap) {

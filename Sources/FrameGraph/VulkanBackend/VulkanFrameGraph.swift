@@ -156,7 +156,6 @@ extension VulkanBackend {
         func processMemoryBarrier(resource: Resource, afterCommand: Int, afterUsage: ResourceUsageType, afterStages: RenderStages?, beforeCommand: Int, beforeUsage: ResourceUsageType, beforeStages: RenderStages) {
             let pixelFormat =  resource.texture?.descriptor.pixelFormat ?? .invalid
             let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
-            let isInitialised = resource.stateFlags.contains(.initialised)
 
             let sourceLayout: VkImageLayout
             let destinationLayout: VkImageLayout

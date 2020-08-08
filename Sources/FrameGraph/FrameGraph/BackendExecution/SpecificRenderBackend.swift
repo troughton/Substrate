@@ -126,8 +126,8 @@ protocol BackendPersistentResourceRegistry: ResourceRegistry where Backend.Persi
     func allocateBuffer(_ buffer: Buffer) -> Backend.BufferReference?
     func allocateTexture(_ texture: Texture) -> Backend.TextureReference?
     
-    func prepareBuffer(_ buffer: Buffer)
-    func prepareTexture(_ texture: Texture)
+    func prepareBuffer(_ buffer: Buffer) -> FrameResourceCommands?
+    func prepareTexture(_ texture: Texture) -> FrameResourceCommands?
     
     func disposeTexture(_ texture: Texture)
     func disposeBuffer(_ buffer: Buffer)
