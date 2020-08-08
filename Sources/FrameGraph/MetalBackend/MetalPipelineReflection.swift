@@ -40,6 +40,8 @@ final class MetalPipelineReflection : PipelineReflection {
     let argumentEncoderCount : Int
     let argumentEncoders : UnsafeMutablePointer<MetalArgumentEncoder?>
     
+    let threadExecutionWidth: Int
+    
     deinit {
         self.bindingPathCache.deinit()
         
@@ -50,7 +52,8 @@ final class MetalPipelineReflection : PipelineReflection {
         self.argumentEncoders.deallocate()
     }
     
-    init(bindingPathCache: HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MetalArgumentEncoder?>, argumentEncoderCount: Int) {
+    init(threadExecutionWidth: Int, bindingPathCache: HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MetalArgumentEncoder?>, argumentEncoderCount: Int) {
+        self.threadExecutionWidth = threadExecutionWidth
         self.bindingPathCache = bindingPathCache
         
         let sortedReflectionCache = reflectionCache.sorted(by: { $0.key.value < $1.key.value })
@@ -72,7 +75,7 @@ final class MetalPipelineReflection : PipelineReflection {
         self.argumentEncoderCount = argumentEncoderCount
     }
     
-    public convenience init(vertexFunction: MTLFunction, fragmentFunction: MTLFunction?, renderReflection: MTLRenderPipelineReflection) {
+    public convenience init(threadExecutionWidth: Int, vertexFunction: MTLFunction, fragmentFunction: MTLFunction?, renderReflection: MTLRenderPipelineReflection) {
         var bindingPathCache = HashMap<BindingPathCacheKey, ResourceBindingPath>()
         var reflectionCache = [ResourceBindingPath : ArgumentReflection]()
         
@@ -88,11 +91,11 @@ final class MetalPipelineReflection : PipelineReflection {
             MetalPipelineReflection.fillCaches(function: fragmentFunction!, argument: arg, stages: .fragment, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentEncoders: argumentEncoders.advanced(by: 31))
         }
         
-        self.init(bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentEncoders: argumentEncoders, argumentEncoderCount: argumentEncoderCount)
+        self.init(threadExecutionWidth: threadExecutionWidth, bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentEncoders: argumentEncoders, argumentEncoderCount: argumentEncoderCount)
         
     }
     
-    public convenience init(function: MTLFunction, computeReflection: MTLComputePipelineReflection) {
+    public convenience init(threadExecutionWidth: Int, function: MTLFunction, computeReflection: MTLComputePipelineReflection) {
         var bindingPathCache = HashMap<BindingPathCacheKey, ResourceBindingPath>()
         var reflectionCache = [ResourceBindingPath : ArgumentReflection]()
         
@@ -103,7 +106,7 @@ final class MetalPipelineReflection : PipelineReflection {
         computeReflection.arguments.forEach { arg in
             MetalPipelineReflection.fillCaches(function: function, argument: arg, stages: .compute, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentEncoders: argumentEncoders)
         }
-        self.init(bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentEncoders: argumentEncoders, argumentEncoderCount: argumentEncoderCount)
+        self.init(threadExecutionWidth: threadExecutionWidth, bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentEncoders: argumentEncoders, argumentEncoderCount: argumentEncoderCount)
     }
     
     static func fillCaches(function: MTLFunction, argument: MTLArgument, stages: RenderStages, bindingPathCache: inout HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: inout [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MetalArgumentEncoder?>) {

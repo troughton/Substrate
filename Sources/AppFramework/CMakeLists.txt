@@ -6,7 +6,7 @@ add_subdirectory(UpdateScheduler)
 add_subdirectory(Windowing)
 
 target_sources(AppFramework PRIVATE
-  ImGui+RGBAColour.swift
+  ImGui+RGBAColor.swift
   ImGuiTextureLookup.swift
 )
 
