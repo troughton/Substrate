@@ -229,11 +229,11 @@ final class MetalBackend : SpecificRenderBackend {
     }
 
     
-    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
+    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
-    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
+    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
     

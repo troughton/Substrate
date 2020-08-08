@@ -40,8 +40,8 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     
     func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<Self>, commandInfo: FrameCommandInfo<Self>, commandGenerator: ResourceCommandGenerator<Self>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>])
     
-    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: ArgumentBufferReference, resourceMap: FrameResourceMap<Self>)
-    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: ArgumentBufferArrayReference, resourceMap: FrameResourceMap<Self>)
+    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
+    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: ArgumentBufferArrayReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
 }
 
 protocol BackendRenderTargetDescriptor: class {

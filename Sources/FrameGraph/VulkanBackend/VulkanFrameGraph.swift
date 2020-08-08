@@ -282,7 +282,7 @@ extension VulkanBackend {
             // useResource should be batched together by usage to as early as possible in the encoder.
             // memoryBarriers should be as late as possible.
             switch command.command {
-            case .useResource(let resource, let usage, let stages, let allowReordering):
+            case .useResource:
                 fatalError("Vulkan does not track resource residency")
             case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages):
                 processMemoryBarrier(resource: resource, afterCommand: command.index, afterUsage: afterUsage, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsage: beforeUsage, beforeStages: beforeStages)

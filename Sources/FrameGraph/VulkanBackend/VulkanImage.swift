@@ -179,7 +179,7 @@ class VulkanImage {
     
     func layout(fromCommandIndex: Int) -> VkImageLayout {
         guard let layout = self.frameLayouts.last(where: { fromCommandIndex >= $0.commandRange.lowerBound })?.layout else {
-            preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image")
+            preconditionFailure("Command index \(fromCommandIndex) does not correspond to a usage of this image")
         }
         return layout
     }

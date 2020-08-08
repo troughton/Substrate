@@ -88,7 +88,8 @@ final class VulkanQueue: BackendQueue {
     }
     
     func makeCommandBuffer(commandInfo: FrameCommandInfo<Backend>, resourceMap: FrameResourceMap<Backend>, compactedResourceCommands: [CompactedResourceCommand<Backend.CompactedResourceCommandType>]) -> VulkanCommandBuffer {
-        fatalError()
+        let queue = device.queues[0] // TODO: use queues other than the main queue.
+        return VulkanCommandBuffer(backend: self.backend, queue: queue, commandInfo: commandInfo, resourceMap: resourceMap, compactedResourceCommands: compactedResourceCommands)
     }
 }
 

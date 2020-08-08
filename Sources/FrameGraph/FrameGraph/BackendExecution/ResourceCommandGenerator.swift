@@ -56,7 +56,7 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend>(resourceRegistry: Backend.TransientResourceRegistry, resourceMap: FrameResourceMap<Backend>, queue: Queue, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+    func execute<Backend: SpecificRenderBackend>(commandIndex: Int, resourceRegistry: Backend.TransientResourceRegistry, resourceMap: FrameResourceMap<Backend>, queue: Queue, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
         let queueIndex = Int(queue.index)
         
         switch self {
@@ -89,7 +89,7 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
                 argBufferReference = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
                 waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
-            Backend.fillArgumentBuffer(argumentBuffer, storage: argBufferReference, resourceMap: resourceMap)
+            Backend.fillArgumentBuffer(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
             
             
         case .materialiseArgumentBufferArray(let argumentBuffer):
@@ -100,7 +100,7 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
                 argBufferReference = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
                 waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
-            Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, resourceMap: resourceMap)
+            Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
             
         case .preparePersistentResource(let resource):
             precondition(resource.flags.contains(.persistent))
@@ -478,7 +478,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         self.preFrameCommands.sort()
         for command in self.preFrameCommands {
             let commandBufferIndex = frameCommandInfo.commandEncoders[command.encoderIndex].commandBufferIndex
-            command.command.execute(resourceRegistry: resourceMap.transientRegistry, resourceMap: resourceMap, queue: queue,
+            command.command.execute(commandIndex: command.index,
+                                    resourceRegistry: resourceMap.transientRegistry, resourceMap: resourceMap, queue: queue,
                                     encoderDependencies: &self.commandEncoderDependencies,
                                     waitEventValues: &frameCommandInfo.commandEncoders[command.encoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
         }
