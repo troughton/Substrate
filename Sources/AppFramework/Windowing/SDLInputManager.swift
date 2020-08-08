@@ -84,14 +84,16 @@ public final class SDLInputManager : InputManager {
             }) as! SDLWindow? else {
                 continue
             }
+
+            let eventType = SDL_EventType(rawValue: SDL_EventType.RawValue(event.type))
+            if case SDL_QUIT = eventType {
+                shouldQuit = true
+            }
             
             if event.type == SDL_WINDOWEVENT.rawValue {
                 window.didReceiveEvent(event: event)
             } else {
-                switch SDL_EventType(rawValue: SDL_EventType.RawValue(event.type)) {
-                    
-                case SDL_QUIT:
-                    shouldQuit = true
+                switch eventType {
                     
                 case SDL_MOUSEBUTTONDOWN:
                     if let inputSource = InputSource(fromSDLMouseButton: event.button.button) {

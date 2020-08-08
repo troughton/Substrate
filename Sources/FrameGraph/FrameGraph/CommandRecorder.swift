@@ -1637,6 +1637,7 @@ public final class BlitCommandEncoder : CommandEncoder {
     }
     
     public func copy(from sourceBuffer: Buffer, sourceOffset: Int, sourceBytesPerRow: Int, sourceBytesPerImage: Int, sourceSize: Size, to destinationTexture: Texture, destinationSlice: Int, destinationLevel: Int, destinationOrigin: Origin, options: BlitOption = []) {
+        assert(sourceBuffer.length - sourceOffset >= sourceSize.height * sourceBytesPerRow)
         let commandOffset = self.nextCommandOffset
         
         resourceUsages.addResourceUsage(for: sourceBuffer, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)

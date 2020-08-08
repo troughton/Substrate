@@ -42,8 +42,13 @@ extension VulkanBackend {
             if signalIndex < 0 { continue }
             
             let label = "Encoder \(sourceIndex) Event"
-            let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[sourceIndex].commandBufferIndex)
+            let sourceEncoder = frameCommandInfo.commandEncoders[sourceIndex]
+            let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: sourceEncoder.commandBufferIndex)
             let fence = VulkanEventHandle(label: label, queue: queue, commandBufferIndex: commandBufferSignalValue)
+
+            if sourceEncoder.type == .draw {
+                signalIndex = max(signalIndex, sourceEncoder.commandRange.last!) // We can't signal within a VkRenderPass instance.
+            }
             
             compactedResourceCommands.append(CompactedResourceCommand<VulkanCompactedResourceCommandType>(command: .signalEvent(fence.event, afterStages: signalStages), index: signalIndex, order: .after))
             
@@ -61,6 +66,7 @@ extension VulkanBackend {
                     
                     if let buffer = resource.buffer {
                         var barrier = VkBufferMemoryBarrier()
+                        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER
                         barrier.buffer = resourceMap[buffer].buffer.vkBuffer
                         barrier.offset = 0
                         barrier.size = VK_WHOLE_SIZE // TODO: track at a more fine-grained level.
@@ -76,6 +82,7 @@ extension VulkanBackend {
                         let image = resource.texture.map({ resourceMap[$0].image })!
                         
                         var barrier = VkImageMemoryBarrier()
+                        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
                         barrier.image = resourceMap[texture].image.vkImage
                         barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
                         barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
@@ -104,7 +111,13 @@ extension VulkanBackend {
                                                                                  bufferMemoryBarriers: UnsafeBufferPointer<VkBufferMemoryBarrier>(start: bufferBarriersPtr, count: bufferBarriers.count),
                                                                                  imageMemoryBarriers: UnsafeBufferPointer<VkImageMemoryBarrier>(start: imageBarriersPtr, count: imageBarriers.count))
                 
-                compactedResourceCommands.append(CompactedResourceCommand<VulkanCompactedResourceCommandType>(command: command, index: dependency.wait.index, order: .before))
+                var waitIndex = dependency.wait.index
+                let dependentEncoder = frameCommandInfo.commandEncoders[dependentIndex]
+                if dependentEncoder.type == .draw {
+                    waitIndex = dependentEncoder.commandRange.first! // We can't wait within a VkRenderPass instance.
+                }
+
+                compactedResourceCommands.append(CompactedResourceCommand<VulkanCompactedResourceCommandType>(command: command, index: waitIndex, order: .before))
             }
         }
     }

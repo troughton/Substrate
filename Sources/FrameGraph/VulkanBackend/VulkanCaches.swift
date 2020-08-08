@@ -93,10 +93,7 @@ final class VulkanStateCaches {
     }
     
     private let defaultVertexInputStateCreateInfo : VertexInputStateCreateInfo = {
-        var descriptor = VertexDescriptor()
-        descriptor.attributes[0].format = .float4
-        descriptor.layouts[0].stepFunction = .perVertex
-        descriptor.layouts[0].stride = 4 * MemoryLayout<Float>.size
+        let descriptor = VertexDescriptor()
         return VertexInputStateCreateInfo(descriptor: descriptor)
     }()
     
