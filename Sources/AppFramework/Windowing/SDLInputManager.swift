@@ -77,17 +77,18 @@ public final class SDLInputManager : InputManager {
         
         var event = SDL_Event()
         while SDL_PollEvent(&event) != 0 {
+
+            let eventType = SDL_EventType(rawValue: SDL_EventType.RawValue(event.type))
+            if case SDL_QUIT = eventType {
+                shouldQuit = true
+            }
+            
             let windowId = event.window.windowID
                     
             guard let window = windows.first(where: { (window) -> Bool in
                 return (window as! SDLWindow).sdlWindowId == windowId
             }) as! SDLWindow? else {
                 continue
-            }
-
-            let eventType = SDL_EventType(rawValue: SDL_EventType.RawValue(event.type))
-            if case SDL_QUIT = eventType {
-                shouldQuit = true
             }
             
             if event.type == SDL_WINDOWEVENT.rawValue {

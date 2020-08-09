@@ -86,7 +86,7 @@ extension ImGui {
         }
         
         platformIO.pointee.Platform_DestroyWindow = { viewport in
-            Application.sharedApplication.destroyWindow(window: viewport!.pointee.window)
+            Application.sharedApplication.destroyWindow(viewport!.pointee.window)
             Unmanaged<AnyObject>.fromOpaque(viewport!.pointee.PlatformHandle).release()
         }
         

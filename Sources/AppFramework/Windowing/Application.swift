@@ -90,7 +90,7 @@ public class Application {
             for layer in windowDelegate.inputLayers {
                 self.inputLayers.removeAll(where: { $0 === layer })
             }
-            self.destroyWindow(window: windowDelegate.window)
+            self.destroyWindow(windowDelegate.window)
         }
         self.updateables.remove(at: self.updateables.firstIndex(where: { $0 === updateable })!)
     }
@@ -172,7 +172,7 @@ public class Application {
         fatalError("createWindow(title:dimensions:flags:) needs concrete implementation.")
     }
     
-    public func destroyWindow(window: Window) {
+    public func destroyWindow(_ window: Window) {
         self.windows.remove(at: self.windows.firstIndex(where: { $0 === window })!)
     }
     
