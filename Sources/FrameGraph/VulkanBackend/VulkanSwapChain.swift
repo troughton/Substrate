@@ -155,6 +155,7 @@ public class VulkanSwapChain : SwapChain {
             descriptor.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
             descriptor.sharingMode = sharingMode
             descriptor.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED // as per spec.
+            descriptor.storageMode = .private
             
             let image = VulkanImage(device: device, image: image, allocator: nil, allocation: nil, descriptor: descriptor)
             image.swapchainImageIndex = i

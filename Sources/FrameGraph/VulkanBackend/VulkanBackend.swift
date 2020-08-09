@@ -84,14 +84,14 @@ public final class VulkanBackend : SpecificRenderBackend {
         let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
         let buffer = bufferReference.buffer
         
-        return buffer.map(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
+        return buffer.contents(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
     public func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         if range.isEmpty { return }
         let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
         let buffer = bufferReference.buffer
-        buffer.unmapMemory(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
+        buffer.didModifyRange((range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
     public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {

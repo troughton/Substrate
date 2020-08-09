@@ -266,6 +266,8 @@ struct VulkanImageDescriptor : Equatable {
     var usage : VkImageUsageFlagBits = []
     var sharingMode : VulkanSharingMode = .exclusive
     var initialLayout : VkImageLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    var storageMode: StorageMode = .private
+    var cacheMode: CPUCacheMode = .defaultCache
     
     public init() {
         
@@ -285,6 +287,8 @@ struct VulkanImageDescriptor : Equatable {
         self.usage = usage
         self.sharingMode = sharingMode
         self.initialLayout = initialLayout
+        self.storageMode = descriptor.storageMode
+        self.cacheMode = descriptor.cacheMode
 
         if .typeCube == descriptor.textureType || .typeCubeArray == descriptor.textureType {
             self.flags = .cubeCompatible
@@ -309,7 +313,9 @@ struct VulkanImageDescriptor : Equatable {
             self.samples == descriptor.samples &&
             self.tiling == descriptor.tiling &&
             self.usage.isSuperset(of: descriptor.usage) &&
-            self.sharingMode ~= descriptor.sharingMode
+            self.sharingMode ~= descriptor.sharingMode &&
+            self.storageMode == descriptor.storageMode &&
+            self.cacheMode == descriptor.cacheMode
     }
     
     func withImageCreateInfo(device: VulkanDevice, withInfo: (VkImageCreateInfo) -> Void) {

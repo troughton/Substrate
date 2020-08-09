@@ -54,7 +54,6 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
         self.resourceMap = resourceMap
         self.compactedResourceCommands = compactedResourceCommands
 
-        
         var beginInfo = VkCommandBufferBeginInfo()
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
         beginInfo.flags = VkCommandBufferUsageFlags(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)
@@ -75,7 +74,6 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
     
     func encodeCommands(encoderIndex: Int) {
         let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
-        print("Encoding \(encoderInfo)")
         
         switch encoderInfo.type {
         case .draw:

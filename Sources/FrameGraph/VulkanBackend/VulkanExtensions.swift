@@ -42,4 +42,24 @@ extension VkResult {
     }
 }
 
+extension VmaAllocationCreateInfo {
+    init(storageMode: StorageMode, cacheMode: CPUCacheMode) {
+        self.init()
+        if storageMode == .private {
+            self.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT.rawValue
+        } else {
+            self.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT.rawValue
+            if storageMode == .shared {
+                self.requiredFlags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT.rawValue
+            } else if storageMode == .managed {
+                self.preferredFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT.rawValue
+            }
+            if cacheMode == .defaultCache {
+                self.preferredFlags |= VK_MEMORY_PROPERTY_HOST_CACHED_BIT.rawValue
+            }
+            self.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT.rawValue
+        }
+    }
+}
+
 #endif // canImport(Vulkan)
