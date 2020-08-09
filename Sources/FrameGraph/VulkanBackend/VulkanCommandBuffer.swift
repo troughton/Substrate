@@ -75,6 +75,7 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
     
     func encodeCommands(encoderIndex: Int) {
         let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
+        print("Encoding \(encoderInfo)")
         
         switch encoderInfo.type {
         case .draw:
@@ -110,7 +111,6 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
     
     func waitForEvent(_ event: VkSemaphore, value: UInt64) {
         // TODO: wait for more fine-grained pipeline stages.
-        print("Waiting for semaphore \(event) with value \(value)")
         self.waitSemaphores.append(ResourceSemaphore(vkSemaphore: event, stages: VK_PIPELINE_STAGE_ALL_COMMANDS_BIT))
         self.waitSemaphoreWaitValues.append(value)
     }

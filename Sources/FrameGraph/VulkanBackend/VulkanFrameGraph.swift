@@ -166,22 +166,25 @@ extension VulkanBackend {
             barrierLastIndex = .max
         }
         
-        func processMemoryBarrier(resource: Resource, afterCommand: Int, afterUsage: ResourceUsageType, afterStages: RenderStages?, beforeCommand: Int, beforeUsage: ResourceUsageType, beforeStages: RenderStages) {
+        func processMemoryBarrier(resource: Resource, afterCommand: Int, afterUsage: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsage: ResourceUsageType, beforeStages: RenderStages) {
             let pixelFormat =  resource.texture?.descriptor.pixelFormat ?? .invalid
             let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
 
             let sourceLayout: VkImageLayout
             let destinationLayout: VkImageLayout
             if let image = resource.texture.map({ resourceMap[$0].image }) {
-                sourceLayout = image.layout(commandIndex: afterCommand)
+                sourceLayout = afterUsage == .previousFrame ? image.frameInitialLayout : image.layout(commandIndex: afterCommand)
                 destinationLayout = image.layout(commandIndex: beforeCommand)
             } else {
                 assert(resource.type != .texture || resource.flags.contains(.windowHandle))
                 sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED
                 destinationLayout = VK_IMAGE_LAYOUT_UNDEFINED
             }
+            if sourceLayout == destinationLayout, afterUsage == .previousFrame {
+                return // No layout transition needed, so we don't need a memory barrier.
+            }
             
-            let sourceMask = afterUsage.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: afterStages ?? [])
+            let sourceMask = afterUsage.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: afterStages)
             let destinationMask = beforeUsage.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: beforeStages)
             
             let sourceAccessMask = afterUsage.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
@@ -192,7 +195,9 @@ extension VulkanBackend {
             if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound {
                 var subpassDependency = VkSubpassDependency()
                 subpassDependency.dependencyFlags = 0 // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
-                if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(currentPassIndex) {
+                if afterUsage == .previousFrame {
+                    subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
+                } else if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(currentPassIndex) {
                     subpassDependency.srcSubpass = UInt32(passUsageSubpass.index)
                 } else {
                     subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL

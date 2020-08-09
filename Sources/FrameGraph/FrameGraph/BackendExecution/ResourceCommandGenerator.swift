@@ -39,7 +39,6 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
     case materialiseTextureView(Texture)
     case materialiseArgumentBuffer(_ArgumentBuffer)
     case materialiseArgumentBufferArray(_ArgumentBufferArray)
-    case preparePersistentResource(Resource)
     case disposeResource(Resource, afterStages: RenderStages)
     
     case waitForHeapAliasingFences(resource: Resource, waitDependency: FenceDependency)
@@ -104,20 +103,7 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
                 waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
             Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
-            
-        case .preparePersistentResource(let resource):
-            precondition(resource.flags.contains(.persistent))
-            let commandType: FrameResourceCommands?
-            if let buffer = resource.buffer {
-                commandType = resourceMap.persistentRegistry.prepareBuffer(buffer)
-            } else if let texture = resource.texture {
-                commandType = resourceMap.persistentRegistry.prepareTexture(texture)
-            } else {
-                commandType = nil
-            }
-            if let commandType = commandType {
-                commandGenerator.commands.append(.init(command: commandType, index: commandIndex))
-            }
+    
         case .disposeResource(let resource, let afterStages):
             let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)
             if let buffer = resource.buffer {
@@ -282,7 +268,14 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                 }
             }
-            
+
+            #if canImport(Vulkan)
+            if Backend.self == VulkanBackend.self, resource.type == .texture, resource.flags.intersection([.historyBuffer, .persistent]) != [] {
+                // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
+                self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: .previousFrame, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages), index: 0))
+            }
+            #endif
+
             var readsSinceLastWrite = (firstUsage.isRead && !firstUsage.isWrite) ? [firstUsage] : []
             var previousWrite = firstUsage.isWrite ? firstUsage : nil
             
@@ -381,7 +374,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 resource.dispose() // This will dispose it in the FrameGraph persistent allocator, which will in turn call dispose in the resource registry at the end of the frame.
             }
             
-            #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+            #if !os(macOS) && !targetEnvironment(macCatalyst)
             var canBeMemoryless = false
             #else
             let canBeMemoryless = false
@@ -437,7 +430,12 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             }
             
             if resource.flags.intersection([.persistent, .historyBuffer]) != [] {
-                self.preFrameCommands.append(PreFrameResourceCommand(command: .preparePersistentResource(resource), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
+                // Prepare the resource for being used this frame. For Vulkan, this means computing the image layouts.
+                if let buffer = resource.buffer {
+                    transientRegistry.prepareMultiframeBuffer(buffer)
+                } else if let texture = resource.texture {
+                    transientRegistry.prepareMultiframeTexture(texture)
+                }
                 
                 for queue in QueueRegistry.allQueues {
                     // TODO: separate out the wait index for the first read from the first write.

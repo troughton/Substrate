@@ -169,17 +169,14 @@ class VulkanImage {
             self.frameLayouts.insert(LayoutState(commandRange: usage.commandRange, layout: layout), at: insertionIndex)
         }
     }
+
+    var frameInitialLayout: VkImageLayout {
+        return self.frameLayouts.first!.layout
+    }
     
     func layout(commandIndex: Int) -> VkImageLayout {
         guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) })?.layout else {
-            preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image")
-        }
-        return layout
-    }
-    
-    func layout(fromCommandIndex: Int) -> VkImageLayout {
-        guard let layout = self.frameLayouts.last(where: { fromCommandIndex >= $0.commandRange.lowerBound })?.layout else {
-            preconditionFailure("Command index \(fromCommandIndex) does not correspond to a usage of this image")
+            preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image; layouts are \(self.frameLayouts)")
         }
         return layout
     }

@@ -280,16 +280,6 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         
         return state
     }
-    
-    func prepareBuffer(_ buffer: Buffer) -> FrameResourceCommands? {
-        // No-op for Metal
-        return nil
-    }
-    
-    func prepareTexture(_ texture: Texture) -> FrameResourceCommands? {
-        // No-op for Metal
-        return nil
-    }
 
     func disposeHeap(_ heap: Heap) {
         self.heapReferences.removeValue(forKey: heap)
@@ -772,6 +762,16 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         
         return storage
     }
+
+    
+    func prepareMultiframeBuffer(_ buffer: Buffer) {
+        // No-op for Metal
+    }
+    
+    func prepareMultiframeTexture(_ texture: Texture) {
+        // No-op for Metal
+    }
+
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
         self.prepareFrame()

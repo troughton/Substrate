@@ -253,23 +253,6 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         return vkSampler!
     }
     
-    func prepareBuffer(_ buffer: Buffer) -> FrameResourceCommands? {
-        // TODO: perform queue ownership transfers.
-        return nil
-    }
-    
-    func prepareTexture(_ texture: Texture) -> FrameResourceCommands? {
-        let image = self[texture]!
-        image.image.computeFrameLayouts(usages: texture.usages, preserveLastLayout: true)
-        // TODO: perform queue ownership transfers and initial layout transitions.
-        if image.image.previousFrameLayout != image.image.firstLayoutInFrame {
-            let firstUsage = texture.usages.first
-            return .memoryBarrier(Resource(texture), afterUsage: .unusedArgumentBuffer, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages)
-        } else {
-            return nil
-        }
-    }
-    
     func disposeHeap(_ heap: Heap) {
         self.heapReferences.removeValue(forKey: heap)
     }
@@ -499,8 +482,9 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     @discardableResult
     public func allocateBuffer(_ buffer: Buffer, forceGPUPrivate: Bool) -> VkBufferReference {
-    
-        var bufferUsage: VkBufferUsageFlagBits = []
+        // If this is a CPU-visible buffer, include the usage hints passed by the user.
+        var bufferUsage: VkBufferUsageFlagBits = forceGPUPrivate ? [] : VkBufferUsageFlagBits(buffer.descriptor.usageHint)
+
         for usage in buffer.usages {
             switch usage.type {
             case .constantBuffer:
@@ -524,9 +508,9 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
             }
         }
         if bufferUsage.isEmpty, !forceGPUPrivate {
-            bufferUsage = [VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT]
+            bufferUsage = [VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT]
         }
-        
+
         var descriptor = buffer.descriptor
         
         if forceGPUPrivate {
@@ -602,6 +586,17 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
 //        let layout = VkDescriptorSetLayout(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!)
        
         fatalError("Argument buffer arrays are currently unsupported on Vulkan.")
+    }
+    
+    
+    func prepareMultiframeBuffer(_ buffer: Buffer) {
+        
+    }
+    
+    func prepareMultiframeTexture(_ texture: Texture) {
+        if let image = self.persistentRegistry[texture] {
+            image.image.computeFrameLayouts(usages: texture.usages, preserveLastLayout: true)
+        }
     }
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {

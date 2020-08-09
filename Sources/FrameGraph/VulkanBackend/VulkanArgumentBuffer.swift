@@ -64,10 +64,12 @@ extension VulkanArgumentBuffer {
 
                 self.images.append(image)
             
+                let usage = texture.usages.first(where: { $0.inArgumentBuffer && $0.commandRange.lowerBound >= commandIndex })!
+
                 let pixelFormat = texture.descriptor.pixelFormat
                 let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                 var imageInfo = VkDescriptorImageInfo()
-                imageInfo.imageLayout = image.layout(fromCommandIndex: commandIndex)
+                imageInfo.imageLayout = image.layout(commandIndex: usage.commandRange.lowerBound)
                 imageInfo.imageView = image.defaultImageView.vkView
                 
                 descriptorWrite.pImageInfo = imageInfoSentinel
