@@ -26,7 +26,7 @@ final class DefaultFrameGraphJobManager : FrameGraphJobManager {
     }
     
     public func dispatchSyncFrameGraph(_ function: () -> Void) {
-        syncOnMainThread(function)
+        function()
     }
     
     public func dispatchPassJob(_ function: @escaping () -> Void) {
