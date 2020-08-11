@@ -6,14 +6,14 @@
 //
 //
 
-public enum SamplerMinMagFilter : UInt {
+public enum SamplerMinMagFilter : UInt, Codable {
     
     case nearest
     
     case linear
 }
 
-public enum SamplerMipFilter : UInt {
+public enum SamplerMipFilter : UInt, Codable {
     
     case notMipmapped
     
@@ -22,7 +22,7 @@ public enum SamplerMipFilter : UInt {
     case linear
 }
 
-public enum SamplerAddressMode : UInt {
+public enum SamplerAddressMode : UInt, Codable {
     /// Clamp texture coordinates between 0 and 1 and repeat the edge value outside of that range.
     case clampToEdge
     
@@ -45,13 +45,13 @@ public enum SamplerAddressMode : UInt {
     case clampToBorderColor
 }
 
-public enum SamplerBorderColor : UInt {
+public enum SamplerBorderColor : UInt, Codable {
     case transparentBlack
     case opaqueBlack
     case opaqueWhite
 }
 
-public struct SamplerDescriptor : Hashable {
+public struct SamplerDescriptor : Hashable, Codable {
     
     public init() {
         

@@ -796,77 +796,75 @@ public final class FrameGraph {
         
         let jobManager = FrameGraph.jobManager
         
-        jobManager.dispatchSyncFrameGraph { [self] in
-            self.context.accessSemaphore.wait()
-            
-            FrameGraph.resourceUsagesAllocator = TagAllocator(tag: FrameGraphTagType.resourceUsageNodes.tag, threadCount: jobManager.threadCount)
-            FrameGraph.executionAllocator = TagAllocator(tag: FrameGraphTagType.frameGraphExecution.tag, threadCount: jobManager.threadCount)
-            
-            let threadCount = jobManager.threadCount
-            
-            FrameGraph.threadResourceUsages.reserveCapacity(threadCount)
-            while FrameGraph.threadResourceUsages.count < threadCount {
-                FrameGraph.threadResourceUsages.append(ResourceUsages())
-            }
-            
-            FrameGraph.threadUnmanagedReferences = (0..<threadCount).map { i in
-                return ExpandingBuffer(allocator: AllocatorType(TagAllocator.ThreadView(allocator: FrameGraph.executionAllocator, threadIndex: i)), initialCapacity: 0)
-            }
-            
-            for (i, usages) in FrameGraph.threadResourceUsages.enumerated() {
-                usages.usageNodeAllocator = TagAllocator.ThreadView(allocator: FrameGraph.resourceUsagesAllocator, threadIndex: i)
-            }
-            
-            self.context.beginFrameResourceAccess()
-            
-            let (passes, dependencyTable) = self.compile(renderPasses: self.renderPasses)
-            
-            // Index the commands for each pass in a sequential manner for the entire frame.
-            var commandCount = 0
-            for (i, passRecord) in passes.enumerated() {
-                let startCommandIndex = commandCount
-                commandCount += passRecord.commands.count
-                
-                passRecord.passIndex = i
-                passRecord.commandRange = startCommandIndex..<commandCount
-                assert(passRecord.commandRange!.count > 0)
-            }
-            
-            // Compilation is finished, so reset that tag.
-            TaggedHeap.free(tag: FrameGraphTagType.frameGraphCompilation.tag)
-            
-            let completion: (Double) -> Void = { gpuTime in
-                self.lastFrameGPUTime = gpuTime
-                
-                let completionTime = DispatchTime.now().uptimeNanoseconds
-                let elapsed = completionTime - self.previousFrameCompletionTime
-                self.previousFrameCompletionTime = completionTime
-                self.lastFrameRenderDuration = Double(elapsed) * 1e-6
-                //            print("Frame \(currentFrameIndex) completed in \(self.lastFrameRenderDuration)ms.")
-                
-                onGPUCompletion?()
-            }
-            
-            self.context.executeFrameGraph(passes: passes, dependencyTable: dependencyTable, resourceUsages: FrameGraph.threadResourceUsages[0], completion: completion)
-            
-            // Make sure the FrameGraphCommands buffers are deinitialised before the tags are freed.
-            passes.forEach {
-                $0.commands = nil
-            }
-            
-            self.renderPasses.forEach {
-                $0.commands = nil
-            }
-            
-            onSubmission?()
-            
-            self.submissionNotifyQueue.forEach { $0() }
-            self.submissionNotifyQueue.removeAll(keepingCapacity: true)
-            
-            self.reset()
-            
-            FrameGraph.globalSubmissionIndex += 1
+        self.context.accessSemaphore.wait()
+        
+        FrameGraph.resourceUsagesAllocator = TagAllocator(tag: FrameGraphTagType.resourceUsageNodes.tag, threadCount: jobManager.threadCount)
+        FrameGraph.executionAllocator = TagAllocator(tag: FrameGraphTagType.frameGraphExecution.tag, threadCount: jobManager.threadCount)
+        
+        let threadCount = jobManager.threadCount
+        
+        FrameGraph.threadResourceUsages.reserveCapacity(threadCount)
+        while FrameGraph.threadResourceUsages.count < threadCount {
+            FrameGraph.threadResourceUsages.append(ResourceUsages())
         }
+        
+        FrameGraph.threadUnmanagedReferences = (0..<threadCount).map { i in
+            return ExpandingBuffer(allocator: AllocatorType(TagAllocator.ThreadView(allocator: FrameGraph.executionAllocator, threadIndex: i)), initialCapacity: 0)
+        }
+        
+        for (i, usages) in FrameGraph.threadResourceUsages.enumerated() {
+            usages.usageNodeAllocator = TagAllocator.ThreadView(allocator: FrameGraph.resourceUsagesAllocator, threadIndex: i)
+        }
+        
+        self.context.beginFrameResourceAccess()
+        
+        let (passes, dependencyTable) = self.compile(renderPasses: self.renderPasses)
+        
+        // Index the commands for each pass in a sequential manner for the entire frame.
+        var commandCount = 0
+        for (i, passRecord) in passes.enumerated() {
+            let startCommandIndex = commandCount
+            commandCount += passRecord.commands.count
+            
+            passRecord.passIndex = i
+            passRecord.commandRange = startCommandIndex..<commandCount
+            assert(passRecord.commandRange!.count > 0)
+        }
+        
+        // Compilation is finished, so reset that tag.
+        TaggedHeap.free(tag: FrameGraphTagType.frameGraphCompilation.tag)
+        
+        let completion: (Double) -> Void = { gpuTime in
+            self.lastFrameGPUTime = gpuTime
+            
+            let completionTime = DispatchTime.now().uptimeNanoseconds
+            let elapsed = completionTime - self.previousFrameCompletionTime
+            self.previousFrameCompletionTime = completionTime
+            self.lastFrameRenderDuration = Double(elapsed) * 1e-6
+            //            print("Frame \(currentFrameIndex) completed in \(self.lastFrameRenderDuration)ms.")
+            
+            onGPUCompletion?()
+        }
+        
+        self.context.executeFrameGraph(passes: passes, dependencyTable: dependencyTable, resourceUsages: FrameGraph.threadResourceUsages[0], completion: completion)
+        
+        // Make sure the FrameGraphCommands buffers are deinitialised before the tags are freed.
+        passes.forEach {
+            $0.commands = nil
+        }
+        
+        self.renderPasses.forEach {
+            $0.commands = nil
+        }
+        
+        onSubmission?()
+        
+        self.submissionNotifyQueue.forEach { $0() }
+        self.submissionNotifyQueue.removeAll(keepingCapacity: true)
+        
+        self.reset()
+        
+        FrameGraph.globalSubmissionIndex += 1
     }
     
     private func reset() {

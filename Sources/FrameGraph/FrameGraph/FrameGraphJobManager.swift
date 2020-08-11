@@ -9,8 +9,6 @@ public protocol FrameGraphJobManager : class {
     var threadIndex : Int { get }
     var threadCount : Int { get }
     
-    func dispatchSyncFrameGraph(_ function: () -> Void)
-    
     func dispatchPassJob(_ function: @escaping () -> Void)
     func waitForAllPassJobs()
     func syncOnMainThread<T>(_ function: () throws -> T) rethrows -> T
@@ -23,10 +21,6 @@ final class DefaultFrameGraphJobManager : FrameGraphJobManager {
     
     public var threadCount : Int {
         return 1
-    }
-    
-    public func dispatchSyncFrameGraph(_ function: () -> Void) {
-        syncOnMainThread(function)
     }
     
     public func dispatchPassJob(_ function: @escaping () -> Void) {
