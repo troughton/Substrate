@@ -220,6 +220,7 @@ extension VulkanBackend {
 
                 if subpassDependency.srcSubpass == subpassDependency.dstSubpass {
                     precondition(resource.type == .texture, "We can only insert pipeline barriers within render passes for textures.")
+                    assert(subpassDependency.srcSubpass != VK_SUBPASS_EXTERNAL, "Dependent pass \(dependentPass.passIndex): Subpass dependency from \(afterUsage) (afterCommand \(afterCommand)) to \(beforeUsage) (beforeCommand \(beforeCommand)) for resource \(resource) is EXTERNAL to EXTERNAL, which is invalid.")
                     renderTargetDescriptor.addDependency(subpassDependency)
                 } else if sourceLayout != destinationLayout, // guaranteed to not be a buffer since buffers have UNDEFINED image layouts above.
                             !afterUsage.isRenderTarget, !beforeUsage.isRenderTarget {

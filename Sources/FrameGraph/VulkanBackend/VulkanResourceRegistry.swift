@@ -509,7 +509,9 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
             
             let swapChain = self.persistentRegistry.windowReferences.removeValue(forKey: texture)!
             self.frameSwapChains.append(swapChain)
-            self.textureReferences[texture] = VkImageReference(image: Unmanaged.passUnretained(swapChain.nextImage(descriptor: texture.descriptor)))
+            let image = swapChain.nextImage(descriptor: texture.descriptor)
+            image.computeFrameLayouts(usages: texture.usages, preserveLastLayout: false)
+            self.textureReferences[texture] = VkImageReference(image: Unmanaged.passUnretained(image))
         }
 
         return self.textureReferences[texture]!

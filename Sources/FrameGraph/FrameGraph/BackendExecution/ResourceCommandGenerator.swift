@@ -272,7 +272,11 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             #if canImport(Vulkan)
             if Backend.self == VulkanBackend.self, resource.type == .texture, resource.flags.intersection([.historyBuffer, .persistent]) != [] {
                 // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
-                self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: .previousFrame, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages), index: 0))
+                // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
+                // so that it can be inserted as a subpass dependency.
+                self.commands.append(FrameResourceCommand(command: 
+                    .memoryBarrier(Resource(resource), afterUsage: .previousFrame, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages), 
+                        index: firstUsage.type.isRenderTarget ? firstUsage.commandRange.lowerBound : 0))
             }
             #endif
 

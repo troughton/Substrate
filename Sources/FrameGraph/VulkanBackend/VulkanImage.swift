@@ -159,6 +159,7 @@ class VulkanImage {
         let lastLayout = self.frameLayouts.last!
         self.frameLayouts.removeAll(keepingCapacity: true)
         self.frameLayouts.append(LayoutState(commandRange: -1..<0, layout: preserveLastLayout ? lastLayout.layout : VK_IMAGE_LAYOUT_UNDEFINED))
+        assert(self.frameInitialLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
         
         let isDepthOrStencil = self.descriptor.allAspects.contains(where: { VkImageAspectFlagBits($0).intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != [] })
         
