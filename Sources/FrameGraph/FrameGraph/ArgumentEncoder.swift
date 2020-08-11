@@ -68,19 +68,13 @@ public struct BufferBacked<T> {
 
 extension Buffer : Encodable {
     public func encode(to encoder: Encoder) throws {
-        fatalError("Buffer.encode(to:) should never be called directly.")
+        assertionFailure("Buffer.encode(to:) should never be called directly.")
     }
 }
 
 extension Texture : Encodable {
     public func encode(to encoder: Encoder) throws {
-        fatalError("Texture.encode(to:) should never be called directly.")
-    }
-}
-
-extension SamplerDescriptor : Encodable {
-    public func encode(to encoder: Encoder) throws {
-        fatalError("SamplerDescriptor.encode(to:) should never be called directly.")
+        assertionFailure("Texture.encode(to:) should never be called directly.")
     }
 }
 
