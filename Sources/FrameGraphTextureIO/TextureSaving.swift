@@ -317,10 +317,12 @@ extension TextureData where T == UInt16 {
         var outBuffer: UnsafeMutablePointer<UInt8>! = nil
         var outSize: Int = 0
         
-        let errorCode = texture.withUnsafeBufferPointer { pixelData in
-            return pixelData.withMemoryRebound(to: UInt8.self) {
-                return lodepng_encode(&outBuffer, &outSize, $0.baseAddress, UInt32(self.width), UInt32(self.height), &lodePNGState)
-            }
+        let errorCode = texture.withUnsafeBufferPointer { pixelData -> UInt32 in
+            let pixelBytes = UnsafeRawBufferPointer(pixelData)
+            let uint8Bytes = pixelBytes.bindMemory(to: UInt8.self)
+            defer { pixelBytes.bindMemory(to: T.self) }
+            
+            return lodepng_encode(&outBuffer, &outSize, uint8Bytes.baseAddress, UInt32(self.width), UInt32(self.height), &lodePNGState)
         }
         
         if errorCode != 0 {
