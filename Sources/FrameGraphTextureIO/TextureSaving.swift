@@ -3,6 +3,10 @@ import stb_image_write
 import tinyexr
 import LodePNG
 
+#if canImport(zlib)
+import zlib
+#endif
+
 public enum TextureSaveFormat: String {
     case png
     case bmp
@@ -84,6 +88,8 @@ public struct PNGCompressionSettings {
     public var targetMatchLength = 128
     /// Use lazy matching. Slightly slower but better compression.
     public var useLazyMatching = true
+    /// The compression level from 0 to 10 to use with zlib, if available. Overrides other zlib-related settings in this struct.
+    public var zlibCompressionLevel: Int32?
     
     public init() {
     }
@@ -93,6 +99,9 @@ public struct PNGCompressionSettings {
         settings.filterType = .zero
         settings.useLZ77 = false
         settings.blockType = .uncompressed
+        #if canImport(zlib)
+        settings.zlibCompressionLevel = Z_NO_COMPRESSION
+        #endif
         return settings
     }
 
@@ -103,11 +112,18 @@ public struct PNGCompressionSettings {
         settings.minimumMatchLength = 0
         settings.targetMatchLength = 16
         settings.useLazyMatching = false
+        #if canImport(zlib)
+        settings.zlibCompressionLevel = Z_BEST_SPEED
+        #endif
         return settings
     }
     
     public static var `default`: PNGCompressionSettings {
-        return PNGCompressionSettings()
+        var settings = PNGCompressionSettings()
+        #if canImport(zlib)
+        settings.zlibCompressionLevel = Z_DEFAULT_COMPRESSION
+        #endif
+        return settings
     }
     
     public var maxCompression: PNGCompressionSettings {
@@ -115,6 +131,9 @@ public struct PNGCompressionSettings {
         settings.blockType = .type2
         settings.windowSize = .size32768
         settings.targetMatchLength = 256
+        #if canImport(zlib)
+        settings.zlibCompressionLevel = Z_BEST_COMPRESSION
+        #endif
         return settings
     }
 }
@@ -154,6 +173,22 @@ fileprivate extension LodePNGEncoderSettings {
         self.zlibsettings.minmatch = UInt32(settings.minimumMatchLength)
         self.zlibsettings.nicematch = UInt32(settings.targetMatchLength)
         self.zlibsettings.lazymatching = settings.useLazyMatching ? 1 : 0
+        
+        #if canImport(zlib)
+        if let zlibCompressionLevel = settings.zlibCompressionLevel {
+            self.zlibsettings.custom_context = UnsafeRawPointer(bitPattern: Int(zlibCompressionLevel))
+            
+            self.zlibsettings.custom_zlib = { out, outsize, `in`, inSize, settings in
+                let compressionLevel = Int32(Int(bitPattern: settings?.pointee.custom_context))
+                let bufferSize = Int(compressBound(uLong(inSize)))
+                out!.pointee = .allocate(capacity: bufferSize)
+                outsize!.pointee = bufferSize
+                
+                let result = compress2(out!.pointee, unsafeBitCast(outsize, to: UnsafeMutablePointer<uLongf>?.self), `in`, uLong(inSize), compressionLevel)
+                return UInt32(bitPattern: result)
+            }
+        }
+        #endif
     }
 }
 
