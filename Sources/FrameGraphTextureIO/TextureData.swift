@@ -669,33 +669,31 @@ extension TextureData where T == Float {
             
             if header.tiled != 0 {
                 for it in 0..<Int(image.num_tiles) {
-                    image.tiles![it].images.withMemoryRebound(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels)) { src in
-                        for j in 0..<header.tile_size_y {
-                            for i in 0..<header.tile_size_x {
-                                let ii =
-                                    image.tiles![it].offset_x * header.tile_size_x + i
-                                let jj =
-                                    image.tiles![it].offset_y * header.tile_size_y + j
-                                let idx = Int(ii + jj * image.width)
-                                
-                                // out of region check.
-                                if ii >= image.width || jj >= image.height {
-                                    continue;
-                                }
-                                let srcIdx = Int(i + j * header.tile_size_x)
-                                
-                                self.storage.data[self.channelCount * idx + channelIndex] = src[c][srcIdx]
+                    let src = UnsafeRawPointer(image.tiles![it].images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
+                    for j in 0..<header.tile_size_y {
+                        for i in 0..<header.tile_size_x {
+                            let ii =
+                                image.tiles![it].offset_x * header.tile_size_x + i
+                            let jj =
+                                image.tiles![it].offset_y * header.tile_size_y + j
+                            let idx = Int(ii + jj * image.width)
+                            
+                            // out of region check.
+                            if ii >= image.width || jj >= image.height {
+                                continue;
                             }
+                            let srcIdx = Int(i + j * header.tile_size_x)
+                            
+                            self.storage.data[self.channelCount * idx + channelIndex] = src[c][srcIdx]
                         }
                     }
                 }
             } else {
-                image.images.withMemoryRebound(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels)) { src in
-                    for y in 0..<self.height {
-                        for x in 0..<self.width {
-                            let i = y &* self.width &+ x
-                            self.storage.data[self.channelCount &* i + channelIndex] = src[c][i]
-                        }
+                let src = UnsafeRawPointer(image.images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
+                for y in 0..<self.height {
+                    for x in 0..<self.width {
+                        let i = y &* self.width &+ x
+                        self.storage.data[self.channelCount &* i + channelIndex] = src[c][i]
                     }
                 }
                 

@@ -12,10 +12,8 @@ import FrameGraphCExtras
 
 extension String {
     init<T>(cStringTuple: T) {
-        self = withUnsafePointer(to: cStringTuple) {
-            return $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout<T>.size / MemoryLayout<CChar>.stride) {
-                return String(cString: $0)
-            }
+        self = withUnsafeBytes(of: cStringTuple) {
+            return String(cString: $0.bindMemory(to: CChar.self))
         }
     }
 }
