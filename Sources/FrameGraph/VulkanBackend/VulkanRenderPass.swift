@@ -15,7 +15,7 @@ class VulkanRenderPass {
     let vkPass : VkRenderPass
     let descriptor : VulkanRenderTargetDescriptor
     
-    init(device: VulkanDevice, descriptor: VulkanRenderTargetDescriptor) {
+    init(device: VulkanDevice, descriptor: VulkanRenderTargetDescriptor, resourceMap: FrameResourceMap<VulkanBackend>) throws {
         self.device = device
         self.descriptor = descriptor
         
@@ -28,8 +28,10 @@ class VulkanRenderPass {
         
         if let depthAttachment = descriptor.descriptor.depthAttachment {
             var attachmentDescription = VkAttachmentDescription(pixelFormat: depthAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: depthAttachment, depthActions: descriptor.depthActions, stencilActions: descriptor.stencilActions)
-            attachmentDescription.initialLayout = descriptor.initialLayouts[depthAttachment.texture] ?? VK_IMAGE_LAYOUT_UNDEFINED
-            attachmentDescription.finalLayout = descriptor.finalLayouts[depthAttachment.texture] ?? VK_IMAGE_LAYOUT_GENERAL // TODO: Can we do something smarter here than just a general layout?
+            let (previousCommandIndex, nextCommandIndex) = descriptor.depthPreviousAndNextUsageCommands
+            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(depthAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex)
+            attachmentDescription.initialLayout = initialLayout
+            attachmentDescription.finalLayout = finalLayout
             attachmentIndices[.depthStencil] = attachments.count
             attachments.append(attachmentDescription)
         } else {
@@ -39,8 +41,10 @@ class VulkanRenderPass {
         for (i, (colorAttachment, actions)) in zip(descriptor.descriptor.colorAttachments, descriptor.colorActions).enumerated() {
             guard let colorAttachment = colorAttachment else { continue }
             var attachmentDescription = VkAttachmentDescription(pixelFormat: colorAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: colorAttachment, actions: actions)
-            attachmentDescription.initialLayout = descriptor.initialLayouts[colorAttachment.texture] ?? VK_IMAGE_LAYOUT_UNDEFINED
-            attachmentDescription.finalLayout = descriptor.finalLayouts[colorAttachment.texture] ?? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR // FIXME: is this generally correct?
+            let (previousCommandIndex, nextCommandIndex) = descriptor.colorPreviousAndNextUsageCommands[i]
+            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(colorAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex)
+            attachmentDescription.initialLayout = initialLayout
+            attachmentDescription.finalLayout = finalLayout
             attachmentIndices[.color(i)] = attachments.count
             attachments.append(attachmentDescription)
         }

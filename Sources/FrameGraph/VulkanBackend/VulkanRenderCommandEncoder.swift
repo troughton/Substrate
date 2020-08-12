@@ -353,7 +353,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         
         if pass === self.renderTarget.renderPasses.first { // Set up the render target.
             
-            self.renderPass = VulkanRenderPass(device: self.device, descriptor: renderTarget)
+            self.renderPass = try VulkanRenderPass(device: self.device, descriptor: renderTarget, resourceMap: self.resourceMap)
             commandBufferResources.renderPasses.append(renderPass)
             let framebuffer = try VulkanFramebuffer(descriptor: renderTarget, renderPass: renderPass.vkPass, device: self.device, resourceMap: self.resourceMap)
             commandBufferResources.framebuffers.append(framebuffer)

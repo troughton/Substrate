@@ -181,6 +181,22 @@ class VulkanImage {
         }
         return layout
     }
+
+    func renderPassLayouts(previousCommandIndex: Int, nextCommandIndex: Int) -> (VkImageLayout, VkImageLayout) {
+        var initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        var finalLayout = self.swapchainImageIndex != nil ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED
+
+        for layout in self.frameLayouts {
+            if previousCommandIndex >= 0, layout.commandRange.contains(previousCommandIndex) {
+                initialLayout = layout.layout
+            }
+            if nextCommandIndex >= 0, layout.commandRange.contains(nextCommandIndex) {
+                finalLayout = layout.layout
+                break
+            }
+        }
+        return (initialLayout, finalLayout)
+    }
     
     var previousFrameLayout: VkImageLayout {
         return self.frameLayouts[0].layout
