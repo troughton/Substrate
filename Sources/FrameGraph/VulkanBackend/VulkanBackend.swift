@@ -126,7 +126,9 @@ public final class VulkanBackend : SpecificRenderBackend {
         }
     }
     
-    public var isDepth24Stencil8PixelFormatSupported: Bool = false // TODO: query device capabilities for this
+    public func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
+        return true // TODO: query device capabilities for this
+    }
     
     public var hasUnifiedMemory: Bool {
         return false // TODO: Retrieve this from the device.

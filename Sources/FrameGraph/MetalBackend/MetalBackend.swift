@@ -124,10 +124,39 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.disposeHeap(heap)
     }
     
-    public var isDepth24Stencil8PixelFormatSupported: Bool {
-        #if os(macOS) || targetEnvironment(macCatalyst)
-        return self.device.isDepth24Stencil8PixelFormatSupported
+    public func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
+        switch pixelFormat {
+        case .depth24Unorm_stencil8:
+            #if os(macOS) || targetEnvironment(macCatalyst)
+            return self.device.isDepth24Stencil8PixelFormatSupported
+            #else
+            return false
+            #endif
+        case .r8Unorm_sRGB, .rg8Unorm_sRGB:
+            return self.isAppleSiliconGPU
+        case .bc1_rgba, .bc1_rgba_sRGB,
+             .bc2_rgba, .bc2_rgba_sRGB,
+             .bc3_rgba, .bc3_rgba_sRGB,
+             .bc4_rUnorm, .bc4_rSnorm,
+             .bc5_rgUnorm, .bc5_rgSnorm,
+             .bc6H_rgbFloat, .bc6H_rgbuFloat,
+             .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+            if #available(OSX 11.0, *) {
+                return self.device.supportsBCTextureCompression
+            }
+            return !self.isAppleSiliconGPU
+        default:
+            return true
+        }
+    }
+    
+    public var isAppleSiliconGPU: Bool {
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+        return true
         #else
+        if #available(OSX 11.0, *) {
+            return self.device.supportsFamily(.apple6)
+        }
         return false
         #endif
     }
