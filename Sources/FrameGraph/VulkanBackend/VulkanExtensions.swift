@@ -13,7 +13,7 @@ import FrameGraphCExtras
 extension String {
     init<T>(cStringTuple: T) {
         self = withUnsafeBytes(of: cStringTuple) {
-            return String(cString: $0.bindMemory(to: CChar.self))
+            return String(cString: $0.bindMemory(to: CChar.self).baseAddress!)
         }
     }
 }
