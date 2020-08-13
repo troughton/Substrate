@@ -316,7 +316,15 @@ struct VulkanImageDescriptor : Equatable {
     }
     
     public var allAspects : [VkImageAspectFlags] {
-        return [VkImageAspectFlags(VK_IMAGE_ASPECT_COLOR_BIT)] // FIXME: wrong for depth-stencil. Affects buffer -> image copies
+        if self.format.isDepthStencil {
+            return [VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT), VkImageAspectFlags(VK_IMAGE_ASPECT_STENCIL_BIT)]
+        } else if self.format.isDepth {
+            return [VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT)]
+        } else if self.format.isStencil {
+            return [VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT)]
+        } else {
+            return [VkImageAspectFlags(VK_IMAGE_ASPECT_COLOR_BIT)]
+        }
     }
     
     public func matches(descriptor: VulkanImageDescriptor) -> Bool {
