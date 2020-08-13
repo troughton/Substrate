@@ -688,7 +688,7 @@ extension TextureData where T == Float {
         let isHDR = stbi_is_hdr(url.path) != 0
         let is16Bit = stbi_is_16_bit(url.path) != 0
         
-        let dataCount = Int(width * height * componentsPerPixel)
+        let dataCount = Int(width * height * channels)
         
         if isHDR {
             let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, channels)!
