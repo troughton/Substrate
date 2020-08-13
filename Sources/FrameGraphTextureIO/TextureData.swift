@@ -771,7 +771,7 @@ extension TextureData where T == Float {
             }
         }
         
-        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colorSpace: colorSpace, alphaMode: alphaMode)
+        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: "exr"))
         self.storage.data.initialize(repeating: 0.0)
         
         
@@ -822,6 +822,8 @@ extension TextureData where T == Float {
                 
             }
         }
+        
+        self.inferAlphaMode()
     }
     
     public mutating func convert(toColorSpace: TextureColorSpace) {
