@@ -127,7 +127,7 @@ public final class VulkanBackend : SpecificRenderBackend {
     }
     
     public func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
-        return true // TODO: query device capabilities for this
+        return device.physicalDevice.supportsPixelFormat(pixelFormat)
     }
     
     public var hasUnifiedMemory: Bool {

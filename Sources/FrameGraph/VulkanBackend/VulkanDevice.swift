@@ -37,6 +37,13 @@ public final class VulkanPhysicalDevice {
         
         self.queueFamilies = queueFamilies
     }
+    
+    public func supportsPixelFormat(_ format: PixelFormat) -> Bool {
+        guard let vkFormat = VkFormat(pixelFormat: format) else { return false }
+        var formatProperties = VkFormatProperties()
+        vkGetPhysicalDeviceFormatProperties(self.vkDevice, vkFormat, &formatProperties)
+        return formatProperties.linearTilingFeatures != 0 || formatProperties.optimalTilingFeatures != 0
+    }
 }
 
 public final class VulkanDevice {
