@@ -68,6 +68,22 @@ public final class VulkanDevice {
         }
         // Strategy: one render queue, as many async compute queues as we can get, and a couple of copy queues.
         
+        // Enable all features apart from robust buffer access by default.
+        var features = VkPhysicalDeviceFeatures2()
+        features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
+        var features11 = VkPhysicalDeviceVulkan11Features()
+        features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES
+        var features12 = VkPhysicalDeviceVulkan12Features()
+        features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES
+        withUnsafeMutableBytes(of: &features12) { features12 in
+            features11.pNext = features12.baseAddress
+            withUnsafeMutableBytes(of: &features11) { features11 in
+                features.pNext = features11.baseAddress
+                vkGetPhysicalDeviceFeatures2(physicalDevice.vkDevice, &features)
+            }
+        }
+        features.features.robustBufferAccess = VkBool32(VK_FALSE)
+        
         var activeQueues = [(familyIndex: Int, queueIndex: Int)]()
         
         var device : VkDevice? = nil
@@ -106,7 +122,7 @@ public final class VulkanDevice {
                 createInfo.queueCreateInfoCount = UInt32(queueCreateInfos.count)
                 createInfo.pQueueCreateInfos = queueCreateInfos.baseAddress
                 
-                                   
+                
                 let extensions = VulkanDevice.deviceExtensions.map { ext -> UnsafePointer<CChar>? in
                     return UnsafeRawPointer(ext.utf8Start).assumingMemoryBound(to: CChar.self)
                 }
@@ -116,28 +132,21 @@ public final class VulkanDevice {
                     createInfo.ppEnabledExtensionNames = extensions.baseAddress
                     
                     createInfo.enabledLayerCount = 0
-
-                    var timelineSemaphore = VkPhysicalDeviceTimelineSemaphoreFeatures()
-                    timelineSemaphore.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES
-                    timelineSemaphore.timelineSemaphore = true
-
-                    withUnsafeMutablePointer(to: &timelineSemaphore) { timelineSemaphore in
-                        var deviceFeatures = VkPhysicalDeviceFeatures2()
-                        deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2
-                        deviceFeatures.features.independentBlend = VkBool32(VK_TRUE)
-                        deviceFeatures.features.depthClamp = VkBool32(VK_TRUE)
-                        deviceFeatures.features.depthBiasClamp = VkBool32(VK_TRUE)
-                        deviceFeatures.pNext = UnsafeMutableRawPointer(timelineSemaphore)
-
-                        withUnsafePointer(to: deviceFeatures) { deviceFeatures in
-                            createInfo.pNext = UnsafeRawPointer(deviceFeatures)
-
-                            if !vkCreateDevice(physicalDevice.vkDevice, &createInfo, nil, &device).check() {
-                                print("Failed to create Vulkan logical device!")
+                    
+                    withUnsafeMutableBytes(of: &features12) { features12 in
+                        features11.pNext = features12.baseAddress
+                        withUnsafeMutableBytes(of: &features11) { features11 in
+                            features.pNext = features11.baseAddress
+                            
+                            withUnsafeBytes(of: features) { deviceFeatures in
+                                createInfo.pNext = deviceFeatures.baseAddress
+                                
+                                if !vkCreateDevice(physicalDevice.vkDevice, &createInfo, nil, &device).check() {
+                                    print("Failed to create Vulkan logical device!")
+                                }
                             }
                         }
                     }
-                    
                 }
             }
         }
