@@ -4,8 +4,7 @@ import FrameGraphCExtras
 
 extension ResourceUsageType {
 
-    public func imageLayout(isDepthOrStencil: Bool) -> VkImageLayout {
-
+    public func imageLayout(isDepthOrStencil: Bool) -> VkImageLayout? {
         switch self {
         case .read, .sampler, .inputAttachment:
             return isDepthOrStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -19,8 +18,10 @@ extension ResourceUsageType {
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
         case .blitSynchronisation:
             return VK_IMAGE_LAYOUT_GENERAL
+        case .unusedRenderTarget:
+            return nil
         default:
-            fatalError()
+            fatalError("Unknown image layout for usage \(self)")
         }
     }
     

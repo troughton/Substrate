@@ -278,21 +278,6 @@ public struct TextureData<T> {
         self.colorSpace = colorSpace
         self.alphaMode = alphaMode
     }
-    
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .premultiplied, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) where T: Comparable {
-        precondition(width >= 1 && height >= 1 && channels >= 1)
-        
-        self.width = width
-        self.height = height
-        self.channelCount = channels
-        
-        self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), deallocateFunc: deallocateFunc)
-        
-        self.colorSpace = colorSpace
-        self.alphaMode = alphaMode
-        
-        self.inferAlphaMode()
-    }
 
     @available(*, deprecated, renamed: "init(width:height:channels:data:colorSpace:alphaMode:deallocateFunc:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, premultipliedAlpha: Bool, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
@@ -470,6 +455,21 @@ public struct TextureData<T> {
 }
 
 extension TextureData where T: Comparable {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .premultiplied, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+        precondition(width >= 1 && height >= 1 && channels >= 1)
+        
+        self.width = width
+        self.height = height
+        self.channelCount = channels
+        
+        self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), deallocateFunc: deallocateFunc)
+        
+        self.colorSpace = colorSpace
+        self.alphaMode = alphaMode
+        
+        self.inferAlphaMode()
+    }
+
     mutating func inferAlphaMode() {
         guard case .inferred = alphaMode else { return }
         

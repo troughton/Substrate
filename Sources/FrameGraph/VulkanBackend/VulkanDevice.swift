@@ -74,7 +74,7 @@ public final class VulkanDevice {
         var features11 = VkPhysicalDeviceVulkan11Features()
         features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES
         var features12 = VkPhysicalDeviceVulkan12Features()
-        features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES
+        features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES
         withUnsafeMutableBytes(of: &features12) { features12 in
             features11.pNext = features12.baseAddress
             withUnsafeMutableBytes(of: &features11) { features11 in

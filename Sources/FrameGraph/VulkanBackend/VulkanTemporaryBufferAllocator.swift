@@ -36,9 +36,10 @@ fileprivate class VulkanTemporaryBufferArena {
     }
     
     func allocate(bytes: Int, alignedTo alignment: Int) -> (VulkanBuffer, Int) {
-        let alignedPosition = (currentBlockPos + alignment - 1) & ~(alignment - 1)
+        let alignment = bytes == 0 ? 1 : alignment // Don't align for empty allocations
         
-        if (alignedPosition + bytes > (currentBlock?.descriptor.size ?? 0)) {
+        let alignedPosition = (currentBlockPos + alignment - 1) & ~(alignment - 1)
+        if (alignedPosition + bytes > (currentBlock.map({ Int($0.descriptor.size) }) ?? -1)) {
             // Add current block to usedBlocks list
             if let currentBlock = self.currentBlock {
                 usedBlocks.append(currentBlock)

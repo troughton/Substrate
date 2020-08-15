@@ -164,7 +164,7 @@ class VulkanImage {
         let isDepthOrStencil = self.descriptor.allAspects.contains(where: { VkImageAspectFlagBits($0).intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != [] })
         
         for usage in usages {
-            let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil)
+            let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil) ?? self.frameLayouts.last!.layout // Preserve the last layout if the usage doesn't require a specific layout
             // Find the insertion location (since reads may be unordered in the usages list).
             let insertionIndex = self.frameLayouts.firstIndex(where: { $0.commandRange.lowerBound > usage.commandRange.lowerBound }) ?? self.frameLayouts.endIndex
             self.frameLayouts.insert(LayoutState(commandRange: usage.commandRange, layout: layout), at: insertionIndex)
@@ -195,6 +195,11 @@ class VulkanImage {
                 break
             }
         }
+        if finalLayout == VK_IMAGE_LAYOUT_UNDEFINED {
+            // Assume we should be in the first layout used this frame for next frame
+            finalLayout = self.frameLayouts.first(where: { $0.layout != VK_IMAGE_LAYOUT_UNDEFINED })!.layout
+        }
+
         return (initialLayout, finalLayout)
     }
     

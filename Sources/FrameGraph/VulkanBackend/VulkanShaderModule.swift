@@ -115,8 +115,11 @@ final class VulkanPipelineReflection : PipelineReflection {
 
                 for resource in UnsafeBufferPointer(start: resourceList, count: resourceCount) {
 
+                    let resourceTypeHandle = spvc_compiler_get_type_handle(compiler, resource.type_id)
+
                     let set = spvc_compiler_get_decoration(compiler, resource.id, SpvDecorationDescriptorSet)
                     let binding = spvc_compiler_get_decoration(compiler, resource.id, SpvDecorationBinding)
+                    let arrayLength = max(Int(spvc_type_get_array_dimension(resourceTypeHandle, 0)), 1)
                     let name = spvc_compiler_get_name(compiler, resource.id)
                     
                     
@@ -148,7 +151,7 @@ final class VulkanPipelineReflection : PipelineReflection {
                                        type: type,
                                        bindingPath: bindingPath,
                                        bindingRange: UInt32(bufferRangesMin)..<UInt32(bufferRangesMax),
-                                       arrayLength: 1, // FIXME: get this from SPIR-V
+                                       arrayLength: arrayLength,
                                        access: access,
                                        accessedStages: stage)
                     ].accessedStages.formUnion(stage)
