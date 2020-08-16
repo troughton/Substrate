@@ -43,7 +43,7 @@ final class VulkanStateCaches {
     
     public subscript(pipelineDescriptor: VulkanRenderPipelineDescriptor, 
                      renderPass renderPass: VulkanRenderPass,
-                     subpass subpass: UInt32) -> VkPipeline? {
+                     subpass subpass: VulkanSubpass) -> VkPipeline? {
         if let pipeline = self.renderPipelines[pipelineDescriptor] {
             return pipeline
         }

@@ -187,16 +187,16 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     func tryMerge(withPass passRecord: RenderPassRecord) -> Bool {
         let pass = passRecord.pass as! DrawRenderPass
         
-        if pass.renderTargetDescriptor.colorAttachments.count != self.descriptor.colorAttachments.count {
-            return false // The render targets must be using the same AttachmentIdentifier and therefore have the same maximum attachment count.
+        if pass.renderTargetDescriptor.size != self.descriptor.size {
+            return false // The render targets must be the same size.
         }
         
         var newDescriptor = descriptor
-        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: pass.renderTargetDescriptor.colorAttachments.count - descriptor.colorAttachments.count))
+        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: max(pass.renderTargetDescriptor.colorAttachments.count - descriptor.colorAttachments.count, 0)))
         
         var mergeResult = MergeResult.identical
         
-        for i in 0..<newDescriptor.colorAttachments.count {
+        for i in 0..<min(newDescriptor.colorAttachments.count, pass.renderTargetDescriptor.colorAttachments.count) {
             switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: pass.renderTargetDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
             case .identical:
                 break
@@ -226,12 +226,18 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
         
         switch mergeResult {
-        case .identical:
+        case .identical, .compatible:
             self.subpasses.append(self.subpasses.last!) // They can share the same subpass.
         case .incompatible:
             return false
-        case .compatible:
-            self.subpasses.append(VulkanSubpass(descriptor: newDescriptor, index: self.subpasses.last!.index + 1))
+        // case .compatible: // TODO: correctly handle multiple subpasses.
+        //     let lastSubpassIndex = self.subpasses.last!.index
+        //     self.subpasses.append(VulkanSubpass(descriptor: newDescriptor, index: lastSubpassIndex + 1))
+        //     var dependency = VkSubpassDependency()
+        //     dependency.srcSubpass = UInt32(lastSubpassIndex)
+        //     dependency.dstSubpass = dependency.srcSubpass + 1
+        //     // No barriers needed for now.
+        //     self.addDependency(dependency)
         }
         
         if newDescriptor.visibilityResultBuffer != nil && pass.renderTargetDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {

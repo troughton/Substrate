@@ -548,32 +548,31 @@ struct ColorBlendStateCreateInfo {
     let attachmentStates : FixedSizeBuffer<VkPipelineColorBlendAttachmentState>
     var info : VkPipelineColorBlendStateCreateInfo
     
-    init(descriptor: RenderPipelineDescriptor, renderTargetDescriptor: RenderTargetDescriptor) {
-        self.attachmentStates = FixedSizeBuffer(capacity: descriptor.blendStates.count, defaultValue: VkPipelineColorBlendAttachmentState())
+    init(descriptor: RenderPipelineDescriptor, renderTargetDescriptor: RenderTargetDescriptor, attachmentCount: Int) {
+        var disabledAttachment = VkPipelineColorBlendAttachmentState()
+        disabledAttachment.blendEnable = false
+        disabledAttachment.colorWriteMask = 0
+
+        self.attachmentStates = FixedSizeBuffer(capacity: attachmentCount, defaultValue: disabledAttachment)
         
         // Fill out attachment blend info
         for (i, attachment) in descriptor.blendStates.enumerated() {
-            let attachmentActive = renderTargetDescriptor.colorAttachments[i] != nil
+            guard renderTargetDescriptor.colorAttachments[i] != nil else { continue }
 
             var state = VkPipelineColorBlendAttachmentState()
 
-            if attachmentActive {
-                if let attachment = attachment {
-                    state.blendEnable = true
-                    state.srcColorBlendFactor = VkBlendFactor(attachment.sourceRGBBlendFactor)
-                    state.dstColorBlendFactor = VkBlendFactor(attachment.destinationRGBBlendFactor)
-                    state.colorBlendOp = VkBlendOp(attachment.rgbBlendOperation)
-                    state.srcAlphaBlendFactor = VkBlendFactor(attachment.sourceAlphaBlendFactor)
-                    state.dstAlphaBlendFactor = VkBlendFactor(attachment.destinationAlphaBlendFactor)
-                    state.alphaBlendOp = VkBlendOp(attachment.alphaBlendOperation)
-                } else {
-                    state.blendEnable = false
-                }
-                state.colorWriteMask = VkColorComponentFlags(VkColorComponentFlagBits(descriptor.writeMasks[i]))
+            if let attachment = attachment {
+                state.blendEnable = true
+                state.srcColorBlendFactor = VkBlendFactor(attachment.sourceRGBBlendFactor)
+                state.dstColorBlendFactor = VkBlendFactor(attachment.destinationRGBBlendFactor)
+                state.colorBlendOp = VkBlendOp(attachment.rgbBlendOperation)
+                state.srcAlphaBlendFactor = VkBlendFactor(attachment.sourceAlphaBlendFactor)
+                state.dstAlphaBlendFactor = VkBlendFactor(attachment.destinationAlphaBlendFactor)
+                state.alphaBlendOp = VkBlendOp(attachment.alphaBlendOperation)
             } else {
                 state.blendEnable = false
-                state.colorWriteMask = 0
             }
+            state.colorWriteMask = VkColorComponentFlags(VkColorComponentFlagBits(descriptor.writeMasks[i]))
             self.attachmentStates[i] = state
         }
         

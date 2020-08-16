@@ -436,13 +436,25 @@ public class VulkanDescriptorSetLayout {
         }
 
         layoutCreateInfo.bindingCount = UInt32(bindings.count)
-        
-        self.vkLayout = bindings.withUnsafeBufferPointer { bindings in
-            layoutCreateInfo.pBindings = bindings.baseAddress
-            
-            var layout : VkDescriptorSetLayout?
-            vkCreateDescriptorSetLayout(pipelineReflection.device.vkDevice, &layoutCreateInfo, nil, &layout)
-            return layout!
+
+        let bindingFlags = [VkDescriptorBindingFlags](repeating: VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT.rawValue, count: bindings.count)
+
+        self.vkLayout = bindingFlags.withUnsafeBufferPointer { bindingFlags in
+            var bindingFlagsCreateInfo = VkDescriptorSetLayoutBindingFlagsCreateInfo()
+            bindingFlagsCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO
+            bindingFlagsCreateInfo.bindingCount = UInt32(bindingFlags.count)
+            bindingFlagsCreateInfo.pBindingFlags = bindingFlags.baseAddress
+
+            return withUnsafeBytes(of: bindingFlagsCreateInfo) { flagsCreateInfo in
+                layoutCreateInfo.pNext = flagsCreateInfo.baseAddress
+                return bindings.withUnsafeBufferPointer { bindings in
+                    layoutCreateInfo.pBindings = bindings.baseAddress
+                    
+                    var layout : VkDescriptorSetLayout?
+                    vkCreateDescriptorSetLayout(pipelineReflection.device.vkDevice, &layoutCreateInfo, nil, &layout)
+                    return layout!
+                }
+            }
         }
     }
     

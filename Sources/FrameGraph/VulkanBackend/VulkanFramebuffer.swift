@@ -9,55 +9,61 @@
 import Vulkan
 import FrameGraphCExtras
 
-public enum AttachmentIndex {
-    case depth
-    case stencil
-    case color(Int)
-}
-
 public class VulkanFramebuffer {
     let device : VulkanDevice
     let framebuffer : VkFramebuffer
     
-    let attachments : [(AttachmentIndex, VulkanImageView)]
+    let imageViews : [VulkanImageView]
     
-    init(descriptor: VulkanRenderTargetDescriptor, renderPass: VkRenderPass, device: VulkanDevice, resourceMap: FrameResourceMap<VulkanBackend>) throws {
+    init(descriptor: VulkanRenderTargetDescriptor, renderPass: VulkanRenderPass, device: VulkanDevice, resourceMap: FrameResourceMap<VulkanBackend>) throws {
         self.device = device
         
         let renderTargetSize = descriptor.descriptor.size
     
         var createInfo = VkFramebufferCreateInfo()
         createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO
-        createInfo.renderPass = renderPass
+        createInfo.renderPass = renderPass.vkPass
         createInfo.width = UInt32(renderTargetSize.width)
         createInfo.height = UInt32(renderTargetSize.height)
         createInfo.layers = UInt32(max(descriptor.descriptor.renderTargetArrayLength, 1))
         
-        var attachments = [(AttachmentIndex, VulkanImageView)]()
-        if let depthAttachment = descriptor.descriptor.depthAttachment {
-            let image = try resourceMap.renderTargetTexture(depthAttachment.texture).image
-            attachments.append((.depth, image.viewForAttachment(descriptor: depthAttachment)))
-        }
-        
-        if let stencilAttachment = descriptor.descriptor.stencilAttachment, stencilAttachment.texture != descriptor.descriptor.depthAttachment?.texture {
-            let image = try resourceMap.renderTargetTexture(stencilAttachment.texture).image
-            attachments.append((.stencil, image.viewForAttachment(descriptor: stencilAttachment)))
-        }
-        
+        var attachments = [VkImageView?]()
+        attachments.reserveCapacity(renderPass.attachmentCount)
+
+        var imageViews = [VulkanImageView]()
+        imageViews.reserveCapacity(renderPass.attachmentCount)
+
+        // Color first, then depth-stencil
         for (i, attachment) in descriptor.descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             
             let image = try resourceMap.renderTargetTexture(attachment.texture).image
-            attachments.append((.color(i), image.viewForAttachment(descriptor: attachment)))
+            let imageView = image.viewForAttachment(descriptor: attachment)
+            imageViews.append(imageView)
+            attachments.append(imageView.vkView)
+        }
+
+        if let depthAttachment = descriptor.descriptor.depthAttachment {
+            let image = try resourceMap.renderTargetTexture(depthAttachment.texture).image
+            let imageView = image.viewForAttachment(descriptor: depthAttachment)
+            imageViews.append(imageView)
+            attachments.append(imageView.vkView)
         }
         
-        self.attachments = attachments
+        if let stencilAttachment = descriptor.descriptor.stencilAttachment, stencilAttachment.texture != descriptor.descriptor.depthAttachment?.texture {
+            let image = try resourceMap.renderTargetTexture(stencilAttachment.texture).image
+            let imageView = image.viewForAttachment(descriptor: stencilAttachment)
+            imageViews.append(imageView)
+            attachments.append(imageView.vkView)
+        }
+        
+        self.imageViews = imageViews
         
         var framebuffer : VkFramebuffer? = nil
-        let imageViews = attachments.map { $0.1.vkView as VkImageView? }
-        imageViews.withUnsafeBufferPointer { imageViews in
-            createInfo.pAttachments = imageViews.baseAddress
-            createInfo.attachmentCount = UInt32(imageViews.count)
+
+        attachments.withUnsafeBufferPointer { attachments in
+            createInfo.pAttachments = attachments.baseAddress
+            createInfo.attachmentCount = UInt32(attachments.count)
             
             vkCreateFramebuffer(device.vkDevice, &createInfo, nil, &framebuffer)
         }

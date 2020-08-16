@@ -25,7 +25,7 @@ struct DynamicStateCreateInfo {
     static let `default` = DynamicStateCreateInfo(states: [VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_BIAS, VK_DYNAMIC_STATE_BLEND_CONSTANTS, VK_DYNAMIC_STATE_STENCIL_REFERENCE])
 }
 
-final class VulkanRenderPipelineDescriptor : Hashable {
+struct VulkanRenderPipelineDescriptor : Hashable {
 
     let shaderLibrary : VulkanShaderLibrary
     var hasChanged: Bool = false
@@ -113,7 +113,7 @@ final class VulkanRenderPipelineDescriptor : Hashable {
         return true
     }
 
-    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, subpass: UInt32, stateCaches: VulkanStateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
+    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, subpass: VulkanSubpass, stateCaches: VulkanStateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
         
         var functionNames = [FixedSizeBuffer<CChar>]()
         
@@ -187,7 +187,7 @@ final class VulkanRenderPipelineDescriptor : Hashable {
             depthStencilState = dsState
         }
         
-        let colorBlendState = ColorBlendStateCreateInfo(descriptor: self.descriptor, renderTargetDescriptor: renderTargetDescriptor)
+        let colorBlendState = ColorBlendStateCreateInfo(descriptor: self.descriptor, renderTargetDescriptor: renderTargetDescriptor, attachmentCount: subpass.descriptor.colorAttachments.count)
         
         let dynamicState = DynamicStateCreateInfo.default
         
@@ -221,7 +221,7 @@ final class VulkanRenderPipelineDescriptor : Hashable {
                 pipelineInfo.pViewportState = escapingPointer(to: &states.8)
             
                 pipelineInfo.renderPass = renderPass.vkPass
-                pipelineInfo.subpass = UInt32(subpass)
+                pipelineInfo.subpass = UInt32(subpass.index)
                 
                 withInfo(&pipelineInfo)
             }
@@ -245,7 +245,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     var boundVertexBuffers = [Buffer?](repeating: nil, count: 8)
     var enqueuedBindings = [FrameGraphCommand]()
 
-    var subpass: Int = 0
+    var subpass: VulkanSubpass? = nil
     
     public init?(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: VulkanCommandBuffer, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: FrameResourceMap<VulkanBackend>) {
         self.device = device
@@ -290,7 +290,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
 
             let pipeline = self.stateCaches[self.pipelineDescriptor, 
                                             renderPass: self.renderPass!, 
-                                            subpass: UInt32(self.subpass)]
+                                            subpass: self.subpass!]
             vkCmdBindPipeline(self.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline)
         }
 
@@ -344,7 +344,8 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     
     private func beginPass(_ pass: RenderPassRecord) throws {
         let drawPass = pass.pass as! DrawRenderPass
-        self.currentDrawRenderPass = drawPass    
+        self.currentDrawRenderPass = drawPass  
+        self.subpass = self.renderTarget.subpassForPassIndex(pass.passIndex)  
 
         self.pipelineDescriptor.renderTargetDescriptor = drawPass.renderTargetDescriptor
         
@@ -352,10 +353,9 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         let renderTargetRect = VkRect2D(offset: VkOffset2D(x: 0, y: 0), extent: VkExtent2D(width: UInt32(renderTargetSize.width), height: UInt32(renderTargetSize.height)))
         
         if pass === self.renderTarget.renderPasses.first { // Set up the render target.
-            
             self.renderPass = try VulkanRenderPass(device: self.device, descriptor: renderTarget, resourceMap: self.resourceMap)
             commandBufferResources.renderPasses.append(renderPass)
-            let framebuffer = try VulkanFramebuffer(descriptor: renderTarget, renderPass: renderPass.vkPass, device: self.device, resourceMap: self.resourceMap)
+            let framebuffer = try VulkanFramebuffer(descriptor: renderTarget, renderPass: renderPass, device: self.device, resourceMap: self.resourceMap)
             commandBufferResources.framebuffers.append(framebuffer)
             
             var clearValues = [VkClearValue]()
@@ -403,9 +403,11 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         if pass === self.renderTarget.renderPasses.last {
             vkCmdEndRenderPass(self.commandBuffer)
             return false
-        } else if self.renderTarget.subpassForPassIndex(pass.passIndex) !== self.renderTarget.subpassForPassIndex(pass.passIndex + 1) {
-            vkCmdNextSubpass(self.commandBuffer, VK_SUBPASS_CONTENTS_INLINE)
-            self.subpass += 1
+        } else {
+            let nextSubpass = self.renderTarget.subpassForPassIndex(pass.passIndex + 1)
+            if nextSubpass !== self.subpass {
+                vkCmdNextSubpass(self.commandBuffer, VK_SUBPASS_CONTENTS_INLINE)
+            }
         }
         return true
     }
