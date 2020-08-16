@@ -30,7 +30,7 @@ extension VulkanBackend {
             for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
                 let dependency = dependencies.dependency(from: dependentIndex, on: sourceIndex)!
                 
-                for (resource, producingUsage, consumingUsage) in dependency.resources {
+                for (resource, producingUsage, _) in dependency.resources {
                     let pixelFormat = resource.texture?.descriptor.pixelFormat ?? .invalid
                     let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                     signalStages.formUnion(producingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: producingUsage.stages))
@@ -90,6 +90,13 @@ extension VulkanBackend {
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!)
                         barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!)
+                        if producingUsage.type.isRenderTarget {
+                            // We transitioned to the new layout at the end of the previous render pass.
+                            barrier.oldLayout = barrier.newLayout 
+                        } else if consumingUsage.type.isRenderTarget {
+                            // The layout transition will be handled by the next render pass.
+                            barrier.newLayout = barrier.oldLayout
+                        } 
                         barrier.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
                         imageBarriers.append(barrier)
                     } else {
