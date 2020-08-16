@@ -18,6 +18,8 @@ extension ResourceUsageType {
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
         case .blitSynchronisation:
             return VK_IMAGE_LAYOUT_GENERAL
+        case .mipGeneration:
+            return .mipGeneration
         case .unusedRenderTarget:
             return nil
         default:
@@ -49,7 +51,9 @@ extension ResourceUsageType {
         case .blitDestination:
             return VK_ACCESS_TRANSFER_WRITE_BIT
         case .blitSynchronisation:
-            return [VK_ACCESS_HOST_READ_BIT, VK_ACCESS_HOST_WRITE_BIT] 
+            return [VK_ACCESS_HOST_READ_BIT, VK_ACCESS_HOST_WRITE_BIT]
+        case .mipGeneration:
+            return [VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT]
         case .vertexBuffer:
             return VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT
         case .indexBuffer:
@@ -93,6 +97,8 @@ extension ResourceUsageType {
             return VK_PIPELINE_STAGE_TRANSFER_BIT
         case .blitSynchronisation:
             return VK_PIPELINE_STAGE_HOST_BIT
+        case .mipGeneration:
+            return VK_PIPELINE_STAGE_TRANSFER_BIT
         case .vertexBuffer, .indexBuffer:
             return VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
         case .indirectBuffer:

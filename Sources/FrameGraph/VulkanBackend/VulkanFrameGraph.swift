@@ -88,8 +88,8 @@ extension VulkanBackend {
                         barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
                         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
-                        barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!)
-                        barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!)
+                        barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!).afterOperation
+                        barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!).beforeOperation
                         if producingUsage.type.isRenderTarget {
                             // We transitioned to the new layout at the end of the previous render pass.
                             barrier.oldLayout = barrier.newLayout 
@@ -180,8 +180,8 @@ extension VulkanBackend {
             let sourceLayout: VkImageLayout
             let destinationLayout: VkImageLayout
             if let image = resource.texture.map({ resourceMap[$0].image }) {
-                sourceLayout = afterUsage == .previousFrame ? image.frameInitialLayout : image.layout(commandIndex: afterCommand)
-                destinationLayout = image.layout(commandIndex: beforeCommand)
+                sourceLayout = afterUsage == .previousFrame ? image.frameInitialLayout : image.layout(commandIndex: afterCommand).afterOperation
+                destinationLayout = image.layout(commandIndex: beforeCommand).beforeOperation
             } else {
                 assert(resource.type != .texture || resource.flags.contains(.windowHandle))
                 sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED

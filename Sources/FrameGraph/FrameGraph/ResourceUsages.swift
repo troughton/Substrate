@@ -228,7 +228,7 @@ extension ResourceUsageType {
     @inlinable
     public var isRead : Bool {
         switch self {
-        case .read, .readWrite, .blitSource, .blitSynchronisation,
+        case .read, .readWrite, .blitSource, .blitSynchronisation, .mipGeneration,
              .vertexBuffer, .indexBuffer, .indirectBuffer, .readWriteRenderTarget,
              .inputAttachment, .inputAttachmentRenderTarget, .constantBuffer:
             return true
@@ -240,7 +240,7 @@ extension ResourceUsageType {
     @inlinable
     public var isWrite : Bool {
         switch self {
-        case .write, .readWrite, .readWriteRenderTarget, .writeOnlyRenderTarget, .inputAttachmentRenderTarget, .blitDestination, .blitSynchronisation:
+        case .write, .readWrite, .readWriteRenderTarget, .writeOnlyRenderTarget, .inputAttachmentRenderTarget, .blitDestination, .blitSynchronisation, .mipGeneration:
             return true
         default:
             return false

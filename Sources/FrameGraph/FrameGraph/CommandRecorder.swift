@@ -1680,7 +1680,7 @@ public final class BlitCommandEncoder : CommandEncoder {
     }
     
     public func generateMipmaps(for texture: Texture) {
-        resourceUsages.addResourceUsage(for: texture, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
+        resourceUsages.addResourceUsage(for: texture, commandIndex: self.nextCommandOffset, encoder: self, usageType: .mipGeneration, stages: .blit, inArgumentBuffer: false)
         
         commandRecorder.record(.generateMipmaps(texture))
     }

@@ -55,8 +55,9 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
 
             let bytesPerPixel = args.pointee.destinationTexture.descriptor.pixelFormat.bytesPerPixel
 
-            let regions = destination.descriptor.allAspects.map { aspect -> VkBufferImageCopy in
-                let layers = VkImageSubresourceLayers(aspectMask: aspect, mipLevel: args.pointee.destinationLevel, baseArrayLayer: args.pointee.destinationSlice, layerCount: 1)
+            let possibleAspects = [VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]
+            let regions = possibleAspects.filter { destination.descriptor.allAspects.contains($0) }.map { aspect -> VkBufferImageCopy in
+                let layers = VkImageSubresourceLayers(aspectMask: VkImageAspectFlags(aspect), mipLevel: args.pointee.destinationLevel, baseArrayLayer: args.pointee.destinationSlice, layerCount: 1)
                 
                 return VkBufferImageCopy(bufferOffset: VkDeviceSize(args.pointee.sourceOffset) + VkDeviceSize(source.offset),
                                          bufferRowLength: UInt32(Double(args.pointee.sourceBytesPerRow) / bytesPerPixel),
@@ -136,13 +137,13 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
         
         for i in 0..<image.descriptor.mipLevels {
             var region = VkImageBlit()
-            region.srcSubresource.aspectMask = VkImageAspectFlags(VK_IMAGE_ASPECT_COLOR_BIT)
+            region.srcSubresource.aspectMask = VkImageAspectFlags(image.descriptor.allAspects)
             region.srcSubresource.mipLevel = i - 1
             region.srcSubresource.layerCount = 1
             region.srcOffsets.1.x = Int32(max(image.descriptor.extent.width >> (i - 1), 1))
             region.srcOffsets.1.y = Int32(max(image.descriptor.extent.height >> (i - 1), 1))
             region.srcOffsets.1.z = 1
-            region.dstSubresource.aspectMask = VkImageAspectFlags(VK_IMAGE_ASPECT_COLOR_BIT)
+            region.dstSubresource.aspectMask = VkImageAspectFlags(image.descriptor.allAspects)
             region.dstSubresource.mipLevel = i
             region.dstSubresource.layerCount = 1
             region.dstOffsets.1.x = Int32(max(image.descriptor.extent.width >> i, 1))

@@ -55,6 +55,29 @@ extension VkImageSubresourceRange : Hashable {
     }
 }
 
+
+extension VkImageLayout {
+    /// A special case VkImageLayout, representing, on entry, `_TRANSFER_SRC` for the top-most mip and `_UNDEFINED` for the other mips,
+    /// and `SHADER_READ_ONLY_OPTIMAL` on exit.
+    static var mipGeneration: VkImageLayout {
+        return VkImageLayout(rawValue: VkImageLayout.RawValue.max - 1)
+    }
+    
+    var beforeOperation: VkImageLayout {
+        if case .mipGeneration = self {
+            return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        }
+        return self
+    }
+    
+    var afterOperation: VkImageLayout {
+        if case .mipGeneration = self {
+            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        }
+        return self
+    }
+}
+
 class VulkanImage {
     public let device : VulkanDevice
     
@@ -157,14 +180,15 @@ class VulkanImage {
     
     func computeFrameLayouts(usages: ResourceUsagesList, preserveLastLayout: Bool) {
         let lastLayout = self.frameLayouts.last!
+        
         self.frameLayouts.removeAll(keepingCapacity: true)
-        self.frameLayouts.append(LayoutState(commandRange: -1..<0, layout: preserveLastLayout ? lastLayout.layout : VK_IMAGE_LAYOUT_UNDEFINED))
+        self.frameLayouts.append(LayoutState(commandRange: -1..<0, layout: preserveLastLayout ? lastLayout.layout.afterOperation : VK_IMAGE_LAYOUT_UNDEFINED))
         assert(self.frameInitialLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
         
-        let isDepthOrStencil = self.descriptor.allAspects.contains(where: { VkImageAspectFlagBits($0).intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != [] })
+        let isDepthOrStencil = self.descriptor.allAspects.intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != []
         
         for usage in usages {
-            let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil) ?? self.frameLayouts.last!.layout // Preserve the last layout if the usage doesn't require a specific layout
+            let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil) ?? self.frameLayouts.last!.layout.afterOperation // Preserve the last layout if the usage doesn't require a specific layout
             // Find the insertion location (since reads may be unordered in the usages list).
             let insertionIndex = self.frameLayouts.firstIndex(where: { $0.commandRange.lowerBound > usage.commandRange.lowerBound }) ?? self.frameLayouts.endIndex
             self.frameLayouts.insert(LayoutState(commandRange: usage.commandRange, layout: layout), at: insertionIndex)
@@ -188,16 +212,16 @@ class VulkanImage {
 
         for layout in self.frameLayouts {
             if previousCommandIndex >= 0, layout.commandRange.contains(previousCommandIndex) {
-                initialLayout = layout.layout
+                initialLayout = layout.layout.afterOperation
             }
             if nextCommandIndex >= 0, layout.commandRange.contains(nextCommandIndex) {
-                finalLayout = layout.layout
+                finalLayout = layout.layout.beforeOperation
                 break
             }
         }
         if finalLayout == VK_IMAGE_LAYOUT_UNDEFINED {
             // Assume we should be in the first layout used this frame for next frame
-            finalLayout = self.frameLayouts.first(where: { $0.layout != VK_IMAGE_LAYOUT_UNDEFINED })!.layout
+            finalLayout = self.frameLayouts.first(where: { $0.layout != VK_IMAGE_LAYOUT_UNDEFINED })!.layout.afterOperation
         }
 
         return (initialLayout, finalLayout)
@@ -320,15 +344,15 @@ struct VulkanImageDescriptor : Equatable {
         }
     }
     
-    public var allAspects : [VkImageAspectFlags] {
+    public var allAspects : VkImageAspectFlagBits {
         if self.format.isDepthStencil {
-            return [VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT), VkImageAspectFlags(VK_IMAGE_ASPECT_STENCIL_BIT)]
+            return [VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]
         } else if self.format.isDepth {
-            return [VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT)]
+            return VK_IMAGE_ASPECT_DEPTH_BIT
         } else if self.format.isStencil {
-            return [VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT)]
+            return VK_IMAGE_ASPECT_STENCIL_BIT
         } else {
-            return [VkImageAspectFlags(VK_IMAGE_ASPECT_COLOR_BIT)]
+            return VK_IMAGE_ASPECT_COLOR_BIT
         }
     }
     

@@ -28,6 +28,7 @@ public enum ResourceUsageType {
     case blitSource
     case blitDestination
     case blitSynchronisation
+    case mipGeneration
     
     case vertexBuffer
     case indexBuffer
