@@ -83,7 +83,32 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             fatalError("Unimplemented.")
             
         case .copyTextureToTexture(let args):
-            fatalError("Unimplemented.")
+            let source = resourceMap[args.pointee.sourceTexture].image
+            let destination = resourceMap[args.pointee.destinationTexture].image
+
+            let bytesPerPixel = args.pointee.destinationTexture.descriptor.pixelFormat.bytesPerPixel
+
+            let possibleAspects = [VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]
+            let regions = possibleAspects.filter { destination.descriptor.allAspects.contains($0) && source.descriptor.allAspects.contains($0) }.map { aspect -> VkImageCopy in
+                let sourceLayers = VkImageSubresourceLayers(aspectMask: VkImageAspectFlags(aspect), mipLevel: args.pointee.sourceLevel, baseArrayLayer: args.pointee.sourceSlice, layerCount: 1)
+                let destinationLayers = VkImageSubresourceLayers(aspectMask: VkImageAspectFlags(aspect), mipLevel: args.pointee.destinationLevel, baseArrayLayer: args.pointee.destinationSlice, layerCount: 1)
+                
+                return VkImageCopy(srcSubresource: sourceLayers,
+                                    srcOffset: VkOffset3D(args.pointee.sourceOrigin),
+                                    dstSubresource: destinationLayers,
+                                    dstOffset: VkOffset3D(args.pointee.destinationOrigin),
+                                    extent: VkExtent3D(args.pointee.sourceSize))
+                
+            }
+            
+            regions.withUnsafeBufferPointer { regions in
+                vkCmdCopyImage(
+                    self.commandBufferResources.commandBuffer, 
+                    source.vkImage, source.layout(commandIndex: commandIndex),
+                    destination.vkImage, destination.layout(commandIndex: commandIndex),
+                    UInt32(regions.count), regions.baseAddress
+                )
+            }
             
         case .fillBuffer(let args):
             let buffer = resourceMap[args.pointee.buffer]
@@ -133,9 +158,15 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
     /// PRECONDITION: the image layout is VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
     /// POSTCONDITION: the image layout is VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     func generateMipmaps(image: VulkanImage) {
-        assert(image.descriptor.usage.contains([.transferSource, .transferDestination, .sampled]))
+        assert(image.descriptor.usage.contains([.transferSource, .transferDestination]))
         
-        for i in 0..<image.descriptor.mipLevels {
+        for i in 1..<image.descriptor.mipLevels {
+            // Transition the current mip level into a VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL layout.
+            imageMemoryBarrier(image: image.vkImage, srcAccessMask: [], dstAccessMask: VK_ACCESS_TRANSFER_WRITE_BIT, srcStageMask: VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                               dstStageMask: VK_PIPELINE_STAGE_TRANSFER_BIT, oldLayout: VK_IMAGE_LAYOUT_UNDEFINED, newLayout: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                               baseMipLevel: i, mipLevelCount: 1)
+            
+
             var region = VkImageBlit()
             region.srcSubresource.aspectMask = VkImageAspectFlags(image.descriptor.allAspects)
             region.srcSubresource.mipLevel = i - 1

@@ -441,7 +441,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         let isDepthOrStencil = texture.descriptor.pixelFormat.isDepth || texture.descriptor.pixelFormat.isStencil
         
-        // TODO: compute image layout transitions here.
         for usage in texture.usages {
             switch usage.type {
             case .read:
@@ -456,6 +455,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
                 imageUsage.formUnion(VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
             case .blitDestination:
                 imageUsage.formUnion(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            case .mipGeneration:
+                imageUsage.formUnion([VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT])
             default:
                 break
             }
