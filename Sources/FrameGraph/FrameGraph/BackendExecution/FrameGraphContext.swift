@@ -114,12 +114,15 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
                 let queueCBIndex = self.queueCommandBufferIndex
                 
                 self.frameGraphQueue.lastSubmittedCommand = queueCBIndex
+                self.frameGraphQueue.lastSubmissionTime = DispatchTime.now()
                 
                 commandBuffer.commit(onCompletion: { (commandBuffer) in
                     if let error = commandBuffer.error {
                         print("Error executing command buffer \(queueCBIndex): \(error)")
                     }
                     self.frameGraphQueue.lastCompletedCommand = queueCBIndex
+                    self.frameGraphQueue.lastCompletionTime = DispatchTime.now()
+                    
                     if cbIndex == 0 {
                         gpuStartTime = commandBuffer.gpuStartTime
                     }
