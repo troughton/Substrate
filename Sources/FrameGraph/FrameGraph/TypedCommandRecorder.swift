@@ -35,7 +35,7 @@ public struct NilSet : ShaderDescriptorSet {
     @inlinable
     public init() {}
     
-    public func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?) {
+    public mutating func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?) {
     }
 }
 
@@ -202,28 +202,28 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         
         if self.descriptorSetChangeMask != 0 {
             if (self.descriptorSetChangeMask & (1 << 0)) != 0 {
-                self.encoder.setArguments(self.set0, at: 0)
+                self.encoder.setArguments(&self.set0, at: 0)
             }
             if (self.descriptorSetChangeMask & (1 << 1)) != 0 {
-                self.encoder.setArguments(self.set1, at: 1)
+                self.encoder.setArguments(&self.set1, at: 1)
             }
             if (self.descriptorSetChangeMask & (1 << 2)) != 0 {
-                self.encoder.setArguments(self.set2, at: 2)
+                self.encoder.setArguments(&self.set2, at: 2)
             }
             if (self.descriptorSetChangeMask & (1 << 3)) != 0 {
-                self.encoder.setArguments(self.set3, at: 3)
+                self.encoder.setArguments(&self.set3, at: 3)
             }
             if (self.descriptorSetChangeMask & (1 << 4)) != 0 {
-                self.encoder.setArguments(self.set4, at: 4)
+                self.encoder.setArguments(&self.set4, at: 4)
             }
             if (self.descriptorSetChangeMask & (1 << 5)) != 0 {
-                self.encoder.setArguments(self.set5, at: 5)
+                self.encoder.setArguments(&self.set5, at: 5)
             }
             if (self.descriptorSetChangeMask & (1 << 6)) != 0 {
-                self.encoder.setArguments(self.set6, at: 6)
+                self.encoder.setArguments(&self.set6, at: 6)
             }
             if (self.descriptorSetChangeMask & (1 << 7)) != 0 {
-                self.encoder.setArguments(self.set7, at: 7)
+                self.encoder.setArguments(&self.set7, at: 7)
             }
         }
     }
@@ -429,28 +429,28 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         
         if self.descriptorSetChangeMask != 0 {
             if (self.descriptorSetChangeMask & (1 << 0)) != 0 {
-                self.encoder.setArguments(self.set0, at: 0)
+                self.encoder.setArguments(&self.set0, at: 0)
             }
             if (self.descriptorSetChangeMask & (1 << 1)) != 0 {
-                self.encoder.setArguments(self.set1, at: 1)
+                self.encoder.setArguments(&self.set1, at: 1)
             }
             if (self.descriptorSetChangeMask & (1 << 2)) != 0 {
-                self.encoder.setArguments(self.set2, at: 2)
+                self.encoder.setArguments(&self.set2, at: 2)
             }
             if (self.descriptorSetChangeMask & (1 << 3)) != 0 {
-                self.encoder.setArguments(self.set3, at: 3)
+                self.encoder.setArguments(&self.set3, at: 3)
             }
             if (self.descriptorSetChangeMask & (1 << 4)) != 0 {
-                self.encoder.setArguments(self.set4, at: 4)
+                self.encoder.setArguments(&self.set4, at: 4)
             }
             if (self.descriptorSetChangeMask & (1 << 5)) != 0 {
-                self.encoder.setArguments(self.set5, at: 5)
+                self.encoder.setArguments(&self.set5, at: 5)
             }
             if (self.descriptorSetChangeMask & (1 << 6)) != 0 {
-                self.encoder.setArguments(self.set6, at: 6)
+                self.encoder.setArguments(&self.set6, at: 6)
             }
             if (self.descriptorSetChangeMask & (1 << 7)) != 0 {
-                self.encoder.setArguments(self.set7, at: 7)
+                self.encoder.setArguments(&self.set7, at: 7)
             }
         }
     }

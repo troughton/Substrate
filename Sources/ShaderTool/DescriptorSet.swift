@@ -112,7 +112,7 @@ final class DescriptorSet {
         
         stream.newLine()
         
-        stream.print("public func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder? = nil) {")
+        stream.print("public mutating func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder? = nil) {")
 
         // Metal 
         do {

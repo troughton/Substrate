@@ -532,7 +532,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
-    public func setArguments<A : ArgumentBufferEncodable>(_ arguments: A, at setIndex: Int) {
+    public func setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) {
         if A.self == NilSet.self {
             return
         }
