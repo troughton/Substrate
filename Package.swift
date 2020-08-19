@@ -23,7 +23,7 @@ let package = Package(
         .package(name: "SPIRV-Cross", url: "https://github.com/troughton/SPIRV-Cross-SPM", from: "0.33.1"),
         .package(url: "https://github.com/sharplet/Regex", from: "2.1.0"),
         .package(url: "https://github.com/troughton/Cstb", from: "1.0.3"),
-        .package(url: "https://github.com/apple/swift-argument-parser", from: "0.0.1"),
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "0.0.6"),
         .package(name: "LodePNG", url: "https://github.com/troughton/LodePNG-SPM", from: "0.0.1"),
         .package(url: "https://github.com/troughton/SwiftImGui", from: "1.7.32"),
         .package(url: "https://github.com/troughton/SwiftMath", from: "5.1.2")
