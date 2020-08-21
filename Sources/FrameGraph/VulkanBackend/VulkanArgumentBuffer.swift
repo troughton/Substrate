@@ -28,7 +28,7 @@ final class VulkanArgumentBuffer {
 
 extension VulkanArgumentBuffer {
     
-    func encodeArguments(from buffer: _ArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
+    func encodeArguments(from buffer: _ArgumentBuffer, commandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
         let pipelineReflection = self.layout.pipelineReflection
         let setIndex = self.layout.set
 
@@ -64,15 +64,10 @@ extension VulkanArgumentBuffer {
 
                 self.images.append(image)
             
-                let pixelFormat = texture.descriptor.pixelFormat
-                let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
+                let usage = texture.usages.first(where: { $0.inArgumentBuffer && $0.commandRange.lowerBound >= commandIndex })!
+
                 var imageInfo = VkDescriptorImageInfo()
-                switch resource.access {
-                case .read:
-                    imageInfo.imageLayout = isDepthOrStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                case .readWrite, .write:
-                    imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL
-                }
+                imageInfo.imageLayout = image.layout(commandIndex: usage.commandRange.lowerBound)
                 imageInfo.imageView = image.defaultImageView.vkView
                 
                 descriptorWrite.pImageInfo = imageInfoSentinel
@@ -89,7 +84,7 @@ extension VulkanArgumentBuffer {
                     // FIXME: should be constrained to maxUniformBufferRange or maxStorageBufferRange
                     bufferInfo.range = VK_WHOLE_SIZE
                 } else {
-                    bufferInfo.range = VkDeviceSize(resource.bindingRange.lowerBound)
+                    bufferInfo.range = VkDeviceSize(resource.bindingRange.count)
                 }
 
                 descriptorWrite.pBufferInfo = bufferInfoSentinel

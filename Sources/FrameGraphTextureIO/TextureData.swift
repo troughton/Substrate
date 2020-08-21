@@ -97,6 +97,32 @@ public enum TextureColorSpace : String, Codable, Hashable {
 
 public typealias TextureColourSpace = TextureColorSpace
 
+public enum TextureAlphaMode {
+    case premultiplied
+    case postmultiplied
+    
+    case inferred
+    
+    func inferFromFileFormat(fileExtension: String) -> TextureAlphaMode {
+        if case .inferred = self, let format = TextureSaveFormat(rawValue: fileExtension.lowercased()) {
+            switch format {
+            case .png:
+                return .postmultiplied
+            case .exr:
+                return .premultiplied
+            case .bmp:
+                return .premultiplied
+            case .jpg, .hdr:
+                return .premultiplied // No transparency
+            default:
+                break
+            }
+        }
+        
+        return self
+    }
+}
+
 public enum TextureEdgeWrapMode {
     case zero
     case wrap
@@ -192,7 +218,7 @@ public struct TextureData<T> {
     public let channelCount : Int
     
     public internal(set) var colorSpace : TextureColorSpace
-    public internal(set) var premultipliedAlpha: Bool
+    public internal(set) var alphaMode: TextureAlphaMode
     
     @usableFromInline var storage: TextureDataStorage<T>
     
@@ -206,9 +232,19 @@ public struct TextureData<T> {
         }
     }
     
-    public init(width: Int, height: Int, channels: Int, colorSpace: TextureColorSpace, premultipliedAlpha: Bool = false) {
+    public init(width: Int, height: Int, channels: Int, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .premultiplied) {
         precondition(_isPOD(T.self))
         precondition(width >= 1 && height >= 1 && channels >= 1)
+        precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
+        
+        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
+    }
+    
+    init(width: Int, height: Int, channels: Int, colorSpace: TextureColorSpace, alphaModeAllowInferred alphaMode: TextureAlphaMode) {
+        precondition(_isPOD(T.self))
+        precondition(width >= 1 && height >= 1 && channels >= 1)
+        precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
+        
         self.width = width
         self.height = height
         self.channelCount = channels
@@ -216,16 +252,22 @@ public struct TextureData<T> {
         self.storage = .init(elementCount: width * height * channelCount)
         
         self.colorSpace = colorSpace
-        self.premultipliedAlpha = premultipliedAlpha
+        self.alphaMode = alphaMode
     }
     
-    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:premultipliedAlpha:)")
+    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:)")
+    public init(width: Int, height: Int, channels: Int, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) {
+        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
+    }
+    
+    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:)")
     public init(width: Int, height: Int, channels: Int, colourSpace: TextureColorSpace, premultipliedAlpha: Bool = false) {
-        self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
+        self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, premultipliedAlpha: Bool = false, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .premultiplied, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         precondition(width >= 1 && height >= 1 && channels >= 1)
+        precondition(alphaMode != .inferred, "Cannot infer the alpha mode when T is not Comparable.")
         
         self.width = width
         self.height = height
@@ -234,12 +276,17 @@ public struct TextureData<T> {
         self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), deallocateFunc: deallocateFunc)
         
         self.colorSpace = colorSpace
-        self.premultipliedAlpha = premultipliedAlpha
+        self.alphaMode = alphaMode
+    }
+
+    @available(*, deprecated, renamed: "init(width:height:channels:data:colorSpace:alphaMode:deallocateFunc:)")
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, premultipliedAlpha: Bool, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+        self.init(width: width, height: height, channels: channels, data: data, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, deallocateFunc: deallocateFunc)
     }
     
-    @available(*, deprecated, renamed: "init(width:height:channels:data:colorSpace:premultipliedAlpha:deallocateFunc:)")
+    @available(*, deprecated, renamed: "init(width:height:channels:data:colorSpace:alphaMode:deallocateFunc:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colourSpace: TextureColorSpace, premultipliedAlpha: Bool = false, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
-        self.init(width: width, height: height, channels: channels, data: data, colorSpace: colourSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: deallocateFunc)
+        self.init(width: width, height: height, channels: channels, data: data, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, deallocateFunc: deallocateFunc)
     }
     
     @inlinable
@@ -247,6 +294,12 @@ public struct TextureData<T> {
         if !isKnownUniquelyReferenced(&self.storage) {
             self.storage = .init(copying: self.storage.data)
         }
+    }
+    
+    @available(*, deprecated, renamed: "alphaMode")
+    @inlinable
+    public var premultipliedAlpha: Bool {
+        return self.alphaMode == .premultiplied
     }
     
     @inlinable
@@ -318,7 +371,7 @@ public struct TextureData<T> {
             return self
         }
         
-        var result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, premultipliedAlpha: self.premultipliedAlpha)
+        var result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
         for y in 0..<height {
             let clampedY = clampOutOfBounds ? clamp(y + originY, min: 0, max: self.height - 1) : (y + originY)
@@ -339,10 +392,10 @@ public struct TextureData<T> {
             return self
         }
         
-        let result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, premultipliedAlpha: self.premultipliedAlpha)
+        let result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
         var flags : Int32 = 0
-        if self.premultipliedAlpha {
+        if self.alphaMode == .premultiplied {
             flags |= STBIR_FLAG_ALPHA_PREMULTIPLIED
         }
         
@@ -401,6 +454,43 @@ public struct TextureData<T> {
     }
 }
 
+extension TextureData where T: Comparable {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .premultiplied, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+        precondition(width >= 1 && height >= 1 && channels >= 1)
+        
+        self.width = width
+        self.height = height
+        self.channelCount = channels
+        
+        self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), deallocateFunc: deallocateFunc)
+        
+        self.colorSpace = colorSpace
+        self.alphaMode = alphaMode
+        
+        self.inferAlphaMode()
+    }
+
+    mutating func inferAlphaMode() {
+        guard case .inferred = alphaMode else { return }
+        
+        if self.channelCount == 2 || self.channelCount == 4 {
+            let alphaChannel = self.channelCount - 1
+            for baseIndex in stride(from: 0, to: self.storage.data.count, by: self.channelCount) {
+                let alphaVal = self.storage.data[baseIndex + alphaChannel]
+                for c in 0..<alphaChannel {
+                    if self.storage.data[baseIndex + c] > alphaVal {
+                        self.alphaMode = .postmultiplied
+                        break
+                    }
+                }
+            }
+            self.alphaMode = .premultiplied
+        } else {
+            self.alphaMode = .premultiplied
+        }
+    }
+}
+
 extension TextureData where T: SIMDScalar {
     @inlinable
     public subscript(x: Int, y: Int) -> SIMD4<T> {
@@ -427,7 +517,7 @@ extension TextureData where T: SIMDScalar {
 extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
     @inlinable
     public init(_ data: TextureData<Float>) {
-        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, premultipliedAlpha: data.premultipliedAlpha)
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
@@ -449,7 +539,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
     }
     
     public mutating func convertToPremultipliedAlpha() {
-        guard !self.premultipliedAlpha, self.channelCount == 4 else { return }
+        guard case .postmultiplied = self.alphaMode, self.channelCount == 4 else { return }
         self.ensureUniqueness()
         
         let sourceColorSpace = self.colorSpace
@@ -465,11 +555,11 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
             }
         }
         
-        self.premultipliedAlpha = true
+        self.alphaMode = .premultiplied
     }
     
     public mutating func convertToPostmultipliedAlpha() {
-        guard self.premultipliedAlpha, self.channelCount == 4 else { return }
+        guard case .premultiplied = self.alphaMode, self.channelCount == 4 else { return }
         self.ensureUniqueness()
         
         let sourceColorSpace = self.colorSpace
@@ -485,14 +575,14 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
             }
         }
         
-        self.premultipliedAlpha = false
+        self.alphaMode = .postmultiplied
     }
 }
 
 extension TextureData where T: BinaryInteger & FixedWidthInteger & SignedInteger {
     @inlinable
     public init(_ data: TextureData<Float>) {
-        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, premultipliedAlpha: data.premultipliedAlpha)
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
@@ -504,8 +594,8 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & SignedInteger
     }
 }
 
-extension TextureData where T == UInt16 {
-    public init(fileAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+extension TextureData where T == UInt8 {
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
@@ -513,17 +603,40 @@ extension TextureData where T == UInt16 {
             throw TextureLoadingError.invalidFile(url)
         }
         
-        let channels = componentsPerPixel
+        let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
+        
+        guard let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
+            throw TextureLoadingError.invalidTextureDataFormat(url, T.self)
+        }
+        
+        self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension), deallocateFunc: { stbi_image_free($0) })
+    }
+}
+
+extension TextureData where T == UInt16 {
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
+        var width : Int32 = 0
+        var height : Int32 = 0
+        var componentsPerPixel : Int32 = 0
+        guard stbi_info(url.path, &width, &height, &componentsPerPixel) != 0 else {
+            throw TextureLoadingError.invalidFile(url)
+        }
+        
+        let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
         
         guard let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
             throw TextureLoadingError.invalidTextureDataFormat(url, T.self)
         }
         
-        self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
+        self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension), deallocateFunc: { stbi_image_free($0) })
     }
     
+    @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+        try self.init(fileAt: url, colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha)
+    }
     
-    @available(*, deprecated, renamed: "init(fileAt:colorSpace:premultipliedAlpha:)")
+    @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
     public init(fileAt url: URL, colourSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
         try self.init(fileAt: url, colorSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
     }
@@ -533,7 +646,7 @@ extension TextureData where T == Float {
     
     @inlinable
     public init<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ data: TextureData<I>) {
-        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, premultipliedAlpha: data.premultipliedAlpha)
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
@@ -546,7 +659,7 @@ extension TextureData where T == Float {
     
     @inlinable
     public init<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ data: TextureData<I>) {
-        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, premultipliedAlpha: data.premultipliedAlpha)
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
@@ -557,9 +670,9 @@ extension TextureData where T == Float {
         }
     }
     
-    public init(fileAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
         if url.pathExtension.lowercased() == "exr" {
-            try self.init(exrAt: url, colorSpace: colorSpace)
+            try self.init(exrAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
             return
         }
         
@@ -570,45 +683,55 @@ extension TextureData where T == Float {
             throw TextureLoadingError.invalidFile(url)
         }
         
-        let channels = componentsPerPixel
+        let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
         
         let isHDR = stbi_is_hdr(url.path) != 0
         let is16Bit = stbi_is_16_bit(url.path) != 0
         
-        let dataCount = Int(width * height * componentsPerPixel)
+        let dataCount = Int(width * height * channels)
         
         if isHDR {
             let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, channels)!
-            self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha, deallocateFunc: { stbi_image_free($0) })
+            self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension), deallocateFunc: { stbi_image_free($0) })
             
         } else if is16Bit {
             let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, channels)!
             defer { stbi_image_free(data) }
             
-            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha)
+            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension))
             
             for i in 0..<dataCount {
                 self.storage.data[i] = unormToFloat(data[i])
             }
+            
+            self.inferAlphaMode()
             
         } else {
             let data = stbi_load(url.path, &width, &height, &componentsPerPixel, channels)!
             defer { stbi_image_free(data) }
             
-            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha)
+            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension))
             
             for i in 0..<dataCount {
                 self.storage.data[i] = unormToFloat(data[i])
             }
+            
+            self.inferAlphaMode()
         }
     }
     
-    @available(*, deprecated, renamed: "init(fileAt:colorSpace:premultipliedAlpha:)")
-    public init(fileAt url: URL, colourSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
-        try self.init(fileAt: url, colorSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
+    
+    @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+        try self.init(fileAt: url, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
-    init(exrAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool = false) throws {
+    @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
+    public init(fileAt url: URL, colourSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+        try self.init(fileAt: url, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
+    }
+    
+    init(exrAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
         var header = EXRHeader()
         InitEXRHeader(&header)
         var image = EXRImage()
@@ -648,7 +771,7 @@ extension TextureData where T == Float {
             }
         }
         
-        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha)
+        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: "exr"))
         self.storage.data.initialize(repeating: 0.0)
         
         
@@ -669,38 +792,38 @@ extension TextureData where T == Float {
             
             if header.tiled != 0 {
                 for it in 0..<Int(image.num_tiles) {
-                    image.tiles![it].images.withMemoryRebound(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels)) { src in
-                        for j in 0..<header.tile_size_y {
-                            for i in 0..<header.tile_size_x {
-                                let ii =
-                                    image.tiles![it].offset_x * header.tile_size_x + i
-                                let jj =
-                                    image.tiles![it].offset_y * header.tile_size_y + j
-                                let idx = Int(ii + jj * image.width)
-                                
-                                // out of region check.
-                                if ii >= image.width || jj >= image.height {
-                                    continue;
-                                }
-                                let srcIdx = Int(i + j * header.tile_size_x)
-                                
-                                self.storage.data[self.channelCount * idx + channelIndex] = src[c][srcIdx]
+                    let src = UnsafeRawPointer(image.tiles![it].images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
+                    for j in 0..<header.tile_size_y {
+                        for i in 0..<header.tile_size_x {
+                            let ii =
+                                image.tiles![it].offset_x * header.tile_size_x + i
+                            let jj =
+                                image.tiles![it].offset_y * header.tile_size_y + j
+                            let idx = Int(ii + jj * image.width)
+                            
+                            // out of region check.
+                            if ii >= image.width || jj >= image.height {
+                                continue;
                             }
+                            let srcIdx = Int(i + j * header.tile_size_x)
+                            
+                            self.storage.data[self.channelCount * idx + channelIndex] = src[c][srcIdx]
                         }
                     }
                 }
             } else {
-                image.images.withMemoryRebound(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels)) { src in
-                    for y in 0..<self.height {
-                        for x in 0..<self.width {
-                            let i = y &* self.width &+ x
-                            self.storage.data[self.channelCount &* i + channelIndex] = src[c][i]
-                        }
+                let src = UnsafeRawPointer(image.images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
+                for y in 0..<self.height {
+                    for x in 0..<self.width {
+                        let i = y &* self.width &+ x
+                        self.storage.data[self.channelCount &* i + channelIndex] = src[c][i]
                     }
                 }
                 
             }
         }
+        
+        self.inferAlphaMode()
     }
     
     public mutating func convert(toColorSpace: TextureColorSpace) {
@@ -719,7 +842,7 @@ extension TextureData where T == Float {
     }
     
     public mutating func convertToPremultipliedAlpha() {
-        guard !self.premultipliedAlpha, self.channelCount == 4 else { return }
+        guard case .postmultiplied = self.alphaMode, self.channelCount == 4 else { return }
         self.ensureUniqueness()
         
         let sourceColorSpace = self.colorSpace
@@ -734,11 +857,11 @@ extension TextureData where T == Float {
         }
         
         self.convert(toColorSpace: sourceColorSpace)
-        self.premultipliedAlpha = true
+        self.alphaMode = .premultiplied
     }
     
     public mutating func convertToPostmultipliedAlpha() {
-        guard self.premultipliedAlpha, self.channelCount == 4 else { return }
+        guard case .premultiplied = self.alphaMode, self.channelCount == 4 else { return }
         self.ensureUniqueness()
         
         let sourceColorSpace = self.colorSpace
@@ -755,7 +878,7 @@ extension TextureData where T == Float {
         
         self.convert(toColorSpace: sourceColorSpace)
         
-        self.premultipliedAlpha = false
+        self.alphaMode = .postmultiplied
     }
     
     public var averageValue : SIMD4<Float> {

@@ -21,16 +21,16 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
     var queueCommandBufferIndex: UInt64 = 0
     let syncEvent: Backend.Event
        
-    let commandQueue: Backend.BackendQueue
+    let commandQueue: Backend.QueueImpl
        
     public let transientRegistryIndex: Int
     var frameGraphQueue: Queue
     
     var compactedResourceCommands = [CompactedResourceCommand<Backend.CompactedResourceCommandType>]()
        
-    public init(backend: Backend, capabilities: QueueCapabilities, inflightFrameCount: Int, transientRegistryIndex: Int) {
+    public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
-        self.frameGraphQueue = Queue(capabilities: capabilities)
+        self.frameGraphQueue = Queue()
         self.commandQueue = backend.makeQueue(frameGraphQueue: self.frameGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
         self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount)
@@ -82,7 +82,8 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
         
         var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, resourceUsages: resourceUsages, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
         self.commandGenerator.generateCommands(passes: passes, resourceUsages: resourceUsages, transientRegistry: self.resourceRegistry, frameCommandInfo: &frameCommandInfo)
-        self.commandGenerator.executePreFrameCommands(queue: self.frameGraphQueue, resourceMap: self.resourceMap, frameCommandInfo: &frameCommandInfo)
+        self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
+        self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
         backend.compactResourceCommands(queue: self.frameGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &self.compactedResourceCommands)
         
         let lastCommandBufferIndex = frameCommandInfo.commandBufferCount - 1
@@ -113,12 +114,15 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
                 let queueCBIndex = self.queueCommandBufferIndex
                 
                 self.frameGraphQueue.lastSubmittedCommand = queueCBIndex
+                self.frameGraphQueue.lastSubmissionTime = DispatchTime.now()
                 
                 commandBuffer.commit(onCompletion: { (commandBuffer) in
                     if let error = commandBuffer.error {
                         print("Error executing command buffer \(queueCBIndex): \(error)")
                     }
                     self.frameGraphQueue.lastCompletedCommand = queueCBIndex
+                    self.frameGraphQueue.lastCompletionTime = DispatchTime.now()
+                    
                     if cbIndex == 0 {
                         gpuStartTime = commandBuffer.gpuStartTime
                     }
@@ -143,10 +147,7 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
             }
             
             if commandBuffer == nil {
-                commandBuffer = Backend.CommandBuffer(backend: self.backend,
-                                                      queue: self.commandQueue,
-                                                      commandInfo: frameCommandInfo,
-                                                      textureUsages: self.commandGenerator.renderTargetTextureProperties,
+                commandBuffer = self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
                                                       resourceMap: resourceMap,
                                                       compactedResourceCommands: self.compactedResourceCommands)
             }

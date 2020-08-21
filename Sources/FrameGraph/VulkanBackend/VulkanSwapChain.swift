@@ -109,20 +109,20 @@ public class VulkanSwapChain : SwapChain {
         createInfo.presentMode = presentMode
         createInfo.clipped = true
         
-        let renderQueueIndex = device.queueFamilyIndex(capabilities: [.render], requiredCapability: .render)
-        let presentQueueIndex = self.presentQueue.familyIndex
-        let queueFamilyIndices = [ UInt32(renderQueueIndex), UInt32(presentQueueIndex) ]
+        let renderQueueIndices = device.queueFamilyIndices(matchingAnyOf: VK_QUEUE_GRAPHICS_BIT)
+        let presentQueueIndex = UInt32(self.presentQueue.familyIndex)
+        let queueFamilyIndices = renderQueueIndices + [presentQueueIndex]
         
         let sharingMode : VulkanSharingMode
-        if renderQueueIndex != presentQueueIndex {
-            sharingMode = .concurrent(queueFamilyIndices: [UInt32(renderQueueIndex), UInt32(presentQueueIndex)])
+        if !renderQueueIndices.contains(presentQueueIndex) {
+            sharingMode = .concurrent(queueFamilyIndices: queueFamilyIndices)
         } else {
             sharingMode = .exclusive
         }
         
         var swapChain : VkSwapchainKHR? = nil
         queueFamilyIndices.withUnsafeBufferPointer { queueFamilyIndices in
-            if renderQueueIndex != presentQueueIndex {
+            if !renderQueueIndices.contains(presentQueueIndex) {
                 createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT
                 createInfo.queueFamilyIndexCount = 2
                 createInfo.pQueueFamilyIndices = queueFamilyIndices.baseAddress
@@ -155,6 +155,7 @@ public class VulkanSwapChain : SwapChain {
             descriptor.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
             descriptor.sharingMode = sharingMode
             descriptor.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED // as per spec.
+            descriptor.storageMode = .private
             
             let image = VulkanImage(device: device, image: image, allocator: nil, allocation: nil, descriptor: descriptor)
             image.swapchainImageIndex = i

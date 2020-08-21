@@ -548,32 +548,31 @@ struct ColorBlendStateCreateInfo {
     let attachmentStates : FixedSizeBuffer<VkPipelineColorBlendAttachmentState>
     var info : VkPipelineColorBlendStateCreateInfo
     
-    init(descriptor: RenderPipelineDescriptor, renderTargetDescriptor: RenderTargetDescriptor) {
-        self.attachmentStates = FixedSizeBuffer(capacity: descriptor.blendStates.count, defaultValue: VkPipelineColorBlendAttachmentState())
+    init(descriptor: RenderPipelineDescriptor, renderTargetDescriptor: RenderTargetDescriptor, attachmentCount: Int) {
+        var disabledAttachment = VkPipelineColorBlendAttachmentState()
+        disabledAttachment.blendEnable = false
+        disabledAttachment.colorWriteMask = 0
+
+        self.attachmentStates = FixedSizeBuffer(capacity: attachmentCount, defaultValue: disabledAttachment)
         
         // Fill out attachment blend info
         for (i, attachment) in descriptor.blendStates.enumerated() {
-            let attachmentActive = renderTargetDescriptor.colorAttachments[i] != nil
+            guard renderTargetDescriptor.colorAttachments[i] != nil else { continue }
 
             var state = VkPipelineColorBlendAttachmentState()
 
-            if attachmentActive {
-                if let attachment = attachment {
-                    state.blendEnable = true
-                    state.srcColorBlendFactor = VkBlendFactor(attachment.sourceRGBBlendFactor)
-                    state.dstColorBlendFactor = VkBlendFactor(attachment.destinationRGBBlendFactor)
-                    state.colorBlendOp = VkBlendOp(attachment.rgbBlendOperation)
-                    state.srcAlphaBlendFactor = VkBlendFactor(attachment.sourceAlphaBlendFactor)
-                    state.dstAlphaBlendFactor = VkBlendFactor(attachment.destinationAlphaBlendFactor)
-                    state.alphaBlendOp = VkBlendOp(attachment.alphaBlendOperation)
-                } else {
-                    state.blendEnable = false
-                }
-                state.colorWriteMask = VkColorComponentFlags(VkColorComponentFlagBits(descriptor.writeMasks[i]))
+            if let attachment = attachment {
+                state.blendEnable = true
+                state.srcColorBlendFactor = VkBlendFactor(attachment.sourceRGBBlendFactor)
+                state.dstColorBlendFactor = VkBlendFactor(attachment.destinationRGBBlendFactor)
+                state.colorBlendOp = VkBlendOp(attachment.rgbBlendOperation)
+                state.srcAlphaBlendFactor = VkBlendFactor(attachment.sourceAlphaBlendFactor)
+                state.dstAlphaBlendFactor = VkBlendFactor(attachment.destinationAlphaBlendFactor)
+                state.alphaBlendOp = VkBlendOp(attachment.alphaBlendOperation)
             } else {
                 state.blendEnable = false
-                state.colorWriteMask = 0
             }
+            state.colorWriteMask = VkColorComponentFlags(VkColorComponentFlagBits(descriptor.writeMasks[i]))
             self.attachmentStates[i] = state
         }
         
@@ -733,7 +732,7 @@ extension VkAttachmentDescription {
     public init(pixelFormat: PixelFormat, renderTargetDescriptor: ColorAttachmentDescriptor, actions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
         self.init()
         self.flags = 0
-        self.format = VkFormat(pixelFormat: pixelFormat)
+        self.format = VkFormat(pixelFormat: pixelFormat)!
         self.samples = VK_SAMPLE_COUNT_1_BIT
         self.loadOp = actions.0
         self.storeOp = actions.1
@@ -746,7 +745,7 @@ extension VkAttachmentDescription {
     public init(pixelFormat: PixelFormat, renderTargetDescriptor: DepthAttachmentDescriptor, depthActions: (VkAttachmentLoadOp, VkAttachmentStoreOp), stencilActions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
         self.init()
         self.flags = 0
-        self.format = VkFormat(pixelFormat: pixelFormat)
+        self.format = VkFormat(pixelFormat: pixelFormat)!
         self.samples = VK_SAMPLE_COUNT_1_BIT
         self.loadOp = depthActions.0
         self.storeOp = depthActions.1
@@ -758,11 +757,11 @@ extension VkAttachmentDescription {
 }
 
 extension VkFormat {
-    init(pixelFormat: PixelFormat) {
+    init?(pixelFormat: PixelFormat) {
         switch pixelFormat {
         case .invalid:
             self = VK_FORMAT_UNDEFINED
-
+            
         case .r8Unorm:
             self = VK_FORMAT_R8_UNORM
         case .r8Snorm:
@@ -818,7 +817,7 @@ extension VkFormat {
         case .depth32Float_stencil8:
             self = VK_FORMAT_D32_SFLOAT_S8_UINT
         default:
-            fatalError("Unimplemented format conversion for PixelFormat \(pixelFormat).")
+            return nil
         }
     }
 }

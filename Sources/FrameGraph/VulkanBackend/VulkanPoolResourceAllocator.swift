@@ -32,14 +32,12 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
     private var imagesUsedThisFrame = [ResourceReference<VkImageReference>]()
     
     let numFrames : Int
-    let memoryUsage : VmaMemoryUsage
     private var currentIndex : Int = 0
     
-    init(device: VulkanDevice, allocator: VmaAllocator, memoryUsage: VmaMemoryUsage, numFrames: Int) {
+    init(device: VulkanDevice, allocator: VmaAllocator, numFrames: Int) {
         self.numFrames = numFrames
         self.device = device
         self.allocator = allocator
-        self.memoryUsage = memoryUsage
         self.buffers = [[ResourceReference<VkBufferReference>]](repeating: [], count: numFrames)
         self.images = [[ResourceReference<VkImageReference>]](repeating: [], count: numFrames)
     }
@@ -80,8 +78,7 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
         if let image = self.imageFitting(descriptor: descriptor) {
             return (image.0, [], image.1)
         } else {
-            var allocInfo = VmaAllocationCreateInfo()
-            allocInfo.usage = self.memoryUsage
+            var allocInfo = VmaAllocationCreateInfo(storageMode: descriptor.storageMode, cacheMode: descriptor.cacheMode)
             
             var image : VkImage? = nil
             var allocation : VmaAllocation? = nil
@@ -108,8 +105,7 @@ final class VulkanPoolResourceAllocator : VulkanImageAllocator, VulkanBufferAllo
         if let buffer = self.bufferFitting(descriptor: descriptor) {
             return (buffer.0, [], buffer.1)
         } else {
-            var allocInfo = VmaAllocationCreateInfo()
-            allocInfo.usage = self.memoryUsage
+            var allocInfo = VmaAllocationCreateInfo(storageMode: descriptor.storageMode, cacheMode: descriptor.cacheMode)
             
             var buffer : VkBuffer? = nil
             var allocation : VmaAllocation? = nil

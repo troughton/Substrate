@@ -532,7 +532,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
-    public func setArguments<A : ArgumentBufferEncodable>(_ arguments: A, at setIndex: Int) {
+    public func setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) {
         if A.self == NilSet.self {
             return
         }
@@ -1637,6 +1637,7 @@ public final class BlitCommandEncoder : CommandEncoder {
     }
     
     public func copy(from sourceBuffer: Buffer, sourceOffset: Int, sourceBytesPerRow: Int, sourceBytesPerImage: Int, sourceSize: Size, to destinationTexture: Texture, destinationSlice: Int, destinationLevel: Int, destinationOrigin: Origin, options: BlitOption = []) {
+        assert(sourceBuffer.length - sourceOffset >= sourceSize.height * sourceBytesPerRow)
         let commandOffset = self.nextCommandOffset
         
         resourceUsages.addResourceUsage(for: sourceBuffer, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
@@ -1679,7 +1680,7 @@ public final class BlitCommandEncoder : CommandEncoder {
     }
     
     public func generateMipmaps(for texture: Texture) {
-        resourceUsages.addResourceUsage(for: texture, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
+        resourceUsages.addResourceUsage(for: texture, commandIndex: self.nextCommandOffset, encoder: self, usageType: .mipGeneration, stages: .blit, inArgumentBuffer: false)
         
         commandRecorder.record(.generateMipmaps(texture))
     }

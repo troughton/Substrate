@@ -239,7 +239,7 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
         self.mtkView = mtkView
         if win.screen?.canRepresent(.p3) ?? false {
             mtkView.colorPixelFormat = .bgr10a2Unorm
-            mtkView.colorspace = CGColorSpace(name: CGColorSpace.genericRGBLinear)
+            mtkView.colorspace = CGColorSpace(name: CGColorSpace.linearSRGB)
         } else {
             mtkView.colorPixelFormat = .bgra8Unorm_srgb
         }

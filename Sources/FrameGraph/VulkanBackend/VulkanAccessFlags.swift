@@ -4,8 +4,7 @@ import FrameGraphCExtras
 
 extension ResourceUsageType {
 
-    public func imageLayout(isDepthOrStencil: Bool) -> VkImageLayout {
-
+    public func imageLayout(isDepthOrStencil: Bool) -> VkImageLayout? {
         switch self {
         case .read, .sampler, .inputAttachment:
             return isDepthOrStencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
@@ -19,8 +18,12 @@ extension ResourceUsageType {
             return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
         case .blitSynchronisation:
             return VK_IMAGE_LAYOUT_GENERAL
+        case .mipGeneration:
+            return .mipGeneration
+        case .unusedRenderTarget:
+            return nil
         default:
-            fatalError()
+            fatalError("Unknown image layout for usage \(self)")
         }
     }
     
@@ -48,13 +51,17 @@ extension ResourceUsageType {
         case .blitDestination:
             return VK_ACCESS_TRANSFER_WRITE_BIT
         case .blitSynchronisation:
-            return [VK_ACCESS_HOST_READ_BIT, VK_ACCESS_HOST_WRITE_BIT] 
+            return [VK_ACCESS_HOST_READ_BIT, VK_ACCESS_HOST_WRITE_BIT]
+        case .mipGeneration:
+            return [VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT]
         case .vertexBuffer:
             return VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT
         case .indexBuffer:
             return VK_ACCESS_INDEX_READ_BIT
         case .indirectBuffer:
             return VK_ACCESS_INDIRECT_COMMAND_READ_BIT
+        case .previousFrame: // Used for image layout transitions at the start of the frame
+            return []
         default:
             fatalError()
         }
@@ -90,10 +97,14 @@ extension ResourceUsageType {
             return VK_PIPELINE_STAGE_TRANSFER_BIT
         case .blitSynchronisation:
             return VK_PIPELINE_STAGE_HOST_BIT
+        case .mipGeneration:
+            return VK_PIPELINE_STAGE_TRANSFER_BIT
         case .vertexBuffer, .indexBuffer:
             return VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
         case .indirectBuffer:
             return VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT
+        case .previousFrame: // Used for image layout transitions at the start of the frame
+            return VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
         default:
             fatalError()
         }

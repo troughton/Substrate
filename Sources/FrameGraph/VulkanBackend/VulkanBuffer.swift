@@ -14,6 +14,8 @@ struct VulkanBufferDescriptor : Equatable {
     var size : VkDeviceSize
     var usageFlags : VkBufferUsageFlagBits
     var sharingMode : VulkanSharingMode
+    var storageMode: StorageMode
+    var cacheMode: CPUCacheMode
     
     init(_ descriptor: BufferDescriptor, usage: VkBufferUsageFlagBits, sharingMode: VulkanSharingMode) {
         assert(!usage.isEmpty, "Usage for buffer with descriptor \(descriptor) must not be empty.")
@@ -22,6 +24,8 @@ struct VulkanBufferDescriptor : Equatable {
         self.size = VkDeviceSize(descriptor.length)
         self.usageFlags = usage
         self.sharingMode = sharingMode
+        self.storageMode = descriptor.storageMode
+        self.cacheMode = descriptor.cacheMode
     }
     
     func withBufferCreateInfo(device: VulkanDevice, withInfo: (VkBufferCreateInfo) -> Void) {
@@ -60,9 +64,6 @@ class VulkanBuffer {
     let descriptor : VulkanBufferDescriptor
     
     var label : String? = nil
-    
-    var hasBeenHostUpdated = false
-    var isMapped = false // TODO: we should instead keep tracked of mapped ranges.
 
     init(device: VulkanDevice, buffer: VkBuffer, allocator: VmaAllocator, allocation: VmaAllocation, allocationInfo: VmaAllocationInfo, descriptor: VulkanBufferDescriptor) {
         self.device = device
@@ -73,17 +74,11 @@ class VulkanBuffer {
         self.descriptor = descriptor
     }
     
-    func map(range: Range<Int>) -> UnsafeMutableRawPointer {
-        var data : UnsafeMutableRawPointer? = nil
-        vmaMapMemory(self.allocator, self.allocation, &data).check()
-        self.hasBeenHostUpdated = true
-        self.isMapped = true
-        return data! + range.lowerBound
+    func contents(range: Range<Int>) -> UnsafeMutableRawPointer {
+        return self.allocationInfo.pMappedData! + range.lowerBound
     }
     
-    func unmapMemory(range: Range<Int>) {
-        assert(self.isMapped)
-
+    func didModifyRange(_ range: Range<Int>) {
         var memFlags = VkMemoryPropertyFlags()
         vmaGetMemoryTypeProperties(self.allocator, self.allocationInfo.memoryType, &memFlags);
         if !VkMemoryPropertyFlagBits(memFlags).contains(VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
@@ -94,16 +89,15 @@ class VulkanBuffer {
             memRange.size   = VkDeviceSize(range.count)
             vkFlushMappedMemoryRanges(self.device.vkDevice, 1, &memRange)
         }
-
-        vmaUnmapMemory(self.allocator, self.allocation)
-        self.isMapped = false
     }
     
     func fits(descriptor: VulkanBufferDescriptor) -> Bool {
         return self.descriptor.flags == descriptor.flags &&
                 self.descriptor.usageFlags.isSuperset(of: descriptor.usageFlags) &&
                 self.descriptor.sharingMode ~= descriptor.sharingMode && // TODO: check compatibility rather than equality.
-                self.descriptor.size >= descriptor.size
+                self.descriptor.size >= descriptor.size &&
+                self.descriptor.storageMode == descriptor.storageMode &&
+                self.descriptor.cacheMode == descriptor.cacheMode
     }
     
     deinit {

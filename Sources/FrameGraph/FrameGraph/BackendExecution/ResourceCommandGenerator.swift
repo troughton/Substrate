@@ -7,25 +7,6 @@
 
 import FrameGraphUtilities
 
-
-struct TextureUsageProperties {
-    var usage : TextureUsage
-    #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-    var canBeMemoryless : Bool
-    #endif
-    
-    init(usage: TextureUsage, canBeMemoryless: Bool = false) {
-        self.usage = usage
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-        self.canBeMemoryless = canBeMemoryless
-        #endif
-    }
-    
-    init(_ usage: TextureUsage) {
-        self.init(usage: usage, canBeMemoryless: false)
-    }
-}
-
 /// The value to wait for on the event associated with this FrameGraph context.
 struct ContextWaitEvent {
     var waitValue : UInt64 = 0
@@ -53,9 +34,9 @@ struct CompactedResourceCommand<T> : Comparable {
 enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
     
     // These commands mutate the ResourceRegistry and should be executed before render pass execution:
-    case materialiseBuffer(Buffer, usage: BufferUsage)
-    case materialiseTexture(Texture, usage: TextureUsageProperties)
-    case materialiseTextureView(Texture, usage: TextureUsageProperties)
+    case materialiseBuffer(Buffer)
+    case materialiseTexture(Texture)
+    case materialiseTextureView(Texture)
     case materialiseArgumentBuffer(_ArgumentBuffer)
     case materialiseArgumentBufferArray(_ArgumentBufferArray)
     case disposeResource(Resource, afterStages: RenderStages)
@@ -74,30 +55,33 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend>(resourceRegistry: Backend.TransientResourceRegistry, resourceMap: FrameResourceMap<Backend>, queue: Queue, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+    func execute<Backend: SpecificRenderBackend>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: FrameGraphContextImpl<Backend>, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+        let queue = context.frameGraphQueue
         let queueIndex = Int(queue.index)
+        let resourceMap = context.resourceMap
+        let resourceRegistry = context.resourceRegistry
         
         switch self {
-        case .materialiseBuffer(let buffer, let usage):
+        case .materialiseBuffer(let buffer):
             // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
-            _ = resourceRegistry.allocateBufferIfNeeded(buffer, usage: usage, forceGPUPrivate: !buffer._usesPersistentRegistry && buffer._deferredSliceActions.isEmpty)
+            _ = resourceRegistry.allocateBufferIfNeeded(buffer, forceGPUPrivate: !buffer._usesPersistentRegistry && buffer._deferredSliceActions.isEmpty)
             
             let waitEvent = buffer.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(buffer)] : resourceRegistry.bufferWaitEvents[buffer]
             
             waitEventValues[queueIndex] = max(waitEvent!.waitValue, waitEventValues[queueIndex])
             buffer.applyDeferredSliceActions()
             
-        case .materialiseTexture(let texture, let usage):
+        case .materialiseTexture(let texture):
             // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
-            _ = resourceRegistry.allocateTextureIfNeeded(texture, usage: usage, forceGPUPrivate: !texture._usesPersistentRegistry)
+            _ = resourceRegistry.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry)
             if let textureWaitEvent = (texture.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(texture)] : resourceRegistry.textureWaitEvents[texture]) {
                 waitEventValues[queueIndex] = max(textureWaitEvent.waitValue, waitEventValues[queueIndex])
             } else {
                 precondition(texture.flags.contains(.windowHandle))
             }
             
-        case .materialiseTextureView(let texture, let usage):
-            _ = resourceRegistry.allocateTextureView(texture, usage: usage, resourceMap: resourceMap)
+        case .materialiseTextureView(let texture):
+            _ = resourceRegistry.allocateTextureView(texture, resourceMap: resourceMap)
             
         case .materialiseArgumentBuffer(let argumentBuffer):
             let argBufferReference : Backend.ArgumentBufferReference
@@ -107,7 +91,7 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
                 argBufferReference = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
                 waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
-            Backend.fillArgumentBuffer(argumentBuffer, storage: argBufferReference, resourceMap: resourceMap)
+            Backend.fillArgumentBuffer(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
             
             
         case .materialiseArgumentBufferArray(let argumentBuffer):
@@ -118,8 +102,8 @@ enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
                 argBufferReference = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
                 waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
-            Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, resourceMap: resourceMap)
-            
+            Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
+    
         case .disposeResource(let resource, let afterStages):
             let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)
             if let buffer = resource.buffer {
@@ -210,11 +194,10 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     private var preFrameCommands = [PreFrameResourceCommand<Dependency>]()
     var commands = [FrameResourceCommand]()
     
-    var renderTargetTextureProperties = [Texture : TextureUsageProperties]()
     var commandEncoderDependencies = DependencyTable<Dependency?>(capacity: 1, defaultValue: nil)
     
     func processResourceResidency(resource: Resource, frameCommandInfo: FrameCommandInfo<Backend>) {
-        guard resource.type == .texture || Backend.requiresResourceResidencyTracking else { return }
+        guard Backend.requiresResourceResidencyTracking else { return }
         
         var resourceIsRenderTarget = false
         do {
@@ -285,7 +268,18 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                 }
             }
-            
+
+            #if canImport(Vulkan)
+            if Backend.self == VulkanBackend.self, resource.type == .texture, resource.flags.intersection([.historyBuffer, .persistent]) != [] {
+                // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
+                // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
+                // so that it can be inserted as a subpass dependency.
+                self.commands.append(FrameResourceCommand(command: 
+                    .memoryBarrier(Resource(resource), afterUsage: .previousFrame, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages), 
+                        index: firstUsage.type.isRenderTarget ? firstUsage.commandRange.lowerBound : 0))
+            }
+            #endif
+
             var readsSinceLastWrite = (firstUsage.isRead && !firstUsage.isWrite) ? [firstUsage] : []
             var previousWrite = firstUsage.isWrite ? firstUsage : nil
             
@@ -384,7 +378,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 resource.dispose() // This will dispose it in the FrameGraph persistent allocator, which will in turn call dispose in the resource registry at the end of the frame.
             }
             
-            #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+            #if !os(macOS) && !targetEnvironment(macCatalyst)
             var canBeMemoryless = false
             #else
             let canBeMemoryless = false
@@ -408,25 +402,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 
             } else if !resource.flags.contains(.persistent) || resource.flags.contains(.windowHandle) {
                 if let buffer = resource.buffer {
-                    var bufferUsage : BufferUsage = []
-                    
-                    if Backend.requiresBufferUsage {
-                        for usage in usages {
-                            switch usage.type {
-                            case .read:
-                                bufferUsage.formUnion(.shaderRead)
-                            case .write:
-                                bufferUsage.formUnion(.shaderWrite)
-                            case .readWrite:
-                                bufferUsage.formUnion([.shaderRead, .shaderWrite])
-                            default:
-                                break
-                            }
-                        }
-                    }
                     
                     if !historyBufferUseFrame {
-                        self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseBuffer(buffer, usage: bufferUsage), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
+                        self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseBuffer(buffer), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
                     }
                     
                     if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
@@ -434,66 +412,39 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                     
                 } else if let texture = resource.texture {
-                    var textureUsage : TextureUsage = []
                     
-                    for usage in usages {
-                        switch usage.type {
-                        case .read:
-                            textureUsage.formUnion(.shaderRead)
-                        case .write:
-                            textureUsage.formUnion(.shaderWrite)
-                        case .readWrite:
-                            textureUsage.formUnion([.shaderRead, .shaderWrite])
-                        case .readWriteRenderTarget, .writeOnlyRenderTarget, .inputAttachmentRenderTarget, .unusedRenderTarget:
-                            textureUsage.formUnion(.renderTarget)
-                        default:
-                            break
-                        }
-                    }
-                    
-                    if texture.descriptor.usageHint.contains(.pixelFormatView) {
-                        textureUsage.formUnion(.pixelFormatView)
-                    }
-                    
-                    #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+                    #if !os(macOS) && !targetEnvironment(macCatalyst)
                     canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
-                        && textureUsage == .renderTarget
+                        && usages.allSatisfy({ $0.type.isRenderTarget })
                         && !frameCommandInfo.storedTextures.contains(texture)
-                    let properties = TextureUsageProperties(usage: textureUsage, canBeMemoryless: canBeMemoryless)
-                    #else
-                    let properties = TextureUsageProperties(usage: textureUsage)
                     #endif
-                    
-                    assert(properties.usage != .unknown)
-                    
-                    if textureUsage.contains(.renderTarget) {
-                        self.renderTargetTextureProperties[texture] = properties
-                    }
                     
                     if !historyBufferUseFrame {
                         if texture.isTextureView {
-                            self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseTextureView(texture, usage: properties), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
+                            self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseTextureView(texture), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
                         } else {
-                            self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseTexture(texture, usage: properties), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
+                            self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseTexture(texture), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.lowerBound, order: .before))
                         }
                     }
                     
                     if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), encoderIndex: lastCommandEncoderIndex, index: disposalIndex, order: .after))
-                        
                     }
                 }
             }
             
             if resource.flags.intersection([.persistent, .historyBuffer]) != [] {
+                // Prepare the resource for being used this frame. For Vulkan, this means computing the image layouts.
+                if let buffer = resource.buffer {
+                    transientRegistry.prepareMultiframeBuffer(buffer)
+                } else if let texture = resource.texture {
+                    transientRegistry.prepareMultiframeTexture(texture)
+                }
+                
                 for queue in QueueRegistry.allQueues {
                     // TODO: separate out the wait index for the first read from the first write.
                     let waitIndex = resource[waitIndexFor: queue, accessType: previousWrite != nil ? .readWrite : .read]
                     self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.first!, order: .before))
-                }
-                
-                if resource.type == .texture, Backend.requiresTextureLayoutTransitions {
-                    self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: firstUsage.type, stages: firstUsage.stages, allowReordering: true), index: firstUsage.commandRange.first!))
                 }
 
                 if !resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised) {
@@ -530,15 +481,15 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             }
             
         }
-        
-        self.commands.sort()
     }
     
-    func executePreFrameCommands(queue: Queue, resourceMap: FrameResourceMap<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func executePreFrameCommands(context: FrameGraphContextImpl<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) {
         self.preFrameCommands.sort()
         for command in self.preFrameCommands {
             let commandBufferIndex = frameCommandInfo.commandEncoders[command.encoderIndex].commandBufferIndex
-            command.command.execute(resourceRegistry: resourceMap.transientRegistry, resourceMap: resourceMap, queue: queue,
+            command.command.execute(commandIndex: command.index,
+                                    commandGenerator: self,
+                                    context: context,
                                     encoderDependencies: &self.commandEncoderDependencies,
                                     waitEventValues: &frameCommandInfo.commandEncoders[command.encoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
         }
@@ -548,6 +499,5 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     
     func reset() {
         self.commands.removeAll(keepingCapacity: true)
-        self.renderTargetTextureProperties.removeAll(keepingCapacity: true)
     }
 }

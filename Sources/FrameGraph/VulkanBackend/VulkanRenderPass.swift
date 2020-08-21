@@ -14,8 +14,10 @@ class VulkanRenderPass {
     let device : VulkanDevice
     let vkPass : VkRenderPass
     let descriptor : VulkanRenderTargetDescriptor
+
+    let attachmentCount: Int
     
-    init(device: VulkanDevice, descriptor: VulkanRenderTargetDescriptor) {
+    init(device: VulkanDevice, descriptor: VulkanRenderTargetDescriptor, resourceMap: FrameResourceMap<VulkanBackend>) throws {
         self.device = device
         self.descriptor = descriptor
         
@@ -23,32 +25,54 @@ class VulkanRenderPass {
         createInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO
         
         var attachments = [VkAttachmentDescription]()
-        
-        var attachmentIndices = [RenderTargetAttachmentIndex : Int]()
+        var attachmentIndices = [RenderTargetAttachmentIndex: Int]()
+                
+        // Color attachments first, then depth-stencil
+        for (i, (colorAttachment, actions)) in zip(descriptor.descriptor.colorAttachments, descriptor.colorActions).enumerated() {
+            guard let colorAttachment = colorAttachment else { continue }
+            var attachmentDescription = VkAttachmentDescription(pixelFormat: colorAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: colorAttachment, actions: actions)
+            let (previousCommandIndex, nextCommandIndex) = descriptor.colorPreviousAndNextUsageCommands[i]
+            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(colorAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex)
+            attachmentDescription.initialLayout = initialLayout
+            attachmentDescription.finalLayout = finalLayout
+            attachmentIndices[.color(i)] = attachments.count
+            attachments.append(attachmentDescription)
+        }
         
         if let depthAttachment = descriptor.descriptor.depthAttachment {
             var attachmentDescription = VkAttachmentDescription(pixelFormat: depthAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: depthAttachment, depthActions: descriptor.depthActions, stencilActions: descriptor.stencilActions)
-            attachmentDescription.initialLayout = descriptor.initialLayouts[depthAttachment.texture] ?? VK_IMAGE_LAYOUT_UNDEFINED
-            attachmentDescription.finalLayout = descriptor.finalLayouts[depthAttachment.texture] ?? VK_IMAGE_LAYOUT_GENERAL // TODO: Can we do something smarter here than just a general layout?
+            let (previousCommandIndex, nextCommandIndex) = descriptor.depthPreviousAndNextUsageCommands
+            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(depthAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex)
+            attachmentDescription.initialLayout = initialLayout
+            attachmentDescription.finalLayout = finalLayout
             attachmentIndices[.depthStencil] = attachments.count
             attachments.append(attachmentDescription)
         } else {
             assert(descriptor.descriptor.stencilAttachment == nil, "Stencil attachments without depth are currently unimplemented.")
         }
         
-        for (i, (colorAttachment, actions)) in zip(descriptor.descriptor.colorAttachments, descriptor.colorActions).enumerated() {
-            guard let colorAttachment = colorAttachment else { continue }
-            var attachmentDescription = VkAttachmentDescription(pixelFormat: colorAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: colorAttachment, actions: actions)
-            attachmentDescription.initialLayout = descriptor.initialLayouts[colorAttachment.texture] ?? VK_IMAGE_LAYOUT_UNDEFINED
-            attachmentDescription.finalLayout = descriptor.finalLayouts[colorAttachment.texture] ?? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR // FIXME: is this generally correct?
-            attachmentIndices[.color(i)] = attachments.count
-            attachments.append(attachmentDescription)
-        }
-        
         var subpasses = [VkSubpassDescription]()
-        let attachmentReferences = ExpandingBuffer<VkAttachmentReference>(initialCapacity: 24)
-        let preserveAttachmentIndices = ExpandingBuffer<UInt32>()
         
+        // Compute the attachment count in advance so we don't resize the attachment reference buffers.
+        var attachmentReferenceCount = 0
+        var preserveAttachmentCount = 0
+
+        do {
+            var previousSubpass : VulkanSubpass? = nil
+            for subpass in descriptor.subpasses {
+                if subpass === previousSubpass { continue }
+                defer { previousSubpass = subpass }
+
+                attachmentReferenceCount += (subpass.descriptor.depthAttachment != nil || subpass.descriptor.stencilAttachment != nil) ? 1 : 0
+                attachmentReferenceCount += subpass.descriptor.colorAttachments.count
+                attachmentReferenceCount += subpass.inputAttachments.count
+                preserveAttachmentCount += subpass.preserveAttachments.count
+            }
+        }
+
+        let attachmentReferences = ExpandingBuffer<VkAttachmentReference>(initialCapacity: attachmentReferenceCount)
+        let preserveAttachmentIndices = ExpandingBuffer<UInt32>(initialCapacity: preserveAttachmentCount)
+
         var previousSubpass : VulkanSubpass? = nil
         for subpass in descriptor.subpasses {
             if subpass === previousSubpass { continue }
@@ -56,12 +80,14 @@ class VulkanRenderPass {
             
             var subpassDescription = VkSubpassDescription()
             subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS
-            
-            if subpass.descriptor.depthAttachment != nil {
+
+            if subpass.descriptor.depthAttachment != nil || subpass.descriptor.stencilAttachment != nil {
                 let layout = subpass.inputAttachments.contains(.depthStencil) ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                subpassDescription.pDepthStencilAttachment = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferences.count))
                 attachmentReferences.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[.depthStencil]!), layout: layout))
             }
             
+            subpassDescription.pColorAttachments = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferences.count))
             for (i, colorAttachment) in subpass.descriptor.colorAttachments.enumerated() {
                 if colorAttachment != nil {
                     let layout = subpass.inputAttachments.contains(.color(i)) ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
@@ -72,6 +98,7 @@ class VulkanRenderPass {
             }
             subpassDescription.colorAttachmentCount = UInt32(subpass.descriptor.colorAttachments.count)
             
+            subpassDescription.pInputAttachments = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferences.count))
             for inputAttachment in subpass.inputAttachments {
                 let layout : VkImageLayout
                 switch inputAttachment {
@@ -84,6 +111,7 @@ class VulkanRenderPass {
             }
             subpassDescription.inputAttachmentCount = UInt32(subpass.inputAttachments.count)
             
+            subpassDescription.pPreserveAttachments = UnsafePointer(preserveAttachmentIndices.buffer?.advanced(by: preserveAttachmentIndices.count))
             for preserveAttachment in subpass.preserveAttachments {
                 preserveAttachmentIndices.append(UInt32(attachmentIndices[preserveAttachment]!))
             }
@@ -91,31 +119,10 @@ class VulkanRenderPass {
             
             subpasses.append(subpassDescription)
         }
+        assert(attachmentReferenceCount == attachmentReferences.count)
+        assert(preserveAttachmentCount == preserveAttachmentIndices.count)
         
-        var attachmentReferencesIndex = 0
-        var preserveAttachmentsIndex = 0
-        for i in 0..<subpasses.count { // Need to do this in a second loop to ensure the ExpandingBuffers' backing storage doesn't get reallocated by a resize.
-            // FIXME: All of the 'UnsafePointer(bitPattern: 0x4)'s are to work around a miscompile. They should be removed once the bug is fixed.
-
-            if descriptor.subpasses[i].descriptor.depthAttachment != nil {
-                subpasses[i].pDepthStencilAttachment = UnsafePointer(bitPattern: 0x4)
-                subpasses[i].pDepthStencilAttachment = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferencesIndex))
-                attachmentReferencesIndex += 1
-            }
-            
-            subpasses[i].pColorAttachments = UnsafePointer(bitPattern: 0x4)
-            subpasses[i].pColorAttachments = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferencesIndex))
-            attachmentReferencesIndex += Int(subpasses[i].colorAttachmentCount)
-            
-            subpasses[i].pInputAttachments = UnsafePointer(bitPattern: 0x4)
-            subpasses[i].pInputAttachments = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferencesIndex))
-            attachmentReferencesIndex += Int(subpasses[i].inputAttachmentCount)
-            
-            subpasses[i].pPreserveAttachments = UnsafePointer(bitPattern: 0x4)
-            subpasses[i].pPreserveAttachments = UnsafePointer(preserveAttachmentIndices.buffer.advanced(by: preserveAttachmentsIndex))
-            preserveAttachmentsIndex += Int(subpasses[i].preserveAttachmentCount)
-        }
-        
+        self.attachmentCount = attachments.count
         
         var renderPass : VkRenderPass? = nil
         

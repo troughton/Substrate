@@ -332,10 +332,10 @@ extension ExpandingBuffer where Element == UInt8 {
     @inlinable
     public subscript<T>(index: Int, as type: T.Type) -> T {
         get {
-            return self.buffer.unsafelyUnwrapped.advanced(by: index * MemoryLayout<T>.stride).withMemoryRebound(to: T.self, capacity: 1, { return $0.pointee })
+            return UnsafeRawPointer(self.buffer.unsafelyUnwrapped).load(fromByteOffset: index * MemoryLayout<T>.stride, as: T.self)
         }
         set {
-            self.buffer.unsafelyUnwrapped.advanced(by: index * MemoryLayout<T>.stride).withMemoryRebound(to: T.self, capacity: 1, { $0.pointee = newValue })
+            UnsafeMutableRawPointer(self.buffer.unsafelyUnwrapped).storeBytes(of: newValue, toByteOffset: index * MemoryLayout<T>.stride, as: T.self)
         }
     }
     

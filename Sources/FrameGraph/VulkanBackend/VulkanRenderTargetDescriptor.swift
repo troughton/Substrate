@@ -60,16 +60,16 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var colorActions : [(VkAttachmentLoadOp, VkAttachmentStoreOp)] = []
     var depthActions : (VkAttachmentLoadOp, VkAttachmentStoreOp) = (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE)
     var stencilActions : (VkAttachmentLoadOp, VkAttachmentStoreOp) = (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE)
-    
+    var colorPreviousAndNextUsageCommands : [(previous: Int, next: Int)] = []
+    var depthPreviousAndNextUsageCommands = (previous: -1, next: -1)
+    var stencilPreviousAndNextUsageCommands = (previous: -1, next: -1)
+
     var clearColors: [VkClearColorValue] = []
     var clearDepth: Double = 0.0
     var clearStencil: UInt32 = 0
 
     var subpasses = [VulkanSubpass]()
     private(set) var dependencies = [VkSubpassDependency]()
-    
-    var initialLayouts = [Texture : VkImageLayout]()
-    var finalLayouts = [Texture : VkImageLayout]()
     
     init(renderPass: RenderPassRecord) {
         let drawRenderPass = renderPass.pass as! DrawRenderPass
@@ -187,16 +187,16 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     func tryMerge(withPass passRecord: RenderPassRecord) -> Bool {
         let pass = passRecord.pass as! DrawRenderPass
         
-        if pass.renderTargetDescriptor.colorAttachments.count != self.descriptor.colorAttachments.count {
-            return false // The render targets must be using the same AttachmentIdentifier and therefore have the same maximum attachment count.
+        if pass.renderTargetDescriptor.size != self.descriptor.size {
+            return false // The render targets must be the same size.
         }
         
         var newDescriptor = descriptor
-        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: pass.renderTargetDescriptor.colorAttachments.count - descriptor.colorAttachments.count))
+        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: max(pass.renderTargetDescriptor.colorAttachments.count - descriptor.colorAttachments.count, 0)))
         
         var mergeResult = MergeResult.identical
         
-        for i in 0..<newDescriptor.colorAttachments.count {
+        for i in 0..<min(newDescriptor.colorAttachments.count, pass.renderTargetDescriptor.colorAttachments.count) {
             switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: pass.renderTargetDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
             case .identical:
                 break
@@ -226,12 +226,18 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
         
         switch mergeResult {
-        case .identical:
+        case .identical, .compatible:
             self.subpasses.append(self.subpasses.last!) // They can share the same subpass.
         case .incompatible:
             return false
-        case .compatible:
-            self.subpasses.append(VulkanSubpass(descriptor: newDescriptor, index: self.subpasses.last!.index + 1))
+        // case .compatible: // TODO: correctly handle multiple subpasses.
+        //     let lastSubpassIndex = self.subpasses.last!.index
+        //     self.subpasses.append(VulkanSubpass(descriptor: newDescriptor, index: lastSubpassIndex + 1))
+        //     var dependency = VkSubpassDependency()
+        //     dependency.srcSubpass = UInt32(lastSubpassIndex)
+        //     dependency.dstSubpass = dependency.srcSubpass + 1
+        //     // No barriers needed for now.
+        //     self.addDependency(dependency)
         }
         
         if newDescriptor.visibilityResultBuffer != nil && pass.renderTargetDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
@@ -259,7 +265,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
     }
     
-    private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, attachmentIndex: RenderTargetAttachmentIndex, resourceUsages: ResourceUsages, loadAction: VkAttachmentLoadOp, storedTextures: inout [Texture]) -> (VkAttachmentLoadOp, VkAttachmentStoreOp) {
+    private func processLoadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, attachmentIndex: RenderTargetAttachmentIndex, resourceUsages: ResourceUsages, loadAction: VkAttachmentLoadOp, storedTextures: inout [Texture]) {
         // Logic for usages:
         //
         //
@@ -289,15 +295,22 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         var currentRenderPassIndex = renderPassRange.lowerBound
         
         var isFirstLocalUsage = true
+
+        var lastUsageBeforeIndex = -1
+        var firstUsageAfterIndex = -1
         
         while let usage = usageIterator.next() {
             if !usage.renderPassRecord.isActive { continue }
             
             if usage.renderPassRecord.passIndex < renderPassRange.lowerBound {
                 isFirstUsage = false
+                lastUsageBeforeIndex = usage.commandRange.last!
                 continue
             }
             if usage.renderPassRecord.passIndex >= renderPassRange.upperBound {
+                if firstUsageAfterIndex < 0 {
+                    firstUsageAfterIndex = usage.commandRange.first!
+                }
                 if usage.isRead || (usage.type.isRenderTarget && isDepthStencil) {
                     // Using a depth texture as an attachment also implies reading from it.
                     isLastUsage = false
@@ -341,22 +354,34 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             storedTextures.append(attachment.texture)
         }
         
-        return (loadAction, storeAction)
+        switch attachmentIndex {
+        case .color(let index):
+            self.colorActions[index] = (loadAction, storeAction)
+            self.colorPreviousAndNextUsageCommands[index] = (lastUsageBeforeIndex, firstUsageAfterIndex)
+        case .depthStencil where attachment is DepthAttachmentDescriptor:
+            self.depthActions = (loadAction, storeAction)
+            self.depthPreviousAndNextUsageCommands = (lastUsageBeforeIndex, firstUsageAfterIndex)
+        case .depthStencil:
+            self.stencilActions = (loadAction, storeAction)
+            self.stencilPreviousAndNextUsageCommands = (lastUsageBeforeIndex, firstUsageAfterIndex)
+        }
     }
     
     func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture]) {
         // Compute load and store actions for all attachments.
-        self.colorActions = self.descriptor.colorAttachments.enumerated().map { (i, attachment) in
-            guard let attachment = attachment else { return (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE) }
-            return self.loadAndStoreActions(for: attachment, attachmentIndex: .color(i), resourceUsages: resourceUsages, loadAction: self.colorActions[i].0, storedTextures: &storedTextures)
+        self.colorActions = .init(repeating: (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE), count: self.descriptor.colorAttachments.count)
+        self.colorPreviousAndNextUsageCommands = .init(repeating: (-1, -1), count: self.descriptor.colorAttachments.count)
+        for (i, attachment) in self.descriptor.colorAttachments.enumerated() {
+            guard let attachment = attachment else { continue }
+            self.processLoadAndStoreActions(for: attachment, attachmentIndex: .color(i), resourceUsages: resourceUsages, loadAction: self.colorActions[i].0, storedTextures: &storedTextures)
         }
         
         if let depthAttachment = self.descriptor.depthAttachment {
-            self.depthActions = self.loadAndStoreActions(for: depthAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, loadAction: self.depthActions.0, storedTextures: &storedTextures)
+            self.processLoadAndStoreActions(for: depthAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, loadAction: self.depthActions.0, storedTextures: &storedTextures)
         }
         
         if let stencilAttachment = self.descriptor.stencilAttachment {
-            self.stencilActions = self.loadAndStoreActions(for: stencilAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, loadAction: self.stencilActions.0, storedTextures: &storedTextures)
+            self.processLoadAndStoreActions(for: stencilAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, loadAction: self.stencilActions.0, storedTextures: &storedTextures)
         }
     }
 }

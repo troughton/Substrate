@@ -74,7 +74,7 @@ public class SDLMetalWindow : SDLWindow {
         
         if view.window?.screen?.canRepresent(.p3) ?? false {
             metalLayer.pixelFormat = .bgr10a2Unorm
-            metalLayer.colorspace = CGColorSpace(name: CGColorSpace.genericRGBLinear)
+            metalLayer.colorspace = CGColorSpace(name: CGColorSpace.linearSRGB)
         } else {
             metalLayer.pixelFormat = .bgra8Unorm_srgb
         }

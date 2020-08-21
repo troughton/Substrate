@@ -26,7 +26,7 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     typealias CompactedResourceCommandType = VulkanCompactedResourceCommandType
     typealias Event = VkSemaphore
-    typealias BackendQueue = VulkanDeviceQueue
+    typealias BackendQueue = VulkanQueue
     typealias InterEncoderDependencyType = FineDependency
     typealias CommandBuffer = VulkanCommandBuffer
     
@@ -70,13 +70,13 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     public func materialisePersistentTexture(_ texture: Texture) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateTexture(texture, usage: TextureUsageProperties(usage: texture.descriptor.usageHint)) != nil
+            return self.resourceRegistry.allocateTexture(texture) != nil
         }
     }
     
     public func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateBuffer(buffer, usage: buffer.descriptor.usageHint) != nil
+            return self.resourceRegistry.allocateBuffer(buffer) != nil
         }
     }
     
@@ -84,14 +84,14 @@ public final class VulkanBackend : SpecificRenderBackend {
         let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
         let buffer = bufferReference.buffer
         
-        return buffer.map(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
+        return buffer.contents(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
     public func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         if range.isEmpty { return }
         let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
         let buffer = bufferReference.buffer
-        buffer.unmapMemory(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
+        buffer.didModifyRange((range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
     public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
@@ -126,7 +126,9 @@ public final class VulkanBackend : SpecificRenderBackend {
         }
     }
     
-    public var isDepth24Stencil8PixelFormatSupported: Bool = false // TODO: query device capabilities for this
+    public func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
+        return device.physicalDevice.supportsPixelFormat(pixelFormat)
+    }
     
     public var hasUnifiedMemory: Bool {
         return false // TODO: Retrieve this from the device.
@@ -219,20 +221,12 @@ public final class VulkanBackend : SpecificRenderBackend {
     static var requiresResourceResidencyTracking: Bool {
         return false
     }
-    
-    static var requiresBufferUsage: Bool {
-        return true
-    }
 
-    static var requiresTextureLayoutTransitions: Bool {
-        return true
+    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
+        storage.encodeArguments(from: argumentBuffer, commandIndex: firstUseCommandIndex, resourceMap: resourceMap)
     }
     
-    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
-        storage.encodeArguments(from: argumentBuffer, resourceMap: resourceMap)
-    }
-    
-    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: VulkanArgumentBuffer, resourceMap: FrameResourceMap<VulkanBackend>) {
+    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
         fatalError()
     }
     
@@ -240,8 +234,8 @@ public final class VulkanBackend : SpecificRenderBackend {
         return VulkanTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
     }
     
-    func makeQueue(frameGraphQueue: Queue) -> VulkanDeviceQueue {
-        return self.device.deviceQueue(capabilities: frameGraphQueue.capabilities, requiredCapability: frameGraphQueue.capabilities)
+    func makeQueue(frameGraphQueue: Queue) -> VulkanQueue {
+        return VulkanQueue(backend: self, device: self.device)
     }
     
     func makeSyncEvent(for queue: Queue) -> Event {

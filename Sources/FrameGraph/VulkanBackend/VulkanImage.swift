@@ -55,6 +55,29 @@ extension VkImageSubresourceRange : Hashable {
     }
 }
 
+
+extension VkImageLayout {
+    /// A special case VkImageLayout, representing, on entry, `_TRANSFER_SRC` for the top-most mip and `_UNDEFINED` for the other mips,
+    /// and `SHADER_READ_ONLY_OPTIMAL` on exit.
+    static var mipGeneration: VkImageLayout {
+        return VkImageLayout(rawValue: VkImageLayout.RawValue.max - 1)
+    }
+    
+    var beforeOperation: VkImageLayout {
+        if case .mipGeneration = self {
+            return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+        }
+        return self
+    }
+    
+    var afterOperation: VkImageLayout {
+        if case .mipGeneration = self {
+            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        }
+        return self
+    }
+}
+
 class VulkanImage {
     public let device : VulkanDevice
     
@@ -64,6 +87,11 @@ class VulkanImage {
         public var format: VkFormat
         public var components: VkComponentMapping
         public var subresourceRange: VkImageSubresourceRange
+    }
+    
+    struct LayoutState {
+        var commandRange: Range<Int>
+        var layout: VkImageLayout
     }
     
     let vkImage : VkImage
@@ -78,9 +106,7 @@ class VulkanImage {
     var defaultImageView : VulkanImageView! = nil
     var views = [ViewDescriptor : VulkanImageView]()
     
-    var layout : VkImageLayout
-    var lastUsageType: ResourceUsageType? = nil
-    var lastUsageStages: RenderStages = .cpuBeforeRender
+    var frameLayouts: [LayoutState]
 
     init(device: VulkanDevice, image: VkImage, allocator: VmaAllocator?, allocation: VmaAllocation?, descriptor: VulkanImageDescriptor) {
         self.device = device
@@ -88,7 +114,7 @@ class VulkanImage {
         self.allocator = allocator
         self.allocation = allocation
         self.descriptor = descriptor
-        self.layout = descriptor.initialLayout
+        self.frameLayouts = [LayoutState(commandRange: -1..<0, layout: descriptor.initialLayout)]
         
         do {
             var createInfo = VkImageViewCreateInfo()
@@ -150,6 +176,63 @@ class VulkanImage {
     
     func matches(descriptor: VulkanImageDescriptor) -> Bool {
         return self.descriptor.matches(descriptor: descriptor)
+    }
+    
+    func computeFrameLayouts(usages: ResourceUsagesList, preserveLastLayout: Bool) {
+        let lastLayout = self.frameLayouts.last!
+        
+        self.frameLayouts.removeAll(keepingCapacity: true)
+        self.frameLayouts.append(LayoutState(commandRange: -1..<0, layout: preserveLastLayout ? lastLayout.layout.afterOperation : VK_IMAGE_LAYOUT_UNDEFINED))
+        assert(self.frameInitialLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+        
+        let isDepthOrStencil = self.descriptor.allAspects.intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != []
+        
+        for usage in usages {
+            let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil) ?? self.frameLayouts.last!.layout.afterOperation // Preserve the last layout if the usage doesn't require a specific layout
+            // Find the insertion location (since reads may be unordered in the usages list).
+            let insertionIndex = self.frameLayouts.firstIndex(where: { $0.commandRange.lowerBound > usage.commandRange.lowerBound }) ?? self.frameLayouts.endIndex
+            self.frameLayouts.insert(LayoutState(commandRange: usage.commandRange, layout: layout), at: insertionIndex)
+        }
+    }
+
+    var frameInitialLayout: VkImageLayout {
+        return self.frameLayouts.first!.layout
+    }
+    
+    func layout(commandIndex: Int) -> VkImageLayout {
+        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) })?.layout else {
+            preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image; layouts are \(self.frameLayouts)")
+        }
+        return layout
+    }
+
+    func renderPassLayouts(previousCommandIndex: Int, nextCommandIndex: Int) -> (VkImageLayout, VkImageLayout) {
+        var initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        var finalLayout = self.swapchainImageIndex != nil ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED
+
+        for layout in self.frameLayouts {
+            if previousCommandIndex >= 0, layout.commandRange.contains(previousCommandIndex) {
+                initialLayout = layout.layout.afterOperation
+            }
+            if nextCommandIndex >= 0, layout.commandRange.contains(nextCommandIndex) {
+                finalLayout = layout.layout.beforeOperation
+                break
+            }
+        }
+        if finalLayout == VK_IMAGE_LAYOUT_UNDEFINED {
+            // Assume we should be in the first layout used this frame for next frame
+            finalLayout = self.frameLayouts.first(where: { $0.layout != VK_IMAGE_LAYOUT_UNDEFINED })!.layout.afterOperation
+        }
+
+        return (initialLayout, finalLayout)
+    }
+    
+    var previousFrameLayout: VkImageLayout {
+        return self.frameLayouts[0].layout
+    }
+    
+    var firstLayoutInFrame: VkImageLayout {
+        return self.frameLayouts[1].layout
     }
     
     subscript(viewDescriptor: ViewDescriptor) -> VulkanImageView {
@@ -229,6 +312,8 @@ struct VulkanImageDescriptor : Equatable {
     var usage : VkImageUsageFlagBits = []
     var sharingMode : VulkanSharingMode = .exclusive
     var initialLayout : VkImageLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    var storageMode: StorageMode = .private
+    var cacheMode: CPUCacheMode = .defaultCache
     
     public init() {
         
@@ -239,7 +324,7 @@ struct VulkanImageDescriptor : Equatable {
         
         self.imageType = VkImageType(descriptor.textureType)
         self.imageViewType = VkImageViewType(descriptor.textureType)
-        self.format = VkFormat(pixelFormat: descriptor.pixelFormat)
+        self.format = VkFormat(pixelFormat: descriptor.pixelFormat)!
         self.extent = VkExtent3D(width: UInt32(descriptor.width), height: UInt32(descriptor.height), depth: UInt32(descriptor.depth))
         self.mipLevels = UInt32(descriptor.mipmapLevelCount)
         self.arrayLayers = UInt32(descriptor.arrayLength)
@@ -248,6 +333,8 @@ struct VulkanImageDescriptor : Equatable {
         self.usage = usage
         self.sharingMode = sharingMode
         self.initialLayout = initialLayout
+        self.storageMode = descriptor.storageMode
+        self.cacheMode = descriptor.cacheMode
 
         if .typeCube == descriptor.textureType || .typeCubeArray == descriptor.textureType {
             self.flags = .cubeCompatible
@@ -257,8 +344,16 @@ struct VulkanImageDescriptor : Equatable {
         }
     }
     
-    public var allAspects : [VkImageAspectFlags] {
-        return [VkImageAspectFlags(VK_IMAGE_ASPECT_COLOR_BIT)] // FIXME: wrong for depth-stencil. Affects buffer -> image copies
+    public var allAspects : VkImageAspectFlagBits {
+        if self.format.isDepthStencil {
+            return [VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]
+        } else if self.format.isDepth {
+            return VK_IMAGE_ASPECT_DEPTH_BIT
+        } else if self.format.isStencil {
+            return VK_IMAGE_ASPECT_STENCIL_BIT
+        } else {
+            return VK_IMAGE_ASPECT_COLOR_BIT
+        }
     }
     
     public func matches(descriptor: VulkanImageDescriptor) -> Bool {
@@ -272,7 +367,9 @@ struct VulkanImageDescriptor : Equatable {
             self.samples == descriptor.samples &&
             self.tiling == descriptor.tiling &&
             self.usage.isSuperset(of: descriptor.usage) &&
-            self.sharingMode ~= descriptor.sharingMode
+            self.sharingMode ~= descriptor.sharingMode &&
+            self.storageMode == descriptor.storageMode &&
+            self.cacheMode == descriptor.cacheMode
     }
     
     func withImageCreateInfo(device: VulkanDevice, withInfo: (VkImageCreateInfo) -> Void) {

@@ -7,57 +7,50 @@
 
 import FrameGraphUtilities
 import CAtomics
-
-public struct QueueCapabilities : OptionSet {
-    public let rawValue: Int
-    
-    public init(rawValue: Int) {
-        self.rawValue = rawValue
-    }
-    
-    public static let render = QueueCapabilities(rawValue: 1 << 0)
-    public static let compute = QueueCapabilities(rawValue: 1 << 1)
-    public static let blit = QueueCapabilities(rawValue: 1 << 2)
-    
-    public static var all : QueueCapabilities = [.render, .compute, .blit]
-}
+import Dispatch
 
 public final class QueueRegistry {
     public static let instance = QueueRegistry()
     
     public static let maxQueues = UInt8.bitWidth
     
-    public let queueCapabilities : UnsafeMutablePointer<QueueCapabilities>
     public let lastSubmittedCommands : UnsafeMutablePointer<AtomicUInt64>
     public let lastCompletedCommands : UnsafeMutablePointer<AtomicUInt64>
+    public let lastSubmissionTimes : UnsafeMutablePointer<AtomicUInt64>
+    public let lastCompletionTimes : UnsafeMutablePointer<AtomicUInt64>
     
     var allocatedQueues : UInt8 = 0
     var lock = SpinLock()
     
     public init() {
-        self.queueCapabilities = .allocate(capacity: Self.maxQueues)
         self.lastSubmittedCommands = .allocate(capacity: Self.maxQueues)
         self.lastCompletedCommands = .allocate(capacity: Self.maxQueues)
+        self.lastSubmissionTimes = .allocate(capacity: Self.maxQueues)
+        self.lastCompletionTimes = .allocate(capacity: Self.maxQueues)
     }
     
     deinit {
         self.lastSubmittedCommands.deallocate()
         self.lastCompletedCommands.deallocate()
+        self.lastSubmissionTimes.deallocate()
+        self.lastCompletionTimes.deallocate()
     }
     
     public static var allQueues : IteratorSequence<QueueIterator> {
         return IteratorSequence(QueueIterator())
     }
     
-    public func allocate(capabilities: QueueCapabilities) -> UInt8 {
+    public func allocate() -> UInt8 {
         return self.lock.withLock {
             for i in 0..<self.allocatedQueues.bitWidth {
                 if self.allocatedQueues & (1 << i) == 0 {
                     self.allocatedQueues |= (1 << i)
                     
-                    self.queueCapabilities.advanced(by: i).initialize(to: capabilities)
                     CAtomicsStore(self.lastSubmittedCommands.advanced(by: i), 0, .relaxed)
                     CAtomicsStore(self.lastCompletedCommands.advanced(by: i), 0, .relaxed)
+                    
+                    CAtomicsStore(self.lastSubmissionTimes.advanced(by: i), 0, .relaxed)
+                    CAtomicsStore(self.lastCompletionTimes.advanced(by: i), 0, .relaxed)
                     
                     return UInt8(i)
                 }
@@ -102,16 +95,12 @@ public struct Queue : Equatable {
         self.index = index
     }
     
-    init(capabilities: QueueCapabilities) {
-        self.index = QueueRegistry.instance.allocate(capabilities: capabilities)
+    init() {
+        self.index = QueueRegistry.instance.allocate()
     }
     
     func dispose() {
         QueueRegistry.instance.dispose(self)
-    }
-    
-    public var capabilities: QueueCapabilities {
-        return QueueRegistry.instance.queueCapabilities[Int(self.index)]
     }
     
     public internal(set) var lastSubmittedCommand : UInt64 {
@@ -124,6 +113,18 @@ public struct Queue : Equatable {
         }
     }
     
+    /// The time at which the last command was submitted.
+    public internal(set) var lastSubmissionTime : DispatchTime {
+        get {
+            let time = CAtomicsLoad(QueueRegistry.instance.lastSubmissionTimes.advanced(by: Int(self.index)), .relaxed)
+            return DispatchTime(uptimeNanoseconds: time)
+        }
+        nonmutating set {
+            assert(self.lastSubmissionTime < newValue)
+            CAtomicsStore(QueueRegistry.instance.lastSubmissionTimes.advanced(by: Int(self.index)), newValue.uptimeNanoseconds, .relaxed)
+        }
+    }
+    
     public internal(set) var lastCompletedCommand : UInt64 {
         get {
             return CAtomicsLoad(QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), .relaxed)
@@ -132,6 +133,19 @@ public struct Queue : Equatable {
             assert(self.lastSubmittedCommand >= newValue)
             assert(self.lastCompletedCommand < newValue)
             CAtomicsStore(QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), newValue, .relaxed)
+        }
+    }
+    
+    /// The time at which the last command was completed.
+    public internal(set) var lastCompletionTime : DispatchTime {
+        get {
+            let time = CAtomicsLoad(QueueRegistry.instance.lastCompletionTimes.advanced(by: Int(self.index)), .relaxed)
+            return DispatchTime(uptimeNanoseconds: time)
+        }
+        nonmutating set {
+            assert(self.lastSubmissionTime < newValue)
+            assert(self.lastCompletionTime < newValue)
+            CAtomicsStore(QueueRegistry.instance.lastCompletionTimes.advanced(by: Int(self.index)), newValue.uptimeNanoseconds, .relaxed)
         }
     }
     

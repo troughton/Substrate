@@ -90,7 +90,7 @@ extension String : FunctionArgumentKey {
 public protocol ArgumentBufferEncodable {
     static var activeStages : RenderStages { get }
     
-    func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?)
+    mutating func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?)
 }
 
 public struct _ArgumentBuffer : ResourceProtocol {
@@ -390,6 +390,13 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
 }
 
+
+extension _ArgumentBuffer: CustomStringConvertible {
+    public var description: String {
+        return "_ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self.bindings), enqueuedBindings: \(self.enqueuedBindings), flags: \(self.flags) }"
+    }
+}
+
 public struct _ArgumentBufferArray : ResourceProtocol {
     @usableFromInline let _handle : UnsafeRawPointer
     @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
@@ -501,6 +508,13 @@ public struct _ArgumentBufferArray : ResourceProtocol {
         }
     }
 }
+
+extension _ArgumentBufferArray: CustomStringConvertible {
+    public var description: String {
+        return "_ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self._bindings), flags: \(self.flags) }"
+    }
+}
+
 
 public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     

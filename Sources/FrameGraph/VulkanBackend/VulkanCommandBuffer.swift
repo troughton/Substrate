@@ -23,7 +23,6 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
     let queue: VulkanDeviceQueue
     let commandBuffer: VkCommandBuffer
     let commandInfo: FrameCommandInfo<VulkanBackend>
-    let textureUsages: [Texture: TextureUsageProperties]
     let resourceMap: FrameResourceMap<VulkanBackend>
     let compactedResourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>]
     
@@ -46,18 +45,15 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
     init(backend: VulkanBackend,
          queue: VulkanDeviceQueue,
          commandInfo: FrameCommandInfo<VulkanBackend>,
-         textureUsages: [Texture: TextureUsageProperties],
          resourceMap: FrameResourceMap<VulkanBackend>,
          compactedResourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>]) {
         self.backend = backend
         self.queue = queue
         self.commandBuffer = queue.allocateCommandBuffer()
         self.commandInfo = commandInfo
-        self.textureUsages = textureUsages
         self.resourceMap = resourceMap
         self.compactedResourceCommands = compactedResourceCommands
 
-        
         var beginInfo = VkCommandBufferBeginInfo()
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
         beginInfo.flags = VkCommandBufferUsageFlags(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)
@@ -113,7 +109,6 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
     
     func waitForEvent(_ event: VkSemaphore, value: UInt64) {
         // TODO: wait for more fine-grained pipeline stages.
-        print("Waiting for semaphore \(event) with value \(value)")
         self.waitSemaphores.append(ResourceSemaphore(vkSemaphore: event, stages: VK_PIPELINE_STAGE_ALL_COMMANDS_BIT))
         self.waitSemaphoreWaitValues.append(value)
     }

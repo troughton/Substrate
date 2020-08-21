@@ -90,7 +90,7 @@ final class MetalBackend : SpecificRenderBackend {
     
     @usableFromInline func materialisePersistentTexture(_ texture: Texture) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateTexture(texture, usage: TextureUsageProperties(texture.descriptor.usageHint)) != nil
+            return self.resourceRegistry.allocateTexture(texture) != nil
         }
     }
     
@@ -100,7 +100,7 @@ final class MetalBackend : SpecificRenderBackend {
     
     @usableFromInline func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
         return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateBuffer(buffer, usage: buffer.descriptor.usageHint) != nil
+            return self.resourceRegistry.allocateBuffer(buffer) != nil
         }
     }
     
@@ -128,10 +128,39 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.disposeHeap(heap)
     }
     
-    public var isDepth24Stencil8PixelFormatSupported: Bool {
-        #if os(macOS) || targetEnvironment(macCatalyst)
-        return self.device.isDepth24Stencil8PixelFormatSupported
+    public func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
+        switch pixelFormat {
+        case .depth24Unorm_stencil8:
+            #if os(macOS) || targetEnvironment(macCatalyst)
+            return self.device.isDepth24Stencil8PixelFormatSupported
+            #else
+            return false
+            #endif
+        case .r8Unorm_sRGB, .rg8Unorm_sRGB:
+            return self.isAppleSiliconGPU
+        case .bc1_rgba, .bc1_rgba_sRGB,
+             .bc2_rgba, .bc2_rgba_sRGB,
+             .bc3_rgba, .bc3_rgba_sRGB,
+             .bc4_rUnorm, .bc4_rSnorm,
+             .bc5_rgUnorm, .bc5_rgSnorm,
+             .bc6H_rgbFloat, .bc6H_rgbuFloat,
+             .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+            if #available(OSX 11.0, *) {
+                return self.device.supportsBCTextureCompression
+            }
+            return !self.isAppleSiliconGPU
+        default:
+            return true
+        }
+    }
+    
+    public var isAppleSiliconGPU: Bool {
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+        return true
         #else
+        if #available(OSX 11.0, *) {
+            return self.device.supportsFamily(.apple6)
+        }
         return false
         #endif
     }
@@ -232,26 +261,17 @@ final class MetalBackend : SpecificRenderBackend {
         return true
     }
 
-    static var requiresBufferUsage: Bool {
-        // Metal does not track buffer usages.
-        return false
-    }
-
-    static var requiresTextureLayoutTransitions: Bool {
-        // Metal handles layout transitions through residency tracking.
-        return false 
-    }
     
-    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
+    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
-    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
+    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
-    func makeQueue(frameGraphQueue: Queue) -> MTLCommandQueue {
-        return self.device.makeCommandQueue()!
+    func makeQueue(frameGraphQueue: Queue) -> MetalCommandQueue {
+        return MetalCommandQueue(backend: self, queue: self.device.makeCommandQueue()!)
     }
 
     func makeSyncEvent(for queue: Queue) -> MTLEvent {

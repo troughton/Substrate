@@ -48,7 +48,7 @@ public enum RenderAPI {
 public protocol RenderBackendProtocol : class {
     func backingResource(_ resource: Resource) -> Any?
     
-    var isDepth24Stencil8PixelFormatSupported : Bool { get }
+    func supportsPixelFormat(_ format: PixelFormat) -> Bool
     var hasUnifiedMemory : Bool { get }
     
     var renderDevice : Any { get }
@@ -179,8 +179,13 @@ public struct RenderBackend {
     }
     
     @inlinable
+    public static func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
+        return _backend.supportsPixelFormat(pixelFormat)
+    }
+    
+    @inlinable
     public static var isDepth24Stencil8PixelFormatSupported : Bool {
-        return _backend.isDepth24Stencil8PixelFormatSupported
+        return self.supportsPixelFormat(.depth24Unorm_stencil8)
     }
     
     @inlinable

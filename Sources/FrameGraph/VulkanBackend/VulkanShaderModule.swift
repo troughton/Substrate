@@ -115,8 +115,11 @@ final class VulkanPipelineReflection : PipelineReflection {
 
                 for resource in UnsafeBufferPointer(start: resourceList, count: resourceCount) {
 
+                    let resourceTypeHandle = spvc_compiler_get_type_handle(compiler, resource.type_id)
+
                     let set = spvc_compiler_get_decoration(compiler, resource.id, SpvDecorationDescriptorSet)
                     let binding = spvc_compiler_get_decoration(compiler, resource.id, SpvDecorationBinding)
+                    let arrayLength = max(Int(spvc_type_get_array_dimension(resourceTypeHandle, 0)), 1)
                     let name = spvc_compiler_get_name(compiler, resource.id)
                     
                     
@@ -148,7 +151,7 @@ final class VulkanPipelineReflection : PipelineReflection {
                                        type: type,
                                        bindingPath: bindingPath,
                                        bindingRange: UInt32(bufferRangesMin)..<UInt32(bufferRangesMax),
-                                       arrayLength: 1, // FIXME: get this from SPIR-V
+                                       arrayLength: arrayLength,
                                        access: access,
                                        accessedStages: stage)
                     ].accessedStages.formUnion(stage)
@@ -433,13 +436,25 @@ public class VulkanDescriptorSetLayout {
         }
 
         layoutCreateInfo.bindingCount = UInt32(bindings.count)
-        
-        self.vkLayout = bindings.withUnsafeBufferPointer { bindings in
-            layoutCreateInfo.pBindings = bindings.baseAddress
-            
-            var layout : VkDescriptorSetLayout?
-            vkCreateDescriptorSetLayout(pipelineReflection.device.vkDevice, &layoutCreateInfo, nil, &layout)
-            return layout!
+
+        let bindingFlags = [VkDescriptorBindingFlags](repeating: VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT.rawValue, count: bindings.count)
+
+        self.vkLayout = bindingFlags.withUnsafeBufferPointer { bindingFlags in
+            var bindingFlagsCreateInfo = VkDescriptorSetLayoutBindingFlagsCreateInfo()
+            bindingFlagsCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO
+            bindingFlagsCreateInfo.bindingCount = UInt32(bindingFlags.count)
+            bindingFlagsCreateInfo.pBindingFlags = bindingFlags.baseAddress
+
+            return withUnsafeBytes(of: bindingFlagsCreateInfo) { flagsCreateInfo in
+                layoutCreateInfo.pNext = flagsCreateInfo.baseAddress
+                return bindings.withUnsafeBufferPointer { bindings in
+                    layoutCreateInfo.pBindings = bindings.baseAddress
+                    
+                    var layout : VkDescriptorSetLayout?
+                    vkCreateDescriptorSetLayout(pipelineReflection.device.vkDevice, &layoutCreateInfo, nil, &layout)
+                    return layout!
+                }
+            }
         }
     }
     

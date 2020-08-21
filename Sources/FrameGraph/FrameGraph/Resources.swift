@@ -386,6 +386,25 @@ public struct Resource : ResourceProtocol, Hashable {
     }
 }
 
+extension Resource: CustomStringConvertible {
+    public var description: String {
+        switch self.type {
+        case .buffer:
+            return Buffer(handle: self.handle).description
+        case .texture:
+            return Texture(handle: self.handle).description
+        case .argumentBuffer:
+            return _ArgumentBuffer(handle: self.handle).description
+        case .argumentBufferArray:
+            return _ArgumentBufferArray(handle: self.handle).description
+        case .heap:
+            return Heap(handle: self.handle).description
+        default:
+            return "Resource(type: \(self.type), index: \(self.index), flags: \(self.flags))"
+        }
+    }
+}
+
 extension Resource : CustomHashable {
     public var customHashValue : Int {
         return self.hashValue
@@ -579,6 +598,12 @@ public struct Heap : ResourceProtocol {
     public var isValid : Bool {
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
         return HeapRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+    }
+}
+
+extension Heap: CustomStringConvertible {
+    public var description: String {
+        return "Heap(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")descriptor: \(self.descriptor), flags: \(self.flags) }"
     }
 }
 
@@ -918,6 +943,12 @@ public struct Buffer : ResourceProtocol {
     }
 }
 
+extension Buffer: CustomStringConvertible {
+    public var description: String {
+        return "Buffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")descriptor: \(self.descriptor), stateFlags: \(self.stateFlags), flags: \(self.flags) }"
+    }
+}
+
 public struct Texture : ResourceProtocol {
     public struct TextureViewDescriptor {
         public var pixelFormat: PixelFormat
@@ -1235,6 +1266,13 @@ public struct Texture : ResourceProtocol {
     
     public static let invalid = Texture(descriptor: TextureDescriptor(type: .type2D, format: .r32Float, width: 1, height: 1, mipmapped: false, storageMode: .private, usage: .shaderRead), flags: .persistent)
     
+}
+
+
+extension Texture: CustomStringConvertible {
+    public var description: String {
+        return "Texture(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")descriptor: \(self.descriptor), stateFlags: \(self.stateFlags), flags: \(self.flags) }"
+    }
 }
 
 public protocol DeferredBufferSlice {

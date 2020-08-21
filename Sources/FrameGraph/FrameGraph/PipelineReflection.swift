@@ -28,6 +28,7 @@ public enum ResourceUsageType {
     case blitSource
     case blitDestination
     case blitSynchronisation
+    case mipGeneration
     
     case vertexBuffer
     case indexBuffer
@@ -35,6 +36,9 @@ public enum ResourceUsageType {
     
     // Present in an argument buffer, but not actually used until later on.
     case unusedArgumentBuffer
+
+    // Used in a previous frame
+    case previousFrame
 
     public var isRenderTarget : Bool {
         switch self {

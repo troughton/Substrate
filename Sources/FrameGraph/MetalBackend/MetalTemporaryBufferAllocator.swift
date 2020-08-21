@@ -31,6 +31,7 @@ fileprivate class TemporaryBufferArena {
     }
     
     func allocate(bytes: Int, alignedTo alignment: Int) -> (MTLBuffer, Int) {
+        let alignment = bytes == 0 ? 1 : alignment // Don't align for empty allocations
         let alignedPosition = (currentBlockPos + alignment - 1) & ~(alignment - 1)
         
         if (alignedPosition + bytes > (currentBlock?.length ?? -1)) {

@@ -237,6 +237,12 @@ open class SDLWindow : Window {
         switch windowEventID {
         case SDL_WINDOWEVENT_SIZE_CHANGED:
             self.dimensions = WindowSize(Float(event.window.data1), Float(event.window.data2))
+        case SDL_WINDOWEVENT_CLOSE:
+            if let delegate = self.delegate {
+                Application.sharedApplication.removeUpdateable(delegate)
+            } else {
+                Application.sharedApplication.destroyWindow(self)
+            }
         default:
             break
         }

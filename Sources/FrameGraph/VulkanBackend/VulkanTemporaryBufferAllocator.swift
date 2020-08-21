@@ -16,6 +16,8 @@ fileprivate class VulkanTemporaryBufferArena {
     
     let device : VulkanDevice
     let allocator : VmaAllocator
+    let storageMode: StorageMode
+    let cacheMode: CPUCacheMode
     
     private let blockSize : Int
     var currentBlockPos = 0
@@ -24,17 +26,20 @@ fileprivate class VulkanTemporaryBufferArena {
     var availableBlocks = LinkedList<VulkanBuffer>()
     
     // MemoryArena Public Methods
-    public init(blockSize: Int = 262144, allocator: VmaAllocator, device: VulkanDevice) {
+    public init(blockSize: Int = 262144, allocator: VmaAllocator, storageMode: StorageMode, cacheMode: CPUCacheMode, device: VulkanDevice) {
         self.blockSize = blockSize
         self.allocator = allocator
         self.device = device
         
+        self.storageMode = storageMode
+        self.cacheMode = cacheMode
     }
     
     func allocate(bytes: Int, alignedTo alignment: Int) -> (VulkanBuffer, Int) {
-        let alignedPosition = (currentBlockPos + alignment - 1) & ~(alignment - 1)
+        let alignment = bytes == 0 ? 1 : alignment // Don't align for empty allocations
         
-        if (alignedPosition + bytes > (currentBlock?.descriptor.size ?? 0)) {
+        let alignedPosition = (currentBlockPos + alignment - 1) & ~(alignment - 1)
+        if (alignedPosition + bytes > (currentBlock.map({ Int($0.descriptor.size) }) ?? -1)) {
             // Add current block to usedBlocks list
             if let currentBlock = self.currentBlock {
                 usedBlocks.append(currentBlock)
@@ -54,12 +59,11 @@ fileprivate class VulkanTemporaryBufferArena {
             if self.currentBlock == nil {
                 let allocationSize = max(bytes, self.blockSize)
                 
-                let renderAPIDescriptor = BufferDescriptor(length: allocationSize, storageMode: .managed, cacheMode: .defaultCache, usage: .shaderRead)
+                let renderAPIDescriptor = BufferDescriptor(length: allocationSize, storageMode: self.storageMode, cacheMode: self.cacheMode, usage: [.shaderRead, .vertexBuffer, .indexBuffer, .blitSource])
                 
-                var allocInfo = VmaAllocationCreateInfo()
-                allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU
+                var allocInfo = VmaAllocationCreateInfo(storageMode: self.storageMode, cacheMode: self.cacheMode)
                 // FIXME: is it actually valid to have a buffer being used without ownership transfers?
-                let descriptor = VulkanBufferDescriptor(renderAPIDescriptor, usage: .uniformBuffer, sharingMode: .exclusive)
+                let descriptor = VulkanBufferDescriptor(renderAPIDescriptor, usage: [.uniformBuffer, .storageBuffer, .vertexBuffer, .indexBuffer, .transferSource], sharingMode: .exclusive)
                 var buffer : VkBuffer? = nil
                 var allocation : VmaAllocation? = nil
                 var allocationInfo = VmaAllocationInfo()
@@ -87,14 +91,14 @@ fileprivate class VulkanTemporaryBufferArena {
 class VulkanTemporaryBufferAllocator : VulkanBufferAllocator {
     private var arenas : [VulkanTemporaryBufferArena]
     
-    let numFrames : Int
+    let inflightFrameCount : Int
     private var currentIndex : Int = 0
     private var waitSemaphoreValue : UInt64 = 0
     private var nextFrameWaitSemaphoreValue : UInt64 = 0
     
-    public init(numFrames: Int, allocator: VmaAllocator, device: VulkanDevice) {
-        self.numFrames = numFrames
-        self.arenas = (0..<numFrames).map { _ in VulkanTemporaryBufferArena(allocator: allocator, device: device) }
+    public init(device: VulkanDevice, allocator: VmaAllocator, storageMode: StorageMode, cacheMode: CPUCacheMode, inflightFrameCount: Int) {
+        self.inflightFrameCount = inflightFrameCount
+        self.arenas = (0..<inflightFrameCount).map { _ in VulkanTemporaryBufferArena(allocator: allocator, storageMode: storageMode, cacheMode: cacheMode, device: device) }
     }
     
     public func allocate(bytes: Int) -> (VulkanBuffer, Int) {
@@ -112,7 +116,7 @@ class VulkanTemporaryBufferAllocator : VulkanBufferAllocator {
     }
     
     public func cycleFrames() {
-        self.currentIndex = (self.currentIndex + 1) % self.numFrames
+        self.currentIndex = (self.currentIndex + 1) % self.inflightFrameCount
         self.waitSemaphoreValue = self.nextFrameWaitSemaphoreValue
         self.arenas[self.currentIndex].reset()
     }
