@@ -24,10 +24,20 @@ public struct BitSet {
     }
     
     @inlinable
-    public init(storageCount: Int) {
-        self.storage = .allocate(capacity: storageCount)
+    public init(storageCount: Int, allocator: AllocatorType = .system) {
+        self.storage = Allocator.allocate(capacity: storageCount, allocator: allocator)
         self.storage.initialize(repeating: 0, count: storageCount)
         self.storageCount = storageCount
+    }
+    
+    @inlinable
+    public init(storage: UnsafeMutableBufferPointer<UInt>) {
+        self.storage = storage.baseAddress!
+        self.storageCount = storage.count
+    }
+    
+    public func dispose(allocator: AllocatorType = .system) {
+        Allocator.deallocate(self.storage, allocator: allocator)
     }
     
     @inlinable

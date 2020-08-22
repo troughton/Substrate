@@ -203,7 +203,7 @@ public struct LockingTagAllocator {
     }
     
     @inlinable
-    public func allocate<T>(capacity: Int) -> UnsafeMutablePointer<T> {
+    public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
         if useSystemAllocator {
             return .allocate(capacity: capacity)
         }
@@ -312,7 +312,7 @@ public struct TagAllocator {
     }
     
     @inlinable
-    public func allocate<T>(capacity: Int, threadIndex: Int) -> UnsafeMutablePointer<T> {
+    public func allocate<T>(type: T.Type = T.self, capacity: Int, threadIndex: Int) -> UnsafeMutablePointer<T> {
         return self.allocate(bytes: capacity * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment, threadIndex: threadIndex).bindMemory(to: T.self, capacity: capacity)
     }
     
@@ -352,7 +352,7 @@ public struct TagAllocator {
         }
         
         @inlinable
-        public func allocate<T>(capacity: Int) -> UnsafeMutablePointer<T> {
+        public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
             if useSystemAllocator {
                 return .allocate(capacity: capacity)
             }
@@ -403,7 +403,7 @@ public struct TagAllocator {
         }
         
         @inlinable
-        public func allocate<T>(capacity: Int) -> UnsafeMutablePointer<T> {
+        public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
             if useSystemAllocator {
                 return .allocate(capacity: capacity)
             }
