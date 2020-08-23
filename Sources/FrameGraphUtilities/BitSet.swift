@@ -15,6 +15,21 @@ extension UInt {
     }
 }
 
+extension UInt64 {
+    @inlinable
+    public subscript(bit at: Int) -> Bool {
+        get {
+            return (self &>> at) & 0b1 != 0
+        } set {
+            if newValue {
+                self |= (1 &<< at)
+            } else {
+                self &= ~(1 &<< at)
+            }
+        }
+    }
+}
+
 public struct BitSet {
     @usableFromInline let storage : UnsafeMutablePointer<UInt>
     @usableFromInline let storageCount : Int
