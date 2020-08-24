@@ -777,6 +777,10 @@ public final class FrameGraph {
     }
     
     public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
+        if GPUResourceUploader.frameGraph !== self {
+            GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
+        }
+        
         guard !self.renderPasses.isEmpty else {
             onSubmission?()
             onGPUCompletion?()
