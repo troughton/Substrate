@@ -181,7 +181,7 @@ fileprivate extension LodePNGEncoderSettings {
             self.zlibsettings.custom_zlib = { out, outsize, `in`, inSize, settings in
                 let compressionLevel = Int32(Int(bitPattern: settings?.pointee.custom_context))
                 let bufferSize = Int(compressBound(uLong(inSize)))
-                out!.pointee = .allocate(capacity: bufferSize)
+                out!.pointee = malloc(bufferSize).assumingMemoryBound(to: UInt8.self)
                 outsize!.pointee = bufferSize
                 
                 let result = compress2(out!.pointee, unsafeBitCast(outsize, to: UnsafeMutablePointer<uLongf>?.self), `in`, uLong(inSize), compressionLevel)
@@ -266,7 +266,7 @@ extension TextureData where T == UInt8 {
         lodepng_state_init(&lodePNGState)
         defer { lodepng_state_cleanup(&lodePNGState) }
         
-        lodePNGState.info_raw.colortype = try LodePNGColorType(channelCount: self.channelCount)
+        lodePNGState.info_raw.colortype = try LodePNGColorType(channelCount: texture.channelCount)
         lodePNGState.info_raw.bitdepth = UInt32(MemoryLayout<T>.size * 8)
         lodePNGState.info_png.color.colortype = lodePNGState.info_raw.colortype
         lodePNGState.info_png.color.bitdepth = lodePNGState.info_raw.bitdepth
@@ -275,7 +275,7 @@ extension TextureData where T == UInt8 {
         var outBuffer: UnsafeMutablePointer<UInt8>! = nil
         var outSize: Int = 0
         
-        let errorCode = lodepng_encode(&outBuffer, &outSize, texture.storage.data.baseAddress, UInt32(self.width), UInt32(self.height), &lodePNGState)
+        let errorCode = texture.withUnsafeBufferPointer { lodepng_encode(&outBuffer, &outSize, $0.baseAddress, UInt32(texture.width), UInt32(texture.height), &lodePNGState) }
         
         if errorCode != 0 {
             let error = lodepng_error_text(errorCode)
