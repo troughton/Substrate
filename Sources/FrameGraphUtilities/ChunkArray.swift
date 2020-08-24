@@ -17,17 +17,11 @@ public struct ChunkArray<T>: Collection {
         @usableFromInline var next: UnsafeMutablePointer<Chunk>?
     }
     
-    public var allocator: AllocatorType
     public var count: Int
     @usableFromInline var next: UnsafeMutablePointer<Chunk>?
     @usableFromInline var tail: UnsafeMutablePointer<Chunk>?
     
-    public init(allocator: AllocatorType) {
-        if case .system = allocator {
-        } else {
-            precondition(_isPOD(T.self))
-        }
-        self.allocator = allocator
+    public init() {
         self.count = 0
     }
     
@@ -83,11 +77,16 @@ public struct ChunkArray<T>: Collection {
     }
     
     @inlinable
-    public mutating func append(_ element: T) {
+    public mutating func append(_ element: T, allocator: AllocatorType) {
+        if case .system = allocator {
+        } else {
+            precondition(_isPOD(T.self))
+        }
+        
         let insertionIndex = self.count
         let indexInChunk = insertionIndex % ChunkArray.elementsPerChunk
         if indexInChunk == 0 {
-            let newChunkBytes = Allocator.allocate(byteCount: MemoryLayout<Chunk>.size, alignment: MemoryLayout<Chunk>.alignment, allocator: self.allocator)
+            let newChunkBytes = Allocator.allocate(byteCount: MemoryLayout<Chunk>.size, alignment: MemoryLayout<Chunk>.alignment, allocator: allocator)
             newChunkBytes.initializeMemory(as: UInt8.self, repeating: 0, count: MemoryLayout<Chunk>.size)
             let newChunk = newChunkBytes.bindMemory(to: Chunk.self, capacity: 1)
             
@@ -103,7 +102,7 @@ public struct ChunkArray<T>: Collection {
     }
     
     @inlinable
-    public mutating func removeLast() -> T {
+    public mutating func removeLast(allocator: AllocatorType) -> T {
         precondition(self.count > 0)
         
         let (chunkIndex, indexInChunk) = self.count.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
@@ -118,7 +117,7 @@ public struct ChunkArray<T>: Collection {
         
         if indexInChunk == 0 {
             previousChunk.pointee.next = nil
-            Allocator.deallocate(currentChunk, allocator: self.allocator)
+            Allocator.deallocate(currentChunk, allocator: allocator)
         }
         
         self.count -= 1
