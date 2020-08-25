@@ -198,6 +198,7 @@ extension VulkanBackend {
             let destinationAccessMask = beforeUsage.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
 
             var beforeCommand = beforeCommand
+            var subresourceRanges: [VkImageSubresourceRange] = []
             
             if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound {
                 var subpassDependency = VkSubpassDependency()
@@ -249,9 +250,62 @@ extension VulkanBackend {
                         // renderTargetDescriptor.addDependency(subpassDependency)
                     }
                 } else {
-                    // A subpass dependency should be enough to handle this case.
+                    // A subpass dependency should be enough to handle this case, unless there are other layers we also need to transition.
+                    // TODO: can we do better with fine-grained tracking of layouts and barriers for different layers?
                     renderTargetDescriptor.addDependency(subpassDependency)
-                    return
+                    
+                    if sourceLayout != destinationLayout, let texture = resource.texture {
+                        let mipCount = texture.descriptor.mipmapLevelCount
+                        let arrayLength = texture.descriptor.arrayLength
+                        
+                        if mipCount > 1 || arrayLength > 1 {
+                            // Compute which slices of the texture were not rendered to (and therefore need a manual layout transition).
+                            let pixelFormat = texture.descriptor.pixelFormat
+                            var usedSlices: [(level: Int, slice: Int, depthPlane: Int)] = []
+                            
+                            if !(pixelFormat.isDepth || pixelFormat.isStencil) {
+                                for attachment in renderTargetDescriptor.descriptor.colorAttachments {
+                                    guard let attachment = attachment else { continue }
+                                    if attachment.texture == texture {
+                                        usedSlices.append((attachment.level, attachment.slice, attachment.depthPlane))
+                                    }
+                                    if attachment.resolveTexture == texture {
+                                        usedSlices.append((attachment.resolveLevel, attachment.resolveSlice, attachment.resolveDepthPlane))
+                                    }
+                                }
+                            }
+                            
+                            if pixelFormat.isDepth, let attachment = renderTargetDescriptor.descriptor.depthAttachment {
+                                if attachment.texture == texture {
+                                    usedSlices.append((attachment.level, attachment.slice, attachment.depthPlane))
+                                }
+                                if attachment.resolveTexture == texture {
+                                    usedSlices.append((attachment.resolveLevel, attachment.resolveSlice, attachment.resolveDepthPlane))
+                                }
+                            }
+                            
+                            if pixelFormat.isStencil, let attachment = renderTargetDescriptor.descriptor.stencilAttachment {
+                                if attachment.texture == texture {
+                                    usedSlices.append((attachment.level, attachment.slice, attachment.depthPlane))
+                                }
+                                if attachment.resolveTexture == texture {
+                                    usedSlices.append((attachment.resolveLevel, attachment.resolveSlice, attachment.resolveDepthPlane))
+                                }
+                            }
+                            
+                            for mip in 0..<mipCount {
+                                for slice in 0..<arrayLength {
+                                    if !usedSlices.contains(where: { $0.level == mip && $0.slice == slice }) {
+                                        subresourceRanges.append(VkImageSubresourceRange(aspectMask: pixelFormat.aspectFlags, baseMipLevel: UInt32(mip), levelCount: 1, baseArrayLayer: UInt32(slice), layerCount: 1))
+                                    }
+                                }
+                            }
+                        }
+                        
+                    }
+                    
+                    // We don't need to insert a barrier; just the render pass layout transitions should be enough.
+                    if subresourceRanges.isEmpty { return }
                 }
             }
             
@@ -277,8 +331,17 @@ extension VulkanBackend {
                 barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                 barrier.oldLayout = sourceLayout
                 barrier.newLayout = destinationLayout
-                barrier.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
-                imageBarriers.append(barrier)
+                
+                if subresourceRanges.isEmpty {
+                    barrier.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
+                    imageBarriers.append(barrier)
+                } else {
+                    for subresourceRange in subresourceRanges {
+                        // Transition the mips/slices not accounted for by the render pass.
+                        barrier.subresourceRange = subresourceRange
+                        imageBarriers.append(barrier)
+                    }
+                }
             }
             
             barrierAfterStages.formUnion(sourceMask)

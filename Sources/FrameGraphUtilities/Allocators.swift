@@ -63,7 +63,7 @@ public final class Allocator {
     }
     
     @inlinable
-    public static func allocate<T>(capacity: Int = 1, allocator: AllocatorType) -> UnsafeMutablePointer<T> {
+    public static func allocate<T>(type: T.Type = T.self, capacity: Int = 1, allocator: AllocatorType) -> UnsafeMutablePointer<T> {
         switch allocator {
         case .system:
             return UnsafeMutablePointer.allocate(capacity: capacity)

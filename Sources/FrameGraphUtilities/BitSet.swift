@@ -15,6 +15,21 @@ extension UInt {
     }
 }
 
+extension UInt64 {
+    @inlinable
+    public subscript(bit at: Int) -> Bool {
+        get {
+            return (self &>> at) & 0b1 != 0
+        } set {
+            if newValue {
+                self |= (1 &<< at)
+            } else {
+                self &= ~(1 &<< at)
+            }
+        }
+    }
+}
+
 public struct BitSet {
     @usableFromInline let storage : UnsafeMutablePointer<UInt>
     @usableFromInline let storageCount : Int
@@ -24,10 +39,20 @@ public struct BitSet {
     }
     
     @inlinable
-    public init(storageCount: Int) {
-        self.storage = .allocate(capacity: storageCount)
+    public init(storageCount: Int, allocator: AllocatorType = .system) {
+        self.storage = Allocator.allocate(capacity: storageCount, allocator: allocator)
         self.storage.initialize(repeating: 0, count: storageCount)
         self.storageCount = storageCount
+    }
+    
+    @inlinable
+    public init(storage: UnsafeMutableBufferPointer<UInt>) {
+        self.storage = storage.baseAddress!
+        self.storageCount = storage.count
+    }
+    
+    public func dispose(allocator: AllocatorType = .system) {
+        Allocator.deallocate(self.storage, allocator: allocator)
     }
     
     @inlinable
