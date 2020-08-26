@@ -111,15 +111,23 @@ extension Texture {
                         let sourceData = textureData
                         textureData = TextureData<UInt8>(width: sourceData.width, height: sourceData.height, channels: 4, colorSpace: sourceData.colorSpace, alphaMode: sourceData.alphaMode)
                         
-                        sourceData.forEachPixel { (x, y, channel, val) in
-                            if sourceData.channelCount == 1 {
+                        if sourceData.channelCount == 1 {
+                            sourceData.forEachPixel { (x, y, channel, val) in
                                 textureData[x, y] = SIMD4(val, val, val, .max)
-                            } else if channel == 1 {
-                                textureData[x, y, channel: 3] = val
-                            } else {
-                                for i in 0..<3 {
-                                    textureData[x, y, channel: i] = val
+                            }
+                        } else if sourceData.channelCount == 2 {
+                            sourceData.forEachPixel { (x, y, channel, val) in
+                                if channel == 0 {
+                                    textureData[x, y] = SIMD4(val, val, val, .max)
+                                } else {
+                                    textureData[x, y, channel: 3] = val
                                 }
+                            }
+                        } else {
+                            precondition(sourceData.channelCount == 3)
+                            sourceData.forEachPixel { (x, y, channel, val) in
+                                textureData[x, y, channel: channel] = val
+                                textureData[x, y, channel: 3] = .max
                             }
                         }
                     }

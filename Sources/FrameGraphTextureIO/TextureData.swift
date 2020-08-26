@@ -480,7 +480,7 @@ extension TextureData where T: Comparable {
                 for c in 0..<alphaChannel {
                     if self.storage.data[baseIndex + c] > alphaVal {
                         self.alphaMode = .postmultiplied
-                        break
+                        return
                     }
                 }
             }
