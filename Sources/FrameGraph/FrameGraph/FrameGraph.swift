@@ -428,6 +428,16 @@ public final class FrameGraph {
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
     
+    public func addClearPass(file: String = #file, line: Int = #line,
+                             descriptor: RenderTargetDescriptor,
+                             colorClearOperations: [ColorClearOperation] = [],
+                             depthClearOperation: DepthClearOperation = .keep,
+                             stencilClearOperation: StencilClearOperation = .keep) {
+        self.addPass(CallbackDrawRenderPass(name: "Clear Pass at \(file):\(line)", descriptor: descriptor,
+                                            colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                            execute: { _ in }))
+    }
+    
     public func addDrawCallbackPass(file: String = #file, line: Int = #line,
                                     descriptor: RenderTargetDescriptor,
                                     colorClearOperations: [ColorClearOperation] = [],
