@@ -178,7 +178,7 @@ class VulkanImage {
         return self.descriptor.matches(descriptor: descriptor)
     }
     
-    func computeFrameLayouts(usages: ResourceUsagesList, preserveLastLayout: Bool) {
+    func computeFrameLayouts(usages: ChunkArray<ResourceUsage>, preserveLastLayout: Bool) {
         let lastLayout = self.frameLayouts.last!
         
         self.frameLayouts.removeAll(keepingCapacity: true)

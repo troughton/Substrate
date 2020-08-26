@@ -287,7 +287,6 @@ final class FrameGraphCommandRecorder {
 @usableFromInline
 protocol CommandEncoder : class {
     var passRecord : RenderPassRecord { get }
-    var unmanagedPassRecord : Unmanaged<RenderPassRecord> { get }
     
     var commandRecorder : FrameGraphCommandRecorder { get }
     var startCommandIndex : Int { get }
@@ -305,11 +304,6 @@ extension CommandEncoder {
     @inlinable
     public var renderPass : RenderPass {
         return self.passRecord.pass
-    }
-    
-    @inlinable
-    public var unmanagedPassRecord : Unmanaged<RenderPassRecord> {
-        return Unmanaged.passUnretained(self.passRecord)
     }
 }
 
@@ -364,7 +358,7 @@ public class ResourceBindingEncoder : CommandEncoder {
     struct BoundResource {
         public var resource : Resource
         public var bindingCommand : UnsafeMutableRawPointer?
-        public var usageNode : ResourceUsageNodePtr?
+        public var usagePointer : ResourceUsagePointer?
         public var isInArgumentBuffer : Bool
         /// Whether the resource is assumed to be used in the same way for the entire time it's bound.
         public var consistentUsageAssumed : Bool
@@ -424,7 +418,7 @@ public class ResourceBindingEncoder : CommandEncoder {
     // They're contained on the object rather than as local variables to minimised allocations and retain-release traffic.
     
     @usableFromInline
-    let usageNodesToUpdate : ExpandingBuffer<ResourceUsageNodePtr> // nodes to update the upper bound on to the last usage index.
+    let usagePointersToUpdate : ExpandingBuffer<ResourceUsagePointer> // nodes to update the upper bound on to the last usage index.
     
     deinit {
         self.boundResources.deinit()
@@ -457,7 +451,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.pendingArgumentBuffersByKey = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         self.pendingArgumentBuffers = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         self.resourceBindingCommands = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
-        self.usageNodesToUpdate = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
+        self.usagePointersToUpdate = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         
         self.pushDebugGroup(passRecord.pass.name)
     }
@@ -486,7 +480,6 @@ public class ResourceBindingEncoder : CommandEncoder {
     
     public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey) {
         guard let buffer = buffer else { return }
-        self.resourceUsages.registerResource(Resource(buffer))
         
         let args : FrameGraphCommand.SetBufferArgs = (.nil, buffer, UInt32(offset), false)
         
@@ -521,7 +514,6 @@ public class ResourceBindingEncoder : CommandEncoder {
     
     public func setTexture(_ texture: Texture?, key: FunctionArgumentKey) {
         guard let texture = texture else { return }
-        self.resourceUsages.registerResource(Resource(texture))
         
         let args : FrameGraphCommand.SetTextureArgs = (.nil, texture)
         
@@ -582,8 +574,6 @@ public class ResourceBindingEncoder : CommandEncoder {
             self.pendingArgumentBuffers.append((bindingPath, argumentBuffer, type: type, assumeConsistentUsage: assumeConsistentUsage))
         }
         
-        self.resourceUsages.registerResource(Resource(argumentBufferArray))
-        
         self.needsUpdateBindings = true
     }
     
@@ -610,17 +600,15 @@ public class ResourceBindingEncoder : CommandEncoder {
         // We add the command to the commands list here so that the binding key can be translated.
         self.resourceBindingCommands.append((key, FrameGraphCommand.setArgumentBufferArray(UnsafePointer(argsPointer))))
         
-        self.resourceUsages.registerResource(Resource(argumentBufferArray))
-        
         self.needsUpdateBindings = true
     }
     
     
     func updateUsageNodes(lastIndex: Int) {
-        for usageNode in usageNodesToUpdate {
-            usageNode.pointee.element.commandRangeInPass = Range(uncheckedBounds: (usageNode.pointee.element.commandRangeInPass.lowerBound, lastIndex + 1))
+        for usagePointer in usagePointersToUpdate {
+            usagePointer.pointee.commandRangeInPass = Range(uncheckedBounds: (usagePointer.pointee.commandRangeInPass.lowerBound, lastIndex + 1))
         }
-        usageNodesToUpdate.removeAll()
+        usagePointersToUpdate.removeAll()
     }
    
     public func updateResourceUsages(endingEncoding: Bool = false) {
@@ -641,13 +629,13 @@ public class ResourceBindingEncoder : CommandEncoder {
             // has already expired.
             let endIndex = self.lastGPUCommandIndex + 1
             self.boundResources.forEach { (path, value) in
-                if let usageNode = value.usageNode {
-                    usageNode.pointee.element.commandRangeInPass = usageNode.pointee.element.commandRangeInPass.lowerBound..<endIndex
+                if let usagePointer = value.usagePointer {
+                    usagePointer.pointee.commandRangeInPass = usagePointer.pointee.commandRangeInPass.lowerBound..<endIndex
                 }
             }
             self.untrackedBoundResources.forEach { (path, value) in
-                if let usageNode = value.usageNode {
-                    usageNode.pointee.element.commandRangeInPass = usageNode.pointee.element.commandRangeInPass.lowerBound..<endIndex
+                if let usagePointer = value.usagePointer {
+                    usagePointer.pointee.commandRangeInPass = usagePointer.pointee.commandRangeInPass.lowerBound..<endIndex
                 }
             }
             return
@@ -675,7 +663,7 @@ public class ResourceBindingEncoder : CommandEncoder {
             let newValue = perform(currentlyBound)
             
             if let newValue = newValue {
-                if resultUntrackedIfUsed, newValue.usageNode != nil {
+                if resultUntrackedIfUsed, newValue.usagePointer != nil {
                     if let target = indexInUntrackedBoundResources {
                         self.untrackedBoundResources.insertAtIndex(target, key: bindingPath, value: newValue)
                     } else {
@@ -690,8 +678,8 @@ public class ResourceBindingEncoder : CommandEncoder {
                 }
             }
             
-            if let currentBoundUsage = currentlyBound?.usageNode, newValue?.usageNode != currentBoundUsage {
-                self.usageNodesToUpdate.append(currentBoundUsage) // The old resource is no longer bound, so we need to end the old usage.
+            if let currentBoundUsage = currentlyBound?.usagePointer, newValue?.usagePointer != currentBoundUsage {
+                self.usagePointersToUpdate.append(currentBoundUsage) // The old resource is no longer bound, so we need to end the old usage.
             }
         }
         
@@ -786,9 +774,9 @@ public class ResourceBindingEncoder : CommandEncoder {
                     } else {
                         self.boundUAVResources.remove(key: bindingPath)
                     }
-                    return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usageNode: node, isInArgumentBuffer: false, consistentUsageAssumed: false)
+                    return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usagePointer: node, isInArgumentBuffer: false, consistentUsageAssumed: false)
                 } else {
-                    return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usageNode: nil, isInArgumentBuffer: false, consistentUsageAssumed: false)
+                    return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usagePointer: nil, isInArgumentBuffer: false, consistentUsageAssumed: false)
                 }
             })
         }
@@ -834,8 +822,6 @@ public class ResourceBindingEncoder : CommandEncoder {
                 continue
             }
             
-            self.resourceUsages.registerResource(Resource(argumentBuffer))
-            
             replacingBoundResourceNode(bindingPath: argumentBufferPath, resultUntrackedIfUsed: assumeConsistentUsage, perform: { currentlyBound in
 
                 let argsPtr : UnsafeMutableRawPointer
@@ -873,9 +859,9 @@ public class ResourceBindingEncoder : CommandEncoder {
                         self.boundUAVResources.remove(key: argumentBufferPath)
                     }
                     
-                    return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usageNode: node, isInArgumentBuffer: false, consistentUsageAssumed: false)
+                    return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usagePointer: node, isInArgumentBuffer: false, consistentUsageAssumed: false)
                 } else {
-                    return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usageNode: nil, isInArgumentBuffer: false, consistentUsageAssumed: false)
+                    return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usagePointer: nil, isInArgumentBuffer: false, consistentUsageAssumed: false)
                 }
             })
             
@@ -919,13 +905,12 @@ public class ResourceBindingEncoder : CommandEncoder {
                 let identifier : Resource.Handle
                 if let renderAPIResource = renderAPIResource {
                     identifier = renderAPIResource.handle
-                    self.resourceUsages.registerResource(renderAPIResource)
                 } else {
-                    if let existingUsage = self.boundResources.removeValue(forKey: bindingPath)?.usageNode {
-                        self.usageNodesToUpdate.append(existingUsage)
+                    if let existingUsage = self.boundResources.removeValue(forKey: bindingPath)?.usagePointer {
+                        self.usagePointersToUpdate.append(existingUsage)
                     }
-                    if let existingUsage = self.untrackedBoundResources.removeValue(forKey: bindingPath)?.usageNode {
-                        self.usageNodesToUpdate.append(existingUsage)
+                    if let existingUsage = self.untrackedBoundResources.removeValue(forKey: bindingPath)?.usagePointer {
+                        self.usagePointersToUpdate.append(existingUsage)
                     }
                     continue
                 }
@@ -941,9 +926,9 @@ public class ResourceBindingEncoder : CommandEncoder {
                         } else {
                             self.boundUAVResources.remove(key: bindingPath)
                         }
-                        return BoundResource(resource: Resource(handle: identifier), bindingCommand: nil, usageNode: node, isInArgumentBuffer: true, consistentUsageAssumed: assumeConsistentUsage)
+                        return BoundResource(resource: Resource(handle: identifier), bindingCommand: nil, usagePointer: node, isInArgumentBuffer: true, consistentUsageAssumed: assumeConsistentUsage)
                     } else {
-                        return BoundResource(resource: Resource(handle: identifier), bindingCommand: nil, usageNode: nil, isInArgumentBuffer: true, consistentUsageAssumed: assumeConsistentUsage)
+                        return BoundResource(resource: Resource(handle: identifier), bindingCommand: nil, usagePointer: nil, isInArgumentBuffer: true, consistentUsageAssumed: assumeConsistentUsage)
                     }
                 })
             }
@@ -964,7 +949,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                     assert(reflection.type == boundResource.resource.type || (reflection.type == .buffer && boundResource.resource.type == .argumentBuffer))
                         
                     // If the command to bind the resource hasn't yet been inserted into the command stream, insert it now.
-                    if boundResource.usageNode == nil, let bindingCommandArgs = boundResource.bindingCommand {
+                    if boundResource.usagePointer == nil, let bindingCommandArgs = boundResource.bindingCommand {
                         switch boundResource.resource.type {
                         case .texture:
                             self.commandRecorder.commands.append(.setTexture(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetTextureArgs.self)))
@@ -997,7 +982,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                     }
                     
                     let node = self.resourceUsages.resourceUsageNode(for: boundResource.resource.handle, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, inArgumentBuffer: boundResource.isInArgumentBuffer, firstCommandOffset: firstCommandOffset)
-                    boundResource.usageNode = node
+                    boundResource.usagePointer = node
                     
                     assert(!boundResource.resource.usages.isEmpty)
                     
@@ -1012,10 +997,10 @@ public class ResourceBindingEncoder : CommandEncoder {
                     // The resource is currently unused; end its usage.
                     if boundResource.isInArgumentBuffer {
                         let _ = self.resourceUsages.resourceUsageNode(for: boundResource.resource.handle, encoder: self, usageType: .unusedArgumentBuffer, stages: .cpuBeforeRender, inArgumentBuffer: true, firstCommandOffset: firstCommandOffset)
-                    } else if let currentUsage = boundResource.usageNode {
+                    } else if let currentUsage = boundResource.usagePointer {
                         // The resource is currently unused; end its usage.
-                        self.usageNodesToUpdate.append(currentUsage)
-                        boundResource.usageNode = nil
+                        self.usagePointersToUpdate.append(currentUsage)
+                        boundResource.usagePointer = nil
                     }
                 }
             }
@@ -1023,9 +1008,9 @@ public class ResourceBindingEncoder : CommandEncoder {
             self.boundUAVResources.forEach { bindingPath in
                 self.boundResources.withValue(forKey: bindingPath, perform: { boundResourcePtr, _ in
                     let boundResource = boundResourcePtr.pointee
-                    let usage = boundResource.usageNode!.pointee.element
+                    let usage = boundResource.usagePointer!.pointee
                     let node = self.resourceUsages.resourceUsageNode(for: boundResource.resource.handle, encoder: self, usageType: usage.type, stages: usage.stages, inArgumentBuffer: boundResource.isInArgumentBuffer, firstCommandOffset: firstCommandOffset)
-                    boundResourcePtr.pointee.usageNode = node
+                    boundResourcePtr.pointee.usagePointer = node
                 })
                 
             }
@@ -1050,14 +1035,14 @@ public class ResourceBindingEncoder : CommandEncoder {
         let endIndex = self.lastGPUCommandIndex + 1
         
         self.boundResources.removeAll(iterating: { (path, value) in
-            if let usageNode = value.usageNode {
-                usageNode.pointee.element.commandRangeInPass = usageNode.pointee.element.commandRangeInPass.lowerBound..<endIndex
+            if let usagePointer = value.usagePointer {
+                usagePointer.pointee.commandRangeInPass = usagePointer.pointee.commandRangeInPass.lowerBound..<endIndex
             }
         })
         
         self.untrackedBoundResources.removeAll(iterating: { (path, value) in
-            if let usageNode = value.usageNode {
-                usageNode.pointee.element.commandRangeInPass = usageNode.pointee.element.commandRangeInPass.lowerBound..<endIndex
+            if let usagePointer = value.usagePointer {
+                usagePointer.pointee.commandRangeInPass = usagePointer.pointee.commandRangeInPass.lowerBound..<endIndex
             }
         })
     }
@@ -1141,9 +1126,9 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
     let drawRenderPass : DrawRenderPass
     
     @usableFromInline
-    var boundVertexBuffers = [ResourceUsageNodePtr?](repeating: nil, count: 8)
+    var boundVertexBuffers = [ResourceUsagePointer?](repeating: nil, count: 8)
     @usableFromInline
-    var renderTargetAttachmentUsages : HashMap<Attachment, ResourceUsageNodePtr>
+    var renderTargetAttachmentUsages : HashMap<Attachment, ResourceUsagePointer>
     
     var renderPipelineDescriptor : RenderPipelineDescriptor? = nil
     var depthStencilDescriptor : DepthStencilDescriptor? = nil
@@ -1165,27 +1150,21 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         
         for (i, attachment) in renderPass.renderTargetDescriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
-            self.resourceUsages.registerResource(Resource(attachment.texture))
-            
             needsClearCommand = needsClearCommand || renderPass.colorClearOperation(attachmentIndex: i).isClear
-            let usageNode = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: renderPass.colorClearOperation(attachmentIndex: i).isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: 0)
-            self.renderTargetAttachmentUsages[.color(i)] = usageNode
+            let usagePointer = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: renderPass.colorClearOperation(attachmentIndex: i).isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: 0)
+            self.renderTargetAttachmentUsages[.color(i)] = usagePointer
         }
         
         if let depthAttachment = renderPass.renderTargetDescriptor.depthAttachment {
-            self.resourceUsages.registerResource(Resource(depthAttachment.texture))
-            
             needsClearCommand = needsClearCommand || renderPass.depthClearOperation.isClear
-            let usageNode = self.resourceUsages.resourceUsageNode(for: depthAttachment.texture.handle, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
-            self.renderTargetAttachmentUsages[.depth] = usageNode
+            let usagePointer = self.resourceUsages.resourceUsageNode(for: depthAttachment.texture.handle, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
+            self.renderTargetAttachmentUsages[.depth] = usagePointer
         }
         
         if let stencilAttachment = renderPass.renderTargetDescriptor.stencilAttachment {
-            self.resourceUsages.registerResource(Resource(stencilAttachment.texture))
-            
             needsClearCommand = needsClearCommand || renderPass.stencilClearOperation.isClear
-            let usageNode = self.resourceUsages.resourceUsageNode(for: stencilAttachment.texture.handle, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
-            self.renderTargetAttachmentUsages[.stencil] = usageNode
+            let usagePointer = self.resourceUsages.resourceUsageNode(for: stencilAttachment.texture.handle, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
+            self.renderTargetAttachmentUsages[.stencil] = usagePointer
         }
         
         if needsClearCommand {
@@ -1218,7 +1197,6 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             
             defer {
                 if endingEncoding, let resolveTexture = attachment.resolveTexture {
-                    self.resourceUsages.registerResource(Resource(resolveTexture))
                     let _ = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
                     let _ = self.resourceUsages.resourceUsageNode(for: resolveTexture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
                 }
@@ -1230,22 +1208,22 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             
             let type : ResourceUsageType = renderPipelineDescriptor.blendStates[i] != nil ? .readWriteRenderTarget : .writeOnlyRenderTarget
             
-            if let usageNode = self.renderTargetAttachmentUsages[.color(i)] {
-                switch (type, usageNode.pointee.element.type) {
+            if let usagePointer = self.renderTargetAttachmentUsages[.color(i)] {
+                switch (type, usagePointer.pointee.type) {
                 case (.readWriteRenderTarget, _):
-                    usageNode.pointee.element.type = .readWriteRenderTarget
+                    usagePointer.pointee.type = .readWriteRenderTarget
                 case (_, .unusedRenderTarget):
-                    usageNode.pointee.element.type = type
+                    usagePointer.pointee.type = type
                 default:
                     break // No change necessary.
                 }
-                usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
+                usagePointer.pointee.commandRangeInPass = Range(usagePointer.pointee.commandRangeInPass.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
                 continue
             }
             
-            let usageNode = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: type, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
-            usageNode.pointee.element.commandRangeInPass = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
-            self.renderTargetAttachmentUsages[.color(i)] = usageNode
+            let usagePointer = self.resourceUsages.resourceUsageNode(for: attachment.texture.handle, encoder: self, usageType: type, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
+            usagePointer.pointee.commandRangeInPass = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
+            self.renderTargetAttachmentUsages[.color(i)] = usagePointer
         }
     }
     
@@ -1271,25 +1249,24 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 type = .readWriteRenderTarget // TODO: should we have a special readOnlyRenderTarget for e.g. depth writes disabled but depth comparison on?
             }
             
-            if let usageNode = self.renderTargetAttachmentUsages[.depth] {
-                switch (type, usageNode.pointee.element.type) {
+            if let usagePointer = self.renderTargetAttachmentUsages[.depth] {
+                switch (type, usagePointer.pointee.type) {
                 case (.readWriteRenderTarget, _):
-                    usageNode.pointee.element.type = .readWriteRenderTarget
+                    usagePointer.pointee.type = .readWriteRenderTarget
                 case (_, .unusedRenderTarget):
-                    usageNode.pointee.element.type = .writeOnlyRenderTarget
+                    usagePointer.pointee.type = .writeOnlyRenderTarget
                 default:
                     break // No change necessary.
                 }
-                usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
+                usagePointer.pointee.commandRangeInPass = Range(usagePointer.pointee.commandRangeInPass.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
                 break depthCheck
             }
             
-            let usageNode = self.resourceUsages.resourceUsageNode(for: depthAttachment.texture.handle, encoder: self, usageType: type, stages: [.vertex, .fragment], inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
-            usageNode.pointee.element.commandRangeInPass = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
-            self.renderTargetAttachmentUsages[.depth] = usageNode
+            let usagePointer = self.resourceUsages.resourceUsageNode(for: depthAttachment.texture.handle, encoder: self, usageType: type, stages: [.vertex, .fragment], inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
+            usagePointer.pointee.commandRangeInPass = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
+            self.renderTargetAttachmentUsages[.depth] = usagePointer
             
             if endingEncoding, let resolveTexture = depthAttachment.resolveTexture {
-                self.resourceUsages.registerResource(Resource(resolveTexture))
                 let _ = self.resourceUsages.resourceUsageNode(for: depthAttachment.texture.handle, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
                 let _ = self.resourceUsages.resourceUsageNode(for: resolveTexture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
             }
@@ -1308,25 +1285,24 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             
             let type : ResourceUsageType = isRead ? .readWriteRenderTarget : .writeOnlyRenderTarget
             
-            if let usageNode = self.renderTargetAttachmentUsages[.stencil] {
-                switch (type, usageNode.pointee.element.type) {
+            if let usagePointer = self.renderTargetAttachmentUsages[.stencil] {
+                switch (type, usagePointer.pointee.type) {
                 case (.readWriteRenderTarget, _):
-                    usageNode.pointee.element.type = .readWriteRenderTarget
+                    usagePointer.pointee.type = .readWriteRenderTarget
                 case (_, .unusedRenderTarget):
-                    usageNode.pointee.element.type = .writeOnlyRenderTarget
+                    usagePointer.pointee.type = .writeOnlyRenderTarget
                 default:
                     break // No change necessary.
                 }
-                usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
+                usagePointer.pointee.commandRangeInPass = Range(usagePointer.pointee.commandRangeInPass.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
                 break stencilCheck
             }
             
-            let usageNode = self.resourceUsages.resourceUsageNode(for: stencilAttachment.texture.handle, encoder: self, usageType: type, stages: [.vertex, .fragment], inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
-            usageNode.pointee.element.commandRangeInPass = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
-            self.renderTargetAttachmentUsages[.stencil] = usageNode
+            let usagePointer = self.resourceUsages.resourceUsageNode(for: stencilAttachment.texture.handle, encoder: self, usageType: type, stages: [.vertex, .fragment], inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
+            usagePointer.pointee.commandRangeInPass = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
+            self.renderTargetAttachmentUsages[.stencil] = usagePointer
             
             if endingEncoding, let resolveTexture = stencilAttachment.resolveTexture {
-                self.resourceUsages.registerResource(Resource(resolveTexture))
                 let _ = self.resourceUsages.resourceUsageNode(for: stencilAttachment.texture.handle, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
                 let _ = self.resourceUsages.resourceUsageNode(for: resolveTexture.handle, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
             }
@@ -1355,16 +1331,15 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
     
     public func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int) {
         if let currentBinding = self.boundVertexBuffers[index] {
-            let lowerBound = currentBinding.pointee.element.commandRangeInPass.lowerBound
+            let lowerBound = currentBinding.pointee.commandRangeInPass.lowerBound
             // In normal execution, the last GPU command index should always be at least lowerBound.
             // However, if we don't have a valid pipeline state, it's possible that no GPU commands get executed;
             // in that case, we use max(lowerBound, self.lastGPUCommandIndex) to prevent the Swift stdlib from asserting.
-            currentBinding.pointee.element.commandRangeInPass = Range(lowerBound...max(lowerBound, self.lastGPUCommandIndex))
+            currentBinding.pointee.commandRangeInPass = Range(lowerBound...max(lowerBound, self.lastGPUCommandIndex))
         }
         
         guard let buffer = buffer else { return }
         
-        self.resourceUsages.registerResource(Resource(buffer))
         let newUsageNode = self.resourceUsages.resourceUsageNode(for: buffer.handle, encoder: self, usageType: .vertexBuffer, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: self.nextCommandOffset)
         self.boundVertexBuffers[index] = newUsageNode
         
@@ -1490,10 +1465,10 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         super.updateResourceUsages(endingEncoding: endingEncoding)
         
         if endingEncoding {
-            for usageNode in self.boundVertexBuffers {
-                guard let usageNode = usageNode else { continue }
-                if self.lastGPUCommandIndex > usageNode.pointee.element.commandRangeInPass.lowerBound {
-                    usageNode.pointee.element.commandRangeInPass = Range(usageNode.pointee.element.commandRangeInPass.lowerBound...self.lastGPUCommandIndex)
+            for usagePointer in self.boundVertexBuffers {
+                guard let usagePointer = usagePointer else { continue }
+                if self.lastGPUCommandIndex > usagePointer.pointee.commandRangeInPass.lowerBound {
+                    usagePointer.pointee.commandRangeInPass = Range(usagePointer.pointee.commandRangeInPass.lowerBound...self.lastGPUCommandIndex)
                 }
             }
             

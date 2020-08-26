@@ -322,7 +322,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     let isRTBarrier = false
                     #endif
                     
-                    if isRTBarrier, usage._renderPass.toOpaque() == previousUsage._renderPass.toOpaque(), previousUsage.commandRange.upperBound > usage.commandRange.lowerBound {
+                    if isRTBarrier, usage.renderPassRecord === previousUsage.renderPassRecord, previousUsage.commandRange.upperBound > usage.commandRange.lowerBound {
                         // We have overlapping usages, so we need to insert a render target barrier before every draw.
                         let applicableRange = max(previousUsage.commandRangeInPass.lowerBound, usage.commandRangeInPass.lowerBound)..<min(previousUsage.commandRangeInPass.upperBound, usage.commandRangeInPass.upperBound)
                         

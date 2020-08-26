@@ -41,38 +41,39 @@ public struct ChunkArray<T>: Collection {
     @inlinable
     public subscript(_ index: Int) -> T {
         get {
-            precondition(index >= 0 && index < self.count)
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
-            var currentChunk = self.next!
-            for _ in 0..<chunkIndex {
-                currentChunk = currentChunk.pointee.next!
-            }
-            return UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self)[indexInChunk]
+            return self[pointerTo: index].pointee
         }
         set {
-            precondition(index >= 0 && index < self.count)
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
-            var currentChunk = self.next!
-            for _ in 0..<chunkIndex {
-                currentChunk = currentChunk.pointee.next!
-            }
-            return UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self)[indexInChunk] = newValue
+            self[pointerTo: index].pointee = newValue
         }
+    }
+    
+    @inlinable
+    public subscript(pointerTo index: Int) -> UnsafeMutablePointer<T> {
+        precondition(index >= 0 && index < self.count)
+        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
+        var currentChunk = self.next!
+        for _ in 0..<chunkIndex {
+            currentChunk = currentChunk.pointee.next!
+        }
+        return UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self).advanced(by: indexInChunk)
+    }
+    
+    @inlinable
+    public var pointerToLast: UnsafeMutablePointer<T> {
+        precondition(self.count > 0)
+        let index = self.count - 1
+        let indexInChunk = index % ChunkArray.elementsPerChunk
+        return UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: T.self).advanced(by: indexInChunk)
     }
     
     @inlinable
     public var last: T {
         get {
-            precondition(self.count > 0 )
-            let index = self.count - 1
-            let indexInChunk = index % ChunkArray.elementsPerChunk
-            return UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: T.self)[indexInChunk]
+            return self.pointerToLast.pointee
         }
         set {
-            precondition(self.count > 0 )
-            let index = self.count - 1
-            let indexInChunk = index % ChunkArray.elementsPerChunk
-            UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: T.self)[indexInChunk] = newValue
+            self.pointerToLast.pointee = newValue
         }
     }
     

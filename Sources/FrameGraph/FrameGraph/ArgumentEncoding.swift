@@ -169,7 +169,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public var usages : ResourceUsagesList {
+    public var usages : ChunkArray<ResourceUsage> {
         get {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
@@ -201,19 +201,6 @@ public struct _ArgumentBuffer : ResourceProtocol {
                     let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
                     return CAtomicsStore(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), newValue, .relaxed)
                 }
-            }
-        }
-    }
-    
-    @inlinable
-    var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
-        get {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].usages.advanced(by: indexInChunk)
             }
         }
     }
@@ -558,11 +545,6 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     @inlinable
     public var sourceArray : ArgumentBufferArray<K>? {
         return self.argumentBuffer.sourceArray.map { ArgumentBufferArray(handle: $0.handle) }
-    }
-    
-    @inlinable
-    var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
-        return self.argumentBuffer.usagesPointer
     }
     
     @inlinable

@@ -56,7 +56,7 @@ public final class TransientRegistryManager {
     
     @usableFromInline var descriptors : UnsafeMutablePointer<BufferDescriptor>! = nil
     @usableFromInline var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>! = nil
-    @usableFromInline var usages : UnsafeMutablePointer<ResourceUsagesList>! = nil
+    @usableFromInline var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>! = nil
     @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
     
     init(transientRegistryIndex: Int) {
@@ -94,7 +94,7 @@ public final class TransientRegistryManager {
         
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.deferredSliceActions.advanced(by: index).initialize(to: [])
-        self.usages.advanced(by: index).initialize(to: ResourceUsagesList())
+        self.usages.advanced(by: index).initialize(to: ChunkArray())
         self.labels.advanced(by: index).initialize(to: nil)
         
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
@@ -135,7 +135,7 @@ public final class TransientRegistryManager {
         /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
         @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         @usableFromInline let descriptors : UnsafeMutablePointer<BufferDescriptor>
-        @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
+        @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
         @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         @usableFromInline let labels : UnsafeMutablePointer<String?>
@@ -198,7 +198,7 @@ public final class TransientRegistryManager {
             self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
+            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
@@ -247,7 +247,7 @@ public final class TransientRegistryManager {
         self.enqueuedDisposals.removeAll()
         
         for chunkIndex in 0..<self.chunkCount {
-            self.chunks[chunkIndex].usages.assign(repeating: ResourceUsagesList(), count: Chunk.itemsPerChunk)
+            self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
         }
     }
     
@@ -276,7 +276,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var generation : UInt8 = 0
     
     @usableFromInline var descriptors : UnsafeMutablePointer<TextureDescriptor>! = nil
-    @usableFromInline var usages : UnsafeMutablePointer<ResourceUsagesList>! = nil
+    @usableFromInline var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>! = nil
     
     @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
     @usableFromInline var baseResources : UnsafeMutablePointer<Resource?>! = nil
@@ -315,7 +315,7 @@ public enum TextureViewBaseInfo {
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
         self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.usages.advanced(by: index).initialize(to: ResourceUsagesList())
+        self.usages.advanced(by: index).initialize(to: ChunkArray())
         self.labels.advanced(by: index).initialize(to: nil)
         self.baseResources.advanced(by: index).initialize(to: nil)
         self.textureViewInfos.advanced(by: index).initialize(to: nil)
@@ -330,7 +330,7 @@ public enum TextureViewBaseInfo {
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
         self.descriptors.advanced(by: index).initialize(to: descriptor.descriptor)
-        self.usages.advanced(by: index).initialize(to: ResourceUsagesList())
+        self.usages.advanced(by: index).initialize(to: ChunkArray())
         self.labels.advanced(by: index).initialize(to: nil)
         self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
         self.textureViewInfos.advanced(by: index).initialize(to: .buffer(descriptor))
@@ -359,7 +359,7 @@ public enum TextureViewBaseInfo {
         baseResource.descriptor.usageHint.formUnion(.pixelFormatView)
         
         self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.usages.advanced(by: index).initialize(to:  ResourceUsagesList())
+        self.usages.advanced(by: index).initialize(to:  ChunkArray())
         self.labels.advanced(by: index).initialize(to: nil)
         self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
         self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
@@ -400,7 +400,7 @@ public enum TextureViewBaseInfo {
         /// The index that must be completed on the GPU for each queue before the CPU can write to this memory.
         @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         @usableFromInline let descriptors : UnsafeMutablePointer<TextureDescriptor>
-        @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
+        @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
         @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         @usableFromInline let labels : UnsafeMutablePointer<String?>
@@ -463,7 +463,7 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
+            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
@@ -507,7 +507,7 @@ public enum TextureViewBaseInfo {
         self.enqueuedDisposals.removeAll()
         
         for chunkIndex in 0..<self.chunkCount {
-            self.chunks[chunkIndex].usages.assign(repeating: ResourceUsagesList(), count: Chunk.itemsPerChunk)
+            self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
         }
     }
     
@@ -528,7 +528,7 @@ public enum TextureViewBaseInfo {
     struct Chunk {
         @usableFromInline static let itemsPerChunk = 2048
         
-        @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
+        @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
         @usableFromInline let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
         @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
         @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
@@ -593,7 +593,7 @@ public enum TextureViewBaseInfo {
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
+            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
             self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: AtomicOptionalRawPointer(nil))
             self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
@@ -617,7 +617,7 @@ public enum TextureViewBaseInfo {
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
+            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
             self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: AtomicOptionalRawPointer(nil))
             self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
@@ -667,7 +667,7 @@ public enum TextureViewBaseInfo {
     struct Chunk {
         @usableFromInline static let itemsPerChunk = 2048
         
-        @usableFromInline let usages : UnsafeMutablePointer<ResourceUsagesList>
+        @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
         @usableFromInline let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
         @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
         @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
@@ -743,7 +743,7 @@ public enum TextureViewBaseInfo {
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
+            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
             self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: AtomicOptionalRawPointer(nil))
             self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
@@ -776,7 +776,7 @@ public enum TextureViewBaseInfo {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
             
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ResourceUsagesList())
+            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
             self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: AtomicOptionalRawPointer(nil))
             self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
@@ -829,7 +829,7 @@ public enum TextureViewBaseInfo {
         self.enqueuedDisposals.removeAll()
         
         for chunkIndex in 0..<self.chunkCount {
-            self.chunks[chunkIndex].usages.assign(repeating: ResourceUsagesList(), count: Chunk.itemsPerChunk)
+            self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
         }
     }
     

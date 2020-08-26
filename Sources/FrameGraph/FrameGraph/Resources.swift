@@ -109,7 +109,7 @@ public protocol ResourceProtocol : Hashable {
     var handle : Handle { get }
     var stateFlags : ResourceStateFlags { get nonmutating set }
     
-    var usages : ResourceUsagesList { get }
+    var usages : ChunkArray<ResourceUsage> { get }
     
     var label : String? { get nonmutating set }
     var storageMode : StorageMode { get }
@@ -306,7 +306,7 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
-    public var usages: ResourceUsagesList {
+    public var usages: ChunkArray<ResourceUsage> {
         get {
             switch self.type {
             case .buffer:
@@ -316,23 +316,7 @@ public struct Resource : ResourceProtocol, Hashable {
             case .argumentBuffer:
                 return _ArgumentBuffer(handle: self.handle).usages
             default:
-                return ResourceUsagesList()
-            }
-        }
-    }
-    
-    @inlinable
-    internal var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
-        get {
-            switch self.type {
-            case .buffer:
-                return Buffer(handle: self.handle).usagesPointer
-            case .texture:
-                return Texture(handle: self.handle).usagesPointer
-            case .argumentBuffer:
-                return _ArgumentBuffer(handle: self.handle).usagesPointer
-            default:
-                fatalError()
+                return ChunkArray()
             }
         }
     }
@@ -479,8 +463,8 @@ extension ResourceProtocol {
     }
     
     @inlinable
-    public var usages : ResourceUsagesList {
-        return ResourceUsagesList()
+    public var usages : ChunkArray<ResourceUsage> {
+        return ChunkArray()
     }
     
     @inlinable
@@ -895,7 +879,7 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public var usages : ResourceUsagesList {
+    public var usages : ChunkArray<ResourceUsage> {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
@@ -903,19 +887,6 @@ public struct Buffer : ResourceProtocol {
                 return PersistentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
             } else {
                 return TransientBufferRegistry.instances[self.transientRegistryIndex].usages[index]
-            }
-        }
-    }
-    
-    @inlinable
-    var usagesPointer : UnsafeMutablePointer<ResourceUsagesList> {
-        get {
-            let index = self.index
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-                return PersistentBufferRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
-            } else {
-                return TransientBufferRegistry.instances[self.transientRegistryIndex].usages.advanced(by: index)
             }
         }
     }
@@ -1200,7 +1171,7 @@ public struct Texture : ResourceProtocol {
     }
     
     @inlinable
-    public var usages : ResourceUsagesList {
+    public var usages : ChunkArray<ResourceUsage> {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
@@ -1208,19 +1179,6 @@ public struct Texture : ResourceProtocol {
                 return PersistentTextureRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
             } else {
                 return self.baseResource?.usages ?? TransientTextureRegistry.instances[self.transientRegistryIndex].usages[index]
-            }
-        }
-    }
-    
-    @inlinable
-    var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
-        get {
-            let index = self.index
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-                return PersistentTextureRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
-            } else {
-                return self.baseResource?.usagesPointer ?? TransientTextureRegistry.instances[self.transientRegistryIndex].usages.advanced(by: index)
             }
         }
     }
