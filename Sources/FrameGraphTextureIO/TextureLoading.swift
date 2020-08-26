@@ -9,10 +9,7 @@
 import Foundation
 import SwiftFrameGraph
 import stb_image
-
-#if os(macOS)
-import Metal
-#endif
+import tinyexr
 
 extension StorageMode {
     public static var preferredForLoadedImage: StorageMode {
@@ -20,145 +17,211 @@ extension StorageMode {
     }
 }
 
-extension Texture {
+extension TextureData where T == UInt8 {
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
+        var width : Int32 = 0
+        var height : Int32 = 0
+        var componentsPerPixel : Int32 = 0
+        guard stbi_info(url.path, &width, &height, &componentsPerPixel) != 0 else {
+            throw TextureLoadingError.invalidFile(url)
+        }
+        
+        let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
+        
+        guard let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
+            throw TextureLoadingError.invalidTextureDataFormat(url, T.self)
+        }
+        
+        self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension), deallocateFunc: { stbi_image_free($0) })
+    }
+}
+
+
+extension TextureData where T == UInt16 {
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
+        var width : Int32 = 0
+        var height : Int32 = 0
+        var componentsPerPixel : Int32 = 0
+        guard stbi_info(url.path, &width, &height, &componentsPerPixel) != 0 else {
+            throw TextureLoadingError.invalidFile(url)
+        }
+        
+        let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
+        
+        guard let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
+            throw TextureLoadingError.invalidTextureDataFormat(url, T.self)
+        }
+        
+        self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension), deallocateFunc: { stbi_image_free($0) })
+    }
     
-    fileprivate func copyData<T>(from textureData: TextureData<T>, mipmapped: Bool) throws {
-        let mips = mipmapped ? textureData.generateMipChain(wrapMode: .wrap, compressedBlockSize: 1) : [textureData]
-                       
-        for (i, data) in mips.enumerated() {
-            let storage = data.storage
-            GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: storage.data.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [storage] _, _ in
-                _ = storage
-            })
+    @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+        try self.init(fileAt: url, colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha)
+    }
+    
+    @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
+    public init(fileAt url: URL, colourSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+        try self.init(fileAt: url, colorSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
+    }
+}
+
+
+extension TextureData where T == Float {
+    
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
+        if url.pathExtension.lowercased() == "exr" {
+            try self.init(exrAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
+            return
+        }
+        
+        var width : Int32 = 0
+        var height : Int32 = 0
+        var componentsPerPixel : Int32 = 0
+        guard stbi_info(url.path, &width, &height, &componentsPerPixel) != 0 else {
+            throw TextureLoadingError.invalidFile(url)
+        }
+        
+        let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
+        
+        let isHDR = stbi_is_hdr(url.path) != 0
+        let is16Bit = stbi_is_16_bit(url.path) != 0
+        
+        let dataCount = Int(width * height * channels)
+        
+        if isHDR {
+            let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, channels)!
+            self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension), deallocateFunc: { stbi_image_free($0) })
+            
+        } else if is16Bit {
+            let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, channels)!
+            defer { stbi_image_free(data) }
+            
+            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension))
+            
+            for i in 0..<dataCount {
+                self.storage.data[i] = unormToFloat(data[i])
+            }
+            
+            self.inferAlphaMode()
+            
+        } else {
+            let data = stbi_load(url.path, &width, &height, &componentsPerPixel, channels)!
+            defer { stbi_image_free(data) }
+            
+            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension))
+            
+            for i in 0..<dataCount {
+                self.storage.data[i] = unormToFloat(data[i])
+            }
+            
+            self.inferAlphaMode()
         }
     }
     
-    public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
-        let pixelFormat: PixelFormat
-        let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
+    
+    @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+        try self.init(fileAt: url, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
+    }
+    
+    @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
+    public init(fileAt url: URL, colourSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+        try self.init(fileAt: url, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
+    }
+    
+    init(exrAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
+        var header = EXRHeader()
+        InitEXRHeader(&header)
+        var image = EXRImage()
+        InitEXRImage(&image)
         
-        if url.pathExtension.lowercased() == "exr" {
-            let textureData = try TextureData<Float>(exrAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
-            switch textureData.channelCount {
-            case 1:
-                pixelFormat = .r32Float
-            case 2:
-                pixelFormat = .rg32Float
-            case 4:
-                pixelFormat = .rgba32Float
-            default:
-                throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
+        var error: UnsafePointer<CChar>? = nil
+        
+        defer {
+            FreeEXRImage(&image)
+            FreeEXRHeader(&header)
+            error.map { FreeEXRErrorMessage($0) }
+        }
+        
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        try data.withUnsafeBytes { data in
+            
+            let memory = data.bindMemory(to: UInt8.self)
+            
+            var version = EXRVersion()
+            var result = ParseEXRVersionFromMemory(&version, memory.baseAddress, memory.count)
+            if result != TINYEXR_SUCCESS {
+                throw TextureLoadingError.exrParseError("Unable to parse EXR version")
             }
             
-            let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
-            self = Texture(descriptor: descriptor, flags: .persistent)
+            result = ParseEXRHeaderFromMemory(&header, &version, memory.baseAddress, memory.count, &error)
+            if result != TINYEXR_SUCCESS {
+                throw TextureLoadingError.exrParseError(String(cString: error!))
+            }
             
-            try self.copyData(from: textureData, mipmapped: mipmapped)
+            for i in 0..<Int(header.num_channels) {
+                header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT
+            }
             
-        } else {
-            // Use stb image directly.
+            result = LoadEXRImageFromMemory(&image, &header, memory.baseAddress, memory.count, &error)
+            if result != TINYEXR_SUCCESS {
+                throw TextureLoadingError.exrParseError(String(cString: error!))
+            }
+        }
+        
+        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: "exr"))
+        self.storage.data.initialize(repeating: 0.0)
+        
+        
+        for c in 0..<Int(image.num_channels) {
+            let channelIndex : Int
+            switch (UInt8(bitPattern: header.channels[c].name.0), header.channels[c].name.1) {
+            case (UInt8(ascii: "R"), 0):
+                channelIndex = 0
+            case (UInt8(ascii: "G"), 0):
+                channelIndex = 1
+            case (UInt8(ascii: "B"), 0):
+                channelIndex = 2
+            case (UInt8(ascii: "A"), 0):
+                channelIndex = 3
+            default:
+                channelIndex = c
+            }
             
-            let isHDR = stbi_is_hdr(url.path) != 0
-            let is16Bit = stbi_is_16_bit(url.path) != 0
-            
-            if isHDR {
-                let textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
-                
-                switch textureData.channelCount {
-                case 1:
-                    pixelFormat = .r32Float
-                case 2:
-                    pixelFormat = .rg32Float
-                case 4:
-                    pixelFormat = .rgba32Float
-                default:
-                    throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
-                }
-                
-                let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
-                self = Texture(descriptor: descriptor, flags: .persistent)
-                
-                try self.copyData(from: textureData, mipmapped: mipmapped)
-                
-            } else if is16Bit {
-                let textureData = try TextureData<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
-                
-                switch textureData.channelCount {
-                case 1:
-                    pixelFormat = .r16Unorm
-                case 2:
-                    pixelFormat = .rg16Unorm
-                case 4:
-                    pixelFormat = .rgba16Unorm
-                default:
-                    throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
-                }
-                
-                let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
-                self = Texture(descriptor: descriptor, flags: .persistent)
-                
-                try self.copyData(from: textureData, mipmapped: mipmapped)
-            } else {
-                var textureData = try TextureData<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
-                
-                if (colorSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
-                    var needsChannelExpansion = true
-                    if (textureData.channelCount == 1 && RenderBackend.supportsPixelFormat(.r8Unorm_sRGB)) ||
-                        (textureData.channelCount == 2 && RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB)) {
-                        needsChannelExpansion = false
-                    }
-                    if needsChannelExpansion {
-                        let sourceData = textureData
-                        textureData = TextureData<UInt8>(width: sourceData.width, height: sourceData.height, channels: 4, colorSpace: sourceData.colorSpace, alphaMode: sourceData.alphaMode)
-                        
-                        if sourceData.channelCount == 1 {
-                            sourceData.forEachPixel { (x, y, channel, val) in
-                                textureData[x, y] = SIMD4(val, val, val, .max)
+            if header.tiled != 0 {
+                for it in 0..<Int(image.num_tiles) {
+                    let src = UnsafeRawPointer(image.tiles![it].images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
+                    for j in 0..<header.tile_size_y {
+                        for i in 0..<header.tile_size_x {
+                            let ii =
+                                image.tiles![it].offset_x * header.tile_size_x + i
+                            let jj =
+                                image.tiles![it].offset_y * header.tile_size_y + j
+                            let idx = Int(ii + jj * image.width)
+                            
+                            // out of region check.
+                            if ii >= image.width || jj >= image.height {
+                                continue;
                             }
-                        } else if sourceData.channelCount == 2 {
-                            sourceData.forEachPixel { (x, y, channel, val) in
-                                if channel == 0 {
-                                    textureData[x, y] = SIMD4(val, val, val, .max)
-                                } else {
-                                    textureData[x, y, channel: 3] = val
-                                }
-                            }
-                        } else {
-                            precondition(sourceData.channelCount == 3)
-                            sourceData.forEachPixel { (x, y, channel, val) in
-                                textureData[x, y, channel: channel] = val
-                                textureData[x, y, channel: 3] = .max
-                            }
+                            let srcIdx = Int(i + j * header.tile_size_x)
+                            
+                            self.storage.data[self.channelCount * idx + channelIndex] = src[c][srcIdx]
                         }
                     }
                 }
-                
-                switch textureData.channelCount {
-                case 1:
-                    pixelFormat = colorSpace == .sRGB ? .r8Unorm_sRGB : .r8Unorm
-                case 2:
-                    pixelFormat = colorSpace == .sRGB ? .rg8Unorm_sRGB : .rg8Unorm
-                case 4:
-                    pixelFormat = colorSpace == .sRGB ? .rgba8Unorm_sRGB : .rgba8Unorm
-                default:
-                    throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
+            } else {
+                let src = UnsafeRawPointer(image.images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
+                for y in 0..<self.height {
+                    for x in 0..<self.width {
+                        let i = y &* self.width &+ x
+                        self.storage.data[self.channelCount &* i + channelIndex] = src[c][i]
+                    }
                 }
                 
-                let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
-                self = Texture(descriptor: descriptor, flags: .persistent)
-                
-                try self.copyData(from: textureData, mipmapped: mipmapped)
             }
         }
-    }
-    
-    @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:alphaMode:storageMode:usage:)")
-    public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, premultipliedAlpha: Bool, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
-        try self.init(fileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, storageMode: storageMode, usage: usage)
-    }
-    
-    @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:alphaMode:storageMode:usage:)")
-    public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColorSpace, premultipliedAlpha: Bool, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
-        try self.init(fileAt: url, mipmapped: mipmapped, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, storageMode: storageMode, usage: usage)
+        
+        self.inferAlphaMode()
     }
 }
