@@ -850,6 +850,7 @@ public struct Buffer : ResourceProtocol {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
                 PersistentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+                RenderBackend.updateLabel(on: self)
             } else {
                 TransientBufferRegistry.instances[self.transientRegistryIndex].labels[index] = newValue
             }
@@ -1150,6 +1151,7 @@ public struct Texture : ResourceProtocol {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
                 PersistentTextureRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+                RenderBackend.updateLabel(on: self)
             } else {
                 TransientTextureRegistry.instances[self.transientRegistryIndex].labels[index] = newValue
             }
