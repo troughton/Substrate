@@ -636,35 +636,46 @@ extension TextureData where T == Float {
     }
     
     public mutating func convertToPremultipliedAlpha() {
-        guard case .postmultiplied = self.alphaMode, self.channelCount == 4 else { return }
+        guard case .postmultiplied = self.alphaMode else { return }
+        
+        defer { self.alphaMode = .premultiplied }
+        
+        guard self.channelCount == 2 || self.channelCount == 4 else { return }
+        
         self.ensureUniqueness()
         
         let sourceColorSpace = self.colorSpace
         self.convert(toColorSpace: .linearSRGB)
         
+        let alphaChannel = self.channelCount - 1
         for y in 0..<self.height {
             for x in 0..<self.width {
-                for c in 0..<3 {
-                    self[x, y, channel: c] *= self[x, y, channel: 3]
+                for c in 0..<alphaChannel {
+                    self[x, y, channel: c] *= self[x, y, channel: alphaChannel]
                 }
             }
         }
         
         self.convert(toColorSpace: sourceColorSpace)
-        self.alphaMode = .premultiplied
     }
     
     public mutating func convertToPostmultipliedAlpha() {
-        guard case .premultiplied = self.alphaMode, self.channelCount == 4 else { return }
+        guard case .premultiplied = self.alphaMode else { return }
+        
+        defer { self.alphaMode = .postmultiplied }
+        
+        guard self.channelCount == 2 || self.channelCount == 4 else { return }
+        
         self.ensureUniqueness()
         
         let sourceColorSpace = self.colorSpace
         self.convert(toColorSpace: .linearSRGB)
         
+        let alphaChannel = self.channelCount - 1
         for y in 0..<self.height {
             for x in 0..<self.width {
-                for c in 0..<3 {
-                    self[x, y, channel: c] /= self[x, y, channel: 3]
+                for c in 0..<alphaChannel {
+                    self[x, y, channel: c] /= self[x, y, channel: alphaChannel]
                     self[x, y, channel: c] = clamp(self[x, y, channel: c], min: 0.0, max: 1.0)
                 }
             }
@@ -672,7 +683,6 @@ extension TextureData where T == Float {
         
         self.convert(toColorSpace: sourceColorSpace)
         
-        self.alphaMode = .postmultiplied
     }
     
     public var averageValue : SIMD4<Float> {
