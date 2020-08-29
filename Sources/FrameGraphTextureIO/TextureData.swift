@@ -21,9 +21,23 @@ public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_
     }
     let c = clamp(c, min: -1.0, max: 1.0)
     
-    let scale = Float(I.max)
+    let scale: Float
+    if I.self == Int8.self {
+        scale = Float(Int8.max)
+    } else if I.self == Int16.self {
+        scale = Float(Int16.max)
+    } else {
+        scale = Float(I.max)
+    }
     let rescaled = c * scale
-    return I(exactly: rescaled.rounded(.toNearestOrAwayFromZero))!
+    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
+    if I.self == UInt8.self {
+        return UInt8(rounded) as! I
+    } else if I.self == UInt16.self {
+        return UInt16(rounded) as! I
+    } else {
+        return I(rounded)
+    }
 }
 
 @inlinable
@@ -31,10 +45,24 @@ public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>
     if c.isNaN {
         return 0
     }
-    let c = clamp(c, min: 0.0, max: 1.0)
-    let scale = Float(I.max)
+    let c = min(1.0, max(c, 0.0))
+    let scale: Float
+    if I.self == UInt8.self {
+        scale = Float(UInt8.max)
+    } else if I.self == UInt16.self {
+        scale = Float(UInt16.max)
+    } else {
+        scale = Float(I.max)
+    }
     let rescaled = c * scale
-    return I(exactly: rescaled.rounded(.toNearestOrAwayFromZero))!
+    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
+    if I.self == UInt8.self {
+        return UInt8(rounded) as! I
+    } else if I.self == UInt16.self {
+        return UInt16(rounded) as! I
+    } else {
+        return I(rounded)
+    }
 }
 
 @inlinable
@@ -42,12 +70,24 @@ public func snormToFloat<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_
     if c == I.min {
         return -1.0
     }
-    return Float(c) / Float(I.max)
+    if let c = c as? Int8 {
+        return Float(c) / Float(Int8.max)
+    } else if let c = c as? Int16 {
+        return Float(c) / Float(Int16.max)
+    } else {
+        return Float(c) / Float(I.max)
+    }
 }
 
 @inlinable
 public func unormToFloat<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ c: I) -> Float {
-    return Float(c) / Float(I.max)
+    if let c = c as? UInt8 {
+        return Float(c) / Float(UInt8.max)
+    } else if let c = c as? UInt16 {
+        return Float(c) / Float(UInt16.max)
+    } else {
+        return Float(c) / Float(I.max)
+    }
 }
 
 public enum TextureLoadingError : Error {
