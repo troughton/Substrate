@@ -100,6 +100,16 @@ final class MetalBackend : SpecificRenderBackend {
         }
     }
     
+    @usableFromInline func updateLabel(on resource: Resource) {
+        self.resourceRegistry.accessLock.withReadLock {
+            if let buffer = resource.buffer {
+                self.resourceRegistry[buffer]?.buffer.label = buffer.label
+            } else if let texture = resource.texture {
+                self.resourceRegistry[texture]?.texture.label = texture.label
+            }
+        }
+    }
+    
     @usableFromInline func materialiseHeap(_ heap: Heap) -> Bool {
         return self.resourceRegistry.allocateHeap(heap) != nil
     }

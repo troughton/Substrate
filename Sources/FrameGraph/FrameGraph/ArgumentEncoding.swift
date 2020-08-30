@@ -277,6 +277,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
                 PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+                RenderBackend.updateLabel(on: self)
             } else {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
                 TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].labels[indexInChunk] = newValue
@@ -473,6 +474,7 @@ public struct _ArgumentBufferArray : ResourceProtocol {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
                 PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+                RenderBackend.updateLabel(on: self)
             } else {
                 TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].labels[self.index] = newValue
             }

@@ -65,6 +65,8 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func registerWindowTexture(texture: Texture, context: Any)
     func registerExternalResource(_ resource: Resource, backingResource: Any)
     
+    func updateLabel(on resource: Resource)
+    
     func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
     
@@ -126,6 +128,11 @@ public struct RenderBackend {
     @inlinable
     public static func registerWindowTexture(texture: Texture, context: Any) {
         return _backend.registerWindowTexture(texture: texture, context: context)
+    }
+    
+    @inlinable
+    static func updateLabel<R: ResourceProtocol>(on resource: R) {
+        return _backend.updateLabel(on: Resource(resource))
     }
     
     @inlinable
