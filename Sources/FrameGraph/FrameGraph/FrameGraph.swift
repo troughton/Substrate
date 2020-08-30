@@ -770,6 +770,7 @@ public final class FrameGraph {
             assert(passRecord.commandRange!.count > 0)
             
             for (resource, resourceUsage) in passRecord.resourceUsages where resourceUsage.stages != .cpuBeforeRender {
+                assert(resource.isValid)
                 self.usedResources.insert(resource)
                 
                 var resourceUsage = resourceUsage

@@ -131,22 +131,27 @@ public struct ChunkArray<T>: Collection {
         public typealias Element = T
         
         @usableFromInline
+        let elementCount: Int
+        @usableFromInline
         var chunk: UnsafeMutablePointer<Chunk>?
         @usableFromInline
-        var indexInChunk = 0
+        var index = 0
         
         @inlinable
-        init(currentChunk: UnsafeMutablePointer<Chunk>?) {
+        init(currentChunk: UnsafeMutablePointer<Chunk>?, elementCount: Int) {
             self.chunk = currentChunk
+            self.elementCount = elementCount
         }
         
         @inlinable
         public mutating func next() -> T? {
-            if let currentChunk = self.chunk {
-                let element = UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self)[self.indexInChunk]
-                self.indexInChunk += 1
-                if self.indexInChunk >= ChunkArray.elementsPerChunk {
-                    self.indexInChunk = 0
+            if self.index < self.elementCount {
+                let indexInChunk = self.index % ChunkArray.elementsPerChunk
+                let currentChunk = self.chunk.unsafelyUnwrapped
+                let element = UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self)[indexInChunk]
+                self.index += 1
+                
+                if indexInChunk + 1 == ChunkArray.elementsPerChunk {
                     self.chunk = currentChunk.pointee.next
                 }
                 return element
@@ -157,7 +162,7 @@ public struct ChunkArray<T>: Collection {
     
     @inlinable
     public func makeIterator() -> Iterator {
-        return Iterator(currentChunk: self.next)
+        return Iterator(currentChunk: self.next, elementCount: self.count)
     }
     
 }
