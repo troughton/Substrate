@@ -80,6 +80,7 @@ public enum ActiveResourceRange {
     case buffer(Range<Int>)
     case texture(TextureSubresourceMask)
     
+    @inlinable
     mutating func formUnion(with range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) {
         if case .fullResource = self {
             return

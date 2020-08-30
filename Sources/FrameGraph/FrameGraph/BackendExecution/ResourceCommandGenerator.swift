@@ -267,12 +267,40 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             if Backend.TransientResourceRegistry.isAliasedHeapResource(resource: resource) {
                 let fenceDependency = FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, stages: firstUsage.stages)
                 self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource, waitDependency: fenceDependency), encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, order: .before))
+            }
+            
+            func processInputAttachmentUsage(_ usage: ResourceUsage) {
+                // To simulate input attachments on desktop platforms, we need to insert a render target barrier between every draw.
+                #if !(os(iOS) || os(tvOS) || os(watchOS)) || targetEnvironment(macCatalyst)
+                let applicableRange = usage.commandRange
                 
+                let commands = usage.renderPassRecord.commands!
+                let passCommandRange = usage.renderPassRecord.commandRange!
+                var previousCommandIndex = -1
+                for i in applicableRange {
+                    let command = commands[i]
+                    if command.isDrawCommand {
+                        let commandIndex = i + passCommandRange.lowerBound
+                        if previousCommandIndex >= 0 {
+                            self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: previousCommandIndex))
+                        }
+                        previousCommandIndex = commandIndex
+                    }
+                }
+                #endif
+            }
+            
+            if firstUsage.type == .inputAttachmentRenderTarget {
+                processInputAttachmentUsage(firstUsage)
             }
             
             while let usage = usageIterator.next()  {
                 if !usage.affectsGPUBarriers {
                     continue
+                }
+                
+                if usage.type == .inputAttachmentRenderTarget {
+                    processInputAttachmentUsage(usage)
                 }
                 
                 if usage.isWrite {
@@ -289,37 +317,14 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                 }
                 
-                // Only insert a barrier for the first usage following a write.
                 if usage.isRead, previousUsage.isWrite,
                     frameCommandInfo.encoderIndex(for: previousUsage.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord),
-                    !(previousUsage.type.isRenderTarget && (usage.type == .writeOnlyRenderTarget || usage.type == .readWriteRenderTarget)) {
+                    !(previousUsage.type.isRenderTarget && usage.type == .readWriteRenderTarget) {
                     
                     assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
                     assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
                     
-                    #if os(macOS) || targetEnvironment(macCatalyst)
-                    let isRTBarrier = previousUsage.type.isRenderTarget || usage.type.isRenderTarget
-                    #else
-                    let isRTBarrier = false
-                    #endif
-                    
-                    if isRTBarrier, usage.renderPassRecord === previousUsage.renderPassRecord, previousUsage.commandRange.upperBound > usage.commandRange.lowerBound {
-                        // We have overlapping usages, so we need to insert a render target barrier before every draw.
-                        let applicableRange = max(previousUsage.commandRange.lowerBound, usage.commandRange.lowerBound)..<min(previousUsage.commandRange.upperBound, usage.commandRange.upperBound)
-                        
-                        let commands = usage.renderPassRecord.commands!
-                        let passCommandRange = usage.renderPassRecord.commandRange!
-                        for i in applicableRange {
-                            let command = commands[i]
-                            if command.isDrawCommand {
-                                let commandIndex = i + passCommandRange.lowerBound
-                                self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousUsage.type, afterStages: previousUsage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: commandIndex))
-                            }
-                        }
-                        
-                    } else {
-                        self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousUsage.type, afterStages: previousUsage.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages), index: previousUsage.commandRange.last!))
-                    }
+                    self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousUsage.type, afterStages: previousUsage.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages), index: previousUsage.commandRange.last!))
                 }
                 
                 if (usage.isRead || usage.isWrite), let previousWrite = previousWrite, frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {

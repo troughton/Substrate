@@ -33,8 +33,8 @@ extension ChunkArray where Element == ResourceUsage {
     }
     
     @inlinable
-    mutating func mergeOrAppendUsage(_ usage: ResourceUsage, allocator: TagAllocator.ThreadView) {
-        if self.isEmpty || !self.last.mergeWithUsage(usage) {
+    mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.ThreadView) {
+        if self.isEmpty || !self.last.mergeWithUsage(usage, resource: resource, allocator: .tagThreadView(allocator)) {
             self.append(usage, allocator: .tagThreadView(allocator))
         }
     }
@@ -118,43 +118,50 @@ public struct ResourceUsage {
     
     /// - returns: Whether the usages could be merged.
     @inlinable
-    mutating func mergeWithUsage(_ nextUsage: ResourceUsage) -> Bool {
+    mutating func mergeWithUsage(_ nextUsage: ResourceUsage, resource: Resource, allocator: AllocatorType) -> Bool {
         if self.renderPassRecord !== nextUsage.renderPassRecord {
             return false
         }
         
-        if type == .inputAttachment && self.type.isRenderTarget { // Transform a resource read within a render target into a readWriteRenderTarget.
+        if self.type.isRenderTarget, (nextUsage.type == .inputAttachment || nextUsage.type == .read) { // Transform a resource read within a render target into an inputAttachmentRenderTarget.
+            if !self.commandRange.contains(nextUsage.commandRange.lowerBound) {
+                return false
+            }
+            
             self.type = .inputAttachmentRenderTarget
-            self.stages.formUnion(stages)
-            self.inArgumentBuffer = self.inArgumentBuffer || inArgumentBuffer
+            self.stages.formUnion(nextUsage.stages)
+            self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
+            self.inArgumentBuffer = self.inArgumentBuffer || nextUsage.inArgumentBuffer
             self.commandRange = Range(uncheckedBounds: (min(self.commandRange.lowerBound, nextUsage.commandRange.lowerBound), max(self.commandRange.upperBound, nextUsage.commandRange.upperBound)))
             return true
         }
         
-        readWriteMergeCheck: if self.commandRange.contains(nextUsage.commandRange.lowerBound), stages == self.stages, self.type != type {
+        readWriteMergeCheck: if self.commandRange.contains(nextUsage.commandRange.lowerBound), self.stages == nextUsage.stages, self.type != nextUsage.type {
             assert(self.inArgumentBuffer == inArgumentBuffer)
             
-            switch (type, self.type) {
+            switch (nextUsage.type, self.type) {
             case (.read, .readWrite), (.write, .write), (.write, .readWrite):
                 break
             case (.read, .write), (.readWrite, .read), (.write, .read):
                 self.type = .readWrite
             case (.writeOnlyRenderTarget, .readWriteRenderTarget), (.readWriteRenderTarget, .writeOnlyRenderTarget):
                 self.type = .readWriteRenderTarget
-            case (_, _) where !type.isWrite && !self.type.isWrite:
+            case (_, _) where !nextUsage.type.isWrite && !self.type.isWrite:
                 // If neither are writes, then it's fine to have conflicting uses.
                 // This might occur e.g. when reading from a buffer while simultaneously using it as an indirect buffer.
                 break readWriteMergeCheck
             default:
                 assertionFailure("Resource simulaneously bound for conflicting uses.")
             }
+            self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
             
             return true
         }
         
-        if ResourceUsageType.areMergeable(self.type, type) &&
-            self.inArgumentBuffer == inArgumentBuffer {
-            self.stages.formUnion(stages)
+        if ResourceUsageType.areMergeable(self.type, nextUsage.type) &&
+            self.inArgumentBuffer == nextUsage.inArgumentBuffer {
+            self.stages.formUnion(nextUsage.stages)
+            self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
             self.commandRange = Range(uncheckedBounds: (min(self.commandRange.lowerBound, nextUsage.commandRange.lowerBound), max(self.commandRange.upperBound, nextUsage.commandRange.upperBound)))
             return true
         }

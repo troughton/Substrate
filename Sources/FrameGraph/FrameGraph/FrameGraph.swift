@@ -774,7 +774,7 @@ public final class FrameGraph {
                 
                 var resourceUsage = resourceUsage
                 resourceUsage.commandRange = Range(uncheckedBounds: (resourceUsage.commandRange.lowerBound + startCommandIndex, resourceUsage.commandRange.upperBound + startCommandIndex))
-                resource.usages.mergeOrAppendUsage(resourceUsage, allocator: allocator)
+                resource.usages.mergeOrAppendUsage(resourceUsage, resource: resource, allocator: allocator)
             }
             
             passRecord.resourceUsages = nil
