@@ -34,7 +34,8 @@ extension ChunkArray where Element == ResourceUsage {
     
     @inlinable
     mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.ThreadView) {
-        if self.isEmpty || !self.last.mergeWithUsage(usage, resource: resource, allocator: .tagThreadView(allocator)) {
+        var usage = usage
+        if self.isEmpty || !self.last.mergeWithUsage(&usage, resource: resource, allocator: .tagThreadView(allocator)) {
             self.append(usage, allocator: .tagThreadView(allocator))
         }
     }
@@ -118,22 +119,29 @@ public struct ResourceUsage {
     
     /// - returns: Whether the usages could be merged.
     @inlinable
-    mutating func mergeWithUsage(_ nextUsage: ResourceUsage, resource: Resource, allocator: AllocatorType) -> Bool {
+    mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, resource: Resource, allocator: AllocatorType) -> Bool {
         if self.renderPassRecord !== nextUsage.renderPassRecord {
             return false
         }
         
         if self.type.isRenderTarget, (nextUsage.type == .inputAttachment || nextUsage.type == .read) { // Transform a resource read within a render target into an inputAttachmentRenderTarget.
             if !self.commandRange.contains(nextUsage.commandRange.lowerBound) {
+                nextUsage.type == .inputAttachment
+                return false
+            } else if self.commandRange.lowerBound >= nextUsage.commandRange.lowerBound {
+                // The usages fully overlap.
+                self.type = .inputAttachmentRenderTarget
+                self.stages.formUnion(nextUsage.stages)
+                self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
+                self.inArgumentBuffer = self.inArgumentBuffer || nextUsage.inArgumentBuffer
+                self.commandRange = Range(uncheckedBounds: (min(self.commandRange.lowerBound, nextUsage.commandRange.lowerBound), max(self.commandRange.upperBound, nextUsage.commandRange.upperBound)))
+                return true
+            } else {
+                // Mark the next use as being a shared input attachment/render target usage.
+                self.commandRange = self.commandRange.lowerBound..<nextUsage.commandRange.lowerBound
+                nextUsage.type = .inputAttachmentRenderTarget
                 return false
             }
-            
-            self.type = .inputAttachmentRenderTarget
-            self.stages.formUnion(nextUsage.stages)
-            self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
-            self.inArgumentBuffer = self.inArgumentBuffer || nextUsage.inArgumentBuffer
-            self.commandRange = Range(uncheckedBounds: (min(self.commandRange.lowerBound, nextUsage.commandRange.lowerBound), max(self.commandRange.upperBound, nextUsage.commandRange.upperBound)))
-            return true
         }
         
         readWriteMergeCheck: if self.commandRange.contains(nextUsage.commandRange.lowerBound), self.stages == nextUsage.stages, self.type != nextUsage.type {
