@@ -215,7 +215,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         
                         if usage.type.isRenderTarget {
                             resourceIsRenderTarget = true
-                            continue
+                            if usage.type != .inputAttachmentRenderTarget || !RenderBackend.requiresEmulatedInputAttachments {
+                                continue
+                            }
                         }
                         
                         let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
@@ -270,8 +272,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             }
             
             func processInputAttachmentUsage(_ usage: ResourceUsage) {
+                guard RenderBackend.requiresEmulatedInputAttachments else { return }
                 // To simulate input attachments on desktop platforms, we need to insert a render target barrier between every draw.
-                #if !(os(iOS) || os(tvOS) || os(watchOS)) || targetEnvironment(macCatalyst)
                 let applicableRange = usage.commandRange
                 
                 let commands = usage.renderPassRecord.commands!
@@ -283,11 +285,11 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         let commandIndex = i + passCommandRange.lowerBound
                         if previousCommandIndex >= 0 {
                             self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: previousCommandIndex))
+                            self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: .read, stages: usage.stages, allowReordering: false), index: commandIndex))
                         }
                         previousCommandIndex = commandIndex
                     }
                 }
-                #endif
             }
             
             if firstUsage.type == .inputAttachmentRenderTarget {

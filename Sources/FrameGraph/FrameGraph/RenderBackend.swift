@@ -66,6 +66,7 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func registerExternalResource(_ resource: Resource, backingResource: Any)
     
     func updateLabel(on resource: Resource)
+    var requiresEmulatedInputAttachments : Bool { get }
     
     func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
@@ -198,6 +199,11 @@ public struct RenderBackend {
     @inlinable
     public static var hasUnifiedMemory : Bool {
         return _backend.hasUnifiedMemory
+    }
+    
+    @inlinable
+    static var requiresEmulatedInputAttachments : Bool {
+        return _backend.requiresEmulatedInputAttachments
     }
     
     @inlinable

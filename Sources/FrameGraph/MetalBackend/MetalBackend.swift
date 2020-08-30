@@ -266,7 +266,10 @@ final class MetalBackend : SpecificRenderBackend {
         // Metal requires useResource calls for all untracked resources.
         return true
     }
-
+    
+    var requiresEmulatedInputAttachments: Bool {
+        return !self.isAppleSiliconGPU
+    }
     
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
