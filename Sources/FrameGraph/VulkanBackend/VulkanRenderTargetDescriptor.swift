@@ -256,16 +256,16 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         return true
     }
     
-    func descriptorMergedWithPass(_ pass: RenderPassRecord, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> VulkanRenderTargetDescriptor {
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, storedTextures: inout [Texture]) -> VulkanRenderTargetDescriptor {
         if self.tryMerge(withPass: pass) {
             return self
         } else {
-            self.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
+            self.finalise(storedTextures: &storedTextures)
             return VulkanRenderTargetDescriptor(renderPass: pass)
         }
     }
     
-    private func processLoadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, attachmentIndex: RenderTargetAttachmentIndex, resourceUsages: ResourceUsages, loadAction: VkAttachmentLoadOp, storedTextures: inout [Texture]) {
+    private func processLoadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, attachmentIndex: RenderTargetAttachmentIndex, loadAction: VkAttachmentLoadOp, storedTextures: inout [Texture]) {
         // Logic for usages:
         //
         //
@@ -367,21 +367,21 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
     }
     
-    func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture]) {
+    func finalise(storedTextures: inout [Texture]) {
         // Compute load and store actions for all attachments.
         self.colorActions = .init(repeating: (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE), count: self.descriptor.colorAttachments.count)
         self.colorPreviousAndNextUsageCommands = .init(repeating: (-1, -1), count: self.descriptor.colorAttachments.count)
         for (i, attachment) in self.descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
-            self.processLoadAndStoreActions(for: attachment, attachmentIndex: .color(i), resourceUsages: resourceUsages, loadAction: self.colorActions[i].0, storedTextures: &storedTextures)
+            self.processLoadAndStoreActions(for: attachment, attachmentIndex: .color(i), loadAction: self.colorActions[i].0, storedTextures: &storedTextures)
         }
         
         if let depthAttachment = self.descriptor.depthAttachment {
-            self.processLoadAndStoreActions(for: depthAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, loadAction: self.depthActions.0, storedTextures: &storedTextures)
+            self.processLoadAndStoreActions(for: depthAttachment, attachmentIndex: .depthStencil, loadAction: self.depthActions.0, storedTextures: &storedTextures)
         }
         
         if let stencilAttachment = self.descriptor.stencilAttachment {
-            self.processLoadAndStoreActions(for: stencilAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, loadAction: self.stencilActions.0, storedTextures: &storedTextures)
+            self.processLoadAndStoreActions(for: stencilAttachment, attachmentIndex: .depthStencil, loadAction: self.stencilActions.0, storedTextures: &storedTextures)
         }
     }
 }

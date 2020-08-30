@@ -95,8 +95,8 @@ public struct ChunkArray<T>: Collection {
                 currentTail.pointee.next = newChunk
             } else {
                 self.next = newChunk
-                self.tail = newChunk
             }
+            self.tail = newChunk
         }
         UnsafeMutableRawPointer(self.tail.unsafelyUnwrapped).assumingMemoryBound(to: T.self).advanced(by: indexInChunk).initialize(to: element)
         self.count += 1
@@ -118,6 +118,7 @@ public struct ChunkArray<T>: Collection {
         
         if indexInChunk == 0 {
             previousChunk.pointee.next = nil
+            self.tail = previousChunk
             Allocator.deallocate(currentChunk, allocator: allocator)
         }
         

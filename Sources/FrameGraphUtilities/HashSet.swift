@@ -81,7 +81,7 @@ public struct HashSet<K : CustomHashable> {
     /// and a bool denoting whether the insertion took place.
     @inlinable
     @discardableResult
-    public mutating func insert(key: K) -> (index: Index, inserted: Bool) {
+    public mutating func insert(_ key: K) -> (index: Index, inserted: Bool) {
         self.checkIfNeedsExpand()
         
         let bucket = self.findOrAllocate(key: key)
@@ -98,7 +98,7 @@ public struct HashSet<K : CustomHashable> {
     
     /// Same as above, but contains(key) MUST be false
     @inlinable
-    public mutating func insertUnique(key: K) {
+    public mutating func insertUnique(_ key: K) {
         assert(!self.contains(key: key))
         
         self.checkIfNeedsExpand()
@@ -123,7 +123,7 @@ public struct HashSet<K : CustomHashable> {
     
     @inlinable
     @discardableResult
-    public mutating func remove(key: K) -> Bool {
+    public mutating func remove(_ key: K) -> Bool {
         let bucket = self.findFilledBucket(key: key)
         return self.remove(at: bucket)
     }

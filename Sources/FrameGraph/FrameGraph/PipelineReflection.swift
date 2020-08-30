@@ -74,17 +74,55 @@ extension ResourceBindingPath : CustomHashable {
     }
 }
 
+public enum ActiveResourceRange {
+    case inactive
+    case fullResource
+    case buffer(Range<Int>)
+    case texture(TextureSubresourceMask)
+    
+    mutating func formUnion(with range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) {
+        if case .fullResource = self {
+            return
+        }
+        switch (self, range) {
+        case (.inactive, _):
+            self = range
+        case (_, .inactive):
+            break
+        case (.fullResource, _),
+             (_, .fullResource):
+            self = .fullResource
+        case (.buffer(let rangeA), .buffer(let rangeB)):
+            self = .buffer(min(rangeA.lowerBound, rangeB.lowerBound)..<max(rangeA.upperBound, rangeB.upperBound))
+        case (.texture(var maskA), .texture(let maskB)):
+            maskA.formUnion(with: maskB, descriptor: resource.texture!.descriptor, allocator: allocator)
+            self = .texture(maskA)
+        default:
+            fatalError("Incompatible resource ranges \(self) and \(range)")
+        }
+    }
+    
+    func offset(by offset: Int) -> ActiveResourceRange {
+        if case .buffer(let range) = self {
+            return .buffer((range.lowerBound + offset)..<(range.upperBound + offset))
+        }
+        return self
+    }
+}
+
 public struct ArgumentReflection {
     public var type : ResourceType
     public var bindingPath : ResourceBindingPath
     public var usageType : ResourceUsageType
     public var activeStages : RenderStages
+    public var activeRange: ActiveResourceRange
     
-    public init(type: ResourceType, bindingPath: ResourceBindingPath, usageType: ResourceUsageType, activeStages: RenderStages) {
+    public init(type: ResourceType, bindingPath: ResourceBindingPath, usageType: ResourceUsageType, activeStages: RenderStages, activeRange: ActiveResourceRange) {
         self.type = type
         self.bindingPath = bindingPath
         self.usageType = usageType
         self.activeStages = activeStages
+        self.activeRange = activeRange
     }
     
     public var isActive: Bool {

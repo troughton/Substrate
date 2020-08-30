@@ -279,10 +279,14 @@ public enum RenderPassType {
 final class RenderPassRecord {
     @usableFromInline let pass : RenderPass
     @usableFromInline var commands : ExpandingBuffer<FrameGraphCommand>! = nil
+    @usableFromInline var readResources : HashSet<Resource>! = nil
+    @usableFromInline var writtenResources : HashSet<Resource>! = nil
+    @usableFromInline var resourceUsages : ChunkArray<(Resource, ResourceUsage)>! = nil
     @usableFromInline /* internal(set) */ var commandRange : Range<Int>?
     @usableFromInline /* internal(set) */ var passIndex : Int
     @usableFromInline /* internal(set) */ var isActive : Bool
     @usableFromInline /* internal(set) */ var usesWindowTexture : Bool = false
+    @usableFromInline /* internal(set) */ var hasSideEffects : Bool = false
     
     init(pass: RenderPass, passIndex: Int) {
         self.pass = pass
@@ -313,7 +317,7 @@ protocol _FrameGraphContext : FrameGraphContext {
     var accessSemaphore : DispatchSemaphore { get }
     var frameGraphQueue: Queue { get }
     func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
-    func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<DependencyType>, resourceUsages: ResourceUsages, completion: @escaping (_ gpuTime: Double) -> Void)
+    func executeFrameGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>, completion: @escaping (_ gpuTime: Double) -> Void)
 }
 
 public enum FrameGraphTagType : UInt64 {
@@ -355,10 +359,10 @@ public final class FrameGraph {
     /// resourceUsagesAllocator is used for resource usages, and lasts one execution of the FrameGraph.
     static var resourceUsagesAllocator : TagAllocator! = nil
     
-    private static var threadResourceUsages : [ResourceUsages] = []
     private static var threadUnmanagedReferences : [ExpandingBuffer<Releasable>]! = nil
     
     private var renderPasses : [RenderPassRecord] = []
+    private var usedResources : Set<Resource> = []
     
     public static private(set) var globalSubmissionIndex : UInt64 = 0
     private var previousFrameCompletionTime : UInt64 = 0
@@ -536,35 +540,35 @@ public final class FrameGraph {
     // Then, it will execute the command list.
     
     func executePass(_ passRecord: RenderPassRecord, threadIndex: Int) {
-        let resourceUsages = FrameGraph.threadResourceUsages[threadIndex]
         let unmanagedReferences = FrameGraph.threadUnmanagedReferences[threadIndex]
         
         let renderPassScratchTag = FrameGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
         
         let commandRecorder = FrameGraphCommandRecorder(renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
                                                         frameGraphExecutionAllocator: TagAllocator.ThreadView(allocator: FrameGraph.executionAllocator, threadIndex: threadIndex),
+                                                        resourceUsageAllocator: TagAllocator.ThreadView(allocator: FrameGraph.resourceUsagesAllocator, threadIndex: threadIndex),
                                                         unmanagedReferences: unmanagedReferences)
         
         
         
         switch passRecord.pass {
         case let drawPass as DrawRenderPass:
-            let rce = RenderCommandEncoder(commandRecorder: commandRecorder, resourceUsages: resourceUsages, renderPass: drawPass, passRecord: passRecord)
+            let rce = RenderCommandEncoder(commandRecorder: commandRecorder, renderPass: drawPass, passRecord: passRecord)
             drawPass.execute(renderCommandEncoder: rce)
             rce.endEncoding()
             
         case let computePass as ComputeRenderPass:
-            let cce = ComputeCommandEncoder(commandRecorder: commandRecorder, resourceUsages: resourceUsages, renderPass: computePass, passRecord: passRecord)
+            let cce = ComputeCommandEncoder(commandRecorder: commandRecorder, renderPass: computePass, passRecord: passRecord)
             computePass.execute(computeCommandEncoder: cce)
             cce.endEncoding()
             
         case let blitPass as BlitRenderPass:
-            let bce = BlitCommandEncoder(commandRecorder: commandRecorder, resourceUsages: resourceUsages, renderPass: blitPass, passRecord: passRecord)
+            let bce = BlitCommandEncoder(commandRecorder: commandRecorder, renderPass: blitPass, passRecord: passRecord)
             blitPass.execute(blitCommandEncoder: bce)
             bce.endEncoding()
             
         case let externalPass as ExternalRenderPass:
-            let ece = ExternalCommandEncoder(commandRecorder: commandRecorder, resourceUsages: resourceUsages, renderPass: externalPass, passRecord: passRecord)
+            let ece = ExternalCommandEncoder(commandRecorder: commandRecorder, renderPass: externalPass, passRecord: passRecord)
             externalPass.execute(externalCommandEncoder: ece)
             ece.endEncoding()
             
@@ -577,8 +581,25 @@ public final class FrameGraph {
         
         passRecord.commands = commandRecorder.commands
         passRecord.commandRange = 0..<passRecord.commands.count
+        passRecord.readResources = commandRecorder.readResources
+        passRecord.writtenResources = commandRecorder.writtenResources
+        passRecord.resourceUsages = commandRecorder.resourceUsages
         
         TaggedHeap.free(tag: renderPassScratchTag)
+    }
+    
+    func fillUsedResourcesFromPass(passRecord: RenderPassRecord, threadIndex: Int) {
+        let usageAllocator = TagAllocator.ThreadView(allocator: FrameGraph.resourceUsagesAllocator, threadIndex: threadIndex)
+        
+        passRecord.readResources = .init(allocator: .tagThreadView(usageAllocator))
+        passRecord.writtenResources = .init(allocator: .tagThreadView(usageAllocator))
+        
+        for resource in passRecord.pass.writtenResources {
+            passRecord.writtenResources.insert(resource)
+        }
+        for resource in passRecord.pass.readResources {
+            passRecord.readResources.insert(resource)
+        }
     }
     
     func evaluateResourceUsages(renderPasses: [RenderPassRecord]) {
@@ -588,8 +609,8 @@ public final class FrameGraph {
             if passRecord.pass.writtenResources.isEmpty {
                 self.executePass(passRecord, threadIndex: jobManager.threadIndex)
             } else {
-                FrameGraph.threadResourceUsages[0].addReadResources(passRecord.pass.readResources, for: passRecord)
-                FrameGraph.threadResourceUsages[0].addWrittenResources(passRecord.pass.writtenResources, for: passRecord)
+                let threadIndex = jobManager.threadIndex
+                self.fillUsedResourcesFromPass(passRecord: passRecord, threadIndex: threadIndex)
             }
         }
         
@@ -600,8 +621,8 @@ public final class FrameGraph {
                 if passRecord.pass.writtenResources.isEmpty {
                     self.executePass(passRecord, threadIndex: threadIndex)
                 } else {
-                    FrameGraph.threadResourceUsages[threadIndex].addReadResources(passRecord.pass.readResources, for: passRecord)
-                    FrameGraph.threadResourceUsages[threadIndex].addWrittenResources(passRecord.pass.writtenResources, for: passRecord)
+                    let threadIndex = jobManager.threadIndex
+                    self.fillUsedResourcesFromPass(passRecord: passRecord, threadIndex: threadIndex)
                 }
             }
         }
@@ -667,78 +688,33 @@ public final class FrameGraph {
         var dependencyTable = DependencyTable<DependencyType>(capacity: renderPasses.count, defaultValue: .none)
         var passHasSideEffects = [Bool](repeating: false, count: renderPasses.count)
         
-        var producingPasses = [Int]()
-        var priorReads = [Int]()
-        
-        // Merge the resources from all other threads into the usages for the first thread.
-        for resourceUsages in FrameGraph.threadResourceUsages.dropFirst() {
-            FrameGraph.threadResourceUsages[0].resources.formUnion(resourceUsages.allResources)
-        }
-        
-        // Note: we don't need to include argument buffers in this loop since the only allowed usage of an argument buffer by the GPU is a read.
-        // We don't need to reverse the order of reads, either, since reads don't form data hazards.
-        // FIXME: this assumption will no longer hold once we support read-write argument buffers.
-        for resource in FrameGraph.threadResourceUsages[0].resources where resource.type == .buffer || resource.type == .texture || resource.type == .argumentBuffer {
-            if resource.isTextureView { continue } // Skip over the non-canonical versions of resources.
-            
-            resource.usagesPointer.reverse() // Since the usages list is constructed in reverse order.
-            
-            assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another FrameGraph is being used in this FrameGraph.")
-            assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
-            
-            let usages = resource.usages
-            guard !usages.isEmpty else {
-                continue
-            }
-            
-            //            assert(resource.flags.contains(.initialised) || usages.first.isWrite, "Resource read by pass \(usages.first.renderPass.pass.name) without being written to.")
-            for usage in usages {
+        for (i, pass) in renderPasses.enumerated() {
+            for resource in pass.writtenResources {
+                assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another FrameGraph is being used in this FrameGraph.")
+                assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
                 
-                let usagePassIndex = usage.renderPassRecord.passIndex
+                if resource.flags.intersection([.persistent, .windowHandle, .historyBuffer, .externalOwnership]) != [] {
+                    passHasSideEffects[i] = true
+                }
                 
-                if usage.isRead {
-                    for producingPass in producingPasses where usagePassIndex != producingPass {
-                        dependencyTable.setDependency(from: usagePassIndex, on: producingPass, to: .execution)
+                if resource.flags.contains(.windowHandle) {
+                    pass.usesWindowTexture = true
+                }
+                
+                for (j, otherPass) in renderPasses.enumerated().dropFirst(i + 1) {
+                    if otherPass.readResources.contains(resource) {
+                        dependencyTable.setDependency(from: j, on: i, to: .execution)
                     }
-                    priorReads.append(usagePassIndex)
-                }
-                if usage.isWrite {
-                    // Also set each producing pass to be dependent on all previous passes, since the relative ordering of writes matters.
-                    // The producingPasses list is guaranteed to be ordered.
-                    for priorRead in priorReads where usagePassIndex != priorRead {
-                        if dependencyTable.dependency(from: usagePassIndex, on: priorRead) != .execution {
-                            dependencyTable.setDependency(from: usagePassIndex, on: priorRead, to: .ordering)
-                        }
-                    }
-                    
-                    producingPasses.append(usagePassIndex)
-                }
-            }
-            
-            if resource.flags.intersection([.persistent, .windowHandle, .historyBuffer, .externalOwnership]) != [] {
-                for pass in producingPasses {
-                    passHasSideEffects[pass] = true
-                }
-            }
-            
-            if resource.flags.contains(.windowHandle) {
-                for pass in producingPasses {
-                    renderPasses[pass].usesWindowTexture = true
-                }
-            }
-            
-            // Also set each producing pass to be dependent on all previous passes, since the relative ordering of writes matters.
-            // The producingPasses list is guaranteed to be ordered.
-            for (i, pass) in producingPasses.enumerated() {
-                for dependentPass in producingPasses[(i + 1)...] where dependentPass != pass {
-                    if dependencyTable.dependency(from: dependentPass, on: pass) != .execution {
-                        dependencyTable.setDependency(from: dependentPass, on: pass, to: .ordering)
+                    if otherPass.writtenResources.contains(resource), dependencyTable.dependency(from: j, on: i) != .execution {
+                        dependencyTable.setDependency(from: j, on: i, to: .ordering) // since the relative ordering of writes matters
                     }
                 }
             }
             
-            producingPasses.removeAll(keepingCapacity: true)
-            priorReads.removeAll(keepingCapacity: true)
+            for resource in pass.readResources {
+                assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another FrameGraph is being used in this FrameGraph.")
+                assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
+            }
         }
         
         for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
@@ -779,6 +755,34 @@ public final class FrameGraph {
             }
         }
         
+        let allocator = TagAllocator.ThreadView(allocator: FrameGraph.resourceUsagesAllocator, threadIndex: 0)
+        
+        // Index the commands for each pass in a sequential manner for the entire frame.
+        var commandCount = 0
+        for (i, passRecord) in activePasses.enumerated() {
+            precondition(passRecord.isActive)
+            
+            let startCommandIndex = commandCount
+            commandCount += passRecord.commands.count
+            
+            passRecord.passIndex = i
+            passRecord.commandRange = startCommandIndex..<commandCount
+            assert(passRecord.commandRange!.count > 0)
+            
+            for (resource, resourceUsage) in passRecord.resourceUsages where resourceUsage.stages != .cpuBeforeRender {
+                self.usedResources.insert(resource)
+                
+                var resourceUsage = resourceUsage
+                resourceUsage.commandRange = Range(uncheckedBounds: (resourceUsage.commandRange.lowerBound + startCommandIndex, resourceUsage.commandRange.upperBound + startCommandIndex))
+                resource.usages.mergeOrAppendUsage(resourceUsage, allocator: allocator)
+            }
+            
+            passRecord.resourceUsages = nil
+        }
+        
+        // Compilation is finished, so reset that tag.
+        TaggedHeap.free(tag: FrameGraphTagType.frameGraphCompilation.tag)
+        
         return (activePasses, activePassDependencies)
     }
     
@@ -817,36 +821,13 @@ public final class FrameGraph {
         
         let threadCount = jobManager.threadCount
         
-        FrameGraph.threadResourceUsages.reserveCapacity(threadCount)
-        while FrameGraph.threadResourceUsages.count < threadCount {
-            FrameGraph.threadResourceUsages.append(ResourceUsages())
-        }
-        
         FrameGraph.threadUnmanagedReferences = (0..<threadCount).map { i in
             return ExpandingBuffer(allocator: AllocatorType(TagAllocator.ThreadView(allocator: FrameGraph.executionAllocator, threadIndex: i)), initialCapacity: 0)
-        }
-        
-        for (i, usages) in FrameGraph.threadResourceUsages.enumerated() {
-            usages.usageNodeAllocator = TagAllocator.ThreadView(allocator: FrameGraph.resourceUsagesAllocator, threadIndex: i)
         }
         
         self.context.beginFrameResourceAccess()
         
         let (passes, dependencyTable) = self.compile(renderPasses: self.renderPasses)
-        
-        // Index the commands for each pass in a sequential manner for the entire frame.
-        var commandCount = 0
-        for (i, passRecord) in passes.enumerated() {
-            let startCommandIndex = commandCount
-            commandCount += passRecord.commands.count
-            
-            passRecord.passIndex = i
-            passRecord.commandRange = startCommandIndex..<commandCount
-            assert(passRecord.commandRange!.count > 0)
-        }
-        
-        // Compilation is finished, so reset that tag.
-        TaggedHeap.free(tag: FrameGraphTagType.frameGraphCompilation.tag)
         
         let completion: (Double) -> Void = { gpuTime in
             self.lastFrameGPUTime = gpuTime
@@ -860,7 +841,7 @@ public final class FrameGraph {
             onGPUCompletion?()
         }
         
-        self.context.executeFrameGraph(passes: passes, dependencyTable: dependencyTable, resourceUsages: FrameGraph.threadResourceUsages[0], completion: completion)
+        self.context.executeFrameGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
         
         // Make sure the FrameGraphCommands buffers are deinitialised before the tags are freed.
         passes.forEach {
@@ -901,7 +882,7 @@ public final class FrameGraph {
         FrameGraph.threadUnmanagedReferences = nil
         
         self.renderPasses.removeAll(keepingCapacity: true)
-        FrameGraph.threadResourceUsages.forEach { $0.reset() }
+        self.usedResources.removeAll(keepingCapacity: true)
         
         FrameGraph.executionAllocator = nil
         FrameGraph.resourceUsagesAllocator = nil

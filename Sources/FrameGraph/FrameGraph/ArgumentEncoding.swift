@@ -179,6 +179,15 @@ public struct _ArgumentBuffer : ResourceProtocol {
                 return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].usages[indexInChunk]
             }
         }
+        nonmutating set {
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk] = newValue
+            } else {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].usages[indexInChunk] = newValue
+            }
+        }
     }
     
     @inlinable

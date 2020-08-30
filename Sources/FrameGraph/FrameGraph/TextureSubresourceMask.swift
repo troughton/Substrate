@@ -15,22 +15,28 @@ public struct TextureSubresourceMask {
         
     }
     
+    @inlinable
+    static func uintCount(bitCount: Int) -> Int {
+        return (bitCount + UInt64.bitWidth - 1) / UInt64.bitWidth
+    }
+    
+    @usableFromInline
     mutating func reserveStorage(bitCount: Int, allocator: AllocatorType) {
         precondition(bitCount > UInt64.bitWidth)
         if self.value == .max { // We haven't allocated the storage yet, so allocate it now.
-            let uintCount = (bitCount + UInt64.bitWidth - 1) / UInt64.bitWidth
+            let uintCount = Self.uintCount(bitCount: bitCount)
             let storage = Allocator.allocate(type: UInt64.self, capacity: uintCount, allocator: allocator)
             storage.initialize(repeating: .max, count: uintCount)
             self.value = UInt64(UInt(bitPattern: storage))
         }
     }
     
-    subscript(slice slice: Int, level level: Int, descriptor: TextureDescriptor, allocator: AllocatorType) -> Bool {
+    public subscript(slice slice: Int, level level: Int, descriptor: TextureDescriptor, allocator: AllocatorType) -> Bool {
         get {
-            let count = descriptor.arrayLength * descriptor.mipmapLevelCount
+            let count = descriptor.slicesPerLevel * descriptor.mipmapLevelCount
             
             // Arranged by level, then slice
-            let index = level * descriptor.arrayLength + slice
+            let index = level * descriptor.slicesPerLevel + slice
             precondition(index < count)
             
             if count < UInt64.bitWidth {
@@ -46,10 +52,10 @@ public struct TextureSubresourceMask {
             }
         }
         set {
-            let count = descriptor.arrayLength * descriptor.mipmapLevelCount
+            let count = descriptor.slicesPerLevel * descriptor.mipmapLevelCount
             
             // Arranged by level, then slice
-            let index = level * descriptor.arrayLength + slice
+            let index = level * descriptor.slicesPerLevel + slice
             precondition(index < count)
             
             if count < UInt64.bitWidth {
@@ -64,25 +70,52 @@ public struct TextureSubresourceMask {
         }
     }
     
-    @inlinable
-    public func withUnsafePointerToStorage<T>(descriptor: TextureDescriptor, _ perform: (UnsafePointer<UInt64>) throws -> T) rethrows -> T {
-        let count = descriptor.arrayLength * descriptor.mipmapLevelCount
-        if count <= UInt64.bitWidth {
-            return try withUnsafePointer(to: self.value, perform)
-        } else {
-            let storagePtr = UnsafePointer<UInt64>(bitPattern: UInt(exactly: self.value)!)!
-            return try perform(storagePtr)
+    public mutating func clear(descriptor: TextureDescriptor, allocator: AllocatorType) {
+        self.withUnsafeMutablePointerToStorage(descriptor: descriptor, allocator: allocator) { storage in
+            storage.assign(repeating: 0)
         }
     }
     
     @inlinable
-    public mutating func withUnsafeMutablePointerToStorage<T>(descriptor: TextureDescriptor, _ perform: (UnsafeMutablePointer<UInt64>) throws -> T) rethrows -> T {
-        let count = descriptor.arrayLength * descriptor.mipmapLevelCount
+    public func withUnsafePointerToStorage<T>(descriptor: TextureDescriptor, _ perform: (UnsafeBufferPointer<UInt64>) throws -> T) rethrows -> T {
+        let count = descriptor.slicesPerLevel * descriptor.mipmapLevelCount
         if count <= UInt64.bitWidth {
-            return try withUnsafeMutablePointer(to: &self.value, perform)
+            return try withUnsafePointer(to: self.value, { try perform(UnsafeBufferPointer(start: $0, count: 1)) })
         } else {
-            let storagePtr = UnsafeMutablePointer<UInt64>(bitPattern: UInt(exactly: self.value)!)!
-            return try perform(storagePtr)
+            let storagePtr = UnsafePointer<UInt64>(bitPattern: UInt(exactly: self.value)!)!
+            return try perform(UnsafeBufferPointer(start: storagePtr, count: Self.uintCount(bitCount: count)))
         }
     }
+    
+    @inlinable
+    public mutating func withUnsafeMutablePointerToStorage<T>(descriptor: TextureDescriptor, allocator: AllocatorType, _ perform: (UnsafeMutableBufferPointer<UInt64>) throws -> T) rethrows -> T {
+        let count = descriptor.slicesPerLevel * descriptor.mipmapLevelCount
+        if count <= UInt64.bitWidth {
+            return try withUnsafeMutablePointer(to: &self.value, { try perform(UnsafeMutableBufferPointer(start: $0, count: 1)) })
+        } else {
+            self.reserveStorage(bitCount: count, allocator: allocator)
+            let storagePtr = UnsafeMutablePointer<UInt64>(bitPattern: UInt(exactly: self.value)!)!
+            return try perform(UnsafeMutableBufferPointer(start: storagePtr, count: Self.uintCount(bitCount: count)))
+        }
+    }
+    
+    @inlinable
+    public mutating func formUnion(with range: TextureSubresourceMask, descriptor: TextureDescriptor, allocator: AllocatorType) {
+        if self.value == .max {
+            return
+        }
+        if range.value == .max {
+            self.value = .max
+            return
+        }
+        
+        self.withUnsafeMutablePointerToStorage(descriptor: descriptor, allocator: allocator) { elements in
+            range.withUnsafePointerToStorage(descriptor: descriptor) { otherElements in
+                for i in elements.indices {
+                    elements[i] |= otherElements[i]
+                }
+            }
+        }
+    }
+    
 }

@@ -109,7 +109,7 @@ public protocol ResourceProtocol : Hashable {
     var handle : Handle { get }
     var stateFlags : ResourceStateFlags { get nonmutating set }
     
-    var usages : ChunkArray<ResourceUsage> { get }
+    var usages : ChunkArray<ResourceUsage> { get nonmutating set }
     
     var label : String? { get nonmutating set }
     var storageMode : StorageMode { get }
@@ -319,6 +319,18 @@ public struct Resource : ResourceProtocol, Hashable {
                 return ChunkArray()
             }
         }
+        nonmutating set {
+            switch self.type {
+            case .buffer:
+                Buffer(handle: self.handle).usages = newValue
+            case .texture:
+                Texture(handle: self.handle).usages = newValue
+            case .argumentBuffer:
+                _ArgumentBuffer(handle: self.handle).usages = newValue
+            default:
+                fatalError()
+            }
+        }
     }
     
     @inlinable
@@ -464,7 +476,12 @@ extension ResourceProtocol {
     
     @inlinable
     public var usages : ChunkArray<ResourceUsage> {
-        return ChunkArray()
+        get {
+            return ChunkArray()
+        }
+        nonmutating set {
+            fatalError()
+        }
     }
     
     @inlinable
@@ -889,6 +906,15 @@ public struct Buffer : ResourceProtocol {
                 return TransientBufferRegistry.instances[self.transientRegistryIndex].usages[index]
             }
         }
+        nonmutating set {
+            let index = self.index
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+                PersistentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk] = newValue
+            } else {
+                TransientBufferRegistry.instances[self.transientRegistryIndex].usages[index] = newValue
+            }
+        }
     }
 
     @inlinable
@@ -1179,6 +1205,19 @@ public struct Texture : ResourceProtocol {
                 return PersistentTextureRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
             } else {
                 return self.baseResource?.usages ?? TransientTextureRegistry.instances[self.transientRegistryIndex].usages[index]
+            }
+        }
+        nonmutating set {
+            let index = self.index
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+                PersistentTextureRegistry.instance.chunks[chunkIndex].usages[indexInChunk] = newValue
+            } else {
+                if let baseResource = self.baseResource {
+                    baseResource.usages = newValue
+                } else {
+                    TransientTextureRegistry.instances[self.transientRegistryIndex].usages[index] = newValue
+                }
             }
         }
     }

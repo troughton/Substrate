@@ -138,20 +138,20 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         return true
     }
     
-    func descriptorMergedWithPass(_ pass: RenderPassRecord, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
-        return self.descriptorMergedWithPass(pass.pass as! DrawRenderPass, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
+        return self.descriptorMergedWithPass(pass.pass as! DrawRenderPass, storedTextures: &storedTextures)
      }
     
-    func descriptorMergedWithPass(_ pass: DrawRenderPass, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
+    func descriptorMergedWithPass(_ pass: DrawRenderPass, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
         if self.tryMerge(withPass: pass) {
             return self
         } else {
-            self.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
+            self.finalise(storedTextures: &storedTextures)
             return MetalRenderTargetDescriptor(renderPass: pass)
         }
     }
     
-    private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, loadAction: MTLLoadAction, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> (MTLLoadAction, MTLStoreAction) {
+    private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, loadAction: MTLLoadAction, storedTextures: inout [Texture]) -> (MTLLoadAction, MTLStoreAction) {
         let usages = attachment.texture.usages
         
         // Are we the first usage?
@@ -245,24 +245,24 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         return (loadAction, storeAction)
     }
     
-    func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture]) {
+    func finalise(storedTextures: inout [Texture]) {
         // Compute load and store actions for all attachments.
         for (i, attachment) in self.descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else {
                 self.colorActions[i] = (.dontCare, .dontCare)
                 continue
             }
-            self.colorActions[i] = self.loadAndStoreActions(for: attachment, loadAction: self.colorActions[i].0, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+            self.colorActions[i] = self.loadAndStoreActions(for: attachment, loadAction: self.colorActions[i].0, storedTextures: &storedTextures)
         }
         
         if let depthAttachment = self.descriptor.depthAttachment {
-            self.depthActions = self.loadAndStoreActions(for: depthAttachment, loadAction: self.depthActions.0, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+            self.depthActions = self.loadAndStoreActions(for: depthAttachment, loadAction: self.depthActions.0, storedTextures: &storedTextures)
         } else {
             self.depthActions = (.dontCare, .dontCare)
         }
         
         if let stencilAttachment = self.descriptor.stencilAttachment {
-            self.stencilActions = self.loadAndStoreActions(for: stencilAttachment, loadAction: self.stencilActions.0, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+            self.stencilActions = self.loadAndStoreActions(for: stencilAttachment, loadAction: self.stencilActions.0, storedTextures: &storedTextures)
         } else {
             self.stencilActions = (.dontCare, .dontCare)
         }

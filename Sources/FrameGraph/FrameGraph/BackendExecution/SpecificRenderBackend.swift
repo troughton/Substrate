@@ -47,8 +47,8 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
 protocol BackendRenderTargetDescriptor: class {
     init(renderPass: RenderPassRecord)
     var descriptor: RenderTargetDescriptor { get }
-    func descriptorMergedWithPass(_ pass: RenderPassRecord, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> Self
-    func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture])
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, storedTextures: inout [Texture]) -> Self
+    func finalise(storedTextures: inout [Texture])
 }
 
 protocol BackendQueue: class {

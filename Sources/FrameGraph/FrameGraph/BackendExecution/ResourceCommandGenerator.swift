@@ -207,10 +207,12 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             var previousUsageStages: RenderStages = []
             
             for usage in resource.usages
-                where usage.renderPassRecord.isActive &&
-                    usage.renderPassRecord.pass.passType != .external &&
-                    //                        usage.inArgumentBuffer &&
-                    usage.stages != .cpuBeforeRender {
+                where usage.renderPassRecord.pass.passType != .external
+                    //                        && usage.inArgumentBuffer
+                     {
+                        assert(usage.stages != .cpuBeforeRender) // CPU-only usages should have been filtered out by the FrameGraph
+                        assert(usage.renderPassRecord.isActive) // Only usages for active render passes should be here.
+                        
                         if usage.type.isRenderTarget {
                             resourceIsRenderTarget = true
                             continue
@@ -230,14 +232,14 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
-    func generateCommands(passes: [RenderPassRecord], resourceUsages: ResourceUsages, transientRegistry: Backend.TransientResourceRegistry, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry, frameCommandInfo: inout FrameCommandInfo<Backend>) {
         if passes.isEmpty {
             return
         }
         
         self.commandEncoderDependencies.resizeAndClear(capacity: frameCommandInfo.commandEncoders.count, clearValue: nil)
         
-        resourceLoop: for resource in resourceUsages.allResources {
+        resourceLoop: for resource in usedResources {
             let usages = resource.usages
             if usages.isEmpty { continue }
             
@@ -245,29 +247,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
             var usageIterator = usages.makeIterator()
             
-            // Find the first used render pass.
-            var previousUsage : ResourceUsage
-            repeat {
-                guard let usage = usageIterator.next() else {
-                    continue resourceLoop // no active usages for this resource.
-                }
-                previousUsage = usage
-            } while !previousUsage.renderPassRecord.isActive || previousUsage.stages == .cpuBeforeRender
-            
-            var firstUsage = previousUsage
-            
-            if !firstUsage.isWrite {
-                
-                // Scan forward from the 'first usage' until we find the _actual_ first usage - that is, the usage whose command range comes first.
-                // The 'first usage' might only not actually be the first if the first usages are all reads.
-                
-                var firstUsageIterator = usageIterator // Since the usageIterator is a struct, this will copy the iterator.
-                while let nextUsage = firstUsageIterator.next(), !nextUsage.isWrite {
-                    if nextUsage.renderPassRecord.isActive, nextUsage.type != .unusedRenderTarget, nextUsage.commandRange.lowerBound < firstUsage.commandRange.lowerBound {
-                        firstUsage = nextUsage
-                    }
-                }
-            }
+            let firstUsage = usageIterator.next()!
+            var previousUsage = firstUsage
 
             #if canImport(Vulkan)
             if Backend.self == VulkanBackend.self, resource.type == .texture, resource.flags.intersection([.historyBuffer, .persistent]) != [] {
@@ -324,7 +305,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     
                     if isRTBarrier, usage.renderPassRecord === previousUsage.renderPassRecord, previousUsage.commandRange.upperBound > usage.commandRange.lowerBound {
                         // We have overlapping usages, so we need to insert a render target barrier before every draw.
-                        let applicableRange = max(previousUsage.commandRangeInPass.lowerBound, usage.commandRangeInPass.lowerBound)..<min(previousUsage.commandRangeInPass.upperBound, usage.commandRangeInPass.upperBound)
+                        let applicableRange = max(previousUsage.commandRange.lowerBound, usage.commandRange.lowerBound)..<min(previousUsage.commandRange.upperBound, usage.commandRange.upperBound)
                         
                         let commands = usage.renderPassRecord.commands!
                         let passCommandRange = usage.renderPassRecord.commandRange!
