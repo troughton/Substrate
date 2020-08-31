@@ -60,6 +60,33 @@ extension DrawRenderPass {
     public var stencilClearOperation : StencilClearOperation {
         return .keep
     }
+    
+    var renderTargetDescriptorForActiveAttachments: RenderTargetDescriptor {
+        // Filter out any unused attachments.
+        var descriptor = self.renderTargetDescriptor
+        
+        let isUsedAttachment: (Texture) -> Bool = { attachment in
+            return attachment.usages.contains(where: {
+                return $0.renderPassRecord.pass === self && $0.type.isRenderTarget && $0.type != .unusedRenderTarget
+            })
+        }
+        
+        for (i, colorAttachment) in descriptor.colorAttachments.enumerated() {
+            if let attachment = colorAttachment?.texture, case .keep = self.colorClearOperation(attachmentIndex: i), !isUsedAttachment(attachment) {
+                descriptor.colorAttachments[i] = nil
+            }
+        }
+        
+        if let attachment = descriptor.depthAttachment?.texture, case .keep = self.depthClearOperation, !isUsedAttachment(attachment) {
+            descriptor.depthAttachment = nil
+        }
+        
+        if let attachment = descriptor.stencilAttachment?.texture, case .keep = self.stencilClearOperation, !isUsedAttachment(attachment) {
+            descriptor.stencilAttachment = nil
+        }
+        
+        return descriptor
+    }
 }
 
 public protocol ComputeRenderPass : RenderPass {
