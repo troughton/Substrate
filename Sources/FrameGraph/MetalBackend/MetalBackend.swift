@@ -432,14 +432,19 @@ final class MetalBackend : SpecificRenderBackend {
                 let mtlResource = getResource(resource)
                 
                 var computedUsageType: MTLResourceUsage = []
-                if resource.type == .texture, usage == .read {
-                    computedUsageType.formUnion(.sample)
-                }
-                if usage.isRead {
+                if usage == .inputAttachmentRenderTarget || usage == .inputAttachment {
+                    assert(resource.type == .texture)
                     computedUsageType.formUnion(.read)
-                }
-                if usage.isWrite {
-                    computedUsageType.formUnion(.write)
+                } else {
+                    if resource.type == .texture, usage == .read {
+                        computedUsageType.formUnion(.sample)
+                    }
+                    if usage.isRead {
+                        computedUsageType.formUnion(.read)
+                    }
+                    if usage.isWrite {
+                        computedUsageType.formUnion(.write)
+                    }
                 }
                 
                 if !allowReordering {
