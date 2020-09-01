@@ -25,7 +25,7 @@ protocol PipelineReflection : class {
     
     func remapArgumentBufferPathForActiveStages(_ path: ResourceBindingPath) -> ResourceBindingPath
 
-    func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer?
+    func argumentBufferEncoder(at path: ResourceBindingPath, currentEncoder: UnsafeRawPointer?) -> UnsafeRawPointer?
     
     var threadExecutionWidth: Int { get }
 }
