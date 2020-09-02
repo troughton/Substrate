@@ -73,13 +73,6 @@ extension ResourceUsageType {
             return false
         }
     }
-    
-    @inlinable
-    static func areMergeable(_ typeA: ResourceUsageType, _ typeB: ResourceUsageType) -> Bool {
-        // We can only merge resources of the same type, and we can only merge writes if they're contained within a render target.
-        return typeA == typeB &&
-            (!typeA.isWrite || typeA.isRenderTarget)
-    }
 }
 
 // Note: must be a value type.
@@ -124,57 +117,47 @@ public struct ResourceUsage {
             return false
         }
         
-        if self.type.isRenderTarget, (nextUsage.type == .inputAttachment || nextUsage.type == .read) { // Transform a resource read within a render target into an inputAttachmentRenderTarget.
-            if !self.commandRange.contains(nextUsage.commandRange.lowerBound) {
-                nextUsage.type == .inputAttachment
-                return false
-            } else if self.commandRange.lowerBound >= nextUsage.commandRange.lowerBound {
-                // The usages fully overlap.
+        let rangesOverlap = self.commandRange.lowerBound < nextUsage.commandRange.upperBound && nextUsage.commandRange.lowerBound < self.commandRange.upperBound
+        
+        if !rangesOverlap {
+            return false
+        }
+        
+        if !self.isWrite, !nextUsage.isWrite, nextUsage.type != self.type {
+            return false // Don't merge reads of different types
+        }
+        
+        if self.type.isRenderTarget || nextUsage.type.isRenderTarget {
+            if self.type == .read || nextUsage.type == .read {
                 self.type = .inputAttachmentRenderTarget
-                self.stages.formUnion(nextUsage.stages)
-                self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
-                self.inArgumentBuffer = self.inArgumentBuffer || nextUsage.inArgumentBuffer
-                self.commandRange = Range(uncheckedBounds: (min(self.commandRange.lowerBound, nextUsage.commandRange.lowerBound), max(self.commandRange.upperBound, nextUsage.commandRange.upperBound)))
-                return true
-            } else {
-                // Mark the next use as being a shared input attachment/render target usage.
-                self.commandRange = self.commandRange.lowerBound..<nextUsage.commandRange.lowerBound
-                nextUsage.type = .inputAttachmentRenderTarget
+                self.inArgumentBuffer = true
+            }
+            
+            if self.type != .inputAttachmentRenderTarget {
+                assert(self.type.isRenderTarget && nextUsage.type.isRenderTarget)
+                let isRead = self.type.isRead || nextUsage.type.isRead
+                let isWrite = self.type.isWrite || nextUsage.type.isWrite
+                
+                if isRead {
+                    self.type = .readWriteRenderTarget
+                } else if isWrite {
+                    self.type = .writeOnlyRenderTarget
+                } else {
+                    assert(self.type == .unusedRenderTarget && nextUsage.type == .unusedRenderTarget)
+                }
+            }
+        } else {
+            assert(!self.type.isWrite || !nextUsage.type.isWrite, "Resource simultaneously bound for conflicting writes.")
+            if self.inArgumentBuffer != nextUsage.inArgumentBuffer {
                 return false
             }
         }
         
-        readWriteMergeCheck: if self.commandRange.contains(nextUsage.commandRange.lowerBound), self.stages == nextUsage.stages, self.type != nextUsage.type {
-            assert(self.inArgumentBuffer == inArgumentBuffer)
-            
-            switch (nextUsage.type, self.type) {
-            case (.read, .readWrite), (.write, .write), (.write, .readWrite):
-                break
-            case (.read, .write), (.readWrite, .read), (.write, .read):
-                self.type = .readWrite
-            case (.writeOnlyRenderTarget, .readWriteRenderTarget), (.readWriteRenderTarget, .writeOnlyRenderTarget):
-                self.type = .readWriteRenderTarget
-            case (_, _) where !nextUsage.type.isWrite && !self.type.isWrite:
-                // If neither are writes, then it's fine to have conflicting uses.
-                // This might occur e.g. when reading from a buffer while simultaneously using it as an indirect buffer.
-                break readWriteMergeCheck
-            default:
-                assertionFailure("Resource simulaneously bound for conflicting uses.")
-            }
-            self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
-            
-            return true
-        }
+        self.stages.formUnion(nextUsage.stages)
+        self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
+        self.commandRange = Range(uncheckedBounds: (min(self.commandRange.lowerBound, nextUsage.commandRange.lowerBound), max(self.commandRange.upperBound, nextUsage.commandRange.upperBound)))
         
-        if ResourceUsageType.areMergeable(self.type, nextUsage.type) &&
-            self.inArgumentBuffer == nextUsage.inArgumentBuffer {
-            self.stages.formUnion(nextUsage.stages)
-            self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
-            self.commandRange = Range(uncheckedBounds: (min(self.commandRange.lowerBound, nextUsage.commandRange.lowerBound), max(self.commandRange.upperBound, nextUsage.commandRange.upperBound)))
-            return true
-        }
-        return false
-        
+        return true
     }
 }
 

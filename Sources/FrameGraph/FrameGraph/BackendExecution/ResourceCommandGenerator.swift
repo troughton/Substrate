@@ -278,15 +278,14 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 
                 let commands = usage.renderPassRecord.commands!
                 let passCommandRange = usage.renderPassRecord.commandRange!
-                var previousCommandIndex = -1
+                var previousCommandIndex = passCommandRange.lowerBound
+                
                 for i in applicableRange {
                     let command = commands[i]
                     if command.isDrawCommand {
                         let commandIndex = i + passCommandRange.lowerBound
-                        if previousCommandIndex >= 0 {
-                            self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: previousCommandIndex))
-                            self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: .read, stages: usage.stages, allowReordering: false), index: commandIndex))
-                        }
+                        self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: previousCommandIndex))
+                        self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: .read, stages: usage.stages, allowReordering: false), index: commandIndex))
                         previousCommandIndex = commandIndex
                     }
                 }
