@@ -201,16 +201,28 @@ public struct _ArgumentBuffer : ResourceProtocol {
                 return CAtomicsLoad(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), .relaxed)
             }
         }
-        nonmutating set {
-            if let newValue = newValue {
-                if self._usesPersistentRegistry {
-                    let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                    return CAtomicsStore(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), newValue, .relaxed)
-                } else {
-                    let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                    return CAtomicsStore(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), newValue, .relaxed)
-                }
-            }
+    }
+    
+    /// Updates the encoder to also support encoding to bindingPath.
+    @inlinable
+    func updateEncoder(pipelineReflection: PipelineReflection, bindingPath: ResourceBindingPath) {
+        var hasSetEncoder = false
+        repeat {
+            let currentEncoder = self.encoder
+            let newEncoder = pipelineReflection.argumentBufferEncoder(at: bindingPath, currentEncoder: currentEncoder)!
+            hasSetEncoder = (newEncoder == currentEncoder) || self.replaceEncoder(with: newEncoder, expectingCurrentValue: currentEncoder)
+        } while !hasSetEncoder
+    }
+    
+    /// Allows us to perform a compare-and-swap on the argument buffer encoder.
+    @inlinable
+    func replaceEncoder(with newEncoder: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+            return CAtomicsCompareAndExchange(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), expectingCurrentValue, newEncoder, .weak, .relaxed)
+        } else {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+            return CAtomicsCompareAndExchange(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), expectingCurrentValue, newEncoder, .weak, .relaxed)
         }
     }
     

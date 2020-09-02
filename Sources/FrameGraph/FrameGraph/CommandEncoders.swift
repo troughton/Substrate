@@ -572,8 +572,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                 // This only applies for render commands, since we may need to insert memory barriers between compute and blit commands.
                 if !self.pipelineStateChanged,
                     let reflection = pipelineReflection.argumentReflection(at: argumentBufferPath), reflection.isActive {
-                    argumentBuffer.encoder = pipelineReflection.argumentBufferEncoder(at: argumentBufferPath)!
-//                    print("Encoder for \(argumentBuffer.label ?? "unnamed arg buffer") is \(argumentBuffer.encoder!)")
+                    argumentBuffer.updateEncoder(pipelineReflection: pipelineReflection, bindingPath: argumentBufferPath)
                     
                     switch argBufferType {
                     case .standalone:
@@ -694,8 +693,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                             self.commandRecorder.commands.append(.setBuffer(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetBufferArgs.self)))
                         case .argumentBuffer:
                             let argumentBuffer = boundResource.resource.argumentBuffer!
-                            argumentBuffer.encoder = pipelineReflection.argumentBufferEncoder(at: bindingPath)!
-//                            print("Encoder for \(argumentBuffer.label ?? "unnamed arg buffer") is \(argumentBuffer.encoder!)")
+                            argumentBuffer.updateEncoder(pipelineReflection: pipelineReflection, bindingPath: bindingPath)
                             
                             // The command might be either a setArgumentBuffer or setArgumentBufferArray command.
                             // Check to see whether the resource is an _ArgumentBuffer or _ArgumentBufferArray to distinguish.

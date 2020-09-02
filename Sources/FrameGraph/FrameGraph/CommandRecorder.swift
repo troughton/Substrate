@@ -345,7 +345,7 @@ final class FrameGraphCommandRecorder {
                 }
             }
         }
-
+        
         if usageType.isRead {
             self.readResources.insert(resource)
         }

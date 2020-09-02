@@ -325,9 +325,16 @@ final class VulkanPipelineReflection : PipelineReflection {
         return path // Paths don't differ by stage on Vulkan
     }
 
-    func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer? {
-        let layout = self.descriptorSetLayout(set: path.set)
-        return UnsafeRawPointer(Unmanaged.passUnretained(layout).toOpaque())
+    func argumentBufferEncoder(at path: ResourceBindingPath, currentEncoder: UnsafeRawPointer?) -> UnsafeRawPointer? {
+        let currentLayout = currentEncoder.map { Unmanaged<VulkanDescriptorSetLayout>.fromOpaque($0) }
+        let newLayout = self.descriptorSetLayout(set: path.set)
+
+        // Choose the more-specific layout.
+        if newLayout.bindingCount > currentLayout?._withUnsafeGuaranteedRef({ $0.bindingCount }) ?? 0 {
+            return UnsafeRawPointer(Unmanaged.passUnretained(newLayout).toOpaque())
+        } else {
+            return currentEncoder
+        }
     }
 }
 
@@ -422,6 +429,7 @@ public class VulkanDescriptorSetLayout {
     unowned(unsafe) let pipelineReflection: VulkanPipelineReflection
     let vkLayout : VkDescriptorSetLayout
     let set : UInt32
+    let bindingCount: Int
     
     init(set: UInt32, pipelineReflection: VulkanPipelineReflection, resources: [ShaderResource], stages: VkShaderStageFlagBits) {
         self.pipelineReflection = pipelineReflection
@@ -436,6 +444,7 @@ public class VulkanDescriptorSetLayout {
         }
 
         layoutCreateInfo.bindingCount = UInt32(bindings.count)
+        self.bindingCount = bindings.count
 
         let bindingFlags = [VkDescriptorBindingFlags](repeating: VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT.rawValue, count: bindings.count)
 

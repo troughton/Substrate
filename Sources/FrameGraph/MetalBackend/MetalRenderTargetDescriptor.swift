@@ -22,9 +22,9 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var clearStencil: UInt32 = 0
     
     init(renderPass: DrawRenderPass) {
-        self.descriptor = renderPass.renderTargetDescriptor
+        self.descriptor = renderPass.renderTargetDescriptorForActiveAttachments
         self.colorActions = .init(repeating: (.dontCare, .dontCare), count: self.descriptor.colorAttachments.count)
-        self.updateClearValues(pass: renderPass)
+        self.updateClearValues(pass: renderPass, descriptor: self.descriptor)
         self.renderPasses.append(renderPass)
     }
     
@@ -54,9 +54,7 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
                 descriptor.depthPlane  == new.depthPlane
     }
     
-    func updateClearValues(pass: DrawRenderPass) {
-        let descriptor = pass.renderTargetDescriptor
-        
+    func updateClearValues(pass: DrawRenderPass, descriptor: RenderTargetDescriptor) {
         // Update the clear values.
         self.clearColors.append(contentsOf: repeatElement(.init(), count: max(descriptor.colorAttachments.count - clearColors.count, 0)))
         self.colorActions.append(contentsOf: repeatElement((.dontCare, .dontCare), count: max(descriptor.colorAttachments.count - colorActions.count, 0)))
@@ -105,32 +103,34 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
             return false // The render targets must be the same size.
         }
         
-        var newDescriptor = descriptor
-        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: max(pass.renderTargetDescriptor.colorAttachments.count - descriptor.colorAttachments.count, 0)))
+        let passDescriptor = pass.renderTargetDescriptorForActiveAttachments
         
-        for i in 0..<min(newDescriptor.colorAttachments.count, pass.renderTargetDescriptor.colorAttachments.count) {
-            if !self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: pass.renderTargetDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
+        var newDescriptor = descriptor
+        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: max(passDescriptor.colorAttachments.count - descriptor.colorAttachments.count, 0)))
+        
+        for i in 0..<min(newDescriptor.colorAttachments.count, passDescriptor.colorAttachments.count) {
+            if !self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: passDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
                 return false
             }
         }
         
-        if !self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: pass.renderTargetDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
+        if !self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: passDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
             return false
         }
         
-        if !self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: pass.renderTargetDescriptor.stencilAttachment, clearOperation: pass.stencilClearOperation) {
+        if !self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: passDescriptor.stencilAttachment, clearOperation: pass.stencilClearOperation) {
             return false
         }
         
-        if newDescriptor.visibilityResultBuffer != nil && pass.renderTargetDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
+        if newDescriptor.visibilityResultBuffer != nil && passDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
             return false
         } else {
-            newDescriptor.visibilityResultBuffer = pass.renderTargetDescriptor.visibilityResultBuffer
+            newDescriptor.visibilityResultBuffer = passDescriptor.visibilityResultBuffer
         }
         
-        self.updateClearValues(pass: pass)
+        self.updateClearValues(pass: pass, descriptor: passDescriptor)
         
-        newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, pass.renderTargetDescriptor.renderTargetArrayLength)
+        newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, passDescriptor.renderTargetArrayLength)
         
         self.descriptor = newDescriptor
         self.renderPasses.append(pass)
