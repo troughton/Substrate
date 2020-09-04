@@ -9,25 +9,45 @@ import Foundation
 import SwiftFrameGraph
 import stb_image
 
+public enum MipGenerationMode {
+    case cpu(wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter)
+    case gpuDefault
+}
+
 extension Texture {
     
-    fileprivate func copyData<T>(from textureData: TextureData<T>, mipmapped: Bool) throws {
-        let mips = mipmapped ? textureData.generateMipChain(wrapMode: .wrap, compressedBlockSize: 1) : [textureData]
-                       
-        for (i, data) in mips.enumerated() {
-            let storage = data.storage
-            GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: storage.data.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [storage] _, _ in
+    fileprivate func copyData<T>(from textureData: TextureData<T>, mipmapped: Bool, mipGenerationMode: MipGenerationMode) throws {
+        if mipmapped, case .cpu(let wrapMode, let filter) = mipGenerationMode {
+            let mips = textureData.generateMipChain(wrapMode: wrapMode, filter: filter, compressedBlockSize: 1)
+                           
+            for (i, data) in mips.enumerated() {
+                let storage = data.storage
+                GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: storage.data.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [storage] _, _ in
+                    _ = storage
+                })
+            }
+        } else {
+            let storage = textureData.storage
+            GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: textureData.width, height: textureData.height), mipmapLevel: 0, in: self, withBytes: storage.data.baseAddress!, bytesPerRow: textureData.width * textureData.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [storage] _, _ in
                 _ = storage
             })
+            if mipmapped, case .gpuDefault = mipGenerationMode {
+                if textureData.channelCount == 4, textureData.alphaMode != .premultiplied {
+                    if _isDebugAssertConfiguration() {
+                        print("Warning: generating mipmaps using the GPU's default mipmap generation for texture \(self.label ?? "Texture(handle: \(self.handle))") which expects premultiplied alpha, but the texture has an alpha mode of \(textureData.alphaMode). Fringing may be visible")
+                    }
+                }
+                GPUResourceUploader.generateMipmaps(for: self)
+            }
         }
     }
     
-    public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
+    public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, mipGenerationMode: MipGenerationMode = .gpuDefault) throws {
         let pixelFormat: PixelFormat
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         
         if url.pathExtension.lowercased() == "exr" {
-            let textureData = try TextureData<Float>(exrAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
+            var textureData = try TextureData<Float>(exrAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
             switch textureData.channelCount {
             case 1:
                 pixelFormat = .r32Float
@@ -39,10 +59,19 @@ extension Texture {
                 throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
             }
             
+            switch gpuAlphaMode {
+            case .premultiplied:
+                textureData.convertToPremultipliedAlpha()
+            case .postmultiplied:
+                textureData.convertToPostmultipliedAlpha()
+            default:
+                break
+            }
+            
             let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
             self = Texture(descriptor: descriptor, flags: .persistent)
             
-            try self.copyData(from: textureData, mipmapped: mipmapped)
+            try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
             
         } else {
             // Use stb image directly.
@@ -51,7 +80,7 @@ extension Texture {
             let is16Bit = stbi_is_16_bit(url.path) != 0
             
             if isHDR {
-                let textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
+                var textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
                 
                 switch textureData.channelCount {
                 case 1:
@@ -64,13 +93,22 @@ extension Texture {
                     throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
                 }
                 
+                switch gpuAlphaMode {
+                case .premultiplied:
+                    textureData.convertToPremultipliedAlpha()
+                case .postmultiplied:
+                    textureData.convertToPostmultipliedAlpha()
+                default:
+                    break
+                }
+                
                 let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                 self = Texture(descriptor: descriptor, flags: .persistent)
                 
-                try self.copyData(from: textureData, mipmapped: mipmapped)
+                try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
                 
             } else if is16Bit {
-                let textureData = try TextureData<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
+                var textureData = try TextureData<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
                 
                 switch textureData.channelCount {
                 case 1:
@@ -83,12 +121,30 @@ extension Texture {
                     throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
                 }
                 
+                switch gpuAlphaMode {
+                case .premultiplied:
+                    textureData.convertToPremultipliedAlpha()
+                case .postmultiplied:
+                    textureData.convertToPostmultipliedAlpha()
+                default:
+                    break
+                }
+                
                 let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                 self = Texture(descriptor: descriptor, flags: .persistent)
                 
-                try self.copyData(from: textureData, mipmapped: mipmapped)
+                try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
             } else {
                 var textureData = try TextureData<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
+                
+                switch gpuAlphaMode {
+                case .premultiplied:
+                    textureData.convertToPremultipliedAlpha()
+                case .postmultiplied:
+                    textureData.convertToPostmultipliedAlpha()
+                default:
+                    break
+                }
                 
                 if (colorSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
                     var needsChannelExpansion = true
@@ -136,7 +192,7 @@ extension Texture {
                 let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                 self = Texture(descriptor: descriptor, flags: .persistent)
                 
-                try self.copyData(from: textureData, mipmapped: mipmapped)
+                try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
             }
         }
         

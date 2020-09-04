@@ -7,7 +7,7 @@ import LodePNG
 import zlib
 #endif
 
-public enum TextureSaveFormat: String {
+public enum TextureFileFormat: String, CaseIterable {
     case png
     case bmp
     case tga
@@ -193,10 +193,10 @@ fileprivate extension LodePNGEncoderSettings {
 }
 
 extension TextureData {
-    public typealias SaveFormat = TextureSaveFormat
+    public typealias SaveFormat = TextureFileFormat
     
     public func write(to url: URL) throws {
-        guard let saveFormat = SaveFormat(rawValue: url.pathExtension) else {
+        guard let saveFormat = TextureFileFormat(rawValue: url.pathExtension) else {
             throw TextureSaveError.unknownFormat(url.pathExtension)
         }
         
