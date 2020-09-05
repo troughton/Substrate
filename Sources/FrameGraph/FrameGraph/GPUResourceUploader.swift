@@ -84,6 +84,14 @@ public final class GPUResourceUploader {
             
     }
     
+    public static func generateMipmaps(for texture: Texture) {
+        self.lock.withSemaphore {
+            self.frameGraph.addBlitCallbackPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
+                bce.generateMipmaps(for: texture)
+            }
+        }
+    }
+    
     public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int, onUploadCompleted: ((Buffer, UnsafeRawPointer) -> Void)? = nil) {
         assert(offset + count <= buffer.length)
         

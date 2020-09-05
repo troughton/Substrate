@@ -16,7 +16,7 @@ func clamp<T: Comparable>(_ val: T, min minValue: T, max maxValue: T) -> T {
 // Reference: https://docs.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
 @inlinable
 public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ c: Float, type: I.Type) -> I {
-    if c.isNaN {
+    if c != c { // Check for NaN – this check is faster than c.isNaN
         return 0
     }
     let c = clamp(c, min: -1.0, max: 1.0)
@@ -30,11 +30,12 @@ public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_
         scale = Float(I.max)
     }
     let rescaled = c * scale
-    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
-    if I.self == UInt8.self {
-        return UInt8(rounded) as! I
-    } else if I.self == UInt16.self {
-        return UInt16(rounded) as! I
+    //    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
+    let rounded = rescaled + (rescaled > 0 ? 0.5 : -0.5) // We follow this by a floor through conversion to int, so we can round by adding 0.5
+    if I.self == Int8.self {
+        return Int8(rounded) as! I
+    } else if I.self == Int16.self {
+        return Int16(rounded) as! I
     } else {
         return I(rounded)
     }
@@ -42,7 +43,7 @@ public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_
 
 @inlinable
 public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ c: Float, type: I.Type) -> I {
-    if c.isNaN {
+    if c != c { // Check for NaN – this check is faster than c.isNaN
         return 0
     }
     let c = min(1.0, max(c, 0.0))
@@ -55,7 +56,8 @@ public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>
         scale = Float(I.max)
     }
     let rescaled = c * scale
-    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
+    //    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
+    let rounded = rescaled + 0.5 // We follow this by a floor through conversion to int, so we can round by adding 0.5
     if I.self == UInt8.self {
         return UInt8(rounded) as! I
     } else if I.self == UInt16.self {
@@ -100,7 +102,7 @@ public enum TextureLoadingError : Error {
     case noSupportedPixelFormat
 }
 
-public enum TextureColorSpace : String, Codable, Hashable {
+public enum TextureColorSpace : UInt8, Codable, Hashable {
     case sRGB
     case linearSRGB
 
@@ -142,7 +144,7 @@ public enum TextureAlphaMode {
     case inferred
     
     func inferFromFileFormat(fileExtension: String) -> TextureAlphaMode {
-        if case .inferred = self, let format = TextureSaveFormat(rawValue: fileExtension.lowercased()) {
+        if case .inferred = self, let format = TextureFileFormat(rawValue: fileExtension.lowercased()) {
             switch format {
             case .png:
                 return .postmultiplied
@@ -341,15 +343,20 @@ public struct TextureData<T> {
     }
     
     @inlinable
+    mutating func setUnchecked(x: Int, y: Int, channel: Int, value: T) {
+        self.storage.data[y &* self.width &* self.channelCount + x &* self.channelCount &+ channel] = value
+    }
+    
+    @inlinable
     public subscript(x: Int, y: Int, channel channel: Int) -> T {
         get {
             precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channelCount)
-            return self.storage.data[y * self.width * self.channelCount + x * self.channelCount + channel]
+            return self.storage.data[y &* self.width &* self.channelCount + x &* self.channelCount &+ channel]
         }
         set {
             precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channelCount)
             self.ensureUniqueness()
-            self.storage.data[y * self.width * self.channelCount + x * self.channelCount + channel] = newValue
+            self.storage.data[y &* self.width &* self.channelCount &+ x * self.channelCount &+ channel] = newValue
         }
     }
     
@@ -359,7 +366,7 @@ public struct TextureData<T> {
             x < self.width, y < self.height, channel < self.channelCount else {
                 return nil
         }
-        return self.storage.data[y * self.width * self.channelCount + x * self.channelCount + channel]
+        return self.storage.data[y &* self.width &* self.channelCount &+ x * self.channelCount &+ channel]
     }
     
     @inlinable
@@ -416,7 +423,7 @@ public struct TextureData<T> {
             for x in 0..<width {
                 let clampedX = clampOutOfBounds ? clamp(x + originX, min: 0, max: self.width - 1) : (x + originX)
                 for c in 0..<self.channelCount {
-                    result[x, y, channel: c] = self[clampedX, clampedY, channel: c]
+                    result.setUnchecked(x: clampedX, y: clampedY, channel: c, value: self[clampedX, clampedY, channel: c])
                 }
             }
         }
@@ -472,7 +479,7 @@ public struct TextureData<T> {
         return result
     }
     
-    public func generateMipChain(wrapMode: TextureEdgeWrapMode, compressedBlockSize: Int) -> [TextureData<T>] {
+    public func generateMipChain(wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter = .default, compressedBlockSize: Int) -> [TextureData<T>] {
         var results = [self]
         
         var width = self.width
@@ -570,15 +577,54 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         if toColorSpace == self.colorSpace {
             return
         }
+        defer { self.colorSpace = toColorSpace }
+        
+        if T.self == UInt8.self {
+            if self.colorSpace == .sRGB, toColorSpace == .linearSRGB {
+                self.apply({ ColorSpaceLUTs.sRGBToLinear($0 as! UInt8) as! T }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+                return
+            } else if self.colorSpace == .linearSRGB, toColorSpace == .sRGB {
+                self.apply({ ColorSpaceLUTs.linearToSRGB($0 as! UInt8) as! T }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+                return
+            }
+        }
         
         let sourceColorSpace = self.colorSpace
         self.apply({ floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
-        self.colorSpace = toColorSpace
     }
     
     public mutating func convertToPremultipliedAlpha() {
         guard case .postmultiplied = self.alphaMode, self.channelCount == 4 else { return }
         self.ensureUniqueness()
+        
+        defer { self.alphaMode = .premultiplied }
+        
+        if T.self == UInt8.self {
+            if self.colorSpace == .sRGB {
+                for y in 0..<self.height {
+                    for x in 0..<self.width {
+                        let alpha = self[x, y, channel: 3] as! UInt8
+                        for c in 0..<3 {
+                            let channelVal = self[x, y, channel: c] as! UInt8
+                            self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPostmultToPremult(value: channelVal, alpha: alpha) as! T)
+                        }
+                    }
+                }
+                return
+            } else if self.colorSpace == .linearSRGB {
+                for y in 0..<self.height {
+                    for x in 0..<self.width {
+                        let alpha = UInt16(self[x, y, channel: 3] as! UInt8)
+                        for c in 0..<3 {
+                            let channelVal = UInt16(self[x, y, channel: c] as! UInt8)
+                            let result = alpha == 0xFF ? channelVal : ((channelVal * alpha) >> 8)
+                            self.setUnchecked(x: x, y: y, channel: c, value: UInt8(truncatingIfNeeded: result) as! T)
+                        }
+                    }
+                }
+                return
+            }
+        }
         
         let sourceColorSpace = self.colorSpace
         
@@ -588,17 +634,44 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
                 for c in 0..<3 {
                     let floatVal = unormToFloat(self[x, y, channel: c])
                     let linearVal = TextureColourSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) * alpha
-                    self[x, y, channel: c] = floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self)
+                    self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
                 }
             }
         }
-        
-        self.alphaMode = .premultiplied
     }
     
     public mutating func convertToPostmultipliedAlpha() {
         guard case .premultiplied = self.alphaMode, self.channelCount == 4 else { return }
         self.ensureUniqueness()
+        defer { self.alphaMode = .postmultiplied }
+        
+        
+        if T.self == UInt8.self {
+            if self.colorSpace == .sRGB {
+                for y in 0..<self.height {
+                    for x in 0..<self.width {
+                        let alpha = self[x, y, channel: 3] as! UInt8
+                        for c in 0..<3 {
+                            let channelVal = self[x, y, channel: c] as! UInt8
+                            self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPremultToPostmult(value: channelVal, alpha: alpha) as! T)
+                        }
+                    }
+                }
+                return
+            } else if self.colorSpace == .linearSRGB {
+                for y in 0..<self.height {
+                    for x in 0..<self.width {
+                        let alpha = self[x, y, channel: 3] as! UInt8
+                        for c in 0..<3 {
+                            let channelVal = self[x, y, channel: c] as! UInt8
+                            let result = alpha == 0 ? 0xFF : (channelVal / alpha)
+                            self.setUnchecked(x: x, y: y, channel: c, value: result as! T)
+                        }
+                    }
+                }
+                return
+            }
+        }
         
         let sourceColorSpace = self.colorSpace
         
@@ -608,12 +681,10 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
                 for c in 0..<3 {
                     let floatVal = unormToFloat(self[x, y, channel: c])
                     let linearVal = clamp(TextureColourSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)
-                    self[x, y, channel: c] = floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self)
+                    self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
                 }
             }
         }
-        
-        self.alphaMode = .postmultiplied
     }
 }
 
@@ -691,7 +762,7 @@ extension TextureData where T == Float {
         for y in 0..<self.height {
             for x in 0..<self.width {
                 for c in 0..<alphaChannel {
-                    self[x, y, channel: c] *= self[x, y, channel: alphaChannel]
+                    self.setUnchecked(x: x, y: y, channel: c, value: self[x, y, channel: c] * self[x, y, channel: alphaChannel])
                 }
             }
         }
@@ -715,8 +786,8 @@ extension TextureData where T == Float {
         for y in 0..<self.height {
             for x in 0..<self.width {
                 for c in 0..<alphaChannel {
-                    self[x, y, channel: c] /= self[x, y, channel: alphaChannel]
-                    self[x, y, channel: c] = clamp(self[x, y, channel: c], min: 0.0, max: 1.0)
+                    let newValue = self[x, y, channel: c] / self[x, y, channel: alphaChannel]
+                    self.setUnchecked(x: x, y: y, channel: c, value: clamp(newValue, min: 0.0, max: 1.0))
                 }
             }
         }
