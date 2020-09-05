@@ -8,7 +8,7 @@
 import Foundation
 import FrameGraphUtilities
 
-public struct TextureSubresourceMask {
+public struct TextureSubresourceMask: Equatable {
     @usableFromInline var value: UInt64 = .max // Meaning the entire resource is in use.
     
     public init() {
@@ -118,4 +118,7 @@ public struct TextureSubresourceMask {
         }
     }
     
+    public static func ==(lhs: TextureSubresourceMask, rhs: TextureSubresourceMask) -> Bool {
+        return lhs.value == rhs.value // TODO: This will incorrectly return false when the pointees are identical but the pointers differ; maybe we could encode the storageCount in the value pointer (changing the value pointer to an offset into the tagged heap)?
+    }
 }

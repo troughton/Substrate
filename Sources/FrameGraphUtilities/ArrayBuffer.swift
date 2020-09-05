@@ -152,8 +152,10 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     @inlinable
     public subscript(index: Int) -> Element {
         get {
+            precondition(index < self.count)
             return self.buffer.unsafelyUnwrapped.advanced(by: index).pointee
         } set {
+            precondition(index < self.count)
             self.buffer.unsafelyUnwrapped.advanced(by: index).pointee = newValue
         }
     }

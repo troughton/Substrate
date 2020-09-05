@@ -350,7 +350,7 @@ extension VulkanBackend {
         }
 
         for command in commandGenerator.commands {
-            if command.index > barrierLastIndex {
+            if command.index >= barrierLastIndex { // For barriers, the barrier associated with command.index needs to happen _after_ any barriers required to happen _by_ barrierLastIndex
                 addBarrier(&compactedResourceCommands)
             }
             

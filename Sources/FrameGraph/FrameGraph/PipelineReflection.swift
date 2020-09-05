@@ -74,7 +74,7 @@ extension ResourceBindingPath : CustomHashable {
     }
 }
 
-public enum ActiveResourceRange {
+public enum ActiveResourceRange: Equatable {
     case inactive
     case fullResource
     case buffer(Range<Int>)

@@ -31,6 +31,12 @@ struct CompactedResourceCommand<T> : Comparable {
     }
 }
 
+extension Range where Bound: AdditiveArithmetic {
+    func offset(by: Bound) -> Self {
+        return (self.lowerBound + by)..<(self.upperBound + by)
+    }
+}
+
 enum PreFrameCommands<Dependency: SwiftFrameGraph.Dependency> {
     
     // These commands mutate the ResourceRegistry and should be executed before render pass execution:
@@ -145,8 +151,8 @@ struct BarrierScope: OptionSet {
 
 enum FrameResourceCommands {
     // These commands need to be executed during render pass execution and do not modify the ResourceRegistry.
-    case useResource(Resource, usage: ResourceUsageType, stages: RenderStages, allowReordering: Bool)
-    case memoryBarrier(Resource, afterUsage: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsage: ResourceUsageType, beforeStages: RenderStages) // beforeCommand is the command that this memory barrier must have been executed before.
+    case useResource(Resource, usage: ResourceUsageType, stages: RenderStages, allowReordering: Bool) // Must happen before the FrameResourceCommand command index.
+    case memoryBarrier(Resource, afterUsage: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsage: ResourceUsageType, beforeStages: RenderStages) // beforeCommand is the command that this memory barrier must have been executed before, while the FrameResourceCommand's command index is the index that this must happen after.
 }
 
 struct PreFrameResourceCommand<Dependency: SwiftFrameGraph.Dependency> : Comparable {
@@ -278,14 +284,17 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 
                 let commands = usage.renderPassRecord.commands!
                 let passCommandRange = usage.renderPassRecord.commandRange!
-                var previousCommandIndex = passCommandRange.lowerBound
+                var previousCommandIndex = -1
                 
-                for i in applicableRange {
+                let rangeInPass = applicableRange.offset(by: -passCommandRange.lowerBound)
+                for i in rangeInPass {
                     let command = commands[i]
                     if command.isDrawCommand {
                         let commandIndex = i + passCommandRange.lowerBound
-                        self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: previousCommandIndex))
-                        self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: .read, stages: usage.stages, allowReordering: false), index: commandIndex))
+                        if previousCommandIndex >= 0 {
+                            self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: previousCommandIndex))
+//                            self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: .read, stages: usage.stages, allowReordering: false), index: commandIndex))
+                        }
                         previousCommandIndex = commandIndex
                     }
                 }

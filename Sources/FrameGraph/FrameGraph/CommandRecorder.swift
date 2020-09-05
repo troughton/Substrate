@@ -198,7 +198,7 @@ enum FrameGraphCommand {
     
     var isDrawCommand: Bool {
         switch self {
-        case .drawPrimitives, .drawIndexedPrimitives:
+        case .clearRenderTargets, .drawPrimitives, .drawIndexedPrimitives:
             return true
         default:
             return false

@@ -119,7 +119,8 @@ public struct ResourceUsage {
         
         let rangesOverlap = self.commandRange.lowerBound < nextUsage.commandRange.upperBound && nextUsage.commandRange.lowerBound < self.commandRange.upperBound
         
-        if !rangesOverlap {
+        if !rangesOverlap, (nextUsage.type != self.type || nextUsage.activeRange != self.activeRange), !self.type.isRenderTarget || !(self.type.isWrite && nextUsage.type.isRead) {
+            // Don't merge usages of different types with non-overlapping ranges, and don't merge a write with a possible dependent read unless they're render target accesses.
             return false
         }
         
@@ -154,7 +155,9 @@ public struct ResourceUsage {
         }
         
         self.stages.formUnion(nextUsage.stages)
-        self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
+        if self.type != .inputAttachmentRenderTarget {
+            self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
+        }
         self.commandRange = Range(uncheckedBounds: (min(self.commandRange.lowerBound, nextUsage.commandRange.lowerBound), max(self.commandRange.upperBound, nextUsage.commandRange.upperBound)))
         
         return true
