@@ -130,7 +130,6 @@ public struct Queue : Equatable {
             return CAtomicsLoad(QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), .relaxed)
         }
         nonmutating set {
-            assert(self.lastSubmittedCommand >= newValue)
             assert(self.lastCompletedCommand < newValue)
             CAtomicsStore(QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), newValue, .relaxed)
         }
@@ -143,7 +142,6 @@ public struct Queue : Equatable {
             return DispatchTime(uptimeNanoseconds: time)
         }
         nonmutating set {
-            assert(self.lastSubmissionTime < newValue)
             assert(self.lastCompletionTime < newValue)
             CAtomicsStore(QueueRegistry.instance.lastCompletionTimes.advanced(by: Int(self.index)), newValue.uptimeNanoseconds, .relaxed)
         }

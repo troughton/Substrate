@@ -148,7 +148,7 @@ public struct ResourceUsage {
                 }
             }
         } else {
-            assert(!self.type.isWrite || !nextUsage.type.isWrite, "Resource simultaneously bound for conflicting writes.")
+            assert(self.type == nextUsage.type || !self.type.isWrite || !nextUsage.type.isWrite, "Resource simultaneously bound for conflicting writes.")
             if self.inArgumentBuffer != nextUsage.inArgumentBuffer {
                 return false
             }
