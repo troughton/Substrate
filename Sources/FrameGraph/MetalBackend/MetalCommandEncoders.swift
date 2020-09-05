@@ -282,7 +282,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             
         case .setDepthStencilDescriptor(let descriptorPtr):
             let state = stateCaches[descriptorPtr.takeUnretainedValue().value]
-            if state !== self.boundDepthStencilState {
+            if state !== self.boundDepthStencilState, renderTarget.depthAttachment != nil || renderTarget.stencilAttachment != nil {
                 encoder.setDepthStencilState(state)
                 self.boundDepthStencilState = state
             }
