@@ -178,6 +178,8 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
             if !usage.renderPassRecord.isActive || usage.stages == .cpuBeforeRender { continue }
             
             switch usage.type {
+            case .unusedArgumentBuffer, .unusedRenderTarget:
+                continue
             case _ where usage.type.isRenderTarget:
                 guard let renderPass = usage.renderPassRecord.pass as? DrawRenderPass else { fatalError() }
                 let descriptor = renderPass.renderTargetDescriptor
@@ -213,8 +215,6 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
                 isReadAfterPass = true
             case _ where usage.isWrite:
                 continue // We need to be conservative here; it's possible something else may write to the texture but only partially overwrite our data.
-            case .unusedArgumentBuffer, .unusedRenderTarget:
-                continue
             default:
                 fatalError()
             }
