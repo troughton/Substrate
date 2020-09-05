@@ -171,7 +171,7 @@ public final class TransientRegistryManager {
     
     @usableFromInline var freeIndices = RingBuffer<Int>()
     @usableFromInline var maxIndex = 0
-    @usableFromInline let enqueuedDisposals = ExpandingBuffer<Buffer>()
+    @usableFromInline var enqueuedDisposals = [Buffer]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
     init() {
@@ -244,7 +244,7 @@ public final class TransientRegistryManager {
             self.disposeImmediately(buffer: buffer)
         }
         
-        self.enqueuedDisposals.removeAll()
+        self.enqueuedDisposals.removeAll(keepingCapacity: true)
         
         for chunkIndex in 0..<self.chunkCount {
             self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
@@ -436,7 +436,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline var freeIndices = RingBuffer<Int>()
     @usableFromInline var maxIndex = 0
-    @usableFromInline let enqueuedDisposals = ExpandingBuffer<Texture>()
+    @usableFromInline var enqueuedDisposals = [Texture]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
     init() {
@@ -504,7 +504,7 @@ public enum TextureViewBaseInfo {
             
             self.freeIndices.append(index)
         }
-        self.enqueuedDisposals.removeAll()
+        self.enqueuedDisposals.removeAll(keepingCapacity: true)
         
         for chunkIndex in 0..<self.chunkCount {
             self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
@@ -720,7 +720,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var freeIndices = RingBuffer<Int>()
     @usableFromInline var maxIndex = 0
     
-    @usableFromInline let enqueuedDisposals = ExpandingBuffer<_ArgumentBuffer>()
+    @usableFromInline var enqueuedDisposals = [_ArgumentBuffer]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
     init() {
@@ -826,7 +826,7 @@ public enum TextureViewBaseInfo {
             
             self.freeIndices.append(index)
         }
-        self.enqueuedDisposals.removeAll()
+        self.enqueuedDisposals.removeAll(keepingCapacity: true)
         
         for chunkIndex in 0..<self.chunkCount {
             self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
@@ -930,7 +930,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var freeIndices = RingBuffer<Int>()
     @usableFromInline var maxIndex = 0
     
-    @usableFromInline let enqueuedDisposals = ExpandingBuffer<_ArgumentBufferArray>()
+    @usableFromInline var enqueuedDisposals = [_ArgumentBufferArray]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
     init() {
@@ -992,7 +992,7 @@ public enum TextureViewBaseInfo {
             self.freeIndices.append(index)
         }
         
-        self.enqueuedDisposals.removeAll()
+        self.enqueuedDisposals.removeAll(keepingCapacity: true)
     }
     
     func dispose(_ buffer: _ArgumentBufferArray) {
@@ -1036,7 +1036,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline var freeIndices = RingBuffer<Int>()
     @usableFromInline var maxIndex = 0
-    @usableFromInline let enqueuedDisposals = ExpandingBuffer<Heap>()
+    @usableFromInline var enqueuedDisposals = [Heap]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
     init() {
@@ -1096,7 +1096,7 @@ public enum TextureViewBaseInfo {
             self.disposeImmediately(heap: heap)
         }
         
-        self.enqueuedDisposals.removeAll()
+        self.enqueuedDisposals.removeAll(keepingCapacity: true)
     }
     
     func dispose(_ heap: Heap, atEndOfFrame: Bool = true) {

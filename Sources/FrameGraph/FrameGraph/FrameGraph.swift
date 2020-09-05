@@ -305,7 +305,7 @@ public enum RenderPassType {
 @usableFromInline
 final class RenderPassRecord {
     @usableFromInline let pass : RenderPass
-    @usableFromInline var commands : ExpandingBuffer<FrameGraphCommand>! = nil
+    @usableFromInline var commands : ChunkArray<FrameGraphCommand>! = nil
     @usableFromInline var readResources : HashSet<Resource>! = nil
     @usableFromInline var writtenResources : HashSet<Resource>! = nil
     @usableFromInline var resourceUsages : ChunkArray<(Resource, ResourceUsage)>! = nil

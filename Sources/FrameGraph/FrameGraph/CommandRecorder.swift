@@ -218,7 +218,7 @@ extension ChunkArray where T == (Resource, ResourceUsage) {
 final class FrameGraphCommandRecorder {
     @usableFromInline let renderPassScratchAllocator : ThreadLocalTagAllocator
     @usableFromInline let resourceUsageAllocator : TagAllocator.ThreadView
-    @usableFromInline let commands : ExpandingBuffer<FrameGraphCommand> // Lifetime: FrameGraph compilation (copied to another array for the backend).
+    @usableFromInline var commands : ChunkArray<FrameGraphCommand> // Lifetime: FrameGraph compilation (copied to another array for the backend).
     @usableFromInline var dataAllocator : TagAllocator.ThreadView // Lifetime: FrameGraph execution.
     @usableFromInline let unmanagedReferences : ExpandingBuffer<Releasable> // Lifetime: FrameGraph execution.
     @usableFromInline var readResources : HashSet<Resource>
@@ -229,7 +229,7 @@ final class FrameGraphCommandRecorder {
     @inlinable
     init(renderPassScratchAllocator: ThreadLocalTagAllocator, frameGraphExecutionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView, unmanagedReferences: ExpandingBuffer<Releasable>) {
         assert(_isPOD(FrameGraphCommand.self))
-        self.commands = ExpandingBuffer(allocator: AllocatorType(frameGraphExecutionAllocator), initialCapacity: 64)
+        self.commands = ChunkArray() // (allocator: AllocatorType(frameGraphExecutionAllocator), initialCapacity: 64)
         self.renderPassScratchAllocator = renderPassScratchAllocator
         self.resourceUsageAllocator = resourceUsageAllocator
         self.dataAllocator = frameGraphExecutionAllocator
@@ -253,12 +253,12 @@ final class FrameGraphCommandRecorder {
     @inlinable
     public func record<T>(_ commandGenerator: (UnsafePointer<T>) -> FrameGraphCommand, _ data: T) {
         let command = commandGenerator(copyData(data))
-        self.commands.append(command)
+        self.commands.append(command, allocator: .tagThreadView(self.dataAllocator))
     }
     
     @inlinable
     public func record(_ command: FrameGraphCommand) {
-        self.commands.append(command)
+        self.commands.append(command, allocator: .tagThreadView(self.dataAllocator))
     }
     
     @inlinable
@@ -272,7 +272,7 @@ final class FrameGraphCommandRecorder {
         }
         
         let command = commandGenerator(cStringAddress)
-        self.commands.append(command)
+        self.commands.append(command, allocator: .tagThreadView(self.dataAllocator))
     }
     
     @discardableResult

@@ -103,23 +103,51 @@ public struct ChunkArray<T>: Collection {
     }
     
     @inlinable
+    @discardableResult
+    public mutating func removeBySwappingWithBack(index: Int, allocator: AllocatorType) -> T {
+        precondition(index < self.count)
+        if index == self.count - 1 {
+            return self.removeLast(allocator: allocator)
+        }
+        
+        let elementPointer = self[pointerTo: index]
+        let element = elementPointer.move()
+        elementPointer.moveAssign(from: self.pointerToLast, count: 1)
+        
+        let (_, indexInChunk) = self.count.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
+        if indexInChunk == 0 {
+            self.removeTailChunk(allocator: allocator)
+        }
+        
+        self.count -= 1
+        return element
+    }
+    
+    @usableFromInline
+    mutating func removeTailChunk(allocator: AllocatorType) {
+        var currentChunk = self.next
+        var previousChunk = currentChunk
+        while currentChunk != self.tail {
+            previousChunk = currentChunk
+            currentChunk = currentChunk?.pointee.next!
+        }
+        previousChunk?.pointee.next = nil
+        self.tail = previousChunk
+        if let currentChunk = currentChunk {
+            Allocator.deallocate(currentChunk, allocator: allocator)
+        }
+    }
+    
+    @inlinable
+    @discardableResult
     public mutating func removeLast(allocator: AllocatorType) -> T {
         precondition(self.count > 0)
         
-        let (chunkIndex, indexInChunk) = self.count.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
-        var currentChunk = self.next!
-        var previousChunk = currentChunk
-        for _ in 0..<chunkIndex {
-            previousChunk = currentChunk
-            currentChunk = currentChunk.pointee.next!
-        }
+        let value = self.pointerToLast.move()
         
-        let value = UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self).advanced(by: indexInChunk).move()
-        
+        let (_, indexInChunk) = self.count.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
         if indexInChunk == 0 {
-            previousChunk.pointee.next = nil
-            self.tail = previousChunk
-            Allocator.deallocate(currentChunk, allocator: allocator)
+            self.removeTailChunk(allocator: allocator)
         }
         
         self.count -= 1

@@ -204,9 +204,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         
         let argData = commandRecorder.copyData(args)
         
-        commandRecorder.commands.append(
-            .setBytes(argData)
-        )
+        commandRecorder.record(.setBytes(argData))
     }
     
     public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey) {
@@ -437,7 +435,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                 switch command {
                 case .setSamplerState(let args):
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
-                    self.commandRecorder.commands.append(command)
+                    self.commandRecorder.record(command)
                     return nil
                     
                 case .setArgumentBufferArray(let args):
@@ -448,12 +446,12 @@ public class ResourceBindingEncoder : CommandEncoder {
                     
                 case .setBytes(let args):
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
-                    self.commandRecorder.commands.append(command)
+                    self.commandRecorder.record(command)
                     return nil
                     
                 case .setBufferOffset(let args):
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
-                    self.commandRecorder.commands.append(command)
+                    self.commandRecorder.record(command)
                     
                     guard let setBufferArgsRaw = currentlyBound?.bindingCommand else {
                         assertionFailure("No buffer bound when setBufferOffset was called for key \(key).")
@@ -502,7 +500,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                 // This only applies for render commands, since we may need to insert memory barriers between compute and blit commands.
                 if !self.pipelineStateChanged,
                     let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
-                    self.commandRecorder.commands.append(command)
+                    self.commandRecorder.record(command)
                     let node = self.commandRecorder.boundResourceUsageNode(for: Resource(handle: identifier), encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: bufferOffset), inArgumentBuffer: false, firstCommandOffset: firstCommandOffset)
                     if reflection.usageType.isUAVReadWrite {
                         self.boundUAVResources.insert(bindingPath)
@@ -576,10 +574,10 @@ public class ResourceBindingEncoder : CommandEncoder {
                     
                     switch argBufferType {
                     case .standalone:
-                        self.commandRecorder.commands.append(.setArgumentBuffer(argsPtr.assumingMemoryBound(to: FrameGraphCommand.SetArgumentBufferArgs.self)))
+                        self.commandRecorder.record(.setArgumentBuffer(argsPtr.assumingMemoryBound(to: FrameGraphCommand.SetArgumentBufferArgs.self)))
                     case .inArray(_, let bindingArgs):
                         if !bindingArgs.pointee.isBound {
-                            self.commandRecorder.commands.append(.setArgumentBufferArray(argsPtr.assumingMemoryBound(to: FrameGraphCommand.SetArgumentBufferArrayArgs.self)))
+                            self.commandRecorder.record(.setArgumentBufferArray(argsPtr.assumingMemoryBound(to: FrameGraphCommand.SetArgumentBufferArrayArgs.self)))
                             bindingArgs.pointee.isBound = true
                         }
                         assert(argsPtr.assumingMemoryBound(to: FrameGraphCommand.SetArgumentBufferArrayArgs.self).pointee.argumentBuffer == argumentBuffer.sourceArray)
@@ -688,9 +686,9 @@ public class ResourceBindingEncoder : CommandEncoder {
                     if boundResource.usagePointer == nil, let bindingCommandArgs = boundResource.bindingCommand {
                         switch boundResource.resource.type {
                         case .texture:
-                            self.commandRecorder.commands.append(.setTexture(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetTextureArgs.self)))
+                            self.commandRecorder.record(.setTexture(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetTextureArgs.self)))
                         case .buffer:
-                            self.commandRecorder.commands.append(.setBuffer(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetBufferArgs.self)))
+                            self.commandRecorder.record(.setBuffer(bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetBufferArgs.self)))
                         case .argumentBuffer:
                             let argumentBuffer = boundResource.resource.argumentBuffer!
                             argumentBuffer.updateEncoder(pipelineReflection: pipelineReflection, bindingPath: bindingPath)
@@ -702,13 +700,13 @@ public class ResourceBindingEncoder : CommandEncoder {
                             if Resource(setArgumentBufferArgs.pointee.argumentBuffer).type == .argumentBufferArray {
                                 let arrayArguments = bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetArgumentBufferArrayArgs.self)
                                 if !arrayArguments.pointee.isBound {
-                                    self.commandRecorder.commands.append(.setArgumentBufferArray(arrayArguments))
+                                    self.commandRecorder.record(.setArgumentBufferArray(arrayArguments))
                                     arrayArguments.pointee.isBound = true
                                 }
                                 assert(arrayArguments.pointee.argumentBuffer == argumentBuffer.sourceArray)
                             } else {
                                 let setArgumentBufferArgs = bindingCommandArgs.assumingMemoryBound(to: FrameGraphCommand.SetArgumentBufferArgs.self)
-                                self.commandRecorder.commands.append(.setArgumentBuffer(setArgumentBufferArgs))
+                                self.commandRecorder.record(.setArgumentBuffer(setArgumentBufferArgs))
                             }
                             
                         default:
