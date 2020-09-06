@@ -152,8 +152,10 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     @inlinable
     public subscript(index: Int) -> Element {
         get {
+            assert(index < self.capacity)
             return self.buffer.unsafelyUnwrapped.advanced(by: index).pointee
         } set {
+            assert(index < self.capacity)
             self.buffer.unsafelyUnwrapped.advanced(by: index).pointee = newValue
         }
     }

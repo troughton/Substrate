@@ -40,6 +40,16 @@ public enum AllocatorType {
     public init(_ arena: Unmanaged<MemoryArena>) {
         self = .custom(arena)
     }
+    
+    @inlinable
+    public var requiresDeallocation: Bool {
+        switch self {
+        case .system:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 public final class Allocator {

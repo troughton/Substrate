@@ -74,7 +74,7 @@ extension ResourceBindingPath : CustomHashable {
     }
 }
 
-public enum ActiveResourceRange: Equatable {
+public enum ActiveResourceRange {
     case inactive
     case fullResource
     case buffer(Range<Int>)
@@ -103,12 +103,40 @@ public enum ActiveResourceRange: Equatable {
         }
     }
     
+    public func isEqual(to other: ActiveResourceRange, resource: Resource) -> Bool {
+        switch (self, other) {
+        case (.inactive, .inactive):
+            return true
+        case (.fullResource, .fullResource):
+            return true
+        case (.buffer(let rangeA), .buffer(let rangeB)):
+            return rangeA == rangeB
+        case (.texture(let maskA), .texture(let maskB)):
+            return maskA.isEqual(to: maskB, descriptor: resource.texture!.descriptor)
+            
+        case (.buffer(let range), .fullResource), (.fullResource, .buffer(let range)):
+            return range == resource.buffer!.range
+        case (.buffer(let range), .inactive), (.inactive, .buffer(let range)):
+            return range.isEmpty
+            
+        case (.texture(let mask), .fullResource), (.fullResource, .texture(let mask)):
+            return mask.value == .max
+        case (.texture(let mask), .inactive), (.inactive, .texture(let mask)):
+            return mask.value == 0
+            
+        default:
+            fatalError("Incompatible resource ranges \(self) and \(other)")
+        }
+    }
+    
     func offset(by offset: Int) -> ActiveResourceRange {
         if case .buffer(let range) = self {
             return .buffer((range.lowerBound + offset)..<(range.upperBound + offset))
         }
         return self
     }
+    
+    
 }
 
 public struct ArgumentReflection {
