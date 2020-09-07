@@ -100,6 +100,7 @@ public enum TextureLoadingError : Error {
     case privateTextureRequiresFrameGraph
     case invalidTextureDataFormat(URL, Any.Type)
     case noSupportedPixelFormat
+    case mismatchingPixelFormat(URL, expected: PixelFormat, actual: PixelFormat)
 }
 
 public enum TextureColorSpace : UInt8, Codable, Hashable {

@@ -443,6 +443,47 @@ public enum TextureViewBaseInfo {
         self.chunks = .allocate(capacity: Self.maxChunks)
     }
     
+    /// Reserves a handle, but does not initialise any other variables.
+    @usableFromInline
+    func allocateHandle() -> UInt64 {
+        return self.lock.withLock {
+            let index : Int
+            if let reusedIndex = self.freeIndices.popFirst() {
+                index = reusedIndex
+            } else {
+                index = self.maxIndex
+                if self.maxIndex % Chunk.itemsPerChunk == 0 {
+                    self.allocateChunk(self.maxIndex / Chunk.itemsPerChunk)
+                }
+                self.maxIndex += 1
+            }
+            
+            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
+            let generation = self.chunks[chunkIndex].generations[indexInChunk]
+            
+            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
+        }
+    }
+    
+    /// Initialises an uninitialised handle reserved using allocateHandle.
+    @usableFromInline
+    func initialise(texture: Texture, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
+        precondition(texture.flags.contains(.persistent))
+        return self.lock.withLock {
+            let index = texture.index
+            
+            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
+            
+            self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).initialize(to: [])
+            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
+            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
+            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap)
+            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
+        }
+    }
+    
     @usableFromInline
     func allocate(descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) -> UInt64 {
         return self.lock.withLock {

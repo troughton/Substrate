@@ -993,6 +993,24 @@ public struct Texture : ResourceProtocol {
             assert(didAllocate, "Allocation failed for persistent texture \(self)")
         }
     }
+        
+    @inlinable
+    public static func _createPersistentTextureWithoutDescriptor(flags: ResourceFlags = [.persistent]) -> Texture {
+        precondition(flags.contains(.persistent))
+        let index = PersistentTextureRegistry.instance.allocateHandle()
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        return Texture(handle: handle)
+    }
+    
+    @inlinable
+    public func _initialisePersistentTexture(descriptor: TextureDescriptor, heap: Heap?) {
+        precondition(self.flags.contains(.persistent))
+        PersistentTextureRegistry.instance.initialise(texture: self, descriptor: descriptor, heap: heap, flags: self.flags)
+        
+        assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+        let didAllocate = RenderBackend.materialisePersistentTexture(self)
+        assert(didAllocate, "Allocation failed for persistent texture \(self)")
+    }
     
     @inlinable
     public init?(descriptor: TextureDescriptor, heap: Heap, flags: ResourceFlags = [.persistent]) {
