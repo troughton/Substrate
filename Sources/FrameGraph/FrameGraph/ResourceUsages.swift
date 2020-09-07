@@ -119,7 +119,7 @@ public struct ResourceUsage {
         
         let rangesOverlap = self.commandRange.lowerBound < nextUsage.commandRange.upperBound && nextUsage.commandRange.lowerBound < self.commandRange.upperBound
         
-        if !rangesOverlap, (nextUsage.type != self.type || !nextUsage.activeRange.isEqual(to: self.activeRange, resource: resource)), !self.type.isRenderTarget || !(self.type.isWrite && nextUsage.type.isRead) {
+        if !rangesOverlap, !self.type.isRenderTarget || !(self.type.isWrite && nextUsage.type.isRead) {
             // Don't merge usages of different types with non-overlapping ranges, and don't merge a write with a possible dependent read unless they're render target accesses.
             return false
         }
