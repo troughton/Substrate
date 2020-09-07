@@ -11,6 +11,23 @@ import Metal
 
 //MARK: From Metal
 
+extension ResourcePurgeableState {
+    public init?(_ state: MTLPurgeableState) {
+        switch state {
+        case .keepCurrent:
+            return nil
+        case .empty:
+            self = .discarded
+        case .nonVolatile:
+            self = .nonDiscardable
+        case .volatile:
+            self = .discardable
+        @unknown default:
+            fatalError()
+        }
+    }
+}
+
 extension Texture {
     public init(metalTexture: MTLTexture) {
         self = Texture(descriptor: TextureDescriptor(from: metalTexture), externalResource: metalTexture)
@@ -235,7 +252,6 @@ extension ArgumentReflection {
         self.init(type: type, bindingPath: bindingPath, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
     }
     
-    
 }
 
 //MARK: To Metal
@@ -400,6 +416,24 @@ extension MTLPixelFormat {
         self.init(rawValue: pixelFormat.rawValue)!
     }
 }
+
+extension MTLPurgeableState {
+    public init(_ state: ResourcePurgeableState?) {
+        guard let state = state else {
+            self = .keepCurrent
+            return
+        }
+        switch state {
+        case .discardable:
+            self = .volatile
+        case .nonDiscardable:
+            self = .nonVolatile
+        case .discarded:
+            self = .empty
+        }
+    }
+}
+
 
 extension MTLRegion {
     public init(_ region: Region) {

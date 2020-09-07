@@ -102,6 +102,12 @@ public enum ResourceAccessType {
     case readWrite
 }
 
+public enum ResourcePurgeableState {
+    case nonDiscardable
+    case discardable
+    case discarded
+}
+
 public protocol ResourceProtocol : Hashable {
     init(handle: Handle)
     func dispose()
@@ -121,6 +127,9 @@ public protocol ResourceProtocol : Hashable {
     /// A resource handle is valid if it is a transient resource that was allocated in the current frame
     /// or is a persistent resource that has not been disposed.
     var isValid : Bool { get }
+    
+    var purgeableState: ResourcePurgeableState { get nonmutating set }
+    func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState
 }
 
 extension ResourceProtocol {
@@ -128,6 +137,27 @@ extension ResourceProtocol {
     @inlinable
     public static func ==(lhs: Self, rhs: Self) -> Bool {
         return lhs.handle == rhs.handle
+    }
+    
+    public var purgeableState: ResourcePurgeableState {
+        get {
+            return RenderBackend.updatePurgeableState(for: Resource(self), to: nil)
+        }
+        nonmutating set {
+            let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: newValue)
+            if newValue == .discarded || oldValue == .discarded {
+                self.discardContents()
+            }
+        }
+    }
+    
+    @discardableResult
+    public func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState {
+        let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: to)
+        if to == .discarded || oldValue == .discarded {
+            self.discardContents()
+        }
+        return oldValue
     }
 }
 
