@@ -202,6 +202,10 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     
     var commandEncoderDependencies = DependencyTable<Dependency?>(capacity: 1, defaultValue: nil)
     
+    static var resourceCommandGeneratorTag: TaggedHeap.Tag {
+        return UInt64(bitPattern: Int64("ResourceCommandGenerator".hashValue))
+    }
+    
     func processResourceResidency(resource: Resource, frameCommandInfo: FrameCommandInfo<Backend>) {
         guard Backend.requiresResourceResidencyTracking else { return }
         
@@ -240,12 +244,38 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
+    
+    func processInputAttachmentUsage(_ usage: ResourceUsage, resource: Resource) {
+        guard RenderBackend.requiresEmulatedInputAttachments else { return }
+        // To simulate input attachments on desktop platforms, we need to insert a render target barrier between every draw.
+        let applicableRange = usage.commandRange
+        
+        let commands = usage.renderPassRecord.commands!
+        let passCommandRange = usage.renderPassRecord.commandRange!
+        var previousCommandIndex = -1
+        
+        let rangeInPass = applicableRange.offset(by: -passCommandRange.lowerBound)
+        for i in rangeInPass {
+            let command = commands[i]
+            if command.isDrawCommand {
+                let commandIndex = i + passCommandRange.lowerBound
+                if previousCommandIndex >= 0 {
+                    self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: previousCommandIndex))
+//                            self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: .read, stages: usage.stages, allowReordering: false), index: commandIndex))
+                }
+                previousCommandIndex = commandIndex
+            }
+        }
+    }
+    
     func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry, frameCommandInfo: inout FrameCommandInfo<Backend>) {
         if passes.isEmpty {
             return
         }
         
         self.commandEncoderDependencies.resizeAndClear(capacity: frameCommandInfo.commandEncoders.count, clearValue: nil)
+        let allocator = AllocatorType.threadLocalTag(ThreadLocalTagAllocator(tag: Self.resourceCommandGeneratorTag))
+        defer { TaggedHeap.free(tag: Self.resourceCommandGeneratorTag) }
         
         resourceLoop: for resource in usedResources {
             let usages = resource.usages
@@ -277,40 +307,60 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource, waitDependency: fenceDependency), encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, order: .before))
             }
             
-            func processInputAttachmentUsage(_ usage: ResourceUsage) {
-                guard RenderBackend.requiresEmulatedInputAttachments else { return }
-                // To simulate input attachments on desktop platforms, we need to insert a render target barrier between every draw.
-                let applicableRange = usage.commandRange
-                
-                let commands = usage.renderPassRecord.commands!
-                let passCommandRange = usage.renderPassRecord.commandRange!
-                var previousCommandIndex = -1
-                
-                let rangeInPass = applicableRange.offset(by: -passCommandRange.lowerBound)
-                for i in rangeInPass {
-                    let command = commands[i]
-                    if command.isDrawCommand {
-                        let commandIndex = i + passCommandRange.lowerBound
-                        if previousCommandIndex >= 0 {
-                            self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: previousCommandIndex))
-//                            self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: .read, stages: usage.stages, allowReordering: false), index: commandIndex))
-                        }
-                        previousCommandIndex = commandIndex
-                    }
-                }
+            if firstUsage.type == .inputAttachmentRenderTarget {
+                processInputAttachmentUsage(firstUsage, resource: resource)
             }
             
-            if firstUsage.type == .inputAttachmentRenderTarget {
-                processInputAttachmentUsage(firstUsage)
-            }
+            var remainingSubresourceIterator: ChunkArray<ResourceUsage>.Iterator? = nil
+            var remainingSubresources = ActiveResourceRange.inactive
+            var remainingSubresourcesPreviousWrite: ResourceUsage? = nil
+            var remainingSubresourcesPreviousUsage: ResourceUsage = previousUsage
+            var remainingSubresourcesReadsSinceLastWrite: [ResourceUsage] = []
+            
+            var activeSubresources = ActiveResourceRange.fullResource
             
             while let usage = usageIterator.next()  {
                 if !usage.affectsGPUBarriers {
                     continue
                 }
                 
+                if resource.type == .texture { // We only track subresources for textures.
+                    if usage.activeRange.isEqual(to: .fullResource, resource: resource) {
+                        if !remainingSubresources.isEqual(to: .inactive, resource: resource) {
+                            // Reset the tracked state to the remainingSubresources
+                            activeSubresources = remainingSubresources
+                            usageIterator = remainingSubresourceIterator!
+                            previousUsage = remainingSubresourcesPreviousUsage
+                            previousWrite = remainingSubresourcesPreviousWrite
+                            readsSinceLastWrite = remainingSubresourcesReadsSinceLastWrite
+                            
+                            continue
+                        } else {
+                            activeSubresources = .fullResource
+                        }
+                    } else {
+                        let activeRangeIntersection = usage.activeRange.intersection(with: activeSubresources, resource: resource, allocator: allocator)
+                        if activeRangeIntersection.isEqual(to: .inactive, resource: resource) {
+                            continue
+                        } else if !activeRangeIntersection.isEqual(to: activeSubresources, resource: resource) {
+                            if remainingSubresources.isEqual(to: .inactive, resource: resource) {
+                                remainingSubresourceIterator = usageIterator
+                                
+                                remainingSubresourcesPreviousUsage = previousUsage
+                                remainingSubresourcesPreviousWrite = previousWrite
+                                remainingSubresourcesReadsSinceLastWrite = readsSinceLastWrite
+                            }
+                            
+                            remainingSubresources.formUnion(with: activeSubresources.subtracting(range: activeRangeIntersection, resource: resource, allocator: allocator), resource: resource, allocator: allocator)
+                            activeSubresources = activeRangeIntersection
+                            print("Processing subresources \(activeSubresources), with \(remainingSubresources) remaining")
+                            
+                        }
+                    }
+                }
+                
                 if usage.type == .inputAttachmentRenderTarget {
-                    processInputAttachmentUsage(usage)
+                    processInputAttachmentUsage(usage, resource: resource)
                 }
                 
                 if usage.isWrite {

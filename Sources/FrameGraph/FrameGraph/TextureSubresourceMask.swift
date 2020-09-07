@@ -44,16 +44,20 @@ public struct TextureSubresourceMask {
     
     @inlinable
     mutating func maskLastElement(bitCount: Int) {
-        if self.value == .max { return }
+        if self.value == .max || self.value == 0 { return }
         
         let lastElementBits = bitCount % Element.bitWidth
         if lastElementBits != 0 {
             let uintCount = Self.uintCount(bitCount: bitCount)
-            let storage = UnsafeMutablePointer<Element>(bitPattern: UInt(exactly: self.value)!)!
-            
-            let lastElementBits = bitCount % Element.bitWidth
-            if lastElementBits != 0 {
-                storage[uintCount - 1] &= (1 << lastElementBits) - 1
+            if uintCount <= 1 {
+                self.value &= (1 << lastElementBits) - 1
+            } else {
+                let storage = UnsafeMutablePointer<Element>(bitPattern: UInt(exactly: self.value)!)!
+                
+                let lastElementBits = bitCount % Element.bitWidth
+                if lastElementBits != 0 {
+                    storage[uintCount - 1] &= (1 << lastElementBits) - 1
+                }
             }
         }
     }

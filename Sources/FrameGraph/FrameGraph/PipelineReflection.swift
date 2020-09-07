@@ -81,6 +81,16 @@ public enum ActiveResourceRange {
     case texture(TextureSubresourceMask)
     
     @inlinable
+    init(_ range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) {
+        switch range {
+        case .texture(let textureMask):
+            self = .texture(TextureSubresourceMask(source: textureMask, descriptor: resource.texture!.descriptor, allocator: allocator))
+        default:
+            self = range
+        }
+    }
+    
+    @inlinable
     mutating func formUnion(with range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) {
         if case .fullResource = self {
             return
@@ -103,12 +113,80 @@ public enum ActiveResourceRange {
         }
     }
     
+    func union(with range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) -> ActiveResourceRange {
+        var result = ActiveResourceRange(self, resource: resource, allocator: allocator)
+        result.formIntersection(with: range, resource: resource, allocator: allocator)
+        return result
+    }
+    
+    @inlinable
+    mutating func formIntersection(with range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) {
+        if case .fullResource = self {
+            self = ActiveResourceRange(range, resource: resource, allocator: allocator)
+        }
+        switch (self, range) {
+        case (.inactive, _), (_, .inactive):
+            self = .inactive
+        case (.fullResource, _):
+            self = ActiveResourceRange(range, resource: resource, allocator: allocator)
+        case (_, .fullResource):
+            return
+        case (.buffer(let rangeA), .buffer(let rangeB)):
+            self = rangeA.overlaps(rangeB) ? .buffer(max(rangeA.lowerBound, rangeB.lowerBound)..<min(rangeA.upperBound, rangeB.upperBound)) : .inactive
+        case (.texture(var maskA), .texture(let maskB)):
+            maskA.formIntersection(with: maskB, descriptor: resource.texture!.descriptor, allocator: allocator)
+            self = .texture(maskA)
+        default:
+            fatalError("Incompatible resource ranges \(self) and \(range)")
+        }
+    }
+    
+    func intersection(with range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) -> ActiveResourceRange {
+        var result = ActiveResourceRange(self, resource: resource, allocator: allocator)
+        result.formIntersection(with: range, resource: resource, allocator: allocator)
+        return result
+    }
+    
+    @inlinable
+    mutating func subtract(range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) {
+        switch (self, range) {
+        case (.inactive, _):
+            self = .inactive
+        case (_, .inactive):
+            return
+        case (_, .fullResource):
+            self = .inactive
+        case (.fullResource, .texture(let textureRange)):
+            var result = TextureSubresourceMask()
+            result.removeAll(in: textureRange, descriptor: resource.texture!.descriptor, allocator: allocator)
+            self = .texture(result)
+        case (.buffer, .buffer),
+             (.fullResource, .buffer):
+            fatalError("Subtraction for buffer ranges is not implemented; we really need a RangeSet type (or a TextureSubresourceMask-like coarse tracking for the buffer) to handle this properly.")
+        case (.texture(var maskA), .texture(let maskB)):
+            maskA.removeAll(in: maskB, descriptor: resource.texture!.descriptor, allocator: allocator)
+            self = .texture(maskA)
+        default:
+            fatalError("Incompatible resource ranges \(self) and \(range)")
+        }
+    }
+    
+    
+    @inlinable
+    func subtracting(range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) -> ActiveResourceRange {
+        var result = ActiveResourceRange(self, resource: resource, allocator: allocator)
+        result.subtract(range: range, resource: resource, allocator: allocator)
+        return result
+    }
+    
     public func isEqual(to other: ActiveResourceRange, resource: Resource) -> Bool {
         switch (self, other) {
         case (.inactive, .inactive):
             return true
         case (.fullResource, .fullResource):
             return true
+        case (.inactive, .fullResource), (.fullResource, .inactive):
+            return false
         case (.buffer(let rangeA), .buffer(let rangeB)):
             return rangeA == rangeB
         case (.texture(let maskA), .texture(let maskB)):
