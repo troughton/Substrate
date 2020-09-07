@@ -143,8 +143,10 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         
         if !self.drawablesToPresentOnScheduled.isEmpty {
             self.commandBuffer.waitUntilScheduled()
-            for drawable in self.drawablesToPresentOnScheduled {
-                drawable.present()
+            FrameGraph.jobManager.syncOnMainThread {
+                for drawable in self.drawablesToPresentOnScheduled {
+                    drawable.present()
+                }
             }
         }
     }
