@@ -124,7 +124,7 @@ extension Texture {
             
             let pixelFormat = textureData.pixelFormat
             guard pixelFormat != .invalid else {
-                throw TextureLoadingError.noSupportedPixelFormat(url)
+                throw TextureLoadingError.noSupportedPixelFormat
             }
             if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
                 textureData.convert(toColorSpace: .sRGB)
@@ -157,7 +157,7 @@ extension Texture {
                 var textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
                 let pixelFormat = textureData.pixelFormat
                 guard pixelFormat != .invalid else {
-                    throw TextureLoadingError.noSupportedPixelFormat(url)
+                    throw TextureLoadingError.noSupportedPixelFormat
                 }
                 if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
                     textureData.convert(toColorSpace: .sRGB)
@@ -186,7 +186,7 @@ extension Texture {
                 
                 let pixelFormat = textureData.pixelFormat
                 guard pixelFormat != .invalid else {
-                    throw TextureLoadingError.noSupportedPixelFormat(url)
+                    throw TextureLoadingError.noSupportedPixelFormat
                 }
                 if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
                     textureData.convert(toColorSpace: .sRGB)
@@ -255,7 +255,7 @@ extension Texture {
                 
                 let pixelFormat = textureData.pixelFormat
                 guard pixelFormat != .invalid else {
-                    throw TextureLoadingError.noSupportedPixelFormat(url)
+                    throw TextureLoadingError.noSupportedPixelFormat
                 }
                 if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
                     textureData.convert(toColorSpace: .sRGB)

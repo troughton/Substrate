@@ -94,9 +94,11 @@ public func unormToFloat<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>
 
 public enum TextureLoadingError : Error {
     case invalidFile(URL)
+    case invalidData
     case exrParseError(String)
     case unsupportedMultipartEXR(URL)
-    case noSupportedPixelFormat(URL)
+    case unsupportedMultipartEXRData
+    case noSupportedPixelFormat
     case privateTextureRequiresFrameGraph
     case invalidTextureDataFormat(URL, Any.Type)
     case mismatchingPixelFormat(expected: PixelFormat, actual: PixelFormat)

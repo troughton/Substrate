@@ -119,6 +119,54 @@ extension TextureData where T == Float {
         }
     }
     
+    public init(data: Data, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
+        self = try data.withUnsafeBytes { data in
+            var width : Int32 = 0
+            var height : Int32 = 0
+            var componentsPerPixel : Int32 = 0
+            guard stbi_info_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel) != 0 else {
+                throw TextureLoadingError.invalidData
+            }
+            
+            let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
+            
+            let isHDR = stbi_is_hdr_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count)) != 0
+            let is16Bit = stbi_is_hdr_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count)) != 0
+            
+            let dataCount = Int(width * height * channels)
+            
+            if isHDR {
+                let data = stbi_loadf_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
+                return TextureData(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
+                
+            } else if is16Bit {
+                let data = stbi_load_16_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
+                defer { stbi_image_free(data) }
+                
+                var result = TextureData(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
+                
+                for i in 0..<dataCount {
+                    result.storage.data[i] = unormToFloat(data[i])
+                }
+                
+                result.inferAlphaMode()
+                return result
+                
+            } else {
+                let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
+                defer { stbi_image_free(data) }
+                
+                var result = TextureData(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
+                
+                for i in 0..<dataCount {
+                    result.storage.data[i] = unormToFloat(data[i])
+                }
+                
+                result.inferAlphaMode()
+                return result
+            }
+        }
+    }
     
     @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
     public init(fileAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
@@ -130,7 +178,7 @@ extension TextureData where T == Float {
         try self.init(fileAt: url, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
-    init(exrAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
+    public init(exrData: Data, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
         var header = EXRHeader()
         InitEXRHeader(&header)
         var image = EXRImage()
@@ -144,8 +192,7 @@ extension TextureData where T == Float {
             error.map { FreeEXRErrorMessage($0) }
         }
         
-        let data = try Data(contentsOf: url, options: .mappedIfSafe)
-        try data.withUnsafeBytes { data in
+        try exrData.withUnsafeBytes { data in
             
             let memory = data.bindMemory(to: UInt8.self)
             
@@ -223,5 +270,10 @@ extension TextureData where T == Float {
         }
         
         self.inferAlphaMode()
+    }
+    
+    init(exrAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        try self.init(exrData: data, colorSpace: colorSpace, alphaMode: alphaMode)
     }
 }
