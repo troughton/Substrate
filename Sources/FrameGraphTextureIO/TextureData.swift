@@ -96,11 +96,11 @@ public enum TextureLoadingError : Error {
     case invalidFile(URL)
     case exrParseError(String)
     case unsupportedMultipartEXR(URL)
-    case invalidChannelCount(URL, Int)
+    case noSupportedPixelFormat(URL)
     case privateTextureRequiresFrameGraph
     case invalidTextureDataFormat(URL, Any.Type)
-    case noSupportedPixelFormat
-    case mismatchingPixelFormat(URL, expected: PixelFormat, actual: PixelFormat)
+    case mismatchingPixelFormat(expected: PixelFormat, actual: PixelFormat)
+    case mismatchingDimensions(expected: Size, actual: Size)
 }
 
 public enum TextureColorSpace : UInt8, Codable, Hashable {

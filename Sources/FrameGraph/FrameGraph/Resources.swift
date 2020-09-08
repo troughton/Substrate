@@ -139,6 +139,7 @@ extension ResourceProtocol {
         return lhs.handle == rhs.handle
     }
     
+    /// Note that setting the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
     public var purgeableState: ResourcePurgeableState {
         get {
             return RenderBackend.updatePurgeableState(for: Resource(self), to: nil)
@@ -151,6 +152,7 @@ extension ResourceProtocol {
         }
     }
     
+    /// Note that updating the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
     @discardableResult
     public func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState {
         let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: to)

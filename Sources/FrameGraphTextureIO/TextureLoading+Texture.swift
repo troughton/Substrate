@@ -14,9 +14,66 @@ public enum MipGenerationMode {
     case gpuDefault
 }
 
+extension TextureData {
+    public var pixelFormat: PixelFormat {
+        let colorSpace = self.colorSpace
+        
+        switch T.self {
+        case is UInt8.Type:
+            switch self.channelCount {
+            case 1:
+                if !RenderBackend.supportsPixelFormat(.r8Unorm_sRGB) { return .r8Unorm }
+                return colorSpace == .sRGB ? .r8Unorm_sRGB : .r8Unorm
+            case 2:
+                if !RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB) { return .rg8Unorm }
+                return colorSpace == .sRGB ? .rg8Unorm_sRGB : .rg8Unorm
+            case 4:
+                return colorSpace == .sRGB ? .rgba8Unorm_sRGB : .rgba8Unorm
+            default:
+                return .invalid
+            }
+        case is UInt16.Type:
+            switch self.channelCount {
+            case 1:
+                return .r16Unorm
+            case 2:
+                return .rg16Unorm
+            case 4:
+                return .rgba16Unorm
+            default:
+                return .invalid
+            }
+        case is Float.Type:
+            switch self.channelCount {
+            case 1:
+                return .r32Float
+            case 2:
+                return .rg32Float
+            case 4:
+                return .rgba32Float
+            default:
+                return .invalid
+            }
+        default:
+            return .invalid
+        }
+    }
+}
+
 extension Texture {
     
-    fileprivate func copyData<T>(from textureData: TextureData<T>, mipmapped: Bool, mipGenerationMode: MipGenerationMode) throws {
+    public func copyData<T>(from textureData: TextureData<T>, mipmapped: Bool, mipGenerationMode: MipGenerationMode = .gpuDefault) throws {
+        if textureData.colorSpace == .sRGB, !self.descriptor.pixelFormat.isSRGB {
+            print("Warning: the source texture data is in the sRGB color space but the texture's pixel format is linear RGB.")
+        }
+        
+        guard textureData.pixelFormat.channelCount == self.descriptor.pixelFormat.channelCount, textureData.pixelFormat.bytesPerPixel == self.descriptor.pixelFormat.bytesPerPixel else {
+            throw TextureLoadingError.mismatchingPixelFormat(expected: textureData.pixelFormat, actual: self.descriptor.pixelFormat)
+        }
+        guard self.descriptor.width == textureData.width, self.descriptor.height == textureData.height else {
+            throw TextureLoadingError.mismatchingDimensions(expected: Size(width: textureData.width, height: textureData.height), actual: self.descriptor.size)
+        }
+        
         if mipmapped, case .cpu(let wrapMode, let filter) = mipGenerationMode {
             let mips = textureData.generateMipChain(wrapMode: wrapMode, filter: filter, compressedBlockSize: 1)
                            
@@ -62,18 +119,17 @@ extension Texture {
     private func fillInternal(fromFileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode, gpuAlphaMode: TextureAlphaMode, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, isPartiallyInitialised: Bool) throws {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
-        let pixelFormat: PixelFormat
         if url.pathExtension.lowercased() == "exr" {
             var textureData = try TextureData<Float>(exrAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
-            switch textureData.channelCount {
-            case 1:
-                pixelFormat = .r32Float
-            case 2:
-                pixelFormat = .rg32Float
-            case 4:
-                pixelFormat = .rgba32Float
-            default:
-                throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
+            
+            let pixelFormat = textureData.pixelFormat
+            guard pixelFormat != .invalid else {
+                throw TextureLoadingError.noSupportedPixelFormat(url)
+            }
+            if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
+                textureData.convert(toColorSpace: .sRGB)
+            } else if !pixelFormat.isSRGB, textureData.colorSpace == .sRGB {
+                textureData.convert(toColorSpace: .linearSRGB)
             }
             
             switch gpuAlphaMode {
@@ -88,10 +144,6 @@ extension Texture {
             if isPartiallyInitialised {
                 let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                 self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
-            } else {
-                guard pixelFormat == self.descriptor.pixelFormat else {
-                    throw TextureLoadingError.mismatchingPixelFormat(url, expected: pixelFormat, actual: self.descriptor.pixelFormat)
-                }
             }
             
             try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
@@ -103,16 +155,14 @@ extension Texture {
             
             if isHDR {
                 var textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
-                
-                switch textureData.channelCount {
-                case 1:
-                    pixelFormat = .r32Float
-                case 2:
-                    pixelFormat = .rg32Float
-                case 4:
-                    pixelFormat = .rgba32Float
-                default:
-                    throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
+                let pixelFormat = textureData.pixelFormat
+                guard pixelFormat != .invalid else {
+                    throw TextureLoadingError.noSupportedPixelFormat(url)
+                }
+                if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
+                    textureData.convert(toColorSpace: .sRGB)
+                } else if !pixelFormat.isSRGB, textureData.colorSpace == .sRGB {
+                    textureData.convert(toColorSpace: .linearSRGB)
                 }
                 
                 switch gpuAlphaMode {
@@ -127,10 +177,6 @@ extension Texture {
                 if isPartiallyInitialised {
                     let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                     self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
-                } else {
-                    guard pixelFormat == self.descriptor.pixelFormat else {
-                        throw TextureLoadingError.mismatchingPixelFormat(url, expected: pixelFormat, actual: self.descriptor.pixelFormat)
-                    }
                 }
                 
                 try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
@@ -138,15 +184,14 @@ extension Texture {
             } else if is16Bit {
                 var textureData = try TextureData<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
                 
-                switch textureData.channelCount {
-                case 1:
-                    pixelFormat = .r16Unorm
-                case 2:
-                    pixelFormat = .rg16Unorm
-                case 4:
-                    pixelFormat = .rgba16Unorm
-                default:
-                    throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
+                let pixelFormat = textureData.pixelFormat
+                guard pixelFormat != .invalid else {
+                    throw TextureLoadingError.noSupportedPixelFormat(url)
+                }
+                if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
+                    textureData.convert(toColorSpace: .sRGB)
+                } else if !pixelFormat.isSRGB, textureData.colorSpace == .sRGB {
+                    textureData.convert(toColorSpace: .linearSRGB)
                 }
                 
                 switch gpuAlphaMode {
@@ -161,10 +206,6 @@ extension Texture {
                 if isPartiallyInitialised {
                     let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                     self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
-                } else {
-                    guard pixelFormat == self.descriptor.pixelFormat else {
-                        throw TextureLoadingError.mismatchingPixelFormat(url, expected: pixelFormat, actual: self.descriptor.pixelFormat)
-                    }
                 }
                 
                 try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
@@ -212,24 +253,19 @@ extension Texture {
                     }
                 }
                 
-                switch textureData.channelCount {
-                case 1:
-                    pixelFormat = colorSpace == .sRGB ? .r8Unorm_sRGB : .r8Unorm
-                case 2:
-                    pixelFormat = colorSpace == .sRGB ? .rg8Unorm_sRGB : .rg8Unorm
-                case 4:
-                    pixelFormat = colorSpace == .sRGB ? .rgba8Unorm_sRGB : .rgba8Unorm
-                default:
-                    throw TextureLoadingError.invalidChannelCount(url, textureData.channelCount)
+                let pixelFormat = textureData.pixelFormat
+                guard pixelFormat != .invalid else {
+                    throw TextureLoadingError.noSupportedPixelFormat(url)
+                }
+                if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
+                    textureData.convert(toColorSpace: .sRGB)
+                } else if !pixelFormat.isSRGB, textureData.colorSpace == .sRGB {
+                    textureData.convert(toColorSpace: .linearSRGB)
                 }
                 
                 if isPartiallyInitialised {
                     let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
                     self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
-                } else {
-                    guard pixelFormat == self.descriptor.pixelFormat else {
-                        throw TextureLoadingError.mismatchingPixelFormat(url, expected: pixelFormat, actual: self.descriptor.pixelFormat)
-                    }
                 }
                 
                 try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
