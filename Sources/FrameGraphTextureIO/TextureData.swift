@@ -147,7 +147,7 @@ public enum TextureAlphaMode {
     case inferred
     
     func inferFromFileFormat(fileExtension: String) -> TextureAlphaMode {
-        if case .inferred = self, let format = TextureFileFormat(rawValue: fileExtension.lowercased()) {
+        if case .inferred = self, let format = TextureFileFormat(extension: fileExtension) {
             switch format {
             case .png:
                 return .postmultiplied
@@ -617,11 +617,10 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
             } else if self.colorSpace == .linearSRGB {
                 for y in 0..<self.height {
                     for x in 0..<self.width {
-                        let alpha = UInt16(self[x, y, channel: 3] as! UInt8)
+                        let alpha = self[x, y, channel: 3] as! UInt8
                         for c in 0..<3 {
-                            let channelVal = UInt16(self[x, y, channel: c] as! UInt8)
-                            let result = alpha == 0xFF ? channelVal : ((channelVal * alpha) >> 8)
-                            self.setUnchecked(x: x, y: y, channel: c, value: UInt8(truncatingIfNeeded: result) as! T)
+                            let channelVal = self[x, y, channel: c] as! UInt8
+                            self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.postmultToPremult(value: channelVal, alpha: alpha) as! T)
                         }
                     }
                 }
@@ -667,8 +666,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
                         let alpha = self[x, y, channel: 3] as! UInt8
                         for c in 0..<3 {
                             let channelVal = self[x, y, channel: c] as! UInt8
-                            let result = alpha == 0 ? 0xFF : (channelVal / alpha)
-                            self.setUnchecked(x: x, y: y, channel: c, value: result as! T)
+                            self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.premultToPostmult(value: channelVal, alpha: alpha) as! T)
                         }
                     }
                 }
@@ -789,7 +787,7 @@ extension TextureData where T == Float {
         for y in 0..<self.height {
             for x in 0..<self.width {
                 for c in 0..<alphaChannel {
-                    let newValue = self[x, y, channel: c] / self[x, y, channel: alphaChannel]
+                    let newValue = self[x, y, channel: c] / max(self[x, y, channel: alphaChannel], .leastNormalMagnitude)
                     self.setUnchecked(x: x, y: y, channel: c, value: clamp(newValue, min: 0.0, max: 1.0))
                 }
             }

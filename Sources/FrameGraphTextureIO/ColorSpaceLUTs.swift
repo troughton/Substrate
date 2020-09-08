@@ -60,11 +60,51 @@ enum ColorSpaceLUTs {
     static func sRGBToLinear(_ value: UInt8) -> UInt8 {
         return sRGBToLinearLUT[Int(value)]
     }
+
+    static let premultToPostmultAlphaLUT: [UInt8] = {
+        return (0..<256 * 256).map { i in
+            let alphaByte = UInt8(truncatingIfNeeded: i >> 8)
+            let alpha = unormToFloat(alphaByte)
+            let value = UInt8(truncatingIfNeeded: i & 0xFF)
+            
+            if alphaByte == 0 {
+                return value
+            }
+            
+            let floatVal = unormToFloat(value)
+            let linearVal = clamp(floatVal / alpha, min: 0.0, max: 1.0)
+            return floatToUnorm(linearVal, type: UInt8.self)
+        }
+    }()
     
-    static let sRGBPremultToPostmultAlphaLUT: [UInt8] = {
+    static func premultToPostmult(value: UInt8, alpha: UInt8) -> UInt8 {
+        return premultToPostmultAlphaLUT[Int(alpha) * 256 + Int(value)]
+    }
+    
+    static let postmultToPremultAlphaLUT: [UInt8] = {
         return (0..<256 * 256).map { i in
             let alpha = unormToFloat(UInt8(truncatingIfNeeded: i >> 8))
             let value = UInt8(truncatingIfNeeded: i & 0xFF)
+            
+            let floatVal = unormToFloat(value)
+            let linearVal = floatVal * alpha
+            return floatToUnorm(linearVal, type: UInt8.self)
+        }
+    }()
+    
+    static func postmultToPremult(value: UInt8, alpha: UInt8) -> UInt8 {
+        return postmultToPremultAlphaLUT[Int(alpha) * 256 + Int(value)]
+    }
+    
+    static let sRGBPremultToPostmultAlphaLUT: [UInt8] = {
+        return (0..<256 * 256).map { i in
+            let alphaByte = UInt8(truncatingIfNeeded: i >> 8)
+            let alpha = unormToFloat(alphaByte)
+            let value = UInt8(truncatingIfNeeded: i & 0xFF)
+            
+            if alphaByte == 0 {
+                return value
+            }
             
             let floatVal = unormToFloat(value)
             let linearVal = clamp(TextureColourSpace.convert(floatVal, from: .sRGB, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)

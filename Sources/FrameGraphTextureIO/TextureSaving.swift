@@ -7,13 +7,32 @@ import LodePNG
 import zlib
 #endif
 
-public enum TextureFileFormat: String, CaseIterable {
+public enum TextureFileFormat: String, CaseIterable, Hashable {
     case png
     case bmp
     case tga
     case hdr
     case jpg
     case exr
+    
+    public init?(extension: String) {
+        switch `extension`.lowercased() {
+        case "png":
+            self = .png
+        case "bmp":
+            self = .bmp
+        case "tga":
+            self = .tga
+        case "hdr":
+            self = .hdr
+        case "jpeg", "jpg":
+            self = .jpg
+        case "exr":
+            self = .exr
+        default:
+            return nil
+        }
+    }
     
     public var isLinearHDR : Bool {
         switch self {
@@ -196,7 +215,7 @@ extension TextureData {
     public typealias SaveFormat = TextureFileFormat
     
     public func write(to url: URL) throws {
-        guard let saveFormat = TextureFileFormat(rawValue: url.pathExtension) else {
+        guard let saveFormat = TextureFileFormat(extension: url.pathExtension) else {
             throw TextureSaveError.unknownFormat(url.pathExtension)
         }
         
