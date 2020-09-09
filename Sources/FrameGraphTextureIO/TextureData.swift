@@ -95,6 +95,7 @@ public func unormToFloat<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>
 public enum TextureLoadingError : Error {
     case invalidFile(URL)
     case invalidData
+    case pngDecodingError(String)
     case exrParseError(String)
     case unsupportedMultipartEXR(URL)
     case unsupportedMultipartEXRData
@@ -105,9 +106,13 @@ public enum TextureLoadingError : Error {
     case mismatchingDimensions(expected: Size, actual: Size)
 }
 
-public enum TextureColorSpace : UInt8, Codable, Hashable {
+public enum TextureColorSpace: Hashable {
+    /// The IEC 61966-2-1:1999 color space
     case sRGB
+    /// The IEC 61966-2-1:1999 sRGB color space using a linear gamma.
     case linearSRGB
+    /// The IEC 61966-2-1:1999 sRGB color space using a user-specified gamma.
+    case gammaSRGB(Float)
 
     @inlinable
     public func fromLinearSRGB(_ color: Float) -> Float {
@@ -116,6 +121,8 @@ public enum TextureColorSpace : UInt8, Codable, Hashable {
             return color <= 0.0031308 ? (12.92 * color) : (1.055 * pow(color, 1.0 / 2.4) - 0.055)
         case .linearSRGB:
             return color
+        case .gammaSRGB(let gamma):
+            return pow(color, gamma)
         }
     }
 
@@ -126,6 +133,8 @@ public enum TextureColorSpace : UInt8, Codable, Hashable {
             return color <= 0.04045 ? (color / 12.92) : pow((color + 0.055) / 1.055, 2.4)
         case .linearSRGB:
             return color
+        case .gammaSRGB(let gamma):
+            return pow(color, 1.0 / gamma)
         }
     }
     
@@ -449,9 +458,9 @@ public struct TextureData<T> {
         
         let colorSpace : stbir_colorspace
         switch self.colorSpace {
-        case .linearSRGB:
+        case .linearSRGB, .gammaSRGB(1.0):
             colorSpace = STBIR_COLORSPACE_LINEAR
-        case .sRGB:
+        default:
             colorSpace = STBIR_COLORSPACE_SRGB
         }
         
@@ -647,7 +656,6 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         self.ensureUniqueness()
         defer { self.alphaMode = .postmultiplied }
         
-        
         if T.self == UInt8.self {
             if self.colorSpace == .sRGB {
                 for y in 0..<self.height {
@@ -786,8 +794,9 @@ extension TextureData where T == Float {
         let alphaChannel = self.channelCount - 1
         for y in 0..<self.height {
             for x in 0..<self.width {
+                let alpha = max(self[x, y, channel: alphaChannel], .leastNormalMagnitude)
                 for c in 0..<alphaChannel {
-                    let newValue = self[x, y, channel: c] / max(self[x, y, channel: alphaChannel], .leastNormalMagnitude)
+                    let newValue = self[x, y, channel: c] / alpha
                     self.setUnchecked(x: x, y: y, channel: c, value: clamp(newValue, min: 0.0, max: 1.0))
                 }
             }

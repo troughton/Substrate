@@ -27,6 +27,10 @@ public final class RefCountedResource<R: ResourceProtocol> {
         self.wrappedValue = resource
     }
     
+    public var resource: R {
+        return self.wrappedValue
+    }
+    
     deinit {
         self.wrappedValue.dispose()
     }

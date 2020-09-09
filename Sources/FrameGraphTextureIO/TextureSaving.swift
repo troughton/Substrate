@@ -211,6 +211,22 @@ fileprivate extension LodePNGEncoderSettings {
     }
 }
 
+fileprivate extension LodePNGInfo {
+    mutating func setColorSpace(_ colorSpace: TextureColorSpace) {
+        switch colorSpace {
+        case .linearSRGB:
+            self.gama_defined = 1
+            self.gama_gamma = 100_000 // Gamma exponent times 100000
+        case .gammaSRGB(let gamma):
+            self.gama_defined = 1
+            self.gama_gamma = UInt32(100_000.0 * gamma) // Gamma exponent times 100000
+        case .sRGB:
+            self.srgb_defined = 1
+            self.srgb_intent = 1 // relative colorimetric
+        }
+    }
+}
+
 extension TextureData {
     public typealias SaveFormat = TextureFileFormat
     
@@ -289,6 +305,7 @@ extension TextureData where T == UInt8 {
         lodePNGState.info_raw.bitdepth = UInt32(MemoryLayout<T>.size * 8)
         lodePNGState.info_png.color.colortype = lodePNGState.info_raw.colortype
         lodePNGState.info_png.color.bitdepth = lodePNGState.info_raw.bitdepth
+        lodePNGState.info_png.setColorSpace(texture.colorSpace)
         lodePNGState.encoder.fill(from: compressionSettings)
         
         var outBuffer: UnsafeMutablePointer<UInt8>! = nil
@@ -335,6 +352,7 @@ extension TextureData where T == UInt16 {
         lodePNGState.info_raw.bitdepth = UInt32(MemoryLayout<T>.size * 8)
         lodePNGState.info_png.color.colortype = lodePNGState.info_raw.colortype
         lodePNGState.info_png.color.bitdepth = lodePNGState.info_raw.bitdepth
+        lodePNGState.info_png.setColorSpace(texture.colorSpace)
         lodePNGState.encoder.fill(from: compressionSettings)
         
         var outBuffer: UnsafeMutablePointer<UInt8>! = nil
@@ -368,8 +386,12 @@ extension TextureData where T == Float {
     }
     
     public func writeEXR(to url: URL) throws {
+        var texture = self
+        texture.convert(toColorSpace: .linearSRGB)
+        texture.convertToPremultipliedAlpha()
+        
         var error : UnsafePointer<Int8>? = nil
-        let exrResult = SaveEXR(self.storage.data.baseAddress, Int32(self.width), Int32(self.height), Int32(self.channelCount), 0, url.path, &error)
+        let exrResult = SaveEXR(texture.storage.data.baseAddress, Int32(texture.width), Int32(texture.height), Int32(texture.channelCount), 0, url.path, &error)
         if exrResult < 0 {
             throw TextureSaveError.errorWritingFile(error.map { String(cString: $0) } ?? "(no error message)")
         }

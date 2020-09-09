@@ -10,6 +10,7 @@ import Foundation
 import SwiftFrameGraph
 import stb_image
 import tinyexr
+import LodePNG
 
 extension StorageMode {
     public static var preferredForLoadedImage: StorageMode {
@@ -17,8 +18,41 @@ extension StorageMode {
     }
 }
 
+extension TextureColorSpace {
+    init?(pngData: Data) {
+        var state = LodePNGState()
+        lodepng_state_init(&state)
+        defer { lodepng_state_cleanup(&state) }
+        
+        var width: UInt32 = 0
+        var height: UInt32 = 0
+        
+        let result = pngData.withUnsafeBytes { lodepng_inspect(&width, &height, &state, $0.baseAddress?.assumingMemoryBound(to: UInt8.self), $0.count) }
+        if result != 0 {
+            return nil
+        }
+        
+        if state.info_png.srgb_defined != 0 {
+            self = .sRGB
+        } else if state.info_png.gama_defined != 0 {
+            if state.info_png.gama_gamma == 100_000 {
+                self = .linearSRGB
+            } else {
+                self = .gammaSRGB(Float(state.info_png.gama_gamma) / 100_000.0)
+            }
+        } else {
+            return nil
+        }
+    }
+}
+
 extension TextureData where T == UInt8 {
     public init(fileAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
+        var colorSpace = colorSpace
+        if url.pathExtension.lowercased() == "png", let pngData = try? Data(contentsOf: url, options: .mappedIfSafe), let inferredSpace = TextureColorSpace(pngData: pngData) {
+            colorSpace = inferredSpace
+        }
+        
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
@@ -35,8 +69,9 @@ extension TextureData where T == UInt8 {
         self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension), deallocateFunc: { stbi_image_free($0) })
     }
     
-    
     public init(data: Data, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
+        let colorSpace = TextureColorSpace(pngData: data) ?? colorSpace
+        
         self = try data.withUnsafeBytes { data in
             var width : Int32 = 0
             var height : Int32 = 0
@@ -47,14 +82,19 @@ extension TextureData where T == UInt8 {
             
             let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
             let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
+            
             return TextureData(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
         }
     }
 }
 
-
 extension TextureData where T == UInt16 {
     public init(fileAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
+        var colorSpace = colorSpace
+        if url.pathExtension.lowercased() == "png", let pngData = try? Data(contentsOf: url, options: .mappedIfSafe), let inferredSpace = TextureColorSpace(pngData: pngData) {
+            colorSpace = inferredSpace
+        }
+        
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
@@ -72,6 +112,7 @@ extension TextureData where T == UInt16 {
     }
     
     public init(data: Data, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
+        let colorSpace = TextureColorSpace(pngData: data) ?? colorSpace
         self = try data.withUnsafeBytes { data in
             var width : Int32 = 0
             var height : Int32 = 0
@@ -82,6 +123,7 @@ extension TextureData where T == UInt16 {
             
             let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
             let data = stbi_load_16_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
+            
             return TextureData(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
         }
     }
@@ -102,7 +144,7 @@ extension TextureData where T == Float {
     
     public init(fileAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
         if url.pathExtension.lowercased() == "exr" {
-            try self.init(exrAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
+            try self.init(exrAt: url)
             return
         }
         
@@ -119,6 +161,11 @@ extension TextureData where T == Float {
         let is16Bit = stbi_is_16_bit(url.path) != 0
         
         let dataCount = Int(width * height * channels)
+        
+        var colorSpace = colorSpace
+        if url.pathExtension.lowercased() == "png", let pngData = try? Data(contentsOf: url, options: .mappedIfSafe), let inferredSpace = TextureColorSpace(pngData: pngData) {
+            colorSpace = inferredSpace
+        }
         
         if isHDR {
             let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, channels)!
@@ -151,6 +198,8 @@ extension TextureData where T == Float {
     }
     
     public init(data: Data, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred) throws {
+        let colorSpace = TextureColorSpace(pngData: data) ?? colorSpace
+        
         self = try data.withUnsafeBytes { data in
             var width : Int32 = 0
             var height : Int32 = 0
@@ -209,7 +258,7 @@ extension TextureData where T == Float {
         try self.init(fileAt: url, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
-    public init(exrData: Data, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
+    public init(exrData: Data) throws {
         var header = EXRHeader()
         InitEXRHeader(&header)
         var image = EXRImage()
@@ -248,7 +297,7 @@ extension TextureData where T == Float {
             }
         }
         
-        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: "exr"))
+        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colorSpace: .linearSRGB, alphaModeAllowInferred: .premultiplied)
         self.storage.data.initialize(repeating: 0.0)
         
         
@@ -303,8 +352,8 @@ extension TextureData where T == Float {
         self.inferAlphaMode()
     }
     
-    init(exrAt url: URL, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode) throws {
+    init(exrAt url: URL) throws {
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
-        try self.init(exrData: data, colorSpace: colorSpace, alphaMode: alphaMode)
+        try self.init(exrData: data)
     }
 }
