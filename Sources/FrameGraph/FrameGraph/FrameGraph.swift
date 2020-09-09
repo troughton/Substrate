@@ -575,7 +575,8 @@ public final class FrameGraph {
         
         let renderPassScratchTag = FrameGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
         
-        let commandRecorder = FrameGraphCommandRecorder(renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
+        let commandRecorder = FrameGraphCommandRecorder(frameGraphTransientRegistryIndex: self.transientRegistryIndex,
+                                                        renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
                                                         frameGraphExecutionAllocator: TagAllocator.ThreadView(allocator: FrameGraph.executionAllocator, threadIndex: threadIndex),
                                                         resourceUsageAllocator: TagAllocator.ThreadView(allocator: FrameGraph.resourceUsagesAllocator, threadIndex: threadIndex),
                                                         unmanagedReferences: unmanagedReferences)
