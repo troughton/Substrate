@@ -304,7 +304,7 @@ public enum RenderPassType {
 
 @usableFromInline
 final class RenderPassRecord {
-    @usableFromInline let pass : RenderPass
+    @usableFromInline var pass : RenderPass!
     @usableFromInline var commands : ChunkArray<FrameGraphCommand>! = nil
     @usableFromInline var readResources : HashSet<Resource>! = nil
     @usableFromInline var writtenResources : HashSet<Resource>! = nil
@@ -431,6 +431,10 @@ public final class FrameGraph {
     
     public static func initialise() {
         
+    }
+    
+    public var hasEnqueuedPasses: Bool {
+        return !self.renderPasses.isEmpty
     }
     
     /// Useful for creating resources that may be used later in the frame.
