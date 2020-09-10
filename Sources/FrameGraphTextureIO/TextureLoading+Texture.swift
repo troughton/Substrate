@@ -172,17 +172,11 @@ extension Texture {
             try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
             
         } else {
-            // Use stb image directly.
-            let isHDR = stbi_is_hdr(url.path) != 0
-            let is16Bit = stbi_is_16_bit(url.path) != 0
+            let fileInfo = try TextureFileInfo(url: url)
             
-            var width : Int32 = 0
-            var height : Int32 = 0
-            var componentsPerPixel : Int32 = 0
-            guard stbi_info(url.path, &width, &height, &componentsPerPixel) != 0 else {
-                throw TextureLoadingError.invalidFile(url)
-            }
-            let hasAlphaChannel = componentsPerPixel == 2 || componentsPerPixel == 4
+            let hasAlphaChannel = fileInfo.channelCount == 2 || fileInfo.channelCount == 4
+            let is16Bit = fileInfo.bitDepth == 16
+            let isHDR = fileInfo.isFloatingPoint
             
             if isHDR {
                 var textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
