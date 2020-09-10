@@ -102,6 +102,12 @@ public enum ResourceAccessType {
     case readWrite
 }
 
+public enum ResourcePurgeableState {
+    case nonDiscardable
+    case discardable
+    case discarded
+}
+
 public protocol ResourceProtocol : Hashable {
     init(handle: Handle)
     func dispose()
@@ -109,7 +115,7 @@ public protocol ResourceProtocol : Hashable {
     var handle : Handle { get }
     var stateFlags : ResourceStateFlags { get nonmutating set }
     
-    var usages : ResourceUsagesList { get }
+    var usages : ChunkArray<ResourceUsage> { get nonmutating set }
     
     var label : String? { get nonmutating set }
     var storageMode : StorageMode { get }
@@ -121,6 +127,9 @@ public protocol ResourceProtocol : Hashable {
     /// A resource handle is valid if it is a transient resource that was allocated in the current frame
     /// or is a persistent resource that has not been disposed.
     var isValid : Bool { get }
+    
+    var purgeableState: ResourcePurgeableState { get nonmutating set }
+    func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState
 }
 
 extension ResourceProtocol {
@@ -128,6 +137,29 @@ extension ResourceProtocol {
     @inlinable
     public static func ==(lhs: Self, rhs: Self) -> Bool {
         return lhs.handle == rhs.handle
+    }
+    
+    /// Note that setting the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
+    public var purgeableState: ResourcePurgeableState {
+        get {
+            return RenderBackend.updatePurgeableState(for: Resource(self), to: nil)
+        }
+        nonmutating set {
+            let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: newValue)
+            if newValue == .discarded || oldValue == .discarded {
+                self.discardContents()
+            }
+        }
+    }
+    
+    /// Note that updating the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
+    @discardableResult
+    public func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState {
+        let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: to)
+        if to == .discarded || oldValue == .discarded {
+            self.discardContents()
+        }
+        return oldValue
     }
 }
 
@@ -306,7 +338,7 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
-    public var usages: ResourceUsagesList {
+    public var usages: ChunkArray<ResourceUsage> {
         get {
             switch self.type {
             case .buffer:
@@ -316,21 +348,17 @@ public struct Resource : ResourceProtocol, Hashable {
             case .argumentBuffer:
                 return _ArgumentBuffer(handle: self.handle).usages
             default:
-                return ResourceUsagesList()
+                return ChunkArray()
             }
         }
-    }
-    
-    @inlinable
-    internal var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
-        get {
+        nonmutating set {
             switch self.type {
             case .buffer:
-                return Buffer(handle: self.handle).usagesPointer
+                Buffer(handle: self.handle).usages = newValue
             case .texture:
-                return Texture(handle: self.handle).usagesPointer
+                Texture(handle: self.handle).usages = newValue
             case .argumentBuffer:
-                return _ArgumentBuffer(handle: self.handle).usagesPointer
+                _ArgumentBuffer(handle: self.handle).usages = newValue
             default:
                 fatalError()
             }
@@ -479,8 +507,13 @@ extension ResourceProtocol {
     }
     
     @inlinable
-    public var usages : ResourceUsagesList {
-        return ResourceUsagesList()
+    public var usages : ChunkArray<ResourceUsage> {
+        get {
+            return ChunkArray()
+        }
+        nonmutating set {
+            fatalError()
+        }
     }
     
     @inlinable
@@ -850,6 +883,7 @@ public struct Buffer : ResourceProtocol {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
                 PersistentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+                RenderBackend.updateLabel(on: self)
             } else {
                 TransientBufferRegistry.instances[self.transientRegistryIndex].labels[index] = newValue
             }
@@ -895,7 +929,7 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public var usages : ResourceUsagesList {
+    public var usages : ChunkArray<ResourceUsage> {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
@@ -905,17 +939,13 @@ public struct Buffer : ResourceProtocol {
                 return TransientBufferRegistry.instances[self.transientRegistryIndex].usages[index]
             }
         }
-    }
-    
-    @inlinable
-    var usagesPointer : UnsafeMutablePointer<ResourceUsagesList> {
-        get {
+        nonmutating set {
             let index = self.index
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-                return PersistentBufferRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
+                PersistentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk] = newValue
             } else {
-                return TransientBufferRegistry.instances[self.transientRegistryIndex].usages.advanced(by: index)
+                TransientBufferRegistry.instances[self.transientRegistryIndex].usages[index] = newValue
             }
         }
     }
@@ -994,6 +1024,24 @@ public struct Texture : ResourceProtocol {
             let didAllocate = RenderBackend.materialisePersistentTexture(self)
             assert(didAllocate, "Allocation failed for persistent texture \(self)")
         }
+    }
+        
+    @inlinable
+    public static func _createPersistentTextureWithoutDescriptor(flags: ResourceFlags = [.persistent]) -> Texture {
+        precondition(flags.contains(.persistent))
+        let index = PersistentTextureRegistry.instance.allocateHandle()
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        return Texture(handle: handle)
+    }
+    
+    @inlinable
+    public func _initialisePersistentTexture(descriptor: TextureDescriptor, heap: Heap?) {
+        precondition(self.flags.contains(.persistent))
+        PersistentTextureRegistry.instance.initialise(texture: self, descriptor: descriptor, heap: heap, flags: self.flags)
+        
+        assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+        let didAllocate = RenderBackend.materialisePersistentTexture(self)
+        assert(didAllocate, "Allocation failed for persistent texture \(self)")
     }
     
     @inlinable
@@ -1150,6 +1198,7 @@ public struct Texture : ResourceProtocol {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
                 PersistentTextureRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+                RenderBackend.updateLabel(on: self)
             } else {
                 TransientTextureRegistry.instances[self.transientRegistryIndex].labels[index] = newValue
             }
@@ -1200,7 +1249,7 @@ public struct Texture : ResourceProtocol {
     }
     
     @inlinable
-    public var usages : ResourceUsagesList {
+    public var usages : ChunkArray<ResourceUsage> {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
@@ -1210,17 +1259,17 @@ public struct Texture : ResourceProtocol {
                 return self.baseResource?.usages ?? TransientTextureRegistry.instances[self.transientRegistryIndex].usages[index]
             }
         }
-    }
-    
-    @inlinable
-    var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
-        get {
+        nonmutating set {
             let index = self.index
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-                return PersistentTextureRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
+                PersistentTextureRegistry.instance.chunks[chunkIndex].usages[indexInChunk] = newValue
             } else {
-                return self.baseResource?.usagesPointer ?? TransientTextureRegistry.instances[self.transientRegistryIndex].usages.advanced(by: index)
+                if let baseResource = self.baseResource {
+                    baseResource.usages = newValue
+                } else {
+                    TransientTextureRegistry.instances[self.transientRegistryIndex].usages[index] = newValue
+                }
             }
         }
     }

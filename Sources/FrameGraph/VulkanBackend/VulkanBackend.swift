@@ -206,6 +206,14 @@ public final class VulkanBackend : SpecificRenderBackend {
         vmaUnmapMemory(image.allocator!, image.allocation!)
     }
     
+    @usableFromInline func updateLabel(on resource: Resource) {
+        // TODO: implement.
+    }
+    
+    @usableFromInline func updatePurgeableState(for resource: Resource, to newState: ResourcePurgeableState?) -> ResourcePurgeableState {
+        return .nonDiscardable // TODO: implement.
+    }
+    
     @usableFromInline
     func dispose(heap: Heap) {
         fatalError("dispose(Heap) is unimplemented on Vulkan")

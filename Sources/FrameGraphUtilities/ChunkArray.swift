@@ -41,38 +41,39 @@ public struct ChunkArray<T>: Collection {
     @inlinable
     public subscript(_ index: Int) -> T {
         get {
-            precondition(index >= 0 && index < self.count)
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
-            var currentChunk = self.next!
-            for _ in 0..<chunkIndex {
-                currentChunk = currentChunk.pointee.next!
-            }
-            return UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self)[indexInChunk]
+            return self[pointerTo: index].pointee
         }
         set {
-            precondition(index >= 0 && index < self.count)
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
-            var currentChunk = self.next!
-            for _ in 0..<chunkIndex {
-                currentChunk = currentChunk.pointee.next!
-            }
-            return UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self)[indexInChunk] = newValue
+            self[pointerTo: index].pointee = newValue
         }
+    }
+    
+    @inlinable
+    public subscript(pointerTo index: Int) -> UnsafeMutablePointer<T> {
+        precondition(index >= 0 && index < self.count)
+        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
+        var currentChunk = self.next!
+        for _ in 0..<chunkIndex {
+            currentChunk = currentChunk.pointee.next!
+        }
+        return UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self).advanced(by: indexInChunk)
+    }
+    
+    @inlinable
+    public var pointerToLast: UnsafeMutablePointer<T> {
+        precondition(self.count > 0)
+        let index = self.count - 1
+        let indexInChunk = index % ChunkArray.elementsPerChunk
+        return UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: T.self).advanced(by: indexInChunk)
     }
     
     @inlinable
     public var last: T {
         get {
-            precondition(self.count > 0 )
-            let index = self.count - 1
-            let indexInChunk = index % ChunkArray.elementsPerChunk
-            return UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: T.self)[indexInChunk]
+            return self.pointerToLast.pointee
         }
         set {
-            precondition(self.count > 0 )
-            let index = self.count - 1
-            let indexInChunk = index % ChunkArray.elementsPerChunk
-            UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: T.self)[indexInChunk] = newValue
+            self.pointerToLast.pointee = newValue
         }
     }
     
@@ -94,30 +95,59 @@ public struct ChunkArray<T>: Collection {
                 currentTail.pointee.next = newChunk
             } else {
                 self.next = newChunk
-                self.tail = newChunk
             }
+            self.tail = newChunk
         }
         UnsafeMutableRawPointer(self.tail.unsafelyUnwrapped).assumingMemoryBound(to: T.self).advanced(by: indexInChunk).initialize(to: element)
         self.count += 1
     }
     
     @inlinable
+    @discardableResult
+    public mutating func removeBySwappingWithBack(index: Int, allocator: AllocatorType) -> T {
+        precondition(index < self.count)
+        if index == self.count - 1 {
+            return self.removeLast(allocator: allocator)
+        }
+        
+        let elementPointer = self[pointerTo: index]
+        let element = elementPointer.move()
+        elementPointer.moveAssign(from: self.pointerToLast, count: 1)
+        
+        let (_, indexInChunk) = self.count.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
+        if indexInChunk == 0 {
+            self.removeTailChunk(allocator: allocator)
+        }
+        
+        self.count -= 1
+        return element
+    }
+    
+    @usableFromInline
+    mutating func removeTailChunk(allocator: AllocatorType) {
+        var currentChunk = self.next
+        var previousChunk = currentChunk
+        while currentChunk != self.tail {
+            previousChunk = currentChunk
+            currentChunk = currentChunk?.pointee.next!
+        }
+        previousChunk?.pointee.next = nil
+        self.tail = previousChunk
+        if let currentChunk = currentChunk {
+            Allocator.deallocate(currentChunk, allocator: allocator)
+        }
+    }
+    
+    @inlinable
+    @discardableResult
     public mutating func removeLast(allocator: AllocatorType) -> T {
         precondition(self.count > 0)
         
-        let (chunkIndex, indexInChunk) = self.count.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
-        var currentChunk = self.next!
-        var previousChunk = currentChunk
-        for _ in 0..<chunkIndex {
-            previousChunk = currentChunk
-            currentChunk = currentChunk.pointee.next!
-        }
+        let value = self.pointerToLast.move()
         
-        let value = UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self).advanced(by: indexInChunk).move()
-        
+        let (_, indexInChunk) = self.count.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
         if indexInChunk == 0 {
-            previousChunk.pointee.next = nil
-            Allocator.deallocate(currentChunk, allocator: allocator)
+            self.removeTailChunk(allocator: allocator)
         }
         
         self.count -= 1
@@ -129,22 +159,27 @@ public struct ChunkArray<T>: Collection {
         public typealias Element = T
         
         @usableFromInline
+        let elementCount: Int
+        @usableFromInline
         var chunk: UnsafeMutablePointer<Chunk>?
         @usableFromInline
-        var indexInChunk = 0
+        var index = 0
         
         @inlinable
-        init(currentChunk: UnsafeMutablePointer<Chunk>?) {
+        init(currentChunk: UnsafeMutablePointer<Chunk>?, elementCount: Int) {
             self.chunk = currentChunk
+            self.elementCount = elementCount
         }
         
         @inlinable
         public mutating func next() -> T? {
-            if let currentChunk = self.chunk {
-                let element = UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self)[self.indexInChunk]
-                self.indexInChunk += 1
-                if self.indexInChunk >= ChunkArray.elementsPerChunk {
-                    self.indexInChunk = 0
+            if self.index < self.elementCount {
+                let indexInChunk = self.index % ChunkArray.elementsPerChunk
+                let currentChunk = self.chunk.unsafelyUnwrapped
+                let element = UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self)[indexInChunk]
+                self.index += 1
+                
+                if indexInChunk + 1 == ChunkArray.elementsPerChunk {
                     self.chunk = currentChunk.pointee.next
                 }
                 return element
@@ -155,7 +190,7 @@ public struct ChunkArray<T>: Collection {
     
     @inlinable
     public func makeIterator() -> Iterator {
-        return Iterator(currentChunk: self.next)
+        return Iterator(currentChunk: self.next, elementCount: self.count)
     }
     
 }

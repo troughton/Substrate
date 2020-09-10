@@ -19,86 +19,9 @@ public enum PerformOrder : Comparable {
     }
 }
 
-public struct LinkedNode<T> {
-    public var next: UnsafeMutablePointer<LinkedNode>?
-    public var sortIndex : Int
-    public var element: T
-    
-    @inlinable
-    public init(value: T, sortIndex: Int) {
-        self.element = value
-        self.sortIndex = sortIndex
-    }
-}
+@usableFromInline typealias ResourceUsagePointer = UnsafeMutablePointer<ResourceUsage>
 
-@usableFromInline typealias ResourceUsageNodePtr = UnsafeMutablePointer<LinkedNode<ResourceUsage>>
-
-extension UnsafeMutablePointer where Pointee == LinkedNode<ResourceUsage> {
-    @inlinable
-    var asNextPointer : UnsafeMutablePointer<UnsafeMutablePointer<LinkedNode<ResourceUsage>>?> {
-        return UnsafeMutableRawPointer(self).assumingMemoryBound(to: UnsafeMutablePointer<LinkedNode<ResourceUsage>>?.self)
-    }
-}
-
-// Note: must be bitwise identical to LinkedNode<ResourceUsage>
-public struct ResourceUsagesList : Sequence {
-    @usableFromInline
-    var head : ResourceUsageNodePtr? = nil
-    var sortIndex : Int = -1
-    var dummyUsage = ResourceUsage(type: .unusedArgumentBuffer, stages: [], inArgumentBuffer: false, firstCommandOffset: 0, renderPass: nil)
-    
-    @inlinable
-    public init() {
-        
-    }
-    
-    @inlinable
-    static func createNode(usage: ResourceUsage, allocator: TagAllocator.ThreadView) -> ResourceUsageNodePtr {
-        let node = allocator.allocate(capacity: 1) as ResourceUsageNodePtr
-        node.initialize(to: LinkedNode(value: usage, sortIndex: usage.renderPassRecord.passIndex))
-        return node
-    }
-    
-    // This doesn't need any special synchronisation since nodes can only be merged within a render pass.
-    @inlinable
-    func nextNodeWithUsage(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, commandOffset: Int, renderPass: Unmanaged<RenderPassRecord>, allocator: TagAllocator.ThreadView) -> (ResourceUsageNodePtr, isNew: Bool) {
-        let passIndex = renderPass.takeUnretainedValue().passIndex
-        if let tail = self.findNode(passIndex: passIndex), tail.pointee.sortIndex == passIndex {
-            assert(tail.pointee.element._renderPass.toOpaque() == renderPass.toOpaque())
-            if let newUsage = tail.pointee.element.mergeOrCreateNewUsage(type: type, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandOffset, renderPass: renderPass) {
-                assert(renderPass.toOpaque() != tail.pointee.element._renderPass.toOpaque() || commandOffset >= tail.pointee.element.commandRangeInPass.lowerBound, "Adding a new usage which starts before the previous usage has ended.")
-                let node = ResourceUsagesList.createNode(usage: newUsage, allocator: allocator)
-                return (node, true)
-            } else {
-                return (tail, false)
-            }
-        }
-        return (ResourceUsagesList.createNode(usage: ResourceUsage(type: type, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandOffset, renderPass: renderPass), allocator: allocator), true)
-    }
-    
-    @inlinable
-    func findNode(passIndex: Int) -> ResourceUsageNodePtr? {
-        // Find the last node for which the pass index is > passIndex
-        // We need to return the pointer to the node for which we need to set the next pointer on.
-        
-        var node = self.head
-        while let curNode = node, curNode.pointee.sortIndex > passIndex {
-            node = curNode.pointee.next
-        }
-        
-        return node
-    }
-    
-    @inlinable
-    var first : ResourceUsage {
-        get {
-            return self.head!.pointee.element
-        }
-        set {
-            self.head!.pointee.element = newValue
-        }
-    }
-    
+extension ChunkArray where Element == ResourceUsage {
     @inlinable
     var firstActiveUsage : ResourceUsage? {
         for usage in self {
@@ -110,118 +33,12 @@ public struct ResourceUsagesList : Sequence {
     }
     
     @inlinable
-    public var isEmpty : Bool {
-        return self.head == nil
-    }
-    
-    public struct Iterator : IteratorProtocol {
-        public typealias Element = ResourceUsage
-        
-        @usableFromInline
-        var nextNode : ResourceUsageNodePtr?
-        
-        @inlinable
-        init(nextNode: ResourceUsageNodePtr?) {
-            self.nextNode = nextNode
-        }
-        
-        @inlinable
-        public mutating func next() -> ResourceUsage? {
-            if let node = nextNode {
-                let element = node.pointee.element
-                nextNode = node.pointee.next
-                return element
-            }
-            return nil
+    mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.ThreadView) {
+        var usage = usage
+        if self.isEmpty || !self.last.mergeWithUsage(&usage, resource: resource, allocator: .tagThreadView(allocator)) {
+            self.append(usage, allocator: .tagThreadView(allocator))
         }
     }
-    
-    @inlinable
-    public func makeIterator() -> ResourceUsagesList.Iterator {
-        return Iterator(nextNode: self.head)
-    }
-}
-
-extension UnsafeMutablePointer where Pointee == ResourceUsagesList {
-    
-    @inlinable
-    func append(_ usage: ResourceUsage, allocator: TagAllocator.ThreadView) {
-        let node = ResourceUsagesList.createNode(usage: usage, allocator: allocator)
-        self.append(node)
-    }
-    
-    @inlinable
-    func withInsertionNode<T>(passIndex: Int, perform: (ResourceUsageNodePtr) -> T) -> T {
-        // Find the last node for which the pass index is > passIndex
-        // We need to return the pointer to the node for which we need to set the next pointer on.
-        return self.withMemoryRebound(to: LinkedNode<ResourceUsage>.self, capacity: 1) { node -> T in
-            var node = node
-            while let curNode = node.pointee.next, curNode.pointee.sortIndex > passIndex {
-                node = curNode
-            }
-            
-            return perform(node)
-        }
-    }
-    
-    @inlinable
-    func append(_ usageNode: ResourceUsageNodePtr) {
-        let passIndex = usageNode.pointee.element.renderPassRecord.passIndex
-        self.withInsertionNode(passIndex: passIndex, perform: { insertionNode in
-            var insertionNode = insertionNode
-            
-            var success = false
-            
-            repeat {
-                if let nextNode = insertionNode.pointee.next, nextNode.pointee.sortIndex > usageNode.pointee.sortIndex {
-                    insertionNode = nextNode
-                    continue
-                }
-                
-                usageNode.asNextPointer.pointee = insertionNode.asNextPointer.pointee
-                
-                if let nextNode = usageNode.asNextPointer.pointee, nextNode.pointee.sortIndex > usageNode.pointee.sortIndex {
-                    continue
-                }
-                
-                success = insertionNode.withMemoryRebound(to: LinkedNodeHeader.self, capacity: 1, { insertionNode in
-                    return usageNode.withMemoryRebound(to: LinkedNodeHeader.self, capacity: 1, { usageNode in
-                        return LinkedNodeHeaderCompareAndSwap(insertionNode, usageNode)
-                    })
-                })
-                
-            } while !success
-        })
-        assert(self.pointee.head != nil)
-    }
-    
-    func reverse() {
-        var currNode = self.pointee.head
-        var prevNode : ResourceUsageNodePtr? = nil
-        
-        while currNode != nil {
-            let nextNode = currNode?.pointee.next
-            currNode?.pointee.next = prevNode
-            prevNode = currNode;
-            currNode = nextNode
-        }
-        
-        self.pointee.head = prevNode
-    }
-    
-    // N.B.: this should _only_ be used for debugging. In theory, the list should already be sorted apart from
-    // for reads (which don't have to be ordered), and the backends should be able to deal with that order.
-    // In other words, if sorting the list changes behaviour, something's gone wrong.
-    func sort() {
-        let sortedNodes = Array(self.pointee).sorted(by: { $0.commandRange.lowerBound < $1.commandRange.lowerBound })
-        
-        var curNode = self.pointee.head
-        for node in sortedNodes {
-            curNode!.pointee.element = node
-            curNode = curNode!.pointee.next
-        }
-    }
-    
 }
 
 extension ResourceUsageType {
@@ -256,13 +73,6 @@ extension ResourceUsageType {
             return false
         }
     }
-    
-    @inlinable
-    static func areMergeable(_ typeA: ResourceUsageType, _ typeB: ResourceUsageType) -> Bool {
-        // We can only merge resources of the same type, and we can only merge writes if they're contained within a render target.
-        return typeA == typeB &&
-            (!typeA.isWrite || typeA.isRenderTarget)
-    }
 }
 
 // Note: must be a value type.
@@ -271,23 +81,18 @@ public struct ResourceUsage {
     public var stages : RenderStages
     public var inArgumentBuffer : Bool
     @usableFromInline
-    var _renderPass : Unmanaged<RenderPassRecord>!
-    @usableFromInline
-    var commandRangeInPass : Range<Int>
-    
+    unowned(unsafe) var renderPassRecord : RenderPassRecord
+    public var commandRange : Range<Int> // References the range in the pass before and during FrameGraph compilation, and the range in the full commands array aftre.
+    public var activeRange: ActiveResourceRange = .fullResource
     
     @inlinable
-    init(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: Unmanaged<RenderPassRecord>?) {
+    init(type: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: RenderPassRecord) {
         self.type = type
         self.stages = stages
-        self._renderPass = renderPass
-        self.commandRangeInPass = Range(firstCommandOffset...firstCommandOffset)
+        self.activeRange = activeRange
+        self.renderPassRecord = renderPass
+        self.commandRange = Range(firstCommandOffset...firstCommandOffset)
         self.inArgumentBuffer = inArgumentBuffer
-    }
-    
-    @inlinable
-    var renderPassRecord : RenderPassRecord {
-        return _renderPass.takeUnretainedValue()
     }
     
     @inlinable
@@ -305,63 +110,64 @@ public struct ResourceUsage {
         return self.renderPassRecord.isActive && self.stages != .cpuBeforeRender && self.type != .unusedRenderTarget && self.renderPassRecord.pass.passType != .external
     }
     
+    /// - returns: Whether the usages could be merged.
     @inlinable
-    public var commandRange : Range<Int> {
-        let startIndex = renderPassRecord.commandRange!.lowerBound
-        return (self.commandRangeInPass.lowerBound + startIndex)..<(self.commandRangeInPass.upperBound + startIndex)
-    }
-    
-    /// - returns: The new usage, if the usage couldn't be merged with self.
-    @inlinable
-    mutating func mergeOrCreateNewUsage(type: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: Unmanaged<RenderPassRecord>) -> ResourceUsage? {
-        assert(self._renderPass.toOpaque() == renderPass.toOpaque())
-        
-        if type == .inputAttachment && self.type.isRenderTarget { // Transform a resource read within a render target into a readWriteRenderTarget.
-            self.type = .inputAttachmentRenderTarget
-            self.stages.formUnion(stages)
-            self.inArgumentBuffer = self.inArgumentBuffer || inArgumentBuffer
-            self.commandRangeInPass = Range(uncheckedBounds: (self.commandRangeInPass.lowerBound, firstCommandOffset + 1))
-            return nil
+    mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, resource: Resource, allocator: AllocatorType) -> Bool {
+        if self.renderPassRecord !== nextUsage.renderPassRecord {
+            return false
         }
         
-        readWriteMergeCheck: if self.commandRangeInPass.contains(firstCommandOffset), stages == self.stages, self.type != type {
-            assert(self._renderPass.toOpaque() == renderPass.toOpaque())
-            assert(self.inArgumentBuffer == inArgumentBuffer)
-            
-            switch (type, self.type) {
-            case (.read, .readWrite), (.write, .write), (.write, .readWrite):
-                break
-            case (.read, .write), (.readWrite, .read), (.write, .read):
-                self.type = .readWrite
-            case (.writeOnlyRenderTarget, .readWriteRenderTarget), (.readWriteRenderTarget, .writeOnlyRenderTarget):
-                self.type = .readWriteRenderTarget
-            case (_, _) where !type.isWrite && !self.type.isWrite:
-                // If neither are writes, then it's fine to have conflicting uses.
-                // This might occur e.g. when reading from a buffer while simultaneously using it as an indirect buffer.
-                break readWriteMergeCheck
-            default:
-                assertionFailure("Resource simulaneously bound for conflicting uses.")
+        let rangesOverlap = self.commandRange.lowerBound < nextUsage.commandRange.upperBound && nextUsage.commandRange.lowerBound < self.commandRange.upperBound
+        
+        if !rangesOverlap, !self.type.isRenderTarget || !(self.type.isWrite && nextUsage.type.isRead) {
+            // Don't merge usages of different types with non-overlapping ranges, and don't merge a write with a possible dependent read unless they're render target accesses.
+            return false
+        }
+        
+        if !self.isWrite, !nextUsage.isWrite, nextUsage.type != self.type {
+            return false // Don't merge reads of different types
+        }
+        
+        if self.type.isRenderTarget || nextUsage.type.isRenderTarget {
+            if self.type == .read || nextUsage.type == .read {
+                self.type = .inputAttachmentRenderTarget
+                self.inArgumentBuffer = true
             }
             
-            return nil
+            if self.type != .inputAttachmentRenderTarget {
+                assert(self.type.isRenderTarget && nextUsage.type.isRenderTarget)
+                let isRead = self.type.isRead || nextUsage.type.isRead
+                let isWrite = self.type.isWrite || nextUsage.type.isWrite
+                
+                if isRead {
+                    self.type = .readWriteRenderTarget
+                } else if isWrite {
+                    self.type = .writeOnlyRenderTarget
+                } else {
+                    assert(self.type == .unusedRenderTarget && nextUsage.type == .unusedRenderTarget)
+                }
+            }
+        } else {
+            assert(self.type == nextUsage.type || !self.type.isWrite || !nextUsage.type.isWrite, "Resource simultaneously bound for conflicting writes.")
+            if self.inArgumentBuffer != nextUsage.inArgumentBuffer {
+                return false
+            }
         }
         
-        if ResourceUsageType.areMergeable(self.type, type) &&
-            self.inArgumentBuffer == inArgumentBuffer {
-            self.stages.formUnion(stages)
-            self.commandRangeInPass = Range(uncheckedBounds: (self.commandRangeInPass.lowerBound, firstCommandOffset + 1))
-            return nil
+        self.stages.formUnion(nextUsage.stages)
+        if self.type != .inputAttachmentRenderTarget {
+            self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator)
         }
+        self.commandRange = Range(uncheckedBounds: (min(self.commandRange.lowerBound, nextUsage.commandRange.lowerBound), max(self.commandRange.upperBound, nextUsage.commandRange.upperBound)))
         
-        return ResourceUsage(type: type, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: renderPass)
-        
+        return true
     }
 }
 
 
 extension ResourceUsage : CustomStringConvertible {
     public var description: String {
-        return "ResourceUsage(type: \(self.type), stages: \(self.stages), inArgumentBuffer: \(self.inArgumentBuffer), pass: \(self.renderPassRecord.pass.name), commandRangeInPass: \(self.commandRangeInPass))"
+        return "ResourceUsage(type: \(self.type), stages: \(self.stages), inArgumentBuffer: \(self.inArgumentBuffer), pass: \(self.renderPassRecord.pass.name), commandRange: \(self.commandRange))"
     }
 }
 
@@ -390,126 +196,4 @@ extension UInt64 : CustomHashable {
     public var customHashValue : Int {
         return Int(truncatingIfNeeded: self)
     }
-}
-
-// Responsible for holding a per-thread allocator for Resource usage nodes, along with keeping track of all resources seen on this thread.
-// Can safely switch between multiple render passes being executed on the same thread (e.g. in different fibres).
-@usableFromInline
-class ResourceUsages {
-    
-    @usableFromInline
-    unowned(unsafe) var frameGraph: FrameGraph! = nil
-    
-    @usableFromInline
-    var usageNodeAllocator : TagAllocator.ThreadView! = nil
-    
-    // ResourceUsages should hold exactly one strong reference to each resource.
-    // It needs at least one to guarantee that the resource lives to the end of the frame.
-    @usableFromInline
-    var resources = Set<Resource>()
-    
-    @inlinable
-    init() {
-        
-    }
-    
-    public var allResources : Set<Resource> {
-        return self.resources
-    }
-    
-    func reset() {
-        self.resources.removeAll(keepingCapacity: true)
-        self.usageNodeAllocator = nil
-    }
-    
-    func addReadResources(_ resources: [Resource], `for` renderPass: Unmanaged<RenderPassRecord>) {
-        for resource in resources {
-            self.registerResource(resource)
-            resource.usagesPointer.append(ResourceUsage(type: .read, stages: .cpuBeforeRender, inArgumentBuffer: false, firstCommandOffset: 0, renderPass: renderPass), allocator: self.usageNodeAllocator)
-        }
-    }
-    
-    func addWrittenResources(_ resources: [Resource], `for` renderPass: Unmanaged<RenderPassRecord>) {
-        for resource in resources {
-            self.registerResource(resource)
-            resource.usagesPointer.append(ResourceUsage(type: .write, stages: .cpuBeforeRender, inArgumentBuffer: false, firstCommandOffset: 0, renderPass: renderPass), allocator: self.usageNodeAllocator)
-        }
-    }
-    
-    @inlinable
-    public func registerResource(_ resource: Resource) {
-        self.resources.insert(resource)
-    }
-    
-    /// NOTE: Must be called _before_ the command that uses the resource.
-    @inlinable
-    public func resourceUsageNode<C : CommandEncoder>(`for` resourceHandle: Resource.Handle, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsageNodePtr {
-        assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resourceHandle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resourceHandle }), "Resource \(resourceHandle) used but not declared.")
-        
-        let resource = Resource(handle: resourceHandle)
-        assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
-        
-        assert(resource.type != .argumentBuffer || !usageType.isWrite, "Read-write argument buffers are currently unsupported.")
-        assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
-        
-        if resource.flags.contains(.persistent) {
-            if let textureUsage = resource.texture?.descriptor.usageHint {
-                if usageType == .read {
-                    assert(textureUsage.contains(.shaderRead))
-                }
-                if usageType.isRenderTarget {
-                    assert(textureUsage.contains(.renderTarget))
-                }
-                if usageType == .write || usageType == .readWrite {
-                    assert(textureUsage.contains(.shaderWrite))
-                }
-                if usageType == .blitSource {
-                    assert(textureUsage.contains(.blitSource))
-                }
-                if usageType == .blitDestination {
-                    assert(textureUsage.contains(.blitDestination))
-                }
-            } else if let bufferUsage = resource.buffer?.descriptor.usageHint {
-                if usageType == .read {
-                    assert(bufferUsage.contains(.shaderRead))
-                }
-                if usageType == .write || usageType == .readWrite {
-                    assert(bufferUsage.contains(.shaderWrite))
-                }
-                if usageType == .blitSource {
-                    assert(bufferUsage.contains(.blitSource))
-                }
-                if usageType == .blitDestination {
-                    assert(bufferUsage.contains(.blitDestination))
-                }
-                if usageType == .vertexBuffer {
-                    assert(bufferUsage.contains(.vertexBuffer))
-                }
-                if usageType == .indexBuffer {
-                    assert(bufferUsage.contains(.indexBuffer))
-                }
-            }
-        }
-        
-        let (usagePtr, isNew) = resource.usages.nextNodeWithUsage(type: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, commandOffset: firstCommandOffset, renderPass: encoder.unmanagedPassRecord, allocator: self.usageNodeAllocator)
-        
-        // For each resource, is the resource usage different from what is was previously used for?
-        if isNew {
-            resource.usagesPointer.append(usagePtr)
-            assert(!resource.usages.isEmpty)
-            self.registerResource(resource)
-        }
-        
-        assert(usagePtr.pointee.element.renderPassRecord === encoder.passRecord)
-        
-        return usagePtr
-    }
-    
-    /// NOTE: Must be called _before_ the command that uses the resource.
-    @inlinable
-    public func addResourceUsage<C : CommandEncoder, R: ResourceProtocol>(`for` resource: R, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
-        
-        let _ = self.resourceUsageNode(for: resource.handle, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
-    }
-    
 }

@@ -11,6 +11,23 @@ import Metal
 
 //MARK: From Metal
 
+extension ResourcePurgeableState {
+    public init?(_ state: MTLPurgeableState) {
+        switch state {
+        case .keepCurrent:
+            return nil
+        case .empty:
+            self = .discarded
+        case .nonVolatile:
+            self = .nonDiscardable
+        case .volatile:
+            self = .discardable
+        @unknown default:
+            fatalError()
+        }
+    }
+}
+
 extension Texture {
     public init(metalTexture: MTLTexture) {
         self = Texture(descriptor: TextureDescriptor(from: metalTexture), externalResource: metalTexture)
@@ -178,13 +195,19 @@ extension PixelFormat {
 
 extension ArgumentReflection {
     init(_ argument: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
-        self.init(type: ResourceType(argument.type), bindingPath: bindingPath, usageType: ResourceUsageType(argument.access), activeStages: argument.isActive ? stages : [])
+        var activeRange: ActiveResourceRange = argument.isActive ? .fullResource : .inactive
+        if case .buffer = argument.type {
+            activeRange = .buffer(0..<argument.bufferDataSize)
+        }
+        self.init(type: ResourceType(argument.type), bindingPath: bindingPath, usageType: ResourceUsageType(argument.access), activeStages: argument.isActive ? stages : [], activeRange: activeRange)
     }
-    
     
     init(member: MTLStructMember, argumentBuffer: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
         let type : ResourceType
         let usageType : ResourceUsageType
+        
+        var activeRange: ActiveResourceRange = argumentBuffer.isActive ? .fullResource : .inactive
+        
         switch member.dataType {
         case .texture:
             type = .texture
@@ -194,15 +217,22 @@ extension ArgumentReflection {
             usageType = .sampler
         default:
             type = .buffer
+            if let arrayType = member.arrayType() {
+                activeRange = .buffer(0..<arrayType.arrayLength * arrayType.stride)
+            } else if let pointerType = member.pointerType() {
+                activeRange = .buffer(0..<pointerType.dataSize)
+            }
             usageType = ResourceUsageType(member.pointerType()?.access ?? .readOnly) // It might be POD, in which case the usage is read only.
         }
         
-        self.init(type: type, bindingPath: bindingPath, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [])
+        self.init(type: type, bindingPath: bindingPath, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
     }
     
     init?(array: MTLArrayType, argumentBuffer: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
         let type : ResourceType
         let usageType : ResourceUsageType
+        
+        var activeRange: ActiveResourceRange = argumentBuffer.isActive ? .fullResource : .inactive
         
         switch array.elementType {
         case .texture:
@@ -216,11 +246,11 @@ extension ArgumentReflection {
             type = .buffer
             guard let elementPointerType = array.elementPointerType() else { return nil }
             usageType = ResourceUsageType(elementPointerType.access)
+            activeRange = .buffer(0..<elementPointerType.dataSize)
         }
         
-        self.init(type: type, bindingPath: bindingPath, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [])
+        self.init(type: type, bindingPath: bindingPath, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
     }
-    
     
 }
 
@@ -386,6 +416,24 @@ extension MTLPixelFormat {
         self.init(rawValue: pixelFormat.rawValue)!
     }
 }
+
+extension MTLPurgeableState {
+    public init(_ state: ResourcePurgeableState?) {
+        guard let state = state else {
+            self = .keepCurrent
+            return
+        }
+        switch state {
+        case .discardable:
+            self = .volatile
+        case .nonDiscardable:
+            self = .nonVolatile
+        case .discarded:
+            self = .empty
+        }
+    }
+}
+
 
 extension MTLRegion {
     public init(_ region: Region) {

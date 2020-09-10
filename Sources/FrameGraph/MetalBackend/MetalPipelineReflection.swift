@@ -324,11 +324,19 @@ final class MetalPipelineReflection : PipelineReflection {
         return path
     }
     
-    public func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer? {
+    public func argumentBufferEncoder(at path: ResourceBindingPath, currentEncoder currentEncoderOpaque: UnsafeRawPointer?) -> UnsafeRawPointer? {
+        let currentEncoder = currentEncoderOpaque.map { Unmanaged<MetalArgumentEncoder>.fromOpaque($0) }
+        let newEncoder: MetalArgumentEncoder?
         if path.stages.contains(.fragment), self.argumentEncoderCount > 31 {
-            return self.argumentEncoders[31 + path.index].map { UnsafeRawPointer(Unmanaged.passUnretained($0).toOpaque()) }
+            newEncoder = self.argumentEncoders[31 + path.index]
         } else {
-            return self.argumentEncoders[path.index].map { UnsafeRawPointer(Unmanaged.passUnretained($0).toOpaque()) }
+            newEncoder = self.argumentEncoders[path.index]
+        }
+        // Choose the more-specific encoder (i.e. the encoder with a higher maximum resource index).
+        if let newEncoder = newEncoder, newEncoder.bindingIndexCount > currentEncoder?._withUnsafeGuaranteedRef({ $0.bindingIndexCount }) ?? 0 {
+            return UnsafeRawPointer(Unmanaged.passUnretained(newEncoder).toOpaque())
+        } else {
+            return currentEncoderOpaque
         }
     }
 }

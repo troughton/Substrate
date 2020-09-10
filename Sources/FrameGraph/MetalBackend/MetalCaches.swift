@@ -57,8 +57,12 @@ final class MetalStateCaches {
     }
     
     func checkForLibraryReload() {
+        self.libraryURL?.removeCachedResourceValue(forKey: .contentModificationDateKey)
+        
         guard let libraryURL = self.libraryURL else { return }
-        if FileManager.default.fileExists(atPath: libraryURL.path), let currentModificationDate = try? libraryURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, currentModificationDate > self.loadedLibraryModificationDate {
+        if FileManager.default.fileExists(atPath: libraryURL.path),
+           let currentModificationDate = try? libraryURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+           currentModificationDate > self.loadedLibraryModificationDate {
             
             for queue in QueueRegistry.allQueues {
                 queue.waitForCommand(queue.lastSubmittedCommand) // Wait for all commands to finish on all queues.

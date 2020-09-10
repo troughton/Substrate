@@ -108,6 +108,29 @@ final class MetalBackend : SpecificRenderBackend {
         return self.resourceRegistry.allocateHeap(heap) != nil
     }
 
+    @usableFromInline func updateLabel(on resource: Resource) {
+        self.resourceRegistry.accessLock.withReadLock {
+            if let buffer = resource.buffer {
+                self.resourceRegistry[buffer]?.buffer.label = buffer.label
+            } else if let texture = resource.texture {
+                self.resourceRegistry[texture]?.texture.label = texture.label
+            }
+        }
+    }
+    
+    @usableFromInline func updatePurgeableState(for resource: Resource, to newState: ResourcePurgeableState?) -> ResourcePurgeableState {
+        self.resourceRegistry.accessLock.withReadLock {
+            let mtlState = MTLPurgeableState(newState)
+            if let buffer = resource.buffer, let mtlBuffer = self.resourceRegistry[buffer]?.buffer {
+                return ResourcePurgeableState(mtlBuffer.setPurgeableState(mtlState))!
+            } else if let texture = resource.texture, let mtlTexture = self.resourceRegistry[texture]?.texture {
+                return ResourcePurgeableState(mtlTexture.setPurgeableState(mtlState))!
+            }
+            return .nonDiscardable
+        }
+        
+    }
+    
     @usableFromInline func dispose(texture: Texture) {
         self.resourceRegistry.disposeTexture(texture)
     }
@@ -260,7 +283,10 @@ final class MetalBackend : SpecificRenderBackend {
         // Metal requires useResource calls for all untracked resources.
         return true
     }
-
+    
+    var requiresEmulatedInputAttachments: Bool {
+        return !self.isAppleSiliconGPU
+    }
     
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
@@ -401,7 +427,7 @@ final class MetalBackend : SpecificRenderBackend {
         }
         
         for command in commandGenerator.commands {
-            if command.index > barrierLastIndex {
+            if command.index >= barrierLastIndex { // For barriers, the barrier associated with command.index needs to happen _after_ any barriers required to happen _by_ barrierLastIndex
                 addBarrier(&compactedResourceCommands)
             }
             
@@ -423,14 +449,19 @@ final class MetalBackend : SpecificRenderBackend {
                 let mtlResource = getResource(resource)
                 
                 var computedUsageType: MTLResourceUsage = []
-                if resource.type == .texture, usage == .read {
-                    computedUsageType.formUnion(.sample)
-                }
-                if usage.isRead {
+                if usage == .inputAttachmentRenderTarget || usage == .inputAttachment {
+                    assert(resource.type == .texture)
                     computedUsageType.formUnion(.read)
-                }
-                if usage.isWrite {
-                    computedUsageType.formUnion(.write)
+                } else {
+                    if resource.type == .texture, usage == .read {
+                        computedUsageType.formUnion(.sample)
+                    }
+                    if usage.isRead {
+                        computedUsageType.formUnion(.read)
+                    }
+                    if usage.isWrite {
+                        computedUsageType.formUnion(.write)
+                    }
                 }
                 
                 if !allowReordering {

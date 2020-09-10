@@ -152,6 +152,14 @@ public struct TextureDescriptor: Hashable {
             self.depth = newValue.depth
         }
     }
+    
+    public var slicesPerLevel: Int {
+        var count = self.arrayLength * self.depth
+        if self.textureType == .typeCube || self.textureType == .typeCubeArray {
+            count *= 6
+        }
+        return count
+    }
 }
 
 public struct BufferDescriptor: Hashable {
