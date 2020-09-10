@@ -176,6 +176,14 @@ extension Texture {
             let isHDR = stbi_is_hdr(url.path) != 0
             let is16Bit = stbi_is_16_bit(url.path) != 0
             
+            var width : Int32 = 0
+            var height : Int32 = 0
+            var componentsPerPixel : Int32 = 0
+            guard stbi_info(url.path, &width, &height, &componentsPerPixel) != 0 else {
+                throw TextureLoadingError.invalidFile(url)
+            }
+            let hasAlphaChannel = componentsPerPixel == 2 || componentsPerPixel == 4
+            
             if isHDR {
                 var textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
                 let pixelFormat = textureData.pixelFormat
@@ -190,13 +198,15 @@ extension Texture {
                     }
                 }
                 
-                switch gpuAlphaMode {
-                case .premultiplied:
-                    textureData.convertToPremultipliedAlpha()
-                case .postmultiplied:
-                    textureData.convertToPostmultipliedAlpha()
-                default:
-                    break
+                if hasAlphaChannel {
+                    switch gpuAlphaMode {
+                    case .premultiplied:
+                        textureData.convertToPremultipliedAlpha()
+                    case .postmultiplied:
+                        textureData.convertToPostmultipliedAlpha()
+                    default:
+                        break
+                    }
                 }
                 
                 if isPartiallyInitialised {
@@ -221,13 +231,15 @@ extension Texture {
                     }
                 }
                 
-                switch gpuAlphaMode {
-                case .premultiplied:
-                    textureData.convertToPremultipliedAlpha()
-                case .postmultiplied:
-                    textureData.convertToPostmultipliedAlpha()
-                default:
-                    break
+                if hasAlphaChannel {
+                    switch gpuAlphaMode {
+                    case .premultiplied:
+                        textureData.convertToPremultipliedAlpha()
+                    case .postmultiplied:
+                        textureData.convertToPostmultipliedAlpha()
+                    default:
+                        break
+                    }
                 }
                 
                 if isPartiallyInitialised {
@@ -239,18 +251,20 @@ extension Texture {
             } else {
                 var textureData = try TextureData<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
                 
-                if options.contains(.assumeSourceImageUsesGammaSpaceBlending), textureData.colorSpace == .sRGB {
-                    textureData.convertToPostmultipliedAlpha()
-                    textureData.convertPostmultSRGBBlendedSRGBToPremultLinearBlendedSRGB()
-                }
-                
-                switch gpuAlphaMode {
-                case .premultiplied:
-                    textureData.convertToPremultipliedAlpha()
-                case .postmultiplied:
-                    textureData.convertToPostmultipliedAlpha()
-                default:
-                    break
+                if hasAlphaChannel {
+                    if options.contains(.assumeSourceImageUsesGammaSpaceBlending), textureData.colorSpace == .sRGB {
+                        textureData.convertToPostmultipliedAlpha()
+                        textureData.convertPostmultSRGBBlendedSRGBToPremultLinearBlendedSRGB()
+                    }
+                    
+                    switch gpuAlphaMode {
+                    case .premultiplied:
+                        textureData.convertToPremultipliedAlpha()
+                    case .postmultiplied:
+                        textureData.convertToPostmultipliedAlpha()
+                    default:
+                        break
+                    }
                 }
                 
                 if (options.contains(.autoExpandSRGBToRGBA) && colorSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
