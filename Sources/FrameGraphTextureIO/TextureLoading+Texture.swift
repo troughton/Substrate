@@ -75,6 +75,11 @@ public struct TextureLoadingOptions: OptionSet {
     /// Whether to automatically convert the image's color space to match the chosen pixel format's color space.
     public static let autoConvertColorSpace = TextureLoadingOptions(rawValue: 1 << 1)
     
+    /// If this option is set, the texture will be converted on load such that blending the loaded texture in linear space will have the same
+    /// effect as blending the source texture in gamma space.
+    /// For example, when loading an sRGB texture with a color value of 0.0 and an alpha value of 0.5, blending the texture onto a white background will result in an image with a value of 0.5 in sRGB space rather than a value of 0.5 in linear space.
+    public static let assumeSourceImageUsesGammaSpaceBlending = TextureLoadingOptions(rawValue: 1 << 2)
+    
     public static let `default`: TextureLoadingOptions = [.autoConvertColorSpace, .autoExpandSRGBToRGBA]
 }
 
@@ -117,24 +122,24 @@ extension Texture {
         }
     }
     
-    public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
+    public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         
         self = Texture._createPersistentTextureWithoutDescriptor(flags: .persistent)
-        try self.fillInternal(fromFileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, alphaMode: alphaMode, gpuAlphaMode: gpuAlphaMode, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, options: options, isPartiallyInitialised: true)
+        try self.fillInternal(fromFileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, options: options, isPartiallyInitialised: true)
     }
     
     @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:alphaMode:storageMode:usage:)")
     public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, premultipliedAlpha: Bool, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
-        try self.init(fileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, storageMode: storageMode, usage: usage)
+        try self.init(fileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, sourceAlphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, storageMode: storageMode, usage: usage)
     }
     
     @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:alphaMode:storageMode:usage:)")
     public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColorSpace, premultipliedAlpha: Bool, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
-        try self.init(fileAt: url, mipmapped: mipmapped, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, storageMode: storageMode, usage: usage)
+        try self.init(fileAt: url, mipmapped: mipmapped, colorSpace: colourSpace, sourceAlphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, storageMode: storageMode, usage: usage)
     }
 
-    private func fillInternal(fromFileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode, gpuAlphaMode: TextureAlphaMode, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) throws {
+    private func fillInternal(fromFileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode, gpuAlphaMode: TextureAlphaMode, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) throws {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
         if url.pathExtension.lowercased() == "exr" {
@@ -172,7 +177,7 @@ extension Texture {
             let is16Bit = stbi_is_16_bit(url.path) != 0
             
             if isHDR {
-                var textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
+                var textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
                 let pixelFormat = textureData.pixelFormat
                 guard pixelFormat != .invalid else {
                     throw TextureLoadingError.noSupportedPixelFormat
@@ -202,7 +207,7 @@ extension Texture {
                 try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
                 
             } else if is16Bit {
-                var textureData = try TextureData<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
+                var textureData = try TextureData<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
                 
                 let pixelFormat = textureData.pixelFormat
                 guard pixelFormat != .invalid else {
@@ -232,7 +237,12 @@ extension Texture {
                 
                 try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
             } else {
-                var textureData = try TextureData<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
+                var textureData = try TextureData<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+                
+                if options.contains(.assumeSourceImageUsesGammaSpaceBlending), textureData.colorSpace == .sRGB {
+                    textureData.convertToPostmultipliedAlpha()
+                    textureData.convertPostmultSRGBBlendedSRGBToPremultLinearBlendedSRGB()
+                }
                 
                 switch gpuAlphaMode {
                 case .premultiplied:
@@ -301,7 +311,7 @@ extension Texture {
         }
     }
     
-    public func fill(fromFileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
-        try self.fillInternal(fromFileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, alphaMode: alphaMode, gpuAlphaMode: gpuAlphaMode, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
+    public func fill(fromFileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
+        try self.fillInternal(fromFileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
     }
 }

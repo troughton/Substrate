@@ -130,4 +130,76 @@ enum ColorSpaceLUTs {
     static func sRGBPostmultToPremult(value: UInt8, alpha: UInt8) -> UInt8 {
         return sRGBPostmultToPremultAlphaLUT[Int(alpha) * 256 + Int(value)]
     }
+    
+    // See TextureData.convertPremultLinearBlendedSRGBToPostmultSRGBBlendedSRGB
+    static let linearBlendedSRGBToSRGBBlendedSRGB_AlphaLUT: [UInt8] = {
+        return (0..<256).map { i in
+            let alpha = unormToFloat(UInt8(truncatingIfNeeded: i))
+            let adjustedAlpha = 1.0 - TextureColorSpace.convert(1.0 - alpha, from: .linearSRGB, to: .sRGB)
+            return floatToUnorm(adjustedAlpha, type: UInt8.self)
+        }
+    }()
+    
+    // Converts from a premultiplied alpha RGB value in sRGB space to a postmultiplied alpha RGB value in sRGB space that is designed
+    // to be blended in sRGB space while preserving the appearance of blending in linear space.
+    // See TextureData.adjustForSRGBSpaceBlending
+    static let premultLinearBlendedSRGBToPostmultSRGBBlendedSRGB_ColorLUT: [UInt8] = {
+        return (0..<256 * 256).map { i in
+            let alpha = unormToFloat(UInt8(truncatingIfNeeded: i >> 8))
+            let value = UInt8(truncatingIfNeeded: i & 0xFF)
+            guard alpha > 0 && alpha < 1.0 else { return value }
+            
+            let adjustedAlpha = 1.0 - TextureColorSpace.convert(1.0 - alpha, from: .linearSRGB, to: .sRGB)
+            
+            let premultColor = unormToFloat(value)
+            let adjustedColor = (TextureColorSpace.convert((1.0 - alpha) + TextureColorSpace.convert(premultColor, from: .sRGB, to: .linearSRGB), from: .linearSRGB, to: .sRGB) - (1.0 - adjustedAlpha)) / adjustedAlpha
+            return floatToUnorm(adjustedColor, type: UInt8.self)
+        }
+    }()
+    
+    static func linearBlendedSRGBToSRGBBlendedSRGB(alpha: UInt8) -> UInt8 {
+        return linearBlendedSRGBToSRGBBlendedSRGB_AlphaLUT[Int(alpha)]
+    }
+    
+    static func premultLinearBlendedSRGBToPostmultSRGBBlendedSRGB(alpha: UInt8, value: UInt8) -> UInt8 {
+        return premultLinearBlendedSRGBToPostmultSRGBBlendedSRGB_ColorLUT[Int(alpha) * 256 + Int(value)]
+    }
+    
+    // The inverse of linearBlendedSRGBToSRGBBlendedSRGB_AlphaLUT
+    // See TextureData.adjustForLinearSpaceBlending
+    static let sRGBBlendedSRGBToLinearBlendedSRGB_AlphaLUT: [UInt8] = {
+        return (0..<256).map { i in
+            let adjustedAlpha = unormToFloat(UInt8(truncatingIfNeeded: i))
+            let alpha = 1.0 - TextureColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
+            return floatToUnorm(alpha, type: UInt8.self)
+        }
+    }()
+    
+    // Converts from a postmultiplied alpha RGB value in sRGB space that was designed to be blended in
+    // sRGB space to a premultiplied alpha RGB value in sRGB space that is designed
+    // to be blended in linear space.
+    // See TextureData.convertPostmultSRGBBlendedSRGBToPremultLinearBlendedSRGB
+    static let postmultSRGBBlendedSRGBToPremultLinearBlendedSRGB_ColorLUT: [UInt8] = {
+        return (0..<256 * 256).map { i in
+            let adjustedAlpha = unormToFloat(UInt8(truncatingIfNeeded: i >> 8))
+            let value = UInt8(truncatingIfNeeded: i & 0xFF)
+            guard adjustedAlpha > 0 && adjustedAlpha < 1.0 else { return value }
+            
+            let alpha = 1.0 - TextureColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
+            
+            let srgbBlendColor = unormToFloat(value)
+            let premultColor = TextureColorSpace.convert((TextureColorSpace.convert(srgbBlendColor * adjustedAlpha + (1.0 - adjustedAlpha), from: .sRGB, to: .linearSRGB) - (1.0 - alpha)), from: .linearSRGB, to: .sRGB)
+            
+            return floatToUnorm(premultColor, type: UInt8.self)
+        }
+    }()
+    
+    static func sRGBBlendedSRGBToLinearBlendedSRGB(alpha: UInt8) -> UInt8 {
+        return sRGBBlendedSRGBToLinearBlendedSRGB_AlphaLUT[Int(alpha)]
+    }
+    
+    static func postmultSRGBBlendedSRGBToPremultLinearBlendedSRGB(alpha: UInt8, value: UInt8) -> UInt8 {
+        return postmultSRGBBlendedSRGBToPremultLinearBlendedSRGB_ColorLUT[Int(alpha) * 256 + Int(value)]
+    }
+    
 }

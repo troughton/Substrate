@@ -28,7 +28,7 @@ extension Texture {
 }
 
 extension TextureData {
-    public init(texture: Texture, mipmapLevel: Int = 0, hasPremultipliedAlpha: Bool = false) {
+    public init(texture: Texture, mipmapLevel: Int = 0, hasPremultipliedAlpha: Bool = true) {
         let pixelFormat = texture.descriptor.pixelFormat
         assert(pixelFormat.bytesPerPixel == Double(MemoryLayout<T>.stride * pixelFormat.channelCount))
         assert(texture.descriptor.textureType == .type2D)
