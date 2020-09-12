@@ -100,6 +100,10 @@ final class MetalBackend : SpecificRenderBackend {
         }
     }
     
+    @usableFromInline func materialiseHeap(_ heap: Heap) -> Bool {
+        return self.resourceRegistry.allocateHeap(heap) != nil
+    }
+
     @usableFromInline func updateLabel(on resource: Resource) {
         self.resourceRegistry.accessLock.withReadLock {
             if let buffer = resource.buffer {
@@ -110,10 +114,19 @@ final class MetalBackend : SpecificRenderBackend {
         }
     }
     
-    @usableFromInline func materialiseHeap(_ heap: Heap) -> Bool {
-        return self.resourceRegistry.allocateHeap(heap) != nil
+    @usableFromInline func updatePurgeableState(for resource: Resource, to newState: ResourcePurgeableState?) -> ResourcePurgeableState {
+        self.resourceRegistry.accessLock.withReadLock {
+            let mtlState = MTLPurgeableState(newState)
+            if let buffer = resource.buffer, let mtlBuffer = self.resourceRegistry[buffer]?.buffer {
+                return ResourcePurgeableState(mtlBuffer.setPurgeableState(mtlState))!
+            } else if let texture = resource.texture, let mtlTexture = self.resourceRegistry[texture]?.texture {
+                return ResourcePurgeableState(mtlTexture.setPurgeableState(mtlState))!
+            }
+            return .nonDiscardable
+        }
+        
     }
-
+    
     @usableFromInline func dispose(texture: Texture) {
         self.resourceRegistry.disposeTexture(texture)
     }

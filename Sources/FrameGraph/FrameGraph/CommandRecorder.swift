@@ -216,6 +216,7 @@ extension ChunkArray where T == (Resource, ResourceUsage) {
 // Lifetime: one render pass.
 @usableFromInline
 final class FrameGraphCommandRecorder {
+    @usableFromInline let frameGraphTransientRegistryIndex: Int
     @usableFromInline let renderPassScratchAllocator : ThreadLocalTagAllocator
     @usableFromInline let resourceUsageAllocator : TagAllocator.ThreadView
     @usableFromInline var commands : ChunkArray<FrameGraphCommand> // Lifetime: FrameGraph compilation (copied to another array for the backend).
@@ -227,8 +228,9 @@ final class FrameGraphCommandRecorder {
     @usableFromInline var resourceUsages = ChunkArray<(Resource, ResourceUsage)>()
     
     @inlinable
-    init(renderPassScratchAllocator: ThreadLocalTagAllocator, frameGraphExecutionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView, unmanagedReferences: ExpandingBuffer<Releasable>) {
+    init(frameGraphTransientRegistryIndex: Int, renderPassScratchAllocator: ThreadLocalTagAllocator, frameGraphExecutionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView, unmanagedReferences: ExpandingBuffer<Releasable>) {
         assert(_isPOD(FrameGraphCommand.self))
+        self.frameGraphTransientRegistryIndex = frameGraphTransientRegistryIndex
         self.commands = ChunkArray() // (allocator: AllocatorType(frameGraphExecutionAllocator), initialCapacity: 64)
         self.renderPassScratchAllocator = renderPassScratchAllocator
         self.resourceUsageAllocator = resourceUsageAllocator
@@ -303,6 +305,7 @@ final class FrameGraphCommandRecorder {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
+        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.frameGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a FrameGraph other than the one it was created on.")
         
         assert(resource.type != .argumentBuffer || !usageType.isWrite, "Read-write argument buffers are currently unsupported.")
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
@@ -365,6 +368,7 @@ final class FrameGraphCommandRecorder {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
+        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.frameGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a FrameGraph other than the one it was created on.")
         
         assert(resource.type != .argumentBuffer || !usageType.isWrite, "Read-write argument buffers are currently unsupported.")
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
@@ -388,6 +392,7 @@ final class FrameGraphCommandRecorder {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
+        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.frameGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a FrameGraph other than the one it was created on.")
         
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
@@ -432,6 +437,7 @@ final class FrameGraphCommandRecorder {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
+        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.frameGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a FrameGraph other than the one it was created on.")
         
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         

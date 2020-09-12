@@ -75,6 +75,8 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int)
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int)
     
+    func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState
+    
     // Note: The pipeline reflection functions may return nil if reflection information could not be created for the pipeline.
     func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection?
     func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection?
@@ -229,6 +231,11 @@ public struct RenderBackend {
     @inlinable
     public static func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
         return _backend.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
+    }
+    
+    @inlinable
+    static func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState {
+        return _backend.updatePurgeableState(for: resource, to: to)
     }
     
     @inlinable

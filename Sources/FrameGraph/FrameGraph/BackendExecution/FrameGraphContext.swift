@@ -172,5 +172,9 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
         }
         
         processCommandBuffer()
+        
+        for passRecord in passes {
+            passRecord.pass = nil // Release references to the RenderPasses.
+        }
     }
 }

@@ -102,6 +102,12 @@ public enum ResourceAccessType {
     case readWrite
 }
 
+public enum ResourcePurgeableState {
+    case nonDiscardable
+    case discardable
+    case discarded
+}
+
 public protocol ResourceProtocol : Hashable {
     init(handle: Handle)
     func dispose()
@@ -121,6 +127,9 @@ public protocol ResourceProtocol : Hashable {
     /// A resource handle is valid if it is a transient resource that was allocated in the current frame
     /// or is a persistent resource that has not been disposed.
     var isValid : Bool { get }
+    
+    var purgeableState: ResourcePurgeableState { get nonmutating set }
+    func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState
 }
 
 extension ResourceProtocol {
@@ -128,6 +137,29 @@ extension ResourceProtocol {
     @inlinable
     public static func ==(lhs: Self, rhs: Self) -> Bool {
         return lhs.handle == rhs.handle
+    }
+    
+    /// Note that setting the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
+    public var purgeableState: ResourcePurgeableState {
+        get {
+            return RenderBackend.updatePurgeableState(for: Resource(self), to: nil)
+        }
+        nonmutating set {
+            let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: newValue)
+            if newValue == .discarded || oldValue == .discarded {
+                self.discardContents()
+            }
+        }
+    }
+    
+    /// Note that updating the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
+    @discardableResult
+    public func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState {
+        let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: to)
+        if to == .discarded || oldValue == .discarded {
+            self.discardContents()
+        }
+        return oldValue
     }
 }
 
@@ -992,6 +1024,24 @@ public struct Texture : ResourceProtocol {
             let didAllocate = RenderBackend.materialisePersistentTexture(self)
             assert(didAllocate, "Allocation failed for persistent texture \(self)")
         }
+    }
+        
+    @inlinable
+    public static func _createPersistentTextureWithoutDescriptor(flags: ResourceFlags = [.persistent]) -> Texture {
+        precondition(flags.contains(.persistent))
+        let index = PersistentTextureRegistry.instance.allocateHandle()
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
+        return Texture(handle: handle)
+    }
+    
+    @inlinable
+    public func _initialisePersistentTexture(descriptor: TextureDescriptor, heap: Heap?) {
+        precondition(self.flags.contains(.persistent))
+        PersistentTextureRegistry.instance.initialise(texture: self, descriptor: descriptor, heap: heap, flags: self.flags)
+        
+        assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+        let didAllocate = RenderBackend.materialisePersistentTexture(self)
+        assert(didAllocate, "Allocation failed for persistent texture \(self)")
     }
     
     @inlinable

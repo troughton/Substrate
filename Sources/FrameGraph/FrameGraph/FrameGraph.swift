@@ -304,7 +304,7 @@ public enum RenderPassType {
 
 @usableFromInline
 final class RenderPassRecord {
-    @usableFromInline let pass : RenderPass
+    @usableFromInline var pass : RenderPass!
     @usableFromInline var commands : ChunkArray<FrameGraphCommand>! = nil
     @usableFromInline var readResources : HashSet<Resource>! = nil
     @usableFromInline var writtenResources : HashSet<Resource>! = nil
@@ -433,6 +433,10 @@ public final class FrameGraph {
         
     }
     
+    public var hasEnqueuedPasses: Bool {
+        return !self.renderPasses.isEmpty
+    }
+    
     /// Useful for creating resources that may be used later in the frame.
     public func insertEarlyBlitPass(name: String,
                                     _ execute: @escaping (BlitCommandEncoder) -> Void)  {
@@ -460,11 +464,11 @@ public final class FrameGraph {
     }
     
     public func addClearPass(file: String = #file, line: Int = #line,
-                             descriptor: RenderTargetDescriptor,
+                             renderTarget: RenderTargetDescriptor,
                              colorClearOperations: [ColorClearOperation] = [],
                              depthClearOperation: DepthClearOperation = .keep,
                              stencilClearOperation: StencilClearOperation = .keep) {
-        self.addPass(CallbackDrawRenderPass(name: "Clear Pass at \(file):\(line)", descriptor: descriptor,
+        self.addPass(CallbackDrawRenderPass(name: "Clear Pass at \(file):\(line)", descriptor: renderTarget,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                             execute: { _ in }))
     }
@@ -571,7 +575,8 @@ public final class FrameGraph {
         
         let renderPassScratchTag = FrameGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
         
-        let commandRecorder = FrameGraphCommandRecorder(renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
+        let commandRecorder = FrameGraphCommandRecorder(frameGraphTransientRegistryIndex: self.transientRegistryIndex,
+                                                        renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
                                                         frameGraphExecutionAllocator: TagAllocator.ThreadView(allocator: FrameGraph.executionAllocator, threadIndex: threadIndex),
                                                         resourceUsageAllocator: TagAllocator.ThreadView(allocator: FrameGraph.resourceUsagesAllocator, threadIndex: threadIndex),
                                                         unmanagedReferences: unmanagedReferences)
