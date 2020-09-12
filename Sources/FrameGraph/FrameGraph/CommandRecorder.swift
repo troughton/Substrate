@@ -206,7 +206,7 @@ enum FrameGraphCommand {
     }
 }
 
-extension ChunkArray where T == (Resource, ResourceUsage) {
+extension ChunkArray where Element == (Resource, ResourceUsage) {
     @inlinable
     var pointerToLastUsage: UnsafeMutablePointer<ResourceUsage> {
         return UnsafeMutableRawPointer(self.pointerToLast).advanced(by: MemoryLayout<Resource>.stride).assumingMemoryBound(to: ResourceUsage.self)

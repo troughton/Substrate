@@ -194,6 +194,17 @@ struct FrameResourceCommand : Comparable {
     }
 }
 
+extension ChunkArray.RandomAccessView where Element == ResourceUsage {
+    func indexOfPreviousWrite(before index: Int) -> Int? {
+        for i in (0..<index).reversed() {
+            if self[i].affectsGPUBarriers, self[i].isWrite {
+                return i
+            }
+        }
+        return nil
+    }
+}
+
 final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     typealias Dependency = Backend.InterEncoderDependencyType
     
@@ -278,15 +289,13 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         defer { TaggedHeap.free(tag: Self.resourceCommandGeneratorTag) }
         
         resourceLoop: for resource in usedResources {
-            let usages = resource.usages
-            if usages.isEmpty { continue }
+            if resource.usages.isEmpty { continue }
             
             self.processResourceResidency(resource: resource, frameCommandInfo: frameCommandInfo)
             
-            var usageIterator = usages.makeIterator()
+            let usagesArray = resource.usages.makeRandomAccessView(allocator: allocator)
             
-            let firstUsage = usageIterator.next()!
-            var previousUsage = firstUsage
+            let firstUsage = usagesArray.first!
 
             #if canImport(Vulkan)
             if Backend.self == VulkanBackend.self, resource.type == .texture, resource.flags.intersection([.historyBuffer, .persistent]) != [] {
@@ -298,9 +307,6 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         index: firstUsage.type.isRenderTarget ? firstUsage.commandRange.lowerBound : 0))
             }
             #endif
-
-            var readsSinceLastWrite = (firstUsage.isRead && !firstUsage.isWrite) ? [firstUsage] : []
-            var previousWrite = firstUsage.isWrite ? firstUsage : nil
             
             if Backend.TransientResourceRegistry.isAliasedHeapResource(resource: resource) {
                 let fenceDependency = FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, stages: firstUsage.stages)
@@ -311,28 +317,29 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 processInputAttachmentUsage(firstUsage, resource: resource)
             }
             
-            var remainingSubresourceIterator: ChunkArray<ResourceUsage>.Iterator? = nil
             var remainingSubresources = ActiveResourceRange.inactive
-            var remainingSubresourcesPreviousWrite: ResourceUsage? = nil
-            var remainingSubresourcesPreviousUsage: ResourceUsage = previousUsage
-            var remainingSubresourcesReadsSinceLastWrite: [ResourceUsage] = []
+            var remainingSubresourcesUsageIndex: Int = -1
             
             var activeSubresources = ActiveResourceRange.fullResource
+            var usageIndex = usagesArray.index(after: usagesArray.startIndex)
             
-            while let usage = usageIterator.next()  {
+            while usageIndex < usagesArray.count {
+                defer { usageIndex += 1 }
+                
+                let usage = usagesArray[usageIndex]
                 if !usage.affectsGPUBarriers {
                     continue
                 }
                 
+                // Check for subresource tracking
                 if resource.type == .texture { // We only track subresources for textures.
                     if usage.activeRange.isEqual(to: .fullResource, resource: resource) {
                         if !remainingSubresources.isEqual(to: .inactive, resource: resource) {
                             // Reset the tracked state to the remainingSubresources
                             activeSubresources = remainingSubresources
-                            usageIterator = remainingSubresourceIterator!
-                            previousUsage = remainingSubresourcesPreviousUsage
-                            previousWrite = remainingSubresourcesPreviousWrite
-                            readsSinceLastWrite = remainingSubresourcesReadsSinceLastWrite
+                            remainingSubresources = .inactive
+                            
+                            usageIndex = remainingSubresourcesUsageIndex - 1 // since it will have 1 added to it in the defer statement
                             
                             continue
                         } else {
@@ -344,17 +351,11 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                             continue
                         } else if !activeRangeIntersection.isEqual(to: activeSubresources, resource: resource) {
                             if remainingSubresources.isEqual(to: .inactive, resource: resource) {
-                                remainingSubresourceIterator = usageIterator
-                                
-                                remainingSubresourcesPreviousUsage = previousUsage
-                                remainingSubresourcesPreviousWrite = previousWrite
-                                remainingSubresourcesReadsSinceLastWrite = readsSinceLastWrite
+                                remainingSubresourcesUsageIndex = usageIndex
                             }
                             
                             remainingSubresources.formUnion(with: activeSubresources.subtracting(range: activeRangeIntersection, resource: resource, allocator: allocator), resource: resource, allocator: allocator)
                             activeSubresources = activeRangeIntersection
-                            print("Processing subresources \(activeSubresources), with \(remainingSubresources) remaining")
-                            
                         }
                     }
                 }
@@ -363,10 +364,16 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     processInputAttachmentUsage(usage, resource: resource)
                 }
                 
+                let previousWriteIndex = usagesArray.indexOfPreviousWrite(before: usageIndex)
+                
                 if usage.isWrite {
                     assert(!resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "A resource with the flag .immutableOnceInitialised is being written to in \(usage) when it has already been initialised.")
                     
-                    for previousRead in readsSinceLastWrite where frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
+                    // Process all the reads since the last write.
+                    for previousReadIndex in ((previousWriteIndex ?? -1) + 1)..<usageIndex {
+                        let previousRead = usagesArray[previousReadIndex]
+                        guard previousRead.affectsGPUBarriers, previousRead.isRead, frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) else { continue }
+                        
                         let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
                         let onEncoder = frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord)
                         let dependency = Dependency(resource: resource, producingUsage: previousRead, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
@@ -376,6 +383,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                                                                  to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
                     }
                 }
+                
+                let previousUsage = usagesArray[..<usageIndex].reversed().first(where: { $0.affectsGPUBarriers })!
                 
                 if usage.isRead, previousUsage.isWrite,
                     frameCommandInfo.encoderIndex(for: previousUsage.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord),
@@ -387,6 +396,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousUsage.type, afterStages: previousUsage.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages), index: previousUsage.commandRange.last!))
                 }
                 
+                let previousWrite = previousWriteIndex.map { usagesArray[$0] }
+                
                 if (usage.isRead || usage.isWrite), let previousWrite = previousWrite, frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
                     let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
                     let onEncoder = frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord)
@@ -396,25 +407,12 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                                                              on: onEncoder,
                                                              to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
                 }
-                
-                if usage.isWrite {
-                    readsSinceLastWrite.removeAll(keepingCapacity: true)
-                    previousWrite = usage
-                }
-                if usage.isRead, !usage.isWrite {
-                    readsSinceLastWrite.append(usage)
-                }
-                
-                if usage.commandRange.endIndex > previousUsage.commandRange.endIndex { // FIXME: this is only necessary because resource commands are executed sequentially; this will only be false if both usage and previousUsage are reads, and so it doesn't matter which order they happen in.
-                    // A better solution would be to effectively compile all resource commands ahead of time - doing so will also enable multithreading and out-of-order execution of render passes.
-                    previousUsage = usage
-                }
             }
             
-            let lastUsage = previousUsage
+            let lastUsage = usagesArray.last!
             
             defer {
-                if previousWrite != nil, resource.flags.intersection([.historyBuffer, .persistent]) != [] {
+                if usagesArray.contains(where: { $0.isWrite }), resource.flags.intersection([.historyBuffer, .persistent]) != [] {
                     resource.markAsInitialised()
                 }
             }
@@ -479,6 +477,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
             }
             
+            let lastWriteIndex = usagesArray.indexOfPreviousWrite(before: usagesArray.count)
+            let lastWrite = lastWriteIndex.map { usagesArray[$0] }
+            
             if resource.flags.intersection([.persistent, .historyBuffer]) != [] {
                 // Prepare the resource for being used this frame. For Vulkan, this means computing the image layouts.
                 if let buffer = resource.buffer {
@@ -489,7 +490,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 
                 for queue in QueueRegistry.allQueues {
                     // TODO: separate out the wait index for the first read from the first write.
-                    let waitIndex = resource[waitIndexFor: queue, accessType: previousWrite != nil ? .readWrite : .read]
+                    let waitIndex = resource[waitIndexFor: queue, accessType: lastWriteIndex != nil ? .readWrite : .read]
                     self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), encoderIndex: firstCommandEncoderIndex, index: firstUsage.commandRange.first!, order: .before))
                 }
 
@@ -497,10 +498,14 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     if lastUsage.isWrite {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), encoderIndex: lastCommandEncoderIndex, index: lastUsage.commandRange.last!, order: .after))
                     } else {
-                        if let lastWrite = previousWrite {
+                        if let lastWrite = lastWrite {
                             self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), encoderIndex: frameCommandInfo.encoderIndex(for: lastWrite.renderPassRecord), index: lastWrite.commandRange.last!, order: .after))
                         }
-                        for read in readsSinceLastWrite {
+                        // Process all the reads since the last write.
+                        for readIndex in ((lastWriteIndex ?? -1) + 1)..<usagesArray.count {
+                            let read = usagesArray[readIndex]
+                            guard read.affectsGPUBarriers, read.isRead else { continue }
+                            
                             self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .write), encoderIndex: frameCommandInfo.encoderIndex(for: read.renderPassRecord), index: read.commandRange.last!, order: .after))
                         }
                     }
@@ -515,17 +520,21 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 
                 // We only need to wait for the write to complete if there have been no reads since the write; otherwise, we wait on the reads
                 // which in turn have a transitive dependency on the write.
-                if readsSinceLastWrite.isEmpty, let previousWrite = previousWrite, previousWrite.renderPassRecord.pass.passType != .external {
-                    storeFences = [FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord), index: previousWrite.commandRange.last!, stages: previousWrite.stages)]
+                if let lastWriteIndex = lastWriteIndex, usagesArray.index(after: lastWriteIndex) == usagesArray.endIndex {
+                    let lastWrite = lastWrite!
+                    storeFences = [FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: lastWrite.renderPassRecord), index: lastWrite.commandRange.last!, stages: lastWrite.stages)]
                 }
                 
-                for read in readsSinceLastWrite where read.renderPassRecord.pass.passType != .external {
+                // Process all the reads since the last write.
+                for readIndex in ((lastWriteIndex ?? -1) + 1)..<usagesArray.count {
+                    let read = usagesArray[readIndex]
+                    guard read.affectsGPUBarriers, read.isRead, read.renderPassRecord.pass.passType != .external else { continue }
+                    
                     storeFences.append(FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: read.renderPassRecord), index: read.commandRange.last!, stages: read.stages))
                 }
                 
                 transientRegistry.setDisposalFences(on: resource, to: storeFences)
             }
-            
         }
     }
     
