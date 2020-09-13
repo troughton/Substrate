@@ -8,6 +8,7 @@
 #if canImport(Vulkan)
 import Vulkan
 import FrameGraphCExtras
+import FrameGraphUtilities
 
 extension VkImageViewType : Hashable {
     public func hash(into hasher: inout Hasher) {
@@ -92,6 +93,7 @@ class VulkanImage {
     struct LayoutState {
         var commandRange: Range<Int>
         var layout: VkImageLayout
+        var subresourceRange: ActiveResourceRange
     }
     
     let vkImage : VkImage
@@ -114,7 +116,7 @@ class VulkanImage {
         self.allocator = allocator
         self.allocation = allocation
         self.descriptor = descriptor
-        self.frameLayouts = [LayoutState(commandRange: -1..<0, layout: descriptor.initialLayout)]
+        self.frameLayouts = [LayoutState(commandRange: -1..<0, layout: descriptor.initialLayout, subresourceRange: .fullResource)]
         
         do {
             var createInfo = VkImageViewCreateInfo()
@@ -182,7 +184,9 @@ class VulkanImage {
         let lastLayout = self.frameLayouts.last!
         
         self.frameLayouts.removeAll(keepingCapacity: true)
-        self.frameLayouts.append(LayoutState(commandRange: -1..<0, layout: preserveLastLayout ? lastLayout.layout.afterOperation : VK_IMAGE_LAYOUT_UNDEFINED))
+        self.frameLayouts.append(LayoutState(commandRange: -1..<0,
+                                             layout: preserveLastLayout ? lastLayout.layout.afterOperation : VK_IMAGE_LAYOUT_UNDEFINED,
+                                             subresourceRange: .fullResource))
         assert(self.frameInitialLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
         
         let isDepthOrStencil = self.descriptor.allAspects.intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != []
@@ -191,7 +195,7 @@ class VulkanImage {
             let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil) ?? self.frameLayouts.last!.layout.afterOperation // Preserve the last layout if the usage doesn't require a specific layout
             // Find the insertion location (since reads may be unordered in the usages list).
             let insertionIndex = self.frameLayouts.firstIndex(where: { $0.commandRange.lowerBound > usage.commandRange.lowerBound }) ?? self.frameLayouts.endIndex
-            self.frameLayouts.insert(LayoutState(commandRange: usage.commandRange, layout: layout), at: insertionIndex)
+            self.frameLayouts.insert(LayoutState(commandRange: usage.commandRange, layout: layout, subresourceRange: usage.activeRange), at: insertionIndex)
         }
     }
 
@@ -199,8 +203,8 @@ class VulkanImage {
         return self.frameLayouts.first!.layout
     }
     
-    func layout(commandIndex: Int) -> VkImageLayout {
-        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) })?.layout else {
+    func layout(commandIndex: Int, subresourceRange: ActiveResourceRange, resource: Resource) -> VkImageLayout {
+        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) && $0.subresourceRange.intersects(with: subresourceRange, resource: resource) })?.layout else {
             preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image; layouts are \(self.frameLayouts)")
         }
         return layout

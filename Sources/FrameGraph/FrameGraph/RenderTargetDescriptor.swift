@@ -30,6 +30,22 @@ public protocol RenderTargetAttachmentDescriptor {
     var resolveDepthPlane : Int { get set }
 }
 
+extension RenderTargetAttachmentDescriptor {
+    var arraySlice: Int {
+        if texture.descriptor.textureType == .typeCube || texture.descriptor.textureType == .typeCubeArray {
+            return self.slice / 6
+        }
+        return self.slice
+    }
+    
+    var resolveArraySlice: Int {
+        if texture.descriptor.textureType == .typeCube || texture.descriptor.textureType == .typeCubeArray {
+            return self.resolveSlice / 6
+        }
+        return self.resolveSlice
+    }
+}
+
 public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
 
     public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,

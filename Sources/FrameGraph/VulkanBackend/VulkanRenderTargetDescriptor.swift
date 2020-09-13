@@ -245,7 +245,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             newDescriptor.visibilityResultBuffer = passDescriptor.visibilityResultBuffer
         }
         
-        self.updateClearValues(pass: pass)
+        self.updateClearValues(pass: pass, descriptor: passDescriptor)
 
         newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, passDescriptor.renderTargetArrayLength)
         

@@ -152,7 +152,7 @@ struct BarrierScope: OptionSet {
 enum FrameResourceCommands {
     // These commands need to be executed during render pass execution and do not modify the ResourceRegistry.
     case useResource(Resource, usage: ResourceUsageType, stages: RenderStages, allowReordering: Bool) // Must happen before the FrameResourceCommand command index.
-    case memoryBarrier(Resource, afterUsage: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsage: ResourceUsageType, beforeStages: RenderStages) // beforeCommand is the command that this memory barrier must have been executed before, while the FrameResourceCommand's command index is the index that this must happen after.
+    case memoryBarrier(Resource, afterUsage: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsage: ResourceUsageType, beforeStages: RenderStages, activeRange: ActiveResourceRange) // beforeCommand is the command that this memory barrier must have been executed before, while the FrameResourceCommand's command index is the index that this must happen after.
 }
 
 struct PreFrameResourceCommand : Comparable {
@@ -261,7 +261,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     }
     
     
-    func processInputAttachmentUsage(_ usage: ResourceUsage, resource: Resource) {
+    func processInputAttachmentUsage(_ usage: ResourceUsage, resource: Resource, activeRange: ActiveResourceRange) {
         guard RenderBackend.requiresEmulatedInputAttachments else { return }
         // To simulate input attachments on desktop platforms, we need to insert a render target barrier between every draw.
         let applicableRange = usage.commandRange
@@ -276,7 +276,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             if command.isDrawCommand {
                 let commandIndex = i + passCommandRange.lowerBound
                 if previousCommandIndex >= 0 {
-                    self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages), index: previousCommandIndex))
+                    self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: usage.type, afterStages: usage.stages, beforeCommand: commandIndex, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeRange), index: previousCommandIndex))
 //                            self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: .read, stages: usage.stages, allowReordering: false), index: commandIndex))
                 }
                 previousCommandIndex = commandIndex
@@ -308,7 +308,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
                 // so that it can be inserted as a subpass dependency.
                 self.commands.append(FrameResourceCommand(command: 
-                    .memoryBarrier(Resource(resource), afterUsage: .previousFrame, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages), 
+                                                            .memoryBarrier(Resource(resource), afterUsage: .previousFrame, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages, activeRange: firstUsage.activeRange),
                         index: firstUsage.type.isRenderTarget ? firstUsage.commandRange.lowerBound : 0))
             }
             #endif
@@ -319,7 +319,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             }
             
             if firstUsage.type == .inputAttachmentRenderTarget {
-                processInputAttachmentUsage(firstUsage, resource: resource)
+                processInputAttachmentUsage(firstUsage, resource: resource, activeRange: firstUsage.activeRange)
             }
             
             var remainingSubresources = ActiveResourceRange.inactive
@@ -366,7 +366,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
                 
                 if usage.type == .inputAttachmentRenderTarget {
-                    processInputAttachmentUsage(usage, resource: resource)
+                    processInputAttachmentUsage(usage, resource: resource, activeRange: activeSubresources)
                 }
                 
                 let previousWriteIndex = usagesArray.indexOfPreviousWrite(before: usageIndex)
@@ -398,7 +398,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
                     assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
                     
-                    self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousUsage.type, afterStages: previousUsage.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages), index: previousUsage.commandRange.last!))
+                    self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousUsage.type, afterStages: previousUsage.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources), index: previousUsage.commandRange.last!))
                 }
                 
                 let previousWrite = previousWriteIndex.map { usagesArray[$0] }

@@ -147,6 +147,22 @@ public enum ActiveResourceRange {
         return result
     }
     
+    func intersects(with range: ActiveResourceRange, resource: Resource) -> Bool {
+        switch (self, range) {
+        case (.inactive, _), (_, .inactive):
+            return false
+        case (.fullResource, _),
+             (_, .fullResource):
+            return true
+        case (.buffer(let rangeA), .buffer(let rangeB)):
+            return rangeA.overlaps(rangeB)
+        case (.texture(let maskA), .texture(let maskB)):
+            return maskA.intersects(with: maskB, descriptor: resource.texture!.descriptor)
+        default:
+            fatalError("Incompatible resource ranges \(self) and \(range)")
+        }
+    }
+    
     @inlinable
     mutating func subtract(range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) {
         switch (self, range) {

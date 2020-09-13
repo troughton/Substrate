@@ -11,7 +11,7 @@ import FrameGraphUtilities
 extension TextureDescriptor {
     @inlinable
     var subresourceCount: Int {
-        return self.slicesPerLevel * self.mipmapLevelCount
+        return self.arrayLength * self.mipmapLevelCount
     }
 }
 
@@ -25,6 +25,7 @@ public struct TextureSubresourceMask {
         
     }
     
+    @inlinable
     public init(source: TextureSubresourceMask, descriptor: TextureDescriptor, allocator: AllocatorType) {
         if source.value == .max {
             self.value = .max
@@ -116,12 +117,38 @@ public struct TextureSubresourceMask {
         }
     }
     
-    public subscript(slice slice: Int, level level: Int, descriptor: TextureDescriptor, allocator: AllocatorType) -> Bool {
+    @inlinable
+    public subscript(arraySlice slice: Int, level level: Int, descriptor descriptor: TextureDescriptor) -> Bool {
         get {
             let count = descriptor.subresourceCount
             
             // Arranged by level, then slice
-            let index = level * descriptor.slicesPerLevel + slice
+            let index = level * descriptor.arrayLength + slice
+            precondition(index < count)
+            
+            if count < Element.bitWidth {
+                assert(index < UInt.bitWidth)
+                return self.value[bit: index]
+            } else {
+                if self.value == .max { // Meaning the entire resource is in use.
+                    return true
+                } else if self.value == 0 {
+                    return false
+                }
+                let storagePtr = UnsafeMutablePointer<Element>(bitPattern: UInt(exactly: self.value)!)!
+                let (uintIndex, bitIndex) = index.quotientAndRemainder(dividingBy: Element.bitWidth)
+                return storagePtr[uintIndex][bit: bitIndex]
+            }
+        }
+    }
+    
+    @inlinable
+    public subscript(arraySlice slice: Int, level level: Int, descriptor descriptor: TextureDescriptor, allocator allocator: AllocatorType) -> Bool {
+        get {
+            let count = descriptor.subresourceCount
+            
+            // Arranged by level, then slice
+            let index = level * descriptor.arrayLength + slice
             precondition(index < count)
             
             if count < Element.bitWidth {
@@ -142,7 +169,7 @@ public struct TextureSubresourceMask {
             let count = descriptor.subresourceCount
             
             // Arranged by level, then slice
-            let index = level * descriptor.slicesPerLevel + slice
+            let index = level * descriptor.arrayLength + slice
             precondition(index < count)
             
             if count < Element.bitWidth {
@@ -221,11 +248,36 @@ public struct TextureSubresourceMask {
     
     @inlinable
     public mutating func formIntersection(with range: TextureSubresourceMask, descriptor: TextureDescriptor, allocator: AllocatorType) {
-        if range.value == .max {
+        if self.value == 0 || range.value == .max {
+            return
+        }
+        if range.value == 0 {
+            self.value = 0
             return
         }
         
         self.merge(with: range, operator: &, descriptor: descriptor, allocator: allocator)
+    }
+    
+    @inlinable
+    public func intersects(with range: TextureSubresourceMask, descriptor: TextureDescriptor) -> Bool {
+        if self.value == 0 || range.value == 0 {
+            return false
+        }
+        if self.value == .max || range.value == .max {
+            return true
+        }
+        
+        return self.withUnsafePointerToStorage(descriptor: descriptor) { elements in
+            range.withUnsafePointerToStorage(descriptor: descriptor) { otherElements in
+                for i in elements.indices {
+                    if elements[i] | otherElements[i] != 0 {
+                        return true
+                    }
+                }
+                return false
+            }
+        }
     }
     
     @inlinable

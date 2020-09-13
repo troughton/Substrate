@@ -69,7 +69,8 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             }
             
             regions.withUnsafeBufferPointer { regions in
-                vkCmdCopyBufferToImage(self.commandBufferResources.commandBuffer, source.buffer.vkBuffer, destination.vkImage, destination.layout(commandIndex: commandIndex), UInt32(regions.count), regions.baseAddress)
+                // NOTE: we can use .fullResource when querying the layout since the layout matching tests the intersection of the subresource ranges, and there's no possibility of overlapping uses with different layouts for a blit command index.
+                vkCmdCopyBufferToImage(self.commandBufferResources.commandBuffer, source.buffer.vkBuffer, destination.vkImage, destination.layout(commandIndex: commandIndex, subresourceRange: .fullResource, resource: Resource(args.pointee.destinationTexture)), UInt32(regions.count), regions.baseAddress)
             }
             
         case .copyBufferToBuffer(let args):
@@ -102,10 +103,11 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             }
             
             regions.withUnsafeBufferPointer { regions in
+                // NOTE: we can use .fullResource when querying the layout since the layout matching tests the intersection of the subresource ranges, and there's no possibility of overlapping uses with different layouts for a blit command index.
                 vkCmdCopyImage(
                     self.commandBufferResources.commandBuffer, 
-                    source.vkImage, source.layout(commandIndex: commandIndex),
-                    destination.vkImage, destination.layout(commandIndex: commandIndex),
+                    source.vkImage, source.layout(commandIndex: commandIndex, subresourceRange: .fullResource, resource: Resource(args.pointee.sourceTexture)),
+                    destination.vkImage, destination.layout(commandIndex: commandIndex, subresourceRange: .fullResource, resource: Resource(args.pointee.destinationTexture)),
                     UInt32(regions.count), regions.baseAddress
                 )
             }
