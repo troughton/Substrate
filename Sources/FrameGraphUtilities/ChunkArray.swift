@@ -214,7 +214,7 @@ extension ChunkArray {
                 var currentChunk = array.next
                 while let chunk = currentChunk {
                     chunks[i] = chunk
-                    currentChunk = currentChunk?.pointee.next!
+                    currentChunk = currentChunk?.pointee.next
                     i += 1
                 }
                 self.chunks = UnsafePointer(chunks)
