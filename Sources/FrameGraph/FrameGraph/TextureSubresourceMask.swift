@@ -271,7 +271,7 @@ public struct TextureSubresourceMask {
         return self.withUnsafePointerToStorage(descriptor: descriptor) { elements in
             range.withUnsafePointerToStorage(descriptor: descriptor) { otherElements in
                 for i in elements.indices {
-                    if elements[i] | otherElements[i] != 0 {
+                    if elements[i] & otherElements[i] != 0 {
                         return true
                     }
                 }

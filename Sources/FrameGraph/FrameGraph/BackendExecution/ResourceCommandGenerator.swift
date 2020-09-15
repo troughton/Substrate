@@ -200,9 +200,10 @@ struct FrameResourceCommand : Comparable {
 }
 
 extension ChunkArray.RandomAccessView where Element == ResourceUsage {
-    func indexOfPreviousWrite(before index: Int) -> Int? {
+    func indexOfPreviousWrite(before index: Int, resource: Resource) -> Int? {
+        let usageActiveRange = index >= self.endIndex ? .fullResource : self[index].activeRange
         for i in (0..<index).reversed() {
-            if self[i].affectsGPUBarriers, self[i].isWrite {
+            if self[i].affectsGPUBarriers, self[i].isWrite, self[i].activeRange.intersects(with: usageActiveRange, resource: resource) {
                 return i
             }
         }
@@ -329,7 +330,16 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             var usageIndex = usagesArray.index(after: usagesArray.startIndex)
             
             while usageIndex < usagesArray.count {
-                defer { usageIndex += 1 }
+                defer {
+                    usageIndex += 1
+                    
+                    if usageIndex == usagesArray.count, !remainingSubresources.isEqual(to: .inactive, resource: resource) {
+                        // Reset the tracked state to the remainingSubresources
+                        activeSubresources = remainingSubresources
+                        remainingSubresources = .inactive
+                        usageIndex = remainingSubresourcesUsageIndex
+                    }
+                }
                 
                 let usage = usagesArray[usageIndex]
                 if !usage.affectsGPUBarriers {
@@ -369,7 +379,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     processInputAttachmentUsage(usage, resource: resource, activeRange: activeSubresources)
                 }
                 
-                let previousWriteIndex = usagesArray.indexOfPreviousWrite(before: usageIndex)
+                let previousWriteIndex = usagesArray.indexOfPreviousWrite(before: usageIndex, resource: resource)
                 
                 if usage.isWrite {
                     assert(!resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "A resource with the flag .immutableOnceInitialised is being written to in \(usage) when it has already been initialised.")
@@ -389,28 +399,26 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                 }
                 
-                let previousUsage = usagesArray[..<usageIndex].reversed().first(where: { $0.affectsGPUBarriers })!
-                
-                if usage.isRead, previousUsage.isWrite,
-                    frameCommandInfo.encoderIndex(for: previousUsage.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord),
-                    !(previousUsage.type.isRenderTarget && usage.type == .readWriteRenderTarget) {
+                if let previousWrite = previousWriteIndex.map({ usagesArray[$0] }) {
+                    if usage.isRead,
+                        frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord),
+                        !(previousWrite.type.isRenderTarget && usage.type == .readWriteRenderTarget) {
+                        
+                        assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
+                        assert(!previousWrite.stages.isEmpty || previousWrite.renderPassRecord.pass.passType != .draw)
+                        
+                        self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousWrite.type, afterStages: previousWrite.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources), index: previousWrite.commandRange.last!))
+                    }
                     
-                    assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
-                    assert(!previousUsage.stages.isEmpty || previousUsage.renderPassRecord.pass.passType != .draw)
-                    
-                    self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousUsage.type, afterStages: previousUsage.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources), index: previousUsage.commandRange.last!))
-                }
-                
-                let previousWrite = previousWriteIndex.map { usagesArray[$0] }
-                
-                if (usage.isRead || usage.isWrite), let previousWrite = previousWrite, frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
-                    let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
-                    let onEncoder = frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord)
-                    let dependency = Dependency(resource: resource, producingUsage: previousWrite, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
-                    
-                    commandEncoderDependencies.setDependency(from: fromEncoder,
-                                                             on: onEncoder,
-                                                             to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
+                    if (usage.isRead || usage.isWrite), frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) != frameCommandInfo.encoderIndex(for: usage.renderPassRecord) {
+                        let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
+                        let onEncoder = frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord)
+                        let dependency = Dependency(resource: resource, producingUsage: previousWrite, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
+                        
+                        commandEncoderDependencies.setDependency(from: fromEncoder,
+                                                                 on: onEncoder,
+                                                                 to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
+                    }
                 }
             }
             
@@ -482,7 +490,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
             }
             
-            let lastWriteIndex = usagesArray.indexOfPreviousWrite(before: usagesArray.count)
+            let lastWriteIndex = usagesArray.indexOfPreviousWrite(before: usagesArray.count, resource: resource)
             let lastWrite = lastWriteIndex.map { usagesArray[$0] }
             
             if resource.flags.intersection([.persistent, .historyBuffer]) != [] {
