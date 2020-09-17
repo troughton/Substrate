@@ -180,14 +180,29 @@ class VulkanImage {
         return self.descriptor.matches(descriptor: descriptor)
     }
     
-    func computeFrameLayouts(usages: ChunkArray<ResourceUsage>, preserveLastLayout: Bool) {
-        let lastLayout = self.frameLayouts.last!
+    func computeFrameLayouts(resource: Resource, usages: ChunkArray<ResourceUsage>, preserveLastLayout: Bool) {
+        let previousLayouts = self.frameLayouts
         
         self.frameLayouts.removeAll(keepingCapacity: true)
-        self.frameLayouts.append(LayoutState(commandRange: -1..<0,
-                                             layout: preserveLastLayout ? lastLayout.layout.afterOperation : VK_IMAGE_LAYOUT_UNDEFINED,
-                                             subresourceRange: .fullResource))
-        assert(self.frameInitialLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+        if !preserveLastLayout {
+            self.frameLayouts.append(LayoutState(commandRange: -1..<0,
+                                                 layout: VK_IMAGE_LAYOUT_UNDEFINED,
+                                                 subresourceRange: .fullResource))
+        } else {
+            var remainingSubresources = ActiveResourceRange.fullResource
+            for layout in previousLayouts.reversed() {
+                let subresources = remainingSubresources.intersection(with: layout.subresourceRange, resource: resource, allocator: allocator)
+                remainingSubresources.subtract(range: subresources, resource: resource, allocator: allocator)
+                fatalError("We need the active range mask from the previous frame to survive into this frame, which means allocators with a two-frame lifetime.")
+                
+                self.frameLayouts.append(LayoutState(commandRange: -1..<0,
+                                                     layout: layout.layout,
+                                                     subresourceRange: subresources))
+                if remainingSubresources.isEqual(to: .inactive, resource: resource) {
+                    break
+                }
+            }
+        }
         
         let isDepthOrStencil = self.descriptor.allAspects.intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != []
         
@@ -227,8 +242,16 @@ class VulkanImage {
         }
     }
 
-    var frameInitialLayout: VkImageLayout {
-        return self.frameLayouts.first!.layout
+    var hasMultipleSubresourceInitialLayouts: Bool {
+        return !self.frameLayouts.first!.subresourceRange.isEqual(to: .fullResource, resource: Resource(handle: .max))
+    }
+    
+    var frameInitialLayoutSubresources: [ActiveResourceRange] {
+        fatalError()
+    }
+    
+    func frameInitialLayout(for subresource: ActiveResourceRange) -> VkImageLayout {
+        fatalError()
     }
     
     func layout(commandIndex: Int, subresourceRange: ActiveResourceRange, resource: Resource) -> VkImageLayout {
