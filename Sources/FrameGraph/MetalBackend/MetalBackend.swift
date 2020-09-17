@@ -363,7 +363,7 @@ final class MetalBackend : SpecificRenderBackend {
         self.generateFenceCommands(queue: queue, frameCommandInfo: commandInfo, commandGenerator: commandGenerator, compactedResourceCommands: &compactedResourceCommands)
         
         
-        let allocator = ThreadLocalTagAllocator(tag: FrameGraphContextImpl<MetalBackend>.resourceCommandArrayTag)
+        let allocator = ThreadLocalTagAllocator(tag: .frameGraphResourceCommandArrayTag)
         
         var currentEncoderIndex = 0
         var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]

@@ -49,7 +49,7 @@ extension VulkanBackend {
         let commandEncoderCount = frameCommandInfo.commandEncoders.count
         let reductionMatrix = dependencies.transitiveReduction(hasDependency: { $0 != nil })
         
-        let allocator = ThreadLocalTagAllocator(tag: FrameGraphContextImpl<VulkanBackend>.resourceCommandArrayTag)
+        let allocator = ThreadLocalTagAllocator(tag: .frameGraphResourceCommandArrayTag)
         
         for sourceIndex in (0..<commandEncoderCount) { // sourceIndex always points to the producing pass.
             let dependentRange = min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount
@@ -200,7 +200,7 @@ extension VulkanBackend {
         self.generateEventCommands(queue: queue, resourceMap: resourceMap, frameCommandInfo: commandInfo, commandGenerator: commandGenerator, compactedResourceCommands: &compactedResourceCommands)
         
         
-        let allocator = ThreadLocalTagAllocator(tag: FrameGraphContextImpl<VulkanBackend>.resourceCommandArrayTag)
+        let allocator = ThreadLocalTagAllocator(tag: .frameGraphResourceCommandArrayTag)
         
         var currentEncoderIndex = 0
         var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
@@ -243,7 +243,20 @@ extension VulkanBackend {
             let sourceLayout: VkImageLayout
             let destinationLayout: VkImageLayout
             if let image = resource.texture.map({ resourceMap[$0].image }) {
-                sourceLayout = afterUsageType == .previousFrame ? image.frameInitialLayout : image.layout(commandIndex: afterCommand, subresourceRange: activeRange, resource: resource).afterOperation
+                if afterUsageType == .previousFrame, image.hasMultipleSubresourceInitialLayouts, activeRange.isEqual(to: .fullResource, resource: resource) {
+                    // If we're importing an image into this frame, we need to transition each subresource into the initial layout independently.
+                    let layouts = image.hasMultipleSubresourceInitialLayouts
+                  
+                    for activeRange in image.frameInitialLayoutSubresources {
+                        processMemoryBarrier(resource: resource, afterCommand: afterCommand, afterUsageType: afterUsageType, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsageType, beforeStages: beforeStages, activeRange: activeRange)
+                    }
+                    
+                    return
+                    
+                } else {
+                    sourceLayout = afterUsageType == .previousFrame ? image.frameInitialLayout(for: activeRange) : image.layout(commandIndex: afterCommand, subresourceRange: activeRange, resource: resource).afterOperation
+                }
+                
                 destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange, resource: resource).beforeOperation
             } else {
                 assert(resource.type != .texture || resource.flags.contains(.windowHandle))
