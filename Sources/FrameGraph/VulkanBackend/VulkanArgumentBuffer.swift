@@ -67,7 +67,7 @@ extension VulkanArgumentBuffer {
                 let usage = texture.usages.first(where: { $0.inArgumentBuffer && $0.commandRange.lowerBound >= commandIndex })!
 
                 var imageInfo = VkDescriptorImageInfo()
-                imageInfo.imageLayout = image.layout(commandIndex: usage.commandRange.lowerBound)
+                imageInfo.imageLayout = image.layout(commandIndex: usage.commandRange.lowerBound, subresourceRange: .fullResource, resource: Resource(texture))
                 imageInfo.imageView = image.defaultImageView.vkView
                 
                 descriptorWrite.pImageInfo = imageInfoSentinel

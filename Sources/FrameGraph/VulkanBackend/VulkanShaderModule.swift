@@ -274,7 +274,7 @@ final class VulkanPipelineReflection : PipelineReflection {
     
     public func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection? {
         if path.isArgumentBuffer {
-            return ArgumentReflection(type: .argumentBuffer, bindingPath: path, usageType: .read, activeStages: self.activeStagesForSets[path.set] ?? [])
+            return ArgumentReflection(type: .argumentBuffer, bindingPath: path, usageType: .read, activeStages: self.activeStagesForSets[path.set] ?? [], activeRange: .fullResource)
         }
         return reflectionCacheLinearSearch(path, returnNearest: false)
     }
@@ -381,7 +381,10 @@ extension ArgumentReflection {
             renderAPIStages.formUnion(.fragment)
         }
 
-        self.init(type: resourceType, bindingPath: resource.bindingPath, usageType: usageType, activeStages: renderAPIStages)
+        let activeBufferRange = Int(resource.bindingRange.lowerBound)..<Int(resource.bindingRange.upperBound)
+        let activeRange: ActiveResourceRange = resourceType == .buffer ? .buffer(activeBufferRange) : .fullResource
+        
+        self.init(type: resourceType, bindingPath: resource.bindingPath, usageType: usageType, activeStages: renderAPIStages, activeRange: activeRange)
     }
 }
 

@@ -5,11 +5,11 @@
 //  Created by Thomas Roughton on 23/08/20.
 //
 
-public struct ChunkArray<T>: Collection {
+public struct ChunkArray<Element>: Collection {
     @inlinable
     public static var elementsPerChunk: Int { 8 }
     
-    @usableFromInline typealias Storage = (T, T, T, T, T, T, T, T)
+    @usableFromInline typealias Storage = (Element, Element, Element, Element, Element, Element, Element, Element)
     
     @usableFromInline
     struct Chunk {
@@ -39,7 +39,7 @@ public struct ChunkArray<T>: Collection {
     }
     
     @inlinable
-    public subscript(_ index: Int) -> T {
+    public subscript(_ index: Int) -> Element {
         get {
             return self[pointerTo: index].pointee
         }
@@ -49,26 +49,26 @@ public struct ChunkArray<T>: Collection {
     }
     
     @inlinable
-    public subscript(pointerTo index: Int) -> UnsafeMutablePointer<T> {
+    public subscript(pointerTo index: Int) -> UnsafeMutablePointer<Element> {
         precondition(index >= 0 && index < self.count)
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
         var currentChunk = self.next!
         for _ in 0..<chunkIndex {
             currentChunk = currentChunk.pointee.next!
         }
-        return UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self).advanced(by: indexInChunk)
+        return UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: Element.self).advanced(by: indexInChunk)
     }
     
     @inlinable
-    public var pointerToLast: UnsafeMutablePointer<T> {
+    public var pointerToLast: UnsafeMutablePointer<Element> {
         precondition(self.count > 0)
         let index = self.count - 1
         let indexInChunk = index % ChunkArray.elementsPerChunk
-        return UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: T.self).advanced(by: indexInChunk)
+        return UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: Element.self).advanced(by: indexInChunk)
     }
     
     @inlinable
-    public var last: T {
+    public var last: Element {
         get {
             return self.pointerToLast.pointee
         }
@@ -78,10 +78,10 @@ public struct ChunkArray<T>: Collection {
     }
     
     @inlinable
-    public mutating func append(_ element: T, allocator: AllocatorType) {
+    public mutating func append(_ element: Element, allocator: AllocatorType) {
         if case .system = allocator {
         } else {
-            precondition(_isPOD(T.self))
+            precondition(_isPOD(Element.self))
         }
         
         let insertionIndex = self.count
@@ -98,13 +98,13 @@ public struct ChunkArray<T>: Collection {
             }
             self.tail = newChunk
         }
-        UnsafeMutableRawPointer(self.tail.unsafelyUnwrapped).assumingMemoryBound(to: T.self).advanced(by: indexInChunk).initialize(to: element)
+        UnsafeMutableRawPointer(self.tail.unsafelyUnwrapped).assumingMemoryBound(to: Element.self).advanced(by: indexInChunk).initialize(to: element)
         self.count += 1
     }
     
     @inlinable
     @discardableResult
-    public mutating func removeBySwappingWithBack(index: Int, allocator: AllocatorType) -> T {
+    public mutating func removeBySwappingWithBack(index: Int, allocator: AllocatorType) -> Element {
         precondition(index < self.count)
         if index == self.count - 1 {
             return self.removeLast(allocator: allocator)
@@ -140,7 +140,7 @@ public struct ChunkArray<T>: Collection {
     
     @inlinable
     @discardableResult
-    public mutating func removeLast(allocator: AllocatorType) -> T {
+    public mutating func removeLast(allocator: AllocatorType) -> Element {
         precondition(self.count > 0)
         
         let value = self.pointerToLast.move()
@@ -156,7 +156,7 @@ public struct ChunkArray<T>: Collection {
     
     
     public struct Iterator : IteratorProtocol {
-        public typealias Element = T
+        public typealias Element = ChunkArray.Element
         
         @usableFromInline
         let elementCount: Int
@@ -172,11 +172,11 @@ public struct ChunkArray<T>: Collection {
         }
         
         @inlinable
-        public mutating func next() -> T? {
+        public mutating func next() -> Element? {
             if self.index < self.elementCount {
                 let indexInChunk = self.index % ChunkArray.elementsPerChunk
                 let currentChunk = self.chunk.unsafelyUnwrapped
-                let element = UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: T.self)[indexInChunk]
+                let element = UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: Element.self)[indexInChunk]
                 self.index += 1
                 
                 if indexInChunk + 1 == ChunkArray.elementsPerChunk {
@@ -193,4 +193,72 @@ public struct ChunkArray<T>: Collection {
         return Iterator(currentChunk: self.next, elementCount: self.count)
     }
     
+}
+
+extension ChunkArray {
+    /// A view enabling random access into a ChunkArray. Does not allow appending or removing.
+    public struct RandomAccessView: RandomAccessCollection {
+        public let array: ChunkArray
+        @usableFromInline let chunks: UnsafePointer<UnsafeMutablePointer<Chunk>>?
+        
+        public init(array: ChunkArray, allocator: AllocatorType) {
+            precondition(!allocator.requiresDeallocation)
+            
+            self.array = array
+            
+            if array.count > 2 * ChunkArray.elementsPerChunk {
+                let chunkCount = (array.count + ChunkArray.elementsPerChunk - 1) / ChunkArray.elementsPerChunk
+                let chunks = Allocator.allocate(type: UnsafeMutablePointer<Chunk>.self, capacity: chunkCount, allocator: allocator)
+                
+                var i = 0
+                var currentChunk = array.next
+                while let chunk = currentChunk {
+                    chunks[i] = chunk
+                    currentChunk = currentChunk?.pointee.next
+                    i += 1
+                }
+                self.chunks = UnsafePointer(chunks)
+            } else {
+                self.chunks = nil
+            }
+        }
+        
+        @inlinable
+        public var startIndex: Int {
+            return 0
+        }
+        
+        @inlinable
+        public var endIndex: Int {
+            return array.count
+        }
+        
+        @inlinable
+        func chunk(at chunkIndex: Int) -> UnsafeMutablePointer<Chunk> {
+            return self.chunks?[chunkIndex] ?? (chunkIndex == 0 ? array.next! : array.tail!)
+        }
+        
+        @inlinable
+        public subscript(pointerTo index: Int) -> UnsafeMutablePointer<ChunkArray.Element> {
+            precondition(index >= 0 && index < array.count)
+            
+            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
+            return UnsafeMutableRawPointer(self.chunk(at: chunkIndex)).assumingMemoryBound(to: Element.self).advanced(by: indexInChunk)
+        }
+        
+        @inlinable
+        public subscript(index: Int) -> ChunkArray.Element {
+            get {
+                return self[pointerTo: index].pointee
+            }
+            set {
+                self[pointerTo: index].pointee = newValue
+            }
+        }
+    }
+    
+    @inlinable
+    public func makeRandomAccessView(allocator: AllocatorType) -> RandomAccessView {
+        return RandomAccessView(array: self, allocator: allocator)
+    }
 }

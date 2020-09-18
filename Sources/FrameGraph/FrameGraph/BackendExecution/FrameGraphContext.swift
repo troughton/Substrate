@@ -9,6 +9,12 @@ import FrameGraphUtilities
 import Foundation
 import Dispatch
 
+extension TaggedHeap.Tag {
+    static var frameGraphResourceCommandArrayTag: Self {
+        return 2807157891446559070
+    }
+}
+
 final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphContext {
     public var accessSemaphore: DispatchSemaphore
        
@@ -53,18 +59,13 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
-    static var resourceCommandArrayTag: TaggedHeap.Tag {
-        return UInt64(bitPattern: Int64("FrameGraph Compacted Resource Commands".hashValue))
-    }
-    
-    
     public func executeFrameGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, completion: @escaping (Double) -> Void) {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         self.resourceRegistry.prepareFrame()
         
         defer {
-            TaggedHeap.free(tag: Self.resourceCommandArrayTag)
+            TaggedHeap.free(tag: .frameGraphResourceCommandArrayTag)
             
             self.resourceRegistry.cycleFrames()
             

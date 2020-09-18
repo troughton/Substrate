@@ -8,6 +8,7 @@
 #if canImport(Vulkan)
 import Vulkan
 import FrameGraphCExtras
+import FrameGraphUtilities
 
 extension VkImageViewType : Hashable {
     public func hash(into hasher: inout Hasher) {
@@ -92,6 +93,7 @@ class VulkanImage {
     struct LayoutState {
         var commandRange: Range<Int>
         var layout: VkImageLayout
+        var subresourceRange: ActiveResourceRange
     }
     
     let vkImage : VkImage
@@ -114,7 +116,7 @@ class VulkanImage {
         self.allocator = allocator
         self.allocation = allocation
         self.descriptor = descriptor
-        self.frameLayouts = [LayoutState(commandRange: -1..<0, layout: descriptor.initialLayout)]
+        self.frameLayouts = [LayoutState(commandRange: -1..<0, layout: descriptor.initialLayout, subresourceRange: .fullResource)]
         
         do {
             var createInfo = VkImageViewCreateInfo()
@@ -178,29 +180,82 @@ class VulkanImage {
         return self.descriptor.matches(descriptor: descriptor)
     }
     
-    func computeFrameLayouts(usages: ChunkArray<ResourceUsage>, preserveLastLayout: Bool) {
-        let lastLayout = self.frameLayouts.last!
+    func computeFrameLayouts(resource: Resource, usages: ChunkArray<ResourceUsage>, preserveLastLayout: Bool) {
+        let previousLayouts = self.frameLayouts
         
         self.frameLayouts.removeAll(keepingCapacity: true)
-        self.frameLayouts.append(LayoutState(commandRange: -1..<0, layout: preserveLastLayout ? lastLayout.layout.afterOperation : VK_IMAGE_LAYOUT_UNDEFINED))
-        assert(self.frameInitialLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+        if !preserveLastLayout {
+            self.frameLayouts.append(LayoutState(commandRange: -1..<0,
+                                                 layout: VK_IMAGE_LAYOUT_UNDEFINED,
+                                                 subresourceRange: .fullResource))
+        } else {
+            var remainingSubresources = ActiveResourceRange.fullResource
+            for layout in previousLayouts.reversed() {
+                let subresources = remainingSubresources.intersection(with: layout.subresourceRange, resource: resource, allocator: allocator)
+                remainingSubresources.subtract(range: subresources, resource: resource, allocator: allocator)
+                fatalError("We need the active range mask from the previous frame to survive into this frame, which means allocators with a two-frame lifetime.")
+                
+                self.frameLayouts.append(LayoutState(commandRange: -1..<0,
+                                                     layout: layout.layout,
+                                                     subresourceRange: subresources))
+                if remainingSubresources.isEqual(to: .inactive, resource: resource) {
+                    break
+                }
+            }
+        }
         
         let isDepthOrStencil = self.descriptor.allAspects.intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != []
         
         for usage in usages {
             let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil) ?? self.frameLayouts.last!.layout.afterOperation // Preserve the last layout if the usage doesn't require a specific layout
             // Find the insertion location (since reads may be unordered in the usages list).
-            let insertionIndex = self.frameLayouts.firstIndex(where: { $0.commandRange.lowerBound > usage.commandRange.lowerBound }) ?? self.frameLayouts.endIndex
-            self.frameLayouts.insert(LayoutState(commandRange: usage.commandRange, layout: layout), at: insertionIndex)
+            self.frameLayouts.append(LayoutState(commandRange: usage.commandRange, layout: layout, subresourceRange: usage.activeRange))
+        }
+        
+        // Merge reads of different layouts to use the VK_IMAGE_LAYOUT_GENERAL layout so we don't need to insert layout transition barriers between reads.
+        let readLayouts = [VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL]
+        
+        var i = self.frameLayouts.firstIndex(where: { $0.commandRange.lowerBound >= 0 }) ?? self.frameLayouts.endIndex
+        while i < self.frameLayouts.endIndex {
+            if readLayouts.contains(self.frameLayouts[i].layout) {
+                var makeGeneralLayout = false
+                var generalLayoutEndIndex = -1
+                
+                for j in self.frameLayouts.index(after: i)..<self.frameLayouts.endIndex {
+                    if !readLayouts.contains(self.frameLayouts[j].layout) { break }
+                    generalLayoutEndIndex = j + 1
+                    if self.frameLayouts[j].layout != self.frameLayouts[i].layout {
+                        makeGeneralLayout = true
+                    }
+                }
+                
+                if makeGeneralLayout {
+                    for j in i..<generalLayoutEndIndex {
+                        self.frameLayouts[j].layout = VK_IMAGE_LAYOUT_GENERAL
+                    }
+                    i = generalLayoutEndIndex
+                    continue
+                }
+            }
+            
+            i = self.frameLayouts.index(after: i)
         }
     }
 
-    var frameInitialLayout: VkImageLayout {
-        return self.frameLayouts.first!.layout
+    var hasMultipleSubresourceInitialLayouts: Bool {
+        return !self.frameLayouts.first!.subresourceRange.isEqual(to: .fullResource, resource: Resource(handle: .max))
     }
     
-    func layout(commandIndex: Int) -> VkImageLayout {
-        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) })?.layout else {
+    var frameInitialLayoutSubresources: [ActiveResourceRange] {
+        fatalError()
+    }
+    
+    func frameInitialLayout(for subresource: ActiveResourceRange) -> VkImageLayout {
+        fatalError()
+    }
+    
+    func layout(commandIndex: Int, subresourceRange: ActiveResourceRange, resource: Resource) -> VkImageLayout {
+        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) && $0.subresourceRange.intersects(with: subresourceRange, resource: resource) })?.layout else {
             preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image; layouts are \(self.frameLayouts)")
         }
         return layout

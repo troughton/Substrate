@@ -151,7 +151,9 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.disposeHeap(heap)
     }
     
-    public func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
+    public func supportsPixelFormat(_ pixelFormat: PixelFormat, usage: TextureUsage) -> Bool {
+        let usage = usage.subtracting([.blitSource, .blitDestination])
+        
         switch pixelFormat {
         case .depth24Unorm_stencil8:
             #if os(macOS) || targetEnvironment(macCatalyst)
@@ -168,6 +170,10 @@ final class MetalBackend : SpecificRenderBackend {
              .bc5_rgUnorm, .bc5_rgSnorm,
              .bc6H_rgbFloat, .bc6H_rgbuFloat,
              .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+            
+            if usage.intersection([.shaderWrite, .renderTarget]) != [] {
+                return false
+            }
             if #available(OSX 11.0, *) {
                 return self.device.supportsBCTextureCompression
             }
@@ -361,7 +367,7 @@ final class MetalBackend : SpecificRenderBackend {
         self.generateFenceCommands(queue: queue, frameCommandInfo: commandInfo, commandGenerator: commandGenerator, compactedResourceCommands: &compactedResourceCommands)
         
         
-        let allocator = ThreadLocalTagAllocator(tag: FrameGraphContextImpl<MetalBackend>.resourceCommandArrayTag)
+        let allocator = ThreadLocalTagAllocator(tag: .frameGraphResourceCommandArrayTag)
         
         var currentEncoderIndex = 0
         var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
@@ -478,7 +484,7 @@ final class MetalBackend : SpecificRenderBackend {
                     encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
                 }
                 
-            case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages):
+            case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages, _):
                 
                 var scope: MTLBarrierScope = []
                 

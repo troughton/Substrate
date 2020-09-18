@@ -152,13 +152,19 @@ public struct TextureDescriptor: Hashable {
             self.depth = newValue.depth
         }
     }
-    
-    public var slicesPerLevel: Int {
-        var count = self.arrayLength * self.depth
+}
+
+extension TextureDescriptor {
+    func arraySlice(for slice: Int) -> Int {
+        var arraySlice = slice
+        
         if self.textureType == .typeCube || self.textureType == .typeCubeArray {
-            count *= 6
+            arraySlice /= 6
         }
-        return count
+        arraySlice /= self.depth
+        
+        assert(arraySlice < self.arrayLength)
+        return arraySlice
     }
 }
 

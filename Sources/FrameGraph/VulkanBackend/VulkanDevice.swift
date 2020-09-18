@@ -38,11 +38,34 @@ public final class VulkanPhysicalDevice {
         self.queueFamilies = queueFamilies
     }
     
-    public func supportsPixelFormat(_ format: PixelFormat) -> Bool {
+    public func supportsPixelFormat(_ format: PixelFormat, usage: TextureUsage) -> Bool {
         guard let vkFormat = VkFormat(pixelFormat: format) else { return false }
         var formatProperties = VkFormatProperties()
         vkGetPhysicalDeviceFormatProperties(self.vkDevice, vkFormat, &formatProperties)
-        return formatProperties.linearTilingFeatures != 0 || formatProperties.optimalTilingFeatures != 0
+        
+        let features = VkFormatFeatureFlagBits(formatProperties.linearTilingFeatures | formatProperties.optimalTilingFeatures)
+        
+        if usage.contains(.shaderRead), !features.contains(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) {
+            return false
+        }
+        
+        if usage.contains(.shaderWrite), !features.contains(VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) {
+            return false
+        }
+        
+        if usage.contains(.renderTarget), features.intersection([VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT]) == [] {
+            return false
+        }
+        
+        if usage.contains(.blitSource), features.intersection([VK_FORMAT_FEATURE_BLIT_SRC_BIT, VK_FORMAT_FEATURE_TRANSFER_SRC_BIT]) == [] {
+            return false
+        }
+        
+        if usage.contains(.blitDestination), features.intersection([VK_FORMAT_FEATURE_BLIT_DST_BIT, VK_FORMAT_FEATURE_TRANSFER_DST_BIT]) == [] {
+            return false
+        }
+        
+        return true
     }
 }
 

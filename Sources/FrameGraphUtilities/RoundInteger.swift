@@ -35,5 +35,12 @@ extension BinaryInteger {
         
         return self + multiple - remainder
     }
-    
+}
+
+extension FixedWidthInteger {
+    @inlinable
+    public var roundedUpToPowerOfTwo: Self {
+        let log2P1 = Self(self.bitWidth - self.leadingZeroBitCount)
+        return (1 << (log2P1 - 1)) == self ? self : (1 << log2P1)
+    }
 }

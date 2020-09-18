@@ -102,12 +102,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     }
 
     public func encoderIndex(for passIndex: Int) -> Int {
-        for (i, encoder) in self.commandEncoders.enumerated() {
-            if encoder.passRange.contains(passIndex) {
-                return i
-            }
-        }
-        fatalError()
+        return self.commandEncoders.firstIndex(where: { $0.passRange.contains(passIndex) })!
     }
     
     public func encoderIndex(for pass: RenderPassRecord) -> Int {
@@ -115,12 +110,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     }
     
     public func encoder(for passIndex: Int) -> CommandEncoderInfo<Backend.RenderTargetDescriptor> {
-        for encoder in self.commandEncoders {
-            if encoder.passRange.contains(passIndex) {
-                return encoder
-            }
-        }
-        fatalError()
+        return self.commandEncoders.first(where: { $0.passRange.contains(passIndex) })!
     }
     
     public func encoder(for pass: RenderPassRecord) -> CommandEncoderInfo<Backend.RenderTargetDescriptor> {

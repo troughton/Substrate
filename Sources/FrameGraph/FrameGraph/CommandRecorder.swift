@@ -206,7 +206,7 @@ enum FrameGraphCommand {
     }
 }
 
-extension ChunkArray where T == (Resource, ResourceUsage) {
+extension ChunkArray where Element == (Resource, ResourceUsage) {
     @inlinable
     var pointerToLastUsage: UnsafeMutablePointer<ResourceUsage> {
         return UnsafeMutableRawPointer(self.pointerToLast).advanced(by: MemoryLayout<Resource>.stride).assumingMemoryBound(to: ResourceUsage.self)
@@ -433,7 +433,7 @@ final class FrameGraphCommandRecorder {
     
     /// NOTE: Must be called _before_ the command that uses the resource.
     @inlinable
-    public func resourceUsageNode<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
+    public func resourceUsageNode<C : CommandEncoder>(`for` resource: Texture, arraySlice: Int?, level: Int?, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
@@ -468,11 +468,11 @@ final class FrameGraphCommandRecorder {
         }
         
         var subresourceMask = TextureSubresourceMask()
-        if let slice = slice, let level = level {
+        if let arraySlice = arraySlice, let level = level {
             subresourceMask.clear(descriptor: resource.descriptor, allocator: .tagThreadView(self.dataAllocator))
-            subresourceMask[slice: slice, level: level, resource.descriptor, .tagThreadView(self.dataAllocator)] = true
+            subresourceMask[arraySlice: arraySlice, level: level, descriptor: resource.descriptor, allocator: .tagThreadView(self.dataAllocator)] = true
         } else {
-            assert(slice == nil && level == nil)
+            assert(arraySlice == nil && level == nil)
         }
         
         let usage = ResourceUsage(type: usageType, stages: stages, activeRange: .texture(subresourceMask), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
@@ -495,7 +495,7 @@ final class FrameGraphCommandRecorder {
     
     /// NOTE: Must be called _before_ the command that uses the resource.
     @inlinable
-    public func addResourceUsage<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
-        let _ = self.resourceUsageNode(for: resource, slice: slice, level: level, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
+    public func addResourceUsage<C : CommandEncoder>(`for` resource: Texture, arraySlice: Int?, level: Int?, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
+        let _ = self.resourceUsageNode(for: resource, arraySlice: arraySlice, level: level, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
     }
 }

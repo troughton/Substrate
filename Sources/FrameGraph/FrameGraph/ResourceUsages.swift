@@ -111,7 +111,7 @@ public struct ResourceUsage {
     }
     
     /// - returns: Whether the usages could be merged.
-    @inlinable
+    @usableFromInline
     mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, resource: Resource, allocator: AllocatorType) -> Bool {
         if self.renderPassRecord !== nextUsage.renderPassRecord {
             return false
@@ -130,8 +130,23 @@ public struct ResourceUsage {
         
         if self.type.isRenderTarget || nextUsage.type.isRenderTarget {
             if self.type == .read || nextUsage.type == .read {
+                // We're either using this resource as an input attachment or reading from different mip levels/slices than we're writing to.
+                // If the read spans multiple draw commands, make it an input attachment; otherwise, assume that the render target mip/slice
+                // is not read from.
+                let drawCommandCount = self.renderPassRecord.commands.lazy.filter { $0.isDrawCommand }.count
+                if drawCommandCount <= 1 {
+                    // We can't read from the level we're writing to.
+                    if self.type == .read {
+                        self.activeRange.subtract(range: nextUsage.activeRange, resource: resource, allocator: allocator)
+                    } else {
+                        nextUsage.activeRange.subtract(range: self.activeRange, resource: resource, allocator: allocator)
+                    }
+                    return false
+                }
+                
                 self.type = .inputAttachmentRenderTarget
-                self.inArgumentBuffer = true
+                self.inArgumentBuffer = self.inArgumentBuffer || nextUsage.inArgumentBuffer
+                self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator) // Since we're merging a read, it's technically possible to read from other levels/slices of the resource while simultaneously using it as an input attachment.
             }
             
             if self.type != .inputAttachmentRenderTarget {
