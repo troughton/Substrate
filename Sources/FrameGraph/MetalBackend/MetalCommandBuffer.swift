@@ -79,7 +79,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             renderEncoder.endEncoding()
             
         case .compute:
-            let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: .concurrent)!
+            let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: .serial)!
             let computeEncoder = FGMTLComputeCommandEncoder(encoder: mtlComputeEncoder)
             computeEncoder.encoder.label = encoderInfo.name
             
