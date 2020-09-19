@@ -165,7 +165,7 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
         for i in 1..<image.descriptor.mipLevels {
             // Transition the current mip level into a VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL layout.
             imageMemoryBarrier(image: image.vkImage, srcAccessMask: [], dstAccessMask: VK_ACCESS_TRANSFER_WRITE_BIT, srcStageMask: VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                               dstStageMask: VK_PIPELINE_STAGE_TRANSFER_BIT, oldLayout: VK_IMAGE_LAYOUT_UNDEFINED, newLayout: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                               dstStageMask: VK_PIPELINE_STAGE_TRANSFER_BIT, oldLayout: VK_IMAGE_LAYOUT_UNDEFINED, newLayout: VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                baseMipLevel: i, mipLevelCount: 1)
             
 
