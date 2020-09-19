@@ -10,8 +10,17 @@ import FrameGraphUtilities
 
 extension TextureDescriptor {
     @inlinable
+    var slicesPerLevel: Int {
+        var sliceCount = self.arrayLength * self.depth
+        if self.textureType == .typeCube || self.textureType == .typeCubeArray {
+            sliceCount *= 6
+        }
+        return sliceCount
+    }
+    
+    @inlinable
     var subresourceCount: Int {
-        return self.arrayLength * self.mipmapLevelCount
+        return self.slicesPerLevel * self.mipmapLevelCount
     }
 }
 
@@ -310,12 +319,12 @@ public struct SubresourceMask {
 extension SubresourceMask {
     
     @inlinable
-    public subscript(arraySlice slice: Int, level level: Int, descriptor descriptor: TextureDescriptor) -> Bool {
+    public subscript(slice slice: Int, level level: Int, descriptor descriptor: TextureDescriptor) -> Bool {
         get {
             let count = descriptor.subresourceCount
             
             // Arranged by level, then slice
-            let index = level * descriptor.arrayLength + slice
+            let index = level * descriptor.slicesPerLevel + slice
             precondition(index < count)
             
             if count < Element.bitWidth {
@@ -335,12 +344,12 @@ extension SubresourceMask {
     }
     
     @inlinable
-    public subscript(arraySlice slice: Int, level level: Int, descriptor descriptor: TextureDescriptor, allocator allocator: AllocatorType) -> Bool {
+    public subscript(slice slice: Int, level level: Int, descriptor descriptor: TextureDescriptor, allocator allocator: AllocatorType) -> Bool {
         get {
             let count = descriptor.subresourceCount
             
             // Arranged by level, then slice
-            let index = level * descriptor.arrayLength + slice
+            let index = level * descriptor.slicesPerLevel + slice
             precondition(index < count)
             
             if count < Element.bitWidth {

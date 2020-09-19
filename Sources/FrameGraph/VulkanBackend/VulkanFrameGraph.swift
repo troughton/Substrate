@@ -16,23 +16,23 @@ extension VulkanBackend {
     func processImageSubresourceRanges(_ activeMask: inout SubresourceMask, textureDescriptor: TextureDescriptor, allocator: AllocatorType, action: (VkImageSubresourceRange) -> Void) {
         var subresourceRange = VkImageSubresourceRange(aspectMask: textureDescriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(textureDescriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(textureDescriptor.arrayLength))
         for level in 0..<textureDescriptor.mipmapLevelCount {
-            for slice in 0..<textureDescriptor.arrayLength {
-                if activeMask[arraySlice: slice, level: level, descriptor: textureDescriptor] {
+            for slice in 0..<textureDescriptor.slicesPerLevel {
+                if activeMask[slice: slice, level: level, descriptor: textureDescriptor] {
                     subresourceRange.baseArrayLayer = UInt32(slice)
                     subresourceRange.baseMipLevel = UInt32(level)
                     
-                    let endSlice = (0..<textureDescriptor.arrayLength).dropFirst(slice + 1).first(where: { !activeMask[arraySlice: $0, level: level, descriptor: textureDescriptor] }) ?? textureDescriptor.arrayLength
+                    let endSlice = (0..<textureDescriptor.slicesPerLevel).dropFirst(slice + 1).first(where: { !activeMask[slice: $0, level: level, descriptor: textureDescriptor] }) ?? textureDescriptor.arrayLength
                     subresourceRange.layerCount = UInt32(endSlice - slice)
                  
                     let endLevel = (0..<textureDescriptor.mipmapLevelCount).dropFirst(level + 1).first(where: { testLevel in
-                        !(slice..<endSlice).allSatisfy({ activeMask[arraySlice: $0, level: testLevel, descriptor: textureDescriptor] })
+                        !(slice..<endSlice).allSatisfy({ activeMask[slice: $0, level: testLevel, descriptor: textureDescriptor] })
                     }) ?? textureDescriptor.mipmapLevelCount
                     
                     subresourceRange.levelCount = UInt32(endLevel - level)
                     
                     for l in level..<endLevel {
                         for s in slice..<endSlice {
-                            activeMask[arraySlice: s, level: l, descriptor: textureDescriptor, allocator: allocator] = false
+                            activeMask[slice: s, level: l, descriptor: textureDescriptor, allocator: allocator] = false
                         }
                     }
                     action(subresourceRange)
