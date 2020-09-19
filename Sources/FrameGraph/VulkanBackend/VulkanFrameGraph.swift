@@ -13,7 +13,7 @@ import FrameGraphUtilities
 
 extension VulkanBackend {
     
-    func processImageSubresourceRanges(_ activeMask: inout TextureSubresourceMask, textureDescriptor: TextureDescriptor, allocator: AllocatorType, action: (VkImageSubresourceRange) -> Void) {
+    func processImageSubresourceRanges(_ activeMask: inout SubresourceMask, textureDescriptor: TextureDescriptor, allocator: AllocatorType, action: (VkImageSubresourceRange) -> Void) {
         var subresourceRange = VkImageSubresourceRange(aspectMask: textureDescriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(textureDescriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(textureDescriptor.arrayLength))
         for level in 0..<textureDescriptor.mipmapLevelCount {
             for slice in 0..<textureDescriptor.arrayLength {
@@ -123,8 +123,8 @@ extension VulkanBackend {
                         barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
                         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
-                        barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!, subresourceRange: producingUsage.activeRange, resource: resource).afterOperation
-                        barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!, subresourceRange: consumingUsage.activeRange, resource: resource).beforeOperation
+                        barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!, subresourceRange: producingUsage.activeRange).afterOperation
+                        barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!, subresourceRange: consumingUsage.activeRange).beforeOperation
                         if producingUsage.type.isRenderTarget {
                             // We transitioned to the new layout at the end of the previous render pass.
                             barrier.oldLayout = barrier.newLayout 
@@ -140,7 +140,7 @@ extension VulkanBackend {
                             if mask.value == .max {
                                 imageBarriers.append(barrier)
                             } else {
-                                var activeMask = TextureSubresourceMask(source: mask, descriptor: textureDescriptor, allocator: AllocatorType(allocator))
+                                var activeMask = SubresourceMask(source: mask, subresourceCount: textureDescriptor.subresourceCount, allocator: AllocatorType(allocator))
                                 processImageSubresourceRanges(&activeMask, textureDescriptor: textureDescriptor, allocator: AllocatorType(allocator)) {
                                     barrier.subresourceRange = $0
                                     imageBarriers.append(barrier)
@@ -148,8 +148,8 @@ extension VulkanBackend {
                             }
                             
                         case (.texture(let maskA), .texture(let maskB)):
-                            var activeMask = TextureSubresourceMask(source: maskA, descriptor: textureDescriptor, allocator: AllocatorType(allocator))
-                            activeMask.formIntersection(with: maskB, descriptor: textureDescriptor, allocator: AllocatorType(allocator))
+                            var activeMask = SubresourceMask(source: maskA, subresourceCount: textureDescriptor.subresourceCount, allocator: AllocatorType(allocator))
+                            activeMask.formIntersection(with: maskB, subresourceCount: textureDescriptor.subresourceCount, allocator: AllocatorType(allocator))
                             
                             processImageSubresourceRanges(&activeMask, textureDescriptor: textureDescriptor, allocator: AllocatorType(allocator)) {
                                 barrier.subresourceRange = $0
@@ -245,19 +245,17 @@ extension VulkanBackend {
             if let image = resource.texture.map({ resourceMap[$0].image }) {
                 if afterUsageType == .previousFrame, image.hasMultipleSubresourceInitialLayouts, activeRange.isEqual(to: .fullResource, resource: resource) {
                     // If we're importing an image into this frame, we need to transition each subresource into the initial layout independently.
-                    let layouts = image.hasMultipleSubresourceInitialLayouts
-                  
-                    for activeRange in image.frameInitialLayoutSubresources {
+                    for activeRange in image.frameInitialLayoutSubresources(resource: resource, allocator: AllocatorType(allocator)) {
                         processMemoryBarrier(resource: resource, afterCommand: afterCommand, afterUsageType: afterUsageType, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsageType, beforeStages: beforeStages, activeRange: activeRange)
                     }
                     
                     return
                     
                 } else {
-                    sourceLayout = afterUsageType == .previousFrame ? image.frameInitialLayout(for: activeRange) : image.layout(commandIndex: afterCommand, subresourceRange: activeRange, resource: resource).afterOperation
+                    sourceLayout = afterUsageType == .previousFrame ? image.frameInitialLayout(for: activeRange) : image.layout(commandIndex: afterCommand, subresourceRange: activeRange).afterOperation
                 }
                 
-                destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange, resource: resource).beforeOperation
+                destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange).beforeOperation
             } else {
                 assert(resource.type != .texture || resource.flags.contains(.windowHandle))
                 sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED
@@ -274,7 +272,6 @@ extension VulkanBackend {
             let destinationAccessMask = beforeUsageType.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
 
             var beforeCommand = beforeCommand
-            var subresourceRanges: [VkImageSubresourceRange] = []
             
             if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound {
                 var subpassDependency = VkSubpassDependency()
@@ -366,7 +363,7 @@ extension VulkanBackend {
                     if mask.value == .max {
                         imageBarriers.append(barrier)
                     } else {
-                        var activeMask = TextureSubresourceMask(source: mask, descriptor: texture.descriptor, allocator: AllocatorType(allocator))
+                        var activeMask = SubresourceMask(source: mask, subresourceCount: texture.descriptor.subresourceCount, allocator: AllocatorType(allocator))
                         processImageSubresourceRanges(&activeMask, textureDescriptor: texture.descriptor, allocator: AllocatorType(allocator)) {
                             barrier.subresourceRange = $0
                             imageBarriers.append(barrier)

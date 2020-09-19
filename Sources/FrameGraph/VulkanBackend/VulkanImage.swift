@@ -169,6 +169,7 @@ class VulkanImage {
     }
     
     deinit {
+        self.clearFrameLayouts()
         if let allocator = self.allocator, let allocation = self.allocation {
             vmaDestroyImage(allocator, self.vkImage, allocation)
         } else {
@@ -181,7 +182,12 @@ class VulkanImage {
     }
     
     func computeFrameLayouts(resource: Resource, usages: ChunkArray<ResourceUsage>, preserveLastLayout: Bool) {
+        let subresourceCount = self.descriptor.subresourceCount
+        // NOTE: we use the system allocator for subresource masks within the frameLayouts array
         let previousLayouts = self.frameLayouts
+        defer {
+            previousLayouts.forEach { $0.subresourceRange.deallocateStorage(subresourceCount: subresourceCount, allocator: .system) }
+        }
         
         self.frameLayouts.removeAll(keepingCapacity: true)
         if !preserveLastLayout {
@@ -191,9 +197,8 @@ class VulkanImage {
         } else {
             var remainingSubresources = ActiveResourceRange.fullResource
             for layout in previousLayouts.reversed() {
-                let subresources = remainingSubresources.intersection(with: layout.subresourceRange, resource: resource, allocator: allocator)
-                remainingSubresources.subtract(range: subresources, resource: resource, allocator: allocator)
-                fatalError("We need the active range mask from the previous frame to survive into this frame, which means allocators with a two-frame lifetime.")
+                let subresources = remainingSubresources.intersection(with: layout.subresourceRange, subresourceCount: subresourceCount, allocator: .system)
+                remainingSubresources.subtract(range: subresources, subresourceCount: subresourceCount, allocator: .system)
                 
                 self.frameLayouts.append(LayoutState(commandRange: -1..<0,
                                                      layout: layout.layout,
@@ -209,7 +214,7 @@ class VulkanImage {
         for usage in usages {
             let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil) ?? self.frameLayouts.last!.layout.afterOperation // Preserve the last layout if the usage doesn't require a specific layout
             // Find the insertion location (since reads may be unordered in the usages list).
-            self.frameLayouts.append(LayoutState(commandRange: usage.commandRange, layout: layout, subresourceRange: usage.activeRange))
+            self.frameLayouts.append(LayoutState(commandRange: usage.commandRange, layout: layout, subresourceRange: ActiveResourceRange(usage.activeRange, subresourceCount: subresourceCount, allocator: .system)))
         }
         
         // Merge reads of different layouts to use the VK_IMAGE_LAYOUT_GENERAL layout so we don't need to insert layout transition barriers between reads.
@@ -241,21 +246,35 @@ class VulkanImage {
             i = self.frameLayouts.index(after: i)
         }
     }
+    
+    func clearFrameLayouts() {
+        self.frameLayouts.forEach { $0.subresourceRange.deallocateStorage(subresourceCount: self.descriptor.subresourceCount, allocator: .system) }
+        self.frameLayouts.removeAll()
+    }
 
     var hasMultipleSubresourceInitialLayouts: Bool {
         return !self.frameLayouts.first!.subresourceRange.isEqual(to: .fullResource, resource: Resource(handle: .max))
     }
     
-    var frameInitialLayoutSubresources: [ActiveResourceRange] {
-        fatalError()
+    func frameInitialLayoutSubresources(resource: Resource, allocator: AllocatorType) -> [ActiveResourceRange] {
+        var remainingSubresources = ActiveResourceRange.fullResource
+        var subresources = [ActiveResourceRange]()
+        for layout in self.frameLayouts {
+            subresources.append(layout.subresourceRange)
+            remainingSubresources.subtract(range: layout.subresourceRange, resource: resource, allocator: allocator)
+            if remainingSubresources.isEqual(to: .inactive, resource: resource) {
+                break
+            }
+        }
+        return subresources
     }
     
     func frameInitialLayout(for subresource: ActiveResourceRange) -> VkImageLayout {
-        fatalError()
+        return self.frameLayouts.first(where: { $0.commandRange.upperBound <= 0 && $0.subresourceRange.intersects(with: subresource, subresourceCount: self.descriptor.subresourceCount) })!.layout
     }
     
-    func layout(commandIndex: Int, subresourceRange: ActiveResourceRange, resource: Resource) -> VkImageLayout {
-        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) && $0.subresourceRange.intersects(with: subresourceRange, resource: resource) })?.layout else {
+    func layout(commandIndex: Int, subresourceRange: ActiveResourceRange) -> VkImageLayout {
+        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) && $0.subresourceRange.intersects(with: subresourceRange, subresourceCount: self.descriptor.subresourceCount) })?.layout else {
             preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image; layouts are \(self.frameLayouts)")
         }
         return layout
@@ -280,14 +299,6 @@ class VulkanImage {
         }
 
         return (initialLayout, finalLayout)
-    }
-    
-    var previousFrameLayout: VkImageLayout {
-        return self.frameLayouts[0].layout
-    }
-    
-    var firstLayoutInFrame: VkImageLayout {
-        return self.frameLayouts[1].layout
     }
     
     subscript(viewDescriptor: ViewDescriptor) -> VulkanImageView {
@@ -409,6 +420,10 @@ struct VulkanImageDescriptor : Equatable {
         } else {
             return VK_IMAGE_ASPECT_COLOR_BIT
         }
+    }
+    
+    var subresourceCount: Int {
+        return Int(self.arrayLayers * self.mipLevels)
     }
     
     public func matches(descriptor: VulkanImageDescriptor) -> Bool {

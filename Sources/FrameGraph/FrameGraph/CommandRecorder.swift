@@ -467,9 +467,9 @@ final class FrameGraphCommandRecorder {
             self.writtenResources.insert(Resource(resource))
         }
         
-        var subresourceMask = TextureSubresourceMask()
+        var subresourceMask = SubresourceMask()
         if let arraySlice = arraySlice, let level = level {
-            subresourceMask.clear(descriptor: resource.descriptor, allocator: .tagThreadView(self.dataAllocator))
+            subresourceMask.clear(subresourceCount: resource.descriptor.subresourceCount, allocator: .tagThreadView(self.dataAllocator))
             subresourceMask[arraySlice: arraySlice, level: level, descriptor: resource.descriptor, allocator: .tagThreadView(self.dataAllocator)] = true
         } else {
             assert(arraySlice == nil && level == nil)

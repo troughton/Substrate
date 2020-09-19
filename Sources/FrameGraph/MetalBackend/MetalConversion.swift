@@ -90,10 +90,8 @@ extension StorageMode {
             self = .managed
         case .private:
             self = .private
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         case .memoryless:
             self = .private
-        #endif
         @unknown default:
             fatalError()
         }
