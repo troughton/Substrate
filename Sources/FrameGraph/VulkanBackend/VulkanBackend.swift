@@ -126,12 +126,16 @@ public final class VulkanBackend : SpecificRenderBackend {
         }
     }
     
-    public func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
-        return device.physicalDevice.supportsPixelFormat(pixelFormat)
+    public func supportsPixelFormat(_ pixelFormat: PixelFormat, usage: TextureUsage) -> Bool {
+        return device.physicalDevice.supportsPixelFormat(pixelFormat, usage: usage)
     }
     
     public var hasUnifiedMemory: Bool {
         return false // TODO: Retrieve this from the device.
+    }
+    
+    public var requiresEmulatedInputAttachments: Bool {
+        return false
     }
 
     public var renderDevice: Any {
@@ -204,6 +208,14 @@ public final class VulkanBackend : SpecificRenderBackend {
         }
 
         vmaUnmapMemory(image.allocator!, image.allocation!)
+    }
+    
+    @usableFromInline func updateLabel(on resource: Resource) {
+        // TODO: implement.
+    }
+    
+    @usableFromInline func updatePurgeableState(for resource: Resource, to newState: ResourcePurgeableState?) -> ResourcePurgeableState {
+        return .nonDiscardable // TODO: implement.
     }
     
     @usableFromInline

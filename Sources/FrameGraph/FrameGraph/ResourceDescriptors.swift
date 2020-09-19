@@ -154,6 +154,20 @@ public struct TextureDescriptor: Hashable {
     }
 }
 
+extension TextureDescriptor {
+    func arraySlice(for slice: Int) -> Int {
+        var arraySlice = slice
+        
+        if self.textureType == .typeCube || self.textureType == .typeCubeArray {
+            arraySlice /= 6
+        }
+        arraySlice /= self.depth
+        
+        assert(arraySlice < self.arrayLength)
+        return arraySlice
+    }
+}
+
 public struct BufferDescriptor: Hashable {
     public var length : Int = 0
     public var storageMode : StorageMode

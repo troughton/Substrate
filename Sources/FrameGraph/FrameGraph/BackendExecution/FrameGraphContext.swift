@@ -9,6 +9,12 @@ import FrameGraphUtilities
 import Foundation
 import Dispatch
 
+extension TaggedHeap.Tag {
+    static var frameGraphResourceCommandArrayTag: Self {
+        return 2807157891446559070
+    }
+}
+
 final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphContext {
     public var accessSemaphore: DispatchSemaphore
        
@@ -53,18 +59,13 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
-    static var resourceCommandArrayTag: TaggedHeap.Tag {
-        return UInt64(bitPattern: Int64("FrameGraph Compacted Resource Commands".hashValue))
-    }
-    
-    
-    public func executeFrameGraph(passes: [RenderPassRecord], dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, resourceUsages: ResourceUsages, completion: @escaping (Double) -> Void) {
+    public func executeFrameGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<SwiftFrameGraph.DependencyType>, completion: @escaping (Double) -> Void) {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         self.resourceRegistry.prepareFrame()
         
         defer {
-            TaggedHeap.free(tag: Self.resourceCommandArrayTag)
+            TaggedHeap.free(tag: .frameGraphResourceCommandArrayTag)
             
             self.resourceRegistry.cycleFrames()
             
@@ -80,8 +81,8 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
             return
         }
         
-        var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, resourceUsages: resourceUsages, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
-        self.commandGenerator.generateCommands(passes: passes, resourceUsages: resourceUsages, transientRegistry: self.resourceRegistry, frameCommandInfo: &frameCommandInfo)
+        var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
+        self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
         backend.compactResourceCommands(queue: self.frameGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &self.compactedResourceCommands)
@@ -172,5 +173,9 @@ final class FrameGraphContextImpl<Backend: SpecificRenderBackend>: _FrameGraphCo
         }
         
         processCommandBuffer()
+        
+        for passRecord in passes {
+            passRecord.pass = nil // Release references to the RenderPasses.
+        }
     }
 }

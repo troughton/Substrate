@@ -78,6 +78,8 @@ public final class FGMTLThreadRenderCommandEncoder {
     let renderPassDescriptor : MTLRenderPassDescriptor
     var pipelineDescriptor : RenderPipelineDescriptor? = nil
     private let baseBufferOffsets : UnsafeMutablePointer<Int> // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
+    private unowned(unsafe) var boundPipelineState: MTLRenderPipelineState? = nil
+    private unowned(unsafe) var boundDepthStencilState: MTLDepthStencilState? = nil
     
     init(encoder: MTLRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor) {
         self.encoder = encoder
@@ -252,7 +254,11 @@ public final class FGMTLThreadRenderCommandEncoder {
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
             self.pipelineDescriptor = descriptor
-            encoder.setRenderPipelineState(stateCaches[descriptor, renderTarget: renderTarget]!)
+            let state = stateCaches[descriptor, renderTarget: renderTarget]!
+            if state !== self.boundPipelineState {
+                encoder.setRenderPipelineState(state)
+                self.boundPipelineState = state
+            }
             
         case .drawPrimitives(let args):
             encoder.drawPrimitives(type: MTLPrimitiveType(args.pointee.primitiveType), vertexStart: Int(args.pointee.vertexStart), vertexCount: Int(args.pointee.vertexCount), instanceCount: Int(args.pointee.instanceCount), baseInstance: Int(args.pointee.baseInstance))
@@ -276,7 +282,10 @@ public final class FGMTLThreadRenderCommandEncoder {
             
         case .setDepthStencilDescriptor(let descriptorPtr):
             let state = stateCaches[descriptorPtr.takeUnretainedValue().value]
-            encoder.setDepthStencilState(state)
+            if state !== self.boundDepthStencilState, renderTarget.depthAttachment != nil || renderTarget.stencilAttachment != nil {
+                encoder.setDepthStencilState(state)
+                self.boundDepthStencilState = state
+            }
             
         case .setScissorRect(let scissorPtr):
             encoder.setScissorRect(MTLScissorRect(scissorPtr.pointee))
@@ -348,6 +357,7 @@ public final class FGMTLComputeCommandEncoder {
     
     var pipelineDescriptor : ComputePipelineDescriptor? = nil
     private let baseBufferOffsets : UnsafeMutablePointer<Int> // 31, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
+    private unowned(unsafe) var boundPipelineState: MTLComputePipelineState? = nil
     
     init(encoder: MTLComputeCommandEncoder) {
         self.encoder = encoder
@@ -441,7 +451,11 @@ public final class FGMTLComputeCommandEncoder {
         case .setComputePipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue()
             self.pipelineDescriptor = descriptor.pipelineDescriptor
-            encoder.setComputePipelineState(stateCaches[descriptor.pipelineDescriptor, descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth]!)
+            let state = stateCaches[descriptor.pipelineDescriptor, descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth]!
+            if state !== self.boundPipelineState {
+                encoder.setComputePipelineState(state)
+                self.boundPipelineState = state
+            }
             
         case .setStageInRegion(let regionPtr):
             encoder.setStageInRegion(MTLRegion(regionPtr.pointee))

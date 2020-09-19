@@ -40,6 +40,16 @@ public enum AllocatorType {
     public init(_ arena: Unmanaged<MemoryArena>) {
         self = .custom(arena)
     }
+    
+    @inlinable
+    public var requiresDeallocation: Bool {
+        switch self {
+        case .system:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 public final class Allocator {
@@ -63,7 +73,7 @@ public final class Allocator {
     }
     
     @inlinable
-    public static func allocate<T>(capacity: Int = 1, allocator: AllocatorType) -> UnsafeMutablePointer<T> {
+    public static func allocate<T>(type: T.Type = T.self, capacity: Int = 1, allocator: AllocatorType) -> UnsafeMutablePointer<T> {
         switch allocator {
         case .system:
             return UnsafeMutablePointer.allocate(capacity: capacity)

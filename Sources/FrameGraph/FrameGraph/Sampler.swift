@@ -53,8 +53,16 @@ public enum SamplerBorderColor : UInt, Codable {
 
 public struct SamplerDescriptor : Hashable, Codable {
     
-    public init() {
-        
+    public init() {}
+    
+    public init(filter: SamplerMinMagFilter = .nearest, mipFilter: SamplerMipFilter = .notMipmapped, addressMode: SamplerAddressMode = .clampToEdge) {
+        self.init()
+        self.minFilter = filter
+        self.magFilter = filter
+        self.mipFilter = mipFilter
+        self.sAddressMode = addressMode
+        self.tAddressMode = addressMode
+        self.rAddressMode = addressMode
     }
     
     public var minFilter: SamplerMinMagFilter = .nearest

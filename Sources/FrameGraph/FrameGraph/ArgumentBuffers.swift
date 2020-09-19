@@ -169,7 +169,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public var usages : ResourceUsagesList {
+    public var usages : ChunkArray<ResourceUsage> {
         get {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
@@ -177,6 +177,15 @@ public struct _ArgumentBuffer : ResourceProtocol {
             } else {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
                 return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].usages[indexInChunk]
+            }
+        }
+        nonmutating set {
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk] = newValue
+            } else {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+                TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].usages[indexInChunk] = newValue
             }
         }
     }
@@ -192,29 +201,28 @@ public struct _ArgumentBuffer : ResourceProtocol {
                 return CAtomicsLoad(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), .relaxed)
             }
         }
-        nonmutating set {
-            if let newValue = newValue {
-                if self._usesPersistentRegistry {
-                    let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                    return CAtomicsStore(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), newValue, .relaxed)
-                } else {
-                    let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                    return CAtomicsStore(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), newValue, .relaxed)
-                }
-            }
-        }
     }
     
+    /// Updates the encoder to also support encoding to bindingPath.
     @inlinable
-    var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
-        get {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].usages.advanced(by: indexInChunk)
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].usages.advanced(by: indexInChunk)
-            }
+    func updateEncoder(pipelineReflection: PipelineReflection, bindingPath: ResourceBindingPath) {
+        var hasSetEncoder = false
+        repeat {
+            let currentEncoder = self.encoder
+            let newEncoder = pipelineReflection.argumentBufferEncoder(at: bindingPath, currentEncoder: currentEncoder)!
+            hasSetEncoder = (newEncoder == currentEncoder) || self.replaceEncoder(with: newEncoder, expectingCurrentValue: currentEncoder)
+        } while !hasSetEncoder
+    }
+    
+    /// Allows us to perform a compare-and-swap on the argument buffer encoder.
+    @inlinable
+    func replaceEncoder(with newEncoder: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+            return CAtomicsCompareAndExchange(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), expectingCurrentValue, newEncoder, .weak, .relaxed)
+        } else {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+            return CAtomicsCompareAndExchange(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), expectingCurrentValue, newEncoder, .weak, .relaxed)
         }
     }
     
@@ -281,6 +289,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
                 PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+                RenderBackend.updateLabel(on: self)
             } else {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
                 TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].labels[indexInChunk] = newValue
@@ -477,6 +486,7 @@ public struct _ArgumentBufferArray : ResourceProtocol {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
                 PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+                RenderBackend.updateLabel(on: self)
             } else {
                 TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].labels[self.index] = newValue
             }
@@ -558,11 +568,6 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     @inlinable
     public var sourceArray : ArgumentBufferArray<K>? {
         return self.argumentBuffer.sourceArray.map { ArgumentBufferArray(handle: $0.handle) }
-    }
-    
-    @inlinable
-    var usagesPointer: UnsafeMutablePointer<ResourceUsagesList> {
-        return self.argumentBuffer.usagesPointer
     }
     
     @inlinable

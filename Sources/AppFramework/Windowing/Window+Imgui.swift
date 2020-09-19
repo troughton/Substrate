@@ -57,7 +57,6 @@ extension ImGui {
         textureDescriptor.usageHint = [.shaderRead, .blitDestination]
         let fontTexture = Texture(descriptor: textureDescriptor, flags: .persistent)
         GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, in: fontTexture, withBytes: pixels, bytesPerRow: width * bytesPerPixel)
-        GPUResourceUploader.flush()
         
         ImGui.setFontTexID(UnsafeMutableRawPointer(bitPattern: UInt(exactly: fontTexture.handle)!))
         

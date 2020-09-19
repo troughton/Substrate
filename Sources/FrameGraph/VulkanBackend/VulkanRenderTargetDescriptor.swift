@@ -73,16 +73,14 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     
     init(renderPass: RenderPassRecord) {
         let drawRenderPass = renderPass.pass as! DrawRenderPass
-        self.descriptor = drawRenderPass.renderTargetDescriptor
+        self.descriptor = drawRenderPass.renderTargetDescriptorForActiveAttachments
         self.renderPasses.append(renderPass)
-        self.updateClearValues(pass: drawRenderPass)
+        self.updateClearValues(pass: drawRenderPass, descriptor: self.descriptor)
 
         self.subpasses.append(VulkanSubpass(descriptor: drawRenderPass.renderTargetDescriptor, index: 0))
     }
 
-    func updateClearValues(pass: DrawRenderPass) {
-        let descriptor = pass.renderTargetDescriptor
-        
+    func updateClearValues(pass: DrawRenderPass, descriptor: RenderTargetDescriptor) {
         // Update the clear values.
         let attachmentsToAddCount = max(descriptor.colorAttachments.count - clearColors.count, 0)
         self.clearColors.append(contentsOf: repeatElement(.init(float32: (0, 0, 0, 0)), count: attachmentsToAddCount))
@@ -190,14 +188,15 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         if pass.renderTargetDescriptor.size != self.descriptor.size {
             return false // The render targets must be the same size.
         }
+        let passDescriptor = pass.renderTargetDescriptorForActiveAttachments
         
         var newDescriptor = descriptor
-        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: max(pass.renderTargetDescriptor.colorAttachments.count - descriptor.colorAttachments.count, 0)))
+        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: max(passDescriptor.colorAttachments.count - descriptor.colorAttachments.count, 0)))
         
         var mergeResult = MergeResult.identical
         
-        for i in 0..<min(newDescriptor.colorAttachments.count, pass.renderTargetDescriptor.colorAttachments.count) {
-            switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: pass.renderTargetDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
+        for i in 0..<min(newDescriptor.colorAttachments.count, passDescriptor.colorAttachments.count) {
+            switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: passDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
             case .identical:
                 break
             case .incompatible:
@@ -207,7 +206,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             }
         }
         
-        switch self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: pass.renderTargetDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
+        switch self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: passDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
         case .identical:
             break
         case .incompatible:
@@ -216,7 +215,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             mergeResult = .compatible
         }
         
-        switch self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: pass.renderTargetDescriptor.stencilAttachment, clearOperation: pass.stencilClearOperation) {
+        switch self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: passDescriptor.stencilAttachment, clearOperation: pass.stencilClearOperation) {
         case .identical:
             break
         case .incompatible:
@@ -240,15 +239,15 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         //     self.addDependency(dependency)
         }
         
-        if newDescriptor.visibilityResultBuffer != nil && pass.renderTargetDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
+        if newDescriptor.visibilityResultBuffer != nil && passDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
             return false
         } else {
-            newDescriptor.visibilityResultBuffer = pass.renderTargetDescriptor.visibilityResultBuffer
+            newDescriptor.visibilityResultBuffer = passDescriptor.visibilityResultBuffer
         }
         
-        self.updateClearValues(pass: pass)
+        self.updateClearValues(pass: pass, descriptor: passDescriptor)
 
-        newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, pass.renderTargetDescriptor.renderTargetArrayLength)
+        newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, passDescriptor.renderTargetArrayLength)
         
         self.descriptor = newDescriptor
         self.renderPasses.append(passRecord)
@@ -256,16 +255,16 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         return true
     }
     
-    func descriptorMergedWithPass(_ pass: RenderPassRecord, resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> VulkanRenderTargetDescriptor {
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, storedTextures: inout [Texture]) -> VulkanRenderTargetDescriptor {
         if self.tryMerge(withPass: pass) {
             return self
         } else {
-            self.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
+            self.finalise(storedTextures: &storedTextures)
             return VulkanRenderTargetDescriptor(renderPass: pass)
         }
     }
     
-    private func processLoadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, attachmentIndex: RenderTargetAttachmentIndex, resourceUsages: ResourceUsages, loadAction: VkAttachmentLoadOp, storedTextures: inout [Texture]) {
+    private func processLoadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, attachmentIndex: RenderTargetAttachmentIndex, loadAction: VkAttachmentLoadOp, storedTextures: inout [Texture]) {
         // Logic for usages:
         //
         //
@@ -367,21 +366,21 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
     }
     
-    func finalise(resourceUsages: ResourceUsages, storedTextures: inout [Texture]) {
+    func finalise(storedTextures: inout [Texture]) {
         // Compute load and store actions for all attachments.
         self.colorActions = .init(repeating: (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE), count: self.descriptor.colorAttachments.count)
         self.colorPreviousAndNextUsageCommands = .init(repeating: (-1, -1), count: self.descriptor.colorAttachments.count)
         for (i, attachment) in self.descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
-            self.processLoadAndStoreActions(for: attachment, attachmentIndex: .color(i), resourceUsages: resourceUsages, loadAction: self.colorActions[i].0, storedTextures: &storedTextures)
+            self.processLoadAndStoreActions(for: attachment, attachmentIndex: .color(i), loadAction: self.colorActions[i].0, storedTextures: &storedTextures)
         }
         
         if let depthAttachment = self.descriptor.depthAttachment {
-            self.processLoadAndStoreActions(for: depthAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, loadAction: self.depthActions.0, storedTextures: &storedTextures)
+            self.processLoadAndStoreActions(for: depthAttachment, attachmentIndex: .depthStencil, loadAction: self.depthActions.0, storedTextures: &storedTextures)
         }
         
         if let stencilAttachment = self.descriptor.stencilAttachment {
-            self.processLoadAndStoreActions(for: stencilAttachment, attachmentIndex: .depthStencil, resourceUsages: resourceUsages, loadAction: self.stencilActions.0, storedTextures: &storedTextures)
+            self.processLoadAndStoreActions(for: stencilAttachment, attachmentIndex: .depthStencil, loadAction: self.stencilActions.0, storedTextures: &storedTextures)
         }
     }
 }

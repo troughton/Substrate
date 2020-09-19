@@ -291,11 +291,11 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
 }
 
-
 final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     typealias Backend = VulkanBackend
     
     let persistentRegistry : VulkanPersistentResourceRegistry
+    let transientRegistryIndex: Int
     var accessLock = SpinLock()
     
     private var textureReferences : TransientResourceMap<Texture, VkImageReference>
@@ -306,7 +306,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     var textureWaitEvents: TransientResourceMap<Texture, ContextWaitEvent>
     var bufferWaitEvents: TransientResourceMap<Buffer, ContextWaitEvent>
     var historyBufferResourceWaitEvents = [Resource : ContextWaitEvent]()
-    
     
     private var heapResourceUsageFences = [Resource : [FenceDependency]]()
     private var heapResourceDisposalFences = [Resource : [FenceDependency]]()
@@ -330,6 +329,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     public init(device: VulkanDevice, inflightFrameCount: Int, transientRegistryIndex: Int, persistentRegistry: VulkanPersistentResourceRegistry) {
         self.inflightFrameCount = inflightFrameCount
+        self.transientRegistryIndex = transientRegistryIndex
         self.persistentRegistry = persistentRegistry
         
         self.textureReferences = .init(transientRegistryIndex: transientRegistryIndex)
@@ -367,7 +367,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     public func prepareFrame() {
         VulkanEventRegistry.instance.clearCompletedEvents()
-
+        
         self.textureReferences.prepareFrame()
         self.bufferReferences.prepareFrame()
         self.argumentBufferReferences.prepareFrame()
@@ -490,7 +490,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
             self.heapResourceUsageFences[Resource(texture)] = events
         }
         
-        vkImage.image.computeFrameLayouts(usages: texture.usages, preserveLastLayout: false)
+        vkImage.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false)
         return vkImage
     }
     
@@ -511,7 +511,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
             let swapChain = self.persistentRegistry.windowReferences.removeValue(forKey: texture)!
             self.frameSwapChains.append(swapChain)
             let image = swapChain.nextImage(descriptor: texture.descriptor)
-            image.computeFrameLayouts(usages: texture.usages, preserveLastLayout: false)
+            image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false)
             self.textureReferences[texture] = VkImageReference(image: Unmanaged.passUnretained(image))
         }
 
@@ -633,7 +633,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     func prepareMultiframeTexture(_ texture: Texture) {
         if let image = self.persistentRegistry[texture] {
-            image.image.computeFrameLayouts(usages: texture.usages, preserveLastLayout: true)
+            image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: true)
         }
     }
     

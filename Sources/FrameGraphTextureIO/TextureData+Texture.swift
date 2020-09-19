@@ -10,6 +10,7 @@ import SwiftFrameGraph
 extension Texture {
     /// Uploads a TextureData to a GPU texture using the GPUResourceUploader.
     public init<T>(data textureData: TextureData<T>, pixelFormat: PixelFormat, mipmapped: Bool = false, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
+        precondition(Double(MemoryLayout<T>.stride * textureData.channelCount) == pixelFormat.bytesPerPixel)
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
         self = Texture(descriptor: descriptor, flags: flags)
@@ -27,7 +28,7 @@ extension Texture {
 }
 
 extension TextureData {
-    public init(texture: Texture, mipmapLevel: Int = 0, hasPremultipliedAlpha: Bool = false) {
+    public init(texture: Texture, mipmapLevel: Int = 0, hasPremultipliedAlpha: Bool = true) {
         let pixelFormat = texture.descriptor.pixelFormat
         assert(pixelFormat.bytesPerPixel == Double(MemoryLayout<T>.stride * pixelFormat.channelCount))
         assert(texture.descriptor.textureType == .type2D)

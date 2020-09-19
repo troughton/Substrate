@@ -7,13 +7,32 @@ import LodePNG
 import zlib
 #endif
 
-public enum TextureSaveFormat: String {
+public enum TextureFileFormat: String, CaseIterable, Hashable {
     case png
     case bmp
     case tga
     case hdr
     case jpg
     case exr
+    
+    public init?(extension: String) {
+        switch `extension`.lowercased() {
+        case "png":
+            self = .png
+        case "bmp":
+            self = .bmp
+        case "tga":
+            self = .tga
+        case "hdr":
+            self = .hdr
+        case "jpeg", "jpg":
+            self = .jpg
+        case "exr":
+            self = .exr
+        default:
+            return nil
+        }
+    }
     
     public var isLinearHDR : Bool {
         switch self {
@@ -181,7 +200,7 @@ fileprivate extension LodePNGEncoderSettings {
             self.zlibsettings.custom_zlib = { out, outsize, `in`, inSize, settings in
                 let compressionLevel = Int32(Int(bitPattern: settings?.pointee.custom_context))
                 let bufferSize = Int(compressBound(uLong(inSize)))
-                out!.pointee = .allocate(capacity: bufferSize)
+                out!.pointee = malloc(bufferSize).assumingMemoryBound(to: UInt8.self)
                 outsize!.pointee = bufferSize
                 
                 let result = compress2(out!.pointee, unsafeBitCast(outsize, to: UnsafeMutablePointer<uLongf>?.self), `in`, uLong(inSize), compressionLevel)
@@ -192,11 +211,27 @@ fileprivate extension LodePNGEncoderSettings {
     }
 }
 
+fileprivate extension LodePNGInfo {
+    mutating func setColorSpace(_ colorSpace: TextureColorSpace) {
+        switch colorSpace {
+        case .linearSRGB:
+            self.gama_defined = 1
+            self.gama_gamma = 100_000 // Gamma exponent times 100000
+        case .gammaSRGB(let gamma):
+            self.gama_defined = 1
+            self.gama_gamma = UInt32(100_000.0 * gamma) // Gamma exponent times 100000
+        case .sRGB:
+            self.srgb_defined = 1
+            self.srgb_intent = 1 // relative colorimetric
+        }
+    }
+}
+
 extension TextureData {
-    public typealias SaveFormat = TextureSaveFormat
+    public typealias SaveFormat = TextureFileFormat
     
     public func write(to url: URL) throws {
-        guard let saveFormat = SaveFormat(rawValue: url.pathExtension) else {
+        guard let saveFormat = TextureFileFormat(extension: url.pathExtension) else {
             throw TextureSaveError.unknownFormat(url.pathExtension)
         }
         
@@ -258,7 +293,7 @@ extension TextureData where T == UInt8 {
         }
     }
     
-    public func writePNG(to url: URL, compressionSettings: PNGCompressionSettings = .default) throws {
+    public func pngData(compressionSettings: PNGCompressionSettings = .default) throws -> Data {
         var texture = self
         texture.convertToPostmultipliedAlpha()
         
@@ -266,23 +301,28 @@ extension TextureData where T == UInt8 {
         lodepng_state_init(&lodePNGState)
         defer { lodepng_state_cleanup(&lodePNGState) }
         
-        lodePNGState.info_raw.colortype = try LodePNGColorType(channelCount: self.channelCount)
+        lodePNGState.info_raw.colortype = try LodePNGColorType(channelCount: texture.channelCount)
         lodePNGState.info_raw.bitdepth = UInt32(MemoryLayout<T>.size * 8)
         lodePNGState.info_png.color.colortype = lodePNGState.info_raw.colortype
         lodePNGState.info_png.color.bitdepth = lodePNGState.info_raw.bitdepth
+        lodePNGState.info_png.setColorSpace(texture.colorSpace)
         lodePNGState.encoder.fill(from: compressionSettings)
         
         var outBuffer: UnsafeMutablePointer<UInt8>! = nil
         var outSize: Int = 0
         
-        let errorCode = lodepng_encode(&outBuffer, &outSize, texture.storage.data.baseAddress, UInt32(self.width), UInt32(self.height), &lodePNGState)
+        let errorCode = texture.withUnsafeBufferPointer { lodepng_encode(&outBuffer, &outSize, $0.baseAddress, UInt32(texture.width), UInt32(texture.height), &lodePNGState) }
         
         if errorCode != 0 {
             let error = lodepng_error_text(errorCode)
             throw TextureSaveError.errorWritingFile(error.map { String(cString: $0) } ?? "(no error message)")
         }
         
-        try Data(bytesNoCopy: UnsafeMutableRawPointer(outBuffer), count: outSize, deallocator: .free).write(to: url)
+        return Data(bytesNoCopy: UnsafeMutableRawPointer(outBuffer), count: outSize, deallocator: .free)
+    }
+    
+    public func writePNG(to url: URL, compressionSettings: PNGCompressionSettings = .default) throws {
+        try self.pngData(compressionSettings: compressionSettings).write(to: url)
     }
     
     public func writeTGA(to url: URL) throws {
@@ -312,6 +352,7 @@ extension TextureData where T == UInt16 {
         lodePNGState.info_raw.bitdepth = UInt32(MemoryLayout<T>.size * 8)
         lodePNGState.info_png.color.colortype = lodePNGState.info_raw.colortype
         lodePNGState.info_png.color.bitdepth = lodePNGState.info_raw.bitdepth
+        lodePNGState.info_png.setColorSpace(texture.colorSpace)
         lodePNGState.encoder.fill(from: compressionSettings)
         
         var outBuffer: UnsafeMutablePointer<UInt8>! = nil
@@ -345,8 +386,12 @@ extension TextureData where T == Float {
     }
     
     public func writeEXR(to url: URL) throws {
+        var texture = self
+        texture.convert(toColorSpace: .linearSRGB)
+        texture.convertToPremultipliedAlpha()
+        
         var error : UnsafePointer<Int8>? = nil
-        let exrResult = SaveEXR(self.storage.data.baseAddress, Int32(self.width), Int32(self.height), Int32(self.channelCount), 0, url.path, &error)
+        let exrResult = SaveEXR(texture.storage.data.baseAddress, Int32(texture.width), Int32(texture.height), Int32(texture.channelCount), 0, url.path, &error)
         if exrResult < 0 {
             throw TextureSaveError.errorWritingFile(error.map { String(cString: $0) } ?? "(no error message)")
         }

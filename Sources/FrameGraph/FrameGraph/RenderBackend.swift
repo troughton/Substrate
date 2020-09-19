@@ -25,7 +25,7 @@ protocol PipelineReflection : class {
     
     func remapArgumentBufferPathForActiveStages(_ path: ResourceBindingPath) -> ResourceBindingPath
 
-    func argumentBufferEncoder(at path: ResourceBindingPath) -> UnsafeRawPointer?
+    func argumentBufferEncoder(at path: ResourceBindingPath, currentEncoder: UnsafeRawPointer?) -> UnsafeRawPointer?
     
     var threadExecutionWidth: Int { get }
 }
@@ -48,7 +48,7 @@ public enum RenderAPI {
 public protocol RenderBackendProtocol : class {
     func backingResource(_ resource: Resource) -> Any?
     
-    func supportsPixelFormat(_ format: PixelFormat) -> Bool
+    func supportsPixelFormat(_ format: PixelFormat, usage: TextureUsage) -> Bool
     var hasUnifiedMemory : Bool { get }
     
     var renderDevice : Any { get }
@@ -65,12 +65,17 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func registerWindowTexture(texture: Texture, context: Any)
     func registerExternalResource(_ resource: Resource, backingResource: Any)
     
+    func updateLabel(on resource: Resource)
+    var requiresEmulatedInputAttachments : Bool { get }
+    
     func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
     
     func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int)
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int)
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int)
+    
+    func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState
     
     // Note: The pipeline reflection functions may return nil if reflection information could not be created for the pipeline.
     func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection?
@@ -129,6 +134,11 @@ public struct RenderBackend {
     }
     
     @inlinable
+    static func updateLabel<R: ResourceProtocol>(on resource: R) {
+        return _backend.updateLabel(on: Resource(resource))
+    }
+    
+    @inlinable
     public static func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
         return _backend.materialisePersistentBuffer(buffer)
     }
@@ -179,18 +189,23 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
-        return _backend.supportsPixelFormat(pixelFormat)
+    public static func supportsPixelFormat(_ pixelFormat: PixelFormat, usage: TextureUsage = .shaderRead) -> Bool {
+        return _backend.supportsPixelFormat(pixelFormat, usage: usage)
     }
     
     @inlinable
     public static var isDepth24Stencil8PixelFormatSupported : Bool {
-        return self.supportsPixelFormat(.depth24Unorm_stencil8)
+        return self.supportsPixelFormat(.depth24Unorm_stencil8, usage: .renderTarget)
     }
     
     @inlinable
     public static var hasUnifiedMemory : Bool {
         return _backend.hasUnifiedMemory
+    }
+    
+    @inlinable
+    static var requiresEmulatedInputAttachments : Bool {
+        return _backend.requiresEmulatedInputAttachments
     }
     
     @inlinable
@@ -216,6 +231,11 @@ public struct RenderBackend {
     @inlinable
     public static func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
         return _backend.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
+    }
+    
+    @inlinable
+    static func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState {
+        return _backend.updatePurgeableState(for: resource, to: to)
     }
     
     @inlinable

@@ -79,12 +79,14 @@ public struct ArgumentReflection {
     public var bindingPath : ResourceBindingPath
     public var usageType : ResourceUsageType
     public var activeStages : RenderStages
+    public var activeRange: ActiveResourceRange
     
-    public init(type: ResourceType, bindingPath: ResourceBindingPath, usageType: ResourceUsageType, activeStages: RenderStages) {
+    public init(type: ResourceType, bindingPath: ResourceBindingPath, usageType: ResourceUsageType, activeStages: RenderStages, activeRange: ActiveResourceRange) {
         self.type = type
         self.bindingPath = bindingPath
         self.usageType = usageType
         self.activeStages = activeStages
+        self.activeRange = activeRange
     }
     
     public var isActive: Bool {

@@ -7,45 +7,43 @@
 
 import Foundation
 
+struct CommandEncoderInfo<RenderTargetDescriptor: BackendRenderTargetDescriptor> {
+    var name: String
+    var type: RenderPassType
+    
+    var renderTargetDescriptor: RenderTargetDescriptor?
+    var commandBufferIndex: Int
+    var queueFamilyIndex: Int // corresponding to the Vulkan concept of queue families; this indicates whether e.g. the encoder is executed on the main render queue vs async compute etc.
+    
+    var passRange: Range<Int>
+    var commandRange: Range<Int>
+    
+    var queueCommandWaitIndices: QueueCommandIndices
+    
+    var usesWindowTexture: Bool
+}
 
 struct FrameCommandInfo<Backend: SpecificRenderBackend> {
-    
-    struct CommandEncoderInfo {
-        var name: String
-        var type: RenderPassType
-        
-        var renderTargetDescriptor: Backend.RenderTargetDescriptor?
-        var commandBufferIndex: Int
-        var queueFamilyIndex: Int // corresponding to the Vulkan concept of queue families; this indicates whether e.g. the encoder is executed on the main render queue vs async compute etc.
-        
-        var passRange: Range<Int>
-        var commandRange: Range<Int>
-        
-        var queueCommandWaitIndices: QueueCommandIndices
-        
-        var usesWindowTexture: Bool
-    }
-    
     let baseCommandBufferSignalValue: UInt64
     
     let passes: [RenderPassRecord]
-    var commandEncoders: [CommandEncoderInfo]
+    var commandEncoders: [CommandEncoderInfo<Backend.RenderTargetDescriptor>]
     
     // storedTextures contain all textures that are stored to (i.e. textures that aren't eligible to be memoryless on iOS).
     var storedTextures: [Texture]
     
-    init(passes: [RenderPassRecord], resourceUsages: ResourceUsages, initialCommandBufferSignalValue: UInt64) {
+    init(passes: [RenderPassRecord], initialCommandBufferSignalValue: UInt64) {
         self.passes = passes
         self.baseCommandBufferSignalValue = initialCommandBufferSignalValue
         
         var storedTextures = [Texture]()
-        let renderTargetDescriptors = FrameCommandInfo.generateRenderTargetDescriptors(passes: passes, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+        let renderTargetDescriptors = FrameCommandInfo.generateRenderTargetDescriptors(passes: passes, storedTextures: &storedTextures)
         self.storedTextures = storedTextures
         
         assert(passes.enumerated().allSatisfy({ $0 == $1.passIndex }))
         
         do {
-            var commandEncoders = [CommandEncoderInfo]()
+            var commandEncoders = [CommandEncoderInfo<Backend.RenderTargetDescriptor>]()
             var commandBufferIndex = 0
             
             let addEncoder = { (passRange: Range<Int>, usesWindowTexture: Bool) -> Void in
@@ -104,28 +102,18 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     }
 
     public func encoderIndex(for passIndex: Int) -> Int {
-        for (i, encoder) in self.commandEncoders.enumerated() {
-            if encoder.passRange.contains(passIndex) {
-                return i
-            }
-        }
-        fatalError()
+        return self.commandEncoders.firstIndex(where: { $0.passRange.contains(passIndex) })!
     }
     
     public func encoderIndex(for pass: RenderPassRecord) -> Int {
         return self.encoderIndex(for: pass.passIndex)
     }
     
-    public func encoder(for passIndex: Int) -> CommandEncoderInfo {
-        for encoder in self.commandEncoders {
-            if encoder.passRange.contains(passIndex) {
-                return encoder
-            }
-        }
-        fatalError()
+    public func encoder(for passIndex: Int) -> CommandEncoderInfo<Backend.RenderTargetDescriptor> {
+        return self.commandEncoders.first(where: { $0.passRange.contains(passIndex) })!
     }
     
-    public func encoder(for pass: RenderPassRecord) -> CommandEncoderInfo {
+    public func encoder(for pass: RenderPassRecord) -> CommandEncoderInfo<Backend.RenderTargetDescriptor> {
         return self.encoder(for: pass.passIndex)
     }
     
@@ -136,26 +124,26 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     // Generates a render target descriptor, if applicable, for each pass.
     // MetalRenderTargetDescriptor is a reference type, so we can check if two passes share a render target
     // (and therefore MTLRenderCommandEncoder)
-    private static func generateRenderTargetDescriptors(passes: [RenderPassRecord], resourceUsages: ResourceUsages, storedTextures: inout [Texture]) -> [Backend.RenderTargetDescriptor?] {
+    private static func generateRenderTargetDescriptors(passes: [RenderPassRecord], storedTextures: inout [Texture]) -> [Backend.RenderTargetDescriptor?] {
         var descriptors = [Backend.RenderTargetDescriptor?](repeating: nil, count: passes.count)
         
         var currentDescriptor : Backend.RenderTargetDescriptor? = nil
         for (i, passRecord) in passes.enumerated() {
             if passRecord.pass.passType == .draw {
                 if let descriptor = currentDescriptor {
-                    currentDescriptor = descriptor.descriptorMergedWithPass(passRecord, resourceUsages: resourceUsages, storedTextures: &storedTextures)
+                    currentDescriptor = descriptor.descriptorMergedWithPass(passRecord, storedTextures: &storedTextures)
                 } else {
                     currentDescriptor = Backend.RenderTargetDescriptor(renderPass: passRecord)
                 }
             } else {
-                currentDescriptor?.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
+                currentDescriptor?.finalise(storedTextures: &storedTextures)
                 currentDescriptor = nil
             }
             
             descriptors[i] = currentDescriptor
         }
         
-        currentDescriptor?.finalise(resourceUsages: resourceUsages, storedTextures: &storedTextures)
+        currentDescriptor?.finalise(storedTextures: &storedTextures)
         
         return descriptors
     }

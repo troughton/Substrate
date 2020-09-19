@@ -104,6 +104,29 @@ final class MetalBackend : SpecificRenderBackend {
         return self.resourceRegistry.allocateHeap(heap) != nil
     }
 
+    @usableFromInline func updateLabel(on resource: Resource) {
+        self.resourceRegistry.accessLock.withReadLock {
+            if let buffer = resource.buffer {
+                self.resourceRegistry[buffer]?.buffer.label = buffer.label
+            } else if let texture = resource.texture {
+                self.resourceRegistry[texture]?.texture.label = texture.label
+            }
+        }
+    }
+    
+    @usableFromInline func updatePurgeableState(for resource: Resource, to newState: ResourcePurgeableState?) -> ResourcePurgeableState {
+        self.resourceRegistry.accessLock.withReadLock {
+            let mtlState = MTLPurgeableState(newState)
+            if let buffer = resource.buffer, let mtlBuffer = self.resourceRegistry[buffer]?.buffer {
+                return ResourcePurgeableState(mtlBuffer.setPurgeableState(mtlState))!
+            } else if let texture = resource.texture, let mtlTexture = self.resourceRegistry[texture]?.texture {
+                return ResourcePurgeableState(mtlTexture.setPurgeableState(mtlState))!
+            }
+            return .nonDiscardable
+        }
+        
+    }
+    
     @usableFromInline func dispose(texture: Texture) {
         self.resourceRegistry.disposeTexture(texture)
     }
@@ -124,7 +147,9 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.disposeHeap(heap)
     }
     
-    public func supportsPixelFormat(_ pixelFormat: PixelFormat) -> Bool {
+    public func supportsPixelFormat(_ pixelFormat: PixelFormat, usage: TextureUsage) -> Bool {
+        let usage = usage.subtracting([.blitSource, .blitDestination])
+        
         switch pixelFormat {
         case .depth24Unorm_stencil8:
             #if os(macOS) || targetEnvironment(macCatalyst)
@@ -141,6 +166,10 @@ final class MetalBackend : SpecificRenderBackend {
              .bc5_rgUnorm, .bc5_rgSnorm,
              .bc6H_rgbFloat, .bc6H_rgbuFloat,
              .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+            
+            if usage.intersection([.shaderWrite, .renderTarget]) != [] {
+                return false
+            }
             if #available(OSX 11.0, *) {
                 return self.device.supportsBCTextureCompression
             }
@@ -256,7 +285,10 @@ final class MetalBackend : SpecificRenderBackend {
         // Metal requires useResource calls for all untracked resources.
         return true
     }
-
+    
+    var requiresEmulatedInputAttachments: Bool {
+        return !self.isAppleSiliconGPU
+    }
     
     static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
@@ -331,7 +363,7 @@ final class MetalBackend : SpecificRenderBackend {
         self.generateFenceCommands(queue: queue, frameCommandInfo: commandInfo, commandGenerator: commandGenerator, compactedResourceCommands: &compactedResourceCommands)
         
         
-        let allocator = ThreadLocalTagAllocator(tag: FrameGraphContextImpl<MetalBackend>.resourceCommandArrayTag)
+        let allocator = ThreadLocalTagAllocator(tag: .frameGraphResourceCommandArrayTag)
         
         var currentEncoderIndex = 0
         var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
@@ -397,7 +429,7 @@ final class MetalBackend : SpecificRenderBackend {
         }
         
         for command in commandGenerator.commands {
-            if command.index > barrierLastIndex {
+            if command.index >= barrierLastIndex { // For barriers, the barrier associated with command.index needs to happen _after_ any barriers required to happen _by_ barrierLastIndex
                 addBarrier(&compactedResourceCommands)
             }
             
@@ -419,14 +451,19 @@ final class MetalBackend : SpecificRenderBackend {
                 let mtlResource = getResource(resource)
                 
                 var computedUsageType: MTLResourceUsage = []
-                if resource.type == .texture, usage == .read {
-                    computedUsageType.formUnion(.sample)
-                }
-                if usage.isRead {
+                if usage == .inputAttachmentRenderTarget || usage == .inputAttachment {
+                    assert(resource.type == .texture)
                     computedUsageType.formUnion(.read)
-                }
-                if usage.isWrite {
-                    computedUsageType.formUnion(.write)
+                } else {
+                    if resource.type == .texture, usage == .read {
+                        computedUsageType.formUnion(.sample)
+                    }
+                    if usage.isRead {
+                        computedUsageType.formUnion(.read)
+                    }
+                    if usage.isWrite {
+                        computedUsageType.formUnion(.write)
+                    }
                 }
                 
                 if !allowReordering {
@@ -443,7 +480,7 @@ final class MetalBackend : SpecificRenderBackend {
                     encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
                 }
                 
-            case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages):
+            case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages, _):
                 
                 var scope: MTLBarrierScope = []
                 
