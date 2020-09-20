@@ -455,8 +455,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
                 imageUsage.formUnion(VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
             case .blitDestination:
                 imageUsage.formUnion(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-            case .mipGeneration:
-                imageUsage.formUnion([VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT])
             default:
                 break
             }

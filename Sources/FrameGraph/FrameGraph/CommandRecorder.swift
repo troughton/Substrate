@@ -166,6 +166,10 @@ enum FrameGraphCommand {
     public typealias CopyTextureToTextureArgs = (sourceTexture: Texture, sourceSlice: UInt32, sourceLevel: UInt32, sourceOrigin: Origin, sourceSize: Size, destinationTexture: Texture, destinationSlice: UInt32, destinationLevel: UInt32, destinationOrigin: Origin)
     case copyTextureToTexture(UnsafePointer<CopyTextureToTextureArgs>)
     
+    
+    public typealias BlitTextureToTextureArgs = (sourceTexture: Texture, sourceSlice: UInt32, sourceLevel: UInt32, sourceOrigin: Origin, sourceSize: Size, destinationTexture: Texture, destinationSlice: UInt32, destinationLevel: UInt32, destinationOrigin: Origin, destinationSize: Size, filter: SamplerMinMagFilter)
+    case blitTextureToTexture(UnsafePointer<BlitTextureToTextureArgs>)
+    
     public typealias FillBufferArgs = (buffer: Buffer, range: Range<Int>, value: UInt8)
     case fillBuffer(UnsafePointer<FillBufferArgs>)
     

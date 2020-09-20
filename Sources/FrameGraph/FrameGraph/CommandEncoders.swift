@@ -1408,9 +1408,22 @@ public final class BlitCommandEncoder : CommandEncoder {
     }
     
     public func generateMipmaps(for texture: Texture) {
-        commandRecorder.addResourceUsage(for: texture, slice: nil, level: nil, commandIndex: self.nextCommandOffset, encoder: self, usageType: .mipGeneration, stages: .blit, inArgumentBuffer: false)
-        
-        commandRecorder.record(.generateMipmaps(texture))
+        #if canImport(Metal)
+        if RenderBackend._backend is MetalBackend {
+            commandRecorder.addResourceUsage(for: texture, slice: nil, level: nil, commandIndex: self.nextCommandOffset, encoder: self, usageType: .mipGeneration, stages: .blit, inArgumentBuffer: false)
+            commandRecorder.record(.generateMipmaps(texture))
+            return
+        }
+        #endif
+        for slice in 0..<texture.descriptor.slicesPerLevel {
+            for destLevel in 1..<texture.descriptor.mipmapLevelCount {
+                let sourceLevel = destLevel - 1
+                commandRecorder.addResourceUsage(for: texture, slice: slice, level: sourceLevel, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
+                commandRecorder.addResourceUsage(for: texture, slice: slice, level: destLevel, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
+                let args: FrameGraphCommand.BlitTextureToTextureArgs = (texture, UInt32(slice), UInt32(sourceLevel), Origin(), texture.descriptor.size(mipLevel: sourceLevel), texture, UInt32(slice), UInt32(destLevel), Origin(), texture.descriptor.size(mipLevel: destLevel), .linear)
+                commandRecorder.record(FrameGraphCommand.blitTextureToTexture, args)
+            }
+        }
     }
     
     public func synchronize(buffer: Buffer) {

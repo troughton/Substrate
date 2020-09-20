@@ -127,6 +127,20 @@ public enum ActiveResourceRange {
         }
     }
     
+    
+    func intersects(textureSlice slice: Int, level: Int, descriptor: TextureDescriptor) -> Bool {
+        switch self {
+        case .inactive:
+            return false
+        case .fullResource:
+            return true
+        case .texture(let mask):
+            return mask[slice: slice, level: level, descriptor: descriptor]
+        default:
+            fatalError("\(self) is not a texture range")
+        }
+    }
+    
     @inlinable
     mutating func subtract(range: ActiveResourceRange, resource: Resource, allocator: AllocatorType) {
         self.subtract(range: range, subresourceCount: resource.subresourceCount, allocator: allocator)

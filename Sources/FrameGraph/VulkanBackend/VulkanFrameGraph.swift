@@ -123,8 +123,8 @@ extension VulkanBackend {
                         barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
                         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
-                        barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!, subresourceRange: producingUsage.activeRange).afterOperation
-                        barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!, subresourceRange: consumingUsage.activeRange).beforeOperation
+                        barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!, subresourceRange: producingUsage.activeRange)
+                        barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!, subresourceRange: consumingUsage.activeRange)
                         if producingUsage.type.isRenderTarget {
                             // We transitioned to the new layout at the end of the previous render pass.
                             barrier.oldLayout = barrier.newLayout 
@@ -252,10 +252,10 @@ extension VulkanBackend {
                     return
                     
                 } else {
-                    sourceLayout = afterUsageType == .previousFrame ? image.frameInitialLayout(for: activeRange) : image.layout(commandIndex: afterCommand, subresourceRange: activeRange).afterOperation
+                    sourceLayout = afterUsageType == .previousFrame ? image.frameInitialLayout(for: activeRange) : image.layout(commandIndex: afterCommand, subresourceRange: activeRange)
                 }
                 
-                destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange).beforeOperation
+                destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange)
             } else {
                 assert(resource.type != .texture || resource.flags.contains(.windowHandle))
                 sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED

@@ -56,29 +56,6 @@ extension VkImageSubresourceRange : Hashable {
     }
 }
 
-
-extension VkImageLayout {
-    /// A special case VkImageLayout, representing, on entry, `_TRANSFER_SRC` for the top-most mip and `_UNDEFINED` for the other mips,
-    /// and `SHADER_READ_ONLY_OPTIMAL` on exit.
-    static var mipGeneration: VkImageLayout {
-        return VkImageLayout(rawValue: VkImageLayout.RawValue.max - 1)
-    }
-    
-    var beforeOperation: VkImageLayout {
-        if case .mipGeneration = self {
-            return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-        }
-        return self
-    }
-    
-    var afterOperation: VkImageLayout {
-        if case .mipGeneration = self {
-            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-        }
-        return self
-    }
-}
-
 class VulkanImage {
     public let device : VulkanDevice
     
@@ -212,7 +189,7 @@ class VulkanImage {
         let isDepthOrStencil = self.descriptor.allAspects.intersection([VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT]) != []
         
         for usage in usages {
-            let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil) ?? self.frameLayouts.last!.layout.afterOperation // Preserve the last layout if the usage doesn't require a specific layout
+            let layout = usage.type.imageLayout(isDepthOrStencil: isDepthOrStencil) ?? self.frameLayouts.last!.layout // Preserve the last layout if the usage doesn't require a specific layout
             // Find the insertion location (since reads may be unordered in the usages list).
             self.frameLayouts.append(LayoutState(commandRange: usage.commandRange, layout: layout, subresourceRange: ActiveResourceRange(usage.activeRange, subresourceCount: subresourceCount, allocator: .system)))
         }
@@ -279,6 +256,13 @@ class VulkanImage {
         }
         return layout
     }
+    
+    func layout(commandIndex: Int, slice: Int, level: Int, descriptor: TextureDescriptor) -> VkImageLayout {
+        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) && $0.subresourceRange.intersects(textureSlice: slice, level: level, descriptor: descriptor) })?.layout else {
+            preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image; layouts are \(self.frameLayouts)")
+        }
+        return layout
+    }
 
     func renderPassLayouts(previousCommandIndex: Int, nextCommandIndex: Int) -> (VkImageLayout, VkImageLayout) {
         var initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
@@ -286,16 +270,16 @@ class VulkanImage {
 
         for layout in self.frameLayouts {
             if previousCommandIndex >= 0, layout.commandRange.contains(previousCommandIndex) {
-                initialLayout = layout.layout.afterOperation
+                initialLayout = layout.layout
             }
             if nextCommandIndex >= 0, layout.commandRange.contains(nextCommandIndex) {
-                finalLayout = layout.layout.beforeOperation
+                finalLayout = layout.layout
                 break
             }
         }
         if finalLayout == VK_IMAGE_LAYOUT_UNDEFINED {
             // Assume we should be in the first layout used this frame for next frame
-            finalLayout = self.frameLayouts.first(where: { $0.layout != VK_IMAGE_LAYOUT_UNDEFINED })!.layout.afterOperation
+            finalLayout = self.frameLayouts.first(where: { $0.layout != VK_IMAGE_LAYOUT_UNDEFINED })!.layout
         }
 
         return (initialLayout, finalLayout)

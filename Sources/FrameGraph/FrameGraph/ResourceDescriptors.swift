@@ -152,6 +152,17 @@ public struct TextureDescriptor: Hashable {
             self.depth = newValue.depth
         }
     }
+    
+    public func size(mipLevel: Int) -> Size {
+        var size = self.size
+        size.width >>= mipLevel
+        size.height >>= mipLevel
+        size.depth >>= mipLevel
+        size.width = max(size.width, 1)
+        size.height = max(size.height, 1)
+        size.depth = max(size.depth, 1)
+        return size
+    }
 }
 
 extension TextureDescriptor {
