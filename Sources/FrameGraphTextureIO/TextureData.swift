@@ -435,7 +435,7 @@ public struct TextureData<T> {
             for x in 0..<width {
                 let clampedX = clampOutOfBounds ? clamp(x + originX, min: 0, max: self.width - 1) : (x + originX)
                 for c in 0..<self.channelCount {
-                    result.setUnchecked(x: clampedX, y: clampedY, channel: c, value: self[clampedX, clampedY, channel: c])
+                    result.setUnchecked(x: x, y: y, channel: c, value: self[clampedX, clampedY, channel: c])
                 }
             }
         }
