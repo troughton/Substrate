@@ -120,7 +120,7 @@ public struct TextureFileInfo {
                 self.channelCount = 2
             case LCT_RGB:
                 self.channelCount = 3
-            case LCT_RGBA:
+            case LCT_RGBA, LCT_PALETTE:
                 self.channelCount = 4
             default:
                 throw TextureLoadingError.noSupportedPixelFormat
