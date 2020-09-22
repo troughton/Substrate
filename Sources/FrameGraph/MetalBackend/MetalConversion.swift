@@ -141,12 +141,18 @@ extension ResourceType {
             self = .texture
         case .threadgroupMemory:
             self = .threadgroupMemory
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         case .imageblockData:
             self = .imageblockData
         case .imageblock:
             self = .imageblock
-        #endif
+        case .visibleFunctionTable:
+            self = .visibleFunctionTable
+        case .primitiveAccelerationStructure:
+            self = .primitiveAccelerationStructure
+        case .instanceAccelerationStructure:
+            self = .instanceAccelerationStructure
+        case .intersectionFunctionTable:
+            self = .intersectionFunctionTable
         @unknown default:
             fatalError()
         }
@@ -255,7 +261,7 @@ extension ArgumentReflection {
 //MARK: To Metal
 
 extension MTLBarrierScope {
-    init(_ barrierScope: BarrierScope) {
+    init(_ barrierScope: BarrierScope, isAppleSiliconGPU: Bool) {
         self = []
         if barrierScope.contains(.buffers) {
             self.formUnion(.buffers)
@@ -264,7 +270,7 @@ extension MTLBarrierScope {
             self.formUnion(.textures)
         }
         #if os(macOS) || targetEnvironment(macCatalyst)
-        if barrierScope.contains(.renderTargets) {
+        if barrierScope.contains(.renderTargets), !isAppleSiliconGPU {
             self.formUnion(.renderTargets)
         }
         #endif
@@ -453,7 +459,7 @@ extension MTLRenderStages {
 }
 
 extension MTLResourceOptions {
-    public init(storageMode: StorageMode, cacheMode: CPUCacheMode) {
+    public init(storageMode: StorageMode, cacheMode: CPUCacheMode, isAppleSiliconGPU: Bool) {
         self.init()
         
         switch storageMode {
@@ -461,7 +467,11 @@ extension MTLResourceOptions {
             self.formUnion(.storageModeShared)
         case .managed:
             #if os(macOS) || targetEnvironment(macCatalyst)
-            self.formUnion(.storageModeManaged)
+            if !isAppleSiliconGPU {
+                self.formUnion(.storageModeManaged)
+            } else {
+                self.formUnion(.storageModeShared)
+            }
             #else
             self.formUnion(.storageModeShared)
             #endif
@@ -525,13 +535,17 @@ extension MTLStencilOperation {
 }
 
 extension MTLStorageMode {
-    public init(_ mode: StorageMode) {
+    public init(_ mode: StorageMode, isAppleSiliconGPU: Bool) {
         switch mode {
         case .shared:
             self = .shared
         case .managed:
         #if os(macOS) || targetEnvironment(macCatalyst)
+        if !isAppleSiliconGPU {
             self = .managed
+        } else {
+            self = .shared
+        }
         #else
             self = .shared
         #endif

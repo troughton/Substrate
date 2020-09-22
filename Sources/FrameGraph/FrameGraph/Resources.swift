@@ -17,6 +17,10 @@ public enum ResourceType : UInt8 {
     case argumentBufferArray
     case imageblockData
     case imageblock
+    case visibleFunctionTable
+    case primitiveAccelerationStructure
+    case instanceAccelerationStructure
+    case intersectionFunctionTable
 }
 
 /*!

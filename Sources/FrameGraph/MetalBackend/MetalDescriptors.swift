@@ -16,7 +16,7 @@ enum RenderTargetTextureError : Error {
 }
 
 extension MTLHeapDescriptor {
-    convenience init(_ descriptor: HeapDescriptor) {
+    convenience init(_ descriptor: HeapDescriptor, isAppleSiliconGPU: Bool) {
         self.init()
         
         self.size = descriptor.size
@@ -24,16 +24,15 @@ extension MTLHeapDescriptor {
             switch descriptor.type {
             case .automaticPlacement:
                 self.type = .automatic
-            #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
             case .sparseTexture:
-                self.type = .sparse
-            #else
-            default:
-                self.type = .automatic
-            #endif
+                if isAppleSiliconGPU, #available(macOS 11.0, macCatalyst 14.0, *) {
+                    self.type = .sparse
+                } else {
+                    self.type = .automatic
+                }
             }
         }
-        self.storageMode = MTLStorageMode(descriptor.storageMode)
+        self.storageMode = MTLStorageMode(descriptor.storageMode, isAppleSiliconGPU: isAppleSiliconGPU)
         self.cpuCacheMode = MTLCPUCacheMode(descriptor.cacheMode)
     }
 }
@@ -70,7 +69,7 @@ extension MTLDepthStencilDescriptor {
 }
 
 extension MTLSamplerDescriptor {
-    convenience init(_ descriptor: SamplerDescriptor) {
+    convenience init(_ descriptor: SamplerDescriptor, isAppleSiliconGPU: Bool) {
         self.init()
         
         self.minFilter = MTLSamplerMinMagFilter(descriptor.minFilter)
@@ -81,7 +80,9 @@ extension MTLSamplerDescriptor {
         self.tAddressMode = MTLSamplerAddressMode(descriptor.tAddressMode)
         self.rAddressMode = MTLSamplerAddressMode(descriptor.rAddressMode)
         #if os(macOS)
-        self.borderColor = MTLSamplerBorderColor(descriptor.borderColor)
+        if !isAppleSiliconGPU {
+            self.borderColor = MTLSamplerBorderColor(descriptor.borderColor)
+        }
         #endif
         self.normalizedCoordinates = descriptor.normalizedCoordinates
         self.lodMinClamp = descriptor.lodMinClamp
@@ -247,7 +248,7 @@ extension MTLRenderPipelineDescriptor {
 }
 
 extension MTLTextureDescriptor {
-    convenience init(_ descriptor: TextureDescriptor, usage: MTLTextureUsage) {
+    convenience init(_ descriptor: TextureDescriptor, usage: MTLTextureUsage, isAppleSiliconGPU: Bool) {
         self.init()
         
         self.textureType = MTLTextureType(descriptor.textureType)
@@ -260,10 +261,10 @@ extension MTLTextureDescriptor {
         self.arrayLength = descriptor.arrayLength
         
         self.cpuCacheMode = MTLCPUCacheMode(descriptor.cacheMode)
-        self.storageMode = MTLStorageMode(descriptor.storageMode)
+        self.storageMode = MTLStorageMode(descriptor.storageMode, isAppleSiliconGPU: isAppleSiliconGPU)
         self.usage = usage
         
-        self.resourceOptions = MTLResourceOptions(storageMode: descriptor.storageMode, cacheMode: descriptor.cacheMode)
+        self.resourceOptions = MTLResourceOptions(storageMode: descriptor.storageMode, cacheMode: descriptor.cacheMode, isAppleSiliconGPU: isAppleSiliconGPU)
     }
 }
 

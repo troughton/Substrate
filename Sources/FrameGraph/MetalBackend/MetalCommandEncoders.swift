@@ -17,13 +17,15 @@ public final class FGMTLParallelRenderCommandEncoder {
     
     let parallelEncoder: MTLParallelRenderCommandEncoder
     let renderPassDescriptor : MTLRenderPassDescriptor
+    let isAppleSiliconGPU: Bool
     
     let dispatchGroup = DispatchGroup()
     var currentEncoder : FGMTLThreadRenderCommandEncoder? = nil
     
-    init(encoder: MTLParallelRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor) {
+    init(encoder: MTLParallelRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor, isAppleSiliconGPU: Bool) {
         self.parallelEncoder = encoder
         self.renderPassDescriptor = renderPassDescriptor
+        self.isAppleSiliconGPU = isAppleSiliconGPU
     }
     
     var label: String? {
@@ -41,7 +43,7 @@ public final class FGMTLParallelRenderCommandEncoder {
                 currentEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
             } else {
                 let encoder = self.parallelEncoder.makeRenderCommandEncoder()!
-                let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor)
+                let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor, isAppleSiliconGPU: self.isAppleSiliconGPU)
                 
                 fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
                 
@@ -54,7 +56,7 @@ public final class FGMTLParallelRenderCommandEncoder {
             self.currentEncoder = nil
             
             let encoder = self.parallelEncoder.makeRenderCommandEncoder()!
-            let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor)
+            let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor, isAppleSiliconGPU: self.isAppleSiliconGPU)
             
             DispatchQueue.global().async(group: self.dispatchGroup) {
                 fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
@@ -74,6 +76,7 @@ public final class FGMTLParallelRenderCommandEncoder {
 
 public final class FGMTLThreadRenderCommandEncoder {
     let encoder: MTLRenderCommandEncoder
+    let isAppleSiliconGPU: Bool
     
     let renderPassDescriptor : MTLRenderPassDescriptor
     var pipelineDescriptor : RenderPipelineDescriptor? = nil
@@ -81,9 +84,10 @@ public final class FGMTLThreadRenderCommandEncoder {
     private unowned(unsafe) var boundPipelineState: MTLRenderPipelineState? = nil
     private unowned(unsafe) var boundDepthStencilState: MTLDepthStencilState? = nil
     
-    init(encoder: MTLRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor) {
+    init(encoder: MTLRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.renderPassDescriptor = renderPassDescriptor
+        self.isAppleSiliconGPU = isAppleSiliconGPU
         
         self.baseBufferOffsets = .allocate(capacity: 62)
         self.baseBufferOffsets.initialize(repeating: 0, count: 62)
@@ -315,14 +319,18 @@ public final class FGMTLThreadRenderCommandEncoder {
                 
             case .resourceMemoryBarrier(let resources, let afterStages, let beforeStages):
                 #if os(macOS) || targetEnvironment(macCatalyst)
-                encoder.__memoryBarrier(resources: resources.baseAddress!, count: resources.count, after: afterStages, before: beforeStages)
+                if !self.isAppleSiliconGPU {
+                    encoder.__memoryBarrier(resources: resources.baseAddress!, count: resources.count, after: afterStages, before: beforeStages)
+                }
                 #else
                 break
                 #endif
                 
             case .scopedMemoryBarrier(let scope, let afterStages, let beforeStages):
                 #if os(macOS) || targetEnvironment(macCatalyst)
-                encoder.memoryBarrier(scope: scope, after: afterStages, before: beforeStages)
+                if !self.isAppleSiliconGPU {
+                    encoder.memoryBarrier(scope: scope, after: afterStages, before: beforeStages)
+                }
                 #else
                 break
                 #endif
@@ -354,13 +362,15 @@ public final class FGMTLThreadRenderCommandEncoder {
 
 public final class FGMTLComputeCommandEncoder {
     let encoder: MTLComputeCommandEncoder
+    let isAppleSiliconGPU: Bool
     
     var pipelineDescriptor : ComputePipelineDescriptor? = nil
     private let baseBufferOffsets : UnsafeMutablePointer<Int> // 31, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     private unowned(unsafe) var boundPipelineState: MTLComputePipelineState? = nil
     
-    init(encoder: MTLComputeCommandEncoder) {
+    init(encoder: MTLComputeCommandEncoder, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
+        self.isAppleSiliconGPU = isAppleSiliconGPU
         
         self.baseBufferOffsets = .allocate(capacity: 31)
         self.baseBufferOffsets.initialize(repeating: 0, count: 31)
@@ -500,13 +510,15 @@ public final class FGMTLComputeCommandEncoder {
 
 public final class FGMTLBlitCommandEncoder {
     let encoder: MTLBlitCommandEncoder
+    let isAppleSiliconGPU: Bool
     
     var updatedFences = Set<ObjectIdentifier>()
     var waitedOnFences = Set<ObjectIdentifier>()
     
     
-    init(encoder: MTLBlitCommandEncoder) {
+    init(encoder: MTLBlitCommandEncoder, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
+        self.isAppleSiliconGPU = isAppleSiliconGPU
     }
     
     func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
@@ -559,22 +571,28 @@ public final class FGMTLBlitCommandEncoder {
             
         case .synchroniseTexture(let textureHandle):
             #if os(macOS) || targetEnvironment(macCatalyst)
-            encoder.synchronize(resource: resourceMap[textureHandle].texture)
+            if !self.isAppleSiliconGPU {
+                encoder.synchronize(resource: resourceMap[textureHandle].texture)
+            }
             #else
             break
             #endif
             
         case .synchroniseTextureSlice(let args):
             #if os(macOS) || targetEnvironment(macCatalyst)
-            encoder.synchronize(texture: resourceMap[args.pointee.texture].texture, slice: Int(args.pointee.slice), level: Int(args.pointee.level))
+            if !self.isAppleSiliconGPU {
+                encoder.synchronize(texture: resourceMap[args.pointee.texture].texture, slice: Int(args.pointee.slice), level: Int(args.pointee.level))
+            }
             #else
             break
             #endif
             
         case .synchroniseBuffer(let buffer):
             #if os(macOS) || targetEnvironment(macCatalyst)
-            let buffer = resourceMap[buffer]
-            encoder.synchronize(resource: buffer.buffer)
+            if !self.isAppleSiliconGPU {
+                let buffer = resourceMap[buffer]
+                encoder.synchronize(resource: buffer.buffer)
+            }
             #else
             break
             #endif

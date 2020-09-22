@@ -61,7 +61,7 @@ enum PreFrameCommands {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend, Dependency: SwiftFrameGraph.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: FrameGraphContextImpl<Backend>, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+    func execute<Backend: SpecificRenderBackend, Dependency: SwiftFrameGraph.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: FrameGraphContextImpl<Backend>, storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
         let queue = context.frameGraphQueue
         let queueIndex = Int(queue.index)
         let resourceMap = context.resourceMap
@@ -79,7 +79,7 @@ enum PreFrameCommands {
             
         case .materialiseTexture(let texture):
             // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
-            _ = resourceRegistry.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry)
+            _ = resourceRegistry.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry, frameStoredTextures: storedTextures)
             if let textureWaitEvent = (texture.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(texture)] : resourceRegistry.textureWaitEvents[texture]) {
                 waitEventValues[queueIndex] = max(textureWaitEvent.waitValue, waitEventValues[queueIndex])
             } else {
@@ -285,7 +285,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
-    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry, backend: Backend, frameCommandInfo: inout FrameCommandInfo<Backend>) {
         if passes.isEmpty {
             return
         }
@@ -435,13 +435,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 resource.dispose() // This will dispose it in the FrameGraph persistent allocator, which will in turn call dispose in the resource registry at the end of the frame.
             }
             
-            #if !os(macOS) && !targetEnvironment(macCatalyst)
             var canBeMemoryless = false
-            #else
-            let canBeMemoryless = false
-            #endif
             
-            let firstCommandEncoderIndex = frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord)
             // We dispose at the end of a command encoder since resources can't alias against each other within a command encoder.
             let lastCommandEncoderIndex = frameCommandInfo.encoderIndex(for: lastUsage.renderPassRecord)
             let disposalIndex = frameCommandInfo.commandEncoders[lastCommandEncoderIndex].commandRange.last!
@@ -469,12 +464,10 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                     
                 } else if let texture = resource.texture {
-                    
-                    #if !os(macOS) && !targetEnvironment(macCatalyst)
-                    canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
-                        && usages.allSatisfy({ $0.type.isRenderTarget })
+                    canBeMemoryless = backend.supportsMemorylessAttachments &&
+                        (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
+                        && usagesArray.allSatisfy({ $0.type.isRenderTarget })
                         && !frameCommandInfo.storedTextures.contains(texture)
-                    #endif
                     
                     if !historyBufferUseFrame {
                         if texture.isTextureView {
@@ -563,6 +556,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             command.command.execute(commandIndex: command.index,
                                     commandGenerator: self,
                                     context: context,
+                                    storedTextures: frameCommandInfo.storedTextures,
                                     encoderDependencies: &self.commandEncoderDependencies,
                                     waitEventValues: &frameCommandInfo.commandEncoders[commandEncoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
         }
