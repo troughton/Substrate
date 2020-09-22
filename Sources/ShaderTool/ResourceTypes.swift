@@ -164,13 +164,14 @@ struct Resource : Equatable {
         var platformBindings = PlatformBindings()
         
         if compiler.file.target.isMetal {
-            let assignedIndex = spvc_compiler_msl_get_automatic_resource_binding(compiler.compiler, resource.id)
-            if assignedIndex != .max {
-                if case .macOSMetal = compiler.file.target {
-                    platformBindings.macOSMetalIndex = assignedIndex
-                } else {
-                    platformBindings.iOSMetalIndex = assignedIndex
-                }
+            var assignedIndex = spvc_compiler_msl_get_automatic_resource_binding(compiler.compiler, resource.id)
+            if assignedIndex == .max {
+                assignedIndex = UInt32(binding)
+            }
+            if case .macOSMetal = compiler.file.target {
+                platformBindings.macOSMetalIndex = assignedIndex
+            } else {
+                platformBindings.iOSMetalIndex = assignedIndex
             }
         }
         
