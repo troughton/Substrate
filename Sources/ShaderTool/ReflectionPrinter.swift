@@ -31,7 +31,7 @@ struct ReflectionPrinter {
             let delta = scopeBegins - scopeEnds
             
             if delta < 0 {
-                self.indent = max(0, self.indent +  delta)
+                self.indent = max(0, self.indent + delta)
             }
             
             printLine(line)

@@ -211,11 +211,7 @@ final class ReflectionContext {
         import Metal
         #endif
         
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-        public typealias Vector3h = SIMD3<Float16>
-        #else
         public typealias Vector3h = SIMD3<UInt16>
-        #endif
 
         // MARK: - Shared Structs
 
