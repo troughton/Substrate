@@ -380,7 +380,7 @@ final class RenderPass {
         }
         
         for resource in compiler.boundResources {
-            if resource.viewType == .inputAttachment, case .iOSMetal = compiler.file.target {
+            if resource.viewType == .inputAttachment, compiler.file.target.isAppleSilicon {
                 continue // No explicit bindings for input attachments on iOS Metal.
             }
             

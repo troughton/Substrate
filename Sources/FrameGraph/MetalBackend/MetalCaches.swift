@@ -42,8 +42,18 @@ final class MetalStateCaches {
     public init(device: MTLDevice, libraryPath: String?) {
         self.device = device
         if let libraryPath = libraryPath {
-            self.library = try! device.makeLibrary(filepath: libraryPath)
-            let libraryURL = URL(fileURLWithPath: libraryPath)
+            var libraryURL = URL(fileURLWithPath: libraryPath)
+            
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: libraryPath, isDirectory: &isDirectory), isDirectory.boolValue {
+                #if os(macOS) || targetEnvironment(macCatalyst)
+                libraryURL = libraryURL.appendingPathComponent(device.isAppleSiliconGPU ? "Library-macOSAppleSilicon.metallib" : "Library-macOS.metallib")
+                #else
+                libraryURL = libraryURL.appendingPathComponent("Library-iOS.metallib")
+                #endif
+            }
+            
+            self.library = try! device.makeLibrary(filepath: libraryURL.path)
             self.libraryURL = libraryURL
             self.loadedLibraryModificationDate = try! libraryURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate!
         } else {

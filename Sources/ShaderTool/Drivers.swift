@@ -115,15 +115,15 @@ final class DXCDriver {
     
     func compile(sourceFile: URL, destinationFile: URL, entryPoint: String, type: ShaderType, target: Target) throws -> Process {
         let arguments = ["-enable-16bit-types",
-                         "-E", entryPoint,
-                         "-D" + target.targetDefine,
-                         "-D" + "EntryPoint_\(entryPoint)",
-                         "-fspv-target-env=vulkan1.1",
-                         "-fspv-reflect",
-                         "-T", type.shaderModel,
-                         "-spirv", "-fcgl",
-                         "-Vd", sourceFile.path,
-                         "-Fo", destinationFile.path]
+                         "-E", entryPoint] +
+            target.targetDefines.map { "-D" + $0 } +
+            ["-D" + "EntryPoint_\(entryPoint)",
+             "-fspv-target-env=vulkan1.1",
+             "-fspv-reflect",
+             "-T", type.shaderModel,
+             "-spirv", "-fcgl",
+             "-Vd", sourceFile.path,
+             "-Fo", destinationFile.path]
         return try Process.run(self.url, arguments: arguments, terminationHandler: nil)
     }
 }
@@ -149,9 +149,9 @@ final class SPIRVOptDriver {
 extension Target {
     fileprivate var metalSDK : String? {
         switch self {
-        case .macOSMetal:
+        case .metal(.macOS, _), .metal(.macOSAppleSilicon, _):
             return "macosx"
-        case .iOSMetal:
+        case .metal(.iOS, _):
             return "iphoneos"
         default:
             return nil
@@ -160,10 +160,19 @@ extension Target {
     
     fileprivate var metalTargetVersion : String? {
         switch self {
-        case .macOSMetal(let deploymentTarget):
+        case .metal(.macOS, let deploymentTarget), .metal(.macOSAppleSilicon, let deploymentTarget):
             return "-mmacosx-version-min=\(deploymentTarget)"
-        case .iOSMetal(let deploymentTarget):
+        case .metal(.iOS, let deploymentTarget):
             return "-mios-version-min=\(deploymentTarget)"
+        default:
+            return nil
+        }
+    }
+    
+    fileprivate var metalStandardLibrary : String? {
+        switch self {
+        case .metal(.macOSAppleSilicon, _):
+            return "-std=macos-metal2.3"
         default:
             return nil
         }
@@ -176,7 +185,7 @@ final class MetalDriver {
     
     init?(target: Target) {
         switch target {
-        case .iOSMetal, .macOSMetal:
+        case .metal:
             break
         default:
             return nil
@@ -198,9 +207,10 @@ final class MetalDriver {
             arguments.append("-O")
         }
         arguments.append(contentsOf: [
-            target.metalTargetVersion!,
-            sourceFile.path,
-            "-o", destinationFile.path])
+                            target.metalTargetVersion!,
+                            target.metalStandardLibrary,
+                            sourceFile.path,
+                            "-o", destinationFile.path].compactMap { $0 })
         
         return try Process.run(self.url, arguments: arguments, terminationHandler: nil)
     }

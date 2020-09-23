@@ -13,10 +13,12 @@ extension Target: ExpressibleByArgument {
         let versionStartIndex = lowercasedArg.firstIndex(where: { $0.isNumber })
         let version = versionStartIndex.map { String(lowercasedArg[$0...]) }
         
-        if lowercasedArg.starts(with: "macos") {
-            self = .macOSMetal(deploymentTarget: version ?? "10.14")
+        if lowercasedArg.starts(with: "macos-applesilicon") {
+            self = .metal(platform: .macOSAppleSilicon, deploymentTarget: version ?? "10.16")
+        } else if lowercasedArg.starts(with: "macos") {
+            self = .metal(platform: .macOS, deploymentTarget: version ?? "10.14")
         } else if lowercasedArg.starts(with: "ios") {
-            self = .iOSMetal(deploymentTarget: version ?? "12.0")
+            self = .metal(platform: .iOS, deploymentTarget: version ?? "12.0")
         } else if lowercasedArg == "vulkan" {
             self = .vulkan(version: version ?? "1.1")
         } else {

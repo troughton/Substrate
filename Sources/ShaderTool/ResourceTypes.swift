@@ -100,14 +100,14 @@ struct Binding : Equatable, Comparable {
 
 struct PlatformBindings {
     var macOSMetalIndex: UInt32?
-    var iOSMetalIndex: UInt32?
+    var appleSiliconMetalIndex: UInt32?
     
     mutating func formUnion(_ other: PlatformBindings) {
         assert(self.macOSMetalIndex == nil || other.macOSMetalIndex == nil || self.macOSMetalIndex == other.macOSMetalIndex)
         self.macOSMetalIndex = self.macOSMetalIndex ?? other.macOSMetalIndex
         
-        assert(self.iOSMetalIndex == nil || other.iOSMetalIndex == nil || self.iOSMetalIndex == other.iOSMetalIndex)
-        self.iOSMetalIndex = self.iOSMetalIndex ?? other.iOSMetalIndex
+        assert(self.appleSiliconMetalIndex == nil || other.appleSiliconMetalIndex == nil || self.appleSiliconMetalIndex == other.appleSiliconMetalIndex)
+        self.appleSiliconMetalIndex = self.appleSiliconMetalIndex ?? other.appleSiliconMetalIndex
     }
 }
 
@@ -168,10 +168,10 @@ struct Resource : Equatable {
             if assignedIndex == .max {
                 assignedIndex = UInt32(binding)
             }
-            if case .macOSMetal = compiler.file.target {
-                platformBindings.macOSMetalIndex = assignedIndex
+            if compiler.file.target.isAppleSilicon {
+                platformBindings.appleSiliconMetalIndex = assignedIndex
             } else {
-                platformBindings.iOSMetalIndex = assignedIndex
+                platformBindings.macOSMetalIndex = assignedIndex
             }
         }
         

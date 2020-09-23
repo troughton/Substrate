@@ -118,7 +118,7 @@ final class DescriptorSet {
         do {
             stream.print("#if canImport(Metal)")
             stream.print("if RenderBackend.api == .metal {")
-            if self.resources.contains(where: { $0.viewType == .storageImage || $0.platformBindings.macOSMetalIndex != $0.platformBindings.iOSMetalIndex }) {
+            if self.resources.contains(where: { $0.viewType == .storageImage || $0.platformBindings.macOSMetalIndex != $0.platformBindings.appleSiliconMetalIndex }) {
                 stream.print("#if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)")
                 stream.print("let isAppleSiliconGPU = true")
                 stream.print("#elseif arch(i386) || arch(x86_64)")
@@ -183,15 +183,15 @@ final class DescriptorSet {
                     stream.print(")")
                 }
                 
-                if resource.viewType == .storageImage || resource.platformBindings.macOSMetalIndex != resource.platformBindings.iOSMetalIndex {
+                if resource.viewType == .storageImage || resource.platformBindings.macOSMetalIndex != resource.platformBindings.appleSiliconMetalIndex {
                     stream.print("if isAppleSiliconGPU {")
                     // Storage images (i.e. read-write textures) aren't permitted in argument buffers, so we need to bind directly on the encoder.
-                    if resource.viewType == .storageImage, let index = resource.platformBindings.iOSMetalIndex {
+                    if resource.viewType == .storageImage, let index = resource.platformBindings.appleSiliconMetalIndex {
                         stream.print("if let bindingEncoder = bindingEncoder {")
                         stream.print("bindingEncoder.setTexture(resource, key: MetalIndexedFunctionArgument(type: .texture, index: \(index)\(arrayIndexString), stages: \(resource.stages)))")
                         stream.print("}")
                     } else {
-                        if let index = resource.platformBindings.iOSMetalIndex.map({ Int($0) }) {
+                        if let index = resource.platformBindings.appleSiliconMetalIndex.map({ Int($0) }) {
                             addArgBufferBinding(&stream, index)
                         }
                     }

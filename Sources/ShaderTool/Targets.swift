@@ -9,23 +9,48 @@ import Foundation
 import SPIRV_Cross
 
 enum Target : Hashable {
-    case macOSMetal(deploymentTarget: String)
-    case iOSMetal(deploymentTarget: String)
+    enum MetalPlatform: String, Hashable {
+        case macOS
+        case macOSAppleSilicon
+        case iOS
+    }
+    
+    case metal(platform: MetalPlatform, deploymentTarget: String)
     case vulkan(version: String)
     
     static var defaultTarget : Target {
 #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-        return .iOSMetal(deploymentTarget: "12.0")
+    return .metal(platform: .iOS, deploymentTarget: "12.0")
 #elseif os(macOS) || targetEnvironment(macCatalyst)
-        return .macOSMetal(deploymentTarget: "10.14")
+#if arch(i386) || arch(x86_64)
+    return .metal(platform: .macOS, deploymentTarget: "10.14")
+#else
+    return .metal(platform: .macOSAppleSilicon, deploymentTarget: "10.16")
+#endif
 #else
         return .vulkan(version: "1.1")
 #endif
     }
     
+    var metalPlatform: MetalPlatform? {
+        switch self {
+        case .metal(let platform, _):
+            return platform
+        default:
+            return nil
+        }
+    }
+    
+    var isAppleSilicon: Bool {
+        if let platform = self.metalPlatform, platform != .macOS {
+            return true
+        }
+        return false
+    }
+    
     var isMetal: Bool {
         switch self {
-        case .macOSMetal, .iOSMetal:
+        case .metal:
             return true
         default:
             return false
@@ -34,30 +59,30 @@ enum Target : Hashable {
     
     var spvcBackend : spvc_backend {
         switch self {
-        case .macOSMetal, .iOSMetal:
+        case .metal:
             return SPVC_BACKEND_MSL
         case .vulkan:
             return SPVC_BACKEND_NONE
         }
     }
     
-    var targetDefine : String {
+    var targetDefines : [String] {
         switch self {
-        case .macOSMetal:
-            return "TARGET_METAL_MACOS"
-        case .iOSMetal:
-            return "TARGET_METAL_IOS"
+        case .metal(.macOS, _):
+            return ["TARGET_METAL_MACOS"]
+        case .metal(.macOSAppleSilicon, _):
+            return ["TARGET_METAL_IOS", "TARGET_METAL_MACOS_APPLE_SILICON"]
+        case .metal(.iOS, _):
+            return ["TARGET_METAL_IOS"]
         case .vulkan:
-            return "TARGET_VULKAN"
+            return ["TARGET_VULKAN"]
         }
     }
 
     var intermediatesDirectory : String {
         switch self {
-        case .macOSMetal:
-            return "Intermediates/Metal-macOS"
-        case .iOSMetal:
-            return "Intermediates/Metal-iOS"
+        case .metal(let platform, _):
+            return "Intermediates/Metal-\(platform.rawValue)"
         case .vulkan:
             return self.outputDirectory
         }
@@ -65,7 +90,7 @@ enum Target : Hashable {
     
     var outputDirectory : String {
         switch self {
-        case .macOSMetal, .iOSMetal:
+        case .metal:
             return "Compiled"
         case .vulkan:
             return "Compiled/Vulkan"
@@ -83,7 +108,7 @@ enum Target : Hashable {
     
     var compiler : TargetCompiler? {
         switch self {
-        case .macOSMetal, .iOSMetal:
+        case .metal:
             return MetalCompiler(target: self)
         case .vulkan:
             return nil // We've already compiled to SPIR-V, so there's nothing else to do.
@@ -94,10 +119,8 @@ enum Target : Hashable {
 extension Target: CustomStringConvertible {
     var description: String {
         switch self {
-        case .iOSMetal(let deploymentTarget):
-            return "Metal (iOS \(deploymentTarget))"
-        case .macOSMetal(let deploymentTarget):
-            return "Metal (macOS \(deploymentTarget))"
+        case .metal(let platform, let deploymentTarget):
+            return "Metal (\(platform.rawValue) \(deploymentTarget))"
         case .vulkan(let version):
             return "Vulkan (v\(version))"
         }
@@ -145,9 +168,10 @@ final class MetalCompiler : TargetCompiler {
                 spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FORCE_ACTIVE_ARGUMENT_BUFFER_RESOURCES, 1)
                 spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_IOS_FRAMEBUFFER_FETCH_SUBPASS, 1)
                 spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ENABLE_DECORATION_BINDING, 1)
-                if case .iOSMetal = self.target {
+                switch self.target {
+                case .metal(.iOS, _), .metal(.macOSAppleSilicon, _):
                     spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, SPVC_MSL_PLATFORM_IOS.rawValue)
-                } else {
+                default:
                     spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, SPVC_MSL_PLATFORM_MACOS.rawValue)
                 }
                 
@@ -217,12 +241,8 @@ final class MetalCompiler : TargetCompiler {
         if needsRegenerateLibrary {
             do {
                 try FileManager.default.createDirectoryIfNeeded(at: outputDirectory)
-                let metalLibraryPath: URL
-                if case .macOSMetal = self.target {
-                    metalLibraryPath = outputDirectory.appendingPathComponent("Library-macOS.metallib")
-                } else {
-                    metalLibraryPath = outputDirectory.appendingPathComponent("Library-iOS.metallib")
-                }
+                
+                let metalLibraryPath = outputDirectory.appendingPathComponent("Library-\(target.metalPlatform!.rawValue).metallib")
                 print("\(self.target): Linking Metal library at \(metalLibraryPath.path)")
                 try self.driver.generateLibrary(airFiles: sourceFiles.map { $1 }, outputLibrary: metalLibraryPath).waitUntilExit()
             }
