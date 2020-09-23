@@ -183,7 +183,7 @@ final class DescriptorSet {
                     stream.print(")")
                 }
                 
-                if resource.platformBindings.macOSMetalIndex != resource.platformBindings.iOSMetalIndex {
+                if resource.viewType == .storageImage || resource.platformBindings.macOSMetalIndex != resource.platformBindings.iOSMetalIndex {
                     stream.print("if isAppleSiliconGPU {")
                     // Storage images (i.e. read-write textures) aren't permitted in argument buffers, so we need to bind directly on the encoder.
                     if resource.viewType == .storageImage, let index = resource.platformBindings.iOSMetalIndex {
