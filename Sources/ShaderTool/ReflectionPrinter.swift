@@ -29,16 +29,13 @@ struct ReflectionPrinter {
             let scopeBegins = line.lazy.filter { $0 == "{" || $0 == "(" }.count
             let scopeEnds = line.lazy.filter { $0 == "}" || $0 == ")" }.count
             let delta = scopeBegins - scopeEnds
+            let lineDelta = line.lazy.prefix(while: { $0 != "{" }).filter({ $0 == "}" }).count + line.lazy.prefix(while: { $0 != "(" }).filter({ $0 == ")" }).count
             
-            if delta < 0 {
-                self.indent = max(0, self.indent + delta)
-            }
+            self.indent = max(0, self.indent - lineDelta)
             
             printLine(line)
             
-            if delta > 0 {
-                self.indent += delta
-            }
+            self.indent = max(0, self.indent + delta + lineDelta)
         }
     }
     
