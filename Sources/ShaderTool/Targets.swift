@@ -8,7 +8,7 @@
 import Foundation
 import SPIRV_Cross
 
-enum Target : Hashable {
+enum Target: Equatable {
     enum MetalPlatform: String, Hashable {
         case macOS
         case macOSAppleSilicon
@@ -17,6 +17,18 @@ enum Target : Hashable {
     
     case metal(platform: MetalPlatform, deploymentTarget: String)
     case vulkan(version: String)
+    
+    static func ==(lhs: Target, rhs: Target) -> Bool {
+        switch (lhs, rhs) {
+        case (.metal(.iOS, _), .metal(.iOS, _)),
+             (.metal(.macOS, _), .metal(.macOS, _)),
+             (.metal(.macOSAppleSilicon, _), .metal(.macOSAppleSilicon, _)),
+             (.vulkan(_), .vulkan(_)):
+            return true
+        default:
+            return false
+        }
+    }
     
     static var defaultTarget : Target {
 #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
