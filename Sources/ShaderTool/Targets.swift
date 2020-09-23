@@ -71,9 +71,9 @@ enum Target : Hashable {
         case .metal(.macOS, _):
             return ["TARGET_METAL_MACOS"]
         case .metal(.macOSAppleSilicon, _):
-            return ["TARGET_METAL_IOS", "TARGET_METAL_MACOS_APPLE_SILICON"]
+            return ["TARGET_METAL_MACOS", "TARGET_METAL_APPLE_SILICON"]
         case .metal(.iOS, _):
-            return ["TARGET_METAL_IOS"]
+            return ["TARGET_METAL_IOS", "TARGET_METAL_APPLE_SILICON"]
         case .vulkan:
             return ["TARGET_VULKAN"]
         }
