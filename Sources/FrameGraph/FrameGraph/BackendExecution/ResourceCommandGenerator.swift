@@ -472,7 +472,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     
                     #if !os(macOS) && !targetEnvironment(macCatalyst)
                     canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
-                        && usages.allSatisfy({ $0.type.isRenderTarget })
+                        && usagesArray.allSatisfy({ $0.type.isRenderTarget })
                         && !frameCommandInfo.storedTextures.contains(texture)
                     #endif
                     

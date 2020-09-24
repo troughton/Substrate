@@ -325,6 +325,7 @@ extension SubresourceMask {
             
             // Arranged by level, then slice
             let index = level * descriptor.slicesPerLevel + slice
+                print("Checking bit \(index) for slice \(slice) and level \(level)")
             precondition(index < count)
             
             if count < Element.bitWidth {
@@ -336,8 +337,9 @@ extension SubresourceMask {
                 } else if self.value == 0 {
                     return false
                 }
-                let storagePtr = UnsafeMutablePointer<Element>(bitPattern: UInt(exactly: self.value)!)!
+                let storagePtr = UnsafePointer<Element>(bitPattern: UInt(exactly: self.value)!)!
                 let (uintIndex, bitIndex) = index.quotientAndRemainder(dividingBy: Element.bitWidth)
+                print("Checking bit \(index) for slice \(slice) and level \(level) in \(storagePtr[uintIndex])")
                 return storagePtr[uintIndex][bit: bitIndex]
             }
         }
@@ -370,7 +372,7 @@ extension SubresourceMask {
             let count = descriptor.subresourceCount
             
             // Arranged by level, then slice
-            let index = level * descriptor.arrayLength + slice
+            let index = level * descriptor.slicesPerLevel + slice
             precondition(index < count)
             
             if count < Element.bitWidth {

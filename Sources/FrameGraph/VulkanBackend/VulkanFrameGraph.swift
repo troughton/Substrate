@@ -21,14 +21,15 @@ extension VulkanBackend {
                     subresourceRange.baseArrayLayer = UInt32(slice)
                     subresourceRange.baseMipLevel = UInt32(level)
                     
-                    let endSlice = (0..<textureDescriptor.slicesPerLevel).dropFirst(slice + 1).first(where: { !activeMask[slice: $0, level: level, descriptor: textureDescriptor] }) ?? textureDescriptor.arrayLength
+                    let endSlice = (0..<textureDescriptor.slicesPerLevel).dropFirst(slice + 1).first(where: { !activeMask[slice: $0, level: level, descriptor: textureDescriptor] }) ?? textureDescriptor.slicesPerLevel
                     subresourceRange.layerCount = UInt32(endSlice - slice)
                  
                     let endLevel = (0..<textureDescriptor.mipmapLevelCount).dropFirst(level + 1).first(where: { testLevel in
                         !(slice..<endSlice).allSatisfy({ activeMask[slice: $0, level: testLevel, descriptor: textureDescriptor] })
                     }) ?? textureDescriptor.mipmapLevelCount
-                    
+
                     subresourceRange.levelCount = UInt32(endLevel - level)
+                    assert(endLevel - level <= textureDescriptor.mipmapLevelCount)
                     
                     for l in level..<endLevel {
                         for s in slice..<endSlice {
@@ -131,9 +132,19 @@ extension VulkanBackend {
                         } else if consumingUsage.type.isRenderTarget {
                             // The layout transition will be handled by the next render pass.
                             barrier.newLayout = barrier.oldLayout
-                        } 
+                        } else {
+                            let previousUsage = texture.usages.lazy.filter { $0.affectsGPUBarriers }.prefix(while: { !$0.commandRange.contains(consumingUsage.commandRange.first!) }).last
+                            if let previousUsage = previousUsage, !previousUsage.isWrite {
+                                // There were other reads before consumingUsage, of which the first would have performed the layout transition; therefore, we don't need to transition here.
+                                barrier.oldLayout = barrier.newLayout
+                            }
+                        }
                         barrier.subresourceRange = VkImageSubresourceRange(aspectMask: textureDescriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(textureDescriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(textureDescriptor.arrayLength))
                         
+                if barrier.oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL {
+                    print("Image \(image.vkImage): Source layout is \(barrier.oldLayout) and destination layout is \(barrier.newLayout) for texture \(texture), usages \(producingUsage) to \(consumingUsage) (range \(producingUsage.activeRange) to \(consumingUsage.activeRange))")
+                }
+
                         switch (producingUsage.activeRange, consumingUsage.activeRange) {
                         case (.texture(let mask), .fullResource),
                          (.fullResource, .texture(let mask)):
@@ -256,6 +267,9 @@ extension VulkanBackend {
                 }
                 
                 destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange)
+                if sourceLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL {
+                    print("Source layout is \(sourceLayout) and destination layout is \(destinationLayout) for texture \(resource.texture!), subresource \(activeRange)")
+                }
             } else {
                 assert(resource.type != .texture || resource.flags.contains(.windowHandle))
                 sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED

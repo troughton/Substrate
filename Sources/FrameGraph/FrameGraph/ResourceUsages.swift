@@ -118,14 +118,11 @@ public struct ResourceUsage {
         }
         
         let rangesOverlap = self.commandRange.lowerBound < nextUsage.commandRange.upperBound && nextUsage.commandRange.lowerBound < self.commandRange.upperBound
-        
+        let subresourcesOverlap = self.activeRange.intersects(with: nextUsage.activeRange, subresourceCount: resource.subresourceCount)
+
         if !rangesOverlap, !self.type.isRenderTarget || !(self.type.isWrite && nextUsage.type.isRead) {
             // Don't merge usages of different types with non-overlapping ranges, and don't merge a write with a possible dependent read unless they're render target accesses.
             return false
-        }
-        
-        if !self.isWrite, !nextUsage.isWrite, nextUsage.type != self.type {
-            return false // Don't merge reads of different types
         }
         
         if self.type.isRenderTarget || nextUsage.type.isRenderTarget {
@@ -163,7 +160,28 @@ public struct ResourceUsage {
                 }
             }
         } else {
-            assert(self.type == nextUsage.type || !self.type.isWrite || !nextUsage.type.isWrite, "Resource simultaneously bound for conflicting writes.")
+            if !subresourcesOverlap, self.type != nextUsage.type {
+                return false
+            }
+
+            switch (self.type, nextUsage.type) {
+                case (.read, .readWrite),
+                     (.readWrite, .read),
+                     (.read, .write),
+                     (.write, .read),
+                     (.readWrite, .write),
+                     (.write, .readWrite):
+                    self.type = .readWrite
+
+                case _ where self.type == nextUsage.type:
+                    break
+                case _ where self.type.isWrite && nextUsage.type.isWrite:
+                    preconditionFailure("Resource simultaneously bound for conflicting writes.")
+
+                default:
+                    return false
+
+            }
             if self.inArgumentBuffer != nextUsage.inArgumentBuffer {
                 return false
             }
@@ -182,7 +200,7 @@ public struct ResourceUsage {
 
 extension ResourceUsage : CustomStringConvertible {
     public var description: String {
-        return "ResourceUsage(type: \(self.type), stages: \(self.stages), inArgumentBuffer: \(self.inArgumentBuffer), pass: \(self.renderPassRecord.pass.name), commandRange: \(self.commandRange))"
+        return "ResourceUsage(type: \(self.type), stages: \(self.stages), inArgumentBuffer: \(self.inArgumentBuffer), activeRange: \(self.activeRange), pass: \(self.renderPassRecord.pass.name), commandRange: \(self.commandRange))"
     }
 }
 
