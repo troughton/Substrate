@@ -147,6 +147,36 @@ public enum TextureColorSpace: Hashable {
     }
 }
 
+extension TextureColorSpace: Codable {
+    public enum CodingKeys: CodingKey {
+        case gamma
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let gamma = try container.decode(Float.self, forKey: .gamma)
+        if gamma == 0 {
+            self = .sRGB // sRGB is encoded as gamma of 0.0
+        } else if gamma == 1.0 {
+            self = .linearSRGB
+        } else {
+            self = .gammaSRGB(gamma)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .sRGB:
+            try container.encode(0.0 as Float, forKey: .gamma)
+        case .linearSRGB:
+            try container.encode(1.0 as Float, forKey: .gamma)
+        case .gammaSRGB(let gamma):
+            try container.encode(gamma, forKey: .gamma)
+        }
+    }
+}
+
 public typealias TextureColourSpace = TextureColorSpace
 
 public enum TextureAlphaMode {

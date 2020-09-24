@@ -181,8 +181,13 @@ public enum ActiveResourceRange {
         result.subtract(range: range, subresourceCount: subresourceCount, allocator: allocator)
         return result
     }
-    
+
+
     public func isEqual(to other: ActiveResourceRange, resource: Resource) -> Bool {
+        return self.isEqual(to: other, subresourceCount: resource.subresourceCount)
+    }
+
+    public func isEqual(to other: ActiveResourceRange, subresourceCount: Int) -> Bool {
         switch (self, other) {
         case (.inactive, .inactive):
             return true
@@ -193,10 +198,10 @@ public enum ActiveResourceRange {
         case (.buffer(let rangeA), .buffer(let rangeB)):
             return rangeA == rangeB
         case (.texture(let maskA), .texture(let maskB)):
-            return maskA.isEqual(to: maskB, subresourceCount: resource.texture!.descriptor.subresourceCount)
+            return maskA.isEqual(to: maskB, subresourceCount: subresourceCount)
             
         case (.buffer(let range), .fullResource), (.fullResource, .buffer(let range)):
-            return range == resource.buffer!.range
+            return range.count == subresourceCount
         case (.buffer(let range), .inactive), (.inactive, .buffer(let range)):
             return range.isEmpty
             
@@ -226,6 +231,8 @@ extension ResourceProtocol {
         switch self.type {
         case .texture:
             return Texture(handle: self.handle).descriptor.subresourceCount
+        case .buffer:
+            return Buffer(handle: self.handle).descriptor.length
         default:
             return 0
         }
