@@ -9,21 +9,13 @@ import SwiftFrameGraph
 
 extension Texture {
     /// Uploads a TextureData to a GPU texture using the GPUResourceUploader.
-    public init<T>(data textureData: TextureData<T>, pixelFormat: PixelFormat, mipmapped: Bool = false, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
+    public init<T>(data textureData: TextureData<T>, pixelFormat: PixelFormat, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
         precondition(Double(MemoryLayout<T>.stride * textureData.channelCount) == pixelFormat.bytesPerPixel)
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
         self = Texture(descriptor: descriptor, flags: flags)
         
-        let mips = mipmapped ? textureData.generateMipChain(wrapMode: .wrap, compressedBlockSize: pixelFormat.rowsPerBlock) : [textureData]
-    
-        for (i, data) in mips.enumerated() {
-            let bytesPerRow = Double(data.width * pixelFormat.rowsPerBlock) * pixelFormat.bytesPerPixel
-            let storage = data.storage
-            GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: storage.data.baseAddress!, bytesPerRow: Int(bytesPerRow), onUploadCompleted: { [storage] _, _ in
-                _ = storage
-            })
-        }
+        try self.copyData(from: textureData, mipGenerationMode: mipGenerationMode)
     }
 }
 

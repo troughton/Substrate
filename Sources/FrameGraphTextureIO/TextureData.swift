@@ -491,12 +491,16 @@ public struct TextureData<T> {
         return result
     }
     
-    public func generateMipChain(wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter = .default, compressedBlockSize: Int) -> [TextureData<T>] {
+    public func generateMipChain(wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter = .default, compressedBlockSize: Int, mipmapCount: Int? = nil) -> [TextureData<T>] {
         var results = [self]
         
         var width = self.width
         var height = self.height
         while width >= 2 && height >= 2 {
+            if results.count == (mipmapCount ?? .max) {
+                return results
+            }
+            
             width /= 2
             height /= 2
             if width % compressedBlockSize != 0 || height % compressedBlockSize != 0 {
