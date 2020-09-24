@@ -586,7 +586,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool) -> VkImageReference {
+    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> VkImageReference {
         if let vkTexture = self.textureReferences[texture] {
             return vkTexture
         }
