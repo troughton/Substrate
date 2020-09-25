@@ -895,3 +895,19 @@ extension TextureData where T == Float {
         return average
     }
 }
+
+
+extension TextureData where T: BinaryFloatingPoint {
+    @inlinable
+    public init<Other: BinaryFloatingPoint>(_ data: TextureData<Other>) {
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
+        
+        self.withUnsafeMutableBufferPointer { dest in
+            data.withUnsafeBufferPointer { source in
+                for (i, sourceVal) in source.enumerated() {
+                    dest[i] = T(sourceVal)
+                }
+            }
+        }
+    }
+}
