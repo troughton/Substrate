@@ -302,32 +302,17 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             let usagesArray = resource.usages.makeRandomAccessView(allocator: allocator)
             
             let firstUsage = usagesArray.first!
-
-            #if canImport(Vulkan)
-            if Backend.self == VulkanBackend.self, resource.type == .texture, resource.flags.intersection([.historyBuffer, .persistent]) != [] {
-                // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
-                // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
-                // so that it can be inserted as a subpass dependency.
-                self.commands.append(FrameResourceCommand(command: 
-                                                            .memoryBarrier(Resource(resource), afterUsage: .previousFrame, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages, activeRange: firstUsage.activeRange),
-                        index: firstUsage.type.isRenderTarget ? firstUsage.commandRange.lowerBound : 0))
-            }
-            #endif
             
             if Backend.TransientResourceRegistry.isAliasedHeapResource(resource: resource) {
                 let fenceDependency = FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, stages: firstUsage.stages)
                 self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource, waitDependency: fenceDependency), index: firstUsage.commandRange.lowerBound, order: .before))
             }
             
-            if firstUsage.type == .inputAttachmentRenderTarget {
-                processInputAttachmentUsage(firstUsage, resource: resource, activeRange: firstUsage.activeRange)
-            }
-            
             var remainingSubresources = ActiveResourceRange.inactive
             var remainingSubresourcesUsageIndex: Int = -1
             
             var activeSubresources = ActiveResourceRange.fullResource
-            var usageIndex = usagesArray.index(after: usagesArray.startIndex)
+            var usageIndex = usagesArray.startIndex
             
             while usageIndex < usagesArray.count {
                 defer {
@@ -419,6 +404,17 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                                                                  on: onEncoder,
                                                                  to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
                     }
+                } else {
+                    #if canImport(Vulkan)
+                    if Backend.self == VulkanBackend.self, resource.type == .texture {
+                        // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
+                        // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
+                        // so that it can be inserted as a subpass dependency.
+                        self.commands.append(FrameResourceCommand(command:
+                                                                    .memoryBarrier(Resource(resource), afterUsage: .layoutTransitionCheck, afterStages: .cpuBeforeRender, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
+                                                                  index: usage.type.isRenderTarget ? usage.commandRange.lowerBound : 0))
+                    }
+                    #endif
                 }
             }
             

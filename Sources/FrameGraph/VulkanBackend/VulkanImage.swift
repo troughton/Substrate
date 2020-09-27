@@ -230,30 +230,19 @@ class VulkanImage {
         self.frameLayouts.forEach { $0.subresourceRange.deallocateStorage(subresourceCount: self.descriptor.subresourceCount, allocator: .system) }
         self.frameLayouts.removeAll()
     }
-
-    var hasMultipleSubresourceInitialLayouts: Bool {
-        return !self.frameLayouts.first!.subresourceRange.isEqual(to: .fullResource, subresourceCount: self.descriptor.subresourceCount)
-    }
     
-    func frameInitialLayoutSubresources(resource: Resource, allocator: AllocatorType) -> [ActiveResourceRange] {
-        var remainingSubresources = ActiveResourceRange.fullResource
-        var subresources = [ActiveResourceRange]()
-        for layout in self.frameLayouts {
-            subresources.append(layout.subresourceRange)
-            remainingSubresources.subtract(range: layout.subresourceRange, resource: resource, allocator: allocator)
-            if remainingSubresources.isEqual(to: .inactive, resource: resource) {
-                break
-            }
+    func frameInitialLayout(for subresources: ActiveResourceRange, allocator: AllocatorType) -> (VkImageLayout, unhandledSubresources: ActiveResourceRange) {
+        var remainingSubresources = subresources
+        
+        guard let layout = self.frameLayouts.prefix(while: { $0.commandRange.upperBound <= 0}).first(where: { $0.subresourceRange.intersects(with: remainingSubresources, subresourceCount: self.descriptor.subresourceCount) }) else {
+            preconditionFailure("No initial layout found for range \(subresources); layouts are \(self.frameLayouts)")
         }
-        return subresources
-    }
-    
-    func frameInitialLayout(for subresource: ActiveResourceRange) -> VkImageLayout {
-        return self.frameLayouts.first(where: { $0.commandRange.upperBound <= 0 && $0.subresourceRange.intersects(with: subresource, subresourceCount: self.descriptor.subresourceCount) })!.layout
+        remainingSubresources.subtract(range: layout.subresourceRange, subresourceCount: self.descriptor.subresourceCount, allocator: allocator)
+        return (layout.layout, remainingSubresources)
     }
     
     func layout(commandIndex: Int, subresourceRange: ActiveResourceRange) -> VkImageLayout {
-        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) && $0.subresourceRange.intersects(with: subresourceRange, subresourceCount: self.descriptor.subresourceCount) })?.layout else {
+        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) && $0.subresourceRange.isEqual(to: subresourceRange, subresourceCount: self.descriptor.subresourceCount) })?.layout else {
             preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image for range \(subresourceRange); layouts are \(self.frameLayouts)")
         }
         return layout

@@ -38,7 +38,7 @@ public enum ResourceUsageType {
     case unusedArgumentBuffer
 
     // Used in a previous frame
-    case previousFrame
+    case layoutTransitionCheck
 
     public var isRenderTarget : Bool {
         switch self {

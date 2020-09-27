@@ -244,22 +244,18 @@ extension VulkanBackend {
         }
         
         func processMemoryBarrier(resource: Resource, afterCommand: Int, afterUsageType: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsageType: ResourceUsageType, beforeStages: RenderStages, activeRange: ActiveResourceRange) {
+            var remainingRange = ActiveResourceRange.inactive // The subresource range not processed by this barrier.
+            
             let pixelFormat =  resource.texture?.descriptor.pixelFormat ?? .invalid
             let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
 
             let sourceLayout: VkImageLayout
             let destinationLayout: VkImageLayout
             if let image = resource.texture.map({ resourceMap[$0].image }) {
-                if afterUsageType == .previousFrame, image.hasMultipleSubresourceInitialLayouts, activeRange.isEqual(to: .fullResource, resource: resource) {
-                    // If we're importing an image into this frame, we need to transition each subresource into the initial layout independently.
-                    for activeRange in image.frameInitialLayoutSubresources(resource: resource, allocator: AllocatorType(allocator)) {
-                        processMemoryBarrier(resource: resource, afterCommand: afterCommand, afterUsageType: afterUsageType, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsageType, beforeStages: beforeStages, activeRange: activeRange)
-                    }
-                    
-                    return
-                    
+                if afterUsageType == .layoutTransitionCheck {
+                    (sourceLayout, remainingRange) = image.frameInitialLayout(for: activeRange, allocator: AllocatorType(allocator))
                 } else {
-                    sourceLayout = afterUsageType == .previousFrame ? image.frameInitialLayout(for: activeRange) : image.layout(commandIndex: afterCommand, subresourceRange: activeRange)
+                    sourceLayout = image.layout(commandIndex: afterCommand, subresourceRange: activeRange)
                 }
                 
                 destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange)
@@ -268,7 +264,15 @@ extension VulkanBackend {
                 sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED
                 destinationLayout = VK_IMAGE_LAYOUT_UNDEFINED
             }
-            if sourceLayout == destinationLayout, afterUsageType == .previousFrame {
+            
+            defer {
+                // It's possible there are multiple source layouts/subresource ranges, in which case we insert multiple barriers.
+                if !remainingRange.isEqual(to: .inactive, resource: resource) {
+                    processMemoryBarrier(resource: resource, afterCommand: afterCommand, afterUsageType: afterUsageType, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsageType, beforeStages: beforeStages, activeRange: remainingRange)
+                }
+            }
+            
+            if sourceLayout == destinationLayout, afterUsageType == .layoutTransitionCheck {
                 return // No layout transition needed, so we don't need a memory barrier.
             }
             
@@ -283,7 +287,7 @@ extension VulkanBackend {
             if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound {
                 var subpassDependency = VkSubpassDependency()
                 subpassDependency.dependencyFlags = 0 // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
-                if afterUsageType == .previousFrame {
+                if afterUsageType == .layoutTransitionCheck {
                     subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
                 } else if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(currentPassIndex) {
                     subpassDependency.srcSubpass = UInt32(passUsageSubpass.index)
