@@ -406,7 +406,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                 } else {
                     #if canImport(Vulkan)
-                    if Backend.self == VulkanBackend.self, resource.type == .texture {
+                    if Backend.self == VulkanBackend.self, resource.type == .texture, !resource.flags.contains(.windowHandle) {
                         // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
                         // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
                         // so that it can be inserted as a subpass dependency.
