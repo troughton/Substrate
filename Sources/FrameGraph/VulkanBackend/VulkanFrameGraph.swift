@@ -375,8 +375,9 @@ extension VulkanBackend {
                         imageBarriers.append(barrier)
                     } else {
                         var activeMask = SubresourceMask(source: mask, subresourceCount: texture.descriptor.subresourceCount, allocator: AllocatorType(allocator))
-                        processImageSubresourceRanges(&activeMask, textureDescriptor: texture.descriptor, allocator: AllocatorType(allocator)) {
-                            barrier.subresourceRange = $0
+                        processImageSubresourceRanges(&activeMask, textureDescriptor: texture.descriptor, allocator: AllocatorType(allocator)) { range in
+                            barrier.subresourceRange = range
+                            assert(!imageBarriers.contains(where: { $0.image == barrier.image && $0.subresourceRange == range })) // Ensure we don't add duplicate barriers.
                             imageBarriers.append(barrier)
                         }
                     }

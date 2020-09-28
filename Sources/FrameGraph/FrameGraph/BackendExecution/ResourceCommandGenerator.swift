@@ -313,6 +313,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
             var activeSubresources = ActiveResourceRange.fullResource
             var usageIndex = usagesArray.startIndex
+            var skipUntilAfterInapplicableUsage = false // When processing subresources, we skip until we encounter a usage that is incompatible with our current subresources, since every usage up until that point will have already been processed.
             
             while usageIndex < usagesArray.count {
                 defer {
@@ -323,6 +324,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         activeSubresources = remainingSubresources
                         remainingSubresources = .inactive
                         usageIndex = remainingSubresourcesUsageIndex
+                        skipUntilAfterInapplicableUsage = true
                     }
                 }
                 
@@ -340,6 +342,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                             remainingSubresources = .inactive
                             
                             usageIndex = remainingSubresourcesUsageIndex - 1 // since it will have 1 added to it in the defer statement
+                            skipUntilAfterInapplicableUsage = true
                             
                             continue
                         } else {
@@ -348,6 +351,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     } else {
                         let activeRangeIntersection = usage.activeRange.intersection(with: activeSubresources, resource: resource, allocator: allocator)
                         if activeRangeIntersection.isEqual(to: .inactive, resource: resource) {
+                            skipUntilAfterInapplicableUsage = false
+                            continue
+                        } else if skipUntilAfterInapplicableUsage {
                             continue
                         } else if !activeRangeIntersection.isEqual(to: activeSubresources, resource: resource) {
                             if remainingSubresources.isEqual(to: .inactive, resource: resource) {
