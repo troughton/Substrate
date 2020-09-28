@@ -631,7 +631,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     func prepareMultiframeTexture(_ texture: Texture) {
         if let image = self.persistentRegistry[texture] {
-            image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: true)
+            image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: texture.stateFlags.contains(.initialised))
         }
     }
     
