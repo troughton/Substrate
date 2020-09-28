@@ -381,6 +381,33 @@ public struct _ArgumentBuffer : ResourceProtocol {
         }
     }
     
+    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
+    @inlinable
+    public var isKnownInUse: Bool {
+        guard self._usesPersistentRegistry else {
+            return true
+        }
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+        let activeFrameGraphMask = CAtomicsLoad(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeFrameGraphs.advanced(by: indexInChunk), .relaxed)
+        if activeFrameGraphMask != 0 {
+            return true // The resource is still being used by a yet-to-be-submitted FrameGraph.
+        }
+        for queue in QueueRegistry.allQueues {
+            if self[waitIndexFor: queue, accessType: .readWrite] > queue.lastCompletedCommand {
+                return true
+            }
+        }
+        return false
+    }
+    
+    func markAsUsed(frameGraphIndexMask: UInt8) {
+        guard self._usesPersistentRegistry else {
+            return
+        }
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+        CAtomicsBitwiseOr(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeFrameGraphs.advanced(by: indexInChunk), frameGraphIndexMask, .relaxed)
+    }
+    
     public func dispose() {
         guard self._usesPersistentRegistry else {
             return
@@ -431,6 +458,10 @@ public struct _ArgumentBufferArray : ResourceProtocol {
         
         let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBufferArray.rawValue) << Self.typeBitsRange.lowerBound)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+    }
+    
+    public var isKnownInUse: Bool {
+        return self._bindings.contains(where: { $0?.isKnownInUse ?? false })
     }
     
     public func dispose() {
@@ -571,10 +602,14 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     }
     
     @inlinable
+    public var isKnownInUse: Bool {
+        return self.argumentBuffer.isKnownInUse
+    }
+    
+    @inlinable
     public var isValid: Bool {
         return self.argumentBuffer.isValid
     }
-    
     
     @inlinable
     public var label : String? {
@@ -678,6 +713,11 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
     public init(frameGraph: FrameGraph? = nil, flags: ResourceFlags = []) {
         self.argumentBufferArray = _ArgumentBufferArray(frameGraph: frameGraph, flags: flags)
         self.argumentBufferArray.label = "Argument Buffer Array \(K.self)"
+    }
+    
+    @inlinable
+    public var isKnownInUse: Bool {
+        return self.argumentBufferArray.isKnownInUse
     }
     
     public func dispose() {

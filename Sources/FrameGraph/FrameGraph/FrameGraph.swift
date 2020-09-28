@@ -576,6 +576,7 @@ public final class FrameGraph {
         let renderPassScratchTag = FrameGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
         
         let commandRecorder = FrameGraphCommandRecorder(frameGraphTransientRegistryIndex: self.transientRegistryIndex,
+                                                        frameGraphQueue: self.queue,
                                                         renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
                                                         frameGraphExecutionAllocator: TagAllocator.ThreadView(allocator: FrameGraph.executionAllocator, threadIndex: threadIndex),
                                                         resourceUsageAllocator: TagAllocator.ThreadView(allocator: FrameGraph.resourceUsagesAllocator, threadIndex: threadIndex),
@@ -627,9 +628,11 @@ public final class FrameGraph {
         passRecord.writtenResources = .init(allocator: .tagThreadView(usageAllocator))
         
         for resource in passRecord.pass.writtenResources {
+            resource.markAsUsed(frameGraphIndexMask: 1 << self.queue.index)
             passRecord.writtenResources.insert(resource)
         }
         for resource in passRecord.pass.readResources {
+            resource.markAsUsed(frameGraphIndexMask: 1 << self.queue.index)
             passRecord.readResources.insert(resource)
         }
     }
@@ -901,9 +904,9 @@ public final class FrameGraph {
         TransientArgumentBufferRegistry.instances[transientRegistryIndex].clear()
         TransientArgumentBufferArrayRegistry.instances[transientRegistryIndex].clear()
         
-        PersistentTextureRegistry.instance.clear()
-        PersistentBufferRegistry.instance.clear()
-        PersistentArgumentBufferRegistry.instance.clear()
+        PersistentTextureRegistry.instance.clear(afterFrameGraph: self)
+        PersistentBufferRegistry.instance.clear(afterFrameGraph: self)
+        PersistentArgumentBufferRegistry.instance.clear(afterFrameGraph: self)
         PersistentArgumentBufferArrayRegistry.instance.clear()
         
         FrameGraph.threadUnmanagedReferences.forEach { unmanagedReferences in

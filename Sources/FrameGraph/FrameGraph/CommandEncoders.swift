@@ -1471,7 +1471,6 @@ public final class ExternalCommandEncoder : CommandEncoder {
         }
     }
     
-    @inlinable
     func encodeCommand(usingResources resources: [(Resource, ResourceUsageType, ActiveResourceRange)], _ command: @escaping (_ commandBuffer: UnsafeRawPointer) -> Void) {
         let commandBox = Unmanaged.passRetained(ExternalCommandBox(command: command))
         self.commandRecorder.unmanagedReferences.append(commandBox)
@@ -1485,7 +1484,6 @@ public final class ExternalCommandEncoder : CommandEncoder {
     
     #if canImport(Metal)
     
-    @inlinable
     public func encodeToMetalCommandBuffer(usingResources resources: [(Resource, ResourceUsageType, ActiveResourceRange)], _ command: @escaping (_ commandBuffer: MTLCommandBuffer) -> Void) {
         self.encodeCommand(usingResources: resources, { (cmdBuffer) in
             command(Unmanaged<MTLCommandBuffer>.fromOpaque(cmdBuffer).takeUnretainedValue())
