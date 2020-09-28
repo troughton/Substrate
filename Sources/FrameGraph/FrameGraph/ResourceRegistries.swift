@@ -1242,13 +1242,9 @@ public enum TextureViewBaseInfo {
         }
     }
     
-    func dispose(_ heap: Heap, atEndOfFrame: Bool = true) {
+    func dispose(_ heap: Heap) {
         self.lock.withLock {
-            if atEndOfFrame {
-                self.enqueuedDisposals.append(heap)
-            } else {
-                self.disposeImmediately(heap: heap)
-            }
+            self.enqueuedDisposals.append(heap)
         }
     }
 }
