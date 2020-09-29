@@ -180,6 +180,7 @@ class VulkanImage {
                 self.frameLayouts.append(LayoutState(commandRange: -1..<0,
                                                      layout: layout.layout,
                                                      subresourceRange: subresources))
+
                 if remainingSubresources.isEqual(to: .inactive, resource: resource) {
                     break
                 }
@@ -231,18 +232,18 @@ class VulkanImage {
         self.frameLayouts.removeAll()
     }
     
-    func frameInitialLayout(for subresources: ActiveResourceRange, allocator: AllocatorType) -> (VkImageLayout, unhandledSubresources: ActiveResourceRange) {
+    func frameInitialLayout(for subresources: ActiveResourceRange, allocator: AllocatorType) -> (VkImageLayout, layoutSubresource: ActiveResourceRange, unhandledSubresources: ActiveResourceRange) {
         var remainingSubresources = subresources
         
         guard let layout = self.frameLayouts.prefix(while: { $0.commandRange.upperBound <= 0}).first(where: { $0.subresourceRange.intersects(with: remainingSubresources, subresourceCount: self.descriptor.subresourceCount) }) else {
             preconditionFailure("No initial layout found for range \(subresources); layouts are \(self.frameLayouts)")
         }
         remainingSubresources.subtract(range: layout.subresourceRange, subresourceCount: self.descriptor.subresourceCount, allocator: allocator)
-        return (layout.layout, remainingSubresources)
+        return (layout.layout, layout.subresourceRange, remainingSubresources)
     }
     
     func layout(commandIndex: Int, subresourceRange: ActiveResourceRange) -> VkImageLayout {
-        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) && $0.subresourceRange.isEqual(to: subresourceRange, subresourceCount: self.descriptor.subresourceCount) })?.layout else {
+        guard let layout = self.frameLayouts.first(where: { $0.commandRange.contains(commandIndex) && $0.subresourceRange.intersects(with: subresourceRange, subresourceCount: self.descriptor.subresourceCount) })?.layout else {
             preconditionFailure("Command index \(commandIndex) does not correspond to a usage of this image for range \(subresourceRange); layouts are \(self.frameLayouts)")
         }
         return layout

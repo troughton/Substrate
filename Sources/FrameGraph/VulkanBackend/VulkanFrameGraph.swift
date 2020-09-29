@@ -245,6 +245,7 @@ extension VulkanBackend {
         
         func processMemoryBarrier(resource: Resource, afterCommand: Int, afterUsageType: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsageType: ResourceUsageType, beforeStages: RenderStages, activeRange: ActiveResourceRange) {
             var remainingRange = ActiveResourceRange.inactive // The subresource range not processed by this barrier.
+            var activeRange = activeRange
             
             let pixelFormat =  resource.texture?.descriptor.pixelFormat ?? .invalid
             let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
@@ -252,13 +253,14 @@ extension VulkanBackend {
             let sourceLayout: VkImageLayout
             let destinationLayout: VkImageLayout
             if let image = resource.texture.map({ resourceMap[$0].image }) {
-                if afterUsageType == .layoutTransitionCheck {
-                    (sourceLayout, remainingRange) = image.frameInitialLayout(for: activeRange, allocator: AllocatorType(allocator))
+                if afterUsageType == .frameStartLayoutTransitionCheck {
+                    (sourceLayout, activeRange, remainingRange) = image.frameInitialLayout(for: activeRange, allocator: AllocatorType(allocator))
                 } else {
                     sourceLayout = image.layout(commandIndex: afterCommand, subresourceRange: activeRange)
                 }
                 
                 destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange)
+
             } else {
                 assert(resource.type != .texture || resource.flags.contains(.windowHandle))
                 sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED
@@ -272,7 +274,7 @@ extension VulkanBackend {
                 }
             }
             
-            if sourceLayout == destinationLayout, afterUsageType == .layoutTransitionCheck {
+            if sourceLayout == destinationLayout, afterUsageType == .frameStartLayoutTransitionCheck || afterUsageType == .interReadLayoutTransitionCheck {
                 return // No layout transition needed, so we don't need a memory barrier.
             }
             
@@ -286,8 +288,8 @@ extension VulkanBackend {
             
             if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound {
                 var subpassDependency = VkSubpassDependency()
-                subpassDependency.dependencyFlags = 0 // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
-                if afterUsageType == .layoutTransitionCheck {
+                subpassDependency.dependencyFlags = VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
+                if afterUsageType == .frameStartLayoutTransitionCheck || afterUsageType == .interReadLayoutTransitionCheck {
                     subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
                 } else if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(currentPassIndex) {
                     subpassDependency.srcSubpass = UInt32(passUsageSubpass.index)

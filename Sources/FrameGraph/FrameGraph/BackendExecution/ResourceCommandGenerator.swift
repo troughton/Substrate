@@ -209,6 +209,16 @@ extension ChunkArray.RandomAccessView where Element == ResourceUsage {
         }
         return nil
     }
+
+    func indexOfPreviousRead(before index: Int, resource: Resource) -> Int? {
+        let usageActiveRange = index >= self.endIndex ? .fullResource : self[index].activeRange
+        for i in (0..<index).reversed() {
+            if self[i].affectsGPUBarriers, self[i].isRead, self[i].activeRange.intersects(with: usageActiveRange, resource: resource) {
+                return i
+            }
+        }
+        return nil
+    }
 }
 
 final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
@@ -398,6 +408,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
                         assert(!previousWrite.stages.isEmpty || previousWrite.renderPassRecord.pass.passType != .draw)
                         
+                        if resource.handle == 144116287587483653 {
+                            print("Inserting memory barrier between \(usage) and \(previousWrite)")
+                        }
                         self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousWrite.type, afterStages: previousWrite.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources), index: previousWrite.commandRange.last!))
                     }
                     
@@ -416,9 +429,20 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
                         // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
                         // so that it can be inserted as a subpass dependency.
-                        self.commands.append(FrameResourceCommand(command:
-                                                                    .memoryBarrier(Resource(resource), afterUsage: .layoutTransitionCheck, afterStages: .cpuBeforeRender, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
+
+                        if let previousRead = usagesArray.indexOfPreviousRead(before: usageIndex, resource: resource).map({ usagesArray[$0] }) {
+                            if previousRead.type != usage.type {
+                                self.commands.append(FrameResourceCommand(command:
+                                                                    .memoryBarrier(Resource(resource), afterUsage: .interReadLayoutTransitionCheck, afterStages: previousRead.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
+                                                                     index: previousRead.commandRange.upperBound))
+
+                            }
+
+                        } else {
+                            self.commands.append(FrameResourceCommand(command:
+                                                                    .memoryBarrier(Resource(resource), afterUsage: .frameStartLayoutTransitionCheck, afterStages: .cpuBeforeRender, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
                                                                   index: usage.type.isRenderTarget ? usage.commandRange.lowerBound : 0))
+                        }
                     }
                     #endif
                 }
