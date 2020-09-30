@@ -42,7 +42,11 @@ extension MTLResourceOptions {
             matches = matches && self.contains(.storageModePrivate)
         case .memoryless:
             #if os(macOS) || targetEnvironment(macCatalyst)
-            matches = false
+            if #available(macOS 11.0, macCatalyst 14.0, *) {
+                matches = matches && self.contains(.storageModeMemoryless)
+            } else {
+                matches = false
+            }
             #else
             matches = matches && self.contains(.storageModeMemoryless)
             #endif

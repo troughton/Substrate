@@ -12,6 +12,7 @@ public protocol FrameGraphJobManager : class {
     func dispatchPassJob(_ function: @escaping () -> Void)
     func waitForAllPassJobs()
     func syncOnMainThread<T>(_ function: () throws -> T) rethrows -> T
+    func asyncOnMainThread(_ function: @escaping () -> Void)
 }
 
 final class DefaultFrameGraphJobManager : FrameGraphJobManager {
@@ -37,6 +38,15 @@ final class DefaultFrameGraphJobManager : FrameGraphJobManager {
             return try DispatchQueue.main.sync { try function() }
         } else {
             return try function()
+        }
+    }
+    
+    @inlinable
+    public func asyncOnMainThread(_ function: @escaping () -> Void) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { function() }
+        } else {
+            function()
         }
     }
 }

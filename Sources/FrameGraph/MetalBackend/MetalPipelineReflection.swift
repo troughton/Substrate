@@ -176,6 +176,9 @@ final class MetalPipelineReflection : PipelineReflection {
                     
                     if var existingReflection = reflectionCache[subPath] {
                         existingReflection.activeStages.formUnion(memberReflection.activeStages)
+                        if !memberReflection.activeStages.isEmpty {
+                            existingReflection.activeRange = .fullResource
+                        }
                         assert(existingReflection.type == memberReflection.type)
                         assert(existingReflection.usageType == memberReflection.usageType)
                         reflectionCache[subPath] = existingReflection

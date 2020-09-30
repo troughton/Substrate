@@ -147,6 +147,36 @@ public enum TextureColorSpace: Hashable {
     }
 }
 
+extension TextureColorSpace: Codable {
+    public enum CodingKeys: CodingKey {
+        case gamma
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let gamma = try container.decode(Float.self, forKey: .gamma)
+        if gamma == 0 {
+            self = .sRGB // sRGB is encoded as gamma of 0.0
+        } else if gamma == 1.0 {
+            self = .linearSRGB
+        } else {
+            self = .gammaSRGB(gamma)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .sRGB:
+            try container.encode(0.0 as Float, forKey: .gamma)
+        case .linearSRGB:
+            try container.encode(1.0 as Float, forKey: .gamma)
+        case .gammaSRGB(let gamma):
+            try container.encode(gamma, forKey: .gamma)
+        }
+    }
+}
+
 public typealias TextureColourSpace = TextureColorSpace
 
 public enum TextureAlphaMode {
@@ -355,7 +385,7 @@ public struct TextureData<T> {
     }
     
     @inlinable
-    mutating func setUnchecked(x: Int, y: Int, channel: Int, value: T) {
+    func setUnchecked(x: Int, y: Int, channel: Int, value: T) {
         self.storage.data[y &* self.width &* self.channelCount + x &* self.channelCount &+ channel] = value
     }
     
@@ -428,14 +458,14 @@ public struct TextureData<T> {
             return self
         }
         
-        var result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        let result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
         for y in 0..<height {
             let clampedY = clampOutOfBounds ? clamp(y + originY, min: 0, max: self.height - 1) : (y + originY)
             for x in 0..<width {
                 let clampedX = clampOutOfBounds ? clamp(x + originX, min: 0, max: self.width - 1) : (x + originX)
                 for c in 0..<self.channelCount {
-                    result.setUnchecked(x: clampedX, y: clampedY, channel: c, value: self[clampedX, clampedY, channel: c])
+                    result.setUnchecked(x: x, y: y, channel: c, value: self[clampedX, clampedY, channel: c])
                 }
             }
         }
@@ -491,12 +521,16 @@ public struct TextureData<T> {
         return result
     }
     
-    public func generateMipChain(wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter = .default, compressedBlockSize: Int) -> [TextureData<T>] {
+    public func generateMipChain(wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter = .default, compressedBlockSize: Int, mipmapCount: Int? = nil) -> [TextureData<T>] {
         var results = [self]
         
         var width = self.width
         var height = self.height
         while width >= 2 && height >= 2 {
+            if results.count == (mipmapCount ?? .max) {
+                return results
+            }
+            
             width /= 2
             height /= 2
             if width % compressedBlockSize != 0 || height % compressedBlockSize != 0 {
@@ -571,6 +605,76 @@ extension TextureData where T: SIMDScalar {
     }
 }
 
+extension TextureData where T == UInt8 {
+    private func _applyUnchecked(_ function: (UInt8) -> UInt8, channelRange: Range<Int>) {
+        for y in 0..<self.height {
+            let yBase = y * self.width * self.channelCount
+            for x in 0..<self.width {
+                let baseIndex = yBase + x * self.channelCount
+                for c in channelRange {
+                    self.storage.data[baseIndex + c] = function(self.storage.data[baseIndex + c])
+                }
+            }
+        }
+    }
+    
+    private func _convertSRGBToLinear() {
+        self._applyUnchecked({ ColorSpaceLUTs.sRGBToLinear($0) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+    }
+    
+    private func _convertLinearToSRGB() {
+        self._applyUnchecked({ ColorSpaceLUTs.linearToSRGB($0) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+    }
+    
+    private func _convertSRGBPostmultipliedToPremultiplied() {
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let alpha = self[x, y, channel: 3]
+                for c in 0..<3 {
+                    let channelVal = self[x, y, channel: c]
+                    self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPostmultToPremult(value: channelVal, alpha: alpha))
+                }
+            }
+        }
+    }
+    
+    private func _convertLinearPostmultipliedToPremultiplied() {
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let alpha = self[x, y, channel: 3]
+                for c in 0..<3 {
+                    let channelVal = self[x, y, channel: c]
+                    self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.postmultToPremult(value: channelVal, alpha: alpha))
+                }
+            }
+        }
+    }
+    
+    private func _convertSRGBPremultipliedToPostmultiplied() {
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let alpha = self[x, y, channel: 3]
+                for c in 0..<3 {
+                    let channelVal = self[x, y, channel: c]
+                    self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPremultToPostmult(value: channelVal, alpha: alpha))
+                }
+            }
+        }
+    }
+    
+    private func _convertLinearPremultipliedToPostmultiplied() {
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let alpha = self[x, y, channel: 3]
+                for c in 0..<3 {
+                    let channelVal = self[x, y, channel: c]
+                    self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.premultToPostmult(value: channelVal, alpha: alpha))
+                }
+            }
+        }
+    }
+}
+
 extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
     @inlinable
     public init(_ data: TextureData<Float>) {
@@ -592,11 +696,12 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         defer { self.colorSpace = toColorSpace }
         
         if T.self == UInt8.self {
+            self.ensureUniqueness()
             if self.colorSpace == .sRGB, toColorSpace == .linearSRGB {
-                self.apply({ ColorSpaceLUTs.sRGBToLinear($0 as! UInt8) as! T }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+                (self as! TextureData<UInt8>)._convertSRGBToLinear()
                 return
             } else if self.colorSpace == .linearSRGB, toColorSpace == .sRGB {
-                self.apply({ ColorSpaceLUTs.linearToSRGB($0 as! UInt8) as! T }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+                (self as! TextureData<UInt8>)._convertLinearToSRGB()
                 return
             }
         }
@@ -613,26 +718,10 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         
         if T.self == UInt8.self {
             if self.colorSpace == .sRGB {
-                for y in 0..<self.height {
-                    for x in 0..<self.width {
-                        let alpha = self[x, y, channel: 3] as! UInt8
-                        for c in 0..<3 {
-                            let channelVal = self[x, y, channel: c] as! UInt8
-                            self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPostmultToPremult(value: channelVal, alpha: alpha) as! T)
-                        }
-                    }
-                }
+                (self as! TextureData<UInt8>)._convertSRGBPostmultipliedToPremultiplied()
                 return
             } else if self.colorSpace == .linearSRGB {
-                for y in 0..<self.height {
-                    for x in 0..<self.width {
-                        let alpha = self[x, y, channel: 3] as! UInt8
-                        for c in 0..<3 {
-                            let channelVal = self[x, y, channel: c] as! UInt8
-                            self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.postmultToPremult(value: channelVal, alpha: alpha) as! T)
-                        }
-                    }
-                }
+                (self as! TextureData<UInt8>)._convertLinearPostmultipliedToPremultiplied()
                 return
             }
         }
@@ -658,26 +747,10 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         
         if T.self == UInt8.self {
             if self.colorSpace == .sRGB {
-                for y in 0..<self.height {
-                    for x in 0..<self.width {
-                        let alpha = self[x, y, channel: 3] as! UInt8
-                        for c in 0..<3 {
-                            let channelVal = self[x, y, channel: c] as! UInt8
-                            self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPremultToPostmult(value: channelVal, alpha: alpha) as! T)
-                        }
-                    }
-                }
+                (self as! TextureData<UInt8>)._convertSRGBPremultipliedToPostmultiplied()
                 return
             } else if self.colorSpace == .linearSRGB {
-                for y in 0..<self.height {
-                    for x in 0..<self.width {
-                        let alpha = self[x, y, channel: 3] as! UInt8
-                        for c in 0..<3 {
-                            let channelVal = self[x, y, channel: c] as! UInt8
-                            self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.premultToPostmult(value: channelVal, alpha: alpha) as! T)
-                        }
-                    }
-                }
+                (self as! TextureData<UInt8>)._convertLinearPremultipliedToPostmultiplied()
                 return
             }
         }
@@ -820,5 +893,21 @@ extension TextureData where T == Float {
             }
         }
         return average
+    }
+}
+
+
+extension TextureData where T: BinaryFloatingPoint {
+    @inlinable
+    public init<Other: BinaryFloatingPoint>(_ data: TextureData<Other>) {
+        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
+        
+        self.withUnsafeMutableBufferPointer { dest in
+            data.withUnsafeBufferPointer { source in
+                for (i, sourceVal) in source.enumerated() {
+                    dest[i] = T(sourceVal)
+                }
+            }
+        }
     }
 }

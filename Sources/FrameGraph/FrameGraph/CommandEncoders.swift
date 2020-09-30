@@ -887,19 +887,19 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         for (i, attachment) in renderPass.renderTargetDescriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             needsClearCommand = needsClearCommand || renderPass.colorClearOperation(attachmentIndex: i).isClear
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: attachment.texture, arraySlice: attachment.arraySlice, level: attachment.level, encoder: self, usageType: renderPass.colorClearOperation(attachmentIndex: i).isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: 0)
+            let usagePointer = self.commandRecorder.resourceUsageNode(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: renderPass.colorClearOperation(attachmentIndex: i).isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: 0)
             self.renderTargetAttachmentUsages[.color(i)] = usagePointer
         }
         
         if let depthAttachment = renderPass.renderTargetDescriptor.depthAttachment {
             needsClearCommand = needsClearCommand || renderPass.depthClearOperation.isClear
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: depthAttachment.texture, arraySlice: depthAttachment.arraySlice, level: depthAttachment.level, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
+            let usagePointer = self.commandRecorder.resourceUsageNode(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
             self.renderTargetAttachmentUsages[.depth] = usagePointer
         }
         
         if let stencilAttachment = renderPass.renderTargetDescriptor.stencilAttachment {
             needsClearCommand = needsClearCommand || renderPass.stencilClearOperation.isClear
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: stencilAttachment.texture, arraySlice: stencilAttachment.arraySlice, level: stencilAttachment.level, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
+            let usagePointer = self.commandRecorder.resourceUsageNode(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, inArgumentBuffer: false, firstCommandOffset: 0)
             self.renderTargetAttachmentUsages[.stencil] = usagePointer
         }
         
@@ -933,8 +933,8 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             
             defer {
                 if endingEncoding, let resolveTexture = attachment.resolveTexture {
-                    let _ = self.commandRecorder.resourceUsageNode(for: attachment.texture, arraySlice: attachment.arraySlice, level: attachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
-                    let _ = self.commandRecorder.resourceUsageNode(for: resolveTexture, arraySlice: attachment.resolveArraySlice, level: attachment.resolveLevel, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
+                    let _ = self.commandRecorder.resourceUsageNode(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
+                    let _ = self.commandRecorder.resourceUsageNode(for: resolveTexture, slice: attachment.resolveSlice, level: attachment.resolveLevel, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
                 }
             }
         
@@ -964,7 +964,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 continue
             }
             
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: attachment.texture, arraySlice: attachment.arraySlice, level: attachment.level, encoder: self, usageType: type, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
+            let usagePointer = self.commandRecorder.resourceUsageNode(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: type, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
             usagePointer.pointee.commandRange = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
             self.renderTargetAttachmentUsages[.color(i)] = usagePointer
         }
@@ -1011,13 +1011,13 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 break depthCheck
             }
             
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: depthAttachment.texture, arraySlice: depthAttachment.arraySlice, level: depthAttachment.level, encoder: self, usageType: type, stages: [.vertex, .fragment], inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
+            let usagePointer = self.commandRecorder.resourceUsageNode(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: type, stages: [.vertex, .fragment], inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
             usagePointer.pointee.commandRange = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
             self.renderTargetAttachmentUsages[.depth] = usagePointer
             
             if endingEncoding, let resolveTexture = depthAttachment.resolveTexture {
-                let _ = self.commandRecorder.resourceUsageNode(for: depthAttachment.texture, arraySlice: depthAttachment.arraySlice, level: depthAttachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
-                let _ = self.commandRecorder.resourceUsageNode(for: resolveTexture, arraySlice: depthAttachment.resolveArraySlice, level: depthAttachment.resolveLevel, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
+                let _ = self.commandRecorder.resourceUsageNode(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
+                let _ = self.commandRecorder.resourceUsageNode(for: resolveTexture, slice: depthAttachment.resolveSlice, level: depthAttachment.resolveLevel, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
             }
         }
         
@@ -1053,13 +1053,13 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 break stencilCheck
             }
             
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: stencilAttachment.texture, arraySlice: stencilAttachment.arraySlice, level: stencilAttachment.level, encoder: self, usageType: type, stages: [.vertex, .fragment], inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
+            let usagePointer = self.commandRecorder.resourceUsageNode(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: type, stages: [.vertex, .fragment], inArgumentBuffer: false, firstCommandOffset: gpuCommandsStartIndex)
             usagePointer.pointee.commandRange = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
             self.renderTargetAttachmentUsages[.stencil] = usagePointer
             
             if endingEncoding, let resolveTexture = stencilAttachment.resolveTexture {
-                let _ = self.commandRecorder.resourceUsageNode(for: stencilAttachment.texture, arraySlice: stencilAttachment.arraySlice, level: stencilAttachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
-                let _ = self.commandRecorder.resourceUsageNode(for: resolveTexture, arraySlice: stencilAttachment.resolveArraySlice, level: stencilAttachment.resolveLevel,  encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
+                let _ = self.commandRecorder.resourceUsageNode(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
+                let _ = self.commandRecorder.resourceUsageNode(for: resolveTexture, slice: stencilAttachment.resolveSlice, level: stencilAttachment.resolveLevel,  encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, inArgumentBuffer: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
             }
         }
     }
@@ -1369,7 +1369,7 @@ public final class BlitCommandEncoder : CommandEncoder {
         let commandOffset = self.nextCommandOffset
         
         commandRecorder.addResourceUsage(for: sourceBuffer, bufferRange: sourceOffset..<min(sourceOffset, sourceOffset + sourceBytesPerImage), commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
-        commandRecorder.addResourceUsage(for: destinationTexture, arraySlice: destinationTexture.descriptor.arraySlice(for: destinationSlice), level: destinationLevel, commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: destinationTexture, slice: destinationSlice, level: destinationLevel, commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
         
         commandRecorder.record(FrameGraphCommand.copyBufferToTexture, (sourceBuffer, UInt32(sourceOffset), UInt32(sourceBytesPerRow), UInt32(sourceBytesPerImage), sourceSize, destinationTexture, UInt32(destinationSlice), UInt32(destinationLevel), destinationOrigin, options))
     }
@@ -1386,7 +1386,7 @@ public final class BlitCommandEncoder : CommandEncoder {
     public func copy(from sourceTexture: Texture, sourceSlice: Int, sourceLevel: Int, sourceOrigin: Origin, sourceSize: Size, to destinationBuffer: Buffer, destinationOffset: Int, destinationBytesPerRow: Int, destinationBytesPerImage: Int, options: BlitOption = []) {
         let commandOffset = self.nextCommandOffset
         
-        commandRecorder.addResourceUsage(for: sourceTexture, arraySlice: sourceTexture.descriptor.arraySlice(for: sourceSlice), level: sourceLevel, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: sourceTexture, slice: sourceSlice, level: sourceLevel, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
         commandRecorder.addResourceUsage(for: destinationBuffer, bufferRange: destinationOffset..<(destinationOffset + destinationBytesPerImage), commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
         
         commandRecorder.record(FrameGraphCommand.copyTextureToBuffer, (sourceTexture, UInt32(sourceSlice), UInt32(sourceLevel), sourceOrigin, sourceSize, destinationBuffer, UInt32(destinationOffset), UInt32(destinationBytesPerRow), UInt32(destinationBytesPerImage), options))
@@ -1395,8 +1395,8 @@ public final class BlitCommandEncoder : CommandEncoder {
     public func copy(from sourceTexture: Texture, sourceSlice: Int, sourceLevel: Int, sourceOrigin: Origin, sourceSize: Size, to destinationTexture: Texture, destinationSlice: Int, destinationLevel: Int, destinationOrigin: Origin) {
         let commandOffset = self.nextCommandOffset
         
-        commandRecorder.addResourceUsage(for: sourceTexture, arraySlice: sourceTexture.descriptor.arraySlice(for: sourceSlice), level: sourceLevel, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
-        commandRecorder.addResourceUsage(for: destinationTexture, arraySlice: destinationTexture.descriptor.arraySlice(for: destinationSlice), level: destinationLevel, commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: sourceTexture, slice: sourceSlice, level: sourceLevel, commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: destinationTexture, slice: destinationSlice, level: destinationLevel, commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
         
         commandRecorder.record(FrameGraphCommand.copyTextureToTexture, (sourceTexture, UInt32(sourceSlice), UInt32(sourceLevel), sourceOrigin, sourceSize, destinationTexture, UInt32(destinationSlice), UInt32(destinationLevel), destinationOrigin))
     }
@@ -1408,9 +1408,22 @@ public final class BlitCommandEncoder : CommandEncoder {
     }
     
     public func generateMipmaps(for texture: Texture) {
-        commandRecorder.addResourceUsage(for: texture, arraySlice: nil, level: nil, commandIndex: self.nextCommandOffset, encoder: self, usageType: .mipGeneration, stages: .blit, inArgumentBuffer: false)
-        
-        commandRecorder.record(.generateMipmaps(texture))
+        #if canImport(Metal)
+        if RenderBackend._backend is MetalBackend {
+            commandRecorder.addResourceUsage(for: texture, slice: nil, level: nil, commandIndex: self.nextCommandOffset, encoder: self, usageType: .mipGeneration, stages: .blit, inArgumentBuffer: false)
+            commandRecorder.record(.generateMipmaps(texture))
+            return
+        }
+        #endif
+        for slice in 0..<texture.descriptor.slicesPerLevel {
+            for destLevel in 1..<texture.descriptor.mipmapLevelCount {
+                let sourceLevel = destLevel - 1
+                commandRecorder.addResourceUsage(for: texture, slice: slice, level: sourceLevel, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
+                commandRecorder.addResourceUsage(for: texture, slice: slice, level: destLevel, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
+                let args: FrameGraphCommand.BlitTextureToTextureArgs = (texture, UInt32(slice), UInt32(sourceLevel), Origin(), texture.descriptor.size(mipLevel: sourceLevel), texture, UInt32(slice), UInt32(destLevel), Origin(), texture.descriptor.size(mipLevel: destLevel), .linear)
+                commandRecorder.record(FrameGraphCommand.blitTextureToTexture, args)
+            }
+        }
     }
     
     public func synchronize(buffer: Buffer) {
@@ -1420,13 +1433,12 @@ public final class BlitCommandEncoder : CommandEncoder {
     }
     
     public func synchronize(texture: Texture) {
-        commandRecorder.addResourceUsage(for: texture, arraySlice: nil, level: nil, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: texture, slice: nil, level: nil, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
         commandRecorder.record(.synchroniseTexture(texture))
     }
     
     public func synchronize(texture: Texture, slice: Int, level: Int) {
-        let arraySlice = texture.descriptor.arraySlice(for: slice)
-        commandRecorder.addResourceUsage(for: texture, arraySlice: arraySlice, level: level, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: texture, slice: slice, level: level, commandIndex: self.nextCommandOffset, encoder: self, usageType: .blitSynchronisation, stages: .blit, inArgumentBuffer: false)
         commandRecorder.record(FrameGraphCommand.synchroniseTextureSlice, (texture, UInt32(slice), UInt32(level)))
     }
 }
@@ -1459,7 +1471,6 @@ public final class ExternalCommandEncoder : CommandEncoder {
         }
     }
     
-    @inlinable
     func encodeCommand(usingResources resources: [(Resource, ResourceUsageType, ActiveResourceRange)], _ command: @escaping (_ commandBuffer: UnsafeRawPointer) -> Void) {
         let commandBox = Unmanaged.passRetained(ExternalCommandBox(command: command))
         self.commandRecorder.unmanagedReferences.append(commandBox)
@@ -1473,7 +1484,6 @@ public final class ExternalCommandEncoder : CommandEncoder {
     
     #if canImport(Metal)
     
-    @inlinable
     public func encodeToMetalCommandBuffer(usingResources resources: [(Resource, ResourceUsageType, ActiveResourceRange)], _ command: @escaping (_ commandBuffer: MTLCommandBuffer) -> Void) {
         self.encodeCommand(usingResources: resources, { (cmdBuffer) in
             command(Unmanaged<MTLCommandBuffer>.fromOpaque(cmdBuffer).takeUnretainedValue())

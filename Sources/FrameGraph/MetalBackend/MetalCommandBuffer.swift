@@ -70,7 +70,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
                 return
             }
             
-            let renderEncoder : FGMTLRenderCommandEncoder = /* MetalEncoderManager.useParallelEncoding ? FGMTLParallelRenderCommandEncoder(encoder: commandBuffer.makeParallelRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor) : */ FGMTLThreadRenderCommandEncoder(encoder: commandBuffer.makeRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor)
+            let renderEncoder : FGMTLRenderCommandEncoder = /* MetalEncoderManager.useParallelEncoding ? FGMTLParallelRenderCommandEncoder(encoder: commandBuffer.makeParallelRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor) : */ FGMTLThreadRenderCommandEncoder(encoder: commandBuffer.makeRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor, isAppleSiliconGPU: backend.isAppleSiliconGPU)
             renderEncoder.encoder.label = encoderInfo.name
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
@@ -80,7 +80,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             
         case .compute:
             let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: .serial)!
-            let computeEncoder = FGMTLComputeCommandEncoder(encoder: mtlComputeEncoder)
+            let computeEncoder = FGMTLComputeCommandEncoder(encoder: mtlComputeEncoder, isAppleSiliconGPU: backend.isAppleSiliconGPU)
             computeEncoder.encoder.label = encoderInfo.name
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
@@ -89,7 +89,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             computeEncoder.endEncoding()
             
         case .blit:
-            let blitEncoder = FGMTLBlitCommandEncoder(encoder: commandBuffer.makeBlitCommandEncoder()!)
+            let blitEncoder = FGMTLBlitCommandEncoder(encoder: commandBuffer.makeBlitCommandEncoder()!, isAppleSiliconGPU: backend.isAppleSiliconGPU)
             blitEncoder.encoder.label = encoderInfo.name
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
@@ -128,7 +128,11 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
             self.commandBuffer.present(drawable, afterMinimumDuration: 1.0 / 60.0)
             #else
-            self.commandBuffer.present(drawable)
+            if #available(macOS 10.15.4, macCatalyst 13.4, *), backend.isAppleSiliconGPU {
+                self.commandBuffer.present(drawable, afterMinimumDuration: 1.0 / 60.0)
+            } else {
+                self.commandBuffer.present(drawable)
+            }
             #endif
         }
         // because we reset the list after each command buffer submission.
@@ -142,8 +146,8 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         self.commandBuffer.commit()
         
         if !self.drawablesToPresentOnScheduled.isEmpty {
-            self.commandBuffer.waitUntilScheduled()
-            FrameGraph.jobManager.syncOnMainThread {
+            FrameGraph.jobManager.asyncOnMainThread {
+                self.commandBuffer.waitUntilScheduled()
                 for drawable in self.drawablesToPresentOnScheduled {
                     drawable.present()
                 }

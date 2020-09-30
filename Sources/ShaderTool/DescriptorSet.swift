@@ -118,6 +118,15 @@ final class DescriptorSet {
         do {
             stream.print("#if canImport(Metal)")
             stream.print("if RenderBackend.api == .metal {")
+            if self.resources.contains(where: { $0.viewType == .storageImage || $0.platformBindings.macOSMetalIndex != $0.platformBindings.appleSiliconMetalIndex }) {
+                stream.print("#if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)")
+                stream.print("let isAppleSiliconGPU = true")
+                stream.print("#elseif arch(i386) || arch(x86_64)")
+                stream.print("let isAppleSiliconGPU = false")
+                stream.print("#else")
+                stream.print("let isAppleSiliconGPU = (RenderBackend.renderDevice as! MTLDevice).isAppleSiliconGPU")
+                stream.print("#endif")
+            }
             defer { 
                 stream.print("}")
                 stream.print("#endif // canImport(Metal)")
@@ -174,23 +183,25 @@ final class DescriptorSet {
                     stream.print(")")
                 }
                 
-                if resource.platformBindings.macOSMetalIndex != resource.platformBindings.iOSMetalIndex {
-                    stream.print("#if os(macOS) || targetEnvironment(macCatalyst)")
-                    
-                    let index = resource.platformBindings.macOSMetalIndex.map { Int($0) } ?? resource.binding.index
-                    addArgBufferBinding(&stream, index)
-                    
-                    stream.print("#else")
+                if resource.viewType == .storageImage || resource.platformBindings.macOSMetalIndex != resource.platformBindings.appleSiliconMetalIndex {
+                    stream.print("if isAppleSiliconGPU {")
                     // Storage images (i.e. read-write textures) aren't permitted in argument buffers, so we need to bind directly on the encoder.
-                    if resource.viewType == .storageImage, let index = resource.platformBindings.iOSMetalIndex {
+                    if resource.viewType == .storageImage, let index = resource.platformBindings.appleSiliconMetalIndex {
                         stream.print("if let bindingEncoder = bindingEncoder {")
                         stream.print("bindingEncoder.setTexture(resource, key: MetalIndexedFunctionArgument(type: .texture, index: \(index)\(arrayIndexString), stages: \(resource.stages)))")
                         stream.print("}")
                     } else {
-                        let index = resource.platformBindings.iOSMetalIndex.map { Int($0) } ?? resource.binding.index
-                        addArgBufferBinding(&stream, index)
+                        if let index = resource.platformBindings.appleSiliconMetalIndex.map({ Int($0) }) {
+                            addArgBufferBinding(&stream, index)
+                        }
                     }
-                    stream.print("#endif")
+                    stream.print("} else {")
+                    
+                    let index = resource.platformBindings.macOSMetalIndex.map { Int($0) } ?? resource.binding.index
+                    addArgBufferBinding(&stream, index)
+                    
+                    stream.print("}")
+                    
                 } else {
                     let index = resource.platformBindings.macOSMetalIndex.map { Int($0) } ?? resource.binding.index
                     addArgBufferBinding(&stream, index)

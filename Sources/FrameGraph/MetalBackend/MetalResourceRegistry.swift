@@ -59,15 +59,11 @@ struct MTLTextureReference : MTLResourceReference {
 
 struct MTLTextureUsageProperties {
     var usage : MTLTextureUsage
-    #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
     var canBeMemoryless : Bool
-    #endif
     
     init(usage: MTLTextureUsage, canBeMemoryless: Bool = false) {
         self.usage = usage
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         self.canBeMemoryless = canBeMemoryless
-        #endif
     }
 }
 
@@ -115,7 +111,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     public func allocateHeap(_ heap: Heap) -> MTLHeap? {
         precondition(heap._usesPersistentRegistry)
         
-        let descriptor = MTLHeapDescriptor(heap.descriptor)
+        let descriptor = MTLHeapDescriptor(heap.descriptor, isAppleSiliconGPU: device.isAppleSiliconGPU)
         
         let mtlHeap = self.device.makeHeap(descriptor: descriptor)
         
@@ -137,7 +133,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
         
-        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: MTLTextureUsage(texture.descriptor.usageHint))
+        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: MTLTextureUsage(texture.descriptor.usageHint), isAppleSiliconGPU: device.isAppleSiliconGPU)
         
         let mtlTexture : MTLTextureReference
         if let heap = texture.heap {
@@ -168,7 +164,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
         
-        let options = MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode)
+        let options = MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, isAppleSiliconGPU: device.isAppleSiliconGPU)
         
         let mtlBuffer : MTLBufferReference
         
@@ -274,7 +270,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             return state
         }
         
-        let mtlDescriptor = MTLSamplerDescriptor(descriptor)
+        let mtlDescriptor = MTLSamplerDescriptor(descriptor, isAppleSiliconGPU: device.isAppleSiliconGPU)
         let state = self.device.makeSamplerState(descriptor: mtlDescriptor)!
         self.samplerReferences[descriptor] = state
         
@@ -326,6 +322,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     typealias Backend = MetalBackend
     
+    let device: MTLDevice
     let persistentRegistry : MetalPersistentResourceRegistry
     var accessLock = SpinLock()
     
@@ -347,15 +344,13 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     private let frameSharedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
     
     #if os(macOS) || targetEnvironment(macCatalyst)
-    private let frameManagedBufferAllocator : MetalTemporaryBufferAllocator
-    private let frameManagedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
+    private let frameManagedBufferAllocator : MetalTemporaryBufferAllocator!
+    private let frameManagedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator!
     #endif
     
     private let historyBufferAllocator : MetalPoolResourceAllocator
     
-    #if !os(macOS) && !targetEnvironment(macCatalyst)
-    private let memorylessTextureAllocator : MetalPoolResourceAllocator
-    #endif
+    private let memorylessTextureAllocator : MetalPoolResourceAllocator?
     
     private let frameArgumentBufferAllocator : MetalTemporaryBufferAllocator
     
@@ -368,6 +363,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     public private(set) var frameDrawables : [CAMetalDrawable] = []
     
     public init(device: MTLDevice, inflightFrameCount: Int, transientRegistryIndex: Int, persistentRegistry: MetalPersistentResourceRegistry) {
+        self.device = device
         self.persistentRegistry = persistentRegistry
         
         self.textureReferences = .init(transientRegistryIndex: transientRegistryIndex)
@@ -386,14 +382,23 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.frameSharedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 256 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
         self.frameSharedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
         
+        self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
+        
         #if os(macOS) || targetEnvironment(macCatalyst)
-        self.frameManagedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 1024 * 1024, options: [.storageModeManaged, .frameGraphTrackedHazards])
-        self.frameManagedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeManaged, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
-        self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
-        #else
-        self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
-        self.memorylessTextureAllocator = MetalPoolResourceAllocator(device: device, numFrames: 1)
+        if !device.isAppleSiliconGPU {
+            self.frameManagedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 1024 * 1024, options: [.storageModeManaged, .frameGraphTrackedHazards])
+            self.frameManagedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeManaged, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
+        } else {
+            self.frameManagedBufferAllocator = nil
+            self.frameManagedWriteCombinedBufferAllocator = nil
+        }
         #endif
+        
+        if device.isAppleSiliconGPU {
+            self.memorylessTextureAllocator = MetalPoolResourceAllocator(device: device, numFrames: 1)
+        } else {
+            self.memorylessTextureAllocator = nil
+        }
         
         self.privateAllocator = MetalPoolResourceAllocator(device: device)
         self.depthRenderTargetAllocator = MetalPoolResourceAllocator(device: device)
@@ -436,11 +441,10 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             return self.historyBufferAllocator
         }
         
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-        if storageMode == .memoryless {
-            return self.memorylessTextureAllocator
+        if #available(macOS 11.0, macCatalyst 14.0, *), storageMode == .memoryless,
+           let memorylessAllocator = self.memorylessTextureAllocator {
+            return memorylessAllocator
         }
-        #endif
         
         if storageMode != .private {
             return self.stagingTextureAllocator
@@ -465,11 +469,15 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             return self.privateAllocator
         case .managed:
             #if os(macOS) || targetEnvironment(macCatalyst)
-            switch cacheMode {
-            case .writeCombined:
-                return self.frameManagedWriteCombinedBufferAllocator
-            case .defaultCache:
-                return self.frameManagedBufferAllocator
+            if self.device.isAppleSiliconGPU {
+                fallthrough
+            } else {
+                switch cacheMode {
+                case .writeCombined:
+                    return self.frameManagedWriteCombinedBufferAllocator
+                case .defaultCache:
+                    return self.frameManagedBufferAllocator
+                }
             }
             #else
             fallthrough
@@ -494,7 +502,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         return false
     }
     
-    static func computeTextureUsage(_ texture: Texture) -> MTLTextureUsageProperties {
+    func computeTextureUsage(_ texture: Texture, storedTextures: [Texture]) -> MTLTextureUsageProperties {
         var textureUsage : MTLTextureUsage = []
         
         for usage in texture.usages {
@@ -516,14 +524,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             textureUsage.formUnion(.pixelFormatView)
         }
         
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-        canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
-            && textureUsage == .renderTarget
-            && !frameCommandInfo.storedTextures.contains(texture)
+        let canBeMemoryless = self.device.isAppleSiliconGPU &&
+            (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget)) &&
+            textureUsage == .renderTarget &&
+            !storedTextures.contains(texture)
         let properties = MTLTextureUsageProperties(usage: textureUsage, canBeMemoryless: canBeMemoryless)
-        #else
-        let properties = MTLTextureUsageProperties(usage: textureUsage)
-        #endif
         
         assert(properties.usage != .unknown)
         
@@ -531,23 +536,21 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, forceGPUPrivate: Bool) -> MTLTextureReference {
+    public func allocateTexture(_ texture: Texture, forceGPUPrivate: Bool, storedTextures: [Texture]) -> MTLTextureReference {
         if texture.flags.contains(.windowHandle) {
             // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
             self.textureReferences[texture] = MTLTextureReference(windowTexture: ())
             return MTLTextureReference(windowTexture: ())
         }
         
-        let properties = Self.computeTextureUsage(texture)
+        let properties = self.computeTextureUsage(texture, storedTextures: storedTextures)
         
-        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage)
+        let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage, isAppleSiliconGPU: self.device.isAppleSiliconGPU)
         
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-        if properties.canBeMemoryless {
+        if properties.canBeMemoryless, #available(macOS 11.0, macCatalyst 14.0, *) {
             descriptor.storageMode = .memoryless
             descriptor.resourceOptions.formUnion(.storageModeMemoryless)
         }
-        #endif
         
         let allocator = self.allocatorForTexture(storageMode: descriptor.storageMode, flags: texture.flags, textureParams: (texture.descriptor.pixelFormat, properties.usage))
         let (mtlTexture, fences, waitEvent) = allocator.collectTextureWithDescriptor(descriptor)
@@ -579,13 +582,13 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         assert(texture.flags.intersection([.persistent, .windowHandle, .externalOwnership]) == [])
         
         let mtlTexture : MTLTexture
-        let properties = Self.computeTextureUsage(texture)
+        let properties = self.computeTextureUsage(texture, storedTextures: [texture]) // We don't allow texture views to be memoryless.
         
         let baseResource = texture.baseResource!
         switch texture.textureViewBaseInfo! {
         case .buffer(let bufferInfo):
             let mtlBuffer = resourceMap[baseResource.buffer!]
-            let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: properties.usage)
+            let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: properties.usage, isAppleSiliconGPU: device.isAppleSiliconGPU)
             mtlTexture = mtlBuffer.resource.makeTexture(descriptor: descriptor, offset: bufferInfo.offset, bytesPerRow: bufferInfo.bytesPerRow)!
         case .texture(let textureInfo):
             let baseTexture = resourceMap[baseResource.texture!]
@@ -607,49 +610,34 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     public func allocateWindowHandleTexture(_ texture: Texture) throws -> MTLTextureReference {
         precondition(texture.flags.contains(.windowHandle))
         
-        var error : RenderTargetTextureError? = nil
-        
         // Retrieving the drawable needs to be done on the main thread.
         // Also update and check the MTLTextureReference on the same thread so that subsequent render passes
         // retrieving the same texture always see the same result (and so nextDrawable() only gets called once).
         
-        FrameGraph.jobManager.syncOnMainThread {
-             autoreleasepool {
-                // The texture reference should always be present but the texture itself might not be.
-                if self.textureReferences[texture]!._texture != nil {
-                    return
-                }
-                
-                guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
-                    let mtlDrawable = windowReference.nextDrawable() else {
-                    error = RenderTargetTextureError.unableToRetrieveDrawable(texture)
-                    return
-                }
-                
-                let drawableTexture = mtlDrawable.texture
-                if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
-                    self.frameDrawables.append(mtlDrawable)
-                    self.textureReferences[texture]!._texture = Unmanaged.passUnretained(drawableTexture) // since it's owned by the MTLDrawable
-                    return
-                } else {
-                    // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
-                    // throw an error.
-                    error = RenderTargetTextureError.invalidSizeDrawable(texture, requestedSize: Size(width: texture.descriptor.width, height: texture.descriptor.height), drawableSize: Size(width: drawableTexture.width, height: drawableTexture.height))
-                    return
-                }
+        // The texture reference should always be present but the texture itself might not be.
+        if self.textureReferences[texture]!._texture == nil {
+            guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
+                  let mtlDrawable = windowReference.nextDrawable() else {
+                throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
             }
-                    
+            
+            let drawableTexture = mtlDrawable.texture
+            if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
+                self.frameDrawables.append(mtlDrawable)
+                self.textureReferences[texture]!._texture = Unmanaged.passUnretained(drawableTexture) // since it's owned by the MTLDrawable
+            } else {
+                // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
+                // throw an error.
+                throw RenderTargetTextureError.invalidSizeDrawable(texture, requestedSize: Size(width: texture.descriptor.width, height: texture.descriptor.height), drawableSize: Size(width: drawableTexture.width, height: drawableTexture.height))
+            }
         }
-        if let error = error {
-            throw error
-        } else {
-            return self.textureReferences[texture]!
-        }
+        
+        return self.textureReferences[texture]!
     }
     
     @discardableResult
     public func allocateBuffer(_ buffer: Buffer, forceGPUPrivate: Bool) -> MTLBufferReference? {
-        var options = MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode)
+        var options = MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, isAppleSiliconGPU: device.isAppleSiliconGPU)
         if buffer.descriptor.usageHint.contains(.textureView) {
             options.remove(.frameGraphTrackedHazards) // FIXME: workaround for a bug in Metal where setting hazardTrackingModeUntracked on a MTLTextureDescriptor doesn't stick
         }
@@ -689,12 +677,12 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool) -> MTLTextureReference {
+    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> MTLTextureReference {
         if let mtlTexture = self.textureReferences[texture] {
             assert(mtlTexture.texture.pixelFormat == MTLPixelFormat(texture.descriptor.pixelFormat))
             return mtlTexture
         }
-        return self.allocateTexture(texture, forceGPUPrivate: forceGPUPrivate)
+        return self.allocateTexture(texture, forceGPUPrivate: forceGPUPrivate, storedTextures: frameStoredTextures)
     }
     
     func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {
@@ -891,11 +879,10 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.frameSharedWriteCombinedBufferAllocator.cycleFrames()
         
         #if os(macOS) || targetEnvironment(macCatalyst)
-        self.frameManagedBufferAllocator.cycleFrames()
-        self.frameManagedWriteCombinedBufferAllocator.cycleFrames()
-        #elseif os(iOS) || os(tvOS) || os(watchOS)
-        self.memorylessTextureAllocator.cycleFrames()
+        self.frameManagedBufferAllocator?.cycleFrames()
+        self.frameManagedWriteCombinedBufferAllocator?.cycleFrames()
         #endif
+        self.memorylessTextureAllocator?.cycleFrames()
         
         self.frameArgumentBufferAllocator.cycleFrames()
     }

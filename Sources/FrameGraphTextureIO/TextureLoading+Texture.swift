@@ -10,8 +10,12 @@ import SwiftFrameGraph
 import stb_image
 
 public enum MipGenerationMode {
+    /// Generate mipmaps on the CPU using the specified wrap mode and filter
     case cpu(wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter)
+    /// Generate mipmaps using the default GPU mipmap generation method
     case gpuDefault
+    /// Skip generating mipmaps, leaving levels below the top-most level uninitialised.
+    case skip
 }
 
 extension TextureData {
@@ -85,7 +89,7 @@ public struct TextureLoadingOptions: OptionSet {
 
 extension Texture {
     
-    public func copyData<T>(from textureData: TextureData<T>, mipmapped: Bool, mipGenerationMode: MipGenerationMode = .gpuDefault) throws {
+    public func copyData<T>(from textureData: TextureData<T>, mipGenerationMode: MipGenerationMode = .gpuDefault) throws {
         if textureData.colorSpace == .sRGB, !self.descriptor.pixelFormat.isSRGB {
             print("Warning: the source texture data is in the sRGB color space but the texture's pixel format is linear RGB.")
         }
@@ -97,10 +101,10 @@ extension Texture {
             throw TextureLoadingError.mismatchingDimensions(expected: Size(width: textureData.width, height: textureData.height), actual: self.descriptor.size)
         }
         
-        if mipmapped, case .cpu(let wrapMode, let filter) = mipGenerationMode {
-            let mips = textureData.generateMipChain(wrapMode: wrapMode, filter: filter, compressedBlockSize: 1)
+        if self.descriptor.mipmapLevelCount > 1, case .cpu(let wrapMode, let filter) = mipGenerationMode {
+            let mips = textureData.generateMipChain(wrapMode: wrapMode, filter: filter, compressedBlockSize: 1, mipmapCount: self.descriptor.mipmapLevelCount)
                            
-            for (i, data) in mips.enumerated() {
+            for (i, data) in mips.enumerated().prefix(self.descriptor.mipmapLevelCount) {
                 let storage = data.storage
                 GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: self, withBytes: storage.data.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [storage] _, _ in
                     _ = storage
@@ -111,7 +115,7 @@ extension Texture {
             GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: textureData.width, height: textureData.height), mipmapLevel: 0, in: self, withBytes: storage.data.baseAddress!, bytesPerRow: textureData.width * textureData.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [storage] _, _ in
                 _ = storage
             })
-            if mipmapped, case .gpuDefault = mipGenerationMode {
+            if self.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
                 if textureData.channelCount == 4, textureData.alphaMode != .premultiplied {
                     if _isDebugAssertConfiguration() {
                         print("Warning: generating mipmaps using the GPU's default mipmap generation for texture \(self.label ?? "Texture(handle: \(self.handle))") which expects premultiplied alpha, but the texture has an alpha mode of \(textureData.alphaMode). Fringing may be visible")
@@ -122,24 +126,24 @@ extension Texture {
         }
     }
     
-    public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
+    public init(fileAt url: URL, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, mipmapped: Bool, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, options: TextureLoadingOptions = .default) throws {
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         
         self = Texture._createPersistentTextureWithoutDescriptor(flags: .persistent)
-        try self.fillInternal(fromFileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, options: options, isPartiallyInitialised: true)
+        try self.fillInternal(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, options: options, isPartiallyInitialised: true)
     }
     
     @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:alphaMode:storageMode:usage:)")
     public init(fileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, premultipliedAlpha: Bool, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
-        try self.init(fileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, sourceAlphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, storageMode: storageMode, usage: usage)
+        try self.init(fileAt: url, colorSpace: colorSpace, sourceAlphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
     }
     
     @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:alphaMode:storageMode:usage:)")
     public init(fileAt url: URL, mipmapped: Bool, colourSpace: TextureColorSpace, premultipliedAlpha: Bool, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
-        try self.init(fileAt: url, mipmapped: mipmapped, colorSpace: colourSpace, sourceAlphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, storageMode: storageMode, usage: usage)
+        try self.init(fileAt: url, colorSpace: colourSpace, sourceAlphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
     }
 
-    private func fillInternal(fromFileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode, gpuAlphaMode: TextureAlphaMode, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) throws {
+    private func fillInternal(fromFileAt url: URL, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode, gpuAlphaMode: TextureAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) throws {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
         if url.pathExtension.lowercased() == "exr" {
@@ -169,7 +173,7 @@ extension Texture {
                 self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
             }
             
-            try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
+            try self.copyData(from: textureData, mipGenerationMode: mipGenerationMode)
             
         } else {
             let fileInfo = try TextureFileInfo(url: url)
@@ -208,7 +212,7 @@ extension Texture {
                     self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
                 }
                 
-                try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
+                try self.copyData(from: textureData, mipGenerationMode: mipGenerationMode)
                 
             } else if is16Bit {
                 var textureData = try TextureData<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
@@ -241,7 +245,7 @@ extension Texture {
                     self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
                 }
                 
-                try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
+                try self.copyData(from: textureData, mipGenerationMode: mipGenerationMode)
             } else {
                 var textureData = try TextureData<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
                 
@@ -311,7 +315,7 @@ extension Texture {
                     self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
                 }
                 
-                try self.copyData(from: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode)
+                try self.copyData(from: textureData, mipGenerationMode: mipGenerationMode)
             }
         }
         if self.label == nil {
@@ -319,7 +323,7 @@ extension Texture {
         }
     }
     
-    public func fill(fromFileAt url: URL, mipmapped: Bool, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
-        try self.fillInternal(fromFileAt: url, mipmapped: mipmapped, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
+    public func fill(fromFileAt url: URL, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
+        try self.fillInternal(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: self.descriptor.mipmapLevelCount > 1, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
     }
 }

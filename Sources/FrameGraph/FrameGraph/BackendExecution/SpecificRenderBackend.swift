@@ -28,6 +28,8 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     
     static var requiresResourceResidencyTracking: Bool { get }
     
+    var supportsMemorylessAttachments: Bool { get }
+    
     func makeQueue(frameGraphQueue: Queue) -> QueueImpl
     func makeSyncEvent(for queue: Queue) -> Event
     func freeSyncEvent(for queue: Queue)
@@ -96,7 +98,7 @@ protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.Transi
     var accessLock: SpinLock { get set }
     
     func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> Backend.BufferReference
-    func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool) -> Backend.TextureReference
+    func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> Backend.TextureReference
     func allocateWindowHandleTexture(_ texture: Texture) throws -> Backend.TextureReference
     func allocateTextureView(_ texture: Texture, resourceMap: FrameResourceMap<Backend>) -> Backend.TextureReference
 

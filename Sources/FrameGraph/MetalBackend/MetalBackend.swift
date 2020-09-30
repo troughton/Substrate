@@ -35,6 +35,21 @@ extension MTLHazardTrackingMode {
 }
 #endif
 
+extension MTLDevice {
+    @inlinable
+    public var isAppleSiliconGPU: Bool {
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+        return true
+        #else
+        if #available(macOS 11.0, macCatalyst 14.0, *) {
+            return self.supportsFamily(.apple1)
+        } else {
+            return false
+        }
+        #endif
+    }
+}
+
 final class MetalBackend : SpecificRenderBackend {
 
     typealias BufferReference = MTLBufferReference
@@ -171,27 +186,24 @@ final class MetalBackend : SpecificRenderBackend {
              .bc6H_rgbFloat, .bc6H_rgbuFloat,
              .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
             
+            #if os(macOS)
             if usage.intersection([.shaderWrite, .renderTarget]) != [] {
                 return false
             }
-            if #available(OSX 11.0, *) {
+            if #available(macOS 11.0, *) {
                 return self.device.supportsBCTextureCompression
             }
             return !self.isAppleSiliconGPU
+            #else
+            return false
+            #endif
         default:
             return true
         }
     }
     
     public var isAppleSiliconGPU: Bool {
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-        return true
-        #else
-        if #available(OSX 11.0, *) {
-            return self.device.supportsFamily(.apple6)
-        }
-        return false
-        #endif
+        return self.device.isAppleSiliconGPU
     }
     
     public var hasUnifiedMemory: Bool {
@@ -206,6 +218,10 @@ final class MetalBackend : SpecificRenderBackend {
         #endif
     }
     
+    public var supportsMemorylessAttachments: Bool {
+        return self.isAppleSiliconGPU
+    }
+    
     @usableFromInline func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
         let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
         return bufferReference.buffer.contents() + bufferReference.offset + range.lowerBound
@@ -213,7 +229,7 @@ final class MetalBackend : SpecificRenderBackend {
     
     @usableFromInline func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         #if os(macOS) || targetEnvironment(macCatalyst)
-        if range.isEmpty { return }
+        if range.isEmpty || self.isAppleSiliconGPU { return }
         if buffer.descriptor.storageMode == .managed {
             let mtlBuffer = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
             let offsetRange = (range.lowerBound + mtlBuffer.offset)..<(range.upperBound + mtlBuffer.offset)
@@ -388,7 +404,7 @@ final class MetalBackend : SpecificRenderBackend {
         
         let addBarrier: (inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) -> Void = { compactedResourceCommands in
             #if os(macOS) || targetEnvironment(macCatalyst)
-            let isRTBarrier = barrierScope.contains(.renderTargets)
+            let isRTBarrier = barrierScope.contains(.renderTargets) && !self.isAppleSiliconGPU
             #else
             let isRTBarrier = false
             #endif
@@ -490,9 +506,11 @@ final class MetalBackend : SpecificRenderBackend {
                 
                 #if os(macOS) || targetEnvironment(macCatalyst)
                 let isRTBarrier = afterUsage.isRenderTarget || beforeUsage.isRenderTarget
-                if isRTBarrier {
+                if isRTBarrier, !self.isAppleSiliconGPU {
                     scope.formUnion(.renderTargets)
                 }
+                #else
+                let isRTBarrier = false
                 #endif
                 
                 if !isRTBarrier {

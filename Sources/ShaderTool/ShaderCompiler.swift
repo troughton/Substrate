@@ -99,6 +99,7 @@ extension URL {
 
 enum ShaderCompilerError : Error {
     case missingSourceDirectory(URL)
+    case duplicateTarget(Target)
 }
 
 func computeSourceFileModificationTimes(_ files: [URL]) -> [URL : Date] {
@@ -166,6 +167,12 @@ final class ShaderCompiler {
         self.reflectionFile = reflectionFile
         self.compileWithDebugInfo = compileWithDebugInfo
         self.legalizeHLSL = legalizeHLSL
+
+        for (i, target) in targets.enumerated() {
+            guard !targets.dropFirst(i + 1).contains(target) else {
+                throw ShaderCompilerError.duplicateTarget(target)
+            }
+        }
         
         self.targets = targets
 

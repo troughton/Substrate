@@ -61,7 +61,7 @@ enum PreFrameCommands {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend, Dependency: SwiftFrameGraph.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: FrameGraphContextImpl<Backend>, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+    func execute<Backend: SpecificRenderBackend, Dependency: SwiftFrameGraph.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: FrameGraphContextImpl<Backend>, storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
         let queue = context.frameGraphQueue
         let queueIndex = Int(queue.index)
         let resourceMap = context.resourceMap
@@ -79,7 +79,7 @@ enum PreFrameCommands {
             
         case .materialiseTexture(let texture):
             // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
-            _ = resourceRegistry.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry)
+            _ = resourceRegistry.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry, frameStoredTextures: storedTextures)
             if let textureWaitEvent = (texture.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(texture)] : resourceRegistry.textureWaitEvents[texture]) {
                 waitEventValues[queueIndex] = max(textureWaitEvent.waitValue, waitEventValues[queueIndex])
             } else {
@@ -209,6 +209,16 @@ extension ChunkArray.RandomAccessView where Element == ResourceUsage {
         }
         return nil
     }
+
+    func indexOfPreviousRead(before index: Int, resource: Resource) -> Int? {
+        let usageActiveRange = index >= self.endIndex ? .fullResource : self[index].activeRange
+        for i in (0..<index).reversed() {
+            if self[i].affectsGPUBarriers, self[i].isRead, self[i].activeRange.intersects(with: usageActiveRange, resource: resource) {
+                return i
+            }
+        }
+        return nil
+    }
 }
 
 final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
@@ -285,7 +295,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
-    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry, backend: Backend, frameCommandInfo: inout FrameCommandInfo<Backend>) {
         if passes.isEmpty {
             return
         }
@@ -302,32 +312,18 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             let usagesArray = resource.usages.makeRandomAccessView(allocator: allocator)
             
             let firstUsage = usagesArray.first!
-
-            #if canImport(Vulkan)
-            if Backend.self == VulkanBackend.self, resource.type == .texture, resource.flags.intersection([.historyBuffer, .persistent]) != [] {
-                // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
-                // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
-                // so that it can be inserted as a subpass dependency.
-                self.commands.append(FrameResourceCommand(command: 
-                                                            .memoryBarrier(Resource(resource), afterUsage: .previousFrame, afterStages: .cpuBeforeRender, beforeCommand: firstUsage.commandRange.lowerBound, beforeUsage: firstUsage.type, beforeStages: firstUsage.stages, activeRange: firstUsage.activeRange),
-                        index: firstUsage.type.isRenderTarget ? firstUsage.commandRange.lowerBound : 0))
-            }
-            #endif
             
             if Backend.TransientResourceRegistry.isAliasedHeapResource(resource: resource) {
                 let fenceDependency = FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, stages: firstUsage.stages)
                 self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource, waitDependency: fenceDependency), index: firstUsage.commandRange.lowerBound, order: .before))
             }
             
-            if firstUsage.type == .inputAttachmentRenderTarget {
-                processInputAttachmentUsage(firstUsage, resource: resource, activeRange: firstUsage.activeRange)
-            }
-            
             var remainingSubresources = ActiveResourceRange.inactive
             var remainingSubresourcesUsageIndex: Int = -1
             
             var activeSubresources = ActiveResourceRange.fullResource
-            var usageIndex = usagesArray.index(after: usagesArray.startIndex)
+            var usageIndex = usagesArray.startIndex
+            var skipUntilAfterInapplicableUsage = false // When processing subresources, we skip until we encounter a usage that is incompatible with our current subresources, since every usage up until that point will have already been processed.
             
             while usageIndex < usagesArray.count {
                 defer {
@@ -338,6 +334,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         activeSubresources = remainingSubresources
                         remainingSubresources = .inactive
                         usageIndex = remainingSubresourcesUsageIndex
+                        skipUntilAfterInapplicableUsage = true
                     }
                 }
                 
@@ -355,6 +352,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                             remainingSubresources = .inactive
                             
                             usageIndex = remainingSubresourcesUsageIndex - 1 // since it will have 1 added to it in the defer statement
+                            skipUntilAfterInapplicableUsage = true
                             
                             continue
                         } else {
@@ -363,6 +361,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     } else {
                         let activeRangeIntersection = usage.activeRange.intersection(with: activeSubresources, resource: resource, allocator: allocator)
                         if activeRangeIntersection.isEqual(to: .inactive, resource: resource) {
+                            skipUntilAfterInapplicableUsage = false
+                            continue
+                        } else if skipUntilAfterInapplicableUsage {
                             continue
                         } else if !activeRangeIntersection.isEqual(to: activeSubresources, resource: resource) {
                             if remainingSubresources.isEqual(to: .inactive, resource: resource) {
@@ -419,6 +420,28 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                                                                  on: onEncoder,
                                                                  to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
                     }
+                } else {
+                    #if canImport(Vulkan)
+                    if Backend.self == VulkanBackend.self, resource.type == .texture, !resource.flags.contains(.windowHandle) {
+                        // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
+                        // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
+                        // so that it can be inserted as a subpass dependency.
+
+                        if let previousRead = usagesArray.indexOfPreviousRead(before: usageIndex, resource: resource).map({ usagesArray[$0] }) {
+                            if previousRead.type != usage.type, frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord) { // We only need to check if the usage types differ and the encoders are the same (since otherwise the barrier is either unnecessary or managed as inter-encoder dependencies).
+                                self.commands.append(FrameResourceCommand(command:
+                                                                    .memoryBarrier(Resource(resource), afterUsage: .interReadLayoutTransitionCheck, afterStages: previousRead.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
+                                                                     index: previousRead.commandRange.upperBound))
+
+                            }
+
+                        } else {
+                            self.commands.append(FrameResourceCommand(command:
+                                                                    .memoryBarrier(Resource(resource), afterUsage: .frameStartLayoutTransitionCheck, afterStages: .cpuBeforeRender, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
+                                                                  index: usage.type.isRenderTarget ? usage.commandRange.lowerBound : 0))
+                        }
+                    }
+                    #endif
                 }
             }
             
@@ -435,13 +458,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 resource.dispose() // This will dispose it in the FrameGraph persistent allocator, which will in turn call dispose in the resource registry at the end of the frame.
             }
             
-            #if !os(macOS) && !targetEnvironment(macCatalyst)
             var canBeMemoryless = false
-            #else
-            let canBeMemoryless = false
-            #endif
             
-            let firstCommandEncoderIndex = frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord)
             // We dispose at the end of a command encoder since resources can't alias against each other within a command encoder.
             let lastCommandEncoderIndex = frameCommandInfo.encoderIndex(for: lastUsage.renderPassRecord)
             let disposalIndex = frameCommandInfo.commandEncoders[lastCommandEncoderIndex].commandRange.last!
@@ -469,12 +487,10 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                     
                 } else if let texture = resource.texture {
-                    
-                    #if !os(macOS) && !targetEnvironment(macCatalyst)
-                    canBeMemoryless = (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
-                        && usages.allSatisfy({ $0.type.isRenderTarget })
+                    canBeMemoryless = backend.supportsMemorylessAttachments &&
+                        (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
+                        && usagesArray.allSatisfy({ $0.type.isRenderTarget })
                         && !frameCommandInfo.storedTextures.contains(texture)
-                    #endif
                     
                     if !historyBufferUseFrame {
                         if texture.isTextureView {
@@ -563,6 +579,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             command.command.execute(commandIndex: command.index,
                                     commandGenerator: self,
                                     context: context,
+                                    storedTextures: frameCommandInfo.storedTextures,
                                     encoderDependencies: &self.commandEncoderDependencies,
                                     waitEventValues: &frameCommandInfo.commandEncoders[commandEncoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
         }

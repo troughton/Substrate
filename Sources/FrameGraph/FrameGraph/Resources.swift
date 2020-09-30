@@ -6,6 +6,7 @@
 //
 
 import FrameGraphUtilities
+import CAtomics
 
 public enum ResourceType : UInt8 {
     case buffer = 1
@@ -17,6 +18,10 @@ public enum ResourceType : UInt8 {
     case argumentBufferArray
     case imageblockData
     case imageblock
+    case visibleFunctionTable
+    case primitiveAccelerationStructure
+    case instanceAccelerationStructure
+    case intersectionFunctionTable
 }
 
 /*!
@@ -112,13 +117,13 @@ public protocol ResourceProtocol : Hashable {
     init(handle: Handle)
     func dispose()
     
-    var handle : Handle { get }
-    var stateFlags : ResourceStateFlags { get nonmutating set }
+    var handle: Handle { get }
+    var stateFlags: ResourceStateFlags { get nonmutating set }
     
-    var usages : ChunkArray<ResourceUsage> { get nonmutating set }
+    var usages: ChunkArray<ResourceUsage> { get nonmutating set }
     
-    var label : String? { get nonmutating set }
-    var storageMode : StorageMode { get }
+    var label: String? { get nonmutating set }
+    var storageMode: StorageMode { get }
 
     /// The command buffer index on which to wait on a particular queue `queue` before it is safe to perform an access of type `type`.
     subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 { get nonmutating set }
@@ -126,7 +131,10 @@ public protocol ResourceProtocol : Hashable {
     /// Returns whether or not a resource handle represents a valid GPU resource.
     /// A resource handle is valid if it is a transient resource that was allocated in the current frame
     /// or is a persistent resource that has not been disposed.
-    var isValid : Bool { get }
+    var isValid: Bool { get }
+    
+    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
+    var isKnownInUse: Bool { get }
     
     var purgeableState: ResourcePurgeableState { get nonmutating set }
     func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState
@@ -145,10 +153,7 @@ extension ResourceProtocol {
             return RenderBackend.updatePurgeableState(for: Resource(self), to: nil)
         }
         nonmutating set {
-            let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: newValue)
-            if newValue == .discarded || oldValue == .discarded {
-                self.discardContents()
-            }
+            _ = self.updatePurgeableState(to: newValue)
         }
     }
     
@@ -366,6 +371,24 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
+    public var isKnownInUse: Bool {
+        switch self.type {
+        case .buffer:
+            return Buffer(handle: self.handle).isKnownInUse
+        case .texture:
+            return Texture(handle: self.handle).isKnownInUse
+        case .argumentBuffer:
+            return _ArgumentBuffer(handle: self.handle).isKnownInUse
+        case .argumentBufferArray:
+            return _ArgumentBufferArray(handle: self.handle).isKnownInUse
+        case .heap:
+            return Heap(handle: self.handle).isKnownInUse
+        default:
+            fatalError()
+        }
+    }
+    
+    @inlinable
     public var isValid: Bool {
         switch self.type {
         case .buffer:
@@ -392,6 +415,21 @@ public struct Resource : ResourceProtocol, Hashable {
             default:
                 return nil
             }
+        }
+    }
+    
+    func markAsUsed(frameGraphIndexMask: UInt8) {
+        switch self.type {
+        case .buffer:
+            Buffer(handle: self.handle).markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        case .texture:
+            Texture(handle: self.handle).markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        case .argumentBuffer:
+            _ArgumentBuffer(handle: self.handle).markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        case .heap:
+            Heap(handle: self.handle).markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        default:
+            break
         }
     }
     
@@ -584,11 +622,11 @@ public struct Heap : ResourceProtocol {
     @inlinable
     public var descriptor : HeapDescriptor {
         get {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             return HeapRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
         }
         nonmutating set {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             HeapRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk] = newValue
         }
     }
@@ -606,30 +644,47 @@ public struct Heap : ResourceProtocol {
     @inlinable
     public var label : String? {
         get {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             return HeapRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
         }
         nonmutating set {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             HeapRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
         }
     }
-
+    
+    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
     @inlinable
-    public func dispose() {
-        self.dispose(atEndOfFrame: true)
+    public var isKnownInUse: Bool {
+        guard self._usesPersistentRegistry else {
+            return true
+        }
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
+        let activeFrameGraphMask = CAtomicsLoad(HeapRegistry.instance.chunks[chunkIndex].activeFrameGraphs.advanced(by: indexInChunk), .relaxed)
+        if activeFrameGraphMask != 0 {
+            return true // The resource is still being used by a yet-to-be-submitted FrameGraph.
+        }
+        return false
     }
-        
-    public func dispose(atEndOfFrame: Bool = true) {
+    
+    func markAsUsed(frameGraphIndexMask: UInt8) {
         guard self._usesPersistentRegistry else {
             return
         }
-        HeapRegistry.instance.dispose(self, atEndOfFrame: atEndOfFrame)
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
+        CAtomicsBitwiseOr(HeapRegistry.instance.chunks[chunkIndex].activeFrameGraphs.advanced(by: indexInChunk), frameGraphIndexMask, .relaxed)
+    }
+
+    public func dispose() {
+        guard self._usesPersistentRegistry else {
+            return
+        }
+        HeapRegistry.instance.dispose(self)
     }
     
     @inlinable
     public var isValid : Bool {
-        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
         return HeapRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
     }
 }
@@ -789,7 +844,7 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-    public func applyDeferredSliceActions() {
+    func applyDeferredSliceActions() {
         // TODO: Add support for deferred slice actions to persistent resources. 
         guard !self.flags.contains(.historyBuffer) else {
             return
@@ -949,17 +1004,41 @@ public struct Buffer : ResourceProtocol {
             }
         }
     }
-
+    
+    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
     @inlinable
-    public func dispose() {
-        self.dispose(atEndOfFrame: true)
+    public var isKnownInUse: Bool {
+        guard self._usesPersistentRegistry else {
+            return true
+        }
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+        let activeFrameGraphMask = CAtomicsLoad(PersistentBufferRegistry.instance.chunks[chunkIndex].activeFrameGraphs.advanced(by: indexInChunk), .relaxed)
+        if activeFrameGraphMask != 0 {
+            return true // The resource is still being used by a yet-to-be-submitted FrameGraph.
+        }
+        for queue in QueueRegistry.allQueues {
+            if self[waitIndexFor: queue, accessType: .readWrite] > queue.lastCompletedCommand {
+                return true
+            }
+        }
+        return false
     }
     
-    public func dispose(atEndOfFrame: Bool = true) {
+    func markAsUsed(frameGraphIndexMask: UInt8) {
+        self.heap?.markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        
         guard self._usesPersistentRegistry else {
             return
         }
-        PersistentBufferRegistry.instance.dispose(self, atEndOfFrame: atEndOfFrame)
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
+        CAtomicsBitwiseOr(PersistentBufferRegistry.instance.chunks[chunkIndex].activeFrameGraphs.advanced(by: indexInChunk), frameGraphIndexMask, .relaxed)
+    }
+
+    public func dispose() {
+        guard self._usesPersistentRegistry else {
+            return
+        }
+        PersistentBufferRegistry.instance.dispose(self)
     }
     
     @inlinable
@@ -1294,6 +1373,36 @@ public struct Texture : ResourceProtocol {
         } else {
             return TransientTextureRegistry.instances[self.transientRegistryIndex].textureViewInfos[index]
         }
+    }
+    
+    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
+    @inlinable
+    public var isKnownInUse: Bool {
+        guard self._usesPersistentRegistry else {
+            return true
+        }
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+        let activeFrameGraphMask = CAtomicsLoad(PersistentTextureRegistry.instance.chunks[chunkIndex].activeFrameGraphs.advanced(by: indexInChunk), .relaxed)
+        if activeFrameGraphMask != 0 {
+            return true // The resource is still being used by a yet-to-be-submitted FrameGraph.
+        }
+        for queue in QueueRegistry.allQueues {
+            if self[waitIndexFor: queue, accessType: .readWrite] > queue.lastCompletedCommand {
+                return true
+            }
+        }
+        return false
+    }
+    
+    func markAsUsed(frameGraphIndexMask: UInt8) {
+        self.baseResource?.markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        self.heap?.markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        
+        guard self._usesPersistentRegistry else {
+            return
+        }
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
+        CAtomicsBitwiseOr(PersistentTextureRegistry.instance.chunks[chunkIndex].activeFrameGraphs.advanced(by: indexInChunk), frameGraphIndexMask, .relaxed)
     }
     
     public func dispose() {

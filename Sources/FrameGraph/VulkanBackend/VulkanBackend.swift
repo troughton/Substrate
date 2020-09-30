@@ -138,6 +138,10 @@ public final class VulkanBackend : SpecificRenderBackend {
         return false
     }
 
+    public var supportsMemorylessAttachments: Bool {
+        return false
+    }
+    
     public var renderDevice: Any {
         return self.device
     }

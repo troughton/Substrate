@@ -455,8 +455,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
                 imageUsage.formUnion(VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
             case .blitDestination:
                 imageUsage.formUnion(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-            case .mipGeneration:
-                imageUsage.formUnion([VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_USAGE_TRANSFER_DST_BIT])
             default:
                 break
             }
@@ -588,7 +586,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool) -> VkImageReference {
+    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> VkImageReference {
         if let vkTexture = self.textureReferences[texture] {
             return vkTexture
         }
@@ -633,7 +631,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     func prepareMultiframeTexture(_ texture: Texture) {
         if let image = self.persistentRegistry[texture] {
-            image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: true)
+            image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: texture.stateFlags.contains(.initialised))
         }
     }
     

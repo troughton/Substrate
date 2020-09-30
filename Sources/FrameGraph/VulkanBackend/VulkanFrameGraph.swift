@@ -13,26 +13,27 @@ import FrameGraphUtilities
 
 extension VulkanBackend {
     
-    func processImageSubresourceRanges(_ activeMask: inout TextureSubresourceMask, textureDescriptor: TextureDescriptor, allocator: AllocatorType, action: (VkImageSubresourceRange) -> Void) {
+    func processImageSubresourceRanges(_ activeMask: inout SubresourceMask, textureDescriptor: TextureDescriptor, allocator: AllocatorType, action: (VkImageSubresourceRange) -> Void) {
         var subresourceRange = VkImageSubresourceRange(aspectMask: textureDescriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(textureDescriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(textureDescriptor.arrayLength))
         for level in 0..<textureDescriptor.mipmapLevelCount {
-            for slice in 0..<textureDescriptor.arrayLength {
-                if activeMask[arraySlice: slice, level: level, descriptor: textureDescriptor] {
+            for slice in 0..<textureDescriptor.slicesPerLevel {
+                if activeMask[slice: slice, level: level, descriptor: textureDescriptor] {
                     subresourceRange.baseArrayLayer = UInt32(slice)
                     subresourceRange.baseMipLevel = UInt32(level)
                     
-                    let endSlice = (0..<textureDescriptor.arrayLength).dropFirst(slice + 1).first(where: { !activeMask[arraySlice: $0, level: level, descriptor: textureDescriptor] }) ?? textureDescriptor.arrayLength
+                    let endSlice = (0..<textureDescriptor.slicesPerLevel).dropFirst(slice + 1).first(where: { !activeMask[slice: $0, level: level, descriptor: textureDescriptor] }) ?? textureDescriptor.slicesPerLevel
                     subresourceRange.layerCount = UInt32(endSlice - slice)
                  
                     let endLevel = (0..<textureDescriptor.mipmapLevelCount).dropFirst(level + 1).first(where: { testLevel in
-                        !(slice..<endSlice).allSatisfy({ activeMask[arraySlice: $0, level: testLevel, descriptor: textureDescriptor] })
+                        !(slice..<endSlice).allSatisfy({ activeMask[slice: $0, level: testLevel, descriptor: textureDescriptor] })
                     }) ?? textureDescriptor.mipmapLevelCount
-                    
+
                     subresourceRange.levelCount = UInt32(endLevel - level)
+                    assert(endLevel - level <= textureDescriptor.mipmapLevelCount)
                     
                     for l in level..<endLevel {
                         for s in slice..<endSlice {
-                            activeMask[arraySlice: s, level: l, descriptor: textureDescriptor, allocator: allocator] = false
+                            activeMask[slice: s, level: l, descriptor: textureDescriptor, allocator: allocator] = false
                         }
                     }
                     action(subresourceRange)
@@ -123,15 +124,21 @@ extension VulkanBackend {
                         barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
                         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
-                        barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!, subresourceRange: producingUsage.activeRange, resource: resource).afterOperation
-                        barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!, subresourceRange: consumingUsage.activeRange, resource: resource).beforeOperation
+                        barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!, subresourceRange: producingUsage.activeRange)
+                        barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!, subresourceRange: consumingUsage.activeRange)
                         if producingUsage.type.isRenderTarget {
                             // We transitioned to the new layout at the end of the previous render pass.
                             barrier.oldLayout = barrier.newLayout 
                         } else if consumingUsage.type.isRenderTarget {
                             // The layout transition will be handled by the next render pass.
                             barrier.newLayout = barrier.oldLayout
-                        } 
+                        } else {
+                            let previousUsage = texture.usages.lazy.filter { $0.affectsGPUBarriers }.prefix(while: { !$0.commandRange.contains(consumingUsage.commandRange.first!) }).last
+                            if let previousUsage = previousUsage, !previousUsage.isWrite {
+                                // There were other reads before consumingUsage, of which the first would have performed the layout transition; therefore, we don't need to transition here.
+                                barrier.oldLayout = barrier.newLayout
+                            }
+                        }
                         barrier.subresourceRange = VkImageSubresourceRange(aspectMask: textureDescriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(textureDescriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(textureDescriptor.arrayLength))
                         
                         switch (producingUsage.activeRange, consumingUsage.activeRange) {
@@ -140,7 +147,7 @@ extension VulkanBackend {
                             if mask.value == .max {
                                 imageBarriers.append(barrier)
                             } else {
-                                var activeMask = TextureSubresourceMask(source: mask, descriptor: textureDescriptor, allocator: AllocatorType(allocator))
+                                var activeMask = SubresourceMask(source: mask, subresourceCount: textureDescriptor.subresourceCount, allocator: AllocatorType(allocator))
                                 processImageSubresourceRanges(&activeMask, textureDescriptor: textureDescriptor, allocator: AllocatorType(allocator)) {
                                     barrier.subresourceRange = $0
                                     imageBarriers.append(barrier)
@@ -148,8 +155,8 @@ extension VulkanBackend {
                             }
                             
                         case (.texture(let maskA), .texture(let maskB)):
-                            var activeMask = TextureSubresourceMask(source: maskA, descriptor: textureDescriptor, allocator: AllocatorType(allocator))
-                            activeMask.formIntersection(with: maskB, descriptor: textureDescriptor, allocator: AllocatorType(allocator))
+                            var activeMask = SubresourceMask(source: maskA, subresourceCount: textureDescriptor.subresourceCount, allocator: AllocatorType(allocator))
+                            activeMask.formIntersection(with: maskB, subresourceCount: textureDescriptor.subresourceCount, allocator: AllocatorType(allocator))
                             
                             processImageSubresourceRanges(&activeMask, textureDescriptor: textureDescriptor, allocator: AllocatorType(allocator)) {
                                 barrier.subresourceRange = $0
@@ -237,33 +244,37 @@ extension VulkanBackend {
         }
         
         func processMemoryBarrier(resource: Resource, afterCommand: Int, afterUsageType: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsageType: ResourceUsageType, beforeStages: RenderStages, activeRange: ActiveResourceRange) {
+            var remainingRange = ActiveResourceRange.inactive // The subresource range not processed by this barrier.
+            var activeRange = activeRange
+            
             let pixelFormat =  resource.texture?.descriptor.pixelFormat ?? .invalid
             let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
 
             let sourceLayout: VkImageLayout
             let destinationLayout: VkImageLayout
             if let image = resource.texture.map({ resourceMap[$0].image }) {
-                if afterUsageType == .previousFrame, image.hasMultipleSubresourceInitialLayouts, activeRange.isEqual(to: .fullResource, resource: resource) {
-                    // If we're importing an image into this frame, we need to transition each subresource into the initial layout independently.
-                    let layouts = image.hasMultipleSubresourceInitialLayouts
-                  
-                    for activeRange in image.frameInitialLayoutSubresources {
-                        processMemoryBarrier(resource: resource, afterCommand: afterCommand, afterUsageType: afterUsageType, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsageType, beforeStages: beforeStages, activeRange: activeRange)
-                    }
-                    
-                    return
-                    
+                if afterUsageType == .frameStartLayoutTransitionCheck {
+                    (sourceLayout, activeRange, remainingRange) = image.frameInitialLayout(for: activeRange, allocator: AllocatorType(allocator))
                 } else {
-                    sourceLayout = afterUsageType == .previousFrame ? image.frameInitialLayout(for: activeRange) : image.layout(commandIndex: afterCommand, subresourceRange: activeRange, resource: resource).afterOperation
+                    sourceLayout = image.layout(commandIndex: afterCommand, subresourceRange: activeRange)
                 }
                 
-                destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange, resource: resource).beforeOperation
+                destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange)
+
             } else {
                 assert(resource.type != .texture || resource.flags.contains(.windowHandle))
                 sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED
                 destinationLayout = VK_IMAGE_LAYOUT_UNDEFINED
             }
-            if sourceLayout == destinationLayout, afterUsageType == .previousFrame {
+            
+            defer {
+                // It's possible there are multiple source layouts/subresource ranges, in which case we insert multiple barriers.
+                if !remainingRange.isEqual(to: .inactive, resource: resource) {
+                    processMemoryBarrier(resource: resource, afterCommand: afterCommand, afterUsageType: afterUsageType, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsageType, beforeStages: beforeStages, activeRange: remainingRange)
+                }
+            }
+            
+            if sourceLayout == destinationLayout, afterUsageType == .frameStartLayoutTransitionCheck || afterUsageType == .interReadLayoutTransitionCheck {
                 return // No layout transition needed, so we don't need a memory barrier.
             }
             
@@ -274,12 +285,11 @@ extension VulkanBackend {
             let destinationAccessMask = beforeUsageType.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
 
             var beforeCommand = beforeCommand
-            var subresourceRanges: [VkImageSubresourceRange] = []
             
             if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound {
                 var subpassDependency = VkSubpassDependency()
-                subpassDependency.dependencyFlags = 0 // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
-                if afterUsageType == .previousFrame {
+                subpassDependency.dependencyFlags = VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
+                if afterUsageType == .frameStartLayoutTransitionCheck || afterUsageType == .interReadLayoutTransitionCheck {
                     subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
                 } else if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(currentPassIndex) {
                     subpassDependency.srcSubpass = UInt32(passUsageSubpass.index)
@@ -366,9 +376,10 @@ extension VulkanBackend {
                     if mask.value == .max {
                         imageBarriers.append(barrier)
                     } else {
-                        var activeMask = TextureSubresourceMask(source: mask, descriptor: texture.descriptor, allocator: AllocatorType(allocator))
-                        processImageSubresourceRanges(&activeMask, textureDescriptor: texture.descriptor, allocator: AllocatorType(allocator)) {
-                            barrier.subresourceRange = $0
+                        var activeMask = SubresourceMask(source: mask, subresourceCount: texture.descriptor.subresourceCount, allocator: AllocatorType(allocator))
+                        processImageSubresourceRanges(&activeMask, textureDescriptor: texture.descriptor, allocator: AllocatorType(allocator)) { range in
+                            barrier.subresourceRange = range
+                            assert(!imageBarriers.contains(where: { $0.image == barrier.image && $0.subresourceRange == range })) // Ensure we don't add duplicate barriers.
                             imageBarriers.append(barrier)
                         }
                     }
