@@ -178,9 +178,9 @@ extension MTLRenderPipelineColorAttachmentDescriptor {
         self.init()
         
         self.pixelFormat = pixelFormat
-        self.writeMask = MTLColorWriteMask(writeMask)
+        self.writeMask = pixelFormat == .invalid ? [] : MTLColorWriteMask(writeMask)
         
-        if let blendDescriptor = blendDescriptor {
+        if let blendDescriptor = blendDescriptor, pixelFormat != .invalid {
             self.isBlendingEnabled = true
             self.sourceRGBBlendFactor = MTLBlendFactor(blendDescriptor.sourceRGBBlendFactor)
             self.destinationRGBBlendFactor = MTLBlendFactor(blendDescriptor.destinationRGBBlendFactor)
