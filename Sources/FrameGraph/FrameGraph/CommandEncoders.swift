@@ -859,6 +859,23 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         }
     }
     
+    struct DrawDynamicState: OptionSet {
+        let rawValue: Int
+        
+        init(rawValue: Int) {
+            self.rawValue = rawValue
+        }
+        
+        static let viewport = DrawDynamicState(rawValue: 1 << 0)
+        static let scissorRect = DrawDynamicState(rawValue: 1 << 1)
+        static let frontFacing = DrawDynamicState(rawValue: 1 << 2)
+        static let cullMode = DrawDynamicState(rawValue: 1 << 3)
+        static let triangleFillMode = DrawDynamicState(rawValue: 1 << 4)
+        static let depthClipMode = DrawDynamicState(rawValue: 1 << 5)
+        static let depthBias = DrawDynamicState(rawValue: 1 << 6)
+        static let stencilReferenceValue = DrawDynamicState(rawValue: 1 << 7)
+    }
+    
     let drawRenderPass : DrawRenderPass
     
     @usableFromInline
@@ -873,6 +890,8 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
     var gpuCommandsStartIndexColor : Int? = nil
     @usableFromInline
     var gpuCommandsStartIndexDepthStencil : Int? = nil
+    
+    var nonDefaultDynamicState: DrawDynamicState = []
 
     init(commandRecorder: FrameGraphCommandRecorder, renderPass: DrawRenderPass, passRecord: RenderPassRecord) {
         self.drawRenderPass = renderPass
@@ -1107,18 +1126,22 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
 
     public func setViewport(_ viewport: Viewport) {
         commandRecorder.record(FrameGraphCommand.setViewport, viewport)
+        self.nonDefaultDynamicState.formUnion(.viewport)
     }
     
     public func setFrontFacing(_ frontFacingWinding: Winding) {
         commandRecorder.record(.setFrontFacing(frontFacingWinding))
+        self.nonDefaultDynamicState.formUnion(.frontFacing)
     }
     
     public func setCullMode(_ cullMode: CullMode) {
         commandRecorder.record(.setCullMode(cullMode))
+        self.nonDefaultDynamicState.formUnion(.cullMode)
     }
     
     public func setTriangleFillMode(_ fillMode: TriangleFillMode) {
         commandRecorder.record(.setTriangleFillMode(fillMode))
+        self.nonDefaultDynamicState.formUnion(.triangleFillMode)
     }
     
     public func setDepthStencilDescriptor(_ descriptor: DepthStencilDescriptor?) {
@@ -1146,22 +1169,27 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
 //    @inlinable
     public func setScissorRect(_ rect: ScissorRect) {
         commandRecorder.record(FrameGraphCommand.setScissorRect, rect)
+        self.nonDefaultDynamicState.formUnion(.scissorRect)
     }
     
     public func setDepthClipMode(_ depthClipMode: DepthClipMode) {
         commandRecorder.record(.setDepthClipMode(depthClipMode))
+        self.nonDefaultDynamicState.formUnion(.depthClipMode)
     }
     
     public func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float) {
         commandRecorder.record(FrameGraphCommand.setDepthBias, (depthBias, slopeScale, clamp))
+        self.nonDefaultDynamicState.formUnion(.depthBias)
     }
     
     public func setStencilReferenceValue(_ referenceValue: UInt32) {
         commandRecorder.record(.setStencilReferenceValue(referenceValue))
+        self.nonDefaultDynamicState.formUnion(.stencilReferenceValue)
     }
     
     public func setStencilReferenceValues(front frontReferenceValue: UInt32, back backReferenceValue: UInt32) {
         commandRecorder.record(.setStencilReferenceValues(front: frontReferenceValue, back: backReferenceValue))
+        self.nonDefaultDynamicState.formUnion(.stencilReferenceValue)
     }
     
     public func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
@@ -1230,6 +1258,37 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             self.updateColorAttachmentUsages(endingEncoding: endingEncoding)
             self.updateDepthStencilAttachmentUsages(endingEncoding: endingEncoding)
         }
+    }
+    
+    public override func endEncoding() {
+        // Reset any dynamic state to the defaults.
+        let renderTargetSize = self.drawRenderPass.renderTargetDescriptor.size
+        if self.nonDefaultDynamicState.contains(.viewport) {
+            commandRecorder.record(FrameGraphCommand.setViewport, Viewport(originX: 0.0, originY: 0.0, width: Double(renderTargetSize.width), height: Double(renderTargetSize.height), zNear: 0.0, zFar: 1.0))
+        }
+        if self.nonDefaultDynamicState.contains(.scissorRect) {
+            commandRecorder.record(FrameGraphCommand.setScissorRect, ScissorRect(x: 0, y: 0, width: renderTargetSize.width, height: renderTargetSize.height))
+        }
+        if self.nonDefaultDynamicState.contains(.frontFacing) {
+            commandRecorder.record(.setFrontFacing(.counterClockwise))
+        }
+        if self.nonDefaultDynamicState.contains(.cullMode) {
+            commandRecorder.record(.setCullMode(.none))
+        }
+        if self.nonDefaultDynamicState.contains(.triangleFillMode) {
+            commandRecorder.record(.setTriangleFillMode(.fill))
+        }
+        if self.nonDefaultDynamicState.contains(.depthClipMode) {
+            commandRecorder.record(.setDepthClipMode(.clip))
+        }
+        if self.nonDefaultDynamicState.contains(.depthBias) {
+            commandRecorder.record(FrameGraphCommand.setDepthBias, (depthBias: 0.0, slopeScale: 0.0, clamp: 0.0))
+        }
+        if self.nonDefaultDynamicState.contains(.stencilReferenceValue) {
+            commandRecorder.record(.setStencilReferenceValue(0))
+        }
+        
+        super.endEncoding()
     }
 }
 
