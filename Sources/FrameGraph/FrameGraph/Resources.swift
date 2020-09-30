@@ -844,7 +844,7 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-    public func applyDeferredSliceActions() {
+    func applyDeferredSliceActions() {
         // TODO: Add support for deferred slice actions to persistent resources. 
         guard !self.flags.contains(.historyBuffer) else {
             return
