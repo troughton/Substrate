@@ -621,44 +621,29 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     public func allocateWindowHandleTexture(_ texture: Texture) throws -> MTLTextureReference {
         precondition(texture.flags.contains(.windowHandle))
         
-        var error : RenderTargetTextureError? = nil
-        
         // Retrieving the drawable needs to be done on the main thread.
         // Also update and check the MTLTextureReference on the same thread so that subsequent render passes
         // retrieving the same texture always see the same result (and so nextDrawable() only gets called once).
         
-        FrameGraph.jobManager.syncOnMainThread {
-             autoreleasepool {
-                // The texture reference should always be present but the texture itself might not be.
-                if self.textureReferences[texture]!._texture != nil {
-                    return
-                }
-                
-                guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
-                    let mtlDrawable = windowReference.nextDrawable() else {
-                    error = RenderTargetTextureError.unableToRetrieveDrawable(texture)
-                    return
-                }
-                
-                let drawableTexture = mtlDrawable.texture
-                if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
-                    self.frameDrawables.append(mtlDrawable)
-                    self.textureReferences[texture]!._texture = Unmanaged.passUnretained(drawableTexture) // since it's owned by the MTLDrawable
-                    return
-                } else {
-                    // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
-                    // throw an error.
-                    error = RenderTargetTextureError.invalidSizeDrawable(texture, requestedSize: Size(width: texture.descriptor.width, height: texture.descriptor.height), drawableSize: Size(width: drawableTexture.width, height: drawableTexture.height))
-                    return
-                }
+        // The texture reference should always be present but the texture itself might not be.
+        if self.textureReferences[texture]!._texture == nil {
+            guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
+                  let mtlDrawable = windowReference.nextDrawable() else {
+                throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
             }
-                    
+            
+            let drawableTexture = mtlDrawable.texture
+            if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
+                self.frameDrawables.append(mtlDrawable)
+                self.textureReferences[texture]!._texture = Unmanaged.passUnretained(drawableTexture) // since it's owned by the MTLDrawable
+            } else {
+                // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
+                // throw an error.
+                throw RenderTargetTextureError.invalidSizeDrawable(texture, requestedSize: Size(width: texture.descriptor.width, height: texture.descriptor.height), drawableSize: Size(width: drawableTexture.width, height: drawableTexture.height))
+            }
         }
-        if let error = error {
-            throw error
-        } else {
-            return self.textureReferences[texture]!
-        }
+        
+        return self.textureReferences[texture]!
     }
     
     @discardableResult
