@@ -397,6 +397,7 @@ public final class FrameGraph {
     public private(set) var lastFrameGPUTime = 1000.0 / 60.0
     
     var submissionNotifyQueue = [() -> Void]()
+    var completionNotifyQueue = [() -> Void]()
     let context : _FrameGraphContext
     
     public let transientRegistryIndex : Int
@@ -821,9 +822,18 @@ public final class FrameGraph {
         
         return (activePasses, activePassDependencies)
     }
-    
+
+    @available(*, deprecated, renamed: "onSubmission")
     public func waitForGPUSubmission(_ function: @escaping () -> Void) {
         self.submissionNotifyQueue.append(function)
+    }
+    
+    public func onSubmission(_ function: @escaping () -> Void) {
+        self.submissionNotifyQueue.append(function)
+    }
+    
+    public func onGPUCompletion(_ function: @escaping () -> Void) {
+        self.completionNotifyQueue.append(function)
     }
     
     public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
@@ -837,6 +847,9 @@ public final class FrameGraph {
             
             self.submissionNotifyQueue.forEach { $0() }
             self.submissionNotifyQueue.removeAll(keepingCapacity: true)
+            
+            self.completionNotifyQueue.forEach { $0() }
+            self.completionNotifyQueue.removeAll(keepingCapacity: true)
             
             return
         }
@@ -865,6 +878,7 @@ public final class FrameGraph {
         
         let (passes, dependencyTable) = self.compile(renderPasses: self.renderPasses)
         
+        let completionQueue = self.completionNotifyQueue
         let completion: (Double) -> Void = { gpuTime in
             self.lastFrameGPUTime = gpuTime
             
@@ -875,6 +889,7 @@ public final class FrameGraph {
             //            print("Frame \(currentFrameIndex) completed in \(self.lastFrameRenderDuration)ms.")
             
             onGPUCompletion?()
+            completionQueue.forEach { $0() }
         }
         
         self.context.executeFrameGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
@@ -892,6 +907,7 @@ public final class FrameGraph {
         
         self.submissionNotifyQueue.forEach { $0() }
         self.submissionNotifyQueue.removeAll(keepingCapacity: true)
+        self.completionNotifyQueue.removeAll(keepingCapacity: true)
         
         self.reset()
         
