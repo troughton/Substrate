@@ -458,7 +458,7 @@ public struct TextureData<T> {
             return self
         }
         
-        var result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        let result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
         for y in 0..<height {
             let clampedY = clampOutOfBounds ? clamp(y + originY, min: 0, max: self.height - 1) : (y + originY)
