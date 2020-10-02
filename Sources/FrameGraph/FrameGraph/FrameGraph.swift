@@ -629,11 +629,11 @@ public final class FrameGraph {
         passRecord.writtenResources = .init(allocator: .tagThreadView(usageAllocator))
         
         for resource in passRecord.pass.writtenResources {
-            resource.markAsUsed(frameGraphIndexMask: 1 << self.queue.index)
+            resource._markAsUsed(frameGraphIndexMask: 1 << self.queue.index)
             passRecord.writtenResources.insert(resource)
         }
         for resource in passRecord.pass.readResources {
-            resource.markAsUsed(frameGraphIndexMask: 1 << self.queue.index)
+            resource._markAsUsed(frameGraphIndexMask: 1 << self.queue.index)
             passRecord.readResources.insert(resource)
         }
     }

@@ -136,6 +136,12 @@ public protocol ResourceProtocol : Hashable {
     /// Returns whether the resource is known to currently be in use by the CPU or GPU.
     var isKnownInUse: Bool { get }
     
+    /// Marks the resource as being currently in use by `frameGraph`, ensuring that, if `dispose()` is called,
+    /// it will not get deallocated until after the `frameGraph` has completed.
+    func markAsUsed(by frameGraph: FrameGraph)
+    
+    func _markAsUsed(frameGraphIndexMask: UInt8)
+    
     var purgeableState: ResourcePurgeableState { get nonmutating set }
     func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState
 }
@@ -165,6 +171,10 @@ extension ResourceProtocol {
             self.discardContents()
         }
         return oldValue
+    }
+    
+    public func markAsUsed(by frameGraph: FrameGraph) {
+        self._markAsUsed(frameGraphIndexMask: 1 << frameGraph.queue.index)
     }
 }
 
@@ -418,16 +428,18 @@ public struct Resource : ResourceProtocol, Hashable {
         }
     }
     
-    func markAsUsed(frameGraphIndexMask: UInt8) {
+    public func _markAsUsed(frameGraphIndexMask: UInt8) {
         switch self.type {
         case .buffer:
-            Buffer(handle: self.handle).markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            Buffer(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
         case .texture:
-            Texture(handle: self.handle).markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            Texture(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
         case .argumentBuffer:
-            _ArgumentBuffer(handle: self.handle).markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            _ArgumentBuffer(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        case .argumentBufferArray:
+            _ArgumentBufferArray(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
         case .heap:
-            Heap(handle: self.handle).markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            Heap(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
         default:
             break
         }
@@ -667,7 +679,7 @@ public struct Heap : ResourceProtocol {
         return false
     }
     
-    func markAsUsed(frameGraphIndexMask: UInt8) {
+    public func _markAsUsed(frameGraphIndexMask: UInt8) {
         guard self._usesPersistentRegistry else {
             return
         }
@@ -1024,8 +1036,8 @@ public struct Buffer : ResourceProtocol {
         return false
     }
     
-    func markAsUsed(frameGraphIndexMask: UInt8) {
-        self.heap?.markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+    public func _markAsUsed(frameGraphIndexMask: UInt8) {
+        self.heap?._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
         
         guard self._usesPersistentRegistry else {
             return
@@ -1394,9 +1406,9 @@ public struct Texture : ResourceProtocol {
         return false
     }
     
-    func markAsUsed(frameGraphIndexMask: UInt8) {
-        self.baseResource?.markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
-        self.heap?.markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+    public func _markAsUsed(frameGraphIndexMask: UInt8) {
+        self.baseResource?._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        self.heap?._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
         
         guard self._usesPersistentRegistry else {
             return

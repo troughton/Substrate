@@ -400,7 +400,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
         return false
     }
     
-    func markAsUsed(frameGraphIndexMask: UInt8) {
+    public func _markAsUsed(frameGraphIndexMask: UInt8) {
         guard self._usesPersistentRegistry else {
             return
         }
@@ -462,6 +462,12 @@ public struct _ArgumentBufferArray : ResourceProtocol {
     
     public var isKnownInUse: Bool {
         return self._bindings.contains(where: { $0?.isKnownInUse ?? false })
+    }
+    
+    public func _markAsUsed(frameGraphIndexMask: UInt8) {
+        for binding in self._bindings {
+            binding?._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+        }
     }
     
     public func dispose() {
@@ -606,6 +612,10 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         return self.argumentBuffer.isKnownInUse
     }
     
+    public func _markAsUsed(frameGraphIndexMask: UInt8) {
+        self.argumentBuffer._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+    }
+    
     @inlinable
     public var isValid: Bool {
         return self.argumentBuffer.isValid
@@ -718,6 +728,10 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
     @inlinable
     public var isKnownInUse: Bool {
         return self.argumentBufferArray.isKnownInUse
+    }
+    
+    public func _markAsUsed(frameGraphIndexMask: UInt8) {
+        self.argumentBufferArray._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
     }
     
     public func dispose() {
