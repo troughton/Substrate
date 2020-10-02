@@ -39,7 +39,6 @@ public enum ResourceUsageType {
 
     // Used in a previous frame
     case frameStartLayoutTransitionCheck
-    case interReadLayoutTransitionCheck
 
     public var isRenderTarget : Bool {
         switch self {

@@ -220,7 +220,22 @@ extension VulkanBackend {
         var barrierBeforeStages: VkPipelineStageFlagBits = []
         var barrierLastIndex: Int = .max
         
+        var layoutTransitionOnlyBarriers = [VkImageMemoryBarrier]()
+        var layoutTransitionOnlyBarrierBeforeStages: VkPipelineStageFlagBits = []
+        var layoutTransitionOnlyBarrierLastIndex: Int = .max
+        
         let addBarrier: (inout [CompactedResourceCommand<VulkanCompactedResourceCommandType>]) -> Void = { compactedResourceCommands in
+            if currentEncoder.type != .draw {
+                imageBarriers.append(contentsOf: layoutTransitionOnlyBarriers)
+                barrierAfterStages.formUnion(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT)
+                barrierBeforeStages.formUnion(layoutTransitionOnlyBarrierBeforeStages)
+                barrierLastIndex = min(layoutTransitionOnlyBarrierLastIndex, barrierLastIndex)
+                
+                layoutTransitionOnlyBarriers.removeAll(keepingCapacity: true)
+                layoutTransitionOnlyBarrierBeforeStages = []
+                layoutTransitionOnlyBarrierLastIndex = .max
+            }
+            
             let bufferBarriersPtr: UnsafeMutablePointer<VkBufferMemoryBarrier> = allocator.allocate(capacity: bufferBarriers.count)
             bufferBarriersPtr.initialize(from: bufferBarriers, count: bufferBarriers.count)
             
@@ -274,9 +289,13 @@ extension VulkanBackend {
                 }
             }
             
-            if sourceLayout == destinationLayout, afterUsageType == .frameStartLayoutTransitionCheck || afterUsageType == .interReadLayoutTransitionCheck {
-                return // No layout transition needed, so we don't need a memory barrier.
+            if sourceLayout == destinationLayout, afterUsageType == .frameStartLayoutTransitionCheck || (!afterUsageType.isWrite && !beforeUsageType.isWrite) {
+                return // No layout transition needed, and no execution barrier needed, so we don't need to insert a memory barrier.
             }
+            
+            // We can't insert layout transition barriers during a render pass if the barriers are not applicable to that render encoder;
+            // instead, defer them until compute work/as late as necessary.
+            let isLayoutTransitionOnlyBarrierForDifferentEncoder = afterUsageType == .frameStartLayoutTransitionCheck && !currentEncoder.commandRange.contains(beforeCommand)
             
             let sourceMask = afterUsageType.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: afterStages)
             let destinationMask = beforeUsageType.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: beforeStages)
@@ -286,10 +305,10 @@ extension VulkanBackend {
 
             var beforeCommand = beforeCommand
             
-            if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound {
+            if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound, !isLayoutTransitionOnlyBarrierForDifferentEncoder {
                 var subpassDependency = VkSubpassDependency()
                 subpassDependency.dependencyFlags = VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
-                if afterUsageType == .frameStartLayoutTransitionCheck || afterUsageType == .interReadLayoutTransitionCheck {
+                if afterUsageType == .frameStartLayoutTransitionCheck {
                     subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
                 } else if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(currentPassIndex) {
                     subpassDependency.srcSubpass = UInt32(passUsageSubpass.index)
@@ -371,16 +390,28 @@ extension VulkanBackend {
                 barrier.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
                 switch activeRange {
                 case .fullResource:
-                    imageBarriers.append(barrier)
+                    if isLayoutTransitionOnlyBarrierForDifferentEncoder {
+                        layoutTransitionOnlyBarriers.append(barrier)
+                    } else {
+                        imageBarriers.append(barrier)
+                    }
                 case .texture(let mask):
                     if mask.value == .max {
-                        imageBarriers.append(barrier)
+                        if isLayoutTransitionOnlyBarrierForDifferentEncoder {
+                            layoutTransitionOnlyBarriers.append(barrier)
+                        } else {
+                            imageBarriers.append(barrier)
+                        }
                     } else {
                         var activeMask = SubresourceMask(source: mask, subresourceCount: texture.descriptor.subresourceCount, allocator: AllocatorType(allocator))
                         processImageSubresourceRanges(&activeMask, textureDescriptor: texture.descriptor, allocator: AllocatorType(allocator)) { range in
                             barrier.subresourceRange = range
                             assert(!imageBarriers.contains(where: { $0.image == barrier.image && $0.subresourceRange == range })) // Ensure we don't add duplicate barriers.
-                            imageBarriers.append(barrier)
+                            if isLayoutTransitionOnlyBarrierForDifferentEncoder {
+                                layoutTransitionOnlyBarriers.append(barrier)
+                            } else {
+                                imageBarriers.append(barrier)
+                            }
                         }
                     }
                 default:
@@ -388,13 +419,18 @@ extension VulkanBackend {
                 }
             }
             
-            barrierAfterStages.formUnion(sourceMask)
-            barrierBeforeStages.formUnion(destinationMask)
-            barrierLastIndex = min(beforeCommand, barrierLastIndex)
+            if isLayoutTransitionOnlyBarrierForDifferentEncoder {
+                layoutTransitionOnlyBarrierBeforeStages.formUnion(destinationMask)
+                layoutTransitionOnlyBarrierLastIndex = min(beforeCommand, layoutTransitionOnlyBarrierLastIndex)
+            } else {
+                barrierAfterStages.formUnion(sourceMask)
+                barrierBeforeStages.formUnion(destinationMask)
+                barrierLastIndex = min(beforeCommand, barrierLastIndex)
+            }
         }
 
         for command in commandGenerator.commands {
-            if command.index >= barrierLastIndex { // For barriers, the barrier associated with command.index needs to happen _after_ any barriers required to happen _by_ barrierLastIndex
+            if command.index >= barrierLastIndex || command.index >= layoutTransitionOnlyBarrierLastIndex { // For barriers, the barrier associated with command.index needs to happen _after_ any barriers required to happen _by_ barrierLastIndex
                 addBarrier(&compactedResourceCommands)
             }
             

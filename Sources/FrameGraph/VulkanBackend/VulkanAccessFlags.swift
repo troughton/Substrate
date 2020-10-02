@@ -56,7 +56,7 @@ extension ResourceUsageType {
             return VK_ACCESS_INDEX_READ_BIT
         case .indirectBuffer:
             return VK_ACCESS_INDIRECT_COMMAND_READ_BIT
-        case .frameStartLayoutTransitionCheck, .interReadLayoutTransitionCheck: // Used for image layout transitions at the start of the frame
+        case .frameStartLayoutTransitionCheck: // Used for image layout transitions at the start of the frame
             return []
         default:
             fatalError()
@@ -97,7 +97,7 @@ extension ResourceUsageType {
             return VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
         case .indirectBuffer:
             return VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT
-        case .frameStartLayoutTransitionCheck, .interReadLayoutTransitionCheck: // Used for image layout transitions at the start of the frame
+        case .frameStartLayoutTransitionCheck: // Used for image layout transitions at the start of the frame
             return VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
         default:
             fatalError()
