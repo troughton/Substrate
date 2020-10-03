@@ -21,13 +21,13 @@ extension VkImageSubresourceRange {
 
 extension Array where Element == VkImageMemoryBarrier {
     mutating func appendBarrier(_ barrier: VkImageMemoryBarrier) {
-        assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }))
+        assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }), "Trying to add barrier \(barrier) but \(self.first(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) })) already exists")
         self.append(barrier)
     }
     
     mutating func appendBarriers(_ barriers: [VkImageMemoryBarrier]) {
         for barrier in barriers {
-            assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }))
+            assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }), "Trying to add barrier \(barrier) but \(self.first(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) })) already exists")
         }
         self.append(contentsOf: barriers)
     }
@@ -247,11 +247,13 @@ extension VulkanBackend {
         var layoutTransitionOnlyBarrierLastIndex: Int = .max
         
         let addBarrier: (inout [CompactedResourceCommand<VulkanCompactedResourceCommandType>]) -> Void = { compactedResourceCommands in
-            if currentEncoder.type != .draw {
+            let combinedBarrierIndex = min(layoutTransitionOnlyBarrierLastIndex, barrierLastIndex)
+            let barrierEncoder = commandInfo.commandEncoders.first(where: { $0.commandRange.contains(combinedBarrierIndex) })!
+            if barrierEncoder.type != .draw {
                 imageBarriers.appendBarriers(layoutTransitionOnlyBarriers)
                 barrierAfterStages.formUnion(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT)
                 barrierBeforeStages.formUnion(layoutTransitionOnlyBarrierBeforeStages)
-                barrierLastIndex = min(layoutTransitionOnlyBarrierLastIndex, barrierLastIndex)
+                barrierLastIndex = combinedBarrierIndex
                 
                 layoutTransitionOnlyBarriers.removeAll(keepingCapacity: true)
                 layoutTransitionOnlyBarrierBeforeStages = []
@@ -457,6 +459,12 @@ extension VulkanBackend {
 
         for command in commandGenerator.commands {
             if command.index >= barrierLastIndex || command.index >= layoutTransitionOnlyBarrierLastIndex { // For barriers, the barrier associated with command.index needs to happen _after_ any barriers required to happen _by_ barrierLastIndex
+                addBarrier(&compactedResourceCommands)
+            }
+            if command.index >= layoutTransitionOnlyBarrierLastIndex { 
+                // We may have only processed the non-layout-transition barriers if the encoder was a draw encoder (in a render pass);
+                // we still need to ensure the layout transition barriers happen before the specified command index.
+                assert(barrierLastIndex > command.index)
                 addBarrier(&compactedResourceCommands)
             }
             
