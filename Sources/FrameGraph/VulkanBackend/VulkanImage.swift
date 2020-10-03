@@ -86,6 +86,7 @@ class VulkanImage {
     var views = [ViewDescriptor : VulkanImageView]()
     
     var frameLayouts: [LayoutState]
+    var frameLayoutsLastFrameIndex = UInt64.max
 
     init(device: VulkanDevice, image: VkImage, allocator: VmaAllocator?, allocation: VmaAllocation?, descriptor: VulkanImageDescriptor) {
         self.device = device
@@ -158,31 +159,37 @@ class VulkanImage {
         return self.descriptor.matches(descriptor: descriptor)
     }
     
-    func computeFrameLayouts(resource: Resource, usages: ChunkArray<ResourceUsage>, preserveLastLayout: Bool) {
-        let subresourceCount = self.descriptor.subresourceCount
-        // NOTE: we use the system allocator for subresource masks within the frameLayouts array
-        let previousLayouts = self.frameLayouts
-        defer {
-            previousLayouts.forEach { $0.subresourceRange.deallocateStorage(subresourceCount: subresourceCount, allocator: .system) }
-        }
+    func computeFrameLayouts(resource: Resource, usages: ChunkArray<ResourceUsage>, preserveLastLayout: Bool, frameIndex: UInt64) {
+        defer { self.frameLayoutsLastFrameIndex = frameIndex }
         
-        self.frameLayouts.removeAll(keepingCapacity: true)
-        if !preserveLastLayout {
-            self.frameLayouts.append(LayoutState(commandRange: -1..<0,
-                                                 layout: VK_IMAGE_LAYOUT_UNDEFINED,
-                                                 subresourceRange: .fullResource))
-        } else {
-            var remainingSubresources = ActiveResourceRange.fullResource
-            for layout in previousLayouts.reversed() {
-                let subresources = remainingSubresources.intersection(with: layout.subresourceRange, subresourceCount: subresourceCount, allocator: .system)
-                remainingSubresources.subtract(range: subresources, subresourceCount: subresourceCount, allocator: .system)
-                
+        let subresourceCount = self.descriptor.subresourceCount
+        
+        if frameIndex != self.frameLayoutsLastFrameIndex {
+            // If we don't already have some layouts assigned for this frame (for a different resource).
+            // NOTE: we use the system allocator for subresource masks within the frameLayouts array
+            let previousLayouts = self.frameLayouts
+            defer {
+                previousLayouts.forEach { $0.subresourceRange.deallocateStorage(subresourceCount: subresourceCount, allocator: .system) }
+            }
+            
+            self.frameLayouts.removeAll(keepingCapacity: true)
+            if !preserveLastLayout {
                 self.frameLayouts.append(LayoutState(commandRange: -1..<0,
-                                                     layout: layout.layout,
-                                                     subresourceRange: subresources))
+                                                     layout: VK_IMAGE_LAYOUT_UNDEFINED,
+                                                     subresourceRange: .fullResource))
+            } else {
+                var remainingSubresources = ActiveResourceRange.fullResource
+                for layout in previousLayouts.reversed() {
+                    let subresources = remainingSubresources.intersection(with: layout.subresourceRange, subresourceCount: subresourceCount, allocator: .system)
+                    remainingSubresources.subtract(range: subresources, subresourceCount: subresourceCount, allocator: .system)
+                    
+                    self.frameLayouts.append(LayoutState(commandRange: -1..<0,
+                                                         layout: layout.layout,
+                                                         subresourceRange: subresources))
 
-                if remainingSubresources.isEqual(to: .inactive, resource: resource) {
-                    break
+                    if remainingSubresources.isEqual(to: .inactive, resource: resource) {
+                        break
+                    }
                 }
             }
         }

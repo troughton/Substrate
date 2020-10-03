@@ -11,6 +11,28 @@ import Dispatch
 import FrameGraphCExtras
 import FrameGraphUtilities
 
+extension VkImageSubresourceRange {
+    func overlaps(with otherRange: VkImageSubresourceRange) -> Bool {
+        let layersOverlap = (self.baseArrayLayer..<(self.baseArrayLayer + self.layerCount)).overlaps(otherRange.baseArrayLayer..<otherRange.baseArrayLayer + otherRange.layerCount)
+        let levelsOverlap = (self.baseMipLevel..<(self.baseMipLevel + self.levelCount)).overlaps(otherRange.baseMipLevel..<(otherRange.baseMipLevel + otherRange.levelCount))
+        return layersOverlap && levelsOverlap
+    }
+}
+
+extension Array where Element == VkImageMemoryBarrier {
+    mutating func appendBarrier(_ barrier: VkImageMemoryBarrier) {
+        assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }))
+        self.append(barrier)
+    }
+    
+    mutating func appendBarriers(_ barriers: [VkImageMemoryBarrier]) {
+        for barrier in barriers {
+            assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }))
+        }
+        self.append(contentsOf: barriers)
+    }
+}
+
 extension VulkanBackend {
     
     func processImageSubresourceRanges(_ activeMask: inout SubresourceMask, textureDescriptor: TextureDescriptor, allocator: AllocatorType, action: (VkImageSubresourceRange) -> Void) {
@@ -145,12 +167,12 @@ extension VulkanBackend {
                         case (.texture(let mask), .fullResource),
                          (.fullResource, .texture(let mask)):
                             if mask.value == .max {
-                                imageBarriers.append(barrier)
+                                imageBarriers.appendBarrier(barrier)
                             } else {
                                 var activeMask = SubresourceMask(source: mask, subresourceCount: textureDescriptor.subresourceCount, allocator: AllocatorType(allocator))
                                 processImageSubresourceRanges(&activeMask, textureDescriptor: textureDescriptor, allocator: AllocatorType(allocator)) {
                                     barrier.subresourceRange = $0
-                                    imageBarriers.append(barrier)
+                                    imageBarriers.appendBarrier(barrier)
                                 }
                             }
                             
@@ -160,11 +182,11 @@ extension VulkanBackend {
                             
                             processImageSubresourceRanges(&activeMask, textureDescriptor: textureDescriptor, allocator: AllocatorType(allocator)) {
                                 barrier.subresourceRange = $0
-                                imageBarriers.append(barrier)
+                                imageBarriers.appendBarrier(barrier)
                             }
                             
                         case (.fullResource, .fullResource):
-                            imageBarriers.append(barrier)
+                            imageBarriers.appendBarrier(barrier)
                         default:
                             fatalError()
                         }
@@ -226,7 +248,7 @@ extension VulkanBackend {
         
         let addBarrier: (inout [CompactedResourceCommand<VulkanCompactedResourceCommandType>]) -> Void = { compactedResourceCommands in
             if currentEncoder.type != .draw {
-                imageBarriers.append(contentsOf: layoutTransitionOnlyBarriers)
+                imageBarriers.appendBarriers(layoutTransitionOnlyBarriers)
                 barrierAfterStages.formUnion(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT)
                 barrierBeforeStages.formUnion(layoutTransitionOnlyBarrierBeforeStages)
                 barrierLastIndex = min(layoutTransitionOnlyBarrierLastIndex, barrierLastIndex)
@@ -269,7 +291,11 @@ extension VulkanBackend {
             let destinationLayout: VkImageLayout
             if let image = resource.texture.map({ resourceMap[$0].image }) {
                 if afterUsageType == .frameStartLayoutTransitionCheck {
-                    (sourceLayout, activeRange, remainingRange) = image.frameInitialLayout(for: activeRange, allocator: AllocatorType(allocator))
+                    if !resource._usesPersistentRegistry {
+                        sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED
+                    } else {
+                        (sourceLayout, activeRange, remainingRange) = image.frameInitialLayout(for: activeRange, allocator: AllocatorType(allocator))
+                    }
                 } else {
                     sourceLayout = image.layout(commandIndex: afterCommand, subresourceRange: activeRange)
                 }
@@ -393,14 +419,14 @@ extension VulkanBackend {
                     if isLayoutTransitionOnlyBarrierForDifferentEncoder {
                         layoutTransitionOnlyBarriers.append(barrier)
                     } else {
-                        imageBarriers.append(barrier)
+                        imageBarriers.appendBarrier(barrier)
                     }
                 case .texture(let mask):
                     if mask.value == .max {
                         if isLayoutTransitionOnlyBarrierForDifferentEncoder {
                             layoutTransitionOnlyBarriers.append(barrier)
                         } else {
-                            imageBarriers.append(barrier)
+                            imageBarriers.appendBarrier(barrier)
                         }
                     } else {
                         var activeMask = SubresourceMask(source: mask, subresourceCount: texture.descriptor.subresourceCount, allocator: AllocatorType(allocator))
@@ -410,7 +436,7 @@ extension VulkanBackend {
                             if isLayoutTransitionOnlyBarrierForDifferentEncoder {
                                 layoutTransitionOnlyBarriers.append(barrier)
                             } else {
-                                imageBarriers.append(barrier)
+                                imageBarriers.appendBarrier(barrier)
                             }
                         }
                     }

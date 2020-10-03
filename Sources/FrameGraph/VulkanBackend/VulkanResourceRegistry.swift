@@ -323,7 +323,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     private let descriptorPools: [VulkanDescriptorPool]
     
     public let inflightFrameCount: Int
-    private var activeFrameIndex: Int = 0
+    private var descriptorPoolIndex: Int = 0
+    private var frameIndex: UInt64 = 0
     
     public private(set) var frameSwapChains : [VulkanSwapChain] = []
     
@@ -376,7 +377,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.textureWaitEvents.prepareFrame()
         self.bufferWaitEvents.prepareFrame()
         
-        self.descriptorPools[self.activeFrameIndex].resetDescriptorPool()
+        self.descriptorPools[self.descriptorPoolIndex].resetDescriptorPool()
     }
 
     func allocatorForBuffer(storageMode: StorageMode, cacheMode: CPUCacheMode, flags: ResourceFlags) -> VulkanBufferAllocator {
@@ -488,7 +489,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
             self.heapResourceUsageFences[Resource(texture)] = events
         }
         
-        vkImage.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false)
+        vkImage.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false, frameIndex: self.frameIndex)
         return vkImage
     }
     
@@ -509,7 +510,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
             let swapChain = self.persistentRegistry.windowReferences.removeValue(forKey: texture)!
             self.frameSwapChains.append(swapChain)
             let image = swapChain.nextImage(descriptor: texture.descriptor)
-            image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false)
+            image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false, frameIndex: self.frameIndex)
             self.textureReferences[texture] = VkImageReference(image: Unmanaged.passUnretained(image))
         }
 
@@ -604,7 +605,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         
         let layout = Unmanaged<VulkanDescriptorSetLayout>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-        let set = self.descriptorPools[self.activeFrameIndex].allocateSet(layout: layout.vkLayout)
+        let set = self.descriptorPools[self.descriptorPoolIndex].allocateSet(layout: layout.vkLayout)
         
         let vkArgumentBuffer = VulkanArgumentBuffer(device: self.persistentRegistry.device, layout: layout, descriptorSet: set)
         
@@ -631,7 +632,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     func prepareMultiframeTexture(_ texture: Texture) {
         if let image = self.persistentRegistry[texture] {
-            image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: texture.stateFlags.contains(.initialised))
+            image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: texture.stateFlags.contains(.initialised), frameIndex: self.frameIndex)
         }
     }
     
@@ -762,7 +763,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.historyBufferAllocator.cycleFrames()
         self.privateAllocator.cycleFrames()
         
-        self.activeFrameIndex = (self.activeFrameIndex &+ 1) % self.inflightFrameCount
+        self.descriptorPoolIndex = (self.descriptorPoolIndex &+ 1) % self.inflightFrameCount
+        self.frameIndex += 1
     }
 }
 

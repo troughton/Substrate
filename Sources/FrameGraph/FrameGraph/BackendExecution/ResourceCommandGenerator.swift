@@ -430,7 +430,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         if let previousRead = usagesArray.indexOfPreviousRead(before: usageIndex, resource: resource).map({ usagesArray[$0] }) {
                             if previousRead.type != usage.type, frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord) { // We only need to check if the usage types differ and the encoders are the same (since otherwise the barrier is either unnecessary or managed as inter-encoder dependencies).
                                 self.commands.append(FrameResourceCommand(command:
-                                                                    .memoryBarrier(Resource(resource), afterUsage: .interReadLayoutTransitionCheck, afterStages: previousRead.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
+                                                                            .memoryBarrier(Resource(resource), afterUsage: previousRead.type, afterStages: previousRead.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
                                                                      index: previousRead.commandRange.upperBound))
 
                             }
