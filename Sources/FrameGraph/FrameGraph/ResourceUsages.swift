@@ -107,7 +107,7 @@ public struct ResourceUsage {
     
     @inlinable
     public var affectsGPUBarriers : Bool {
-        return self.renderPassRecord.isActive && self.stages != .cpuBeforeRender && self.type != .unusedRenderTarget && self.renderPassRecord.pass.passType != .external
+        return self.renderPassRecord.isActive && self.stages != .cpuBeforeRender && self.type != .unusedRenderTarget && self.type != .unusedArgumentBuffer && self.renderPassRecord.pass.passType != .external
     }
     
     /// - returns: Whether the usages could be merged.
