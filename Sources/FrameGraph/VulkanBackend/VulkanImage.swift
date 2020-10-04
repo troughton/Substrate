@@ -246,7 +246,8 @@ class VulkanImage {
             preconditionFailure("No initial layout found for range \(subresources); layouts are \(self.frameLayouts)")
         }
         remainingSubresources.subtract(range: layout.subresourceRange, subresourceCount: self.descriptor.subresourceCount, allocator: allocator)
-        return (layout.layout, layout.subresourceRange, remainingSubresources)
+        let intersectedSubresources = subresources.intersection(with: layout.subresourceRange, subresourceCount: self.descriptor.subresourceCount, allocator: allocator)
+        return (layout.layout, intersectedSubresources, remainingSubresources)
     }
     
     func layout(commandIndex: Int, subresourceRange: ActiveResourceRange) -> VkImageLayout {
@@ -263,21 +264,21 @@ class VulkanImage {
         return layout
     }
 
-    func renderPassLayouts(previousCommandIndex: Int, nextCommandIndex: Int, subresourceRange: ActiveResourceRange) -> (VkImageLayout, VkImageLayout) {
+    func renderPassLayouts(previousCommandIndex: Int, nextCommandIndex: Int, slice: Int, level: Int, texture: Texture) -> (VkImageLayout, VkImageLayout) {
         var initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
         var finalLayout = self.swapchainImageIndex != nil ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED
 
         for layout in self.frameLayouts {
-            if previousCommandIndex >= 0, layout.commandRange.contains(previousCommandIndex), layout.subresourceRange.intersects(with: subresourceRange, subresourceCount: self.descriptor.subresourceCount) {
+            if previousCommandIndex >= 0, layout.commandRange.contains(previousCommandIndex), layout.subresourceRange.intersects(textureSlice: slice, level: level, descriptor: texture.descriptor) {
                 initialLayout = layout.layout
             }
-            if nextCommandIndex >= 0, layout.commandRange.contains(nextCommandIndex), layout.subresourceRange.intersects(with: subresourceRange, subresourceCount: self.descriptor.subresourceCount) {
+            if nextCommandIndex >= 0, layout.commandRange.contains(nextCommandIndex), layout.subresourceRange.intersects(textureSlice: slice, level: level, descriptor: texture.descriptor) {
                 finalLayout = layout.layout
                 break
             }
         }
         if finalLayout == VK_IMAGE_LAYOUT_UNDEFINED {
-            finalLayout = self.frameLayouts.last(where: { $0.subresourceRange.intersects(with: subresourceRange, subresourceCount: self.descriptor.subresourceCount) })!.layout
+            finalLayout = self.frameLayouts.last(where: { $0.subresourceRange.intersects(textureSlice: slice, level: level, descriptor: texture.descriptor) })!.layout
         }
 
         return (initialLayout, finalLayout)

@@ -33,8 +33,7 @@ class VulkanRenderPass {
             guard let colorAttachment = colorAttachment else { continue }
             var attachmentDescription = VkAttachmentDescription(pixelFormat: colorAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: colorAttachment, actions: actions)
             let (previousCommandIndex, nextCommandIndex) = descriptor.colorPreviousAndNextUsageCommands[i]
-            let subresourceRange = colorAttachment.texture.usages.first(where: { $0.commandRange.lowerBound > previousCommandIndex && $0.type.isRenderTarget })!.activeRange
-            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(colorAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, subresourceRange: subresourceRange)
+            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(colorAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: colorAttachment.slice, level: colorAttachment.level, texture: colorAttachment.texture)
 
             attachmentDescription.initialLayout = initialLayout
             attachmentDescription.finalLayout = finalLayout
@@ -45,8 +44,7 @@ class VulkanRenderPass {
         if let depthAttachment = descriptor.descriptor.depthAttachment {
             var attachmentDescription = VkAttachmentDescription(pixelFormat: depthAttachment.texture.descriptor.pixelFormat, renderTargetDescriptor: depthAttachment, depthActions: descriptor.depthActions, stencilActions: descriptor.stencilActions)
             let (previousCommandIndex, nextCommandIndex) = descriptor.depthPreviousAndNextUsageCommands
-            let subresourceRange = depthAttachment.texture.usages.first(where: { $0.commandRange.lowerBound > previousCommandIndex && $0.type.isRenderTarget })!.activeRange
-            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(depthAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, subresourceRange: subresourceRange)
+            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(depthAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: depthAttachment.slice, level: depthAttachment.level, texture: depthAttachment.texture)
                  
             attachmentDescription.initialLayout = initialLayout
             attachmentDescription.finalLayout = finalLayout
