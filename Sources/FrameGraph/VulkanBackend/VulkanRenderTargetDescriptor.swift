@@ -299,7 +299,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         var firstUsageAfterIndex = -1
         
         while let usage = usageIterator.next() {
-            if !usage.renderPassRecord.isActive { continue }
+            if !usage.renderPassRecord.isActive || !usage.activeRange.intersects(textureSlice: attachment.slice, level: attachment.level, descriptor: attachment.texture.descriptor) { continue }
             
             if usage.renderPassRecord.passIndex < renderPassRange.lowerBound {
                 isFirstUsage = false

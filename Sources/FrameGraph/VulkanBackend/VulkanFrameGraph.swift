@@ -21,13 +21,17 @@ extension VkImageSubresourceRange {
 
 extension Array where Element == VkImageMemoryBarrier {
     mutating func appendBarrier(_ barrier: VkImageMemoryBarrier) {
-        assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }), "Trying to add barrier \(barrier) but \(self.first(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) })) already exists")
+        assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }), "Trying to add barrier \(barrier) but \(self.first(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) })!) already exists")
         self.append(barrier)
     }
     
     mutating func appendBarriers(_ barriers: [VkImageMemoryBarrier]) {
         for barrier in barriers {
-            assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }), "Trying to add barrier \(barrier) but \(self.first(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) })) already exists")
+            
+            if barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED, barrier.newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL {
+                print("memoryBarrier for undefined to transferDstOptimal: \(barrier)")
+            }
+            assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }), "Trying to add barrier \(barrier) but \(self.first(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) })!) already exists")
         }
         self.append(contentsOf: barriers)
     }
@@ -51,6 +55,9 @@ extension VulkanBackend {
                     }) ?? textureDescriptor.mipmapLevelCount
 
                     subresourceRange.levelCount = UInt32(endLevel - level)
+                    if subresourceRange.layerCount == 1, subresourceRange.levelCount == 7 {
+                        print("SubresourceRange is \(subresourceRange) for activeMask \(activeMask)")
+                    }
                     assert(endLevel - level <= textureDescriptor.mipmapLevelCount)
                     
                     for l in level..<endLevel {
@@ -92,17 +99,6 @@ extension VulkanBackend {
             }
             
             if signalIndex < 0 { continue }
-            
-            let label = "Encoder \(sourceIndex) Event"
-            let sourceEncoder = frameCommandInfo.commandEncoders[sourceIndex]
-            let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: sourceEncoder.commandBufferIndex)
-            let fence = VulkanEventHandle(label: label, queue: queue, commandBufferIndex: commandBufferSignalValue)
-
-            if sourceEncoder.type == .draw {
-                signalIndex = max(signalIndex, sourceEncoder.commandRange.last!) // We can't signal within a VkRenderPass instance.
-            }
-            
-            compactedResourceCommands.append(CompactedResourceCommand<VulkanCompactedResourceCommandType>(command: .signalEvent(fence.event, afterStages: signalStages), index: signalIndex, order: .after))
             
             for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
                 let dependency = dependencies.dependency(from: dependentIndex, on: sourceIndex)!
@@ -148,12 +144,34 @@ extension VulkanBackend {
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!, subresourceRange: producingUsage.activeRange)
                         barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!, subresourceRange: consumingUsage.activeRange)
-                        if producingUsage.type.isRenderTarget {
-                            // We transitioned to the new layout at the end of the previous render pass.
-                            barrier.oldLayout = barrier.newLayout 
-                        } else if consumingUsage.type.isRenderTarget {
-                            // The layout transition will be handled by the next render pass.
-                            barrier.newLayout = barrier.oldLayout
+                        if producingUsage.type.isRenderTarget || consumingUsage.type.isRenderTarget {
+                            // Handle this through a subpass dependency.
+                            // TODO: when we support queue ownership transfers, we may also need a pipeline barrier here.
+                            var subpassDependency = VkSubpassDependency()
+                            let renderTargetDescriptor: VulkanRenderTargetDescriptor
+                            if producingUsage.type.isRenderTarget {
+                                // We transitioned to the new layout at the end of the previous render pass.
+                                // Add a subpass dependency and continue.
+                                barrier.oldLayout = barrier.newLayout
+                                renderTargetDescriptor = frameCommandInfo.commandEncoders[sourceIndex].renderTargetDescriptor!
+                                subpassDependency.srcSubpass = UInt32(renderTargetDescriptor.subpasses.last!.index)
+                                subpassDependency.dstSubpass = VK_SUBPASS_EXTERNAL
+                            } else {
+                                // The layout transition will be handled by the next render pass.
+                                // Add a subpass dependency and continue.
+                                barrier.newLayout = barrier.oldLayout
+                                renderTargetDescriptor = frameCommandInfo.commandEncoders[dependentIndex].renderTargetDescriptor!
+                                subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
+                                subpassDependency.dstSubpass = 0
+                            }
+
+                            subpassDependency.srcStageMask = producingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: producingUsage.stages).rawValue
+                            subpassDependency.srcAccessMask = barrier.srcAccessMask
+                            subpassDependency.dstStageMask = consumingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: consumingUsage.stages).rawValue
+                            subpassDependency.dstAccessMask = barrier.dstAccessMask
+
+                            renderTargetDescriptor.addDependency(subpassDependency) 
+                            continue
                         } else {
                             let previousUsage = texture.usages.lazy.filter { $0.affectsGPUBarriers }.prefix(while: { !$0.commandRange.contains(consumingUsage.commandRange.first!) }).last
                             if let previousUsage = previousUsage, !previousUsage.isWrite {
@@ -162,7 +180,7 @@ extension VulkanBackend {
                             }
                         }
                         barrier.subresourceRange = VkImageSubresourceRange(aspectMask: textureDescriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(textureDescriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(textureDescriptor.arrayLength))
-                        
+
                         switch (producingUsage.activeRange, consumingUsage.activeRange) {
                         case (.texture(let mask), .fullResource),
                          (.fullResource, .texture(let mask)):
@@ -197,6 +215,22 @@ extension VulkanBackend {
                     
                     destinationStages.formUnion(consumingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: consumingUsage.stages))
                 }
+
+                if signalStages.isEmpty || destinationStages.isEmpty {
+                    // Everything has been handled by either pipeline barriers or subpass dependencies, so we don't need a vkCmdWaitEvents.
+                    continue
+                }
+
+                let label = "Encoder \(sourceIndex) Event"
+                let sourceEncoder = frameCommandInfo.commandEncoders[sourceIndex]
+                let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: sourceEncoder.commandBufferIndex)
+                let fence = VulkanEventHandle(label: label, queue: queue, commandBufferIndex: commandBufferSignalValue)
+
+                if sourceEncoder.type == .draw {
+                    signalIndex = max(signalIndex, sourceEncoder.commandRange.last!) // We can't signal within a VkRenderPass instance.
+                }
+                
+                compactedResourceCommands.append(CompactedResourceCommand<VulkanCompactedResourceCommandType>(command: .signalEvent(fence.event, afterStages: signalStages), index: signalIndex, order: .after))
                 
                 let bufferBarriersPtr: UnsafeMutablePointer<VkBufferMemoryBarrier> = allocator.allocate(capacity: bufferBarriers.count)
                 bufferBarriersPtr.initialize(from: bufferBarriers, count: bufferBarriers.count)
@@ -414,19 +448,29 @@ extension VulkanBackend {
                 barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                 barrier.oldLayout = sourceLayout
                 barrier.newLayout = destinationLayout
+
                 
+                        if barrier.oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL {
+                            print("memoryBarrier for \(barrier), resource \(texture), \(afterUsageType) to \(beforeUsageType)")
+                        }
+                
+                
+                        if barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED, barrier.newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL {
+                            print("memoryBarrier for undefined to transferDstOptimal for image \(barrier.image!), activeRange: \(activeRange), remainingRange: \(remainingRange)")
+                        }
+
                 barrier.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
                 switch activeRange {
                 case .fullResource:
                     if isLayoutTransitionOnlyBarrierForDifferentEncoder {
-                        layoutTransitionOnlyBarriers.append(barrier)
+                        layoutTransitionOnlyBarriers.appendBarrier(barrier)
                     } else {
                         imageBarriers.appendBarrier(barrier)
                     }
                 case .texture(let mask):
                     if mask.value == .max {
                         if isLayoutTransitionOnlyBarrierForDifferentEncoder {
-                            layoutTransitionOnlyBarriers.append(barrier)
+                            layoutTransitionOnlyBarriers.appendBarrier(barrier)
                         } else {
                             imageBarriers.appendBarrier(barrier)
                         }
@@ -436,7 +480,7 @@ extension VulkanBackend {
                             barrier.subresourceRange = range
                             assert(!imageBarriers.contains(where: { $0.image == barrier.image && $0.subresourceRange == range })) // Ensure we don't add duplicate barriers.
                             if isLayoutTransitionOnlyBarrierForDifferentEncoder {
-                                layoutTransitionOnlyBarriers.append(barrier)
+                                layoutTransitionOnlyBarriers.appendBarrier(barrier)
                             } else {
                                 imageBarriers.appendBarrier(barrier)
                             }
