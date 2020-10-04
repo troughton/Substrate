@@ -145,7 +145,7 @@ public struct PNGCompressionSettings {
         return settings
     }
     
-    public var maxCompression: PNGCompressionSettings {
+    public static var maxCompression: PNGCompressionSettings {
         var settings = PNGCompressionSettings()
         settings.blockType = .type2
         settings.windowSize = .size32768
