@@ -428,12 +428,21 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         // so that it can be inserted as a subpass dependency.
 
                         if let previousRead = usagesArray.indexOfPreviousRead(before: usageIndex, resource: resource).map({ usagesArray[$0] }) {
-                            if previousRead.type != usage.type, frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord) { // We only need to check if the usage types differ and the encoders are the same (since otherwise the barrier is either unnecessary or managed as inter-encoder dependencies).
-                                self.commands.append(FrameResourceCommand(command:
+                            if previousRead.type != usage.type { // We only need to check if the usage types differ, since otherwise the layouts are guaranteed to be the same.
+                                let onEncoder = frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord)
+                                let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
+                                if fromEncoder == onEncoder {
+                                    self.commands.append(FrameResourceCommand(command:
                                                                             .memoryBarrier(Resource(resource), afterUsage: previousRead.type, afterStages: previousRead.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
                                                                      index: previousRead.commandRange.upperBound))
+                                } else {
+                                    let dependency = Dependency(resource: resource, producingUsage: previousRead, producingEncoder: onEncoder, consumingUsage: usage, consumingEncoder: fromEncoder)
+                                    commandEncoderDependencies.setDependency(from: fromEncoder,
+                                                                            on: onEncoder,
+                                                                            to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
 
-                            }
+                                }
+                            } 
 
                         } else {
                             self.commands.append(FrameResourceCommand(command:

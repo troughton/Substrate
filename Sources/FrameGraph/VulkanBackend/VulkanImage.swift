@@ -203,35 +203,6 @@ class VulkanImage {
             // Find the insertion location (since reads may be unordered in the usages list).
             self.frameLayouts.append(LayoutState(commandRange: usage.commandRange, layout: layout, subresourceRange: ActiveResourceRange(usage.activeRange, subresourceCount: subresourceCount, allocator: .system)))
         }
-        
-        // Merge reads of different layouts to use the VK_IMAGE_LAYOUT_GENERAL layout so we don't need to insert layout transition barriers between reads.
-        let readLayouts = [VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL]
-        
-        var i = self.frameLayouts.firstIndex(where: { $0.commandRange.lowerBound >= 0 }) ?? self.frameLayouts.endIndex
-        while i < self.frameLayouts.endIndex {
-            if readLayouts.contains(self.frameLayouts[i].layout) {
-                var makeGeneralLayout = false
-                var generalLayoutEndIndex = -1
-                
-                for j in self.frameLayouts.index(after: i)..<self.frameLayouts.endIndex {
-                    if !readLayouts.contains(self.frameLayouts[j].layout) { break }
-                    generalLayoutEndIndex = j + 1
-                    if self.frameLayouts[j].layout != self.frameLayouts[i].layout {
-                        makeGeneralLayout = true
-                    }
-                }
-                
-                if makeGeneralLayout {
-                    for j in i..<generalLayoutEndIndex {
-                        self.frameLayouts[j].layout = VK_IMAGE_LAYOUT_GENERAL
-                    }
-                    i = generalLayoutEndIndex
-                    continue
-                }
-            }
-            
-            i = self.frameLayouts.index(after: i)
-        }
     }
     
     func clearFrameLayouts() {

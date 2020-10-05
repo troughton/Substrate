@@ -27,10 +27,6 @@ extension Array where Element == VkImageMemoryBarrier {
     
     mutating func appendBarriers(_ barriers: [VkImageMemoryBarrier]) {
         for barrier in barriers {
-            
-            if barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED, barrier.newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL {
-                print("memoryBarrier for undefined to transferDstOptimal: \(barrier)")
-            }
             assert(!self.contains(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) }), "Trying to add barrier \(barrier) but \(self.first(where: { $0.image == barrier.image && $0.subresourceRange.overlaps(with: barrier.subresourceRange) })!) already exists")
         }
         self.append(contentsOf: barriers)
@@ -55,9 +51,6 @@ extension VulkanBackend {
                     }) ?? textureDescriptor.mipmapLevelCount
 
                     subresourceRange.levelCount = UInt32(endLevel - level)
-                    if subresourceRange.layerCount == 1, subresourceRange.levelCount == 7 {
-                        print("SubresourceRange is \(subresourceRange) for activeMask \(activeMask)")
-                    }
                     assert(endLevel - level <= textureDescriptor.mipmapLevelCount)
                     
                     for l in level..<endLevel {
@@ -144,6 +137,11 @@ extension VulkanBackend {
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!, subresourceRange: producingUsage.activeRange)
                         barrier.newLayout = image.layout(commandIndex: consumingUsage.commandRange.first!, subresourceRange: consumingUsage.activeRange)
+
+                        if !producingUsage.isWrite, !consumingUsage.isWrite, barrier.oldLayout == barrier.newLayout {
+                            continue // This would only be a layout transition barrrier, and we don't need to transition layouts.
+                        }
+
                         if producingUsage.type.isRenderTarget || consumingUsage.type.isRenderTarget {
                             // Handle this through a subpass dependency.
                             // TODO: when we support queue ownership transfers, we may also need a pipeline barrier here.
@@ -448,16 +446,6 @@ extension VulkanBackend {
                 barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                 barrier.oldLayout = sourceLayout
                 barrier.newLayout = destinationLayout
-
-                
-                        if barrier.oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL {
-                            print("memoryBarrier for \(barrier), resource \(texture), \(afterUsageType) to \(beforeUsageType)")
-                        }
-                
-                
-                        if barrier.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED, barrier.newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL {
-                            print("memoryBarrier for undefined to transferDstOptimal for image \(barrier.image!), activeRange: \(activeRange), remainingRange: \(remainingRange)")
-                        }
 
                 barrier.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
                 switch activeRange {
