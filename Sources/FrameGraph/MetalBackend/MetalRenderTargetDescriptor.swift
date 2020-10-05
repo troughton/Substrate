@@ -154,28 +154,26 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, loadAction: MTLLoadAction, storedTextures: inout [Texture]) -> (MTLLoadAction, MTLStoreAction) {
         let usages = attachment.texture.usages
         
-        // Are we the first usage?
-        guard let firstActiveUsage = usages.firstActiveUsage else {
-            return (.dontCare, .dontCare) // We need to have this texture as an attachment, but it's never actually read from or written to.
-        }
-        
-        let isFirstUsage = !attachment.texture.stateFlags.contains(.initialised) && self.renderPasses.contains { $0 === firstActiveUsage.renderPassRecord.pass }
-        
-        // Is the texture read from after these passes?
-        var ourLastUsageIndex = -1
-        for (i, usage) in usages.enumerated().reversed() {
-            if self.renderPasses.contains(where: { $0 === usage.renderPassRecord.pass }) {
-                ourLastUsageIndex = i
-                break
-            }
-        }
-        
-        assert(ourLastUsageIndex != -1)
-        
+        var isFirstUsage: Bool? = nil
         var isReadAfterPass : Bool? = nil // nil = as yet unknown
+        var isProcessingUsagesAfterEncoder = false
         
-        for usage in usages.dropFirst(ourLastUsageIndex + 1) {
-            if !usage.renderPassRecord.isActive || usage.stages == .cpuBeforeRender { continue }
+        for usage in usages {
+            if !usage.affectsGPUBarriers || !usage.activeRange.intersects(textureSlice: attachment.slice, level: attachment.level, descriptor: attachment.texture.descriptor) { continue }
+            
+            let isUsageInEncoder = usage.type.isRenderTarget && self.renderPasses.contains(where: { $0 === usage.renderPassRecord.pass })
+            
+            if isFirstUsage == nil {
+                if !attachment.texture.stateFlags.contains(.initialised), isUsageInEncoder {
+                    isFirstUsage = true
+                } else {
+                    isFirstUsage = false
+                }
+            }
+            
+            isProcessingUsagesAfterEncoder = isUsageInEncoder || isProcessingUsagesAfterEncoder
+            
+            if isUsageInEncoder || !isProcessingUsagesAfterEncoder { continue }
             
             switch usage.type {
             case .unusedArgumentBuffer, .unusedRenderTarget:
@@ -228,7 +226,7 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
         
         var loadAction = loadAction
-        if isFirstUsage, loadAction == .load {
+        if isFirstUsage ?? true, loadAction == .load {
             loadAction = .dontCare
         }
         

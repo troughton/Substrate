@@ -83,7 +83,7 @@ public struct ColorWriteMask : OptionSet, Hashable, Codable {
 }
 
 
-public enum PixelFormat : UInt, Hashable, Codable {
+public enum PixelFormat : UInt, Hashable, Codable, CaseIterable {
     
     case invalid = 0
     
