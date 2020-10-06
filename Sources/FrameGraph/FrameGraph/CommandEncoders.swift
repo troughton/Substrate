@@ -1467,6 +1467,7 @@ public final class BlitCommandEncoder : CommandEncoder {
     }
     
     public func generateMipmaps(for texture: Texture) {
+        guard texture.descriptor.mipmapLevelCount > 1 else { return }
         #if canImport(Metal)
         if RenderBackend._backend is MetalBackend {
             commandRecorder.addResourceUsage(for: texture, slice: nil, level: nil, commandIndex: self.nextCommandOffset, encoder: self, usageType: .mipGeneration, stages: .blit, inArgumentBuffer: false)
