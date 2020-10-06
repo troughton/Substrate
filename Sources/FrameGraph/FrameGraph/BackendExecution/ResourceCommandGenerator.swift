@@ -444,7 +444,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                                 }
                             } 
 
-                        } else {
+                        } else if !usage.type.isRenderTarget { // Render target layout transitions are handled by the render pass.
                             self.commands.append(FrameResourceCommand(command:
                                                                     .memoryBarrier(Resource(resource), afterUsage: .frameStartLayoutTransitionCheck, afterStages: .cpuBeforeRender, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources),
                                                                   index: usage.type.isRenderTarget ? usage.commandRange.lowerBound : 0))
