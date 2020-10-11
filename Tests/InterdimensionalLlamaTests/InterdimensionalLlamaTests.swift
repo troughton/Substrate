@@ -1,9 +1,9 @@
 import XCTest
 @testable import LlamaCore
 
-class SwiftFrameGraphTests: XCTestCase {
+class SubstrateTests: XCTestCase {
 
-    static var allTests : [(String, (SwiftFrameGraphTests) -> () throws -> Void)] {
+    static var allTests : [(String, (SubstrateTests) -> () throws -> Void)] {
         return [
         ]
     }

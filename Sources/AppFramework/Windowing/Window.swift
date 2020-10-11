@@ -6,7 +6,7 @@
 //
 //
 
-import SwiftFrameGraph
+import Substrate
 
 import Foundation
 

@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import SwiftFrameGraph
+import Substrate
 import SPIRV_Cross
 
 final class DescriptorSet {

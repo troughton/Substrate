@@ -8,7 +8,7 @@
 #if os(iOS)
 
 import SwiftMath
-import SwiftFrameGraph
+import Substrate
 import UIKit
 import MetalKit
 import ImGui
@@ -85,7 +85,7 @@ public class CocoaApplication : Application {
     
     let contentScaleFactor : Float
     
-    public init(delegate: AppDelegate?, viewController: UIViewController, windowDelegate: @autoclosure () -> WindowDelegate, updateScheduler: MetalUpdateScheduler, windowFrameGraph: FrameGraph) {
+    public init(delegate: AppDelegate?, viewController: UIViewController, windowDelegate: @autoclosure () -> WindowDelegate, updateScheduler: MetalUpdateScheduler, windowRenderGraph: RenderGraph) {
         delegate?.applicationWillInitialise()
         
         let inputManager = CocoaInputManager()
@@ -98,7 +98,7 @@ public class CocoaApplication : Application {
         let windows : [Window] = [window]
         self.contentScaleFactor = Float(viewController.view.contentScaleFactor)
         
-        super.init(updateables: [windowDelegate], windows: windows, inputManager: inputManager, updateScheduler: updateScheduler, windowFrameGraph: windowFrameGraph)
+        super.init(updateables: [windowDelegate], windows: windows, inputManager: inputManager, updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
     }
     
     public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags) -> Window {

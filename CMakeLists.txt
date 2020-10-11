@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 3.15.1)
 
-project(SwiftFrameGraph LANGUAGES C CXX Swift)
+project(Substrate LANGUAGES C CXX Swift)
 
 # place all modules into `swift` in the root of the build tree
 set(CMAKE_Swift_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/swift)
@@ -31,11 +31,11 @@ install(TARGETS CAtomics
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
 
-# Add the FrameGraph libraries.
+# Add the RenderGraph libraries.
 
 include(CTest)
 
-include_directories(ModuleMaps/FrameGraphCExtras)
+include_directories(ModuleMaps/SubstrateCExtras)
 
 add_subdirectory(SwiftMath) 
 add_subdirectory(swiftimgui)

@@ -6,7 +6,7 @@
 //
 
 import SPIRV_Cross
-import SwiftFrameGraph
+import Substrate
 
 extension ResourceType {
     var frameGraphType : String {

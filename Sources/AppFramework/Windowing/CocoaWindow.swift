@@ -6,8 +6,8 @@
 //
 //
 
-import FrameGraphUtilities
-import SwiftFrameGraph
+import SubstrateUtilities
+import Substrate
 
 #if os(macOS) || os(iOS)
 import MetalKit
@@ -210,7 +210,7 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
         }
     }
     
-    public init(id: Int, title: String, dimensions: WindowSize, inputManager: CocoaInputManager, flags: WindowCreationFlags, frameGraph: FrameGraph) {
+    public init(id: Int, title: String, dimensions: WindowSize, inputManager: CocoaInputManager, flags: WindowCreationFlags, frameGraph: RenderGraph) {
         self.id = id
         
         self._dimensions = dimensions

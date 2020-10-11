@@ -6,7 +6,7 @@
 //  Copyright © 2017 Team Llama. All rights reserved.
 //
 
-#if canImport(CSDL2) && !os(iOS)
+#if canImport(CSDL2) && !os(iOS) && !(os(macOS) && arch(arm64))
 
 import Foundation
 import CSDL2

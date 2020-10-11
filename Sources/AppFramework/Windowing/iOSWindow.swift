@@ -10,7 +10,7 @@ import Foundation
 import UIKit
 import Metal
 import MetalKit
-import SwiftFrameGraph
+import Substrate
 
 import ImGui
 
@@ -69,7 +69,7 @@ public class CocoaWindow : Window, MTKWindow {
     
     public var title: String = "Main Window"
     
-    init(viewController: UIViewController, inputManager: CocoaInputManager, frameGraph: FrameGraph) {
+    init(viewController: UIViewController, inputManager: CocoaInputManager, frameGraph: RenderGraph) {
         self.viewController = viewController
         guard let mtkView = viewController.view as? MTKEventView else {
             fatalError("View of viewController is not an MTKEventView")

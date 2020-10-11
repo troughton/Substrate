@@ -1,4 +1,4 @@
-module FrameGraphCExtras {
-    umbrella header "../../Sources/FrameGraphCExtras/include/FrameGraphCExtras.h"
+module SubstrateCExtras {
+    umbrella header "../../Sources/SubstrateCExtras/include/SubstrateCExtras.h"
     export *
 }

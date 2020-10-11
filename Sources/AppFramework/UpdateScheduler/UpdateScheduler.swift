@@ -7,16 +7,16 @@
 //
 
 import Dispatch
-import SwiftFrameGraph
+import Substrate
 
 public protocol UpdateScheduler {
 }
 
-#if canImport(CSDL2)
+#if canImport(CSDL2) && !(os(macOS) && arch(arm64))
 
 public final class SDLUpdateScheduler : UpdateScheduler  {
-    public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowFrameGraph: FrameGraph) {
-        let application = SDLApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowFrameGraph: windowFrameGraph)
+    public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowRenderGraph: RenderGraph) {
+        let application = SDLApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
     
         while !application.inputManager.shouldQuit {
             #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
@@ -39,10 +39,10 @@ import MetalKit
 public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDelegate  {
     private var application : CocoaApplication! = nil
     
-    public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowFrameGraph: FrameGraph) {
+    public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowRenderGraph: RenderGraph) {
         super.init()
         
-        self.application = CocoaApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowFrameGraph: windowFrameGraph)
+        self.application = CocoaApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
         
         let mainWindow = application.windows.first! as! MTKWindow
     
@@ -80,10 +80,10 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
     private var vsyncUpdate : Bool = false
     private var application : CocoaApplication! = nil
 
-    public init(appDelegate: ApplicationDelegate?, viewController: UIViewController, windowDelegate: @escaping @autoclosure () -> WindowDelegate, windowFrameGraph: FrameGraph) {
+    public init(appDelegate: ApplicationDelegate?, viewController: UIViewController, windowDelegate: @escaping @autoclosure () -> WindowDelegate, windowRenderGraph: RenderGraph) {
         super.init()
 
-        self.application = CocoaApplication(delegate: appDelegate, viewController: viewController, windowDelegate: windowDelegate, updateScheduler: self, windowFrameGraph: windowFrameGraph)
+        self.application = CocoaApplication(delegate: appDelegate, viewController: viewController, windowDelegate: windowDelegate, updateScheduler: self, windowRenderGraph: windowRenderGraph)
 
         let mainWindow = windows.first! as! MTKWindow
 

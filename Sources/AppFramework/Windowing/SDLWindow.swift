@@ -6,16 +6,16 @@
 //
 //
 
-#if canImport(CSDL2) && !os(iOS)
+#if canImport(CSDL2) && !os(iOS) && !(os(macOS) && arch(arm64))
 
 #if os(macOS)
     import AppKit
     import MetalKit
 #endif
 
-import FrameGraphUtilities
+import SubstrateUtilities
 import Foundation
-import SwiftFrameGraph
+import Substrate
 import CSDL2
 import CNativeFileDialog
 
@@ -71,7 +71,7 @@ open class SDLWindow : Window {
         return SDL_GetWindowID(self.sdlWindowPointer)
     }
     
-    public convenience init(id: Int, title: String, dimensions: WindowSize, frameGraph: FrameGraph) {
+    public convenience init(id: Int, title: String, dimensions: WindowSize, frameGraph: RenderGraph) {
         let options : SDLWindowOptions =  [.shown, .resizeable, .allowHighDpi]
         
         let sdlWindowPointer = SDL_CreateWindow(title, Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(dimensions.width), Int32(dimensions.height), options.rawValue)
@@ -79,7 +79,7 @@ open class SDLWindow : Window {
         self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, frameGraph: frameGraph)
     }
     
-    public init(id: Int, title: String, dimensions: WindowSize, sdlWindowPointer: OpaquePointer!, frameGraph: FrameGraph) {
+    public init(id: Int, title: String, dimensions: WindowSize, sdlWindowPointer: OpaquePointer!, frameGraph: RenderGraph) {
         self.id = id
         self.title = title
         self.dimensions = dimensions

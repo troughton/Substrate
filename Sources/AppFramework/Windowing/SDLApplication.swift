@@ -5,10 +5,10 @@
 //  Created by Thomas Roughton on 20/01/18.
 //
 
-#if canImport(CSDL2)
+#if canImport(CSDL2) && !(os(macOS) && arch(arm64))
 
 import SwiftMath
-import SwiftFrameGraph
+import Substrate
 import ImGui
 import CSDL2
 import Foundation
@@ -35,13 +35,13 @@ import Vulkan
 public class SDLVulkanWindow : SDLWindow {
     var vkSurface : VkSurfaceKHR? = nil
     
-    public convenience init(id: Int, title: String, dimensions: WindowSize, flags: WindowCreationFlags, windowFrameGraph: FrameGraph) {
+    public convenience init(id: Int, title: String, dimensions: WindowSize, flags: WindowCreationFlags, windowRenderGraph: RenderGraph) {
         let vulkanBackend = RenderBackend.backend as! VulkanBackend
         let vulkanInstance = vulkanBackend.vulkanInstance
         let options : SDLWindowOptions = [.allowHighDpi, .vulkan, SDLWindowOptions(flags)]
 
         let sdlWindowPointer = SDL_CreateWindow(title, Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(dimensions.width), Int32(dimensions.height), options.rawValue)
-        self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, frameGraph: windowFrameGraph)
+        self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, frameGraph: windowRenderGraph)
         
         if SDL_Vulkan_CreateSurface(self.sdlWindowPointer, vulkanInstance.instance, &self.vkSurface) == SDL_FALSE {
             fatalError("Unable to create Vulkan surface: " + String(cString: SDL_GetError()))
@@ -60,7 +60,7 @@ import MetalKit
 public class SDLMetalWindow : SDLWindow {
     var metalView : SDL_MetalView? = nil
     
-    public convenience init(id: Int, title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: FrameGraph) {
+    public convenience init(id: Int, title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: RenderGraph) {
         let options : SDLWindowOptions = [.allowHighDpi, SDLWindowOptions(flags)]
         let sdlWindowPointer = SDL_CreateWindow(title, Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(dimensions.width), Int32(dimensions.height), options.rawValue)
             
@@ -103,7 +103,7 @@ extension CAMetalLayer : SwapChain {
 
 public class SDLApplication : Application {
     
-    public init(delegate: ApplicationDelegate?, updateables: @autoclosure () -> [FrameUpdateable], updateScheduler: UpdateScheduler, windowFrameGraph: FrameGraph) {
+    public init(delegate: ApplicationDelegate?, updateables: @autoclosure () -> [FrameUpdateable], updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) {
         delegate?.applicationWillInitialise()
         
         guard SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) == 0 else {
@@ -114,10 +114,10 @@ public class SDLApplication : Application {
         let updateables = updateables()
         precondition(!updateables.isEmpty)
         
-        super.init(delegate: delegate, updateables: updateables, inputManager: SDLInputManager(), updateScheduler: updateScheduler, windowFrameGraph: windowFrameGraph)
+        super.init(delegate: delegate, updateables: updateables, inputManager: SDLInputManager(), updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
     }
     
-    public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: FrameGraph) -> Window {
+    public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: RenderGraph) -> Window {
         var window : SDLWindow! = nil
 
         #if canImport(Metal)
@@ -128,7 +128,7 @@ public class SDLApplication : Application {
         
         #if canImport(Vulkan)
         if RenderBackend.api == .vulkan {
-            window = SDLVulkanWindow(id: self.nextAvailableWindowId(), title: title, dimensions: dimensions, flags: flags, windowFrameGraph: frameGraph)
+            window = SDLVulkanWindow(id: self.nextAvailableWindowId(), title: title, dimensions: dimensions, flags: flags, windowRenderGraph: frameGraph)
         }
         #endif
         

@@ -7,7 +7,7 @@
 
 import Foundation
 import SPIRV_Cross
-import SwiftFrameGraph
+import Substrate
 
 enum ShaderType : Hashable {
     case vertex

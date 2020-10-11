@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import SwiftFrameGraph
+import Substrate
 
 struct ReflectionPrinter {
     static let tab = "    "
@@ -126,7 +126,7 @@ extension ReflectionPrinter {
             newLine()
             
             print("@inlinable")
-            print("public func encode(into functionConstants: inout SwiftFrameGraph.FunctionConstants) {")
+            print("public func encode(into functionConstants: inout Substrate.FunctionConstants) {")
             
             for (name, constant) in zip(constantNames, pass.functionConstants) {
                 print("functionConstants.setConstant(self.\(name), at: \(constant.index))")

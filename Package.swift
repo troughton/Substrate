@@ -9,12 +9,16 @@ let vulkanDependencies: [Target.Dependency] = [.target(name: "Vulkan")]
 #endif
 
 let package = Package(
-    name: "SwiftFrameGraph",
+    name: "Substrate",
     platforms: [.macOS(.v10_14), .iOS(.v12), .tvOS(.v12)],
     products: [
-        .library(name: "FrameGraphTextureIO", targets: ["FrameGraphTextureIO"]),
-        .library(name: "SwiftFrameGraph", targets: ["SwiftFrameGraph"]),
-        .library(name: "FrameGraphUtilities", targets: ["FrameGraphUtilities"]),
+        .library(name: "SwiftFrameGraph", targets: ["Substrate", "SwiftFrameGraph"]),
+        .library(name: "FrameGraphTextureIO", targets: ["SubstrateTextureIO", "FrameGraphTextureIO"]),
+        .library(name: "FrameGraphUtilities", targets: ["SubstrateUtilities", "FrameGraphUtilities"]),
+        
+        .library(name: "Substrate", targets: ["Substrate"]),
+        .library(name: "SubstrateUtilities", targets: ["SubstrateUtilities"]),
+        .library(name: "SubstrateTextureIO", targets: ["SubstrateTextureIO"]),
         .library(name: "AppFramework", targets: ["AppFramework"]),
         .executable(name: "ShaderTool", targets: ["ShaderTool"])
     ],
@@ -29,16 +33,21 @@ let package = Package(
         .package(url: "https://github.com/troughton/SwiftMath", from: "5.1.2")
     ],
     targets: [
-        // FrameGraph
-        .target(name: "FrameGraphTextureIO", dependencies: ["SwiftFrameGraph", .product(name: "stb_image", package: "Cstb"), .product(name: "stb_image_resize", package: "Cstb"), .product(name: "stb_image_write", package: "Cstb"), .product(name: "tinyexr", package: "Cstb"), .product(name: "LodePNG", package: "LodePNG")]),
-        .target(name: "FrameGraphCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
-        .target(name: "SwiftFrameGraph", dependencies: ["FrameGraphUtilities", "FrameGraphCExtras", .product(name: "CAtomics", package: "SwiftAtomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross")] + vulkanDependencies, path: "Sources/FrameGraph", exclude: ["CMakeLists.txt", "FrameGraph/CMakeLists.txt", "FrameGraph/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"]),
-        .target(name: "FrameGraphUtilities", dependencies: [.product(name: "CAtomics", package: "SwiftAtomics")], exclude: ["CMakeLists.txt"]),
+        // FrameGraph compatibility libraries
+        .target(name: "FrameGraphTextureIO", dependencies: ["SubstrateTextureIO"]),
+        .target(name: "FrameGraphUtilities", dependencies: ["SubstrateUtilities"]),
+        .target(name: "SwiftFrameGraph", dependencies: ["Substrate"]),
+        
+        // Substrate
+        .target(name: "SubstrateTextureIO", dependencies: ["Substrate", .product(name: "stb_image", package: "Cstb"), .product(name: "stb_image_resize", package: "Cstb"), .product(name: "stb_image_write", package: "Cstb"), .product(name: "tinyexr", package: "Cstb"), .product(name: "LodePNG", package: "LodePNG")]),
+        .target(name: "SubstrateCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
+        .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "CAtomics", package: "SwiftAtomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "Substrate/CMakeLists.txt", "Substrate/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"]),
+        .target(name: "SubstrateUtilities", dependencies: [.product(name: "CAtomics", package: "SwiftAtomics")], exclude: ["CMakeLists.txt"]),
     
         // ShaderTool
         .target(
             name: "ShaderTool",
-            dependencies: [.product(name: "SPIRV-Cross", package: "SPIRV-Cross"), "SwiftFrameGraph", "Regex", .product(name: "ArgumentParser", package: "swift-argument-parser")]),
+            dependencies: [.product(name: "SPIRV-Cross", package: "SPIRV-Cross"), "Substrate", "Regex", .product(name: "ArgumentParser", package: "swift-argument-parser")]),
         
         // AppFramework
         .systemLibrary(
@@ -52,7 +61,7 @@ let package = Package(
         .target(name: "CNativeFileDialog", exclude: ["CMakeLists.txt"]),
         .target(
             name: "AppFramework",
-            dependencies: ["FrameGraphUtilities", "SwiftFrameGraph", "SwiftMath", .product(name: "ImGui", package: "SwiftImGui"), "CNativeFileDialog", "CSDL2"] + vulkanDependencies,
+            dependencies: ["SubstrateUtilities", "Substrate", "SwiftMath", .product(name: "ImGui", package: "SwiftImGui"), "CNativeFileDialog", "CSDL2"] + vulkanDependencies,
             exclude: ["CMakeLists.txt", "Input/CMakeLists.txt", "UpdateScheduler/CMakeLists.txt", "Windowing/CMakeLists.txt"]),
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14

@@ -8,23 +8,23 @@
 #if os(macOS)
 
 import SwiftMath
-import SwiftFrameGraph
+import Substrate
 import Cocoa
 import MetalKit
 import ImGui
 
 public class CocoaApplication : Application {
     
-    public init(delegate: ApplicationDelegate?, updateables: @autoclosure () -> [FrameUpdateable], updateScheduler: UpdateScheduler, windowFrameGraph: FrameGraph) {
+    public init(delegate: ApplicationDelegate?, updateables: @autoclosure () -> [FrameUpdateable], updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) {
         delegate?.applicationWillInitialise()
         
         let updateables = updateables()
         precondition(!updateables.isEmpty)
         
-        super.init(delegate: delegate, updateables: updateables, inputManager: CocoaInputManager(), updateScheduler: updateScheduler, windowFrameGraph: windowFrameGraph)
+        super.init(delegate: delegate, updateables: updateables, inputManager: CocoaInputManager(), updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
     }
     
-    public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: FrameGraph) -> Window {
+    public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: RenderGraph) -> Window {
         let window = CocoaWindow(id: self.nextAvailableWindowId(), title: title, dimensions: dimensions, inputManager: self.inputManager as! CocoaInputManager, flags: flags, frameGraph: frameGraph)
         
         window.mtkView.isPaused = true
