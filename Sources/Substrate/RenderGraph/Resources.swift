@@ -136,11 +136,11 @@ public protocol ResourceProtocol : Hashable {
     /// Returns whether the resource is known to currently be in use by the CPU or GPU.
     var isKnownInUse: Bool { get }
     
-    /// Marks the resource as being currently in use by `frameGraph`, ensuring that, if `dispose()` is called,
-    /// it will not get deallocated until after the `frameGraph` has completed.
-    func markAsUsed(by frameGraph: RenderGraph)
+    /// Marks the resource as being currently in use by `renderGraph`, ensuring that, if `dispose()` is called,
+    /// it will not get deallocated until after the `renderGraph` has completed.
+    func markAsUsed(by renderGraph: RenderGraph)
     
-    func _markAsUsed(frameGraphIndexMask: UInt8)
+    func _markAsUsed(renderGraphIndexMask: UInt8)
     
     var purgeableState: ResourcePurgeableState { get nonmutating set }
     func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState
@@ -173,8 +173,8 @@ extension ResourceProtocol {
         return oldValue
     }
     
-    public func markAsUsed(by frameGraph: RenderGraph) {
-        self._markAsUsed(frameGraphIndexMask: 1 << frameGraph.queue.index)
+    public func markAsUsed(by renderGraph: RenderGraph) {
+        self._markAsUsed(renderGraphIndexMask: 1 << renderGraph.queue.index)
     }
 }
 
@@ -428,18 +428,18 @@ public struct Resource : ResourceProtocol, Hashable {
         }
     }
     
-    public func _markAsUsed(frameGraphIndexMask: UInt8) {
+    public func _markAsUsed(renderGraphIndexMask: UInt8) {
         switch self.type {
         case .buffer:
-            Buffer(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            Buffer(handle: self.handle)._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         case .texture:
-            Texture(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            Texture(handle: self.handle)._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         case .argumentBuffer:
-            _ArgumentBuffer(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            _ArgumentBuffer(handle: self.handle)._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         case .argumentBufferArray:
-            _ArgumentBufferArray(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            _ArgumentBufferArray(handle: self.handle)._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         case .heap:
-            Heap(handle: self.handle)._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            Heap(handle: self.handle)._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         default:
             break
         }
@@ -679,12 +679,12 @@ public struct Heap : ResourceProtocol {
         return false
     }
     
-    public func _markAsUsed(frameGraphIndexMask: UInt8) {
+    public func _markAsUsed(renderGraphIndexMask: UInt8) {
         guard self._usesPersistentRegistry else {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
-        CAtomicsBitwiseOr(HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), frameGraphIndexMask, .relaxed)
+        CAtomicsBitwiseOr(HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), renderGraphIndexMask, .relaxed)
     }
 
     public func dispose() {
@@ -730,22 +730,34 @@ public struct Buffer : ResourceProtocol {
         assert(Resource(handle: handle).type == .buffer)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
-    
+   
+    @available(*, deprecated, renamed: "init(length:storageMode:cacheMode:usage:bytes:renderGraph:flags:)")
     @inlinable
-    public init(length: Int, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache, usage: BufferUsage = .unknown, bytes: UnsafeRawPointer? = nil, frameGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        self.init(descriptor: BufferDescriptor(length: length, storageMode: storageMode, cacheMode: cacheMode, usage: usage), bytes: bytes, frameGraph: frameGraph, flags: flags)
+    public init(length: Int, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache, usage: BufferUsage = .unknown, bytes: UnsafeRawPointer? = nil, frameGraph: RenderGraph?, flags: ResourceFlags = []) {
+        self.init(length: length, storageMode: storageMode, cacheMode: cacheMode, usage: usage, bytes: bytes, renderGraph: frameGraph, flags: flags)
     }
     
     @inlinable
-    public init(descriptor: BufferDescriptor, frameGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+    public init(length: Int, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache, usage: BufferUsage = .unknown, bytes: UnsafeRawPointer? = nil, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+        self.init(descriptor: BufferDescriptor(length: length, storageMode: storageMode, cacheMode: cacheMode, usage: usage), bytes: bytes, renderGraph: renderGraph, flags: flags)
+    }
+    
+    @available(*, deprecated, renamed: "init(descriptor:renderGraph:flags:)")
+    @inlinable
+    public init(descriptor: BufferDescriptor, frameGraph: RenderGraph?, flags: ResourceFlags = []) {
+        self.init(descriptor: descriptor, renderGraph: frameGraph, flags: flags)
+    }
+    
+    @inlinable
+    public init(descriptor: BufferDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             index = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
-            guard let frameGraph = frameGraph ?? RenderGraph.activeRenderGraph else {
+            guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                  fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
              }
-            index = TransientBufferRegistry.instances[frameGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
+            index = TransientBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
         
         let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.buffer.rawValue) << Self.typeBitsRange.lowerBound)
@@ -758,9 +770,15 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
+    @available(*, deprecated, renamed: "init(descriptor:bytes:renderGraph:flags:)")
     @inlinable
-    public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, frameGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        self.init(descriptor: descriptor, frameGraph: frameGraph, flags: flags)
+    public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, frameGraph: RenderGraph?, flags: ResourceFlags = []) {
+        self.init(descriptor: descriptor, bytes: bytes, renderGraph: frameGraph, flags: flags)
+    }
+    
+    @inlinable
+    public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+        self.init(descriptor: descriptor, renderGraph: renderGraph, flags: flags)
         
         if let bytes = bytes {
             assert(self.descriptor.storageMode != .private)
@@ -1036,14 +1054,14 @@ public struct Buffer : ResourceProtocol {
         return false
     }
     
-    public func _markAsUsed(frameGraphIndexMask: UInt8) {
-        self.heap?._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+    public func _markAsUsed(renderGraphIndexMask: UInt8) {
+        self.heap?._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         
         guard self._usesPersistentRegistry else {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-        CAtomicsBitwiseOr(PersistentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), frameGraphIndexMask, .relaxed)
+        CAtomicsBitwiseOr(PersistentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), renderGraphIndexMask, .relaxed)
     }
 
     public func dispose() {
@@ -1095,16 +1113,22 @@ public struct Texture : ResourceProtocol {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
+    @available(*, deprecated, renamed: "init(descriptor:renderGraph:flags:)")
     @inlinable
-    public init(descriptor: TextureDescriptor, frameGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+    public init(descriptor: TextureDescriptor, frameGraph: RenderGraph?, flags: ResourceFlags = []) {
+        self.init(descriptor: descriptor, renderGraph: frameGraph, flags: flags)
+    }
+    
+    @inlinable
+    public init(descriptor: TextureDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
-            guard let frameGraph = frameGraph ?? RenderGraph.activeRenderGraph else {
+            guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
-            index = TransientTextureRegistry.instances[frameGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
+            index = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
         
         let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
@@ -1150,16 +1174,22 @@ public struct Texture : ResourceProtocol {
         }
     }
     
+    @available(*, deprecated, renamed: "init(descriptor:externalResource:renderGraph:flags:)")
     @inlinable
-    public init(descriptor: TextureDescriptor, externalResource: Any, frameGraph: RenderGraph? = nil, flags: ResourceFlags = [.persistent, .externalOwnership]) {
+    public init(descriptor: TextureDescriptor, externalResource: Any, frameGraph: RenderGraph?, flags: ResourceFlags = [.persistent, .externalOwnership]) {
+        self.init(descriptor: descriptor, externalResource: externalResource, renderGraph: frameGraph, flags: flags)
+    }
+    
+    @inlinable
+    public init(descriptor: TextureDescriptor, externalResource: Any, renderGraph: RenderGraph? = nil, flags: ResourceFlags = [.persistent, .externalOwnership]) {
         let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
-            guard let frameGraph = frameGraph ?? RenderGraph.activeRenderGraph else {
+            guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                  fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
              }
-            index = TransientTextureRegistry.instances[frameGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
+            index = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
         
         let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
@@ -1189,9 +1219,15 @@ public struct Texture : ResourceProtocol {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
+    @available(*, deprecated, renamed: "init(windowId:descriptor:isMinimised:nativeWindow:renderGraph:)")
     @inlinable
     public init(windowId: Int, descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, frameGraph: RenderGraph) {
-        self.init(descriptor: descriptor, frameGraph: frameGraph, flags: isMinimised ? [] : .windowHandle)
+        self.init(windowId: windowId, descriptor: descriptor, isMinimised: isMinimised, nativeWindow: nativeWindow, renderGraph: frameGraph)
+    }
+    
+    @inlinable
+    public init(windowId: Int, descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, renderGraph: RenderGraph) {
+        self.init(descriptor: descriptor, renderGraph: renderGraph, flags: isMinimised ? [] : .windowHandle)
         
         if !isMinimised {
             RenderBackend.registerWindowTexture(texture: self, context: nativeWindow)
@@ -1406,15 +1442,15 @@ public struct Texture : ResourceProtocol {
         return false
     }
     
-    public func _markAsUsed(frameGraphIndexMask: UInt8) {
-        self.baseResource?._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
-        self.heap?._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+    public func _markAsUsed(renderGraphIndexMask: UInt8) {
+        self.baseResource?._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+        self.heap?._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         
         guard self._usesPersistentRegistry else {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-        CAtomicsBitwiseOr(PersistentTextureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), frameGraphIndexMask, .relaxed)
+        CAtomicsBitwiseOr(PersistentTextureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), renderGraphIndexMask, .relaxed)
     }
     
     public func dispose() {

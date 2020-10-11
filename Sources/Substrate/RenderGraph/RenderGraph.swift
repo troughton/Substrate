@@ -342,33 +342,33 @@ public protocol RenderGraphContext : class {
 protocol _RenderGraphContext : RenderGraphContext {
     var transientRegistryIndex : Int { get }
     var accessSemaphore : DispatchSemaphore { get }
-    var frameGraphQueue: Queue { get }
-    func beginFrameResourceAccess() // Access is ended when a frameGraph is submitted.
+    var renderGraphQueue: Queue { get }
+    func beginFrameResourceAccess() // Access is ended when a renderGraph is submitted.
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>, completion: @escaping (_ gpuTime: Double) -> Void)
 }
 
 public enum RenderGraphTagType : UInt64 {
-    static let frameGraphTag : UInt64 = 0xf9322463 // CRC-32 of "RenderGraph"
+    static let renderGraphTag : UInt64 = 0xf9322463 // CRC-32 of "RenderGraph"
     
     /// Scratch data that exists only while a render pass is being executed.
     case renderPassExecution
     
     /// Data that exists while the RenderGraph is being compiled.
-    case frameGraphCompilation
+    case renderGraphCompilation
     
     /// Data that exists until the RenderGraph has been executed on the backend.
-    case frameGraphExecution
+    case renderGraphExecution
     
     /// Resource usage nodes – exists until the RenderGraph has been executed on the backend.
     case resourceUsageNodes
     
     public static func renderPassExecutionTag(passIndex: Int) -> TaggedHeap.Tag {
-        return (RenderGraphTagType.frameGraphTag << 32) | (RenderGraphTagType.renderPassExecution.rawValue << 16) | TaggedHeap.Tag(passIndex)
+        return (RenderGraphTagType.renderGraphTag << 32) | (RenderGraphTagType.renderPassExecution.rawValue << 16) | TaggedHeap.Tag(passIndex)
     }
     
     public var tag : TaggedHeap.Tag {
         assert(self != .renderPassExecution)
-        let tag = (RenderGraphTagType.frameGraphTag << 32) | (self.rawValue << 16)
+        let tag = (RenderGraphTagType.renderGraphTag << 32) | (self.rawValue << 16)
         return tag
     }
 }
@@ -427,7 +427,7 @@ public final class RenderGraph {
     }
     
     public var queue: Queue {
-        return self.context.frameGraphQueue
+        return self.context.renderGraphQueue
     }
     
     public static func initialise() {
@@ -576,10 +576,10 @@ public final class RenderGraph {
         
         let renderPassScratchTag = RenderGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
         
-        let commandRecorder = RenderGraphCommandRecorder(frameGraphTransientRegistryIndex: self.transientRegistryIndex,
-                                                        frameGraphQueue: self.queue,
+        let commandRecorder = RenderGraphCommandRecorder(renderGraphTransientRegistryIndex: self.transientRegistryIndex,
+                                                        renderGraphQueue: self.queue,
                                                         renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
-                                                        frameGraphExecutionAllocator: TagAllocator.ThreadView(allocator: RenderGraph.executionAllocator, threadIndex: threadIndex),
+                                                        renderGraphExecutionAllocator: TagAllocator.ThreadView(allocator: RenderGraph.executionAllocator, threadIndex: threadIndex),
                                                         resourceUsageAllocator: TagAllocator.ThreadView(allocator: RenderGraph.resourceUsagesAllocator, threadIndex: threadIndex),
                                                         unmanagedReferences: unmanagedReferences)
         
@@ -629,11 +629,11 @@ public final class RenderGraph {
         passRecord.writtenResources = .init(allocator: .tagThreadView(usageAllocator))
         
         for resource in passRecord.pass.writtenResources {
-            resource._markAsUsed(frameGraphIndexMask: 1 << self.queue.index)
+            resource._markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
             passRecord.writtenResources.insert(resource)
         }
         for resource in passRecord.pass.readResources {
-            resource._markAsUsed(frameGraphIndexMask: 1 << self.queue.index)
+            resource._markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
             passRecord.readResources.insert(resource)
         }
     }
@@ -818,7 +818,7 @@ public final class RenderGraph {
         }
         
         // Compilation is finished, so reset that tag.
-        TaggedHeap.free(tag: RenderGraphTagType.frameGraphCompilation.tag)
+        TaggedHeap.free(tag: RenderGraphTagType.renderGraphCompilation.tag)
         
         return (activePasses, activePassDependencies)
     }
@@ -837,7 +837,7 @@ public final class RenderGraph {
     }
     
     public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
-        if GPUResourceUploader.frameGraph !== self {
+        if GPUResourceUploader.renderGraph !== self {
             GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
         }
         
@@ -866,7 +866,7 @@ public final class RenderGraph {
         self.context.accessSemaphore.wait()
         
         RenderGraph.resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag, threadCount: jobManager.threadCount)
-        RenderGraph.executionAllocator = TagAllocator(tag: RenderGraphTagType.frameGraphExecution.tag, threadCount: jobManager.threadCount)
+        RenderGraph.executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag, threadCount: jobManager.threadCount)
         
         let threadCount = jobManager.threadCount
         
@@ -939,7 +939,7 @@ public final class RenderGraph {
         RenderGraph.executionAllocator = nil
         RenderGraph.resourceUsagesAllocator = nil
         
-        TaggedHeap.free(tag: RenderGraphTagType.frameGraphExecution.tag)
+        TaggedHeap.free(tag: RenderGraphTagType.renderGraphExecution.tag)
         TaggedHeap.free(tag: RenderGraphTagType.resourceUsageNodes.tag)
     }
 }

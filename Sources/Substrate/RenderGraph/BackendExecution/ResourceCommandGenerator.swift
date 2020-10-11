@@ -62,7 +62,7 @@ enum PreFrameCommands {
     }
     
     func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: RenderGraphContextImpl<Backend>, storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
-        let queue = context.frameGraphQueue
+        let queue = context.renderGraphQueue
         let queueIndex = Int(queue.index)
         let resourceMap = context.resourceMap
         let resourceRegistry = context.resourceRegistry

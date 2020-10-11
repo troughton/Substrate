@@ -69,7 +69,7 @@ public class CocoaWindow : Window, MTKWindow {
     
     public var title: String = "Main Window"
     
-    init(viewController: UIViewController, inputManager: CocoaInputManager, frameGraph: RenderGraph) {
+    init(viewController: UIViewController, inputManager: CocoaInputManager, renderGraph: RenderGraph) {
         self.viewController = viewController
         guard let mtkView = viewController.view as? MTKEventView else {
             fatalError("View of viewController is not an MTKEventView")
@@ -89,7 +89,7 @@ public class CocoaWindow : Window, MTKWindow {
 
         self._texture = Cached()
         self._texture.constructor = { [unowned(unsafe) self] in
-            let texture = Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView, frameGRaph: frameGraph)
+            let texture = Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView, frameGRaph: renderGraph)
             return texture
         }
     }

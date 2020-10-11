@@ -54,7 +54,7 @@ fileprivate class TemporaryBufferArena {
             if self.currentBlock == nil {
                 let allocationSize = max(bytes, self.blockSize)
                 
-                self.currentBlock = device.makeBuffer(length: allocationSize, options: [self.options, .frameGraphTrackedHazards])
+                self.currentBlock = device.makeBuffer(length: allocationSize, options: [self.options, .substrateTrackedHazards])
             }
             self.currentBlockPos = 0
             return self.allocate(bytes: bytes, alignedTo: alignment)

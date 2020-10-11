@@ -220,8 +220,8 @@ extension ChunkArray where Element == (Resource, ResourceUsage) {
 // Lifetime: one render pass.
 @usableFromInline
 final class RenderGraphCommandRecorder {
-    @usableFromInline let frameGraphTransientRegistryIndex: Int
-    @usableFromInline let frameGraphIndexMask: UInt8
+    @usableFromInline let renderGraphTransientRegistryIndex: Int
+    @usableFromInline let renderGraphIndexMask: UInt8
     @usableFromInline let renderPassScratchAllocator : ThreadLocalTagAllocator
     @usableFromInline let resourceUsageAllocator : TagAllocator.ThreadView
     @usableFromInline var commands : ChunkArray<RenderGraphCommand> // Lifetime: RenderGraph compilation (copied to another array for the backend).
@@ -232,16 +232,16 @@ final class RenderGraphCommandRecorder {
     
     @usableFromInline var resourceUsages = ChunkArray<(Resource, ResourceUsage)>()
     
-    init(frameGraphTransientRegistryIndex: Int, frameGraphQueue: Queue, renderPassScratchAllocator: ThreadLocalTagAllocator, frameGraphExecutionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView, unmanagedReferences: ExpandingBuffer<Releasable>) {
+    init(renderGraphTransientRegistryIndex: Int, renderGraphQueue: Queue, renderPassScratchAllocator: ThreadLocalTagAllocator, renderGraphExecutionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView, unmanagedReferences: ExpandingBuffer<Releasable>) {
         assert(_isPOD(RenderGraphCommand.self))
-        self.frameGraphTransientRegistryIndex = frameGraphTransientRegistryIndex
-        self.frameGraphIndexMask = 1 << frameGraphQueue.index
-        self.commands = ChunkArray() // (allocator: AllocatorType(frameGraphExecutionAllocator), initialCapacity: 64)
+        self.renderGraphTransientRegistryIndex = renderGraphTransientRegistryIndex
+        self.renderGraphIndexMask = 1 << renderGraphQueue.index
+        self.commands = ChunkArray() // (allocator: AllocatorType(renderGraphExecutionAllocator), initialCapacity: 64)
         self.renderPassScratchAllocator = renderPassScratchAllocator
         self.resourceUsageAllocator = resourceUsageAllocator
-        self.dataAllocator = frameGraphExecutionAllocator
-        self.readResources = .init(allocator: .tagThreadView(frameGraphExecutionAllocator))
-        self.writtenResources = .init(allocator: .tagThreadView(frameGraphExecutionAllocator))
+        self.dataAllocator = renderGraphExecutionAllocator
+        self.readResources = .init(allocator: .tagThreadView(renderGraphExecutionAllocator))
+        self.writtenResources = .init(allocator: .tagThreadView(renderGraphExecutionAllocator))
         self.unmanagedReferences = unmanagedReferences
     }
     
@@ -309,13 +309,13 @@ final class RenderGraphCommandRecorder {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
-        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.frameGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
+        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.renderGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
         
         assert(resource.type != .argumentBuffer || !usageType.isWrite, "Read-write argument buffers are currently unsupported.")
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource._markAsUsed(frameGraphIndexMask: self.frameGraphIndexMask)
+            resource._markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
             if let textureUsage = resource.texture?.descriptor.usageHint {
                 if usageType == .read {
                     assert(textureUsage.contains(.shaderRead))
@@ -372,13 +372,13 @@ final class RenderGraphCommandRecorder {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
-        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.frameGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
+        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.renderGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
         
         assert(resource.type != .argumentBuffer || !usageType.isWrite, "Read-write argument buffers are currently unsupported.")
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource._markAsUsed(frameGraphIndexMask: self.frameGraphIndexMask)
+            resource._markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
         }
         
         if usageType.isRead {
@@ -399,12 +399,12 @@ final class RenderGraphCommandRecorder {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
-        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.frameGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
+        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.renderGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
         
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource._markAsUsed(frameGraphIndexMask: self.frameGraphIndexMask)
+            resource._markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
                 
             let bufferUsage = resource.descriptor.usageHint
             if usageType == .read {
@@ -445,12 +445,12 @@ final class RenderGraphCommandRecorder {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
-        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.frameGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
+        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.renderGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
         
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource._markAsUsed(frameGraphIndexMask: self.frameGraphIndexMask)
+            resource._markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
                 
             let textureUsage = resource.descriptor.usageHint
             if usageType == .read {

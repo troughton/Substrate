@@ -192,9 +192,9 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     
     func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> MTLBufferReference {
 //        #if os(macOS)
-//        let options : MTLResourceOptions = [.storageModeManaged, .frameGraphTrackedHazards]
+//        let options : MTLResourceOptions = [.storageModeManaged, .substrateTrackedHazards]
 //        #else
-        let options : MTLResourceOptions = [.storageModeShared, .frameGraphTrackedHazards]
+        let options : MTLResourceOptions = [.storageModeShared, .substrateTrackedHazards]
 //        #endif
         
         return MTLBufferReference(buffer: Unmanaged.passRetained(self.device.makeBuffer(length: encodedLength, options: options)!), offset: 0)
@@ -379,15 +379,15 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.stagingTextureAllocator = MetalPoolResourceAllocator(device: device, numFrames: inflightFrameCount)
         self.historyBufferAllocator = MetalPoolResourceAllocator(device: device, numFrames: 1)
         
-        self.frameSharedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 256 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
-        self.frameSharedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
+        self.frameSharedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 256 * 1024, options: [.storageModeShared, .substrateTrackedHazards])
+        self.frameSharedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .cpuCacheModeWriteCombined, .substrateTrackedHazards])
         
-        self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .frameGraphTrackedHazards])
+        self.frameArgumentBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeShared, .substrateTrackedHazards])
         
         #if os(macOS) || targetEnvironment(macCatalyst)
         if !device.isAppleSiliconGPU {
-            self.frameManagedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 1024 * 1024, options: [.storageModeManaged, .frameGraphTrackedHazards])
-            self.frameManagedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeManaged, .cpuCacheModeWriteCombined, .frameGraphTrackedHazards])
+            self.frameManagedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 1024 * 1024, options: [.storageModeManaged, .substrateTrackedHazards])
+            self.frameManagedWriteCombinedBufferAllocator = MetalTemporaryBufferAllocator(device: device, numFrames: inflightFrameCount, blockSize: 2 * 1024 * 1024, options: [.storageModeManaged, .cpuCacheModeWriteCombined, .substrateTrackedHazards])
         } else {
             self.frameManagedBufferAllocator = nil
             self.frameManagedWriteCombinedBufferAllocator = nil
@@ -650,7 +650,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     public func allocateBuffer(_ buffer: Buffer, forceGPUPrivate: Bool) -> MTLBufferReference? {
         var options = MTLResourceOptions(storageMode: buffer.descriptor.storageMode, cacheMode: buffer.descriptor.cacheMode, isAppleSiliconGPU: device.isAppleSiliconGPU)
         if buffer.descriptor.usageHint.contains(.textureView) {
-            options.remove(.frameGraphTrackedHazards) // FIXME: workaround for a bug in Metal where setting hazardTrackingModeUntracked on a MTLTextureDescriptor doesn't stick
+            options.remove(.substrateTrackedHazards) // FIXME: workaround for a bug in Metal where setting hazardTrackingModeUntracked on a MTLTextureDescriptor doesn't stick
         }
         
 
@@ -698,9 +698,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {
 //        #if os(macOS)
-//        let options : MTLResourceOptions = [.storageModeManaged, .frameGraphTrackedHazards]
+//        let options : MTLResourceOptions = [.storageModeManaged, .substrateTrackedHazards]
 //        #else
-        let options : MTLResourceOptions = [.storageModeShared, .frameGraphTrackedHazards]
+        let options : MTLResourceOptions = [.storageModeShared, .substrateTrackedHazards]
 //        #endif
         
         let allocator = self.allocatorForArgumentBuffer(flags: argumentBuffer.flags)

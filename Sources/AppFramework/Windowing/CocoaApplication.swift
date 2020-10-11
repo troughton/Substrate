@@ -24,8 +24,8 @@ public class CocoaApplication : Application {
         super.init(delegate: delegate, updateables: updateables, inputManager: CocoaInputManager(), updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
     }
     
-    public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: RenderGraph) -> Window {
-        let window = CocoaWindow(id: self.nextAvailableWindowId(), title: title, dimensions: dimensions, inputManager: self.inputManager as! CocoaInputManager, flags: flags, frameGraph: frameGraph)
+    public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, renderGraph: RenderGraph) -> Window {
+        let window = CocoaWindow(id: self.nextAvailableWindowId(), title: title, dimensions: dimensions, inputManager: self.inputManager as! CocoaInputManager, flags: flags, renderGraph: renderGraph)
         
         window.mtkView.isPaused = true
         window.mtkView.enableSetNeedsDisplay = true

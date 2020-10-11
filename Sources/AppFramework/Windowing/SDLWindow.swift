@@ -71,15 +71,15 @@ open class SDLWindow : Window {
         return SDL_GetWindowID(self.sdlWindowPointer)
     }
     
-    public convenience init(id: Int, title: String, dimensions: WindowSize, frameGraph: RenderGraph) {
+    public convenience init(id: Int, title: String, dimensions: WindowSize, renderGraph: RenderGraph) {
         let options : SDLWindowOptions =  [.shown, .resizeable, .allowHighDpi]
         
         let sdlWindowPointer = SDL_CreateWindow(title, Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(dimensions.width), Int32(dimensions.height), options.rawValue)
         
-        self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, frameGraph: frameGraph)
+        self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, renderGraph: renderGraph)
     }
     
-    public init(id: Int, title: String, dimensions: WindowSize, sdlWindowPointer: OpaquePointer!, frameGraph: RenderGraph) {
+    public init(id: Int, title: String, dimensions: WindowSize, sdlWindowPointer: OpaquePointer!, renderGraph: RenderGraph) {
         self.id = id
         self.title = title
         self.dimensions = dimensions
@@ -94,7 +94,7 @@ open class SDLWindow : Window {
         self._texture = Cached()
         
         self._texture.constructor = { [unowned(unsafe) self] in
-            return Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: self.minimized, nativeWindow: self.swapChain!, frameGraph: frameGraph)
+            return Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: self.minimized, nativeWindow: self.swapChain!, renderGraph: renderGraph)
         }
     }
     

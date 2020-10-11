@@ -72,7 +72,7 @@ extension VulkanBackend {
         let commandEncoderCount = frameCommandInfo.commandEncoders.count
         let reductionMatrix = dependencies.transitiveReduction(hasDependency: { $0 != nil })
         
-        let allocator = ThreadLocalTagAllocator(tag: .frameGraphResourceCommandArrayTag)
+        let allocator = ThreadLocalTagAllocator(tag: .renderGraphResourceCommandArrayTag)
         
         for sourceIndex in (0..<commandEncoderCount) { // sourceIndex always points to the producing pass.
             let dependentRange = min(sourceIndex + 1, commandEncoderCount)..<commandEncoderCount
@@ -261,7 +261,7 @@ extension VulkanBackend {
         self.generateEventCommands(queue: queue, resourceMap: resourceMap, frameCommandInfo: commandInfo, commandGenerator: commandGenerator, compactedResourceCommands: &compactedResourceCommands)
         
         
-        let allocator = ThreadLocalTagAllocator(tag: .frameGraphResourceCommandArrayTag)
+        let allocator = ThreadLocalTagAllocator(tag: .renderGraphResourceCommandArrayTag)
         
         var currentEncoderIndex = 0
         var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]

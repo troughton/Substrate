@@ -259,13 +259,13 @@ public final class TransientRegistryManager {
         self.lock.withLock {
             self.processEnqueuedDisposals()
             
-            let frameGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
+            let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
             for chunkIndex in 0..<self.chunkCount {
                 self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
                 
                 for i in 0..<Chunk.itemsPerChunk {
-                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), frameGraphInactiveMask, .relaxed)
+                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), renderGraphInactiveMask, .relaxed)
                 }
             }
         }
@@ -585,13 +585,13 @@ public enum TextureViewBaseInfo {
         self.lock.withLock {
             self.processEnqueuedDisposals()
             
-            let frameGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
+            let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
             for chunkIndex in 0..<self.chunkCount {
                 self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
                 
                 for i in 0..<Chunk.itemsPerChunk {
-                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), frameGraphInactiveMask, .relaxed)
+                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), renderGraphInactiveMask, .relaxed)
                 }
             }
         }
@@ -936,13 +936,13 @@ public enum TextureViewBaseInfo {
         self.lock.withLock {
             self.processEnqueuedDisposals()
             
-            let frameGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
+            let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
             for chunkIndex in 0..<self.chunkCount {
                 self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
                 
                 for i in 0..<Chunk.itemsPerChunk {
-                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), frameGraphInactiveMask, .relaxed)
+                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), renderGraphInactiveMask, .relaxed)
                 }
             }
         }
@@ -1230,11 +1230,11 @@ public enum TextureViewBaseInfo {
         self.lock.withLock {
             self.processEnqueuedDisposals()
             
-            let frameGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
+            let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
             for chunkIndex in 0..<self.chunkCount {
                 for i in 0..<Chunk.itemsPerChunk {
-                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), frameGraphInactiveMask, .relaxed)
+                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), renderGraphInactiveMask, .relaxed)
                 }
             }
         }

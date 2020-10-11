@@ -10,7 +10,7 @@ import Foundation
 import Dispatch
 
 extension TaggedHeap.Tag {
-    static var frameGraphResourceCommandArrayTag: Self {
+    static var renderGraphResourceCommandArrayTag: Self {
         return 2807157891446559070
     }
 }
@@ -30,25 +30,25 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     let commandQueue: Backend.QueueImpl
        
     public let transientRegistryIndex: Int
-    var frameGraphQueue: Queue
+    var renderGraphQueue: Queue
     
     var compactedResourceCommands = [CompactedResourceCommand<Backend.CompactedResourceCommandType>]()
        
     public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
-        self.frameGraphQueue = Queue()
-        self.commandQueue = backend.makeQueue(frameGraphQueue: self.frameGraphQueue)
+        self.renderGraphQueue = Queue()
+        self.commandQueue = backend.makeQueue(renderGraphQueue: self.renderGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
         self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount)
         self.accessSemaphore = DispatchSemaphore(value: inflightFrameCount)
         
         self.commandGenerator = ResourceCommandGenerator()
-        self.syncEvent = backend.makeSyncEvent(for: self.frameGraphQueue)
+        self.syncEvent = backend.makeSyncEvent(for: self.renderGraphQueue)
     }
     
     deinit {
-        backend.freeSyncEvent(for: self.frameGraphQueue)
-        self.frameGraphQueue.dispose()
+        backend.freeSyncEvent(for: self.renderGraphQueue)
+        self.renderGraphQueue.dispose()
     }
     
     public func beginFrameResourceAccess() {
@@ -65,7 +65,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.resourceRegistry.prepareFrame()
         
         defer {
-            TaggedHeap.free(tag: .frameGraphResourceCommandArrayTag)
+            TaggedHeap.free(tag: .renderGraphResourceCommandArrayTag)
             
             self.resourceRegistry.cycleFrames()
             
@@ -85,7 +85,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
-        backend.compactResourceCommands(queue: self.frameGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &self.compactedResourceCommands)
+        backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &self.compactedResourceCommands)
         
         let lastCommandBufferIndex = frameCommandInfo.commandBufferCount - 1
         
@@ -95,7 +95,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         
         var gpuStartTime: Double = 0.0
         
-        let syncEvent = backend.syncEvent(for: self.frameGraphQueue)!
+        let syncEvent = backend.syncEvent(for: self.renderGraphQueue)!
         
         func processCommandBuffer() {
             if let commandBuffer = commandBuffer {
@@ -114,15 +114,15 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 let cbIndex = committedCommandBufferCount
                 let queueCBIndex = self.queueCommandBufferIndex
                 
-                self.frameGraphQueue.lastSubmittedCommand = queueCBIndex
-                self.frameGraphQueue.lastSubmissionTime = DispatchTime.now()
+                self.renderGraphQueue.lastSubmittedCommand = queueCBIndex
+                self.renderGraphQueue.lastSubmissionTime = DispatchTime.now()
                 
                 commandBuffer.commit(onCompletion: { (commandBuffer) in
                     if let error = commandBuffer.error {
                         print("Error executing command buffer \(queueCBIndex): \(error)")
                     }
-                    self.frameGraphQueue.lastCompletedCommand = queueCBIndex
-                    self.frameGraphQueue.lastCompletionTime = DispatchTime.now()
+                    self.renderGraphQueue.lastCompletedCommand = queueCBIndex
+                    self.renderGraphQueue.lastCompletionTime = DispatchTime.now()
                     
                     if cbIndex == 0 {
                         gpuStartTime = commandBuffer.gpuStartTime

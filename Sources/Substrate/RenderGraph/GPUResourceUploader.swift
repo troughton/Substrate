@@ -23,7 +23,7 @@ public final class GPUResourceUploader {
     public static var skipUpload = false
     
     static let lock = DispatchSemaphore(value: 1)
-    public internal(set) static var frameGraph : RenderGraph! = nil
+    public internal(set) static var renderGraph : RenderGraph! = nil
     private static var enqueuedBytes = 0
     private static var maxUploadSize = 128 * 1024 * 1024
     
@@ -43,7 +43,7 @@ public final class GPUResourceUploader {
         
         @inlinable
         public func execute(blitCommandEncoder: BlitCommandEncoder) {
-            let stagingBuffer = Buffer(descriptor: BufferDescriptor(length: self.stagingBufferLength, storageMode: .shared, cacheMode: .writeCombined, usage: .blitSource), frameGraph: GPUResourceUploader.frameGraph)
+            let stagingBuffer = Buffer(descriptor: BufferDescriptor(length: self.stagingBufferLength, storageMode: .shared, cacheMode: .writeCombined, usage: .blitSource), renderGraph: GPUResourceUploader.renderGraph)
             let bufferSlice = stagingBuffer[stagingBuffer.range, accessType: .write]
             self.closure(bufferSlice, blitCommandEncoder)
         }
@@ -51,13 +51,13 @@ public final class GPUResourceUploader {
     
     public static func initialise(maxUploadSize: Int = 128 * 1024 * 1024) {
         self.maxUploadSize = maxUploadSize
-        self.frameGraph = RenderGraph(inflightFrameCount: 1)
+        self.renderGraph = RenderGraph(inflightFrameCount: 1)
     }
     
     private init() {}
 
     private static func flushHoldingLock() {
-        self.frameGraph.execute()
+        self.renderGraph.execute()
         self.enqueuedBytes = 0
     }
     
@@ -71,14 +71,14 @@ public final class GPUResourceUploader {
         if GPUResourceUploader.skipUpload {
             return
         }
-        precondition(self.frameGraph != nil, "GPUResourceLoader.initialise() has not been called.")
+        precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
         self.lock.withSemaphore {
             if self.enqueuedBytes + stagingBufferLength >= self.maxUploadSize {
                 self.flushHoldingLock()
             }
             
-            frameGraph.addPass(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
+            renderGraph.addPass(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
             self.enqueuedBytes += stagingBufferLength
         }
             
@@ -86,7 +86,7 @@ public final class GPUResourceUploader {
     
     public static func generateMipmaps(for texture: Texture) {
         self.lock.withSemaphore {
-            self.frameGraph.addBlitCallbackPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
+            self.renderGraph.addBlitCallbackPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
                 bce.generateMipmaps(for: texture)
             }
         }

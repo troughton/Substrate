@@ -486,7 +486,7 @@ extension MTLResourceOptions {
             self.formUnion(.cpuCacheModeWriteCombined)
         }
         
-        self.formUnion(.frameGraphTrackedHazards)
+        self.formUnion(.substrateTrackedHazards)
     }
 }
 

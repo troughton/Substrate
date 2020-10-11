@@ -30,7 +30,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     
     var supportsMemorylessAttachments: Bool { get }
     
-    func makeQueue(frameGraphQueue: Queue) -> QueueImpl
+    func makeQueue(renderGraphQueue: Queue) -> QueueImpl
     func makeSyncEvent(for queue: Queue) -> Event
     func freeSyncEvent(for queue: Queue)
     func syncEvent(for queue: Queue) -> Event?

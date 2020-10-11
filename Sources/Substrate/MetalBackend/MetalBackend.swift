@@ -11,7 +11,7 @@ import SubstrateUtilities
 import Metal
 
 extension MTLResourceOptions {
-    static var frameGraphTrackedHazards : MTLResourceOptions {
+    static var substrateTrackedHazards : MTLResourceOptions {
         // This gives us a convenient way to toggle whether the RenderGraph or Metal should handle resource tracking.
         return .hazardTrackingModeUntracked
     }
@@ -19,7 +19,7 @@ extension MTLResourceOptions {
 
 @available(OSX 10.15, iOS 13.0, tvOS 13.0, *)
 extension MTLHazardTrackingMode {
-    static var frameGraphTrackedHazards : MTLHazardTrackingMode {
+    static var substrateTrackedHazards : MTLHazardTrackingMode {
         // This gives us a convenient way to toggle whether the RenderGraph or Metal should handle resource tracking.
         return .untracked
     }
@@ -314,7 +314,7 @@ final class MetalBackend : SpecificRenderBackend {
         argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
-    func makeQueue(frameGraphQueue: Queue) -> MetalCommandQueue {
+    func makeQueue(renderGraphQueue: Queue) -> MetalCommandQueue {
         return MetalCommandQueue(backend: self, queue: self.device.makeCommandQueue()!)
     }
 
@@ -379,7 +379,7 @@ final class MetalBackend : SpecificRenderBackend {
         self.generateFenceCommands(queue: queue, frameCommandInfo: commandInfo, commandGenerator: commandGenerator, compactedResourceCommands: &compactedResourceCommands)
         
         
-        let allocator = ThreadLocalTagAllocator(tag: .frameGraphResourceCommandArrayTag)
+        let allocator = ThreadLocalTagAllocator(tag: .renderGraphResourceCommandArrayTag)
         
         var currentEncoderIndex = 0
         var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]

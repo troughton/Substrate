@@ -78,7 +78,7 @@ public class Application {
     public func addUpdateable(_ updateable: FrameUpdateable) {
         self.updateables.append(updateable)
         if let windowDelegate = updateable as? WindowDelegate {
-            let window = self.createWindow(title: windowDelegate.title, dimensions: windowDelegate.desiredSize, flags: .resizable, frameGraph: self.windowRenderGraph)
+            let window = self.createWindow(title: windowDelegate.title, dimensions: windowDelegate.desiredSize, flags: .resizable, renderGraph: self.windowRenderGraph)
             window.delegate = windowDelegate
             windowDelegate.window = window
             inputLayers.append(contentsOf: windowDelegate.inputLayers)
@@ -168,7 +168,7 @@ public class Application {
         self.timeLastUpdate = currentTime
     }
     
-    public func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: RenderGraph) -> Window {
+    public func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, renderGraph: RenderGraph) -> Window {
         fatalError("createWindow(title:dimensions:flags:) needs concrete implementation.")
     }
     

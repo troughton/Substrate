@@ -112,18 +112,18 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    init(frameGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+    init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
         
         let index : UInt64
         if flags.contains(.persistent) {
             index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags)
         } else {
-            guard let frameGraph = frameGraph ?? RenderGraph.activeRenderGraph else {
+            guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
             
-            index = TransientArgumentBufferRegistry.instances[frameGraph.transientRegistryIndex].allocate(flags: flags)
+            index = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
         }
         
         let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
@@ -400,12 +400,12 @@ public struct _ArgumentBuffer : ResourceProtocol {
         return false
     }
     
-    public func _markAsUsed(frameGraphIndexMask: UInt8) {
+    public func _markAsUsed(renderGraphIndexMask: UInt8) {
         guard self._usesPersistentRegistry else {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-        CAtomicsBitwiseOr(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), frameGraphIndexMask, .relaxed)
+        CAtomicsBitwiseOr(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), renderGraphIndexMask, .relaxed)
     }
     
     public func dispose() {
@@ -443,17 +443,17 @@ public struct _ArgumentBufferArray : ResourceProtocol {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
-    init(frameGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+    init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
         
         let index : UInt64
         if flags.contains(.persistent) {
             index = PersistentArgumentBufferArrayRegistry.instance.allocate(flags: flags)
         } else {
-            guard let frameGraph = frameGraph ?? RenderGraph.activeRenderGraph else {
+            guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
-            index = TransientArgumentBufferArrayRegistry.instances[frameGraph.transientRegistryIndex].allocate(flags: flags)
+            index = TransientArgumentBufferArrayRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
         }
         
         let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBufferArray.rawValue) << Self.typeBitsRange.lowerBound)
@@ -464,9 +464,9 @@ public struct _ArgumentBufferArray : ResourceProtocol {
         return self._bindings.contains(where: { $0?.isKnownInUse ?? false })
     }
     
-    public func _markAsUsed(frameGraphIndexMask: UInt8) {
+    public func _markAsUsed(renderGraphIndexMask: UInt8) {
         for binding in self._bindings {
-            binding?._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+            binding?._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         }
     }
     
@@ -572,9 +572,15 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         self.argumentBuffer = _ArgumentBuffer(handle: handle)
     }
     
+    @available(*, deprecated, renamed: "init(renderGraph:flags:)")
     @inlinable
-    public init(frameGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        self.argumentBuffer = _ArgumentBuffer(frameGraph: frameGraph, flags: flags)
+    public init(frameGraph: RenderGraph?, flags: ResourceFlags = []) {
+        self.init(renderGraph: frameGraph, flags: flags)
+    }
+    
+    @inlinable
+    public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+        self.argumentBuffer = _ArgumentBuffer(renderGraph: renderGraph, flags: flags)
         self.argumentBuffer.label = "Argument Buffer \(K.self)"
     }
     
@@ -612,8 +618,8 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         return self.argumentBuffer.isKnownInUse
     }
     
-    public func _markAsUsed(frameGraphIndexMask: UInt8) {
-        self.argumentBuffer._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+    public func _markAsUsed(renderGraphIndexMask: UInt8) {
+        self.argumentBuffer._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
     }
     
     @inlinable
@@ -720,8 +726,14 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
         self.argumentBufferArray = _ArgumentBufferArray(handle: handle)
     }
     
-    public init(frameGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        self.argumentBufferArray = _ArgumentBufferArray(frameGraph: frameGraph, flags: flags)
+    @available(*, deprecated, renamed: "init(renderGraph:flags:)")
+    @inlinable
+    public init(frameGraph: RenderGraph?, flags: ResourceFlags = []) {
+        self.init(renderGraph: frameGraph, flags: flags)
+    }
+    
+    public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+        self.argumentBufferArray = _ArgumentBufferArray(renderGraph: renderGraph, flags: flags)
         self.argumentBufferArray.label = "Argument Buffer Array \(K.self)"
     }
     
@@ -730,8 +742,8 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
         return self.argumentBufferArray.isKnownInUse
     }
     
-    public func _markAsUsed(frameGraphIndexMask: UInt8) {
-        self.argumentBufferArray._markAsUsed(frameGraphIndexMask: frameGraphIndexMask)
+    public func _markAsUsed(renderGraphIndexMask: UInt8) {
+        self.argumentBufferArray._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
     }
     
     public func dispose() {
