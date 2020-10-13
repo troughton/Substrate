@@ -142,14 +142,12 @@ final class MetalPipelineReflection : PipelineReflection {
         reflectionCache[rootPath] = reflection
         
         if let elementStruct = argument.bufferPointerType?.elementStructType() {
-            var isArgumentBuffer = false
+            let isArgumentBuffer = elementStruct.members.contains(where: { $0.offset < 0 })
             var argumentBufferBindingCount = 0
             
             let metalArgBufferPath = rootPath
             for member in elementStruct.members {
-                if member.offset < 0 {
-                    isArgumentBuffer = true
-                    
+                if isArgumentBuffer {
                     let arrayLength = member.arrayType()?.arrayLength ?? 1
                     argumentBufferBindingCount = max(member.argumentIndex + arrayLength, argumentBufferBindingCount)
                 }
