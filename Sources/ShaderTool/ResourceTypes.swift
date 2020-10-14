@@ -6,10 +6,10 @@
 //
 
 import SPIRV_Cross
-import SwiftFrameGraph
+import Substrate
 
 extension ResourceType {
-    var frameGraphType : String {
+    var substrateType : String {
         switch self {
         case .buffer:
             return "Buffer"
@@ -38,7 +38,7 @@ enum ResourceViewType {
     case inputAttachment
     case sampler
     
-    var frameGraphTypeName : String {
+    var substrateTypeName : String {
         switch self {
         case .uniformBuffer, .storageBuffer:
             return "Buffer"

@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import SwiftFrameGraph
+import Substrate
 import SPIRV_Cross
 
 final class DescriptorSet {
@@ -103,9 +103,9 @@ final class DescriptorSet {
             } else {
                 let wrapperType = resource.viewType == .uniformBuffer || resource.viewType == .storageBuffer ? "@OffsetView " : ""
                 if wrapperType.isEmpty, resource.binding.arrayLength > 1 { // FIXME: how do we handle this case for arrays which require property wrappers?
-                    stream.print("\(wrapperType)public var \(resource.name) : [\(resource.viewType.frameGraphTypeName)?] = .init(repeating: nil, count: \(resource.binding.arrayLength))")
+                    stream.print("\(wrapperType)public var \(resource.name) : [\(resource.viewType.substrateTypeName)?] = .init(repeating: nil, count: \(resource.binding.arrayLength))")
                 } else {
-                    stream.print("\(wrapperType)public var \(resource.name) : \(resource.viewType.frameGraphTypeName)? = nil")
+                    stream.print("\(wrapperType)public var \(resource.name) : \(resource.viewType.substrateTypeName)? = nil")
                 }
             }
         }

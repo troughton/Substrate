@@ -20,14 +20,14 @@ public final class CocoaInputManager : InputManagerInternal {
     
     private var eventQueue = [NSEvent]()
     
-#if canImport(CSDL2) && !os(iOS)
+#if canImport(CSDL2) && !os(iOS) && !(os(macOS) && arch(arm64))
     private var gamepadManager : SDLGamepadManager! = nil
 #endif
     
     private var cursorHidden = false
     
     public init() {
-#if canImport(CSDL2) && !os(iOS)
+#if canImport(CSDL2) && !os(iOS) && !(os(macOS) && arch(arm64))
         self.gamepadManager = SDLGamepadManager(inputManager: self)
 #endif
         self.setupImGui()
@@ -66,7 +66,7 @@ public final class CocoaInputManager : InputManagerInternal {
         let frame = UInt32(truncatingIfNeeded: frame)
         
         self.handleEvents(frame: frame, windows: windows)
-        #if canImport(CSDL2) && !os(iOS)
+        #if canImport(CSDL2) && !os(iOS) && !(os(macOS) && arch(arm64))
         self.gamepadManager.update(frame: frame)
         #endif
         
@@ -105,9 +105,6 @@ public final class CocoaInputManager : InputManagerInternal {
     private func handleEvents(frame: UInt32, windows: [Window]) {
         var mouseScrollX : CGFloat = 0.0
         var mouseScrollY : CGFloat = 0.0
-        
-        var mouseRelativeX : CGFloat = 0.0
-        var mouseRelativeY : CGFloat = 0.0
         
         let activeState = RawInputState(active: true, frame: frame)
         

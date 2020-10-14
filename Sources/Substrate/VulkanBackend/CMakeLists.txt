@@ -1,0 +1,36 @@
+
+target_sources(Substrate PRIVATE 
+  VulkanAccessFlags.swift
+  VulkanArgumentBuffer.swift
+  VulkanBackend.swift
+  VulkanBlitCommandEncoder.swift
+  VulkanBuffer.swift
+  VulkanCaches.swift
+  VulkanVulkanCommandBuffer.swift
+  VulkanCommandEncoder.swift
+  VulkanCommandPool.swift
+  VulkanComputeCommandEncoder.swift
+  VulkanConversion.swift
+  VulkanDescriptorPool.swift
+  VulkanDevice.swift
+  VulkanEnumDefinitions.swift
+  VulkanEventRegistry.swift
+  VulkanExtensions.swift
+  VulkanFramebuffer.swift
+  VulkanRenderGraph.swift
+  VulkanImage.swift
+  VulkanInstance.swift
+  VulkanOptionSets.swift
+  VulkanPoolResourceAllocator.swift
+  VulkanRenderCommandEncoder.swift
+  VulkanRenderPass.swift
+  VulkanRenderTargetDescriptor.swift
+  VulkanResource.swift
+  VulkanResourceAllocator.swift
+  VulkanResourceBindingManager.swift
+  VulkanResourceBindingPath.swift
+  VulkanResourceRegistry.swift
+  VulkanShaderModule.swift 
+  VulkanSwapChain.swift
+  VulkanTemporaryBufferAllocator.swift
+)

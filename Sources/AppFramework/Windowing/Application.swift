@@ -6,7 +6,7 @@
 //  Copyright (c) 2017 Thomas Roughton. All rights reserved.
 //
 
-import SwiftFrameGraph
+import Substrate
 import ImGui
 import Foundation
 
@@ -38,7 +38,7 @@ public class Application {
     public internal(set) var windows : [Window]
     public private(set) var updateables : [FrameUpdateable]
     
-    public let windowFrameGraph : FrameGraph
+    public let windowRenderGraph : RenderGraph
     public var inputManager : InputManager
     public internal(set) var inputLayers : [InputLayer]
     let imguiInputLayer : ImGuiInputLayer
@@ -48,15 +48,15 @@ public class Application {
     
     public weak var delegate : ApplicationDelegate? = nil
     
-    init(delegate: ApplicationDelegate?, updateables: [FrameUpdateable], inputManager: @autoclosure () -> InputManager, updateScheduler: UpdateScheduler, windowFrameGraph: FrameGraph) {
+    init(delegate: ApplicationDelegate?, updateables: [FrameUpdateable], inputManager: @autoclosure () -> InputManager, updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) {
         ImGui.createContext()
-        FrameGraph.initialise()
+        RenderGraph.initialise()
         
         self.inputManager = inputManager()
         self.windows = []
         self.updateables = []
         self.updateScheduler = updateScheduler
-        self.windowFrameGraph = windowFrameGraph
+        self.windowRenderGraph = windowRenderGraph
         
         self.imguiInputLayer = ImGuiInputLayer()
         self.inputLayers = [self.imguiInputLayer]
@@ -78,7 +78,7 @@ public class Application {
     public func addUpdateable(_ updateable: FrameUpdateable) {
         self.updateables.append(updateable)
         if let windowDelegate = updateable as? WindowDelegate {
-            let window = self.createWindow(title: windowDelegate.title, dimensions: windowDelegate.desiredSize, flags: .resizable, frameGraph: self.windowFrameGraph)
+            let window = self.createWindow(title: windowDelegate.title, dimensions: windowDelegate.desiredSize, flags: .resizable, renderGraph: self.windowRenderGraph)
             window.delegate = windowDelegate
             windowDelegate.window = window
             inputLayers.append(contentsOf: windowDelegate.inputLayers)
@@ -168,7 +168,7 @@ public class Application {
         self.timeLastUpdate = currentTime
     }
     
-    public func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, frameGraph: FrameGraph) -> Window {
+    public func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, renderGraph: RenderGraph) -> Window {
         fatalError("createWindow(title:dimensions:flags:) needs concrete implementation.")
     }
     

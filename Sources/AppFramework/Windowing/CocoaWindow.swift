@@ -6,8 +6,8 @@
 //
 //
 
-import FrameGraphUtilities
-import SwiftFrameGraph
+import SubstrateUtilities
+import Substrate
 
 #if os(macOS) || os(iOS)
 import MetalKit
@@ -210,7 +210,7 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
         }
     }
     
-    public init(id: Int, title: String, dimensions: WindowSize, inputManager: CocoaInputManager, flags: WindowCreationFlags, frameGraph: FrameGraph) {
+    public init(id: Int, title: String, dimensions: WindowSize, inputManager: CocoaInputManager, flags: WindowCreationFlags, renderGraph: RenderGraph) {
         self.id = id
         
         self._dimensions = dimensions
@@ -265,7 +265,7 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
         win.isReleasedWhenClosed = false
         
         self._texture.constructor = { [unowned(unsafe) self] in
-            let texture = Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView.layer as Any, frameGraph: frameGraph)
+            let texture = Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView.layer as Any, renderGraph: renderGraph)
             return texture
         }
     }

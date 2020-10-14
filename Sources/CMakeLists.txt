@@ -1,8 +1,8 @@
-include_directories(FrameGraphCExtras/include)
+include_directories(SubstrateCExtras/include)
 
-add_subdirectory(FrameGraphCExtras)
-add_subdirectory(FrameGraphUtilities)
-add_subdirectory(FrameGraph)
+add_subdirectory(SubstrateCExtras)
+add_subdirectory(SubstrateUtilities)
+add_subdirectory(RenderGraph)
 
 add_subdirectory(CNativeFileDialog)
 add_subdirectory(AppFramework)

@@ -7,7 +7,7 @@
 
 import Foundation
 import SPIRV_Cross
-import SwiftFrameGraph
+import Substrate
 
 final class SPIRVContext {
     let spvContext : spvc_context

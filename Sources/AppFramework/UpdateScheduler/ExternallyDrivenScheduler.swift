@@ -8,13 +8,13 @@
 #if os(macOS)
 
 import MetalKit
-import SwiftFrameGraph
+import Substrate
 
 public final class ExternallyDrivenScheduler : UpdateScheduler  {
     private var application : Application! = nil
     
-    public init(appDelegate: ApplicationDelegate?, updateables: @escaping @autoclosure () -> [FrameUpdateable], windowFrameGraph: FrameGraph) {
-        self.application = CocoaApplication(delegate: appDelegate, updateables: updateables(), updateScheduler: self, windowFrameGraph: windowFrameGraph)
+    public init(appDelegate: ApplicationDelegate?, updateables: @escaping @autoclosure () -> [FrameUpdateable], windowRenderGraph: RenderGraph) {
+        self.application = CocoaApplication(delegate: appDelegate, updateables: updateables(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
     }
     
     public func update() {

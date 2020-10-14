@@ -6,7 +6,7 @@
 //
 //
 
-#if canImport(CSDL2) && !os(iOS)
+#if canImport(CSDL2) && !os(iOS) && !(os(macOS) && arch(arm64))
 
 import CSDL2
 import ImGui

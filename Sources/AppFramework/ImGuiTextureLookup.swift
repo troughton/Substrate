@@ -6,7 +6,7 @@
 //
 
 import ImGui
-import SwiftFrameGraph
+import Substrate
 import SwiftMath
 
 public final class TextureLookup {

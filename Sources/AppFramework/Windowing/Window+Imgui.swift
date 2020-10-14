@@ -10,7 +10,7 @@ import CImGui
 import ImGui
 import SwiftMath
 import Dispatch
-import SwiftFrameGraph
+import Substrate
 
 extension ImGuiNavInput_ {
     var value : Int {
@@ -80,7 +80,7 @@ extension ImGui {
         platformIO.pointee.Platform_CreateWindow = { viewport in
             let viewport = viewport!
             let windowSize = WindowSize(Float(viewport.pointee.Size.x), Float(viewport.pointee.Size.y))
-            let window = Application.sharedApplication.createWindow(title: "", dimensions: windowSize, flags: [.borderless, .hidden], frameGraph: Application.sharedApplication.windowFrameGraph)
+            let window = Application.sharedApplication.createWindow(title: "", dimensions: windowSize, flags: [.borderless, .hidden], renderGraph: Application.sharedApplication.windowRenderGraph)
             viewport.pointee.PlatformHandle = Unmanaged<AnyObject>.passRetained(window).toOpaque()
         }
         

@@ -1,6 +1,6 @@
 import XCTest
-@testable import SwiftFrameGraphTests
+@testable import SubstrateTests
 
 XCTMain([
-     testCase(SwiftFrameGraphTests.allTests),
+     testCase(SubstrateTests.allTests),
 ])

@@ -1,6 +1,6 @@
-# SwiftFrameGraph
+# Substrate
 
-_Note: The current version of SwiftFrameGraph on `master` only has support for Metal and does not work with Vulkan. If you want to use the Vulkan backend, the `Vulkan` branch contains the last version tested to be working, although its API has fallen significantly behind `master`. We plan to restore the Vulkan backend to a working state in the future._
+_Note: The current version of Substrate on `master` only has support for Metal and does not work with Vulkan. If you want to use the Vulkan backend, the `Vulkan` branch contains the last version tested to be working, although its API has fallen significantly behind `master`. We plan to restore the Vulkan backend to a working state in the future._
 
 ## What is this?
 
@@ -42,9 +42,9 @@ Persistent resources are a little trickier. To create them, you pass `.persisten
 
 ## Where can I see how it works?
 
-A good place to start would be the main render pass execution in [CommandRecorder.swift](Sources/FrameGraph/FrameGraph/CommandRecorder.swift).
+A good place to start would be the main render pass execution in [CommandRecorder.swift](Sources/Substrate/RenderGraph/CommandRecorder.swift).
 
-With regards to the backends, take a look at the [Vulkan](Sources/FrameGraph/Backends/Vulkan/VkRenderer/FrameGraphBackend.swift) and [Metal](Sources/FrameGraph/Backends/MetalRenderer/FrameGraphBackend.swift) backends.
+With regards to the backends, take a look at the [Vulkan](Sources/Substrate/Backends/Vulkan/VkRenderer/RenderGraphBackend.swift) and [Metal](Sources/Substrate/Backends/MetalRenderer/RenderGraphBackend.swift) backends.
 
 ## How practical is this to use in my personal projects?
 
@@ -195,14 +195,14 @@ Every frame, you'd call something like this:
 
 ```swift
 let debugDrawPass = DebugDrawPass(outputTexture: texture, renderData: debugDrawData, viewUniforms: viewUniforms)
-FrameGraph.addPass(debugDrawPass)
+RenderGraph.addPass(debugDrawPass)
 
 ```
 
-and then execute the FrameGraph using a call like:
+and then execute the RenderGraph using a call like:
 
 ```swift
-FrameGraph.execute(backend: self.backend)
+RenderGraph.execute(backend: self.backend)
 ```
 
 where `self.backend` is an instance of either the Metal or Vulkan backends. 
@@ -237,7 +237,7 @@ I think Swift's a great language, and it's what we wanted to use when making our
 
 ## What about multithreading?
 
-The FrameGraph automatically executes all non-CPU render passes in parallel, and the Metal backend will use parallel render command encoders where it makes sense. This does mean that you need to ensure that all `Draw`, `Blit`, and `Compute` render passes don't change any external state that other passes depend on in their `execute` methods; instead, any such changes should be made in their `init` methods or elsewhere.
+The RenderGraph automatically executes all non-CPU render passes in parallel, and the Metal backend will use parallel render command encoders where it makes sense. This does mean that you need to ensure that all `Draw`, `Blit`, and `Compute` render passes don't change any external state that other passes depend on in their `execute` methods; instead, any such changes should be made in their `init` methods or elsewhere.
 
 ## What about (some other question here)?
 
