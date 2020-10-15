@@ -7,7 +7,7 @@
 
 import Foundation
 import SubstrateUtilities
-import CAtomics
+import Atomics
 
 public protocol FunctionArgumentKey {
     var stringValue : String { get }

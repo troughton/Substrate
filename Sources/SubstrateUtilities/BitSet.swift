@@ -1,4 +1,4 @@
-import CAtomics
+import Atomics
 
 extension UInt {
     @inlinable
@@ -145,7 +145,7 @@ public struct BitSet {
 }
 
 public struct AtomicBitSet {
-    @usableFromInline let storage : UnsafeMutablePointer<AtomicUInt>
+    @usableFromInline let storage : UnsafeMutablePointer<UInt.AtomicRepresentation>
     @usableFromInline let storageCount : Int
     
     @inlinable static var bitsPerElement : Int {
@@ -155,7 +155,7 @@ public struct AtomicBitSet {
     @inlinable
     public init(storageCount: Int) {
         self.storage = .allocate(capacity: storageCount)
-        self.storage.initialize(repeating: AtomicUInt(0), count: storageCount)
+        self.storage.initialize(repeating: .init(0), count: storageCount)
         self.storageCount = storageCount
     }
     
@@ -163,23 +163,23 @@ public struct AtomicBitSet {
     public subscript(uintIndex uintIndex: Int, offset offset: Int) -> UInt {
         get {
             var result = 0 as UInt
-            result |= CAtomicsLoad(self.storage.advanced(by: uintIndex), .relaxed) >> offset // contributes the lower (64 - offset) bits
+            result |= UInt.AtomicRepresentation.atomicLoad(at: storage.advanced(by: uintIndex), ordering: .relaxed) >> offset // contributes the lower (64 - offset) bits
             if offset > 0, uintIndex + 1 < self.storageCount {
                 let remainingBits = BitSet.bitsPerElement - offset
-                let upperBits = CAtomicsLoad(self.storage.advanced(by: uintIndex + 1), .relaxed)// contributes the upper (offset) bits
+                let upperBits = UInt.AtomicRepresentation.atomicLoad(at: storage.advanced(by: uintIndex + 1), ordering: .relaxed) // contributes the upper (offset) bits
                 result |= upperBits << remainingBits
             }
             return result
         }
         nonmutating set {
-            CAtomicsBitwiseAnd(self.storage.advanced(by: uintIndex), ~(~0 << offset), .relaxed) // zero out offset..<64 at uintIndex
-            CAtomicsBitwiseOr(self.storage.advanced(by: uintIndex), newValue << offset, .relaxed) // set offset..<64 to newValue
+            UInt.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: ~(~0 << offset), at: self.storage.advanced(by: uintIndex), ordering: .relaxed) // zero out offset..<64 at uintIndex
+            UInt.AtomicRepresentation.atomicLoadThenBitwiseOr(with: newValue << offset, at: self.storage.advanced(by: uintIndex), ordering: .relaxed) // set offset..<64 to newValue
             
             if offset > 0, uintIndex + 1 < self.storageCount {
                 let remainingBits = BitSet.bitsPerElement - offset
 
-                CAtomicsBitwiseAnd(self.storage.advanced(by: uintIndex + 1), ~((1 << offset) - 1), .relaxed) // zero out 0..<offset at uintIndex + 1
-                CAtomicsBitwiseOr(self.storage.advanced(by: uintIndex + 1), newValue >> remainingBits, .relaxed) // set offset..<64 to newValue
+                UInt.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: ~((1 << offset) - 1), at: self.storage.advanced(by: uintIndex + 1), ordering: .relaxed) // zero out 0..<offset at uintIndex + 1
+                UInt.AtomicRepresentation.atomicLoadThenBitwiseOr(with: newValue >> remainingBits, at: self.storage.advanced(by: uintIndex + 1), ordering: .relaxed)  // set offset..<64 to newValue
             }
         }
     }
@@ -206,7 +206,7 @@ public struct AtomicBitSet {
         
         let bitsInFirstWordCount = min(range.count, BitSet.bitsPerElement - offset)
         let firstWordBits : UInt = (bitsInFirstWordCount == BitSet.bitsPerElement) ? ~0 : ((1 &<< bitsInFirstWordCount) &- 1)
-        if CAtomicsLoad(self.storage.advanced(by: uintIndex), .relaxed) & (firstWordBits << offset) != 0 {
+        if UInt.AtomicRepresentation.atomicLoad(at: storage.advanced(by: uintIndex), ordering: .relaxed) & (firstWordBits << offset) != 0 {
             return false
         }
         
@@ -215,12 +215,12 @@ public struct AtomicBitSet {
         
         while remaining > 0 {
             if remaining < BitSet.bitsPerElement {
-                if CAtomicsLoad(self.storage.advanced(by: uintIndex), .relaxed) & ((1 &<< remaining) &- 1) != 0 {
+                if UInt.AtomicRepresentation.atomicLoad(at: storage.advanced(by: uintIndex), ordering: .relaxed) & ((1 &<< remaining) &- 1) != 0 {
                     return false
                 }
                 remaining = 0
             } else {
-                if CAtomicsLoad(self.storage.advanced(by: uintIndex), .relaxed) != 0 {
+                if UInt.AtomicRepresentation.atomicLoad(at: storage.advanced(by: uintIndex), ordering: .relaxed) != 0 {
                     return false
                 }
                 remaining -= BitSet.bitsPerElement
@@ -240,17 +240,17 @@ public struct AtomicBitSet {
         
         let bitsInFirstWordCount = min(range.count, BitSet.bitsPerElement - offset)
         let firstWordBits : UInt = (bitsInFirstWordCount == BitSet.bitsPerElement) ? ~0 : ((1 &<< bitsInFirstWordCount) &- 1)
-        CAtomicsBitwiseOr(self.storage.advanced(by: uintIndex), firstWordBits << offset, .relaxed)
+        UInt.AtomicRepresentation.atomicLoadThenBitwiseOr(with: firstWordBits << offset, at: self.storage.advanced(by: uintIndex), ordering: .relaxed)
         
         uintIndex += 1
         remaining -= bitsInFirstWordCount
         
         while remaining > 0 {
             if remaining < BitSet.bitsPerElement {
-                CAtomicsBitwiseOr(self.storage.advanced(by: uintIndex), (1 &<< remaining) &- 1, .relaxed)
+                UInt.AtomicRepresentation.atomicLoadThenBitwiseOr(with: (1 &<< remaining) &- 1, at: self.storage.advanced(by: uintIndex), ordering: .relaxed)
                 remaining = 0
             } else {
-                CAtomicsStore(self.storage.advanced(by: uintIndex), ~0, .relaxed)
+                UInt.AtomicRepresentation.atomicStore(~0, at: self.storage.advanced(by: uintIndex), ordering: .relaxed)
                 remaining -= BitSet.bitsPerElement
             }
             uintIndex += 1
@@ -262,21 +262,21 @@ public struct AtomicBitSet {
     public func clearBits(in set: BitSet) {
         assert(set.storageCount == self.storageCount)
         for i in 0..<self.storageCount {
-            CAtomicsBitwiseAnd(self.storage.advanced(by: i), ~set.storage[i], .relaxed)
+            UInt.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: ~set.storage[i], at: self.storage.advanced(by: i), ordering: .relaxed)
         }
     }
     
     @inlinable
     public func clear() {
         for i in 0..<self.storageCount {
-            CAtomicsStore(self.storage.advanced(by: i), 0, .relaxed)
+            UInt.AtomicRepresentation.atomicStore(0, at: self.storage.advanced(by: i), ordering: .relaxed)
         }
     }
     
     @inlinable
     public var isEmpty : Bool {
         for i in 0..<self.storageCount {
-            if CAtomicsLoad(storage.advanced(by: i), .relaxed) != 0 {
+            if UInt.AtomicRepresentation.atomicLoad(at: storage.advanced(by: i), ordering: .relaxed) != 0 {
                 return false
             }
         }

@@ -8,7 +8,7 @@
 import SubstrateUtilities
 import Dispatch
 import Foundation
-import CAtomics
+import Atomics
 
 // Registries in this file fall into two main types.
 // Fixed-capacity registries (transient buffers, transient textures, and transient argument buffer arrays) have permanently-allocated storage.

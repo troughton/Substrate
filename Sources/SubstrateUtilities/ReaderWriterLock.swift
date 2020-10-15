@@ -5,19 +5,19 @@
 //  Created by Thomas Roughton on 17/05/19.
 //
 
-import CAtomics
+import Atomics
 import Foundation
 
 /// An implementation of a spin-lock using test-and-swap
 /// Necessary for fibers since fibers can move between threads.
 public struct ReaderWriterLock {
     // either the number of readers or .max for writer-lock.
-    @usableFromInline let value : UnsafeMutablePointer<AtomicUInt32>
+    @usableFromInline let value : UnsafeMutablePointer<UInt32.AtomicRepresentation>
     
     @inlinable
     public init() {
-        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<AtomicUInt32>.size, alignment: 64).assumingMemoryBound(to: AtomicUInt32.self)
-        CAtomicsStore(self.value, LockState.free.rawValue, .relaxed)
+        self.value = UnsafeMutablePointer.allocate(capacity: 1)
+        UInt32.AtomicRepresentation.atomicStore(LockState.free.rawValue, at: self.value, ordering: .relaxed)
     }
     
     @inlinable
@@ -28,9 +28,8 @@ public struct ReaderWriterLock {
     @inlinable
     public mutating func acquireWriteAccess() {
         while true {
-            var previousReaders = CAtomicsLoad(self.value, .relaxed)
-            if previousReaders == 0 {
-                if CAtomicsCompareAndExchange(self.value, &previousReaders, .max, .weak, .relaxed, .relaxed) {
+            if UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == 0 {
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: 0, desired: .max, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
                     return
                 }
             }
@@ -41,11 +40,11 @@ public struct ReaderWriterLock {
     @inlinable
     public mutating func acquireReadAccess() {
         while true {
-            var previousReaders = CAtomicsLoad(self.value, .relaxed)
+            let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
             
             if previousReaders != .max {
                 let newReaders = previousReaders &+ 1
-                if CAtomicsCompareAndExchange(self.value, &previousReaders, newReaders, .weak, .relaxed, .relaxed) {
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: newReaders, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
                     return
                 }
             }
@@ -55,9 +54,9 @@ public struct ReaderWriterLock {
     
     @inlinable
     public mutating func transformReadToWriteAccess() {
-        var previousReaders = CAtomicsLoad(self.value, .relaxed)
+        let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
         if previousReaders == 1 {
-            if CAtomicsCompareAndExchange(self.value, &previousReaders, .max, .weak, .relaxed, .relaxed) {
+            if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: .max, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
                 return
             }
         }
@@ -69,10 +68,10 @@ public struct ReaderWriterLock {
     @inlinable
     public mutating func releaseReadAccess() {
         while true {
-            var previousReaders = CAtomicsLoad(self.value, .relaxed)
+            let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
             if previousReaders != .max /* && previousReaders > 0 */ {
                 let newReaders = previousReaders &- 1
-                if CAtomicsCompareAndExchange(self.value, &previousReaders, newReaders, .weak, .relaxed, .relaxed) {
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: newReaders, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
                     return
                 }
             }
@@ -83,9 +82,9 @@ public struct ReaderWriterLock {
     @inlinable
     public mutating func releaseWriteAccess() {
         while true {
-            var previousReaders = CAtomicsLoad(self.value, .relaxed)
+            let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
             if previousReaders == .max {
-                if CAtomicsCompareAndExchange(self.value, &previousReaders, 0, .weak, .relaxed, .relaxed) {
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: 0, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
                     return
                 }
             }

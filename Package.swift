@@ -23,7 +23,7 @@ let package = Package(
         .executable(name: "ShaderTool", targets: ["ShaderTool"])
     ],
     dependencies: [
-        .package(name: "SwiftAtomics", url: "https://github.com/glessard/swift-atomics", from: "6.0.1"),
+        .package(name: "swift-atomics", url: "https://github.com/apple/swift-atomics", from: "0.0.1"),
         .package(name: "SPIRV-Cross", url: "https://github.com/troughton/SPIRV-Cross-SPM", from: "0.33.1"),
         .package(url: "https://github.com/sharplet/Regex", from: "2.1.0"),
         .package(url: "https://github.com/troughton/Cstb", from: "1.0.3"),
@@ -41,8 +41,8 @@ let package = Package(
         // Substrate
         .target(name: "SubstrateTextureIO", dependencies: ["Substrate", .product(name: "stb_image", package: "Cstb"), .product(name: "stb_image_resize", package: "Cstb"), .product(name: "stb_image_write", package: "Cstb"), .product(name: "tinyexr", package: "Cstb"), .product(name: "LodePNG", package: "LodePNG")]),
         .target(name: "SubstrateCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
-        .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "CAtomics", package: "SwiftAtomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "Substrate/CMakeLists.txt", "Substrate/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"]),
-        .target(name: "SubstrateUtilities", dependencies: [.product(name: "CAtomics", package: "SwiftAtomics")], exclude: ["CMakeLists.txt"]),
+        .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "Substrate/CMakeLists.txt", "Substrate/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"]),
+        .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"]),
     
         // ShaderTool
         .target(

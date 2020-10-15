@@ -6,7 +6,7 @@
 //
 
 import SubstrateUtilities
-import CAtomics
+import Atomics
 
 public enum ResourceType : UInt8 {
     case buffer = 1
@@ -632,7 +632,7 @@ public struct Heap : ResourceProtocol {
     }
     
     @inlinable
-    public var descriptor : HeapDescriptor {
+    public internal(set) var descriptor : HeapDescriptor {
         get {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             return HeapRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
@@ -915,7 +915,7 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public var descriptor : BufferDescriptor {
+    public internal(set) var descriptor : BufferDescriptor {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
@@ -1277,7 +1277,7 @@ public struct Texture : ResourceProtocol {
     }
     
     @inlinable
-    public var descriptor : TextureDescriptor {
+    public internal(set) var descriptor : TextureDescriptor {
         get {
             let index = self.index
             if self._usesPersistentRegistry {

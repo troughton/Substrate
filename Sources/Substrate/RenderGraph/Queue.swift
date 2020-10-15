@@ -6,7 +6,7 @@
 //
 
 import SubstrateUtilities
-import CAtomics
+import Atomics
 import Dispatch
 
 public final class QueueRegistry {

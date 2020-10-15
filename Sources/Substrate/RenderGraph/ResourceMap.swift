@@ -6,7 +6,7 @@
 //
 
 import SubstrateUtilities
-import CAtomics
+import Atomics
 
 public struct PersistentResourceMap<R : ResourceProtocol, V> {
     
