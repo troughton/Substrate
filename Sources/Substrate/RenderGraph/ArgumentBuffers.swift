@@ -195,10 +195,10 @@ public struct _ArgumentBuffer : ResourceProtocol {
         get {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return CAtomicsLoad(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), .relaxed)
+                return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), ordering: .relaxed)
             } else {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return CAtomicsLoad(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), .relaxed)
+                return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), ordering: .relaxed)
             }
         }
     }
@@ -219,10 +219,10 @@ public struct _ArgumentBuffer : ResourceProtocol {
     func replaceEncoder(with newEncoder: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-            return CAtomicsCompareAndExchange(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), expectingCurrentValue, newEncoder, .weak, .relaxed)
+            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
         } else {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-            return CAtomicsCompareAndExchange(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), expectingCurrentValue, newEncoder, .weak, .relaxed)
+            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
         }
     }
     
@@ -388,7 +388,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
             return true
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-        let activeRenderGraphMask = CAtomicsLoad(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), .relaxed)
+        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
         if activeRenderGraphMask != 0 {
             return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
         }
@@ -405,7 +405,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-        CAtomicsBitwiseOr(PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), renderGraphIndexMask, .relaxed)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: renderGraphIndexMask, at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
     
     public func dispose() {

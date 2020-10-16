@@ -49,7 +49,7 @@ public final class TransientRegistryManager {
     
     @usableFromInline let transientRegistryIndex : Int
     @usableFromInline var capacity : Int
-    @usableFromInline var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    @usableFromInline var count = UnsafeMutablePointer<Int.AtomicRepresentation>.allocate(capacity: 1)
     @usableFromInline var generation : UInt8 = 0
     
     @usableFromInline var descriptors : UnsafeMutablePointer<BufferDescriptor>! = nil
@@ -67,7 +67,7 @@ public final class TransientRegistryManager {
         
         self.capacity = capacity
         
-        self.count.initialize(to: AtomicInt(0))
+        self.count.initialize(to: Int.AtomicRepresentation(0))
         self.descriptors = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.deferredSliceActions = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: self.capacity)
@@ -87,7 +87,7 @@ public final class TransientRegistryManager {
     @usableFromInline
     func allocate(descriptor: BufferDescriptor, flags: ResourceFlags) -> UInt64 {
         
-        let index = CAtomicsAdd(self.count, 1, .relaxed)
+        let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
         self.ensureCapacity(index + 1)
         
         self.descriptors.advanced(by: index).initialize(to: descriptor)
@@ -107,7 +107,7 @@ public final class TransientRegistryManager {
     
     @usableFromInline
     func clear() {
-        let count = CAtomicsExchange(self.count, 0, .relaxed)
+        let count = Int.AtomicRepresentation.atomicExchange(0, at: self.count, ordering: .relaxed)
         self.descriptors.deinitialize(count: count)
         self.deferredSliceActions.deinitialize(count: count)
         self.usages.deinitialize(count: count)
@@ -115,7 +115,7 @@ public final class TransientRegistryManager {
         
         self.generation = self.generation &+ 1
         
-        assert(CAtomicsLoad(self.count, .relaxed) == 0)
+        assert(Int.AtomicRepresentation.atomicLoad(at: self.count, ordering: .relaxed) == 0)
     }
 }
 
@@ -133,7 +133,7 @@ public final class TransientRegistryManager {
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
         @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         /// The RenderGraphs that are currently using this resource.
-        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<AtomicUInt8>
+        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         @usableFromInline let descriptors : UnsafeMutablePointer<BufferDescriptor>
         @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
         @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
@@ -199,7 +199,7 @@ public final class TransientRegistryManager {
             self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).initialize(to: [])
             self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: AtomicUInt8(0))
+            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap)
@@ -265,7 +265,7 @@ public final class TransientRegistryManager {
                 self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
                 
                 for i in 0..<Chunk.itemsPerChunk {
-                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), renderGraphInactiveMask, .relaxed)
+                    UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
                 }
             }
         }
@@ -288,7 +288,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline let transientRegistryIndex : Int
     @usableFromInline var capacity : Int
-    @usableFromInline let count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    @usableFromInline let count = UnsafeMutablePointer<Int.AtomicRepresentation>.allocate(capacity: 1)
     @usableFromInline var generation : UInt8 = 0
     
     @usableFromInline var descriptors : UnsafeMutablePointer<TextureDescriptor>! = nil
@@ -305,7 +305,7 @@ public enum TextureViewBaseInfo {
     
     func initialise(capacity: Int) {
         self.capacity = capacity
-        self.count.initialize(to: AtomicInt(0))
+        self.count.initialize(to: Int.AtomicRepresentation(0))
         self.descriptors = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: self.capacity)
         self.labels = UnsafeMutablePointer.allocate(capacity: self.capacity)
@@ -326,7 +326,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     func allocate(descriptor: TextureDescriptor, flags: ResourceFlags) -> UInt64 {
-        let index = CAtomicsAdd(self.count, 1, .relaxed)
+        let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
         self.ensureCapacity(index + 1)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
@@ -341,7 +341,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) -> UInt64 {
-        let index = CAtomicsAdd(self.count, 1, .relaxed)
+        let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
         self.ensureCapacity(index + 1)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
@@ -358,7 +358,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) -> UInt64 {
-        let index = CAtomicsAdd(self.count, 1, .relaxed)
+        let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
         self.ensureCapacity(index + 1)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
@@ -390,7 +390,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     func clear() {
-        let count = CAtomicsExchange(self.count, 0, .relaxed)
+        let count = Int.AtomicRepresentation.atomicExchange(0, at: self.count, ordering: .relaxed)
         self.descriptors.deinitialize(count: count)
         self.usages.deinitialize(count: count)
         self.labels.deinitialize(count: count)
@@ -399,7 +399,7 @@ public enum TextureViewBaseInfo {
         
         self.generation = self.generation &+ 1
         
-        assert(CAtomicsLoad(self.count, .relaxed) == 0)
+        assert(Int.AtomicRepresentation.atomicLoad(at: self.count, ordering: .relaxed) == 0)
     }
 }
 
@@ -416,7 +416,7 @@ public enum TextureViewBaseInfo {
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
         @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         /// The RenderGraphs that are currently using this resource.
-        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<AtomicUInt8>
+        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         @usableFromInline let descriptors : UnsafeMutablePointer<TextureDescriptor>
         @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
         @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
@@ -497,7 +497,7 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).initialize(to: [])
             self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: AtomicUInt8(0))
+            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap)
@@ -524,7 +524,7 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).initialize(to: [])
             self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: AtomicUInt8(0))
+            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap)
@@ -591,7 +591,7 @@ public enum TextureViewBaseInfo {
                 self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
                 
                 for i in 0..<Chunk.itemsPerChunk {
-                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), renderGraphInactiveMask, .relaxed)
+                    UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
                 }
             }
         }
@@ -616,7 +616,7 @@ public enum TextureViewBaseInfo {
         @usableFromInline static let itemsPerChunk = 2048
         
         @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
-        @usableFromInline let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
+        @usableFromInline let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
         @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
         @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
         @usableFromInline let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray?>
@@ -681,7 +681,7 @@ public enum TextureViewBaseInfo {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: AtomicOptionalRawPointer(nil))
+            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
             self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).initialize(to: nil)
@@ -705,7 +705,7 @@ public enum TextureViewBaseInfo {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: AtomicOptionalRawPointer(nil))
+            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
             self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
@@ -755,7 +755,7 @@ public enum TextureViewBaseInfo {
         @usableFromInline static let itemsPerChunk = 2048
         
         @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
-        @usableFromInline let encoders : UnsafeMutablePointer<AtomicOptionalRawPointer> // Some opaque backend type that can construct the argument buffer
+        @usableFromInline let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
         @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
         @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
         @usableFromInline let inlineDataStorage : UnsafeMutablePointer<Data>
@@ -766,7 +766,7 @@ public enum TextureViewBaseInfo {
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
         @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         /// The RenderGraphs that are currently using this resource.
-        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<AtomicUInt8>
+        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         
         @usableFromInline let labels : UnsafeMutablePointer<String?>
@@ -835,14 +835,14 @@ public enum TextureViewBaseInfo {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: AtomicOptionalRawPointer(nil))
+            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
             self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
             self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: nil)
             self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: AtomicUInt8(0))
+            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             
             let generation = self.chunks[chunkIndex].generations[indexInChunk]
@@ -869,7 +869,7 @@ public enum TextureViewBaseInfo {
             
             
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: AtomicOptionalRawPointer(nil))
+            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
             self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
             self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
@@ -942,7 +942,7 @@ public enum TextureViewBaseInfo {
                 self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
                 
                 for i in 0..<Chunk.itemsPerChunk {
-                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), renderGraphInactiveMask, .relaxed)
+                    UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
                 }
             }
         }
@@ -960,7 +960,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline let transientRegistryIndex: Int
     @usableFromInline var capacity : Int
-    @usableFromInline var count = UnsafeMutablePointer<AtomicInt>.allocate(capacity: 1)
+    @usableFromInline var count = UnsafeMutablePointer<Int.AtomicRepresentation>.allocate(capacity: 1)
     @usableFromInline var generation : UInt8 = 0
     
     @usableFromInline var bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>! = nil
@@ -973,7 +973,7 @@ public enum TextureViewBaseInfo {
     
     func initialise(capacity: Int) {
         self.capacity = capacity
-        self.count.initialize(to: AtomicInt(0))
+        self.count.initialize(to: Int.AtomicRepresentation(0))
         self.bindings = .allocate(capacity: capacity)
         self.labels = .allocate(capacity: capacity)
     }
@@ -986,7 +986,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     func allocate(flags: ResourceFlags) -> UInt64 {
-        let index = CAtomicsAdd(self.count, 1, .relaxed)
+        let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
         assert(index < self.capacity)
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
@@ -998,11 +998,11 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     func clear() {
-        let count = CAtomicsLoad(self.count, .relaxed)
+        let count = Int.AtomicRepresentation.atomicLoad(at: self.count, ordering: .relaxed)
         
         self.bindings.deinitialize(count: count)
         self.labels.deinitialize(count: count)
-        let oldCount = CAtomicsExchange(self.count, 0, .relaxed)
+        let oldCount = Int.AtomicRepresentation.atomicExchange(0, at: self.count, ordering: .relaxed)
         assert(oldCount == count)
         
         self.generation = self.generation &+ 1
@@ -1132,7 +1132,7 @@ public enum TextureViewBaseInfo {
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         @usableFromInline let labels : UnsafeMutablePointer<String?>
         /// The RenderGraphs that are currently using this resource.
-        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<AtomicUInt8>
+        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         
         init() {
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
@@ -1180,7 +1180,7 @@ public enum TextureViewBaseInfo {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: AtomicUInt8(0))
+            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
             
             return UInt64(truncatingIfNeeded: index)
         }
@@ -1234,7 +1234,7 @@ public enum TextureViewBaseInfo {
             
             for chunkIndex in 0..<self.chunkCount {
                 for i in 0..<Chunk.itemsPerChunk {
-                    CAtomicsBitwiseAnd(self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), renderGraphInactiveMask, .relaxed)
+                    UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
                 }
             }
         }

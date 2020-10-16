@@ -14,10 +14,10 @@ public final class QueueRegistry {
     
     public static let maxQueues = UInt8.bitWidth
     
-    public let lastSubmittedCommands : UnsafeMutablePointer<AtomicUInt64>
-    public let lastCompletedCommands : UnsafeMutablePointer<AtomicUInt64>
-    public let lastSubmissionTimes : UnsafeMutablePointer<AtomicUInt64>
-    public let lastCompletionTimes : UnsafeMutablePointer<AtomicUInt64>
+    public let lastSubmittedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
+    public let lastCompletedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
+    public let lastSubmissionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
+    public let lastCompletionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     
     var allocatedQueues : UInt8 = 0
     var lock = SpinLock()
@@ -46,11 +46,11 @@ public final class QueueRegistry {
                 if self.allocatedQueues & (1 << i) == 0 {
                     self.allocatedQueues |= (1 << i)
                     
-                    CAtomicsStore(self.lastSubmittedCommands.advanced(by: i), 0, .relaxed)
-                    CAtomicsStore(self.lastCompletedCommands.advanced(by: i), 0, .relaxed)
+                    UInt64.AtomicRepresentation.atomicStore(0, at: self.lastSubmittedCommands.advanced(by: i), ordering: .relaxed)
+                    UInt64.AtomicRepresentation.atomicStore(0, at: self.lastCompletedCommands.advanced(by: i), ordering: .relaxed)
                     
-                    CAtomicsStore(self.lastSubmissionTimes.advanced(by: i), 0, .relaxed)
-                    CAtomicsStore(self.lastCompletionTimes.advanced(by: i), 0, .relaxed)
+                    UInt64.AtomicRepresentation.atomicStore(0, at: self.lastSubmissionTimes.advanced(by: i), ordering: .relaxed)
+                    UInt64.AtomicRepresentation.atomicStore(0, at: self.lastCompletionTimes.advanced(by: i), ordering: .relaxed)
                     
                     return UInt8(i)
                 }
@@ -105,45 +105,45 @@ public struct Queue : Equatable {
     
     public internal(set) var lastSubmittedCommand : UInt64 {
         get {
-            return CAtomicsLoad(QueueRegistry.instance.lastSubmittedCommands.advanced(by: Int(self.index)), .relaxed)
+            return UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.instance.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
         }
         nonmutating set {
             assert(self.lastSubmittedCommand < newValue)
-            CAtomicsStore(QueueRegistry.instance.lastSubmittedCommands.advanced(by: Int(self.index)), newValue, .relaxed)
+            UInt64.AtomicRepresentation.atomicStore(newValue, at: QueueRegistry.instance.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
         }
     }
     
     /// The time at which the last command was submitted.
     public internal(set) var lastSubmissionTime : DispatchTime {
         get {
-            let time = CAtomicsLoad(QueueRegistry.instance.lastSubmissionTimes.advanced(by: Int(self.index)), .relaxed)
+            let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.instance.lastSubmissionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
             return DispatchTime(uptimeNanoseconds: time)
         }
         nonmutating set {
             assert(self.lastSubmissionTime < newValue)
-            CAtomicsStore(QueueRegistry.instance.lastSubmissionTimes.advanced(by: Int(self.index)), newValue.uptimeNanoseconds, .relaxed)
+            UInt64.AtomicRepresentation.atomicStore(newValue.uptimeNanoseconds, at: QueueRegistry.instance.lastSubmissionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
         }
     }
     
     public internal(set) var lastCompletedCommand : UInt64 {
         get {
-            return CAtomicsLoad(QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), .relaxed)
+            return UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
         }
         nonmutating set {
             assert(self.lastCompletedCommand < newValue)
-            CAtomicsStore(QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), newValue, .relaxed)
+            UInt64.AtomicRepresentation.atomicStore(newValue, at: QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
         }
     }
     
     /// The time at which the last command was completed.
     public internal(set) var lastCompletionTime : DispatchTime {
         get {
-            let time = CAtomicsLoad(QueueRegistry.instance.lastCompletionTimes.advanced(by: Int(self.index)), .relaxed)
+            let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.instance.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
             return DispatchTime(uptimeNanoseconds: time)
         }
         nonmutating set {
             assert(self.lastCompletionTime < newValue)
-            CAtomicsStore(QueueRegistry.instance.lastCompletionTimes.advanced(by: Int(self.index)), newValue.uptimeNanoseconds, .relaxed)
+            UInt64.AtomicRepresentation.atomicStore(newValue.uptimeNanoseconds, at: QueueRegistry.instance.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
         }
     }
     
