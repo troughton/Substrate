@@ -9,6 +9,14 @@ import SubstrateUtilities
 import Atomics
 import Dispatch
 
+#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+import Darwin
+#elseif os(Linux)
+import Glibc
+#elseif os(Windows)
+import CRT
+#endif
+
 public final class QueueRegistry {
     public static let instance = QueueRegistry()
     
