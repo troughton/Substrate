@@ -480,7 +480,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseArgumentBuffer(argumentBuffer), index: firstUsage.commandRange.lowerBound, order: .before))
                 }
                 
-                if !resource.flags.contains(.persistent), !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
+                if !resource.flags.contains(.persistent), !resource.flags.contains(.historyBuffer) || historyBufferUseFrame {
                     self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), index: disposalIndex, order: .after))
                 }
                 
@@ -491,7 +491,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseBuffer(buffer), index: firstUsage.commandRange.lowerBound, order: .before))
                     }
                     
-                    if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
+                    if !resource.flags.contains(.historyBuffer) || historyBufferUseFrame {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), index: disposalIndex, order: .after))
                     }
                     
@@ -509,7 +509,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         }
                     }
                     
-                    if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
+                    if !resource.flags.contains(.historyBuffer) || historyBufferUseFrame {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), index: disposalIndex, order: .after))
                     }
                 }
