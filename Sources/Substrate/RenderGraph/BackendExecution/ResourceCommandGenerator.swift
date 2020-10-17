@@ -518,7 +518,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             let lastWriteIndex = usagesArray.indexOfPreviousWrite(before: usagesArray.count, resource: resource)
             let lastWrite = lastWriteIndex.map { usagesArray[$0] }
             
-            if resource.flags.intersection([.persistent, .historyBuffer]) != [] {
+            if resource.flags.contains(.persistent) || historyBufferUseFrame {
                 // Prepare the resource for being used this frame. For Vulkan, this means computing the image layouts.
                 if let buffer = resource.buffer {
                     transientRegistry.prepareMultiframeBuffer(buffer)
