@@ -208,7 +208,7 @@ extension ImGui {
             }
         }
         #else
-        io.pointee.MousePos = ImVec2(x: mousePosition.x, y: mainScreenHeight - mousePosition.y)
+        io.pointee.MousePos = ImVec2(x: mousePosition.x, y: mousePosition.y)
         #endif
         
         io.pointee.MouseDown.0 = inputLayer[.mouseButtonLeft].isActive
