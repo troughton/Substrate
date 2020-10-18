@@ -362,7 +362,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             if renderTarget.descriptor.depthAttachment != nil || renderTarget.descriptor.stencilAttachment != nil {
                 clearValues.append(VkClearValue(depthStencil: VkClearDepthStencilValue(depth: Float(renderTarget.clearDepth), stencil: renderTarget.clearStencil)))
             }
-            
+
             for clearColor in self.renderTarget.clearColors {
                 clearValues.append(VkClearValue(color: clearColor))
             }
@@ -386,6 +386,8 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         // dynamic in Vulkan, and set sensible defaults.
         
         // See: https://www.khronos.org/registry/vulkan/specs/1.0/man/html/VkDynamicState.html
+        // There's also a new extended dynamic state extension in 1.2 which might be worth 
+        // looking at.
         
         var viewport = VkViewport(x: 0, y: Float(renderTargetRect.extent.height), width: Float(renderTargetRect.extent.width), height: -Float(renderTargetRect.extent.height), minDepth: 0, maxDepth: 1)
         vkCmdSetViewport(self.commandBuffer, 0, 1, &viewport)
