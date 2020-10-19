@@ -88,6 +88,16 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         guard lhs.frontFaceWinding == rhs.frontFaceWinding else { return false }
         guard lhs.layout == rhs.layout else { return false }
 
+        if lhs.renderTargetDescriptor.colorAttachments.count != rhs.renderTargetDescriptor.colorAttachments.count {
+            let sharedCount = min(lhs.renderTargetDescriptor.colorAttachments.count, rhs.renderTargetDescriptor.colorAttachments.count)
+            if !lhs.renderTargetDescriptor.colorAttachments.dropFirst(sharedCount).allSatisfy({ $0 == nil }) {
+                return false
+            }
+            if !rhs.renderTargetDescriptor.colorAttachments.dropFirst(sharedCount).allSatisfy({ $0 == nil }) {
+                return false
+            }
+        }
+
         for (attachmentA, attachmentB) in zip(lhs.renderTargetDescriptor.colorAttachments, rhs.renderTargetDescriptor.colorAttachments) {
             guard attachmentA?.texture.descriptor.pixelFormat == attachmentB?.texture.descriptor.pixelFormat else { return false }
             guard attachmentA?.texture.descriptor.sampleCount == attachmentB?.texture.descriptor.sampleCount else { return false }
