@@ -160,6 +160,11 @@ extension TextureData where T == Float {
     /// and Photoshop. Photoshop's behavior can be corrected by turning on "Blend RGB Colors using Gamma == 1.0" in the "Color Settings" dialog; however,
     /// for cases such as web browsers we just have to deal with the incorrect behavior.
     public mutating func convertPostmultSRGBBlendedSRGBToPremultLinearBlendedSRGB() {
+        if self.channelCount != 2 && self.channelCount != 4 {
+            self.alphaMode = .premultiplied
+            return
+        }
+        
         self.convertPostmultSRGBBlendedSRGBToPremultLinear()
         self.convert(toColorSpace: .sRGB)
     }
@@ -182,6 +187,7 @@ extension TextureData where T == Float {
         }
         
         if self.channelCount != 2 && self.channelCount != 4 {
+            self.convert(toColorSpace: .linearSRGB)
             return
         }
         
@@ -190,7 +196,6 @@ extension TextureData where T == Float {
         for y in 0..<self.height {
             for x in 0..<self.width {
                 let adjustedAlpha = self[x, y, channel: alphaChannel]
-                guard adjustedAlpha > 0 && adjustedAlpha < 1.0 else { continue }
                 
                 let alpha = 1.0 - TextureColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
                 
