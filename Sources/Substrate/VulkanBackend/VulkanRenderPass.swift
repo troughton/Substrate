@@ -88,7 +88,7 @@ class VulkanRenderPass {
 
         let attachmentReferences = ExpandingBuffer<VkAttachmentReference>(initialCapacity: attachmentReferenceCount)
         let preserveAttachmentIndices = ExpandingBuffer<UInt32>(initialCapacity: preserveAttachmentCount)
-        let resolveAttachmentIndices = ExpandingBuffer<VkAttachmentReference>(initialCapacity: resolveAttachmentCount)
+        let resolveAttachmentReferences = ExpandingBuffer<VkAttachmentReference>(initialCapacity: resolveAttachmentCount)
 
         var previousSubpass : VulkanSubpass? = nil
         for subpass in descriptor.subpasses {
@@ -107,15 +107,18 @@ class VulkanRenderPass {
             // TODO: handle depth resolve attachments using VK_KHR_depth_stencil_resolve: https://www.khronos.org/assets/uploads/developers/library/2019-gdc/Vulkan-Depth-Stencil-Resolve-GDC-Mar19.pdf
             
             subpassDescription.pColorAttachments = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferences.count))
-            subpassDescription.pResolveAttachments = UnsafePointer(resolveAttachmentIndices.buffer?.advanced(by: resolveAttachmentIndices.count))
+            subpassDescription.pResolveAttachments = UnsafePointer(resolveAttachmentReferences.buffer?.advanced(by: resolveAttachmentReferences.count))
             for (i, colorAttachment) in subpass.descriptor.colorAttachments.enumerated() {
                 if colorAttachment != nil {
                     let layout = subpass.inputAttachments.contains(.color(i)) ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
                     attachmentReferences.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[.color(i)]!), layout: layout))
-                    resolveAttachmentIndices.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[.colorResolve(i)]!), layout: VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL))
                 } else {
                     attachmentReferences.append(VkAttachmentReference(attachment: VK_ATTACHMENT_UNUSED, layout: VK_IMAGE_LAYOUT_GENERAL))
-                    resolveAttachmentIndices.append(VkAttachmentReference(attachment: VK_ATTACHMENT_UNUSED, layout: VK_IMAGE_LAYOUT_GENERAL))
+                }
+                if let resolveAttachmentIndex = attachmentIndices[.colorResolve(i)] {
+                    resolveAttachmentReferences.append(VkAttachmentReference(attachment: UInt32(resolveAttachmentIndex), layout: VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL))
+                } else {
+                    resolveAttachmentReferences.append(VkAttachmentReference(attachment: VK_ATTACHMENT_UNUSED, layout: VK_IMAGE_LAYOUT_GENERAL))
                 }
             }
             subpassDescription.colorAttachmentCount = UInt32(subpass.descriptor.colorAttachments.count)
