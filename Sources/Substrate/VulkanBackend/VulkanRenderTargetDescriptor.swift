@@ -18,6 +18,7 @@ enum MergeResult {
 enum RenderTargetAttachmentIndex : Hashable {
     case depthStencil
     case color(Int)
+    case colorResolve(Int)
 }
 
 final class VulkanSubpass {
@@ -61,6 +62,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var depthActions : (VkAttachmentLoadOp, VkAttachmentStoreOp) = (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE)
     var stencilActions : (VkAttachmentLoadOp, VkAttachmentStoreOp) = (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE)
     var colorPreviousAndNextUsageCommands : [(previous: Int, next: Int)] = []
+    var colorResolvePreviousAndNextUsageCommands : [(previous: Int, next: Int)] = []
     var depthPreviousAndNextUsageCommands = (previous: -1, next: -1)
     var stencilPreviousAndNextUsageCommands = (previous: -1, next: -1)
 
@@ -159,13 +161,13 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         while i < self.dependencies.count {
             defer { i += 1 }
             if  self.dependencies[i].srcSubpass == dependency.srcSubpass, 
-                self.dependencies[i].dstSubpass == dependency.dstSubpass {
+                self.dependencies[i].dstSubpass == dependency.dstSubpass,
+                self.dependencies[i].dependencyFlags == dependency.dependencyFlags {
                 
                 self.dependencies[i].srcStageMask |= dependency.srcStageMask
                 self.dependencies[i].dstStageMask |= dependency.dstStageMask
                 self.dependencies[i].srcAccessMask |= dependency.srcAccessMask
                 self.dependencies[i].dstAccessMask |= dependency.dstAccessMask
-                self.dependencies[i].dependencyFlags |= dependency.dependencyFlags
                 return
             }
         }
@@ -223,6 +225,10 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             }
         }
         
+        if newDescriptor.colorAttachments.count != passDescriptor.colorAttachments.count {
+            mergeResult = .compatible
+        }
+        
         switch self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: passDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
         case .identical:
             break
@@ -242,18 +248,14 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
         
         switch mergeResult {
-        case .identical, .compatible:
+        case .identical:
             self.subpasses.append(self.subpasses.last!) // They can share the same subpass.
         case .incompatible:
             return false
-        // case .compatible: // TODO: correctly handle multiple subpasses.
-        //     let lastSubpassIndex = self.subpasses.last!.index
-        //     self.subpasses.append(VulkanSubpass(descriptor: newDescriptor, index: lastSubpassIndex + 1))
-        //     var dependency = VkSubpassDependency()
-        //     dependency.srcSubpass = UInt32(lastSubpassIndex)
-        //     dependency.dstSubpass = dependency.srcSubpass + 1
-        //     // No barriers needed for now.
-        //     self.addDependency(dependency)
+         case .compatible:
+            let lastSubpassIndex = self.subpasses.last!.index
+            self.subpasses.append(VulkanSubpass(descriptor: newDescriptor, index: lastSubpassIndex + 1))
+            // We'll add the dependencies later.
         }
         
         if newDescriptor.visibilityResultBuffer != nil && passDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
@@ -298,34 +300,52 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         // Then, figure out dependencies; self-dependency if it's used as both an input and output attachment (implying GENERAL layout),
         // or inter-pass dependencies otherwise.
         
-        let isDepthStencil = (attachment is DepthAttachmentDescriptor) || (attachment is StencilAttachmentDescriptor)
+        let texture: Texture
+        let slice: Int
+        let level: Int
+        
+        if case .colorResolve = attachmentIndex {
+            guard let resolveTexture = attachment.resolveTexture else { return }
+            texture = resolveTexture
+            slice = attachment.resolveSlice
+            level = attachment.resolveLevel
+        } else {
+            texture = attachment.texture
+            slice = attachment.slice
+            level = attachment.level
+        }
+        
+        let isDepthStencil = .depthStencil ~= attachmentIndex
         
         let renderPassRange = Range(self.renderPasses.first!.passIndex...self.renderPasses.last!.passIndex)
         assert(renderPassRange.count == self.renderPasses.count)
 
-        let usages = attachment.texture.usages
+        let usages = texture.usages
         var usageIterator = usages.makeIterator()
-        var isFirstUsage = !attachment.texture.stateFlags.contains(.initialised)
-        var isLastUsage = attachment.texture.flags.intersection([.persistent, .windowHandle]) == [] && 
-                          !(attachment.texture.flags.contains(.historyBuffer) && !attachment.texture.stateFlags.contains(.initialised))
+        var isFirstUsage = !texture.stateFlags.contains(.initialised)
+        var isLastUsage = texture.flags.intersection([.persistent, .windowHandle]) == [] &&
+                          !(texture.flags.contains(.historyBuffer) && !texture.stateFlags.contains(.initialised))
         var currentRenderPassIndex = renderPassRange.lowerBound
         
         var isFirstLocalUsage = true
 
-        var lastUsageBeforeIndex = -1
-        var firstUsageAfterIndex = -1
+        var lastUsageBeforeCommandIndex = -1
+        var firstUsageAfterCommandIndex = -1
+        
+        var previousWrite: ResourceUsage? = nil
+        var previousWriteSubpass: Int = -1
         
         while let usage = usageIterator.next() {
-            if !usage.renderPassRecord.isActive || !usage.activeRange.intersects(textureSlice: attachment.slice, level: attachment.level, descriptor: attachment.texture.descriptor) { continue }
+            if !usage.renderPassRecord.isActive || !usage.activeRange.intersects(textureSlice: slice, level: level, descriptor: texture.descriptor) { continue }
             
             if usage.renderPassRecord.passIndex < renderPassRange.lowerBound {
                 isFirstUsage = false
-                lastUsageBeforeIndex = usage.commandRange.last!
+                lastUsageBeforeCommandIndex = usage.commandRange.last!
                 continue
             }
             if usage.renderPassRecord.passIndex >= renderPassRange.upperBound {
-                if firstUsageAfterIndex < 0 {
-                    firstUsageAfterIndex = usage.commandRange.first!
+                if firstUsageAfterCommandIndex < 0 {
+                    firstUsageAfterCommandIndex = usage.commandRange.first!
                 }
                 if usage.isRead || (usage.type.isRenderTarget && isDepthStencil) {
                     // Using a depth texture as an attachment also implies reading from it.
@@ -336,9 +356,9 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
                 }
             }
             
-            let usageSubpass = self.subpassForPassIndex(usage.renderPassRecord.passIndex)
+            let usageSubpass = self.subpassForPassIndex(usage.renderPassRecord.passIndex)!
 
-            while self.subpassForPassIndex(currentRenderPassIndex)!.index < usageSubpass!.index {
+            while self.subpassForPassIndex(currentRenderPassIndex)!.index < usageSubpass.index {
                 if isFirstLocalUsage {
                     currentRenderPassIndex = usage.renderPassRecord.passIndex
                     isFirstLocalUsage = false
@@ -348,7 +368,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
                 }
             }
             
-            assert(usageSubpass!.index == self.subpassForPassIndex(currentRenderPassIndex)!.index)
+            assert(usageSubpass.index == self.subpassForPassIndex(currentRenderPassIndex)!.index)
             
             if usage.type == .read || usage.type == .inputAttachment || usage.type == .readWrite {
                 if usage.type == .readWrite {
@@ -356,7 +376,23 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
                 }
                 self.subpasses[usage.renderPassRecord.passIndex - renderPassRange.lowerBound].readFrom(attachmentIndex: attachmentIndex)
             }
+            
+            if let previousWrite = previousWrite {
+                var dependency = VkSubpassDependency()
+                dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT.rawValue
+                dependency.srcSubpass = UInt32(previousWriteSubpass)
+                dependency.dstSubpass = UInt32(usageSubpass.index)
+                dependency.srcStageMask = previousWrite.type.shaderStageMask(isDepthOrStencil: isDepthStencil, stages: previousWrite.stages).rawValue
+                dependency.srcAccessMask = previousWrite.type.accessMask(isDepthOrStencil: isDepthStencil).rawValue
+                dependency.dstStageMask = usage.type.shaderStageMask(isDepthOrStencil: isDepthStencil, stages: usage.stages).rawValue
+                dependency.dstAccessMask = usage.type.accessMask(isDepthOrStencil: isDepthStencil).rawValue
+                self.addDependency(dependency)
+            }
 
+            if usage.type.isWrite {
+                previousWrite = usage
+                previousWriteSubpass = usageSubpass.index
+            }
         }
 
         var loadAction = loadAction
@@ -373,22 +409,30 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         switch attachmentIndex {
         case .color(let index):
             self.colorActions[index] = (loadAction, storeAction)
-            self.colorPreviousAndNextUsageCommands[index] = (lastUsageBeforeIndex, firstUsageAfterIndex)
+            self.colorPreviousAndNextUsageCommands[index] = (lastUsageBeforeCommandIndex, firstUsageAfterCommandIndex)
+        case .colorResolve(let index):
+            self.colorResolvePreviousAndNextUsageCommands[index] = (lastUsageBeforeCommandIndex, firstUsageAfterCommandIndex)
         case .depthStencil where attachment is DepthAttachmentDescriptor:
             self.depthActions = (loadAction, storeAction)
-            self.depthPreviousAndNextUsageCommands = (lastUsageBeforeIndex, firstUsageAfterIndex)
+            self.depthPreviousAndNextUsageCommands = (lastUsageBeforeCommandIndex, firstUsageAfterCommandIndex)
         case .depthStencil:
             self.stencilActions = (loadAction, storeAction)
-            self.stencilPreviousAndNextUsageCommands = (lastUsageBeforeIndex, firstUsageAfterIndex)
+            self.stencilPreviousAndNextUsageCommands = (lastUsageBeforeCommandIndex, firstUsageAfterCommandIndex)
         }
     }
     
     func finalise(storedTextures: inout [Texture]) {
+        self.dependencies.reserveCapacity(self.subpasses.count + 1) // One before each subpass and one after all of them.
+        
         // Compute load and store actions for all attachments.
         self.colorPreviousAndNextUsageCommands = .init(repeating: (-1, -1), count: self.descriptor.colorAttachments.count)
+        self.colorResolvePreviousAndNextUsageCommands = .init(repeating: (-1, -1), count: self.descriptor.colorAttachments.count)
         for (i, attachment) in self.descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             self.processLoadAndStoreActions(for: attachment, attachmentIndex: .color(i), loadAction: self.colorActions[i].0, storedTextures: &storedTextures)
+            if attachment.resolveTexture != nil {
+                self.processLoadAndStoreActions(for: attachment, attachmentIndex: .colorResolve(i), loadAction: VK_ATTACHMENT_LOAD_OP_DONT_CARE, storedTextures: &storedTextures)
+            }
         }
         
         if let depthAttachment = self.descriptor.depthAttachment {

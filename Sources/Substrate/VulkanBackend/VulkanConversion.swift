@@ -729,11 +729,11 @@ extension VkPrimitiveTopology {
 }
 
 extension VkAttachmentDescription {
-    public init(pixelFormat: PixelFormat, renderTargetDescriptor: ColorAttachmentDescriptor, actions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
+    public init(descriptor: TextureDescriptor, renderTargetDescriptor: ColorAttachmentDescriptor, actions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
         self.init()
         self.flags = 0
-        self.format = VkFormat(pixelFormat: pixelFormat)!
-        self.samples = VK_SAMPLE_COUNT_1_BIT
+        self.format = VkFormat(pixelFormat: descriptor.pixelFormat)!
+        self.samples = VkSampleCountFlagBits(rawValue: UInt32(descriptor.sampleCount))
         self.loadOp = actions.0
         self.storeOp = actions.1
         self.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE // This is a color attachment
@@ -742,11 +742,11 @@ extension VkAttachmentDescription {
         self.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     }
     
-    public init(pixelFormat: PixelFormat, renderTargetDescriptor: DepthAttachmentDescriptor, depthActions: (VkAttachmentLoadOp, VkAttachmentStoreOp), stencilActions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
+    public init(descriptor: TextureDescriptor, renderTargetDescriptor: DepthAttachmentDescriptor, depthActions: (VkAttachmentLoadOp, VkAttachmentStoreOp), stencilActions: (VkAttachmentLoadOp, VkAttachmentStoreOp)) {
         self.init()
         self.flags = 0
-        self.format = VkFormat(pixelFormat: pixelFormat)!
-        self.samples = VK_SAMPLE_COUNT_1_BIT
+        self.format = VkFormat(pixelFormat: descriptor.pixelFormat)!
+        self.samples = VkSampleCountFlagBits(rawValue: UInt32(descriptor.sampleCount))
         self.loadOp = depthActions.0
         self.storeOp = depthActions.1
         self.stencilLoadOp = stencilActions.0
