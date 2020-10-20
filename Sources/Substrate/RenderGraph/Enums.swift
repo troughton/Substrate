@@ -397,6 +397,29 @@ extension PixelFormat {
             return false
         }
     }
+    
+    public var isUnnormalisedUInt: Bool {
+        switch self {
+        case .r8Uint, .rg8Uint, .rgba8Uint,
+             .r16Uint, .rg16Uint, .rgba16Uint,
+             .r32Uint, .rg32Uint, .rgba32Uint,
+             .rgb10a2Uint:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    public var isUnnormalisedSInt: Bool {
+        switch self {
+        case .r8Sint, .rg8Sint, .rgba8Sint,
+             .r16Sint, .rg16Sint, .rgba16Sint,
+             .r32Sint, .rg32Sint, .rgba32Sint:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 @available(OSX 10.11, *)

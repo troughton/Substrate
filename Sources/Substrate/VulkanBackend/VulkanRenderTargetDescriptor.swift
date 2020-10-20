@@ -87,15 +87,32 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         self.colorActions.append(contentsOf: repeatElement((VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE), count: attachmentsToAddCount))
         
         for i in 0..<descriptor.colorAttachments.count {
-            if descriptor.colorAttachments[i] != nil {
+            if let attachment = descriptor.colorAttachments[i] {
                 switch (pass.colorClearOperation(attachmentIndex: i), self.colorActions[i].0) {
                 case (.clear(let color), _):
-                    self.clearColors[i] = VkClearColorValue(float32: 
-                        (Float(color.red), 
-                        Float(color.green), 
-                        Float(color.blue), 
-                        Float(color.alpha))
-                    )
+                    let pixelFormat = attachment.texture.descriptor.pixelFormat
+                    if pixelFormat.isUnnormalisedUInt {
+                        self.clearColors[i] = VkClearColorValue(uint32: 
+                            (UInt32(color.red), 
+                            UInt32(color.green), 
+                            UInt32(color.blue), 
+                            UInt32(color.alpha))
+                        )
+                    } else if pixelFormat.isUnnormalisedSInt {
+                        self.clearColors[i] = VkClearColorValue(int32: 
+                            (Int32(color.red), 
+                            Int32(color.green), 
+                            Int32(color.blue), 
+                            Int32(color.alpha))
+                        )
+                    } else {
+                        self.clearColors[i] = VkClearColorValue(float32: 
+                            (Float(color.red), 
+                            Float(color.green), 
+                            Float(color.blue), 
+                            Float(color.alpha))
+                        )
+                    }
                     self.colorActions[i].0 = VK_ATTACHMENT_LOAD_OP_CLEAR
                 case (.keep, VK_ATTACHMENT_LOAD_OP_DONT_CARE):
                     self.colorActions[i].0 = VK_ATTACHMENT_LOAD_OP_LOAD
@@ -341,7 +358,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             }
 
         }
-        
+
         var loadAction = loadAction
         if isFirstUsage, loadAction == VK_ATTACHMENT_LOAD_OP_LOAD {
             loadAction = VK_ATTACHMENT_LOAD_OP_DONT_CARE
@@ -368,7 +385,6 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     
     func finalise(storedTextures: inout [Texture]) {
         // Compute load and store actions for all attachments.
-        self.colorActions = .init(repeating: (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE), count: self.descriptor.colorAttachments.count)
         self.colorPreviousAndNextUsageCommands = .init(repeating: (-1, -1), count: self.descriptor.colorAttachments.count)
         for (i, attachment) in self.descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }

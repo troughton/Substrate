@@ -16,13 +16,11 @@ extension TextureData where T == UInt8 {
     /// and Photoshop. Photoshop's behavior can be corrected by turning on "Blend RGB Colors using Gamma == 1.0" in the "Color Settings" dialog; however,
     /// for cases such as web browsers we just have to deal with the incorrect behavior.
     public mutating func convertPremultLinearBlendedSRGBToPostmultSRGBBlendedSRGB() {
+        if self.alphaMode == .none { return }
+        
         precondition(self.alphaMode == .premultiplied, "The texture must use premultiplied alpha.")
         precondition(self.colorSpace == .sRGB, "The texture must be in the sRGB color space.")
         defer { self.alphaMode = .postmultiplied }
-        
-        if self.channelCount != 2 && self.channelCount != 4 {
-            return
-        }
         
         self.ensureUniqueness()
         
@@ -49,13 +47,11 @@ extension TextureData where T == UInt8 {
     /// and Photoshop. Photoshop's behavior can be corrected by turning on "Blend RGB Colors using Gamma == 1.0" in the "Color Settings" dialog; however,
     /// for cases such as web browsers we just have to deal with the incorrect behavior.
     public mutating func convertPostmultSRGBBlendedSRGBToPremultLinearBlendedSRGB() {
+        if self.alphaMode == .none { return }
+        
         precondition(self.alphaMode == .postmultiplied, "The texture must use postmultiplied alpha.")
         precondition(self.colorSpace == .sRGB, "The texture must be in the sRGB color space.")
         defer { self.alphaMode = .premultiplied }
-        
-        if self.channelCount != 2 && self.channelCount != 4 {
-            return
-        }
         
         self.ensureUniqueness()
         
@@ -85,14 +81,12 @@ extension TextureData where T == Float {
     /// and Photoshop. Photoshop's behavior can be corrected by turning on "Blend RGB Colors using Gamma == 1.0" in the "Color Settings" dialog; however,
     /// for cases such as web browsers we just have to deal with the incorrect behavior.
     public mutating func convertPremultLinearBlendedSRGBToPostmultSRGBBlendedSRGB() {
+        if self.alphaMode == .none { return }
+        
         precondition(self.alphaMode == .premultiplied, "The texture must use postmultiplied alpha.")
         precondition(self.colorSpace == .sRGB, "The texture must be in the sRGB color space.")
         
         defer { self.alphaMode = .postmultiplied }
-        
-        if self.channelCount != 2 && self.channelCount != 4 {
-            return
-        }
         
         /*
          Assume postmultiplied alpha:
@@ -160,6 +154,10 @@ extension TextureData where T == Float {
     /// and Photoshop. Photoshop's behavior can be corrected by turning on "Blend RGB Colors using Gamma == 1.0" in the "Color Settings" dialog; however,
     /// for cases such as web browsers we just have to deal with the incorrect behavior.
     public mutating func convertPostmultSRGBBlendedSRGBToPremultLinearBlendedSRGB() {
+        if self.alphaMode == .none {
+            return
+        }
+        
         self.convertPostmultSRGBBlendedSRGBToPremultLinear()
         self.convert(toColorSpace: .sRGB)
     }
@@ -174,6 +172,11 @@ extension TextureData where T == Float {
     /// and Photoshop. Photoshop's behavior can be corrected by turning on "Blend RGB Colors using Gamma == 1.0" in the "Color Settings" dialog; however,
     /// for cases such as web browsers we just have to deal with the incorrect behavior.
     public mutating func convertPostmultSRGBBlendedSRGBToPremultLinear() {
+        if self.alphaMode == .none {
+            self.convert(toColorSpace: .linearSRGB)
+            return
+        }
+        
         precondition(self.alphaMode == .postmultiplied, "The texture must use postmultiplied alpha.")
         precondition(self.colorSpace == .sRGB, "The texture must be in the sRGB color space.")
         defer {
@@ -181,16 +184,11 @@ extension TextureData where T == Float {
             self.colorSpace = .linearSRGB
         }
         
-        if self.channelCount != 2 && self.channelCount != 4 {
-            return
-        }
-        
         let alphaChannel = self.channelCount - 1
         
         for y in 0..<self.height {
             for x in 0..<self.width {
                 let adjustedAlpha = self[x, y, channel: alphaChannel]
-                guard adjustedAlpha > 0 && adjustedAlpha < 1.0 else { continue }
                 
                 let alpha = 1.0 - TextureColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
                 

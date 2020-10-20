@@ -9,7 +9,7 @@
 
 import Metal
 import SubstrateUtilities
-import CAtomics
+import Atomics
 
 enum MetalCompactedResourceCommandType {
     // These commands need to be executed during render pass execution and do not modify the MetalResourceRegistry.

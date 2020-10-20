@@ -126,7 +126,7 @@ extension VulkanBackend {
                         let pixelFormat = textureDescriptor.pixelFormat
                         isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                         
-                        let image = resource.texture.map({ resourceMap[$0].image })!
+                        let image = resourceMap[texture].image
                         
                         var barrier = VkImageMemoryBarrier()
                         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
@@ -335,7 +335,6 @@ extension VulkanBackend {
                 }
                 
                 destinationLayout = image.layout(commandIndex: beforeCommand, subresourceRange: activeRange)
-
             } else {
                 assert(resource.type != .texture || resource.flags.contains(.windowHandle))
                 sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED
@@ -523,9 +522,11 @@ extension VulkanBackend {
             }
         }
         
-        if barrierLastIndex < .max {
+        if barrierLastIndex < .max || layoutTransitionOnlyBarrierLastIndex < .max {
             addBarrier(&compactedResourceCommands)
         }
+
+        assert(layoutTransitionOnlyBarriers.isEmpty)
         
         compactedResourceCommands.sort()
     }

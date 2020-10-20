@@ -121,9 +121,8 @@ public class Application {
     func updateFrameUpdateables(frame: UInt64, deltaTime: Double) {
         if !self.windows.isEmpty {
             ImGui.beginFrame(windows: self.windows, inputLayer: self.imguiInputLayer, deltaTime: deltaTime)
+            self.delegate?.applicationDidBeginImGuiFrame(self, frame: frame, deltaTime: deltaTime)
         }
-        
-        self.delegate?.applicationDidBeginImGuiFrame(self, frame: frame, deltaTime: deltaTime)
         
         self.updateables.forEach {
             $0.update(frame: frame, deltaTime: deltaTime)

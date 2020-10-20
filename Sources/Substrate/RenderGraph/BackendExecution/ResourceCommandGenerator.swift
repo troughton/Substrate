@@ -480,7 +480,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseArgumentBuffer(argumentBuffer), index: firstUsage.commandRange.lowerBound, order: .before))
                 }
                 
-                if !resource.flags.contains(.persistent), !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
+                if !resource.flags.contains(.persistent), !resource.flags.contains(.historyBuffer) || historyBufferUseFrame {
                     self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), index: disposalIndex, order: .after))
                 }
                 
@@ -491,7 +491,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseBuffer(buffer), index: firstUsage.commandRange.lowerBound, order: .before))
                     }
                     
-                    if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
+                    if !resource.flags.contains(.historyBuffer) || historyBufferUseFrame {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), index: disposalIndex, order: .after))
                     }
                     
@@ -509,7 +509,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         }
                     }
                     
-                    if !resource.flags.contains(.historyBuffer) || resource.stateFlags.contains(.initialised), !historyBufferUseFrame {
+                    if !resource.flags.contains(.historyBuffer) || historyBufferUseFrame {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), index: disposalIndex, order: .after))
                     }
                 }
@@ -518,7 +518,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             let lastWriteIndex = usagesArray.indexOfPreviousWrite(before: usagesArray.count, resource: resource)
             let lastWrite = lastWriteIndex.map { usagesArray[$0] }
             
-            if resource.flags.intersection([.persistent, .historyBuffer]) != [] {
+            if resource.flags.contains(.persistent) || historyBufferUseFrame {
                 // Prepare the resource for being used this frame. For Vulkan, this means computing the image layouts.
                 if let buffer = resource.buffer {
                     transientRegistry.prepareMultiframeBuffer(buffer)

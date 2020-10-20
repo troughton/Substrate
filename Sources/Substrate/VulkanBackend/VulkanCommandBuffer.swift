@@ -16,6 +16,10 @@ import Foundation
 // and should be freed once the command buffer has finished execution.
 public final class VulkanCommandBuffer: BackendCommandBuffer {
     typealias Backend = VulkanBackend
+
+    struct Error: Swift.Error {
+        public var result: VkResult
+    }
     
     static let semaphoreSignalQueue = DispatchQueue(label: "Vulkan Semaphore Signal Queue")
     
@@ -189,15 +193,17 @@ public final class VulkanCommandBuffer: BackendCommandBuffer {
                 waitInfo.pSemaphores = signalSemaphores.baseAddress
                 waitInfo.pValues = UnsafePointer(self.signalSemaphoreSignalValues.buffer)
                 waitInfo.semaphoreCount = UInt32(signalTimelineSemaphoreCount)
-                vkWaitSemaphores(self.queue.device.vkDevice, &waitInfo, .max).check()
+                let timeout: UInt64 = 10_000_000_000 // 10s
+                let result = vkWaitSemaphores(self.queue.device.vkDevice, &waitInfo, timeout)
+                if result != VK_SUCCESS {
+                    self.error = Error(result: result)
+                }
             }
             onCompletion(self)
         }
     }
     
-    var error: Error? {
-        return nil
-    }
+    private(set) var error: Swift.Error?
 }
 
 

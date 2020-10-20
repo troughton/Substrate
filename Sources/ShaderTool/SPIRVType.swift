@@ -206,7 +206,7 @@ extension SPIRVType : CustomStringConvertible {
         case .double:
             return "Double"
         case .atomicCounter:
-            return "AtomicUInt32"
+            return "UInt32.AtomicRepresentation"
         case .packedVector(let element, let length):
             return "PackedVector\(length)<\(element)>"
         case .vector(.half, let length):

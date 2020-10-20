@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 8/05/19.
 //
 
-import CAtomics
+import Atomics
 import Foundation
 
 @usableFromInline
@@ -30,12 +30,12 @@ func yieldCPU() {
 
 /// An implementation of a spin-lock using test-and-swap
 public struct SpinLock {
-    @usableFromInline let value : UnsafeMutablePointer<AtomicUInt32>
+    @usableFromInline let value : UnsafeMutablePointer<UInt32.AtomicRepresentation>
 
     @inlinable
     public init() {
-        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<AtomicUInt32>.size, alignment: 64).assumingMemoryBound(to: AtomicUInt32.self)
-        CAtomicsStore(self.value, LockState.free.rawValue, .relaxed)
+        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<UInt32.AtomicRepresentation>.size, alignment: 64).assumingMemoryBound(to: UInt32.AtomicRepresentation.self)
+        UInt32.AtomicRepresentation.atomicStore(LockState.free.rawValue, at: self.value, ordering: .relaxed)
     }
     
     @inlinable
@@ -46,21 +46,21 @@ public struct SpinLock {
     @inlinable
     public var isLocked : Bool {
         get {
-            return CAtomicsLoad(self.value, .relaxed) == LockState.taken.rawValue
+            return UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue
         }
     }
     
     @inlinable
     public func lock() {
-        while CAtomicsLoad(self.value, .relaxed) == LockState.taken.rawValue ||
-            CAtomicsExchange(self.value, LockState.taken.rawValue, .relaxed) == LockState.taken.rawValue {
+        while UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue ||
+                UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: self.value, ordering: .relaxed) == LockState.taken.rawValue {
             yieldCPU()
         }
     }
     
     @inlinable
     public func unlock() {
-        _ = CAtomicsExchange(self.value, LockState.free.rawValue, .relaxed)
+        _ = UInt32.AtomicRepresentation.atomicExchange(LockState.free.rawValue, at: self.value, ordering: .relaxed)
     }
     
     @inlinable
@@ -73,12 +73,12 @@ public struct SpinLock {
 }
 
 public struct Semaphore {
-    @usableFromInline let value : UnsafeMutablePointer<AtomicInt32>
+    @usableFromInline let value : UnsafeMutablePointer<Int32.AtomicRepresentation>
     
     @inlinable
     public init(value: Int32) {
-        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<AtomicInt32>.size, alignment: 64).assumingMemoryBound(to: AtomicInt32.self)
-        CAtomicsStore(self.value, value, .relaxed)
+        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<Int32.AtomicRepresentation>.size, alignment: 64).assumingMemoryBound(to: Int32.AtomicRepresentation.self)
+        Int32.AtomicRepresentation.atomicStore(value, at: self.value, ordering: .relaxed)
     }
     
     @inlinable
@@ -88,20 +88,20 @@ public struct Semaphore {
     
     @inlinable
     public func signal() {
-        CAtomicsAdd(self.value, 1, .relaxed)
+        Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.value, ordering: .relaxed)
     }
     
     @inlinable
     public func signal(count: Int) {
-        CAtomicsAdd(self.value, Int32(count), .relaxed)
+        Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(by: Int32(count), at: self.value, ordering: .relaxed)
     }
     
     @inlinable
     public func wait() {
         // If the value was greater than 0, we can proceed immediately.
-        while CAtomicsSubtract(self.value, 1, .relaxed) <= 0 {
+        while Int32.AtomicRepresentation.atomicLoadThenWrappingDecrement(at: self.value, ordering: .relaxed) <= 0 {
             // Otherwise, reset and try again.
-            CAtomicsAdd(self.value, 1, .relaxed)
+            Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.value, ordering: .relaxed)
             yieldCPU()
         }
     }

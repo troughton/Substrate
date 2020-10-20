@@ -6,7 +6,7 @@
 //
 
 import SubstrateUtilities
-import CAtomics
+import Atomics
 
 public struct PersistentResourceMap<R : ResourceProtocol, V> {
     
@@ -251,9 +251,9 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     public mutating func prepareFrame() {
         switch R.self {
         case is Buffer.Type:
-            self.count = CAtomicsLoad(TransientBufferRegistry.instances[self.transientRegistryIndex].count, .relaxed)
+            self.count = Int.AtomicRepresentation.atomicLoad(at: TransientBufferRegistry.instances[self.transientRegistryIndex].count, ordering: .relaxed)
         case is Texture.Type:
-            self.count = CAtomicsLoad(TransientTextureRegistry.instances[self.transientRegistryIndex].count, .relaxed)
+            self.count = Int.AtomicRepresentation.atomicLoad(at: TransientTextureRegistry.instances[self.transientRegistryIndex].count, ordering: .relaxed)
         case is _ArgumentBuffer.Type:
             let count = TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].count
             self.reserveCapacity(count)

@@ -6,7 +6,7 @@
 //
 
 import SubstrateUtilities
-import CAtomics
+import Atomics
 
 public enum ResourceType : UInt8 {
     case buffer = 1
@@ -632,7 +632,7 @@ public struct Heap : ResourceProtocol {
     }
     
     @inlinable
-    public var descriptor : HeapDescriptor {
+    public internal(set) var descriptor : HeapDescriptor {
         get {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             return HeapRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
@@ -672,7 +672,7 @@ public struct Heap : ResourceProtocol {
             return true
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
-        let activeRenderGraphMask = CAtomicsLoad(HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), .relaxed)
+        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
         if activeRenderGraphMask != 0 {
             return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
         }
@@ -684,7 +684,7 @@ public struct Heap : ResourceProtocol {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
-        CAtomicsBitwiseOr(HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), renderGraphIndexMask, .relaxed)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: renderGraphIndexMask, at: HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
 
     public func dispose() {
@@ -915,7 +915,7 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public var descriptor : BufferDescriptor {
+    public internal(set) var descriptor : BufferDescriptor {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
@@ -1042,7 +1042,7 @@ public struct Buffer : ResourceProtocol {
             return true
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-        let activeRenderGraphMask = CAtomicsLoad(PersistentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), .relaxed)
+        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: PersistentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
         if activeRenderGraphMask != 0 {
             return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
         }
@@ -1061,7 +1061,7 @@ public struct Buffer : ResourceProtocol {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-        CAtomicsBitwiseOr(PersistentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), renderGraphIndexMask, .relaxed)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: renderGraphIndexMask, at: PersistentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
 
     public func dispose() {
@@ -1277,7 +1277,7 @@ public struct Texture : ResourceProtocol {
     }
     
     @inlinable
-    public var descriptor : TextureDescriptor {
+    public internal(set) var descriptor : TextureDescriptor {
         get {
             let index = self.index
             if self._usesPersistentRegistry {
@@ -1430,7 +1430,7 @@ public struct Texture : ResourceProtocol {
             return true
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-        let activeRenderGraphMask = CAtomicsLoad(PersistentTextureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), .relaxed)
+        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: PersistentTextureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
         if activeRenderGraphMask != 0 {
             return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
         }
@@ -1450,7 +1450,7 @@ public struct Texture : ResourceProtocol {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-        CAtomicsBitwiseOr(PersistentTextureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), renderGraphIndexMask, .relaxed)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: renderGraphIndexMask, at: PersistentTextureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
     
     public func dispose() {

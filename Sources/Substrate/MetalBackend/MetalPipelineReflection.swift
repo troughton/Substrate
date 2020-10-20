@@ -149,7 +149,7 @@ final class MetalPipelineReflection : PipelineReflection {
             for member in elementStruct.members {
                 if isArgumentBuffer {
                     let arrayLength = member.arrayType()?.arrayLength ?? 1
-                    argumentBufferBindingCount = max(member.argumentIndex + arrayLength, argumentBufferBindingCount)
+                    argumentBufferBindingCount += arrayLength
                 }
 
                 // Ignore pipeline stages for resources contained within argument buffers.

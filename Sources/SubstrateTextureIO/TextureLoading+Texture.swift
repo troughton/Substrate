@@ -84,6 +84,9 @@ public struct TextureLoadingOptions: OptionSet {
     /// For example, when loading an sRGB texture with a color value of 0.0 and an alpha value of 0.5, blending the texture onto a white background will result in an image with a value of 0.5 in sRGB space rather than a value of 0.5 in linear space.
     public static let assumeSourceImageUsesGammaSpaceBlending = TextureLoadingOptions(rawValue: 1 << 2)
     
+    /// When loading a texture with an undefined color space, treat that texture's contents as being sRGB.
+    public static let mapUndefinedColorSpaceToSRGB = TextureLoadingOptions(rawValue: 1 << 3)
+    
     public static let `default`: TextureLoadingOptions = [.autoConvertColorSpace, .autoExpandSRGBToRGBA]
 }
 
@@ -126,7 +129,7 @@ extension Texture {
         }
     }
     
-    public init(fileAt url: URL, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, mipmapped: Bool, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, options: TextureLoadingOptions = .default) throws {
+    public init(fileAt url: URL, colorSpace: TextureColorSpace = .undefined, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .none, mipmapped: Bool, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, options: TextureLoadingOptions = .default) throws {
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         
         self = Texture._createPersistentTextureWithoutDescriptor(flags: .persistent)
@@ -148,15 +151,23 @@ extension Texture {
         
         if url.pathExtension.lowercased() == "exr" {
             var textureData = try TextureData<Float>(exrAt: url)
+            if colorSpace != .undefined {
+                textureData.reinterpretColor(as: colorSpace)
+            } else if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
+                textureData.reinterpretColor(as: .sRGB)
+            }
             
             let pixelFormat = textureData.pixelFormat
             guard pixelFormat != .invalid else {
                 throw TextureLoadingError.noSupportedPixelFormat
             }
-            if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
-                textureData.convert(toColorSpace: .sRGB)
-            } else if !pixelFormat.isSRGB, textureData.colorSpace == .sRGB {
-                textureData.convert(toColorSpace: .linearSRGB)
+            
+            if options.contains(.autoConvertColorSpace) {
+                if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
+                    textureData.convert(toColorSpace: .sRGB)
+                } else if !pixelFormat.isSRGB {
+                    textureData.convert(toColorSpace: .linearSRGB)
+                }
             }
             
             switch gpuAlphaMode {
@@ -184,6 +195,10 @@ extension Texture {
             
             if isHDR {
                 var textureData = try TextureData<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+                if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
+                    textureData.reinterpretColor(as: .sRGB)
+                }
+                
                 let pixelFormat = textureData.pixelFormat
                 guard pixelFormat != .invalid else {
                     throw TextureLoadingError.noSupportedPixelFormat
@@ -191,7 +206,7 @@ extension Texture {
                 if options.contains(.autoConvertColorSpace) {
                     if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
                         textureData.convert(toColorSpace: .sRGB)
-                    } else if !pixelFormat.isSRGB, textureData.colorSpace == .sRGB {
+                    } else if !pixelFormat.isSRGB {
                         textureData.convert(toColorSpace: .linearSRGB)
                     }
                 }
@@ -216,15 +231,19 @@ extension Texture {
                 
             } else if is16Bit {
                 var textureData = try TextureData<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+                if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
+                    textureData.reinterpretColor(as: .sRGB)
+                }
                 
                 let pixelFormat = textureData.pixelFormat
                 guard pixelFormat != .invalid else {
                     throw TextureLoadingError.noSupportedPixelFormat
                 }
+                
                 if options.contains(.autoConvertColorSpace) {
                     if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
                         textureData.convert(toColorSpace: .sRGB)
-                    } else if !pixelFormat.isSRGB, textureData.colorSpace == .sRGB {
+                    } else if !pixelFormat.isSRGB {
                         textureData.convert(toColorSpace: .linearSRGB)
                     }
                 }
@@ -248,6 +267,9 @@ extension Texture {
                 try self.copyData(from: textureData, mipGenerationMode: mipGenerationMode)
             } else {
                 var textureData = try TextureData<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+                if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
+                    textureData.reinterpretColor(as: .sRGB)
+                }
                 
                 if hasAlphaChannel {
                     if options.contains(.assumeSourceImageUsesGammaSpaceBlending), textureData.colorSpace == .sRGB {
@@ -265,7 +287,7 @@ extension Texture {
                     }
                 }
                 
-                if (options.contains(.autoExpandSRGBToRGBA) && colorSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
+                if (options.contains(.autoExpandSRGBToRGBA) && textureData.colorSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
                     var needsChannelExpansion = true
                     if (textureData.channelCount == 1 && RenderBackend.supportsPixelFormat(.r8Unorm_sRGB)) ||
                         (textureData.channelCount == 2 && RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB)) {
@@ -305,7 +327,7 @@ extension Texture {
                 if options.contains(.autoConvertColorSpace) {
                     if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
                         textureData.convert(toColorSpace: .sRGB)
-                    } else if !pixelFormat.isSRGB, textureData.colorSpace == .sRGB {
+                    } else if !pixelFormat.isSRGB {
                         textureData.convert(toColorSpace: .linearSRGB)
                     }
                 }
@@ -323,7 +345,7 @@ extension Texture {
         }
     }
     
-    public func fill(fromFileAt url: URL, colorSpace: TextureColorSpace, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .premultiplied, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
+    public func fill(fromFileAt url: URL, colorSpace: TextureColorSpace = .undefined, sourceAlphaMode: TextureAlphaMode = .inferred, gpuAlphaMode: TextureAlphaMode = .none, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
         try self.fillInternal(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: self.descriptor.mipmapLevelCount > 1, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
     }
 }
