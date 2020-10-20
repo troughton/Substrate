@@ -107,7 +107,9 @@ public enum TextureLoadingError : Error {
 }
 
 public enum TextureColorSpace: Hashable {
-    /// The IEC 61966-2-1:1999 color space
+    /// The texture values use no defined color space.
+    case undefined
+    /// The IEC 61966-2-1:1999 color space.
     case sRGB
     /// The IEC 61966-2-1:1999 sRGB color space using a linear gamma.
     case linearSRGB
@@ -117,6 +119,8 @@ public enum TextureColorSpace: Hashable {
     @inlinable
     public func fromLinearSRGB(_ color: Float) -> Float {
         switch self {
+        case .undefined:
+            return color
         case .sRGB:
             return color <= 0.0031308 ? (12.92 * color) : (1.055 * pow(color, 1.0 / 2.4) - 0.055)
         case .linearSRGB:
@@ -129,6 +133,8 @@ public enum TextureColorSpace: Hashable {
     @inlinable
     public func toLinearSRGB(_ color: Float) -> Float {
         switch self {
+        case .undefined:
+            return color
         case .sRGB:
             return color <= 0.04045 ? (color / 12.92) : pow((color + 0.055) / 1.055, 2.4)
         case .linearSRGB:
@@ -155,7 +161,9 @@ extension TextureColorSpace: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let gamma = try container.decode(Float.self, forKey: .gamma)
-        if gamma == 0 {
+        if !gamma.isFinite {
+            self = .undefined
+        } else if gamma == 0 {
             self = .sRGB // sRGB is encoded as gamma of 0.0
         } else if gamma == 1.0 {
             self = .linearSRGB
@@ -167,6 +175,8 @@ extension TextureColorSpace: Codable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .undefined:
+            try container.encode(.infinity as Float, forKey: .gamma)
         case .sRGB:
             try container.encode(0.0 as Float, forKey: .gamma)
         case .linearSRGB:
@@ -180,12 +190,16 @@ extension TextureColorSpace: Codable {
 public typealias TextureColourSpace = TextureColorSpace
 
 public enum TextureAlphaMode {
+    case none
     case premultiplied
     case postmultiplied
     
     case inferred
     
-    func inferFromFileFormat(fileExtension: String) -> TextureAlphaMode {
+    func inferFromFileFormat(fileExtension: String, channelCount: Int) -> TextureAlphaMode {
+        if channelCount != 2 && channelCount != 4 {
+            return .none
+        }
         if case .inferred = self, let format = TextureFileFormat(extension: fileExtension) {
             switch format {
             case .png:
@@ -305,7 +319,7 @@ public struct TextureData<T> {
     @usableFromInline var storage: TextureDataStorage<T>
     
     @available(*, deprecated, renamed: "colorSpace")
-    public var colourSpace: TextureColorSpace {
+    public internal(set) var colourSpace: TextureColorSpace {
         get {
             return self.colorSpace
         }
@@ -314,7 +328,7 @@ public struct TextureData<T> {
         }
     }
     
-    public init(width: Int, height: Int, channels: Int, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .premultiplied) {
+    public init(width: Int, height: Int, channels: Int, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .none) {
         precondition(_isPOD(T.self))
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
@@ -347,7 +361,7 @@ public struct TextureData<T> {
         self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .premultiplied, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Cannot infer the alpha mode when T is not Comparable.")
         
@@ -382,6 +396,17 @@ public struct TextureData<T> {
     @inlinable
     public var premultipliedAlpha: Bool {
         return self.alphaMode == .premultiplied
+    }
+    
+    /// Reinterprets the texture's pixel data as belonging to the specified color space.
+    public mutating func reinterpretColor(as colorSpace: TextureColorSpace) {
+        self.colorSpace = colorSpace
+    }
+    
+    /// Reinterprets the texture's alpha data as using the specified alpha mode.
+    public mutating func reinterpretAlphaMode(as alphaMode: TextureAlphaMode) {
+        precondition(alphaMode != .inferred, "Cannot reinterpret the alpha mode as inferred.")
+        self.alphaMode = alphaMode
     }
     
     @inlinable
@@ -546,7 +571,7 @@ public struct TextureData<T> {
 }
 
 extension TextureData where T: Comparable {
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, alphaMode: TextureAlphaMode = .premultiplied, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         precondition(width >= 1 && height >= 1 && channels >= 1)
         
         self.width = width
@@ -577,7 +602,7 @@ extension TextureData where T: Comparable {
             }
             self.alphaMode = .premultiplied
         } else {
-            self.alphaMode = .premultiplied
+            self.alphaMode = .none
         }
     }
 }
@@ -690,7 +715,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
     }
     
     public mutating func convert(toColorSpace: TextureColorSpace) {
-        if toColorSpace == self.colorSpace {
+        if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
             return
         }
         defer { self.colorSpace = toColorSpace }
@@ -711,7 +736,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
     }
     
     public mutating func convertToPremultipliedAlpha() {
-        guard case .postmultiplied = self.alphaMode, self.channelCount == 4 else { return }
+        guard case .postmultiplied = self.alphaMode else { return }
         self.ensureUniqueness()
         
         defer { self.alphaMode = .premultiplied }
@@ -814,7 +839,7 @@ extension TextureData where T == Float {
     }
     
     public mutating func convert(toColorSpace: TextureColorSpace) {
-        if toColorSpace == self.colorSpace {
+        if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
             return
         }
         
@@ -830,10 +855,7 @@ extension TextureData where T == Float {
     
     public mutating func convertToPremultipliedAlpha() {
         guard case .postmultiplied = self.alphaMode else { return }
-        
         defer { self.alphaMode = .premultiplied }
-        
-        guard self.channelCount == 2 || self.channelCount == 4 else { return }
         
         self.ensureUniqueness()
         
@@ -856,8 +878,6 @@ extension TextureData where T == Float {
         guard case .premultiplied = self.alphaMode else { return }
         
         defer { self.alphaMode = .postmultiplied }
-        
-        guard self.channelCount == 2 || self.channelCount == 4 else { return }
         
         self.ensureUniqueness()
         

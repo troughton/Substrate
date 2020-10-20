@@ -214,6 +214,8 @@ fileprivate extension LodePNGEncoderSettings {
 fileprivate extension LodePNGInfo {
     mutating func setColorSpace(_ colorSpace: TextureColorSpace) {
         switch colorSpace {
+        case .undefined:
+            break
         case .linearSRGB:
             self.gama_defined = 1
             self.gama_gamma = 100_000 // Gamma exponent times 100000
