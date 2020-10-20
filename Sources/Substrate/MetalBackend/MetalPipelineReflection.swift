@@ -13,10 +13,12 @@ import SubstrateUtilities
 final class MetalArgumentEncoder {
     let encoder: MTLArgumentEncoder
     let bindingIndexCount: Int
+    let maxBindingIndex: Int
     
-    init(encoder: MTLArgumentEncoder, bindingIndexCount: Int) {
+    init(encoder: MTLArgumentEncoder, bindingIndexCount: Int, maxBindingIndex: Int) {
         self.encoder = encoder
         self.bindingIndexCount = bindingIndexCount
+        self.maxBindingIndex = maxBindingIndex
     }
 }
 
@@ -144,12 +146,14 @@ final class MetalPipelineReflection : PipelineReflection {
         if let elementStruct = argument.bufferPointerType?.elementStructType() {
             let isArgumentBuffer = elementStruct.members.contains(where: { $0.offset < 0 })
             var argumentBufferBindingCount = 0
+            var argumentBufferMaxBinding = 0
             
             let metalArgBufferPath = rootPath
             for member in elementStruct.members {
                 if isArgumentBuffer {
                     let arrayLength = member.arrayType()?.arrayLength ?? 1
                     argumentBufferBindingCount += arrayLength
+                    argumentBufferMaxBinding = max(member.argumentIndex + arrayLength - 1, argumentBufferMaxBinding)
                 }
 
                 // Ignore pipeline stages for resources contained within argument buffers.
@@ -188,7 +192,7 @@ final class MetalPipelineReflection : PipelineReflection {
             }
             
             if isArgumentBuffer {
-                argumentEncoders[rootPath.index] = MetalArgumentEncoder(encoder: function.makeArgumentEncoder(bufferIndex: rootPath.index), bindingIndexCount: argumentBufferBindingCount)
+                argumentEncoders[rootPath.index] = MetalArgumentEncoder(encoder: function.makeArgumentEncoder(bufferIndex: rootPath.index), bindingIndexCount: argumentBufferBindingCount, maxBindingIndex: argumentBufferMaxBinding)
             }
         }
     }
