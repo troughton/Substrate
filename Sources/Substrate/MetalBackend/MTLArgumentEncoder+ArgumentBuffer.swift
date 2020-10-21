@@ -51,7 +51,7 @@ extension MetalArgumentEncoder {
         for (bindingPath, binding) in argBuffer.bindings {
             
             let bindingIndex = bindingPath.bindIndex
-            guard bindingIndex < self.bindingIndexCount else { continue }
+            guard bindingIndex <= self.maxBindingIndex else { continue }
             
             switch binding {
             case .texture(let texture):
