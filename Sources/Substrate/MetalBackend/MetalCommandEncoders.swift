@@ -512,10 +512,6 @@ public final class FGMTLBlitCommandEncoder {
     let encoder: MTLBlitCommandEncoder
     let isAppleSiliconGPU: Bool
     
-    var updatedFences = Set<ObjectIdentifier>()
-    var waitedOnFences = Set<ObjectIdentifier>()
-    
-    
     init(encoder: MTLBlitCommandEncoder, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.isAppleSiliconGPU = isAppleSiliconGPU
