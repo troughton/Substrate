@@ -34,6 +34,9 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     
     var compactedResourceCommands = [CompactedResourceCommand<Backend.CompactedResourceCommandType>]()
        
+    let emptyFrameCompletionHandlerSemaphore = DispatchSemaphore(value: 1)
+    var enqueuedEmptyFrameCompletionHandlers = [(queueCBIndex: UInt64, handler: (Double) -> Void)]()
+    
     public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
         self.renderGraphQueue = Queue()
@@ -76,8 +79,10 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         }
         
         if passes.isEmpty {
-            completion(0.0)
-            self.accessSemaphore.signal()
+            // Enqueue the completion handler to run immediately
+            self.emptyFrameCompletionHandlerSemaphore.withSemaphore {
+                self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, completion))
+            }
             return
         }
         
@@ -131,6 +136,17 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                         let gpuEndTime = commandBuffer.gpuEndTime
                         completion((gpuEndTime - gpuStartTime) * 1000.0)
                         self.accessSemaphore.signal()
+                        
+                        self.emptyFrameCompletionHandlerSemaphore.withSemaphore {
+                            // Notify any completion handlers that were enqueued for frames with no work.
+                            while let (afterCBIndex, completionHandler) = self.enqueuedEmptyFrameCompletionHandlers.first {
+                                if afterCBIndex > queueCBIndex { break }
+                                
+                                completionHandler(0.0)
+                                self.accessSemaphore.signal()
+                                self.enqueuedEmptyFrameCompletionHandlers.removeFirst()
+                            }
+                        }
                     }
                 })
                 committedCommandBufferCount += 1
