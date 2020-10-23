@@ -18,7 +18,6 @@ class VulkanRenderPass {
     let attachmentCount: Int
     
     init(device: VulkanDevice, descriptor: VulkanRenderTargetDescriptor, resourceMap: FrameResourceMap<VulkanBackend>) throws {
-        // TODO: add support for resolve attachments.
         self.device = device
         self.descriptor = descriptor
         
@@ -28,7 +27,21 @@ class VulkanRenderPass {
         var attachments = [VkAttachmentDescription]()
         var attachmentIndices = [RenderTargetAttachmentIndex: Int]()
                 
-        // Color attachments first, then depth-stencil
+        // Depth-stencil attachments first, then colour.
+        
+        if let depthAttachment = descriptor.descriptor.depthAttachment {
+            var attachmentDescription = VkAttachmentDescription(descriptor: depthAttachment.texture.descriptor, renderTargetDescriptor: depthAttachment, depthActions: descriptor.depthActions, stencilActions: descriptor.stencilActions)
+            let (previousCommandIndex, nextCommandIndex) = descriptor.depthPreviousAndNextUsageCommands
+            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(depthAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: depthAttachment.slice, level: depthAttachment.level, texture: depthAttachment.texture)
+                 
+            attachmentDescription.initialLayout = initialLayout
+            attachmentDescription.finalLayout = finalLayout
+            attachmentIndices[.depthStencil] = attachments.count
+            attachments.append(attachmentDescription)
+        } else {
+            assert(descriptor.descriptor.stencilAttachment == nil, "Stencil attachments without depth are currently unimplemented.")
+        }
+        
         for (i, (colorAttachment, actions)) in zip(descriptor.descriptor.colorAttachments, descriptor.colorActions).enumerated() {
             guard let colorAttachment = colorAttachment else { continue }
             var attachmentDescription = VkAttachmentDescription(descriptor: colorAttachment.texture.descriptor, renderTargetDescriptor: colorAttachment, actions: actions)
@@ -50,19 +63,6 @@ class VulkanRenderPass {
                 attachmentIndices[.colorResolve(i)] = attachments.count
                 attachments.append(attachmentDescription)
             }
-        }
-        
-        if let depthAttachment = descriptor.descriptor.depthAttachment {
-            var attachmentDescription = VkAttachmentDescription(descriptor: depthAttachment.texture.descriptor, renderTargetDescriptor: depthAttachment, depthActions: descriptor.depthActions, stencilActions: descriptor.stencilActions)
-            let (previousCommandIndex, nextCommandIndex) = descriptor.depthPreviousAndNextUsageCommands
-            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(depthAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: depthAttachment.slice, level: depthAttachment.level, texture: depthAttachment.texture)
-                 
-            attachmentDescription.initialLayout = initialLayout
-            attachmentDescription.finalLayout = finalLayout
-            attachmentIndices[.depthStencil] = attachments.count
-            attachments.append(attachmentDescription)
-        } else {
-            assert(descriptor.descriptor.stencilAttachment == nil, "Stencil attachments without depth are currently unimplemented.")
         }
         
         var subpasses = [VkSubpassDescription]()
@@ -108,6 +108,7 @@ class VulkanRenderPass {
             
             subpassDescription.pColorAttachments = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferences.count))
             subpassDescription.pResolveAttachments = UnsafePointer(resolveAttachmentReferences.buffer?.advanced(by: resolveAttachmentReferences.count))
+
             for (i, colorAttachment) in subpass.descriptor.colorAttachments.enumerated() {
                 if colorAttachment != nil {
                     let layout = subpass.inputAttachments.contains(.color(i)) ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL

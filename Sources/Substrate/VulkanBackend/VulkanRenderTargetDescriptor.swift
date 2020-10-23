@@ -175,9 +175,9 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         self.dependencies.append(dependency)
     }
     
-    func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ inDescriptor: inout D?, with new: D?, clearOperation: ClearOperation) -> MergeResult {
-        guard let descriptor = inDescriptor else {
-            inDescriptor = new
+    func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ fullDescriptor: inout D?, previousSubpassDescriptor: D?, with new: D?, clearOperation: ClearOperation) -> MergeResult {
+        guard let descriptor = fullDescriptor else {
+            fullDescriptor = new
             return new == nil ? .identical : .compatible
         }
         
@@ -191,14 +191,14 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             return .incompatible
         }
         
-        if  descriptor.texture     == new.texture &&
-            descriptor.level       == new.level &&
-            descriptor.slice       == new.slice &&
-            descriptor.depthPlane  == new.depthPlane {
-            return .identical
+        if  descriptor.texture     != new.texture ||
+            descriptor.level       != new.level ||
+            descriptor.slice       != new.slice ||
+            descriptor.depthPlane  != new.depthPlane {
+            return .incompatible
         }
         
-        return .incompatible
+        return previousSubpassDescriptor == nil ? .compatible : .identical
     }
     
     func tryMerge(withPass passRecord: RenderPassRecord) -> Bool {
@@ -212,10 +212,13 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         var newDescriptor = descriptor
         newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: max(passDescriptor.colorAttachments.count - descriptor.colorAttachments.count, 0)))
         
+        let previousSubpassDescriptor = self.subpasses.last!.descriptor
+
         var mergeResult = MergeResult.identical
         
         for i in 0..<min(newDescriptor.colorAttachments.count, passDescriptor.colorAttachments.count) {
-            switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: passDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
+            let previousSubpassAttachment = (i < previousSubpassDescriptor.colorAttachments.count) ? previousSubpassDescriptor.colorAttachments[i] : nil
+            switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], previousSubpassDescriptor: previousSubpassAttachment, with: passDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
             case .identical:
                 break
             case .incompatible:
@@ -229,7 +232,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             mergeResult = .compatible
         }
         
-        switch self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: passDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
+        switch self.tryUpdateDescriptor(&newDescriptor.depthAttachment, previousSubpassDescriptor: previousSubpassDescriptor.depthAttachment, with: passDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
         case .identical:
             break
         case .incompatible:
@@ -238,7 +241,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             mergeResult = .compatible
         }
         
-        switch self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: passDescriptor.stencilAttachment, clearOperation: pass.stencilClearOperation) {
+        switch self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, previousSubpassDescriptor: previousSubpassDescriptor.stencilAttachment, with: passDescriptor.stencilAttachment, clearOperation: pass.stencilClearOperation) {
         case .identical:
             break
         case .incompatible:
@@ -254,7 +257,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             return false
          case .compatible:
             let lastSubpassIndex = self.subpasses.last!.index
-            self.subpasses.append(VulkanSubpass(descriptor: newDescriptor, index: lastSubpassIndex + 1))
+            self.subpasses.append(VulkanSubpass(descriptor: passDescriptor, index: lastSubpassIndex + 1))
             // We'll add the dependencies later.
         }
         
