@@ -795,6 +795,37 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
     }
 }
 
+extension TextureData {
+    @inlinable
+    public func withTextureReinterpreted<U, Result>(as: U.Type, perform: (TextureData<U>) throws -> Result) rethrows -> Result{
+        precondition(MemoryLayout<U>.stride == MemoryLayout<T>.stride, "\(U.self) is not layout compatible with \(T.self)")
+        let storage = self.storage
+        return try self.withUnsafeBufferPointer { buffer in
+            return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
+                let data = TextureData<U>(width: self.width, height: self.height, channels: self.channelCount, data: UnsafeMutablePointer(mutating: reboundBuffer.baseAddress!), colorSpace: self.colorSpace, alphaMode: self.alphaMode, deallocateFunc: { [storage] _ in _ = storage })
+                return try perform(data)
+            }
+        }
+    }
+    
+    @inlinable
+    public mutating func withMutableTextureReinterpreted<U, Result>(as: U.Type, perform: (inout TextureData<U>) throws -> Result) rethrows -> Result{
+        precondition(MemoryLayout<U>.stride == MemoryLayout<T>.stride, "\(U.self) is not layout compatible with \(T.self)")
+        let width = self.width
+        let height = self.height
+        let channels = self.channelCount
+        let colorSpace = self.colorSpace
+        let alphaMode = self.alphaMode
+        let storage = self.storage
+        return try self.withUnsafeMutableBufferPointer { buffer in
+            return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
+                var data = TextureData<U>(width: width, height: height, channels: channels, data: reboundBuffer.baseAddress!, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { [storage] _ in _ = storage })
+                return try perform(&data)
+            }
+        }
+    }
+}
+
 extension TextureData where T: BinaryInteger & FixedWidthInteger & SignedInteger {
     @inlinable
     public init(_ data: TextureData<Float>) {

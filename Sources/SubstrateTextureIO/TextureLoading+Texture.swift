@@ -36,6 +36,17 @@ extension TextureData {
             default:
                 return .invalid
             }
+        case is Int8.Type:
+            switch self.channelCount {
+            case 1:
+                return .r8Snorm
+            case 2:
+                return .rg8Snorm
+            case 4:
+                return .rgba8Snorm
+            default:
+                return .invalid
+            }
         case is UInt16.Type:
             switch self.channelCount {
             case 1:
