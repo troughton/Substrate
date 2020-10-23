@@ -17,6 +17,11 @@ extension Texture {
         
         try self.copyData(from: textureData, mipGenerationMode: mipGenerationMode)
     }
+    
+    /// Uploads a TextureData to a GPU texture using the GPUResourceUploader.
+    public init<T>(data textureData: TextureData<T>, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
+        try self.init(data: textureData, pixelFormat: textureData.pixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
+    }
 }
 
 extension TextureData {
