@@ -144,12 +144,8 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         rasterisationState.depthBiasSlopeFactor = 0
         rasterisationState.lineWidth = 1.0
         
-        var multisampleState = VkPipelineMultisampleStateCreateInfo(self.descriptor, sampleCount: 1)
-        multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
-        multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
-        multisampleState.sampleShadingEnable = false
-        multisampleState.alphaToOneEnable = VkBool32(self.descriptor.isAlphaToOneEnabled)
-        multisampleState.alphaToCoverageEnable = VkBool32(self.descriptor.isAlphaToCoverageEnabled)
+        let sampleCount = self.compatibleRenderPass.attachments[0].sampleCount
+        let multisampleState = VkPipelineMultisampleStateCreateInfo(self.descriptor, sampleCount: sampleCount)
         
         let depthStencilState : VkPipelineDepthStencilStateCreateInfo
         if let depthStencil = self.depthStencil {

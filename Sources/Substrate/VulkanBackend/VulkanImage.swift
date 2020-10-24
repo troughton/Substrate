@@ -348,7 +348,7 @@ struct VulkanImageDescriptor : Equatable {
         self.extent = VkExtent3D(width: UInt32(descriptor.width), height: UInt32(descriptor.height), depth: UInt32(descriptor.depth))
         self.mipLevels = UInt32(descriptor.mipmapLevelCount)
         self.arrayLayers = UInt32(descriptor.arrayLength)
-        self.samples = VK_SAMPLE_COUNT_1_BIT
+        self.samples = VkSampleCountFlagBits(rawValue: VkSampleCountFlagBits.RawValue(descriptor.sampleCount))
         self.tiling = descriptor.storageMode == .private ? VK_IMAGE_TILING_OPTIMAL : VK_IMAGE_TILING_LINEAR
         self.usage = usage
         self.sharingMode = sharingMode
