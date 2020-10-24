@@ -264,7 +264,6 @@ extension VulkanBackend {
         let allocator = ThreadLocalTagAllocator(tag: .renderGraphResourceCommandArrayTag)
         
         var currentEncoderIndex = 0
-        var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
         var currentPassIndex = 0
         
         var bufferBarriers = [VkBufferMemoryBarrier]()
@@ -299,6 +298,7 @@ extension VulkanBackend {
         
         func processMemoryBarrier(resource: Resource, afterCommand: Int, afterUsageType: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsageType: ResourceUsageType, beforeStages: RenderStages, activeRange: ActiveResourceRange) -> Bool {
             
+            let currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
             // We can't insert layout transition barriers during a render pass if the barriers are not applicable to that render encoder;
             // instead, defer them until compute work/as late as necessary.
             if afterUsageType == .frameStartLayoutTransitionCheck, currentEncoder.type == .draw, !currentEncoder.commandRange.contains(beforeCommand) {
@@ -400,9 +400,9 @@ extension VulkanBackend {
                         // renderTargetDescriptor.addDependency(subpassDependency)
                     }
                 } else {
-                    // A subpass dependency should be enough to handle this case, unless there are other layers we also need to transition.
-                    // TODO: can we do better with fine-grained tracking of layouts and barriers for different layers?
+                    // A subpass dependency should be enough to handle this case.
                     renderTargetDescriptor.addDependency(subpassDependency)
+                    return true
                 }
             }
             
@@ -460,7 +460,7 @@ extension VulkanBackend {
         var pendingCommands = [FrameResourceCommands]()
 
         func processPendingCommands() {
-            let encoderFirstCommand = currentEncoder.commandRange.first!
+            let encoderFirstCommand = commandInfo.commandEncoders[currentEncoderIndex].commandRange.first!
             var i = 0
             while i < pendingCommands.count {
                 guard case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages, let activeRange) = pendingCommands[i] else { 
@@ -481,9 +481,8 @@ extension VulkanBackend {
                 currentPassIndex += 1
             }
             
-            while !currentEncoder.commandRange.contains(command.index) {
+            while !commandInfo.commandEncoders[currentEncoderIndex].commandRange.contains(command.index) {
                 currentEncoderIndex += 1
-                currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
 
                 processPendingCommands()
                 
@@ -515,7 +514,6 @@ extension VulkanBackend {
         // Flush any pending layout transition commands
         currentEncoderIndex += 1
         while currentEncoderIndex < commandInfo.commandEncoders.count {
-            currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
             processPendingCommands()
             
             if barrierLastIndex < .max  {
