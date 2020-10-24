@@ -548,16 +548,16 @@ struct ColorBlendStateCreateInfo {
     let attachmentStates : FixedSizeBuffer<VkPipelineColorBlendAttachmentState>
     var info : VkPipelineColorBlendStateCreateInfo
     
-    init(descriptor: RenderPipelineDescriptor, renderTargetDescriptor: RenderTargetDescriptor, attachmentCount: Int) {
+    init(descriptor: RenderPipelineDescriptor, colorAttachmentIndices: [UInt32]) {
         var disabledAttachment = VkPipelineColorBlendAttachmentState()
         disabledAttachment.blendEnable = false
         disabledAttachment.colorWriteMask = 0
 
-        self.attachmentStates = FixedSizeBuffer(capacity: attachmentCount, defaultValue: disabledAttachment)
+        self.attachmentStates = FixedSizeBuffer(capacity: colorAttachmentIndices.count, defaultValue: disabledAttachment)
         
         // Fill out attachment blend info
         for (i, attachment) in descriptor.blendStates.enumerated() {
-            guard renderTargetDescriptor.colorAttachments[i] != nil else { continue }
+            guard colorAttachmentIndices[i] != VK_ATTACHMENT_UNUSED else { continue }
 
             var state = VkPipelineColorBlendAttachmentState()
 

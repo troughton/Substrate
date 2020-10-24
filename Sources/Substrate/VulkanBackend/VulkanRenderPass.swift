@@ -21,11 +21,12 @@ class VulkanRenderPass {
         self.device = device
         self.descriptor = descriptor
         
+        let renderPassInfo = descriptor.compatibleRenderPass!
+        
         var createInfo = VkRenderPassCreateInfo()
         createInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO
         
         var attachments = [VkAttachmentDescription]()
-        var attachmentIndices = [RenderTargetAttachmentIndex: Int]()
                 
         // Depth-stencil attachments first, then colour.
         
@@ -36,7 +37,6 @@ class VulkanRenderPass {
                  
             attachmentDescription.initialLayout = initialLayout
             attachmentDescription.finalLayout = finalLayout
-            attachmentIndices[.depthStencil] = attachments.count
             attachments.append(attachmentDescription)
         } else {
             assert(descriptor.descriptor.stencilAttachment == nil, "Stencil attachments without depth are currently unimplemented.")
@@ -50,7 +50,6 @@ class VulkanRenderPass {
 
             attachmentDescription.initialLayout = initialLayout
             attachmentDescription.finalLayout = finalLayout
-            attachmentIndices[.color(i)] = attachments.count
             attachments.append(attachmentDescription)
             
             if let resolveTexture = colorAttachment.resolveTexture {
@@ -60,10 +59,12 @@ class VulkanRenderPass {
 
                 attachmentDescription.initialLayout = initialLayout
                 attachmentDescription.finalLayout = finalLayout
-                attachmentIndices[.colorResolve(i)] = attachments.count
                 attachments.append(attachmentDescription)
             }
         }
+        
+        assert(attachments.count == renderPassInfo.attachments.count)
+        assert(zip(attachments, renderPassInfo.attachments).allSatisfy({ $0.format == VkFormat(pixelFormat: $1.format) && $0.samples.rawValue == $1.sampleCount }))
         
         var subpasses = [VkSubpassDescription]()
         
@@ -95,13 +96,16 @@ class VulkanRenderPass {
             if subpass === previousSubpass { continue }
             defer { previousSubpass = subpass }
             
+            let referenceSubpass = renderPassInfo.subpasses[subpasses.count]
+            
             var subpassDescription = VkSubpassDescription()
-            subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS
+            subpassDescription.flags = referenceSubpass.flags
+            subpassDescription.pipelineBindPoint = referenceSubpass.bindPoint
 
             if subpass.descriptor.depthAttachment != nil || subpass.descriptor.stencilAttachment != nil {
                 let layout = subpass.inputAttachments.contains(.depthStencil) ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
                 subpassDescription.pDepthStencilAttachment = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferences.count))
-                attachmentReferences.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[.depthStencil]!), layout: layout))
+                attachmentReferences.append(VkAttachmentReference(attachment: referenceSubpass.depthStencilAttachmentIndex, layout: layout))
             }
             
             // TODO: handle depth resolve attachments using VK_KHR_depth_stencil_resolve: https://www.khronos.org/assets/uploads/developers/library/2019-gdc/Vulkan-Depth-Stencil-Resolve-GDC-Mar19.pdf
@@ -112,20 +116,16 @@ class VulkanRenderPass {
             for (i, colorAttachment) in subpass.descriptor.colorAttachments.enumerated() {
                 if colorAttachment != nil {
                     let layout = subpass.inputAttachments.contains(.color(i)) ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-                    attachmentReferences.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[.color(i)]!), layout: layout))
+                    attachmentReferences.append(VkAttachmentReference(attachment: referenceSubpass.colorAttachmentIndices[i], layout: layout))
                 } else {
                     attachmentReferences.append(VkAttachmentReference(attachment: VK_ATTACHMENT_UNUSED, layout: VK_IMAGE_LAYOUT_GENERAL))
                 }
-                if let resolveAttachmentIndex = attachmentIndices[.colorResolve(i)] {
-                    resolveAttachmentReferences.append(VkAttachmentReference(attachment: UInt32(resolveAttachmentIndex), layout: VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL))
-                } else {
-                    resolveAttachmentReferences.append(VkAttachmentReference(attachment: VK_ATTACHMENT_UNUSED, layout: VK_IMAGE_LAYOUT_GENERAL))
-                }
+                resolveAttachmentReferences.append(VkAttachmentReference(attachment: referenceSubpass.resolveAttachmentIndices[i], layout: VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL))
             }
             subpassDescription.colorAttachmentCount = UInt32(subpass.descriptor.colorAttachments.count)
             
             subpassDescription.pInputAttachments = UnsafePointer(attachmentReferences.buffer.advanced(by: attachmentReferences.count))
-            for inputAttachment in subpass.inputAttachments {
+            for (i, inputAttachment) in subpass.inputAttachments.enumerated() {
                 let layout : VkImageLayout
                 switch inputAttachment {
                 case .depthStencil:
@@ -135,13 +135,13 @@ class VulkanRenderPass {
                 case .colorResolve:
                     fatalError()
                 }
-                attachmentReferences.append(VkAttachmentReference(attachment: UInt32(attachmentIndices[inputAttachment]!), layout: layout))
+                attachmentReferences.append(VkAttachmentReference(attachment: referenceSubpass.inputAttachmentIndices[i], layout: layout))
             }
             subpassDescription.inputAttachmentCount = UInt32(subpass.inputAttachments.count)
             
             subpassDescription.pPreserveAttachments = UnsafePointer(preserveAttachmentIndices.buffer?.advanced(by: preserveAttachmentIndices.count))
             for preserveAttachment in subpass.preserveAttachments {
-                preserveAttachmentIndices.append(UInt32(attachmentIndices[preserveAttachment]!))
+                preserveAttachmentIndices.append(UInt32(descriptor.attachmentIndices[preserveAttachment]!))
             }
             subpassDescription.preserveAttachmentCount = UInt32(subpass.preserveAttachments.count)
             
@@ -164,7 +164,7 @@ class VulkanRenderPass {
                     createInfo.pAttachments = attachments.baseAddress
                     createInfo.attachmentCount = UInt32(attachments.count)
 
-                    descriptor.dependencies.withUnsafeBufferPointer { dependencies in
+                    renderPassInfo.dependencies.withUnsafeBufferPointer { dependencies in
                         createInfo.pDependencies = dependencies.baseAddress
                         createInfo.dependencyCount = UInt32(dependencies.count)
                         
@@ -181,6 +181,5 @@ class VulkanRenderPass {
         vkDestroyRenderPass(self.device.vkDevice, self.vkPass, nil)
     }
 }
-
 
 #endif // canImport(Vulkan)

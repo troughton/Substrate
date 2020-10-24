@@ -42,8 +42,7 @@ final class VulkanStateCaches {
     }
     
     public subscript(pipelineDescriptor: VulkanRenderPipelineDescriptor, 
-                     renderPass renderPass: VulkanRenderPass,
-                     subpass subpass: VulkanSubpass) -> VkPipeline? {
+                     renderPass renderPass: VulkanRenderPass) -> VkPipeline? {
         if let pipeline = self.renderPipelines[pipelineDescriptor] {
             return pipeline
         }
@@ -51,7 +50,7 @@ final class VulkanStateCaches {
         var pipeline : VkPipeline? = nil
 
         // TODO: investigate pipeline derivatives within a render pass to optimise pipeline switching.
-        pipelineDescriptor.withVulkanPipelineCreateInfo(renderPass: renderPass, subpass: subpass, stateCaches: self) { createInfo in
+        pipelineDescriptor.withVulkanPipelineCreateInfo(renderPass: renderPass, stateCaches: self) { createInfo in
             vkCreateGraphicsPipelines(self.device.vkDevice, self.pipelineCache, 1, &createInfo, nil, &pipeline).check()
         }
         self.renderPipelines[pipelineDescriptor] = pipeline
