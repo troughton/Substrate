@@ -775,6 +775,20 @@ extension VkFormat {
         case .r32Float:
             self = VK_FORMAT_R32_SFLOAT
 
+        case .r8Uint:
+            self = VK_FORMAT_R8_UINT
+        case .r16Uint:
+            self = VK_FORMAT_R16_UINT
+        case .r32Uint:
+            self = VK_FORMAT_R32_UINT
+
+        case .r8Sint:
+            self = VK_FORMAT_R8_SINT
+        case .r16Sint:
+            self = VK_FORMAT_R16_SINT
+        case .r32Sint:
+            self = VK_FORMAT_R32_SINT
+
         case .rg8Unorm:
             self = VK_FORMAT_R8G8_UNORM
         case .rg8Snorm:
@@ -787,6 +801,20 @@ extension VkFormat {
             self = VK_FORMAT_R16G16_SFLOAT
         case .rg32Float:
             self = VK_FORMAT_R32G32_SFLOAT
+
+        case .rg8Uint:
+            self = VK_FORMAT_R8G8_UINT
+        case .rg16Uint:
+            self = VK_FORMAT_R16G16_UINT
+        case .rg32Uint:
+            self = VK_FORMAT_R32G32_UINT
+
+        case .rg8Sint:
+            self = VK_FORMAT_R8G8_SINT
+        case .rg16Sint:
+            self = VK_FORMAT_R16G16_SINT
+        case .rg32Sint:
+            self = VK_FORMAT_R32G32_SINT
 
         case .rgba8Unorm:
             self = VK_FORMAT_R8G8B8A8_UNORM
@@ -803,6 +831,20 @@ extension VkFormat {
         case .rgba32Float:
             self = VK_FORMAT_R32G32B32A32_SFLOAT
 
+        case .rgba8Uint:
+            self = VK_FORMAT_R8G8B8A8_UINT
+        case .rgba16Uint:
+            self = VK_FORMAT_R16G16B16A16_UINT
+        case .rgba32Uint:
+            self = VK_FORMAT_R32G32B32A32_UINT
+
+        case .rgba8Sint:
+            self = VK_FORMAT_R8G8B8A8_SINT
+        case .rgba16Sint:
+            self = VK_FORMAT_R16G16B16A16_SINT
+        case .rgba32Sint:
+            self = VK_FORMAT_R32G32B32A32_SINT
+
         case .bgra8Unorm_sRGB:
             self = VK_FORMAT_B8G8R8A8_SRGB
         case .bgra8Unorm:
@@ -817,6 +859,7 @@ extension VkFormat {
         case .depth32Float_stencil8:
             self = VK_FORMAT_D32_SFLOAT_S8_UINT
         default:
+            print("Unknown format \(pixelFormat)")
             return nil
         }
     }
