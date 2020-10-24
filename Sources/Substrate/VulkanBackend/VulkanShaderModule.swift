@@ -122,18 +122,21 @@ final class VulkanPipelineReflection : PipelineReflection {
                     let arrayLength = max(Int(spvc_type_get_array_dimension(resourceTypeHandle, 0)), 1)
                     let name = spvc_compiler_get_name(compiler, resource.id)
                     
-                    
-                    var bufferRanges : UnsafePointer<spvc_buffer_range>! = nil
-                    var bufferRangeCount = 0
-                    spvc_compiler_get_active_buffer_ranges(compiler, resource.id, &bufferRanges, &bufferRangeCount)
-                    
                     var bufferRangesMin : Int = Int(UInt32.max)
                     var bufferRangesMax : Int = 0
                     
-                    for bufferRange in UnsafeBufferPointer(start: bufferRanges, count: bufferRangeCount) {
-                        bufferRangesMin = min(bufferRange.offset, bufferRangesMin)
-                        bufferRangesMax = max(bufferRange.offset + bufferRange.range, bufferRangesMax)
+                    if type == .uniformBuffer || type == .storageBuffer || type == .pushConstantBuffer {
+                    
+                        var bufferRanges : UnsafePointer<spvc_buffer_range>! = nil
+                        var bufferRangeCount = 0
+                        spvc_compiler_get_active_buffer_ranges(compiler, resource.id, &bufferRanges, &bufferRangeCount)
+
+                        for bufferRange in UnsafeBufferPointer(start: bufferRanges, count: bufferRangeCount) {
+                            bufferRangesMin = min(bufferRange.offset, bufferRangesMin)
+                            bufferRangesMax = max(bufferRange.offset + bufferRange.range, bufferRangesMax)
+                        }
                     }
+
                     if bufferRangesMax < bufferRangesMin { bufferRangesMax = bufferRangesMin }
                     
                     let isReadOnly = typeIsReadOnly || spvc_compiler_get_member_decoration(compiler, resource.base_type_id, 0, SpvDecorationNonWritable) != 0
