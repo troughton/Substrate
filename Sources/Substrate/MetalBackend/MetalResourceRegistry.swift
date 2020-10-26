@@ -598,11 +598,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         let baseResource = texture.baseResource!
         switch texture.textureViewBaseInfo! {
         case .buffer(let bufferInfo):
-            let mtlBuffer = resourceMap[baseResource.buffer!]
+            let mtlBuffer = resourceMap[baseResource.buffer!]!
             let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: properties.usage, isAppleSiliconGPU: device.isAppleSiliconGPU)
             mtlTexture = mtlBuffer.resource.makeTexture(descriptor: descriptor, offset: bufferInfo.offset, bytesPerRow: bufferInfo.bytesPerRow)!
         case .texture(let textureInfo):
-            let baseTexture = resourceMap[baseResource.texture!]
+            let baseTexture = resourceMap[baseResource.texture!]!
             if textureInfo.levels.lowerBound == -1 || textureInfo.slices.lowerBound == -1 {
                 assert(textureInfo.levels.lowerBound == -1 && textureInfo.slices.lowerBound == -1)
                 mtlTexture = baseTexture.texture.makeTextureView(pixelFormat: MTLPixelFormat(textureInfo.pixelFormat))!

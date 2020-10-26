@@ -55,10 +55,10 @@ extension MetalArgumentEncoder {
             
             switch binding {
             case .texture(let texture):
-                let mtlTexture = resourceMap[texture].texture
+                guard let mtlTexture = resourceMap[texture]?.texture else { continue }
                 self.encoder.setTexture(mtlTexture, index: bindingIndex)
             case .buffer(let buffer, let offset):
-                let mtlBuffer = resourceMap[buffer]
+                guard let mtlBuffer = resourceMap[buffer] else { continue }
                 self.encoder.setBuffer(mtlBuffer.buffer, offset: offset + mtlBuffer.offset, index: bindingIndex)
             case .sampler(let descriptor):
                 let samplerState = resourceMap[descriptor]

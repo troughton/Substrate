@@ -200,7 +200,9 @@ public final class FGMTLThreadRenderCommandEncoder {
             }
             
         case .setBuffer(let args):
-            let mtlBuffer = resourceMap[args.pointee.buffer]
+            guard let mtlBuffer = resourceMap[args.pointee.buffer] else {
+                break
+            }
             
             let mtlBindingPath = args.pointee.bindingPath
             assert(mtlBindingPath.bindIndex < 31, "The maximum number of buffers allowed in the buffer argument table for a single function is 31.")
@@ -232,7 +234,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             }
             
         case .setTexture(let args):
-            let mtlTexture = resourceMap[args.pointee.texture].texture
+            guard let mtlTexture = resourceMap[args.pointee.texture]?.texture else { break }
             
             let mtlBindingPath = args.pointee.bindingPath
             let stages = mtlBindingPath.stages
@@ -268,7 +270,7 @@ public final class FGMTLThreadRenderCommandEncoder {
             encoder.drawPrimitives(type: MTLPrimitiveType(args.pointee.primitiveType), vertexStart: Int(args.pointee.vertexStart), vertexCount: Int(args.pointee.vertexCount), instanceCount: Int(args.pointee.instanceCount), baseInstance: Int(args.pointee.baseInstance))
             
         case .drawIndexedPrimitives(let args):
-            let indexBuffer = resourceMap[args.pointee.indexBuffer]
+            let indexBuffer = resourceMap[args.pointee.indexBuffer]!
             
             encoder.drawIndexedPrimitives(type: MTLPrimitiveType(args.pointee.primitiveType), indexCount: Int(args.pointee.indexCount), indexType: MTLIndexType(args.pointee.indexType), indexBuffer: indexBuffer.buffer, indexBufferOffset: Int(args.pointee.indexBufferOffset) + indexBuffer.offset, instanceCount: Int(args.pointee.instanceCount), baseVertex: Int(args.pointee.baseVertex), baseInstance: Int(args.pointee.baseInstance))
             
@@ -428,7 +430,7 @@ public final class FGMTLComputeCommandEncoder {
             
         case .setBuffer(let args):
             let mtlBindingPath = args.pointee.bindingPath
-            let mtlBuffer = resourceMap[args.pointee.buffer]
+            guard let mtlBuffer = resourceMap[args.pointee.buffer] else { break }
             encoder.setBuffer(mtlBuffer.buffer, offset: Int(args.pointee.offset) + mtlBuffer.offset, index: mtlBindingPath.bindIndex)
             
             self.baseBufferOffsets[mtlBindingPath.bindIndex] = mtlBuffer.offset
@@ -440,7 +442,7 @@ public final class FGMTLComputeCommandEncoder {
             
         case .setTexture(let args):
             let mtlBindingPath = args.pointee.bindingPath
-            let mtlTexture = resourceMap[args.pointee.texture]
+            guard let mtlTexture = resourceMap[args.pointee.texture] else { break }
             encoder.setTexture(mtlTexture.texture, index: mtlBindingPath.bindIndex)
             
         case .setSamplerState(let args):
@@ -455,7 +457,7 @@ public final class FGMTLComputeCommandEncoder {
             encoder.dispatchThreadgroups(MTLSize(args.pointee.threadgroupsPerGrid), threadsPerThreadgroup: MTLSize(args.pointee.threadsPerThreadgroup))
             
         case .dispatchThreadgroupsIndirect(let args):
-            let indirectBuffer = resourceMap[args.pointee.indirectBuffer]
+            let indirectBuffer = resourceMap[args.pointee.indirectBuffer]!
             encoder.dispatchThreadgroups(indirectBuffer: indirectBuffer.buffer, indirectBufferOffset: Int(args.pointee.indirectBufferOffset) + indirectBuffer.offset, threadsPerThreadgroup: MTLSize(args.pointee.threadsPerThreadgroup))
             
         case .setComputePipelineDescriptor(let descriptorPtr):
@@ -542,33 +544,33 @@ public final class FGMTLBlitCommandEncoder {
             encoder.popDebugGroup()
             
         case .copyBufferToTexture(let args):
-            let sourceBuffer = resourceMap[args.pointee.sourceBuffer]
-            encoder.copy(from: sourceBuffer.buffer, sourceOffset: Int(args.pointee.sourceOffset) + sourceBuffer.offset, sourceBytesPerRow: Int(args.pointee.sourceBytesPerRow), sourceBytesPerImage: Int(args.pointee.sourceBytesPerImage), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture].texture, destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin), options: MTLBlitOption(args.pointee.options))
+            let sourceBuffer = resourceMap[args.pointee.sourceBuffer]!
+            encoder.copy(from: sourceBuffer.buffer, sourceOffset: Int(args.pointee.sourceOffset) + sourceBuffer.offset, sourceBytesPerRow: Int(args.pointee.sourceBytesPerRow), sourceBytesPerImage: Int(args.pointee.sourceBytesPerImage), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture]!.texture, destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin), options: MTLBlitOption(args.pointee.options))
             
         case .copyBufferToBuffer(let args):
-            let sourceBuffer = resourceMap[args.pointee.sourceBuffer]
-            let destinationBuffer = resourceMap[args.pointee.destinationBuffer]
+            let sourceBuffer = resourceMap[args.pointee.sourceBuffer]!
+            let destinationBuffer = resourceMap[args.pointee.destinationBuffer]!
             encoder.copy(from: sourceBuffer.buffer, sourceOffset: Int(args.pointee.sourceOffset) + sourceBuffer.offset, to: destinationBuffer.buffer, destinationOffset: Int(args.pointee.destinationOffset) + destinationBuffer.offset, size: Int(args.pointee.size))
             
         case .copyTextureToBuffer(let args):
-            let destinationBuffer = resourceMap[args.pointee.destinationBuffer]
-            encoder.copy(from: resourceMap[args.pointee.sourceTexture].texture, sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: destinationBuffer.buffer, destinationOffset: Int(args.pointee.destinationOffset) + destinationBuffer.offset, destinationBytesPerRow: Int(args.pointee.destinationBytesPerRow), destinationBytesPerImage: Int(args.pointee.destinationBytesPerImage), options: MTLBlitOption(args.pointee.options))
+            let destinationBuffer = resourceMap[args.pointee.destinationBuffer]!
+            encoder.copy(from: resourceMap[args.pointee.sourceTexture]!.texture, sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: destinationBuffer.buffer, destinationOffset: Int(args.pointee.destinationOffset) + destinationBuffer.offset, destinationBytesPerRow: Int(args.pointee.destinationBytesPerRow), destinationBytesPerImage: Int(args.pointee.destinationBytesPerImage), options: MTLBlitOption(args.pointee.options))
             
         case .copyTextureToTexture(let args):
-            encoder.copy(from: resourceMap[args.pointee.sourceTexture].texture, sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture].texture, destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin))
+            encoder.copy(from: resourceMap[args.pointee.sourceTexture]!.texture, sourceSlice: Int(args.pointee.sourceSlice), sourceLevel: Int(args.pointee.sourceLevel), sourceOrigin: MTLOrigin(args.pointee.sourceOrigin), sourceSize: MTLSize(args.pointee.sourceSize), to: resourceMap[args.pointee.destinationTexture]!.texture, destinationSlice: Int(args.pointee.destinationSlice), destinationLevel: Int(args.pointee.destinationLevel), destinationOrigin: MTLOrigin(args.pointee.destinationOrigin))
             
         case .fillBuffer(let args):
-            let buffer = resourceMap[args.pointee.buffer]
+            let buffer = resourceMap[args.pointee.buffer]!
             let range = (args.pointee.range.lowerBound + buffer.offset)..<(args.pointee.range.upperBound + buffer.offset)
             encoder.fill(buffer: buffer.buffer, range: range, value: args.pointee.value)
             
         case .generateMipmaps(let texture):
-            encoder.generateMipmaps(for: resourceMap[texture].texture)
+            encoder.generateMipmaps(for: resourceMap[texture]!.texture)
             
         case .synchroniseTexture(let textureHandle):
             #if os(macOS) || targetEnvironment(macCatalyst)
             if !self.isAppleSiliconGPU {
-                encoder.synchronize(resource: resourceMap[textureHandle].texture)
+                encoder.synchronize(resource: resourceMap[textureHandle]!.texture)
             }
             #else
             break
@@ -577,7 +579,7 @@ public final class FGMTLBlitCommandEncoder {
         case .synchroniseTextureSlice(let args):
             #if os(macOS) || targetEnvironment(macCatalyst)
             if !self.isAppleSiliconGPU {
-                encoder.synchronize(texture: resourceMap[args.pointee.texture].texture, slice: Int(args.pointee.slice), level: Int(args.pointee.level))
+                encoder.synchronize(texture: resourceMap[args.pointee.texture]!.texture, slice: Int(args.pointee.slice), level: Int(args.pointee.level))
             }
             #else
             break
@@ -586,7 +588,7 @@ public final class FGMTLBlitCommandEncoder {
         case .synchroniseBuffer(let buffer):
             #if os(macOS) || targetEnvironment(macCatalyst)
             if !self.isAppleSiliconGPU {
-                let buffer = resourceMap[buffer]
+                let buffer = resourceMap[buffer]!
                 encoder.synchronize(resource: buffer.buffer)
             }
             #else
@@ -644,8 +646,8 @@ final class FGMTLExternalCommandEncoder {
         case .encodeRayIntersection(let args):
             let intersector = args.pointee.intersector.takeUnretainedValue()
             
-            let rayBuffer = resourceMap[args.pointee.rayBuffer]
-            let intersectionBuffer = resourceMap[args.pointee.intersectionBuffer]
+            let rayBuffer = resourceMap[args.pointee.rayBuffer]!
+            let intersectionBuffer = resourceMap[args.pointee.intersectionBuffer]!
             
             intersector.encodeIntersection(commandBuffer: self.commandBuffer, intersectionType: args.pointee.intersectionType, rayBuffer: rayBuffer.buffer, rayBufferOffset: rayBuffer.offset + args.pointee.rayBufferOffset, intersectionBuffer: intersectionBuffer.buffer, intersectionBufferOffset: intersectionBuffer.offset + args.pointee.intersectionBufferOffset, rayCount: args.pointee.rayCount, accelerationStructure: args.pointee.accelerationStructure.takeUnretainedValue())
             
@@ -653,9 +655,9 @@ final class FGMTLExternalCommandEncoder {
             
             let intersector = args.pointee.intersector.takeUnretainedValue()
             
-            let rayBuffer = resourceMap[args.pointee.rayBuffer]
-            let intersectionBuffer = resourceMap[args.pointee.intersectionBuffer]
-            let rayCountBuffer = resourceMap[args.pointee.rayCountBuffer]
+            let rayBuffer = resourceMap[args.pointee.rayBuffer]!
+            let intersectionBuffer = resourceMap[args.pointee.intersectionBuffer]!
+            let rayCountBuffer = resourceMap[args.pointee.rayCountBuffer]!
             
             intersector.encodeIntersection(commandBuffer: self.commandBuffer, intersectionType: args.pointee.intersectionType, rayBuffer: rayBuffer.buffer, rayBufferOffset: rayBuffer.offset + args.pointee.rayBufferOffset, intersectionBuffer: intersectionBuffer.buffer, intersectionBufferOffset: intersectionBuffer.offset + args.pointee.intersectionBufferOffset, rayCountBuffer: rayCountBuffer.buffer, rayCountBufferOffset: rayCountBuffer.offset + args.pointee.rayCountBufferOffset, accelerationStructure: args.pointee.accelerationStructure.takeUnretainedValue())
             
