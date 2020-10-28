@@ -101,10 +101,16 @@ public struct ResourceStateFlags : OptionSet {
     public static let initialised = ResourceStateFlags(rawValue: 1 << 0)
 }
 
-public enum ResourceAccessType {
-    case read
-    case write
-    case readWrite
+public struct ResourceAccessType: OptionSet {
+    public let rawValue: UInt8
+    
+    public init(rawValue: UInt8) {
+        self.rawValue = rawValue
+    }
+    
+    public static let read = ResourceAccessType(rawValue: 1 << 0)
+    public static let write = ResourceAccessType(rawValue: 1 << 1)
+    public static let readWrite: ResourceAccessType = [.read, .write]
 }
 
 public enum ResourcePurgeableState {
