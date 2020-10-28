@@ -255,6 +255,8 @@ extension SPIRVType : CustomStringConvertible {
             var memberDeclarations = [String]()
             var currentOffset = 0
             var maxAlignment = 1
+            var needsManualHashableEquatable = false
+            
             for member in members {
                 precondition(member.offset >= currentOffset)
                 let alignment = member.type.alignment
@@ -262,6 +264,7 @@ extension SPIRVType : CustomStringConvertible {
                     let paddingBytes = member.offset - currentOffset
                     let paddingType = SPIRVType.array(element: .uint8, length: paddingBytes)
                     memberDeclarations.append("private var _pad\(memberDeclarations.count): \(paddingType.name) = \(paddingType.defaultInitialiser)")
+                    needsManualHashableEquatable = true
                     currentOffset = member.offset
                 }
                 
@@ -273,6 +276,7 @@ extension SPIRVType : CustomStringConvertible {
                 let paddingBytes = size - currentOffset
                 let paddingType = SPIRVType.array(element: .uint8, length: paddingBytes)
                 memberDeclarations.append("private var _pad\(memberDeclarations.count): \(paddingType.name) = \(paddingType.defaultInitialiser)")
+                needsManualHashableEquatable = true
             }
             
             let memberArguments = members.map { "\($0.name): \($0.type.name)" }
@@ -280,7 +284,7 @@ extension SPIRVType : CustomStringConvertible {
             
             // Until SE-0283 is implemented (https://github.com/apple/swift-evolution/blob/master/proposals/0283-tuples-are-equatable-comparable-hashable.md), we need
             // to manually implement hashable/equatable conformances for all types containing tuples.
-            let needsManualHashableEquatable = members.contains(where: {
+            needsManualHashableEquatable = needsManualHashableEquatable || members.contains(where: {
                 if case .array = $0.type { return true }
                 return false
             })

@@ -257,6 +257,10 @@ final class TypeLookup {
     
     func registerType(_ type: SPIRVType, set: DescriptorSet?, pass: RenderPass) {
         if type.isKnownSwiftType { return }
+        if case .array(let nestedType, _) = type {
+            registerType(nestedType, set: set, pass: pass)
+        }
+        
         guard case .struct(_, let members, _) = type else { return }
         
         for member in members {
