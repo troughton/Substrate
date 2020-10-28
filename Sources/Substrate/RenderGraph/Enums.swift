@@ -420,6 +420,24 @@ extension PixelFormat {
             return false
         }
     }
+
+    public var isFloat16: Bool {
+        switch self {
+        case .r16Float, .rg16Float, .rgba16Float:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    public var isFloat32: Bool {
+        switch self {
+        case .r32Float, .rg32Float, .rgba32Float, .depth32Float:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 @available(OSX 10.11, *)
