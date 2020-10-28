@@ -247,7 +247,7 @@ extension MTLRenderPipelineDescriptor {
 }
 
 extension MTLTextureDescriptor {
-    convenience init(_ descriptor: TextureDescriptor, usage: MTLTextureUsage, isAppleSiliconGPU: Bool) {
+    public convenience init(_ descriptor: TextureDescriptor, usage: MTLTextureUsage, isAppleSiliconGPU: Bool) {
         self.init()
         
         self.textureType = MTLTextureType(descriptor.textureType)
