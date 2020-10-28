@@ -10,6 +10,7 @@ import SPIRV_Cross
 struct SPIRVStructMember : Hashable {
     var name : String
     var type : SPIRVType
+    var offset : Int
 }
 
 indirect enum SPIRVType : Hashable {
@@ -32,7 +33,7 @@ indirect enum SPIRVType : Hashable {
     case packedVector(element: SPIRVType, length: Int)
     case matrix(element: SPIRVType, rows: Int, columns: Int)
     case array(element: SPIRVType, length: Int)
-    case `struct`(name: String, members: [SPIRVStructMember])
+    case `struct`(name: String, members: [SPIRVStructMember], size: Int)
     
     case buffer
     case texture
@@ -117,12 +118,7 @@ indirect enum SPIRVType : Hashable {
             return length * element.stride
         case .matrix(let element, let rows, let columns):
             return columns * SPIRVType.vector(element: element, length: rows).stride
-        case .struct(_, let members):
-            var size = 0
-            for member in members {
-                size = size.roundedUpToMultiple(of: member.type.alignment)
-                size += member.type.size
-            }
+        case .struct(_, _, let size):
             return size
         default:
             fatalError()
@@ -133,8 +129,8 @@ indirect enum SPIRVType : Hashable {
     
     var isKnownSwiftType: Bool {
         switch self {
-        case .struct(let name, let members):
-            if ["AffineMatrix"].contains(name) {
+        case .struct(let name, let members, _):
+            if ["AffineMatrix", "AffineMatrix2D"].contains(name) {
                 return true
             }
             if (name.starts(with: "type_StructuredBuffer") || name.starts(with: "type_RWStructuredBuffer")),
@@ -160,11 +156,11 @@ indirect enum SPIRVType : Hashable {
             return SPIRVType.vector(element: element, length: 4).alignment
         case .vector(let element, let length):
             return length * element.stride
-        case .array(let element, let length):
-            return length * element.stride
+        case .array(let element, _):
+            return element.stride
         case .matrix(let element, let rows, _):
             return SPIRVType.vector(element: element, length: rows).alignment
-        case .struct(_, let members):
+        case .struct(_, let members, _):
             return members.lazy.map { $0.type.alignment }.max() ?? 0
         default:
             return self.size
@@ -215,11 +211,13 @@ extension SPIRVType : CustomStringConvertible {
             return "SIMD\(length)<\(element)>"
         case .matrix(let element, 4, 3):
             return "AffineMatrix<\(element)>"
+        case .matrix(let element, 2, 3):
+            return "AffineMatrix2D<\(element)>"
         case .matrix(let element, let rows, let columns):
             return "Matrix\(rows)x\(columns)<\(element)>"
         case .array(let element, let length):
-            return "(\(repeatElement(element.description, count: length).joined(separator: ", ")))"
-        case .struct(let name, _):
+            return "(\(repeatElement(element.name, count: length).joined(separator: ", ")))"
+        case .struct(let name, _, _):
             return TypeLookup.formatName(name)
         case .buffer:
             return "Buffer"
@@ -253,8 +251,30 @@ extension SPIRVType : CustomStringConvertible {
     
     var declaration : String {
         switch self {
-        case .struct(_, let members):
-            let memberDeclarations = members.map { "public var \($0.name): \($0.type.name) = \($0.type.defaultInitialiser)" }
+        case .struct(_, let members, let size):
+            var memberDeclarations = [String]()
+            var currentOffset = 0
+            var maxAlignment = 1
+            for member in members {
+                precondition(member.offset >= currentOffset)
+                let alignment = member.type.alignment
+                if member.offset > currentOffset.roundedUpToMultiple(of: alignment) {
+                    let paddingBytes = member.offset - currentOffset
+                    let paddingType = SPIRVType.array(element: .uint8, length: paddingBytes)
+                    memberDeclarations.append("private var _pad\(memberDeclarations.count): \(paddingType.name) = \(paddingType.defaultInitialiser)")
+                    currentOffset = member.offset
+                }
+                
+                memberDeclarations.append("public var \(member.name): \(member.type.name) = \(member.type.defaultInitialiser)")
+                currentOffset += member.type.size
+                maxAlignment = max(maxAlignment, alignment)
+            }
+            if currentOffset.roundedUpToMultiple(of: alignment) < size {
+                let paddingBytes = size - currentOffset
+                let paddingType = SPIRVType.array(element: .uint8, length: paddingBytes)
+                memberDeclarations.append("private var _pad\(memberDeclarations.count): \(paddingType.name) = \(paddingType.defaultInitialiser)")
+            }
+            
             let memberArguments = members.map { "\($0.name): \($0.type.name)" }
             let memberAssignments = members.map { "self.\($0.name) = \($0.name)" }
             
@@ -264,8 +284,6 @@ extension SPIRVType : CustomStringConvertible {
                 if case .array = $0.type { return true }
                 return false
             })
-            
-            
             
             var structDef = """
             @frozen
@@ -343,26 +361,37 @@ extension SPIRVType {
             var members = [SPIRVStructMember]()
             members.reserveCapacity(Int(memberTypeCount))
             
+            var structSize = 0
+            spvc_compiler_get_declared_struct_size(compiler, type, &structSize)
+            
             for i in 0..<memberTypeCount {
                 let memberTypeId = spvc_type_get_member_type(type, i)
                 
                 let name = String(cString: spvc_compiler_get_member_name(compiler, baseTypeId, i)!)
                 
                 var sizeInStruct : Int? = nil
-            
+                
+                var offset : UInt32 = 0
+                spvc_compiler_type_struct_member_offset(compiler, type, i, &offset)
+                
                 if i + 1 < memberTypeCount {
-                    var offset : UInt32 = 0
-                    spvc_compiler_type_struct_member_offset(compiler, type, i, &offset)
-                    
                     var nextOffset : UInt32 = 0
                     spvc_compiler_type_struct_member_offset(compiler, type, i + 1, &nextOffset)
                     
                     sizeInStruct = Int(nextOffset - offset)
                 }
                 
-                members.append(SPIRVStructMember(name: name, type: SPIRVType(compiler: compiler, typeId: memberTypeId, sizeInStruct: sizeInStruct)))
+                members.append(SPIRVStructMember(name: name, type: SPIRVType(compiler: compiler, typeId: memberTypeId, sizeInStruct: sizeInStruct), offset: Int(offset)))
             }
-            self = .struct(name: name, members: members)
+            
+            if structSize == 0 {
+                for member in members {
+                    structSize = structSize.roundedUpToMultiple(of: member.type.alignment)
+                    structSize += member.type.size
+                }
+            }
+            
+            self = .struct(name: name, members: members, size: structSize)
         } else {
             let baseType = SPIRVType(baseType: baseType) ?? SPIRVType(compiler: compiler, typeId: typeId)
             
@@ -380,14 +409,14 @@ extension SPIRVType {
                     }
                 }
             }
-
-            let arrayDimensions = spvc_type_get_num_array_dimensions(type)
-            if arrayDimensions >= 1 {
-                for dimension in (0..<arrayDimensions) {
-                    let arrayLength = Int(spvc_type_get_array_dimension(type, dimension))
-                    if arrayLength > 1 || dimension > 0 {
-                        self = .array(element: self, length: arrayLength)
-                    }
+        }
+        
+        let arrayDimensions = spvc_type_get_num_array_dimensions(type)
+        if arrayDimensions >= 1 {
+            for dimension in (0..<arrayDimensions) {
+                let arrayLength = Int(spvc_type_get_array_dimension(type, dimension))
+                if arrayLength > 1 || dimension > 0 {
+                    self = .array(element: self, length: arrayLength)
                 }
             }
         }

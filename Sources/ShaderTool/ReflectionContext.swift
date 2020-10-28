@@ -257,7 +257,7 @@ final class TypeLookup {
     
     func registerType(_ type: SPIRVType, set: DescriptorSet?, pass: RenderPass) {
         if type.isKnownSwiftType { return }
-        guard case .struct(_, let members) = type else { return }
+        guard case .struct(_, let members, _) = type else { return }
         
         for member in members {
             self.registerType(member.type, set: set, pass: pass)
@@ -316,15 +316,15 @@ final class TypeLookup {
             return String(name.prefix(1).uppercased()) + name.dropFirst()
         }
         
-        if name == "AffineMatrix" {
-            return "AffineMatrix<Float>"
+        if ["AffineMatrix", "AffineMatrix2D"].contains(name) {
+            return name + "<Float>"
         }
         
         return name
     }
     
     static func formattedName(type: SPIRVType) -> String {
-        guard case .struct(let name, _) = type else { return type.name }
+        guard case .struct(let name, _, _) = type else { return type.name }
         
         return formatName(name)
     }
