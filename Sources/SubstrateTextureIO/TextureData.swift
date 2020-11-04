@@ -714,6 +714,9 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         }
     }
     
+    @_specialize(kind: full, where T == UInt8)
+    @_specialize(kind: full, where T == UInt16)
+    @_specialize(kind: full, where T == UInt32)
     public mutating func convert(toColorSpace: TextureColorSpace) {
         if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
             return
@@ -735,6 +738,9 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         self.apply({ floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
     }
     
+    @_specialize(kind: full, where T == UInt8)
+    @_specialize(kind: full, where T == UInt16)
+    @_specialize(kind: full, where T == UInt32)
     public mutating func convertToPremultipliedAlpha() {
         guard case .postmultiplied = self.alphaMode else { return }
         self.ensureUniqueness()
@@ -745,7 +751,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
             if self.colorSpace == .sRGB {
                 (self as! TextureData<UInt8>)._convertSRGBPostmultipliedToPremultiplied()
                 return
-            } else if self.colorSpace == .linearSRGB {
+            } else if self.colorSpace == .linearSRGB || self.colorSpace == .undefined {
                 (self as! TextureData<UInt8>)._convertLinearPostmultipliedToPremultiplied()
                 return
             }
@@ -765,6 +771,9 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         }
     }
     
+    @_specialize(kind: full, where T == UInt8)
+    @_specialize(kind: full, where T == UInt16)
+    @_specialize(kind: full, where T == UInt32)
     public mutating func convertToPostmultipliedAlpha() {
         guard case .premultiplied = self.alphaMode, self.channelCount == 4 else { return }
         self.ensureUniqueness()
@@ -774,7 +783,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
             if self.colorSpace == .sRGB {
                 (self as! TextureData<UInt8>)._convertSRGBPremultipliedToPostmultiplied()
                 return
-            } else if self.colorSpace == .linearSRGB {
+            } else if self.colorSpace == .linearSRGB || self.colorSpace == .undefined {
                 (self as! TextureData<UInt8>)._convertLinearPremultipliedToPostmultiplied()
                 return
             }
