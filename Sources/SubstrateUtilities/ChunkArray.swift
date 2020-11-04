@@ -21,7 +21,9 @@ public struct ChunkArray<Element>: Collection {
     @usableFromInline var next: UnsafeMutablePointer<Chunk>?
     @usableFromInline var tail: UnsafeMutablePointer<Chunk>?
     
+    @inlinable
     public init() {
+        precondition(_isPOD(Element.self))
         self.count = 0
     }
     

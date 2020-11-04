@@ -1127,6 +1127,8 @@ public struct Texture : ResourceProtocol {
     
     @inlinable
     public init(descriptor: TextureDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+        precondition(descriptor.width <= 16384 && descriptor.height <= 16384 && descriptor.depth <= 1024)
+        
         let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
@@ -1167,6 +1169,8 @@ public struct Texture : ResourceProtocol {
     
     @inlinable
     public init?(descriptor: TextureDescriptor, heap: Heap, flags: ResourceFlags = [.persistent]) {
+        precondition(descriptor.width <= 16384 && descriptor.height <= 16384 && descriptor.depth <= 1024)
+        
         assert(flags.contains(.persistent), "Heap-allocated resources must be persistent.")
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         
@@ -1208,19 +1212,27 @@ public struct Texture : ResourceProtocol {
     }
     
     @inlinable
-    public init(viewOf base: Texture, descriptor: TextureViewDescriptor) {
+    public init(viewOf base: Texture, descriptor: TextureViewDescriptor, renderGraph: RenderGraph? = nil) {
         let flags : ResourceFlags = .resourceView
         
-        let index = TransientTextureRegistry.instances[base.transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base)
+        guard let transientRegistryIndex = renderGraph?.transientRegistryIndex ?? RenderGraph.activeRenderGraph?.transientRegistryIndex ?? (!base._usesPersistentRegistry ? base.transientRegistryIndex : nil) else {
+            fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
+        }
+        
+        let index = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base)
         let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     @inlinable
-    public init(viewOf base: Buffer, descriptor: Buffer.TextureViewDescriptor) {
+    public init(viewOf base: Buffer, descriptor: Buffer.TextureViewDescriptor, renderGraph: RenderGraph? = nil) {
         let flags : ResourceFlags = .resourceView
     
-        let index = TransientTextureRegistry.instances[base.transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base)
+        guard let transientRegistryIndex = renderGraph?.transientRegistryIndex ?? RenderGraph.activeRenderGraph?.transientRegistryIndex ?? (!base._usesPersistentRegistry ? base.transientRegistryIndex : nil) else {
+            fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
+        }
+        
+        let index = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base)
         let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.texture.rawValue) << Self.typeBitsRange.lowerBound)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }

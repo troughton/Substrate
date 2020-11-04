@@ -355,13 +355,13 @@ final class RenderGraphCommandRecorder {
         }
         
         if usageType.isRead {
-            self.readResources.insert(resource)
+            self.readResources.insert(resource.baseResource ?? resource)
         }
         if usageType.isWrite {
-            self.writtenResources.insert(resource)
+            self.writtenResources.insert(resource.baseResource ?? resource)
         }
         
-        let usage = ResourceUsage(type: usageType, stages: stages, activeRange: activeRange, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: activeRange, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
@@ -388,7 +388,7 @@ final class RenderGraphCommandRecorder {
             self.writtenResources.insert(Resource(resource))
         }
         
-        let usage = ResourceUsage(type: usageType, stages: stages, activeRange: .fullResource, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .fullResource, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
@@ -434,7 +434,7 @@ final class RenderGraphCommandRecorder {
             self.writtenResources.insert(Resource(resource))
         }
         
-        let usage = ResourceUsage(type: usageType, stages: stages, activeRange: .buffer(bufferRange), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .buffer(bufferRange), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
@@ -471,10 +471,10 @@ final class RenderGraphCommandRecorder {
         }
         
         if usageType.isRead {
-            self.readResources.insert(Resource(resource))
+            self.readResources.insert(resource.baseResource ?? Resource(resource))
         }
         if usageType.isWrite {
-            self.writtenResources.insert(Resource(resource))
+            self.writtenResources.insert(resource.baseResource ?? Resource(resource))
         }
         
         var subresourceMask = SubresourceMask()
@@ -485,7 +485,7 @@ final class RenderGraphCommandRecorder {
             assert(slice == nil && level == nil)
         }
         
-        let usage = ResourceUsage(type: usageType, stages: stages, activeRange: .texture(subresourceMask), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .texture(subresourceMask), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage

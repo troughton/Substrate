@@ -630,11 +630,11 @@ public final class RenderGraph {
         
         for resource in passRecord.pass.writtenResources {
             resource._markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
-            passRecord.writtenResources.insert(resource)
+            passRecord.writtenResources.insert(resource.baseResource ?? resource)
         }
         for resource in passRecord.pass.readResources {
             resource._markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
-            passRecord.readResources.insert(resource)
+            passRecord.readResources.insert(resource.baseResource ?? resource)
         }
     }
     
@@ -808,6 +808,9 @@ public final class RenderGraph {
             for (resource, resourceUsage) in passRecord.resourceUsages where resourceUsage.stages != .cpuBeforeRender {
                 assert(resource.isValid)
                 self.usedResources.insert(resource)
+                if let baseResource = resource.baseResource {
+                    self.usedResources.insert(baseResource)
+                }
                 
                 var resourceUsage = resourceUsage
                 resourceUsage.commandRange = Range(uncheckedBounds: (resourceUsage.commandRange.lowerBound + startCommandIndex, resourceUsage.commandRange.upperBound + startCommandIndex))

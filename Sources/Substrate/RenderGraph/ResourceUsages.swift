@@ -35,7 +35,7 @@ extension ChunkArray where Element == ResourceUsage {
     @inlinable
     mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.ThreadView) {
         var usage = usage
-        if self.isEmpty || !self.last.mergeWithUsage(&usage, resource: resource, allocator: .tagThreadView(allocator)) {
+        if self.isEmpty || !self.last.mergeWithUsage(&usage, allocator: .tagThreadView(allocator)) {
             self.append(usage, allocator: .tagThreadView(allocator))
         }
     }
@@ -79,6 +79,7 @@ extension ResourceUsageType {
 public struct ResourceUsage {
     public var type : ResourceUsageType
     public var stages : RenderStages
+    public var resource: Resource
     public var inArgumentBuffer : Bool
     @usableFromInline
     unowned(unsafe) var renderPassRecord : RenderPassRecord
@@ -86,7 +87,8 @@ public struct ResourceUsage {
     public var activeRange: ActiveResourceRange = .fullResource
     
     @inlinable
-    init(type: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: RenderPassRecord) {
+    init(resource: Resource, type: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: RenderPassRecord) {
+        self.resource = resource
         self.type = type
         self.stages = stages
         self.activeRange = activeRange
@@ -112,8 +114,8 @@ public struct ResourceUsage {
     
     /// - returns: Whether the usages could be merged.
     @usableFromInline
-    mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, resource: Resource, allocator: AllocatorType) -> Bool {
-        if self.renderPassRecord !== nextUsage.renderPassRecord {
+    mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, allocator: AllocatorType) -> Bool {
+        if self.renderPassRecord !== nextUsage.renderPassRecord || nextUsage.resource != self.resource {
             return false
         }
         

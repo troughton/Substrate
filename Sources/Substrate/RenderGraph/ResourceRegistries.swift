@@ -380,7 +380,7 @@ public enum TextureViewBaseInfo {
         self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
         self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
         
-        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound)
+        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
     }
     
     @usableFromInline
