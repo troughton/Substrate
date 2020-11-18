@@ -29,7 +29,7 @@ public struct ReaderWriterLock {
     public mutating func acquireWriteAccess() {
         while true {
             if UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == 0 {
-                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: 0, desired: .max, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: 0, desired: .max, at: self.value, successOrdering: .acquiring, failureOrdering: .relaxed).exchanged {
                     return
                 }
             }
@@ -44,7 +44,7 @@ public struct ReaderWriterLock {
             
             if previousReaders != .max {
                 let newReaders = previousReaders &+ 1
-                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: newReaders, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: newReaders, at: self.value, successOrdering: .acquiring, failureOrdering: .relaxed).exchanged {
                     return
                 }
             }
@@ -84,7 +84,7 @@ public struct ReaderWriterLock {
         while true {
             let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
             if previousReaders == .max {
-                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: 0, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: 0, at: self.value, successOrdering: .releasing, failureOrdering: .relaxed).exchanged {
                     return
                 }
             }

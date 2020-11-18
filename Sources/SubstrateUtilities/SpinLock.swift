@@ -53,14 +53,14 @@ public struct SpinLock {
     @inlinable
     public func lock() {
         while UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue ||
-                UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: self.value, ordering: .relaxed) == LockState.taken.rawValue {
+                UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: self.value, ordering: .acquiring) == LockState.taken.rawValue {
             yieldCPU()
         }
     }
     
     @inlinable
     public func unlock() {
-        _ = UInt32.AtomicRepresentation.atomicExchange(LockState.free.rawValue, at: self.value, ordering: .relaxed)
+        _ = UInt32.AtomicRepresentation.atomicExchange(LockState.free.rawValue, at: self.value, ordering: .releasing)
     }
     
     @inlinable
@@ -88,18 +88,18 @@ public struct Semaphore {
     
     @inlinable
     public func signal() {
-        Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.value, ordering: .relaxed)
+        Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.value, ordering: .releasing)
     }
     
     @inlinable
     public func signal(count: Int) {
-        Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(by: Int32(count), at: self.value, ordering: .relaxed)
+        Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(by: Int32(count), at: self.value, ordering: .releasing)
     }
     
     @inlinable
     public func wait() {
         // If the value was greater than 0, we can proceed immediately.
-        while Int32.AtomicRepresentation.atomicLoadThenWrappingDecrement(at: self.value, ordering: .relaxed) <= 0 {
+        while Int32.AtomicRepresentation.atomicLoadThenWrappingDecrement(at: self.value, ordering: .acquiring) <= 0 {
             // Otherwise, reset and try again.
             Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.value, ordering: .relaxed)
             yieldCPU()
