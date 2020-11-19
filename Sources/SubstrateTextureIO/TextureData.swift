@@ -308,7 +308,22 @@ final class TextureDataStorage<T> {
     }
 }
 
-public struct TextureData<T> {
+public protocol AnyTextureData {
+    var width : Int { get }
+    var height : Int { get }
+    var channelCount : Int { get }
+    
+    var colorSpace : TextureColorSpace { get }
+    var alphaMode: TextureAlphaMode { get }
+    
+    mutating func reinterpretColor(as colorSpace: TextureColorSpace)
+    mutating func reinterpretAlphaMode(as alphaMode: TextureAlphaMode)
+    
+    func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode) throws
+    var preferredPixelFormat: PixelFormat { get }
+}
+
+public struct TextureData<T> : AnyTextureData {
     public let width : Int
     public let height : Int
     public let channelCount : Int
