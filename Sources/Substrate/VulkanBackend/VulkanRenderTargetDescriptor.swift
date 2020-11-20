@@ -73,6 +73,9 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var subpasses = [VulkanSubpass]()
     private(set) var dependencies = [VkSubpassDependency]()
     
+    var compatibleRenderPass: VulkanCompatibleRenderPass? = nil
+    var attachmentIndices = [RenderTargetAttachmentIndex: UInt32]()
+    
     init(renderPass: RenderPassRecord) {
         let drawRenderPass = renderPass.pass as! DrawRenderPass
         self.descriptor = drawRenderPass.renderTargetDescriptorForActiveAttachments
@@ -175,9 +178,9 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         self.dependencies.append(dependency)
     }
     
-    func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ inDescriptor: inout D?, with new: D?, clearOperation: ClearOperation) -> MergeResult {
-        guard let descriptor = inDescriptor else {
-            inDescriptor = new
+    func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ fullDescriptor: inout D?, previousSubpassDescriptor: D?, with new: D?, clearOperation: ClearOperation) -> MergeResult {
+        guard let descriptor = fullDescriptor else {
+            fullDescriptor = new
             return new == nil ? .identical : .compatible
         }
         
@@ -191,14 +194,14 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             return .incompatible
         }
         
-        if  descriptor.texture     == new.texture &&
-            descriptor.level       == new.level &&
-            descriptor.slice       == new.slice &&
-            descriptor.depthPlane  == new.depthPlane {
-            return .identical
+        if  descriptor.texture     != new.texture ||
+            descriptor.level       != new.level ||
+            descriptor.slice       != new.slice ||
+            descriptor.depthPlane  != new.depthPlane {
+            return .incompatible
         }
         
-        return .incompatible
+        return previousSubpassDescriptor == nil ? .compatible : .identical
     }
     
     func tryMerge(withPass passRecord: RenderPassRecord) -> Bool {
@@ -212,10 +215,13 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         var newDescriptor = descriptor
         newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: max(passDescriptor.colorAttachments.count - descriptor.colorAttachments.count, 0)))
         
+        let previousSubpassDescriptor = self.subpasses.last!.descriptor
+
         var mergeResult = MergeResult.identical
         
         for i in 0..<min(newDescriptor.colorAttachments.count, passDescriptor.colorAttachments.count) {
-            switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: passDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
+            let previousSubpassAttachment = (i < previousSubpassDescriptor.colorAttachments.count) ? previousSubpassDescriptor.colorAttachments[i] : nil
+            switch self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], previousSubpassDescriptor: previousSubpassAttachment, with: passDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
             case .identical:
                 break
             case .incompatible:
@@ -229,7 +235,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             mergeResult = .compatible
         }
         
-        switch self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: passDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
+        switch self.tryUpdateDescriptor(&newDescriptor.depthAttachment, previousSubpassDescriptor: previousSubpassDescriptor.depthAttachment, with: passDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
         case .identical:
             break
         case .incompatible:
@@ -238,7 +244,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             mergeResult = .compatible
         }
         
-        switch self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: passDescriptor.stencilAttachment, clearOperation: pass.stencilClearOperation) {
+        switch self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, previousSubpassDescriptor: previousSubpassDescriptor.stencilAttachment, with: passDescriptor.stencilAttachment, clearOperation: pass.stencilClearOperation) {
         case .identical:
             break
         case .incompatible:
@@ -254,7 +260,7 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             return false
          case .compatible:
             let lastSubpassIndex = self.subpasses.last!.index
-            self.subpasses.append(VulkanSubpass(descriptor: newDescriptor, index: lastSubpassIndex + 1))
+            self.subpasses.append(VulkanSubpass(descriptor: passDescriptor, index: lastSubpassIndex + 1))
             // We'll add the dependencies later.
         }
         
@@ -442,8 +448,154 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         if let stencilAttachment = self.descriptor.stencilAttachment {
             self.processLoadAndStoreActions(for: stencilAttachment, attachmentIndex: .depthStencil, loadAction: self.stencilActions.0, storedTextures: &storedTextures)
         }
+        
+        self.dependencies.sort(by: { $0.srcSubpass < $1.srcSubpass || ($0.srcSubpass == $1.srcSubpass && $0.dstSubpass < $1.dstSubpass) })
+        
+        self.compatibleRenderPass = VulkanCompatibleRenderPass(descriptor: self, attachmentIndices: &self.attachmentIndices)
     }
 }
 
+
+extension VkSubpassDependency: Hashable {
+    public static func ==(lhs: VkSubpassDependency, rhs: VkSubpassDependency) -> Bool {
+        return lhs.srcSubpass == rhs.srcSubpass &&
+            lhs.dstSubpass == rhs.dstSubpass &&
+            lhs.srcStageMask == rhs.srcStageMask &&
+            lhs.dstStageMask == rhs.dstStageMask &&
+            lhs.srcAccessMask == rhs.srcAccessMask &&
+            lhs.dstAccessMask == rhs.dstAccessMask &&
+            lhs.dependencyFlags == rhs.dependencyFlags
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.srcSubpass)
+        hasher.combine(self.dstSubpass)
+        hasher.combine(self.srcStageMask)
+        hasher.combine(self.dstStageMask)
+        hasher.combine(self.srcAccessMask)
+        hasher.combine(self.dstAccessMask)
+        hasher.combine(self.dependencyFlags)
+    }
+}
+
+struct VulkanCompatibleRenderPass: Hashable {
+    struct Attachment: Hashable {
+        var format: PixelFormat
+        var sampleCount: Int
+    }
+    
+    struct Subpass {
+        var flags: VkSubpassDescriptionFlags
+        var bindPoint: VkPipelineBindPoint
+        var inputAttachmentIndices: [UInt32]
+        var colorAttachmentIndices: [UInt32]
+        var depthStencilAttachmentIndex: UInt32
+        var resolveAttachmentIndices: [UInt32]
+        
+        static func areCompatible(_ attachmentsA: [UInt32], _ attachmentsB: [UInt32]) -> Bool {
+            let sharedCount = min(attachmentsA.count, attachmentsB.count)
+            return attachmentsA[..<sharedCount] == attachmentsB[..<sharedCount] &&
+                attachmentsA.dropFirst(sharedCount).allSatisfy({ $0 == VK_ATTACHMENT_UNUSED }) &&
+                attachmentsB.dropFirst(sharedCount).allSatisfy({ $0 == VK_ATTACHMENT_UNUSED })
+        }
+        
+        func hash(into hasher: inout Hasher, isOnlySubpass: Bool) {
+            hasher.combine(self.flags)
+            hasher.combine(self.bindPoint.rawValue)
+            for index in self.inputAttachmentIndices where index != VK_ATTACHMENT_UNUSED {
+                hasher.combine(index)
+            }
+            for index in self.colorAttachmentIndices where index != VK_ATTACHMENT_UNUSED {
+                hasher.combine(index)
+            }
+            if depthStencilAttachmentIndex != VK_ATTACHMENT_UNUSED {
+                hasher.combine(depthStencilAttachmentIndex)
+            }
+            
+            if !isOnlySubpass {
+                for index in self.resolveAttachmentIndices where index != VK_ATTACHMENT_UNUSED {
+                    hasher.combine(index)
+                }
+            }
+        }
+        
+        static func areCompatible(_ subpassA: Subpass, _ subpassB: Subpass, isOnlySubpass: Bool) -> Bool {
+            return subpassA.flags == subpassB.flags &&
+                subpassA.bindPoint == subpassB.bindPoint &&
+                self.areCompatible(subpassA.inputAttachmentIndices, subpassB.inputAttachmentIndices) &&
+                self.areCompatible(subpassA.colorAttachmentIndices, subpassB.colorAttachmentIndices) &&
+                subpassA.depthStencilAttachmentIndex == subpassB.depthStencilAttachmentIndex &&
+                (isOnlySubpass ? true : self.areCompatible(subpassA.resolveAttachmentIndices, subpassB.resolveAttachmentIndices))
+        }
+    }
+    
+    var attachments: [Attachment]
+    var flags: VkRenderPassCreateFlags
+    var dependencies: [VkSubpassDependency] // Sorted by subpass index. Note that external dependencies are currently required to match: https://github.com/KhronosGroup/Vulkan-Docs/issues/726
+    var subpasses: [Subpass]
+    
+    init(descriptor: VulkanRenderTargetDescriptor, attachmentIndices: inout [RenderTargetAttachmentIndex: UInt32]) {
+        self.attachments = [Attachment]()
+        self.attachments.reserveCapacity(descriptor.descriptor.colorAttachments.count + 1)
+        
+        if let depthAttachment = descriptor.descriptor.depthAttachment {
+            attachmentIndices[.depthStencil] = UInt32(self.attachments.count)
+            self.attachments.append(Attachment(format: depthAttachment.texture.descriptor.pixelFormat, sampleCount: depthAttachment.texture.descriptor.sampleCount))
+        }
+        if let stencilAttachment = descriptor.descriptor.stencilAttachment, stencilAttachment.texture != descriptor.descriptor.depthAttachment?.texture {
+            attachmentIndices[.depthStencil] = UInt32(self.attachments.count)
+            self.attachments.append(Attachment(format: stencilAttachment.texture.descriptor.pixelFormat, sampleCount: stencilAttachment.texture.descriptor.sampleCount))
+        }
+        for (i, colorAttachment) in descriptor.descriptor.colorAttachments.enumerated() {
+            guard let colorAttachment = colorAttachment else { continue }
+            attachmentIndices[.color(i)] = UInt32(self.attachments.count)
+            self.attachments.append(Attachment(format: colorAttachment.texture.descriptor.pixelFormat, sampleCount: colorAttachment.texture.descriptor.sampleCount))
+            
+            if let resolveTexture = colorAttachment.resolveTexture {
+                attachmentIndices[.colorResolve(i)] = UInt32(self.attachments.count)
+                self.attachments.append(Attachment(format: resolveTexture.descriptor.pixelFormat, sampleCount: resolveTexture.descriptor.sampleCount))
+            }
+        }
+        
+        self.flags = 0
+        self.dependencies = descriptor.dependencies
+        
+        self.subpasses = [Subpass]()
+        self.subpasses.reserveCapacity(descriptor.subpasses.last!.index + 1)
+        for subpass in descriptor.subpasses {
+            if subpass.index == self.subpasses.count {
+                self.subpasses.append(Subpass(flags: 0,
+                                              bindPoint: VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                              inputAttachmentIndices: subpass.inputAttachments.map { attachmentIndices[$0]! },
+                                              colorAttachmentIndices: subpass.descriptor.colorAttachments.enumerated().map { (i, attachment) in
+                                                if attachment == nil { return VK_ATTACHMENT_UNUSED }
+                                                return attachmentIndices[.color(i)]!
+                                              },
+                                              depthStencilAttachmentIndex: (subpass.descriptor.depthAttachment != nil || subpass.descriptor.stencilAttachment != nil) ? attachmentIndices[.depthStencil]! : VK_ATTACHMENT_UNUSED,
+                                              resolveAttachmentIndices: subpass.descriptor.colorAttachments.enumerated().map { (i, attachment) in
+                                                if attachment?.resolveTexture == nil { return VK_ATTACHMENT_UNUSED }
+                                                return attachmentIndices[.colorResolve(i)]!
+                                              }))
+            }
+        }
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(self.attachments)
+        hasher.combine(self.flags)
+        hasher.combine(self.dependencies)
+        for subpass in self.subpasses {
+            subpass.hash(into: &hasher, isOnlySubpass: subpasses.count == 1)
+        }
+    }
+    
+    static func ==(lhs: VulkanCompatibleRenderPass, rhs: VulkanCompatibleRenderPass) -> Bool {
+        return lhs.attachments == rhs.attachments &&
+            lhs.flags == rhs.flags &&
+            lhs.dependencies == rhs.dependencies &&
+            lhs.subpasses.count == rhs.subpasses.count &&
+            zip(lhs.subpasses, rhs.subpasses).allSatisfy({ Subpass.areCompatible($0, $1, isOnlySubpass: lhs.subpasses.count == 1) })
+    }
+}
 
 #endif // canImport(Vulkan)

@@ -264,7 +264,6 @@ extension VulkanBackend {
         let allocator = ThreadLocalTagAllocator(tag: .renderGraphResourceCommandArrayTag)
         
         var currentEncoderIndex = 0
-        var currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
         var currentPassIndex = 0
         
         var bufferBarriers = [VkBufferMemoryBarrier]()
@@ -274,24 +273,7 @@ extension VulkanBackend {
         var barrierBeforeStages: VkPipelineStageFlagBits = []
         var barrierLastIndex: Int = .max
         
-        var layoutTransitionOnlyBarriers = [VkImageMemoryBarrier]()
-        var layoutTransitionOnlyBarrierBeforeStages: VkPipelineStageFlagBits = []
-        var layoutTransitionOnlyBarrierLastIndex: Int = .max
-        
         let addBarrier: (inout [CompactedResourceCommand<VulkanCompactedResourceCommandType>]) -> Void = { compactedResourceCommands in
-            let combinedBarrierIndex = min(layoutTransitionOnlyBarrierLastIndex, barrierLastIndex)
-            let barrierEncoder = commandInfo.commandEncoders.first(where: { $0.commandRange.contains(combinedBarrierIndex) })!
-            if barrierEncoder.type != .draw {
-                imageBarriers.appendBarriers(layoutTransitionOnlyBarriers)
-                barrierAfterStages.formUnion(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT)
-                barrierBeforeStages.formUnion(layoutTransitionOnlyBarrierBeforeStages)
-                barrierLastIndex = combinedBarrierIndex
-                
-                layoutTransitionOnlyBarriers.removeAll(keepingCapacity: true)
-                layoutTransitionOnlyBarrierBeforeStages = []
-                layoutTransitionOnlyBarrierLastIndex = .max
-            }
-            
             let bufferBarriersPtr: UnsafeMutablePointer<VkBufferMemoryBarrier> = allocator.allocate(capacity: bufferBarriers.count)
             bufferBarriersPtr.initialize(from: bufferBarriers, count: bufferBarriers.count)
             
@@ -314,7 +296,15 @@ extension VulkanBackend {
             barrierLastIndex = .max
         }
         
-        func processMemoryBarrier(resource: Resource, afterCommand: Int, afterUsageType: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsageType: ResourceUsageType, beforeStages: RenderStages, activeRange: ActiveResourceRange) {
+        func processMemoryBarrier(resource: Resource, afterCommand: Int, afterUsageType: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsageType: ResourceUsageType, beforeStages: RenderStages, activeRange: ActiveResourceRange) -> Bool {
+            
+            let currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
+            // We can't insert layout transition barriers during a render pass if the barriers are not applicable to that render encoder;
+            // instead, defer them until compute work/as late as necessary.
+            if afterUsageType == .frameStartLayoutTransitionCheck, currentEncoder.type == .draw, !currentEncoder.commandRange.contains(beforeCommand) {
+                return false
+            }
+            
             var remainingRange = ActiveResourceRange.inactive // The subresource range not processed by this barrier.
             var activeRange = activeRange
             
@@ -344,17 +334,13 @@ extension VulkanBackend {
             defer {
                 // It's possible there are multiple source layouts/subresource ranges, in which case we insert multiple barriers.
                 if !remainingRange.isEqual(to: .inactive, resource: resource) {
-                    processMemoryBarrier(resource: resource, afterCommand: afterCommand, afterUsageType: afterUsageType, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsageType, beforeStages: beforeStages, activeRange: remainingRange)
+                    _ = processMemoryBarrier(resource: resource, afterCommand: afterCommand, afterUsageType: afterUsageType, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsageType, beforeStages: beforeStages, activeRange: remainingRange)
                 }
             }
             
             if sourceLayout == destinationLayout, afterUsageType == .frameStartLayoutTransitionCheck || (!afterUsageType.isWrite && !beforeUsageType.isWrite) {
-                return // No layout transition needed, and no execution barrier needed, so we don't need to insert a memory barrier.
+                return true // No layout transition needed, and no execution barrier needed, so we don't need to insert a memory barrier; however, we've still successfully processed this barrier.
             }
-            
-            // We can't insert layout transition barriers during a render pass if the barriers are not applicable to that render encoder;
-            // instead, defer them until compute work/as late as necessary.
-            let isLayoutTransitionOnlyBarrierForDifferentEncoder = afterUsageType == .frameStartLayoutTransitionCheck && !currentEncoder.commandRange.contains(beforeCommand)
             
             let sourceMask = afterUsageType.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: afterStages)
             let destinationMask = beforeUsageType.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: beforeStages)
@@ -364,7 +350,7 @@ extension VulkanBackend {
 
             var beforeCommand = beforeCommand
             
-            if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound, !isLayoutTransitionOnlyBarrierForDifferentEncoder {
+            if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound {
                 var subpassDependency = VkSubpassDependency()
                 subpassDependency.dependencyFlags = VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
                 if afterUsageType == .frameStartLayoutTransitionCheck {
@@ -414,9 +400,9 @@ extension VulkanBackend {
                         // renderTargetDescriptor.addDependency(subpassDependency)
                     }
                 } else {
-                    // A subpass dependency should be enough to handle this case, unless there are other layers we also need to transition.
-                    // TODO: can we do better with fine-grained tracking of layouts and barriers for different layers?
+                    // A subpass dependency should be enough to handle this case.
                     renderTargetDescriptor.addDependency(subpassDependency)
+                    return true
                 }
             }
             
@@ -449,66 +435,63 @@ extension VulkanBackend {
                 barrier.subresourceRange = VkImageSubresourceRange(aspectMask: texture.descriptor.pixelFormat.aspectFlags, baseMipLevel: 0, levelCount: UInt32(texture.descriptor.mipmapLevelCount), baseArrayLayer: 0, layerCount: UInt32(texture.descriptor.arrayLength))
                 switch activeRange {
                 case .fullResource:
-                    if isLayoutTransitionOnlyBarrierForDifferentEncoder {
-                        layoutTransitionOnlyBarriers.appendBarrier(barrier)
-                    } else {
-                        imageBarriers.appendBarrier(barrier)
-                    }
+                    imageBarriers.appendBarrier(barrier)
                 case .texture(let mask):
                     if mask.value == .max {
-                        if isLayoutTransitionOnlyBarrierForDifferentEncoder {
-                            layoutTransitionOnlyBarriers.appendBarrier(barrier)
-                        } else {
-                            imageBarriers.appendBarrier(barrier)
-                        }
+                        imageBarriers.appendBarrier(barrier)
                     } else {
                         var activeMask = SubresourceMask(source: mask, subresourceCount: texture.descriptor.subresourceCount, allocator: AllocatorType(allocator))
                         processImageSubresourceRanges(&activeMask, textureDescriptor: texture.descriptor, allocator: AllocatorType(allocator)) { range in
                             barrier.subresourceRange = range
-                            assert(!imageBarriers.contains(where: { $0.image == barrier.image && $0.subresourceRange == range })) // Ensure we don't add duplicate barriers.
-                            if isLayoutTransitionOnlyBarrierForDifferentEncoder {
-                                layoutTransitionOnlyBarriers.appendBarrier(barrier)
-                            } else {
-                                imageBarriers.appendBarrier(barrier)
-                            }
+                            imageBarriers.appendBarrier(barrier)
                         }
                     }
                 default:
                     fatalError()
                 }
             }
-            
-            if isLayoutTransitionOnlyBarrierForDifferentEncoder {
-                layoutTransitionOnlyBarrierBeforeStages.formUnion(destinationMask)
-                layoutTransitionOnlyBarrierLastIndex = min(beforeCommand, layoutTransitionOnlyBarrierLastIndex)
-            } else {
-                barrierAfterStages.formUnion(sourceMask)
-                barrierBeforeStages.formUnion(destinationMask)
-                barrierLastIndex = min(beforeCommand, barrierLastIndex)
+            barrierAfterStages.formUnion(sourceMask)
+            barrierBeforeStages.formUnion(destinationMask)
+            barrierLastIndex = min(beforeCommand, barrierLastIndex)
+
+            return true
+        }
+
+        var pendingCommands = [FrameResourceCommands]()
+
+        func processPendingCommands() {
+            let encoderFirstCommand = commandInfo.commandEncoders[currentEncoderIndex].commandRange.first!
+            var i = 0
+            while i < pendingCommands.count {
+                guard case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages, let activeRange) = pendingCommands[i] else { 
+                    i += 1
+                    continue
+                }
+
+                if processMemoryBarrier(resource: resource, afterCommand: encoderFirstCommand, afterUsageType: afterUsage, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsage, beforeStages: beforeStages, activeRange: activeRange) {
+                    pendingCommands.remove(at: i, preservingOrder: false)
+                } else {
+                    i += 1
+                }
             }
         }
 
         for command in commandGenerator.commands {
-            if command.index >= barrierLastIndex || command.index >= layoutTransitionOnlyBarrierLastIndex { // For barriers, the barrier associated with command.index needs to happen _after_ any barriers required to happen _by_ barrierLastIndex
-                addBarrier(&compactedResourceCommands)
-            }
-            if command.index >= layoutTransitionOnlyBarrierLastIndex { 
-                // We may have only processed the non-layout-transition barriers if the encoder was a draw encoder (in a render pass);
-                // we still need to ensure the layout transition barriers happen before the specified command index.
-                assert(barrierLastIndex > command.index)
-                addBarrier(&compactedResourceCommands)
-            }
-            
             while !commandInfo.passes[currentPassIndex].commandRange!.contains(command.index) {
                 currentPassIndex += 1
             }
             
-            while !currentEncoder.commandRange.contains(command.index) {
+            while !commandInfo.commandEncoders[currentEncoderIndex].commandRange.contains(command.index) {
                 currentEncoderIndex += 1
-                currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
+
+                processPendingCommands()
                 
                 assert(bufferBarriers.isEmpty)
                 assert(imageBarriers.isEmpty)
+            }
+
+            if command.index >= barrierLastIndex { // For barriers, the barrier associated with command.index needs to happen _after_ any barriers required to happen _by_ barrierLastIndex
+                addBarrier(&compactedResourceCommands)
             }
             
             // Strategy:
@@ -518,15 +501,28 @@ extension VulkanBackend {
             case .useResource:
                 fatalError("Vulkan does not track resource residency")
             case .memoryBarrier(let resource, let afterUsage, let afterStages, let beforeCommand, let beforeUsage, let beforeStages, let activeRange):
-                processMemoryBarrier(resource: resource, afterCommand: command.index, afterUsageType: afterUsage, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsage, beforeStages: beforeStages, activeRange: activeRange)
+                if !processMemoryBarrier(resource: resource, afterCommand: command.index, afterUsageType: afterUsage, afterStages: afterStages, beforeCommand: beforeCommand, beforeUsageType: beforeUsage, beforeStages: beforeStages, activeRange: activeRange) {
+                    pendingCommands.append(command.command)
+                }
             }
         }
         
-        if barrierLastIndex < .max || layoutTransitionOnlyBarrierLastIndex < .max {
+        if barrierLastIndex < .max  {
             addBarrier(&compactedResourceCommands)
         }
 
-        assert(layoutTransitionOnlyBarriers.isEmpty)
+        // Flush any pending layout transition commands
+        currentEncoderIndex += 1
+        while currentEncoderIndex < commandInfo.commandEncoders.count {
+            processPendingCommands()
+            
+            if barrierLastIndex < .max  {
+                addBarrier(&compactedResourceCommands)
+            }
+            currentEncoderIndex += 1
+        }
+
+        assert(pendingCommands.isEmpty, "Barriers \(pendingCommands) are still pending")
         
         compactedResourceCommands.sort()
     }

@@ -490,6 +490,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         
         vkImage.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false, frameIndex: self.frameIndex)
+        
         return vkImage
     }
     

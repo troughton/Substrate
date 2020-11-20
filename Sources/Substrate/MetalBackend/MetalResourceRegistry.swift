@@ -340,6 +340,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     private var heapResourceUsageFences = [Resource : [FenceDependency]]()
     private var heapResourceDisposalFences = [Resource : [FenceDependency]]()
     
+    private var enqueuedTextureViewDisposals = [Unmanaged<MTLTexture>]()
+    
     private let frameSharedBufferAllocator : MetalTemporaryBufferAllocator
     private let frameSharedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
     
@@ -587,11 +589,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         let baseResource = texture.baseResource!
         switch texture.textureViewBaseInfo! {
         case .buffer(let bufferInfo):
-            let mtlBuffer = resourceMap[baseResource.buffer!]
+            let mtlBuffer = resourceMap[baseResource.buffer!]!
             let descriptor = MTLTextureDescriptor(bufferInfo.descriptor, usage: properties.usage, isAppleSiliconGPU: device.isAppleSiliconGPU)
-            mtlTexture = mtlBuffer.resource.makeTexture(descriptor: descriptor, offset: bufferInfo.offset, bytesPerRow: bufferInfo.bytesPerRow)!
+            mtlTexture = mtlBuffer.resource.makeTexture(descriptor: descriptor, offset: bufferInfo.offset + mtlBuffer.offset, bytesPerRow: bufferInfo.bytesPerRow)!
         case .texture(let textureInfo):
-            let baseTexture = resourceMap[baseResource.texture!]
+            let baseTexture = resourceMap[baseResource.texture!]!
             if textureInfo.levels.lowerBound == -1 || textureInfo.slices.lowerBound == -1 {
                 assert(textureInfo.levels.lowerBound == -1 && textureInfo.slices.lowerBound == -1)
                 mtlTexture = baseTexture.texture.makeTextureView(pixelFormat: MTLPixelFormat(textureInfo.pixelFormat))!
@@ -803,7 +805,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
                 return
             }
             if texture.isTextureView {
-                mtlTexture._texture.release()
+                self.enqueuedTextureViewDisposals.append(mtlTexture._texture)
+                return
             }
             
             var fences : [FenceDependency] = []
@@ -864,6 +867,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.bufferReferences.removeAll()
         self.argumentBufferReferences.removeAll()
         self.argumentBufferArrayReferences.removeAll()
+        
+        for texture in self.enqueuedTextureViewDisposals {
+            texture.release()
+        }
+        self.enqueuedTextureViewDisposals.removeAll(keepingCapacity: true)
         
         self.heapResourceUsageFences.removeAll(keepingCapacity: true)
         self.heapResourceDisposalFences.removeAll(keepingCapacity: true)

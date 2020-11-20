@@ -23,7 +23,7 @@ public final class GPUResourceUploader {
     public static var skipUpload = false
     
     static let lock = DispatchSemaphore(value: 1)
-    public internal(set) static var renderGraph : RenderGraph! = nil
+    @usableFromInline static var renderGraph : RenderGraph! = nil
     private static var enqueuedBytes = 0
     private static var maxUploadSize = 128 * 1024 * 1024
     
@@ -43,7 +43,7 @@ public final class GPUResourceUploader {
         
         @inlinable
         public func execute(blitCommandEncoder: BlitCommandEncoder) {
-            let stagingBuffer = Buffer(descriptor: BufferDescriptor(length: self.stagingBufferLength, storageMode: .shared, cacheMode: .writeCombined, usage: .blitSource), renderGraph: GPUResourceUploader.renderGraph)
+            let stagingBuffer = Buffer(descriptor: BufferDescriptor(length: self.stagingBufferLength, storageMode: .shared, cacheMode: .writeCombined, usage: .blitSource))
             let bufferSlice = stagingBuffer[stagingBuffer.range, accessType: .write]
             self.closure(bufferSlice, blitCommandEncoder)
         }

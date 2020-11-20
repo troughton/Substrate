@@ -163,9 +163,8 @@ extension MTLRenderPassDescriptor {
             self.stencilAttachment = try MTLRenderPassStencilAttachmentDescriptor(stencilAttachment, clearStencil: descriptorWrapper.clearStencil, actions: descriptorWrapper.stencilActions, resourceMap: resourceMap)
         }
         
-        if let visibilityBuffer = descriptor.visibilityResultBuffer {
-            let buffer = resourceMap[visibilityBuffer]
-            assert(buffer.offset == 0, "TODO: Non-zero offsets need to be passed to the MTLRenderCommandEncoder via setVisibilityResultMode()")
+        if let visibilityBuffer = descriptor.visibilityResultBuffer, let buffer = resourceMap[visibilityBuffer] {
+            precondition(buffer.offset == 0, "TODO: Non-zero offsets need to be passed to the MTLRenderCommandEncoder via setVisibilityResultMode()")
             self.visibilityResultBuffer = buffer.buffer
         }
         
@@ -248,7 +247,7 @@ extension MTLRenderPipelineDescriptor {
 }
 
 extension MTLTextureDescriptor {
-    convenience init(_ descriptor: TextureDescriptor, usage: MTLTextureUsage, isAppleSiliconGPU: Bool) {
+    public convenience init(_ descriptor: TextureDescriptor, usage: MTLTextureUsage, isAppleSiliconGPU: Bool) {
         self.init()
         
         self.textureType = MTLTextureType(descriptor.textureType)

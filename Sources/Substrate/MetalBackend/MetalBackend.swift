@@ -437,11 +437,11 @@ final class MetalBackend : SpecificRenderBackend {
             encoderResidentResources.removeAll(keepingCapacity: true)
         }
         
-        let getResource: (Resource) -> Unmanaged<MTLResource> = { resource in
+        let getResource: (Resource) -> Unmanaged<MTLResource>? = { resource in
             if let buffer = resource.buffer {
-                return unsafeBitCast(resourceMap[buffer]._buffer, to: Unmanaged<MTLResource>.self)
+                return resourceMap[buffer].map { unsafeBitCast($0._buffer, to: Unmanaged<MTLResource>.self) }
             } else if let texture = resource.texture {
-                return unsafeBitCast(resourceMap[texture]._texture, to: Unmanaged<MTLResource>.self)
+                return resourceMap[texture].map { unsafeBitCast($0._texture, to: Unmanaged<MTLResource>.self) }
             } else if let argumentBuffer = resource.argumentBuffer {
                 return unsafeBitCast(resourceMap[argumentBuffer]._buffer, to: Unmanaged<MTLResource>.self)
             }
@@ -468,7 +468,7 @@ final class MetalBackend : SpecificRenderBackend {
             // memoryBarriers should be as late as possible.
             switch command.command {
             case .useResource(let resource, let usage, let stages, let allowReordering):
-                let mtlResource = getResource(resource)
+                guard let mtlResource = getResource(resource) else { break }
                 
                 var computedUsageType: MTLResourceUsage = []
                 if usage == .inputAttachmentRenderTarget || usage == .inputAttachment {
@@ -524,7 +524,9 @@ final class MetalBackend : SpecificRenderBackend {
                 }
                 
                 if barrierResources.count < 8 {
-                    barrierResources.append(getResource(resource))
+                    if let mtlResource = getResource(resource) {
+                        barrierResources.append(mtlResource)
+                    }
                 }
                 barrierScope.formUnion(scope)
                 barrierAfterStages.formUnion(MTLRenderStages(afterStages))

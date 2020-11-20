@@ -308,7 +308,22 @@ final class TextureDataStorage<T> {
     }
 }
 
-public struct TextureData<T> {
+public protocol AnyTextureData {
+    var width : Int { get }
+    var height : Int { get }
+    var channelCount : Int { get }
+    
+    var colorSpace : TextureColorSpace { get }
+    var alphaMode: TextureAlphaMode { get }
+    
+    mutating func reinterpretColor(as colorSpace: TextureColorSpace)
+    mutating func reinterpretAlphaMode(as alphaMode: TextureAlphaMode)
+    
+    func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode) throws
+    var preferredPixelFormat: PixelFormat { get }
+}
+
+public struct TextureData<T> : AnyTextureData {
     public let width : Int
     public let height : Int
     public let channelCount : Int
@@ -714,6 +729,9 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         }
     }
     
+    @_specialize(kind: full, where T == UInt8)
+    @_specialize(kind: full, where T == UInt16)
+    @_specialize(kind: full, where T == UInt32)
     public mutating func convert(toColorSpace: TextureColorSpace) {
         if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
             return
@@ -735,6 +753,9 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         self.apply({ floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
     }
     
+    @_specialize(kind: full, where T == UInt8)
+    @_specialize(kind: full, where T == UInt16)
+    @_specialize(kind: full, where T == UInt32)
     public mutating func convertToPremultipliedAlpha() {
         guard case .postmultiplied = self.alphaMode else { return }
         self.ensureUniqueness()
@@ -745,7 +766,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
             if self.colorSpace == .sRGB {
                 (self as! TextureData<UInt8>)._convertSRGBPostmultipliedToPremultiplied()
                 return
-            } else if self.colorSpace == .linearSRGB {
+            } else if self.colorSpace == .linearSRGB || self.colorSpace == .undefined {
                 (self as! TextureData<UInt8>)._convertLinearPostmultipliedToPremultiplied()
                 return
             }
@@ -765,6 +786,9 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         }
     }
     
+    @_specialize(kind: full, where T == UInt8)
+    @_specialize(kind: full, where T == UInt16)
+    @_specialize(kind: full, where T == UInt32)
     public mutating func convertToPostmultipliedAlpha() {
         guard case .premultiplied = self.alphaMode, self.channelCount == 4 else { return }
         self.ensureUniqueness()
@@ -774,7 +798,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
             if self.colorSpace == .sRGB {
                 (self as! TextureData<UInt8>)._convertSRGBPremultipliedToPostmultiplied()
                 return
-            } else if self.colorSpace == .linearSRGB {
+            } else if self.colorSpace == .linearSRGB || self.colorSpace == .undefined {
                 (self as! TextureData<UInt8>)._convertLinearPremultipliedToPostmultiplied()
                 return
             }
@@ -790,6 +814,37 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
                     let linearVal = clamp(TextureColourSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)
                     self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
                 }
+            }
+        }
+    }
+}
+
+extension TextureData {
+    @inlinable
+    public func withTextureReinterpreted<U, Result>(as: U.Type, perform: (TextureData<U>) throws -> Result) rethrows -> Result{
+        precondition(MemoryLayout<U>.stride == MemoryLayout<T>.stride, "\(U.self) is not layout compatible with \(T.self)")
+        let storage = self.storage
+        return try self.withUnsafeBufferPointer { buffer in
+            return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
+                let data = TextureData<U>(width: self.width, height: self.height, channels: self.channelCount, data: UnsafeMutablePointer(mutating: reboundBuffer.baseAddress!), colorSpace: self.colorSpace, alphaMode: self.alphaMode, deallocateFunc: { [storage] _ in _ = storage })
+                return try perform(data)
+            }
+        }
+    }
+    
+    @inlinable
+    public mutating func withMutableTextureReinterpreted<U, Result>(as: U.Type, perform: (inout TextureData<U>) throws -> Result) rethrows -> Result{
+        precondition(MemoryLayout<U>.stride == MemoryLayout<T>.stride, "\(U.self) is not layout compatible with \(T.self)")
+        let width = self.width
+        let height = self.height
+        let channels = self.channelCount
+        let colorSpace = self.colorSpace
+        let alphaMode = self.alphaMode
+        let storage = self.storage
+        return try self.withUnsafeMutableBufferPointer { buffer in
+            return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
+                var data = TextureData<U>(width: width, height: height, channels: channels, data: reboundBuffer.baseAddress!, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { [storage] _ in _ = storage })
+                return try perform(&data)
             }
         }
     }

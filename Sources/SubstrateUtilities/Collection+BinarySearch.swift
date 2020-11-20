@@ -12,7 +12,7 @@ extension Collection {
     /// Finds such index N that predicate is true for all elements up to
     /// but not including the index N, and is false for all elements
     /// starting with index N.
-    /// Behavior is undefined if there is no such N.
+    /// Behavior is undefined if the collection is not sorted.
     @inlinable
     public func binarySearch(predicate: (Iterator.Element) -> Bool) -> Index {
         var low = startIndex

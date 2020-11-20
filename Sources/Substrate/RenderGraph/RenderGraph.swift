@@ -454,7 +454,7 @@ public final class RenderGraph {
         self.renderPasses.append(RenderPassRecord(pass: renderPass, passIndex: self.renderPasses.count))
     }
     
-    public func addBlitCallbackPass(file: String = #file, line: Int = #line,
+    public func addBlitCallbackPass(file: String = #fileID, line: Int = #line,
                                     _ execute: @escaping (BlitCommandEncoder) -> Void) {
         self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
     }
@@ -464,7 +464,7 @@ public final class RenderGraph {
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
     
-    public func addClearPass(file: String = #file, line: Int = #line,
+    public func addClearPass(file: String = #fileID, line: Int = #line,
                              renderTarget: RenderTargetDescriptor,
                              colorClearOperations: [ColorClearOperation] = [],
                              depthClearOperation: DepthClearOperation = .keep,
@@ -474,7 +474,7 @@ public final class RenderGraph {
                                             execute: { _ in }))
     }
     
-    public func addDrawCallbackPass(file: String = #file, line: Int = #line,
+    public func addDrawCallbackPass(file: String = #fileID, line: Int = #line,
                                     descriptor: RenderTargetDescriptor,
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
@@ -496,7 +496,7 @@ public final class RenderGraph {
                                             execute: execute))
     }
     
-    public func addDrawCallbackPass<R>(file: String = #file, line: Int = #line,
+    public func addDrawCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                        descriptor: RenderTargetDescriptor,
                                        colorClearOperations: [ColorClearOperation] = [],
                                        depthClearOperation: DepthClearOperation = .keep,
@@ -520,7 +520,7 @@ public final class RenderGraph {
         reflection: reflection, execute: execute))
     }
 
-    public func addComputeCallbackPass(file: String = #file, line: Int = #line,
+    public func addComputeCallbackPass(file: String = #fileID, line: Int = #line,
                                        _ execute: @escaping (ComputeCommandEncoder) -> Void) {
         self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
     }
@@ -530,7 +530,7 @@ public final class RenderGraph {
         self.addPass(CallbackComputeRenderPass(name: name, execute: execute))
     }
 
-    public func addComputeCallbackPass<R>(file: String = #file, line: Int = #line,
+    public func addComputeCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                           reflection: R.Type,
                                           _ execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
         self.addPass(ReflectableCallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", reflection: reflection, execute: execute))
@@ -542,7 +542,7 @@ public final class RenderGraph {
         self.addPass(ReflectableCallbackComputeRenderPass(name: name, reflection: reflection, execute: execute))
     }
     
-    public func addCPUCallbackPass(file: String = #file, line: Int = #line,
+    public func addCPUCallbackPass(file: String = #fileID, line: Int = #line,
                                    _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
     }
@@ -552,7 +552,7 @@ public final class RenderGraph {
         self.addPass(CallbackCPURenderPass(name: name, execute: execute))
     }
     
-    public func addExternalCallbackPass(file: String = #file, line: Int = #line,
+    public func addExternalCallbackPass(file: String = #fileID, line: Int = #line,
                                         _ execute: @escaping (ExternalCommandEncoder) -> Void) {
         self.addPass(CallbackExternalRenderPass(name: "Anonymous External Encoder Pass at \(file):\(line)", execute: execute))
     }
@@ -630,11 +630,11 @@ public final class RenderGraph {
         
         for resource in passRecord.pass.writtenResources {
             resource._markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
-            passRecord.writtenResources.insert(resource)
+            passRecord.writtenResources.insert(resource.baseResource ?? resource)
         }
         for resource in passRecord.pass.readResources {
             resource._markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
-            passRecord.readResources.insert(resource)
+            passRecord.readResources.insert(resource.baseResource ?? resource)
         }
     }
     
@@ -808,6 +808,9 @@ public final class RenderGraph {
             for (resource, resourceUsage) in passRecord.resourceUsages where resourceUsage.stages != .cpuBeforeRender {
                 assert(resource.isValid)
                 self.usedResources.insert(resource)
+                if let baseResource = resource.baseResource {
+                    self.usedResources.insert(baseResource)
+                }
                 
                 var resourceUsage = resourceUsage
                 resourceUsage.commandRange = Range(uncheckedBounds: (resourceUsage.commandRange.lowerBound + startCommandIndex, resourceUsage.commandRange.upperBound + startCommandIndex))

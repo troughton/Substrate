@@ -9,13 +9,20 @@ import Substrate
 
 extension Texture {
     /// Uploads a TextureData to a GPU texture using the GPUResourceUploader.
-    public init<T>(data textureData: TextureData<T>, pixelFormat: PixelFormat, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
-        precondition(Double(MemoryLayout<T>.stride * textureData.channelCount) == pixelFormat.bytesPerPixel)
+    @inlinable
+    public init(data textureData: AnyTextureData, pixelFormat: PixelFormat, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
+        precondition(textureData.preferredPixelFormat.bytesPerPixel == pixelFormat.bytesPerPixel)
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
         self = Texture(descriptor: descriptor, flags: flags)
         
-        try self.copyData(from: textureData, mipGenerationMode: mipGenerationMode)
+        try textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
+    }
+    
+    /// Uploads a TextureData to a GPU texture using the GPUResourceUploader.
+    @inlinable
+    public init(data textureData: AnyTextureData, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
+        try self.init(data: textureData, pixelFormat: textureData.preferredPixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
     }
 }
 

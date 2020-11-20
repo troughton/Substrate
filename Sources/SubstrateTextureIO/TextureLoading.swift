@@ -171,7 +171,7 @@ public struct TextureFileInfo {
 
 
 extension TextureData where T == UInt8 {
-    public init(fileAt url: URL, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode) throws {
+    public init(fileAt url: URL, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .inferred) throws {
         let fileInfo = try TextureFileInfo(url: url)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
@@ -203,6 +203,42 @@ extension TextureData where T == UInt8 {
             let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
             
             return TextureData(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
+        }
+    }
+}
+
+extension TextureData where T == Int8 {
+    public init(fileAt url: URL) throws {
+        let fileInfo = try TextureFileInfo(url: url)
+        
+        let channels = fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
+        
+        var width : Int32 = 0
+        var height : Int32 = 0
+        var componentsPerPixel : Int32 = 0
+        guard let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
+            throw TextureLoadingError.invalidTextureDataFormat(url, T.self)
+        }
+        
+        self.init(width: Int(width), height: Int(height), channels: Int(channels), data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: .undefined, alphaMode: .none, deallocateFunc: { stbi_image_free($0) })
+    }
+    
+    public init(data: Data, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .inferred) throws {
+        let fileInfo = try TextureFileInfo(format: .png, data: data)
+        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
+        
+        self = try data.withUnsafeBytes { data in
+            var width : Int32 = 0
+            var height : Int32 = 0
+            var componentsPerPixel : Int32 = 0
+            guard stbi_info_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel) != 0 else {
+                throw TextureLoadingError.invalidData
+            }
+            
+            let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
+            let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
+            
+            return TextureData(width: Int(width), height: Int(height), channels: Int(channels), data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
         }
     }
 }

@@ -244,7 +244,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             var previousUsageStages: RenderStages = []
             
             for usage in resource.usages
-                where usage.renderPassRecord.pass.passType != .external
+                where usage.renderPassRecord.pass.passType != .external &&
+                    usage.resource == resource // rather than a view of this resource.
                     //                        && usage.inArgumentBuffer
                      {
                         assert(usage.stages != .cpuBeforeRender) // CPU-only usages should have been filtered out by the RenderGraph
@@ -272,10 +273,11 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     }
     
     
-    func processInputAttachmentUsage(_ usage: ResourceUsage, resource: Resource, activeRange: ActiveResourceRange) {
+    func processInputAttachmentUsage(_ usage: ResourceUsage, activeRange: ActiveResourceRange) {
         guard RenderBackend.requiresEmulatedInputAttachments else { return }
         // To simulate input attachments on desktop platforms, we need to insert a render target barrier between every draw.
         let applicableRange = usage.commandRange
+        let resource = usage.resource
         
         let commands = usage.renderPassRecord.commands!
         let passCommandRange = usage.renderPassRecord.commandRange!
@@ -313,7 +315,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
             let firstUsage = usagesArray.first!
             
-            if Backend.TransientResourceRegistry.isAliasedHeapResource(resource: resource) {
+            if resource.baseResource == nil, Backend.TransientResourceRegistry.isAliasedHeapResource(resource: resource) {
                 let fenceDependency = FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: firstUsage.renderPassRecord), index: firstUsage.commandRange.lowerBound, stages: firstUsage.stages)
                 self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForHeapAliasingFences(resource: resource, waitDependency: fenceDependency), index: firstUsage.commandRange.lowerBound, order: .before))
             }
@@ -377,7 +379,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
                 
                 if usage.type == .inputAttachmentRenderTarget {
-                    processInputAttachmentUsage(usage, resource: resource, activeRange: activeSubresources)
+                    processInputAttachmentUsage(usage, activeRange: activeSubresources)
                 }
                 
                 let previousWriteIndex = usagesArray.indexOfPreviousWrite(before: usageIndex, resource: resource)
@@ -401,7 +403,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
                 
                 if let previousWrite = previousWriteIndex.map({ usagesArray[$0] }) {
-                    if usage.isRead,
+                    if usage.isRead, usage.resource == resource, // rather than processing a texture view/base resource
                         frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord),
                         !(previousWrite.type.isRenderTarget && usage.type == .readWriteRenderTarget) {
                         
@@ -422,13 +424,15 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     }
                 } else {
                     #if canImport(Vulkan)
-                    if Backend.self == VulkanBackend.self, resource.type == .texture, !resource.flags.contains(.windowHandle) {
+                    if Backend.self == VulkanBackend.self, resource.type == .texture, !resource.flags.contains(.windowHandle),
+                       usage.resource == resource {  // rather than processing a texture view/base resource
                         // We may need a pipeline barrier for image layout transitions or queue ownership transfers.
                         // Put the barrier as early as possible unless it's a render target barrier, in which case put it at the time of first usage
                         // so that it can be inserted as a subpass dependency.
 
                         if let previousRead = usagesArray.indexOfPreviousRead(before: usageIndex, resource: resource).map({ usagesArray[$0] }) {
                             if previousRead.type != usage.type { // We only need to check if the usage types differ, since otherwise the layouts are guaranteed to be the same.
+                            
                                 let onEncoder = frameCommandInfo.encoderIndex(for: previousRead.renderPassRecord)
                                 let fromEncoder = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
                                 if fromEncoder == onEncoder {
@@ -440,7 +444,6 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                                     commandEncoderDependencies.setDependency(from: fromEncoder,
                                                                             on: onEncoder,
                                                                             to: commandEncoderDependencies.dependency(from: fromEncoder, on: onEncoder)?.merged(with: dependency) ?? dependency)
-
                                 }
                             } 
 

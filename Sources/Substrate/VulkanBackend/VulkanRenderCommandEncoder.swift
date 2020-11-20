@@ -28,6 +28,8 @@ struct DynamicStateCreateInfo {
 struct VulkanRenderPipelineDescriptor : Hashable {
 
     let shaderLibrary : VulkanShaderLibrary
+    let compatibleRenderPass: VulkanCompatibleRenderPass
+    
     var hasChanged: Bool = false
     var pipelineReflection : VulkanPipelineReflection! = nil
 
@@ -48,10 +50,11 @@ struct VulkanRenderPipelineDescriptor : Hashable {
     var frontFaceWinding : Winding = .clockwise { didSet { self.hasChanged = hasChanged || frontFaceWinding != oldValue } }
     var layout: VkPipelineLayout! = nil { didSet { self.hasChanged = hasChanged || layout != oldValue } }
 
-    var renderTargetDescriptor: RenderTargetDescriptor! = nil { didSet { self.hasChanged = true } }
+    var subpassIndex: Int = 0 { didSet { self.hasChanged = hasChanged || subpassIndex != oldValue } }
 
-    init(shaderLibrary: VulkanShaderLibrary) {
+    init(shaderLibrary: VulkanShaderLibrary, compatibleRenderPass: VulkanCompatibleRenderPass) {
         self.shaderLibrary = shaderLibrary
+        self.compatibleRenderPass = compatibleRenderPass
     }
 
     func hash(into hasher: inout Hasher) {
@@ -64,19 +67,8 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         hasher.combine(self.frontFaceWinding)
         hasher.combine(self.layout)
 
-        for attachment in self.renderTargetDescriptor.colorAttachments {
-            hasher.combine(attachment?.texture.descriptor.pixelFormat)
-            hasher.combine(attachment?.texture.descriptor.sampleCount)
-            hasher.combine(attachment?.resolveTexture != nil)
-        }
-
-        hasher.combine(self.renderTargetDescriptor.depthAttachment?.texture.descriptor.pixelFormat)
-        hasher.combine(self.renderTargetDescriptor.depthAttachment?.texture.descriptor.sampleCount)
-        hasher.combine(self.renderTargetDescriptor.depthAttachment?.resolveTexture != nil)
-
-        hasher.combine(self.renderTargetDescriptor.stencilAttachment?.texture.descriptor.pixelFormat)
-        hasher.combine(self.renderTargetDescriptor.stencilAttachment?.texture.descriptor.sampleCount)
-        hasher.combine(self.renderTargetDescriptor.stencilAttachment?.resolveTexture != nil)
+        hasher.combine(self.subpassIndex)
+        hasher.combine(self.compatibleRenderPass)
     }
 
     static func ==(lhs: VulkanRenderPipelineDescriptor, rhs: VulkanRenderPipelineDescriptor) -> Bool {
@@ -87,43 +79,16 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         guard lhs.depthClipMode == rhs.depthClipMode else { return false }
         guard lhs.frontFaceWinding == rhs.frontFaceWinding else { return false }
         guard lhs.layout == rhs.layout else { return false }
+        guard lhs.subpassIndex == rhs.subpassIndex else { return false }
 
-        if lhs.renderTargetDescriptor.colorAttachments.count != rhs.renderTargetDescriptor.colorAttachments.count {
-            let sharedCount = min(lhs.renderTargetDescriptor.colorAttachments.count, rhs.renderTargetDescriptor.colorAttachments.count)
-            if !lhs.renderTargetDescriptor.colorAttachments.dropFirst(sharedCount).allSatisfy({ $0 == nil }) {
-                return false
-            }
-            if !rhs.renderTargetDescriptor.colorAttachments.dropFirst(sharedCount).allSatisfy({ $0 == nil }) {
-                return false
-            }
-        }
-
-        for (attachmentA, attachmentB) in zip(lhs.renderTargetDescriptor.colorAttachments, rhs.renderTargetDescriptor.colorAttachments) {
-            guard attachmentA?.texture.descriptor.pixelFormat == attachmentB?.texture.descriptor.pixelFormat else { return false }
-            guard attachmentA?.texture.descriptor.sampleCount == attachmentB?.texture.descriptor.sampleCount else { return false }
-            guard (attachmentA?.resolveTexture != nil) == (attachmentB?.resolveTexture != nil) else { return false }
-        }
-
-        do {
-            let attachmentA = lhs.renderTargetDescriptor.depthAttachment
-            let attachmentB = rhs.renderTargetDescriptor.depthAttachment
-            guard attachmentA?.texture.descriptor.pixelFormat == attachmentB?.texture.descriptor.pixelFormat else { return false }
-            guard attachmentA?.texture.descriptor.sampleCount == attachmentB?.texture.descriptor.sampleCount else { return false }
-            guard (attachmentA?.resolveTexture != nil) == (attachmentB?.resolveTexture != nil) else { return false }
-        }
-
-        do {
-            let attachmentA = lhs.renderTargetDescriptor.stencilAttachment
-            let attachmentB = rhs.renderTargetDescriptor.stencilAttachment
-            guard attachmentA?.texture.descriptor.pixelFormat == attachmentB?.texture.descriptor.pixelFormat else { return false }
-            guard attachmentA?.texture.descriptor.sampleCount == attachmentB?.texture.descriptor.sampleCount else { return false }
-            guard (attachmentA?.resolveTexture != nil) == (attachmentB?.resolveTexture != nil) else { return false }
+        guard lhs.compatibleRenderPass == rhs.compatibleRenderPass else {
+            return false
         }
 
         return true
     }
 
-    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, subpass: VulkanSubpass, stateCaches: VulkanStateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
+    func withVulkanPipelineCreateInfo(renderPass: VulkanRenderPass, stateCaches: VulkanStateCaches, _ withInfo: (inout VkGraphicsPipelineCreateInfo) -> Void) {
         
         var functionNames = [FixedSizeBuffer<CChar>]()
         
@@ -179,12 +144,8 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         rasterisationState.depthBiasSlopeFactor = 0
         rasterisationState.lineWidth = 1.0
         
-        var multisampleState = VkPipelineMultisampleStateCreateInfo(self.descriptor, sampleCount: 1)
-        multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO
-        multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
-        multisampleState.sampleShadingEnable = false
-        multisampleState.alphaToOneEnable = VkBool32(self.descriptor.isAlphaToOneEnabled)
-        multisampleState.alphaToCoverageEnable = VkBool32(self.descriptor.isAlphaToCoverageEnabled)
+        let sampleCount = self.compatibleRenderPass.attachments[0].sampleCount
+        let multisampleState = VkPipelineMultisampleStateCreateInfo(self.descriptor, sampleCount: sampleCount)
         
         let depthStencilState : VkPipelineDepthStencilStateCreateInfo
         if let depthStencil = self.depthStencil {
@@ -197,7 +158,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
             depthStencilState = dsState
         }
         
-        let colorBlendState = ColorBlendStateCreateInfo(descriptor: self.descriptor, renderTargetDescriptor: renderTargetDescriptor, attachmentCount: subpass.descriptor.colorAttachments.count)
+        let colorBlendState = ColorBlendStateCreateInfo(descriptor: self.descriptor, colorAttachmentIndices: self.compatibleRenderPass.subpasses[self.subpassIndex].colorAttachmentIndices)
         
         let dynamicState = DynamicStateCreateInfo.default
         
@@ -231,7 +192,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
                 pipelineInfo.pViewportState = escapingPointer(to: &states.8)
             
                 pipelineInfo.renderPass = renderPass.vkPass
-                pipelineInfo.subpass = UInt32(subpass.index)
+                pipelineInfo.subpass = UInt32(self.subpassIndex)
                 
                 withInfo(&pipelineInfo)
             }
@@ -264,7 +225,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         self.stateCaches = caches
         self.resourceMap = resourceMap
         
-        self.pipelineDescriptor = VulkanRenderPipelineDescriptor(shaderLibrary: shaderLibrary)
+        self.pipelineDescriptor = VulkanRenderPipelineDescriptor(shaderLibrary: shaderLibrary, compatibleRenderPass: renderTarget.compatibleRenderPass!)
     }
     
     var queueFamily: QueueFamily {
@@ -299,8 +260,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             // Bind the pipeline before binding any resources.
 
             let pipeline = self.stateCaches[self.pipelineDescriptor, 
-                                            renderPass: self.renderPass!, 
-                                            subpass: self.subpass!]
+                                            renderPass: self.renderPass!]
             vkCmdBindPipeline(self.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline)
         }
 
@@ -357,7 +317,7 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         self.currentDrawRenderPass = drawPass  
         self.subpass = self.renderTarget.subpassForPassIndex(pass.passIndex)  
 
-        self.pipelineDescriptor.renderTargetDescriptor = drawPass.renderTargetDescriptor
+        self.pipelineDescriptor.subpassIndex = self.subpass!.index
         
         let renderTargetSize = renderTarget.descriptor.size
         let renderTargetRect = VkRect2D(offset: VkOffset2D(x: 0, y: 0), extent: VkExtent2D(width: UInt32(renderTargetSize.width), height: UInt32(renderTargetSize.height)))
