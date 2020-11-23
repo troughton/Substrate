@@ -141,11 +141,19 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 print("Warning: requested heap \(heap) for texture \(texture) is invalid.")
                 return nil
             }
-            guard let texture = mtlHeap.makeTexture(descriptor: descriptor) else { return nil }
-            mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(texture))
+            guard let mtlTextureObj = mtlHeap.makeTexture(descriptor: descriptor) else {
+                print("Warning: failed to allocate texture \(texture) from heap \(heap).")
+                texture.dispose()
+                return nil
+            }
+            mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(mtlTextureObj))
         } else {
-            guard let texture = self.device.makeTexture(descriptor: descriptor) else { return nil }
-            mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(texture))
+            guard let mtlTextureObj = self.device.makeTexture(descriptor: descriptor) else {
+                print("Warning: failed to allocate texture \(texture).")
+                texture.dispose()
+                return nil
+            }
+            mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(mtlTextureObj))
         }
         
         if let label = texture.label {
@@ -173,11 +181,19 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 print("Warning: requested heap \(heap) for buffer \(buffer) is invalid.")
                 return nil
             }
-            guard let buffer = mtlHeap.makeBuffer(length: buffer.descriptor.length, options: options) else { return nil }
-            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(buffer), offset: 0)
+            guard let mtlBufferObj = mtlHeap.makeBuffer(length: buffer.descriptor.length, options: options) else {
+                print("Warning: failed to allocate buffer \(buffer) from heap \(heap).")
+                buffer.dispose()
+                return nil
+            }
+            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
         } else {
-            guard let buffer = self.device.makeBuffer(length: buffer.descriptor.length, options: options) else { return nil }
-            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(buffer), offset: 0)
+            guard let mtlBufferObj = self.device.makeBuffer(length: buffer.descriptor.length, options: options) else {
+                print("Warning: failed to allocate buffer \(buffer).")
+                buffer.dispose()
+                return nil
+            }
+            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
         }
         
         if let label = buffer.label {
@@ -286,6 +302,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             if texture.flags.contains(.windowHandle) {
                 return
             }
+            print("Disposing texture \(texture)")
             
             mtlTexture._texture.release()
         }
