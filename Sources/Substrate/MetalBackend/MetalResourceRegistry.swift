@@ -302,8 +302,6 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             if texture.flags.contains(.windowHandle) {
                 return
             }
-            print("Disposing texture \(texture)")
-            
             mtlTexture._texture.release()
         }
     }
