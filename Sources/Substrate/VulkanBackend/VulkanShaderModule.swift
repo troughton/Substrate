@@ -323,10 +323,6 @@ final class VulkanPipelineReflection : PipelineReflection {
         modifiedPath.set = newArgumentBufferPath.set
         return modifiedPath
     }
-    
-    func remapArgumentBufferPathForActiveStages(_ path: ResourceBindingPath) -> ResourceBindingPath {
-        return path // Paths don't differ by stage on Vulkan
-    }
 
     func argumentBufferEncoder(at path: ResourceBindingPath, currentEncoder: UnsafeRawPointer?) -> UnsafeRawPointer? {
         let currentLayout = currentEncoder.map { Unmanaged<VulkanDescriptorSetLayout>.fromOpaque($0) }
