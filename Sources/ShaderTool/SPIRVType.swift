@@ -367,6 +367,9 @@ extension SPIRVType {
             
             var structSize = 0
             spvc_compiler_get_declared_struct_size(compiler, type, &structSize)
+            if structSize == 0 {
+                spvc_compiler_get_declared_struct_size_runtime_array(compiler, type, 1, &structSize)
+            }
             
             for i in 0..<memberTypeCount {
                 let memberTypeId = spvc_type_get_member_type(type, i)
