@@ -284,20 +284,12 @@ final class MetalPipelineReflection : PipelineReflection {
         var path = path
         path.arrayIndexMetal = 0
         if path.argumentBufferIndex == nil {
-            // Check to see if it's active in the specified stage first
-            if let result = reflectionCacheLinearSearch(path, returnNearest: path.argumentBufferIndex != nil) {
-                return result
-            }
-            
-            // Then, try both vertex and fragment
-            path.stages = [.vertex, .fragment]
-            
-            return reflectionCacheLinearSearch(path, returnNearest: path.argumentBufferIndex != nil)
-            
+            let path = self.remapArgumentBufferPathForActiveStages(path)
+            return reflectionCacheLinearSearch(path, returnNearest: false)
         } else {
             // Resources inside argument buffers aren't separated by pipeline stage.
             path.stages = []
-            return reflectionCacheLinearSearch(path, returnNearest: path.argumentBufferIndex != nil) // If the path's in an argument buffer, the id might be higher than the id used for the reflection since array indices within argument buffers are represented as offsets to the id.
+            return reflectionCacheLinearSearch(path, returnNearest: true) // If the path's in an argument buffer, the id might be higher than the id used for the reflection since array indices within argument buffers are represented as offsets to the id.
         }
     }
     
@@ -314,22 +306,41 @@ final class MetalPipelineReflection : PipelineReflection {
         modifiedPath.stages = newParentPath.stages
         return modifiedPath
     }
-
+    
     public func remapArgumentBufferPathForActiveStages(_ path: ResourceBindingPath) -> ResourceBindingPath {
-        if self.pathInCache(path) { return path }
+        var testPath = path
+        testPath.arrayIndexMetal = 0
+        
+        if self.pathInCache(testPath) { return path }
 
         if path.stages.contains([.vertex, .fragment]) {
-            var modifiedPath = path
-            modifiedPath.stages = .vertex
-            if pathInCache(modifiedPath) { return modifiedPath }
-            modifiedPath.stages = .fragment
-            if pathInCache(modifiedPath) { return modifiedPath }
+            testPath.stages = .fragment
+            if pathInCache(testPath) {
+                var path = path
+                path.stages = .fragment
+                return path
+            }
+            testPath.stages = .vertex
+            if pathInCache(testPath) {
+                var path = path
+                path.stages = .vertex
+                return path
+            }
+        } else if path.stages.intersection([.vertex, .fragment]) != [] {
+            testPath.stages = [.vertex, .fragment]
+            if pathInCache(testPath) {
+                var path = path
+                path.stages = [.vertex, .fragment]
+                return path
+            }
         }
         
         return path
     }
     
     public func argumentBufferEncoder(at path: ResourceBindingPath, currentEncoder currentEncoderOpaque: UnsafeRawPointer?) -> UnsafeRawPointer? {
+        let path = self.remapArgumentBufferPathForActiveStages(path)
+        
         let currentEncoder = currentEncoderOpaque.map { Unmanaged<MetalArgumentEncoder>.fromOpaque($0) }
         let newEncoder: MetalArgumentEncoder?
         if path.stages.contains(.fragment), self.argumentEncoderCount > 31 {

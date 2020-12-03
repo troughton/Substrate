@@ -7,7 +7,7 @@
 
 public final class LinkedList<T> : Collection {
     
-        @usableFromInline
+    @usableFromInline
     struct LinkedListNode {
         @usableFromInline var element: T!
         @usableFromInline var next: UnsafeMutablePointer<LinkedListNode>?

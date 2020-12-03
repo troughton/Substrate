@@ -26,7 +26,7 @@ public struct ReaderWriterLock {
     }
     
     @inlinable
-    public mutating func acquireWriteAccess() {
+    public func acquireWriteAccess() {
         while true {
             if UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == 0 {
                 if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: 0, desired: .max, at: self.value, successOrdering: .acquiring, failureOrdering: .relaxed).exchanged {
@@ -38,7 +38,7 @@ public struct ReaderWriterLock {
     }
     
     @inlinable
-    public mutating func acquireReadAccess() {
+    public func acquireReadAccess() {
         while true {
             let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
             
@@ -53,7 +53,7 @@ public struct ReaderWriterLock {
     }
     
     @inlinable
-    public mutating func transformReadToWriteAccess() {
+    public func transformReadToWriteAccess() {
         let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
         if previousReaders == 1 {
             if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: .max, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
@@ -66,7 +66,7 @@ public struct ReaderWriterLock {
     }
     
     @inlinable
-    public mutating func releaseReadAccess() {
+    public func releaseReadAccess() {
         while true {
             let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
             if previousReaders != .max /* && previousReaders > 0 */ {
@@ -80,7 +80,7 @@ public struct ReaderWriterLock {
     }
     
     @inlinable
-    public mutating func releaseWriteAccess() {
+    public func releaseWriteAccess() {
         while true {
             let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
             if previousReaders == .max {
@@ -94,7 +94,7 @@ public struct ReaderWriterLock {
     }
     
     @inlinable
-    public mutating func withReadLock<T>(_ perform: () throws -> T) rethrows -> T {
+    public func withReadLock<T>(_ perform: () throws -> T) rethrows -> T {
         self.acquireReadAccess()
         let result = try perform()
         self.releaseReadAccess()
@@ -102,7 +102,7 @@ public struct ReaderWriterLock {
     }
     
     @inlinable
-    public mutating func withWriteLock<T>(_ perform: () throws -> T) rethrows -> T {
+    public func withWriteLock<T>(_ perform: () throws -> T) rethrows -> T {
         self.acquireWriteAccess()
         let result = try perform()
         self.releaseWriteAccess()
