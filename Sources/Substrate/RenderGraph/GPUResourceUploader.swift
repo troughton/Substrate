@@ -67,6 +67,14 @@ public final class GPUResourceUploader {
         }
     }
     
+    public static func addCopyPass(_ pass: @escaping (_ bce: BlitCommandEncoder) -> Void) {
+        precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
+        
+        self.lock.withSemaphore {
+            renderGraph.addBlitCallbackPass(pass)
+        }
+    }
+    
     public static func addUploadPass(stagingBufferLength: Int, pass: @escaping (RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) {
         if GPUResourceUploader.skipUpload {
             return

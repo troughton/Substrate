@@ -29,8 +29,29 @@ extension Texture {
 extension TextureData {
     public init(texture: Texture, mipmapLevel: Int = 0, hasPremultipliedAlpha: Bool = true) {
         let pixelFormat = texture.descriptor.pixelFormat
-        assert(pixelFormat.bytesPerPixel == Double(MemoryLayout<T>.stride * pixelFormat.channelCount))
-        assert(texture.descriptor.textureType == .type2D)
+        precondition(pixelFormat.bytesPerPixel == Double(MemoryLayout<T>.stride * pixelFormat.channelCount))
+        precondition(texture.descriptor.textureType == .type2D)
+        
+        if texture.descriptor.storageMode == .private {
+            var descriptor = texture.descriptor
+            descriptor.storageMode = .managed
+            descriptor.width = max(descriptor.width >> mipmapLevel, 1)
+            descriptor.height = max(descriptor.height >> mipmapLevel, 1)
+            descriptor.mipmapLevelCount = 1
+            
+            let cpuVisibleTexture = Texture(descriptor: descriptor, flags: .persistent)
+            GPUResourceUploader.addCopyPass { encoder in
+                encoder.copy(from: texture, sourceSlice: 0, sourceLevel: mipmapLevel, sourceOrigin: Origin(), sourceSize: descriptor.size, to: cpuVisibleTexture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: Origin())
+                encoder.synchronize(texture: cpuVisibleTexture)
+            }
+            GPUResourceUploader.flush()
+            
+            self.init(texture: cpuVisibleTexture, hasPremultipliedAlpha: hasPremultipliedAlpha)
+            cpuVisibleTexture.dispose()
+            
+            return
+        }
+        
         assert(texture.storageMode != .private)
         
         self.init(width: max(texture.width >> mipmapLevel, 1), height: max(texture.height >> mipmapLevel, 1),
