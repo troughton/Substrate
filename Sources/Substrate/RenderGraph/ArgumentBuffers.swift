@@ -400,7 +400,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
         return false
     }
     
-    public func _markAsUsed(renderGraphIndexMask: UInt8) {
+    public func markAsUsed(renderGraphIndexMask: UInt8) {
         guard self._usesPersistentRegistry else {
             return
         }
@@ -464,9 +464,9 @@ public struct _ArgumentBufferArray : ResourceProtocol {
         return self._bindings.contains(where: { $0?.isKnownInUse ?? false })
     }
     
-    public func _markAsUsed(renderGraphIndexMask: UInt8) {
+    public func markAsUsed(renderGraphIndexMask: UInt8) {
         for binding in self._bindings {
-            binding?._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+            binding?.markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         }
     }
     
@@ -618,8 +618,8 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         return self.argumentBuffer.isKnownInUse
     }
     
-    public func _markAsUsed(renderGraphIndexMask: UInt8) {
-        self.argumentBuffer._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+    public func markAsUsed(renderGraphIndexMask: UInt8) {
+        self.argumentBuffer.markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
     }
     
     @inlinable
@@ -742,8 +742,8 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
         return self.argumentBufferArray.isKnownInUse
     }
     
-    public func _markAsUsed(renderGraphIndexMask: UInt8) {
-        self.argumentBufferArray._markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+    public func markAsUsed(renderGraphIndexMask: UInt8) {
+        self.argumentBufferArray.markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
     }
     
     public func dispose() {

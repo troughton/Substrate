@@ -629,11 +629,11 @@ public final class RenderGraph {
         passRecord.writtenResources = .init(allocator: .tagThreadView(usageAllocator))
         
         for resource in passRecord.pass.writtenResources {
-            resource._markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
+            resource.markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
             passRecord.writtenResources.insert(resource.baseResource ?? resource)
         }
         for resource in passRecord.pass.readResources {
-            resource._markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
+            resource.markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
             passRecord.readResources.insert(resource.baseResource ?? resource)
         }
     }

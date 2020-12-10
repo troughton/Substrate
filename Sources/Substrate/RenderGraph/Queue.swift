@@ -97,7 +97,7 @@ public final class QueueRegistry {
 }
 
 public struct Queue : Equatable {
-    let index : UInt8
+    public let index : UInt8
     
     fileprivate init(index: UInt8) {
         self.index = index

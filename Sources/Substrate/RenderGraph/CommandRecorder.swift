@@ -315,7 +315,7 @@ final class RenderGraphCommandRecorder {
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource._markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
+            resource.markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
             if let textureUsage = resource.texture?.descriptor.usageHint {
                 if usageType == .read {
                     assert(textureUsage.contains(.shaderRead))
@@ -378,7 +378,7 @@ final class RenderGraphCommandRecorder {
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource._markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
+            resource.markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
         }
         
         if usageType.isRead {
@@ -404,7 +404,7 @@ final class RenderGraphCommandRecorder {
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource._markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
+            resource.markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
                 
             let bufferUsage = resource.descriptor.usageHint
             if usageType == .read {
@@ -450,7 +450,7 @@ final class RenderGraphCommandRecorder {
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource._markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
+            resource.markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
                 
             let textureUsage = resource.descriptor.usageHint
             if usageType == .read {
