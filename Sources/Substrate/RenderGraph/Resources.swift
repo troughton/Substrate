@@ -119,6 +119,8 @@ public enum ResourcePurgeableState {
     case discarded
 }
 
+public typealias ActiveRenderGraphMask = UInt8
+
 public protocol ResourceProtocol : Hashable {
     init(handle: Handle)
     func dispose()
@@ -146,7 +148,7 @@ public protocol ResourceProtocol : Hashable {
     /// it will not get deallocated until after the `renderGraph` has completed.
     func markAsUsed(by renderGraph: RenderGraph)
     
-    func markAsUsed(renderGraphIndexMask: UInt8)
+    func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask)
     
     var purgeableState: ResourcePurgeableState { get nonmutating set }
     func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState
@@ -180,7 +182,7 @@ extension ResourceProtocol {
     }
     
     public func markAsUsed(by renderGraph: RenderGraph) {
-        self.markAsUsed(renderGraphIndexMask: 1 << renderGraph.queue.index)
+        self.markAsUsed(activeRenderGraphMask: 1 << renderGraph.queue.index)
     }
 }
 
@@ -434,18 +436,18 @@ public struct Resource : ResourceProtocol, Hashable {
         }
     }
     
-    public func markAsUsed(renderGraphIndexMask: UInt8) {
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
         switch self.type {
         case .buffer:
-            Buffer(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+            Buffer(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         case .texture:
-            Texture(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+            Texture(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         case .argumentBuffer:
-            ArgumentBuffer(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+            ArgumentBuffer(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         case .argumentBufferArray:
-            ArgumentBufferArray(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+            ArgumentBufferArray(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         case .heap:
-            Heap(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+            Heap(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         default:
             break
         }
@@ -685,12 +687,12 @@ public struct Heap : ResourceProtocol {
         return false
     }
     
-    public func markAsUsed(renderGraphIndexMask: UInt8) {
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
         guard self._usesPersistentRegistry else {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: renderGraphIndexMask, at: HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
 
     public func dispose() {
@@ -1060,14 +1062,14 @@ public struct Buffer : ResourceProtocol {
         return false
     }
     
-    public func markAsUsed(renderGraphIndexMask: UInt8) {
-        self.heap?.markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
+        self.heap?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         
         guard self._usesPersistentRegistry else {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: renderGraphIndexMask, at: PersistentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: PersistentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
 
     public func dispose() {
@@ -1460,15 +1462,15 @@ public struct Texture : ResourceProtocol {
         return false
     }
     
-    public func markAsUsed(renderGraphIndexMask: UInt8) {
-        self.baseResource?.markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
-        self.heap?.markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
+        self.baseResource?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
+        self.heap?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         
         guard self._usesPersistentRegistry else {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentTextureRegistry.Chunk.itemsPerChunk)
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: renderGraphIndexMask, at: PersistentTextureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: PersistentTextureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
     
     public func dispose() {

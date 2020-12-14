@@ -415,12 +415,12 @@ public struct ArgumentBuffer : ResourceProtocol {
         return false
     }
     
-    public func markAsUsed(renderGraphIndexMask: UInt8) {
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
         guard self._usesPersistentRegistry else {
             return
         }
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: renderGraphIndexMask, at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
     
     public func dispose() {
@@ -549,9 +549,9 @@ public struct ArgumentBufferArray : ResourceProtocol {
         return self._bindings.contains(where: { $0?.isKnownInUse ?? false })
     }
     
-    public func markAsUsed(renderGraphIndexMask: UInt8) {
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
         for binding in self._bindings {
-            binding?.markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+            binding?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         }
     }
     
@@ -702,8 +702,8 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         return self.argumentBuffer.isKnownInUse
     }
     
-    public func markAsUsed(renderGraphIndexMask: UInt8) {
-        self.argumentBuffer.markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
+        self.argumentBuffer.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
     }
     
     @inlinable
@@ -826,8 +826,8 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         return self.argumentBufferArray.isKnownInUse
     }
     
-    public func markAsUsed(renderGraphIndexMask: UInt8) {
-        self.argumentBufferArray.markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
+        self.argumentBufferArray.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
     }
     
     public func dispose() {

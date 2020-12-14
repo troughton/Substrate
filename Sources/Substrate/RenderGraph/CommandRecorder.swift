@@ -221,7 +221,7 @@ extension ChunkArray where Element == (Resource, ResourceUsage) {
 @usableFromInline
 final class RenderGraphCommandRecorder {
     @usableFromInline let renderGraphTransientRegistryIndex: Int
-    @usableFromInline let renderGraphIndexMask: UInt8
+    @usableFromInline let activeRenderGraphMask: ActiveRenderGraphMask
     @usableFromInline let renderPassScratchAllocator : ThreadLocalTagAllocator
     @usableFromInline let resourceUsageAllocator : TagAllocator.ThreadView
     @usableFromInline var commands : ChunkArray<RenderGraphCommand> // Lifetime: RenderGraph compilation (copied to another array for the backend).
@@ -235,7 +235,7 @@ final class RenderGraphCommandRecorder {
     init(renderGraphTransientRegistryIndex: Int, renderGraphQueue: Queue, renderPassScratchAllocator: ThreadLocalTagAllocator, renderGraphExecutionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView, unmanagedReferences: ExpandingBuffer<Releasable>) {
         assert(_isPOD(RenderGraphCommand.self))
         self.renderGraphTransientRegistryIndex = renderGraphTransientRegistryIndex
-        self.renderGraphIndexMask = 1 << renderGraphQueue.index
+        self.activeRenderGraphMask = 1 << renderGraphQueue.index
         self.commands = ChunkArray() // (allocator: AllocatorType(renderGraphExecutionAllocator), initialCapacity: 64)
         self.renderPassScratchAllocator = renderPassScratchAllocator
         self.resourceUsageAllocator = resourceUsageAllocator
@@ -315,7 +315,7 @@ final class RenderGraphCommandRecorder {
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource.markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
+            resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
             if let textureUsage = resource.texture?.descriptor.usageHint {
                 if usageType == .read {
                     assert(textureUsage.contains(.shaderRead))
@@ -378,7 +378,7 @@ final class RenderGraphCommandRecorder {
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource.markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
+            resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
         }
         
         if usageType.isRead {
@@ -404,7 +404,7 @@ final class RenderGraphCommandRecorder {
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource.markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
+            resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
                 
             let bufferUsage = resource.descriptor.usageHint
             if usageType == .read {
@@ -450,7 +450,7 @@ final class RenderGraphCommandRecorder {
         assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
         
         if resource._usesPersistentRegistry {
-            resource.markAsUsed(renderGraphIndexMask: self.renderGraphIndexMask)
+            resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
                 
             let textureUsage = resource.descriptor.usageHint
             if usageType == .read {

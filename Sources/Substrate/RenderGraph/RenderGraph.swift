@@ -430,6 +430,10 @@ public final class RenderGraph {
         return self.context.renderGraphQueue
     }
     
+    public var activeRenderGraphMask: ActiveRenderGraphMask {
+        return 1 << self.queue.index
+    }
+    
     public static func initialise() {
         
     }
@@ -629,11 +633,11 @@ public final class RenderGraph {
         passRecord.writtenResources = .init(allocator: .tagThreadView(usageAllocator))
         
         for resource in passRecord.pass.writtenResources {
-            resource.markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
+            resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
             passRecord.writtenResources.insert(resource.baseResource ?? resource)
         }
         for resource in passRecord.pass.readResources {
-            resource.markAsUsed(renderGraphIndexMask: 1 << self.queue.index)
+            resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
             passRecord.readResources.insert(resource.baseResource ?? resource)
         }
     }
