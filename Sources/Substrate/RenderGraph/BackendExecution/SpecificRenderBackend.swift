@@ -42,8 +42,8 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     
     func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<Self>, commandInfo: FrameCommandInfo<Self>, commandGenerator: ResourceCommandGenerator<Self>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>])
     
-    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
-    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: ArgumentBufferArrayReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
+    static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
+    static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: ArgumentBufferArrayReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
 }
 
 protocol BackendRenderTargetDescriptor: class {
@@ -83,13 +83,13 @@ protocol ResourceRegistry: class {
     
     subscript(buffer: Buffer) -> Backend.BufferReference? { get }
     subscript(texture: Texture) -> Backend.TextureReference? { get }
-    subscript(argumentBuffer: _ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
-    subscript(argumentBufferArray: _ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get }
+    subscript(argumentBuffer: ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
+    subscript(argumentBufferArray: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get }
     
     func prepareFrame()
     func cycleFrames()
-    func allocateArgumentBufferIfNeeded(_ buffer: _ArgumentBuffer) -> Backend.ArgumentBufferReference
-    func allocateArgumentBufferArrayIfNeeded(_ buffer: _ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference
+    func allocateArgumentBufferIfNeeded(_ buffer: ArgumentBuffer) -> Backend.ArgumentBufferReference
+    func allocateArgumentBufferArrayIfNeeded(_ buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference
 }
 
 protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.TransientResourceRegistry == Self {
@@ -108,21 +108,21 @@ protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.Transi
     func setDisposalFences(on resource: Resource, to fences: [FenceDependency])
     func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent)
     func disposeBuffer(_ buffer: Buffer, waitEvent: ContextWaitEvent)
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, waitEvent: ContextWaitEvent)
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, waitEvent: ContextWaitEvent)
+    func disposeArgumentBuffer(_ buffer: ArgumentBuffer, waitEvent: ContextWaitEvent)
+    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray, waitEvent: ContextWaitEvent)
     
     func withHeapAliasingFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout [FenceDependency]) -> Void)
     
     var textureWaitEvents: TransientResourceMap<Texture, ContextWaitEvent> { get }
     var bufferWaitEvents: TransientResourceMap<Buffer, ContextWaitEvent> { get }
-    var argumentBufferWaitEvents: TransientResourceMap<_ArgumentBuffer, ContextWaitEvent>? { get }
-    var argumentBufferArrayWaitEvents: TransientResourceMap<_ArgumentBufferArray, ContextWaitEvent>? { get }
+    var argumentBufferWaitEvents: TransientResourceMap<ArgumentBuffer, ContextWaitEvent>? { get }
+    var argumentBufferArrayWaitEvents: TransientResourceMap<ArgumentBufferArray, ContextWaitEvent>? { get }
     var historyBufferResourceWaitEvents: [Resource : ContextWaitEvent] { get }
 }
 
 extension BackendTransientResourceRegistry {
-    var argumentBufferWaitEvents: TransientResourceMap<_ArgumentBuffer, ContextWaitEvent>? { nil }
-    var argumentBufferArrayWaitEvents: TransientResourceMap<_ArgumentBufferArray, ContextWaitEvent>? { nil }
+    var argumentBufferWaitEvents: TransientResourceMap<ArgumentBuffer, ContextWaitEvent>? { nil }
+    var argumentBufferArrayWaitEvents: TransientResourceMap<ArgumentBufferArray, ContextWaitEvent>? { nil }
 }
 
 protocol BackendPersistentResourceRegistry: ResourceRegistry where Backend.PersistentResourceRegistry == Self {
@@ -133,6 +133,6 @@ protocol BackendPersistentResourceRegistry: ResourceRegistry where Backend.Persi
     
     func disposeTexture(_ texture: Texture)
     func disposeBuffer(_ buffer: Buffer)
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer)
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray)
+    func disposeArgumentBuffer(_ buffer: ArgumentBuffer)
+    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray)
 }

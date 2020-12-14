@@ -120,10 +120,10 @@ public class ResourceBindingEncoder : CommandEncoder {
     }
     
     @usableFromInline
-    let pendingArgumentBuffersByKey : ExpandingBuffer<(FunctionArgumentKey, _ArgumentBuffer, type: _ArgumentBufferType, assumeConsistentUsage: Bool)>
+    let pendingArgumentBuffersByKey : ExpandingBuffer<(FunctionArgumentKey, ArgumentBuffer, type: _ArgumentBufferType, assumeConsistentUsage: Bool)>
     var pendingArgumentBufferByKeyCountLastUpdate = 0
     
-    let pendingArgumentBuffers : ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer, type: _ArgumentBufferType, assumeConsistentUsage: Bool)>
+    let pendingArgumentBuffers : ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer, type: _ArgumentBufferType, assumeConsistentUsage: Bool)>
     var pendingArgumentBufferCountLastUpdate = 0
     
     @usableFromInline
@@ -260,7 +260,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         
         let bindingPath = RenderBackend.argumentBufferPath(at: setIndex, stages: A.activeStages)
         
-        let argumentBuffer = _ArgumentBuffer()
+        let argumentBuffer = ArgumentBuffer()
         assert(argumentBuffer.bindings.isEmpty)
         arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
         argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
@@ -281,17 +281,22 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.pendingArgumentBuffers.append((bindingPath, argumentBuffer, type: .standalone, assumeConsistentUsage: false))
         self.needsUpdateBindings = true
     }
-    
-    public func setArgumentBuffer<K>(_ argumentBuffer: ArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
+
+    public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
         guard let argumentBuffer = argumentBuffer else { return }
         let bindingPath = RenderBackend.argumentBufferPath(at: index, stages: stages)
         
-        self.pendingArgumentBuffers.append((bindingPath, argumentBuffer.argumentBuffer, type: .standalone, assumeConsistentUsage: false))
+        self.pendingArgumentBuffers.append((bindingPath, argumentBuffer, type: .standalone, assumeConsistentUsage: false))
         self.needsUpdateBindings = true
     }
     
-    public func setArgumentBufferArray<K>(_ argumentBufferArray: ArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
-        guard let argumentBufferArray = argumentBufferArray?.argumentBufferArray else { return }
+    public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
+        guard let argumentBuffer = argumentBuffer?.argumentBuffer else { return }
+        self.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
+    }
+   
+    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
+        guard let argumentBufferArray = argumentBufferArray else { return }
         let bindingPath = RenderBackend.argumentBufferPath(at: index, stages: stages)
         
         let args : RenderGraphCommand.SetArgumentBufferArrayArgs = (bindingPath, argumentBufferArray, false) // false meaning is not yet bound
@@ -306,15 +311,24 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
-    public func setArgumentBuffer<K>(_ argumentBuffer: ArgumentBuffer<K>?, key: FunctionArgumentKey) {
+    public func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
+        guard let argumentBufferArray = argumentBufferArray?.argumentBufferArray else { return }
+        self.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
+    }
+   
+    public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, key: FunctionArgumentKey) {
         guard let argumentBuffer = argumentBuffer else { return }
         
-        self.pendingArgumentBuffersByKey.append((key, argumentBuffer.argumentBuffer, type: .standalone, assumeConsistentUsage: false))
+        self.pendingArgumentBuffersByKey.append((key, argumentBuffer, type: .standalone, assumeConsistentUsage: false))
         self.needsUpdateBindings = true
     }
     
-    public func setArgumentBufferArray<K>(_ argumentBufferArray: ArgumentBufferArray<K>?, key: FunctionArgumentKey, assumeConsistentUsage: Bool = false) {
-        guard let argumentBufferArray = argumentBufferArray?.argumentBufferArray else { return }
+    public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, key: FunctionArgumentKey) {
+        self.setArgumentBuffer(argumentBuffer?.argumentBuffer, key: key)
+    }
+    
+    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, key: FunctionArgumentKey, assumeConsistentUsage: Bool = false) {
+        guard let argumentBufferArray = argumentBufferArray else { return }
         
         let args : RenderGraphCommand.SetArgumentBufferArrayArgs = (.nil, argumentBufferArray, false) // false meaning is not yet bound
         let argsPointer = commandRecorder.copyData(args)
@@ -332,6 +346,9 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    public func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, key: FunctionArgumentKey, assumeConsistentUsage: Bool = false) {
+        self.setArgumentBufferArray(argumentBufferArray?.argumentBufferArray, key: key, assumeConsistentUsage: assumeConsistentUsage)
+    }
     
     func updateUsageNodes(lastIndex: Int) {
         for usagePointer in usagePointersToUpdate {
@@ -692,7 +709,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                             let argumentBuffer = boundResource.resource.argumentBuffer!
                             
                             // The command might be either a setArgumentBuffer or setArgumentBufferArray command.
-                            // Check to see whether the resource is an _ArgumentBuffer or _ArgumentBufferArray to distinguish.
+                            // Check to see whether the resource is an ArgumentBuffer or _ArgumentBufferArray to distinguish.
                             let setArgumentBufferArgs = bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetArgumentBufferArgs.self)
                             
                             if Resource(setArgumentBufferArgs.pointee.argumentBuffer).type == .argumentBufferArray {
@@ -809,9 +826,9 @@ extension ResourceBindingEncoder {
 }
 
 public protocol AnyRenderCommandEncoder {
-    func setArgumentBuffer<K>(_ argumentBuffer: ArgumentBuffer<K>?, at index: Int, stages: RenderStages)
+    func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, at index: Int, stages: RenderStages)
     
-    func setArgumentBufferArray<K>(_ argumentBufferArray: ArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool)
+    func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool)
     
     func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int)
     

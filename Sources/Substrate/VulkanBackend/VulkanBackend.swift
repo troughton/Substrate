@@ -106,11 +106,11 @@ public final class VulkanBackend : SpecificRenderBackend {
         self.resourceRegistry.disposeBuffer(buffer)
     }
 
-    public func dispose(argumentBuffer: _ArgumentBuffer) {
+    public func dispose(argumentBuffer: ArgumentBuffer) {
         self.resourceRegistry.disposeArgumentBuffer(argumentBuffer)
     }
 
-    public func dispose(argumentBufferArray: _ArgumentBufferArray) {
+    public func dispose(argumentBufferArray: ArgumentBufferArray) {
         self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray)
     }
 
@@ -238,11 +238,11 @@ public final class VulkanBackend : SpecificRenderBackend {
         return false
     }
 
-    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
+    static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
         storage.encodeArguments(from: argumentBuffer, commandIndex: firstUseCommandIndex, resourceMap: resourceMap)
     }
     
-    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
+    static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
         fatalError()
     }
     

@@ -617,9 +617,9 @@ public enum TextureViewBaseInfo {
         
         @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
         @usableFromInline let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
-        @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
-        @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
-        @usableFromInline let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray?>
+        @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)>>
+        @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
+        @usableFromInline let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray?>
         
         @usableFromInline let labels : UnsafeMutablePointer<String?>
         
@@ -693,7 +693,7 @@ public enum TextureViewBaseInfo {
     }
     
     @usableFromInline
-    func allocate(flags: ResourceFlags, sourceArray: _ArgumentBufferArray) -> UInt64 {
+    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> UInt64 {
         return self.lock.withLock {
             let index = self.count
             if index == self.allocatedChunkCount * Chunk.itemsPerChunk {
@@ -756,10 +756,10 @@ public enum TextureViewBaseInfo {
         
         @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
         @usableFromInline let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
-        @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)>>
-        @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)>>
+        @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)>>
+        @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
         @usableFromInline let inlineDataStorage : UnsafeMutablePointer<Data>
-        @usableFromInline let sourceArrays : UnsafeMutablePointer<_ArgumentBufferArray>
+        @usableFromInline let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray>
         @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
         @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
@@ -811,7 +811,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var freeIndices = RingBuffer<Int>()
     @usableFromInline var maxIndex = 0
     
-    @usableFromInline var enqueuedDisposals = [_ArgumentBuffer]()
+    @usableFromInline var enqueuedDisposals = [ArgumentBuffer]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
     init() {
@@ -852,7 +852,7 @@ public enum TextureViewBaseInfo {
     }
     
     @usableFromInline
-    func allocate(flags: ResourceFlags, sourceArray: _ArgumentBufferArray) -> UInt64 {
+    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -897,7 +897,7 @@ public enum TextureViewBaseInfo {
         self.chunks.advanced(by: index).initialize(to: Chunk())
     }
     
-    private func disposeImmediately(argumentBuffer: _ArgumentBuffer) {
+    private func disposeImmediately(argumentBuffer: ArgumentBuffer) {
         RenderBackend.dispose(argumentBuffer: argumentBuffer)
         
         let index = argumentBuffer.index
@@ -948,7 +948,7 @@ public enum TextureViewBaseInfo {
         }
     }
     
-    func dispose(_ buffer: _ArgumentBuffer) {
+    func dispose(_ buffer: ArgumentBuffer) {
         self.lock.withLock {
             self.enqueuedDisposals.append(buffer)
         }
@@ -963,7 +963,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var count = UnsafeMutablePointer<Int.AtomicRepresentation>.allocate(capacity: 1)
     @usableFromInline var generation : UInt8 = 0
     
-    @usableFromInline var bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>! = nil
+    @usableFromInline var bindings : UnsafeMutablePointer<[ArgumentBuffer?]>! = nil
     @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
     
     init(transientRegistryIndex: Int) {
@@ -1016,7 +1016,7 @@ public enum TextureViewBaseInfo {
     struct Chunk {
         @usableFromInline static let itemsPerChunk = 2048
         
-        @usableFromInline let bindings : UnsafeMutablePointer<[_ArgumentBuffer?]>
+        @usableFromInline let bindings : UnsafeMutablePointer<[ArgumentBuffer?]>
         @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         @usableFromInline let labels : UnsafeMutablePointer<String?>
@@ -1045,7 +1045,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var freeIndices = RingBuffer<Int>()
     @usableFromInline var maxIndex = 0
     
-    @usableFromInline var enqueuedDisposals = [_ArgumentBufferArray]()
+    @usableFromInline var enqueuedDisposals = [ArgumentBufferArray]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
     init() {
@@ -1112,7 +1112,7 @@ public enum TextureViewBaseInfo {
         }
     }
     
-    func dispose(_ buffer: _ArgumentBufferArray) {
+    func dispose(_ buffer: ArgumentBufferArray) {
         self.lock.withLock {
             self.enqueuedDisposals.append(buffer)
         }

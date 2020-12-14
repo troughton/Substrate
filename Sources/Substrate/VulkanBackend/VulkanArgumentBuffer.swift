@@ -28,7 +28,7 @@ final class VulkanArgumentBuffer {
 
 extension VulkanArgumentBuffer {
     
-    func encodeArguments(from buffer: _ArgumentBuffer, commandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
+    func encodeArguments(from buffer: ArgumentBuffer, commandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
         let pipelineReflection = self.layout.pipelineReflection
         let setIndex = self.layout.set
 

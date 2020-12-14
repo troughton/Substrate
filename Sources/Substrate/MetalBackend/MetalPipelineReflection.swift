@@ -293,7 +293,7 @@ final class MetalPipelineReflection : PipelineReflection {
         }
     }
     
-    public func bindingPath(argumentBuffer: _ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
+    public func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
         return self.bindingPath(argumentName: argumentName, arrayIndex: arrayIndex, argumentBufferPath: nil)
     }
     

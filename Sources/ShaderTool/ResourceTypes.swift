@@ -20,7 +20,7 @@ extension ResourceType {
         case .heap:
             return "Heap"
         case .argumentBuffer:
-            return "_ArgumentBuffer"
+            return "ArgumentBuffer"
         case .argumentBufferArray:
             return "_ArgumentBufferArray"
         default:

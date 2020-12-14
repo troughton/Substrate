@@ -43,8 +43,8 @@ enum PreFrameCommands {
     case materialiseBuffer(Buffer)
     case materialiseTexture(Texture)
     case materialiseTextureView(Texture)
-    case materialiseArgumentBuffer(_ArgumentBuffer)
-    case materialiseArgumentBufferArray(_ArgumentBufferArray)
+    case materialiseArgumentBuffer(ArgumentBuffer)
+    case materialiseArgumentBufferArray(ArgumentBufferArray)
     case disposeResource(Resource, afterStages: RenderStages)
     
     case waitForHeapAliasingFences(resource: Resource, waitDependency: FenceDependency)

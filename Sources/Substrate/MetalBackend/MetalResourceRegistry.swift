@@ -75,8 +75,8 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     var heapReferences = PersistentResourceMap<Heap, MTLHeap>()
     var textureReferences = PersistentResourceMap<Texture, MTLTextureReference>()
     var bufferReferences = PersistentResourceMap<Buffer, MTLBufferReference>()
-    var argumentBufferReferences = PersistentResourceMap<_ArgumentBuffer, MTLBufferReference>() 
-    var argumentBufferArrayReferences = PersistentResourceMap<_ArgumentBufferArray, MTLBufferReference>() 
+    var argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, MTLBufferReference>() 
+    var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, MTLBufferReference>() 
     
     var windowReferences = [Texture : CAMetalLayer]()
     
@@ -217,7 +217,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer) -> MTLBufferReference {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> MTLBufferReference {
         if let baseArray = argumentBuffer.sourceArray {
             _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
             return self.argumentBufferReferences[argumentBuffer]!
@@ -235,7 +235,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray) -> MTLBufferReference {
+    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference {
         if let mtlArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
             return mtlArgumentBuffer
         }
@@ -272,11 +272,11 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return self.bufferReferences[buffer]
     }
 
-    public subscript(argumentBuffer: _ArgumentBuffer) -> MTLBufferReference? {
+    public subscript(argumentBuffer: ArgumentBuffer) -> MTLBufferReference? {
         return self.argumentBufferReferences[argumentBuffer]
     }
 
-    public subscript(argumentBufferArray: _ArgumentBufferArray) -> MTLBufferReference? {
+    public subscript(argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
     
@@ -312,14 +312,14 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
     }
     
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer) {
+    func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
         if let mtlBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
             assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal RenderGraph backend.")
             mtlBuffer._buffer.release()
         }
     }
     
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray) {
+    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
         if let mtlBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
             mtlBuffer._buffer.release()
         }
@@ -343,13 +343,13 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     private var textureReferences : TransientResourceMap<Texture, MTLTextureReference>
     private var bufferReferences : TransientResourceMap<Buffer, MTLBufferReference>
-    private var argumentBufferReferences : TransientResourceMap<_ArgumentBuffer, MTLBufferReference>
-    private var argumentBufferArrayReferences : TransientResourceMap<_ArgumentBufferArray, MTLBufferReference>
+    private var argumentBufferReferences : TransientResourceMap<ArgumentBuffer, MTLBufferReference>
+    private var argumentBufferArrayReferences : TransientResourceMap<ArgumentBufferArray, MTLBufferReference>
     
     var textureWaitEvents : TransientResourceMap<Texture, ContextWaitEvent>
     var bufferWaitEvents : TransientResourceMap<Buffer, ContextWaitEvent>
-    var argumentBufferWaitEvents : TransientResourceMap<_ArgumentBuffer, ContextWaitEvent>
-    var argumentBufferArrayWaitEvents : TransientResourceMap<_ArgumentBufferArray, ContextWaitEvent>
+    var argumentBufferWaitEvents : TransientResourceMap<ArgumentBuffer, ContextWaitEvent>
+    var argumentBufferArrayWaitEvents : TransientResourceMap<ArgumentBufferArray, ContextWaitEvent>
     var historyBufferResourceWaitEvents = [Resource : ContextWaitEvent]() // since history buffers use the persistent (rather than transient) resource maps.
     
     private var heapResourceUsageFences = [Resource : [FenceDependency]]()
@@ -725,7 +725,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer) -> MTLBufferReference {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> MTLBufferReference {
         if let baseArray = argumentBuffer.sourceArray {
             _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
             return self.argumentBufferReferences[argumentBuffer]!
@@ -745,7 +745,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray) -> MTLBufferReference {
+    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference {
         if let mtlArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
             return mtlArgumentBuffer
         }
@@ -795,11 +795,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         return self.bufferReferences[buffer]
     }
 
-    public subscript(argumentBuffer: _ArgumentBuffer) -> MTLBufferReference? {
+    public subscript(argumentBuffer: ArgumentBuffer) -> MTLBufferReference? {
         return self.argumentBufferReferences[argumentBuffer]
     }
 
-    public subscript(argumentBufferArray: _ArgumentBufferArray) -> MTLBufferReference? {
+    public subscript(argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
     
@@ -868,14 +868,14 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         }
     }
     
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, waitEvent: ContextWaitEvent) {
+    func disposeArgumentBuffer(_ buffer: ArgumentBuffer, waitEvent: ContextWaitEvent) {
         if let mtlBuffer = self.argumentBufferReferences[buffer] {
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)
         }
     }
     
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, waitEvent: ContextWaitEvent) {
+    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray, waitEvent: ContextWaitEvent) {
         if let mtlBuffer = self.argumentBufferArrayReferences[buffer] {
             let allocator = self.allocatorForArgumentBuffer(flags: buffer.flags)
             allocator.depositBuffer(mtlBuffer, fences: [], waitEvent: waitEvent)

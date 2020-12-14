@@ -90,10 +90,16 @@ extension String : FunctionArgumentKey {
 public protocol ArgumentBufferEncodable {
     static var activeStages : RenderStages { get }
     
-    mutating func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?)
+    mutating func encode(into argBuffer: ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?)
 }
 
-public struct _ArgumentBuffer : ResourceProtocol {
+@available(*, deprecated, renamed: "ArgumentBuffer")
+public typealias _ArgumentBuffer = ArgumentBuffer
+
+@available(*, deprecated, renamed: "ArgumentBuffer")
+public typealias _ArgumentBufferArray = ArgumentBufferArray
+
+public struct ArgumentBuffer : ResourceProtocol {
     
     @usableFromInline let _handle : UnsafeRawPointer
     @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
@@ -112,7 +118,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+    public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
         
         let index : UInt64
@@ -132,7 +138,16 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    init(flags: ResourceFlags = [], sourceArray: _ArgumentBufferArray) {
+    public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+        self.init(renderGraph: renderGraph, flags: flags)
+        self.label = "Descriptor Set for \(String(reflecting: A.self))"
+        
+        var arguments = arguments
+        arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
+    }
+    
+    @inlinable
+    init(flags: ResourceFlags = [], sourceArray: ArgumentBufferArray) {
         let index : UInt64
         if flags.contains(.persistent) {
             index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
@@ -146,7 +161,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public var sourceArray : _ArgumentBufferArray? {
+    public var sourceArray : ArgumentBufferArray? {
         if self.flags.contains(.resourceView) {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
@@ -227,7 +242,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource)> {
+    public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)> {
         _read {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
@@ -253,7 +268,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public var bindings : ExpandingBuffer<(ResourceBindingPath, _ArgumentBuffer.ArgumentResource)> {
+    public var bindings : ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)> {
         _read {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
@@ -303,7 +318,7 @@ public struct _ArgumentBuffer : ResourceProtocol {
     }
     
     // Thread-safe
-    public func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, _ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
+    public func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
         
         func translateBindings() {
             var i = 0
@@ -424,16 +439,86 @@ public struct _ArgumentBuffer : ResourceProtocol {
             return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].generation == self.generation
         }
     }
-}
-
-
-extension _ArgumentBuffer: CustomStringConvertible {
-    public var description: String {
-        return "_ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self.bindings), enqueuedBindings: \(self.enqueuedBindings), flags: \(self.flags) }"
+    
+    
+    @inlinable
+    public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+        guard let buffer = buffer else { return }
+        
+        assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        self.enqueuedBindings.append(
+            (key, arrayIndex, .buffer(buffer, offset: offset))
+        )
+    }
+    
+    @inlinable
+    public func setTexture(_ texture: Texture, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+        assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        self.enqueuedBindings.append(
+            (key, arrayIndex, .texture(texture))
+        )
+    }
+    
+    @inlinable
+    public func setSampler(_ sampler: SamplerDescriptor, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+        self.enqueuedBindings.append(
+            (key, arrayIndex, .sampler(sampler))
+        )
+    }
+    
+    @inlinable
+    public func setValue<T>(_ value: T, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+        assert(_isPOD(T.self), "Only POD types should be used with setValue.")
+        
+        var value = value
+        withUnsafeBytes(of: &value) { bufferPointer in
+            self.setBytes(bufferPointer.baseAddress!, length: bufferPointer.count, for: key, arrayIndex: arrayIndex)
+        }
+    }
+    
+    @inlinable
+    public func setValue<T : ResourceProtocol>(_ value: T, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+        preconditionFailure("setValue should not be used with resources; use setBuffer or setTexture instead.")
+    }
+    
+    @inlinable
+    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, for key: FunctionArgumentKey, arrayIndex: Int = 0) {
+        let currentOffset = self._copyBytes(bytes, length: length)
+        self.enqueuedBindings.append(
+            (key, arrayIndex, .bytes(offset: currentOffset, length: length))
+        )
     }
 }
 
-public struct _ArgumentBufferArray : ResourceProtocol {
+extension ArgumentBuffer {
+    
+    public func setBuffers(_ buffers: [Buffer], offsets: [Int], keys: [FunctionArgumentKey]) {
+        for (buffer, (offset, key)) in zip(buffers, zip(offsets, keys)) {
+            self.setBuffer(buffer, offset: offset, key: key)
+        }
+    }
+    
+    public func setTextures(_ textures: [Texture], keys: [FunctionArgumentKey]) {
+        for (texture, key) in zip(textures, keys) {
+            self.setTexture(texture, key: key)
+        }
+    }
+    
+    public func setSamplers(_ samplers: [SamplerDescriptor], keys: [FunctionArgumentKey]) {
+        for (sampler, key) in zip(samplers, keys) {
+            self.setSampler(sampler, key: key)
+        }
+    }
+}
+
+
+extension ArgumentBuffer: CustomStringConvertible {
+    public var description: String {
+        return "ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self.bindings), enqueuedBindings: \(self.enqueuedBindings), flags: \(self.flags) }"
+    }
+}
+
+public struct ArgumentBufferArray : ResourceProtocol {
     @usableFromInline let _handle : UnsafeRawPointer
     @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
@@ -443,7 +528,7 @@ public struct _ArgumentBufferArray : ResourceProtocol {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
-    init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+    public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
         
         let index : UInt64
@@ -490,7 +575,7 @@ public struct _ArgumentBufferArray : ResourceProtocol {
     }
     
     @inlinable
-    public var _bindings : [_ArgumentBuffer?] {
+    public var _bindings : [ArgumentBuffer?] {
         _read {
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
@@ -556,20 +641,19 @@ public struct _ArgumentBufferArray : ResourceProtocol {
     }
 }
 
-extension _ArgumentBufferArray: CustomStringConvertible {
+extension ArgumentBufferArray: CustomStringConvertible {
     public var description: String {
-        return "_ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self._bindings), flags: \(self.flags) }"
+        return "ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self._bindings), flags: \(self.flags) }"
     }
 }
 
 
-public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
-    
-    public let argumentBuffer : _ArgumentBuffer
+public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
+    public let argumentBuffer : ArgumentBuffer
     
     @inlinable
     public init(handle: Handle) {
-        self.argumentBuffer = _ArgumentBuffer(handle: handle)
+        self.argumentBuffer = ArgumentBuffer(handle: handle)
     }
     
     @available(*, deprecated, renamed: "init(renderGraph:flags:)")
@@ -580,7 +664,7 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     
     @inlinable
     public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        self.argumentBuffer = _ArgumentBuffer(renderGraph: renderGraph, flags: flags)
+        self.argumentBuffer = ArgumentBuffer(renderGraph: renderGraph, flags: flags)
         self.argumentBuffer.label = "Argument Buffer \(K.self)"
     }
     
@@ -609,8 +693,8 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     }
     
     @inlinable
-    public var sourceArray : ArgumentBufferArray<K>? {
-        return self.argumentBuffer.sourceArray.map { ArgumentBufferArray(handle: $0.handle) }
+    public var sourceArray : TypedArgumentBufferArray<K>? {
+        return self.argumentBuffer.sourceArray.map { TypedArgumentBufferArray(handle: $0.handle) }
     }
     
     @inlinable
@@ -697,7 +781,7 @@ public struct ArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     
 }
 
-extension ArgumentBuffer {
+extension TypedArgumentBuffer {
     
     public func setBuffers(_ buffers: [Buffer], offsets: [Int], keys: [K]) {
         for (buffer, (offset, key)) in zip(buffers, zip(offsets, keys)) {
@@ -718,12 +802,12 @@ extension ArgumentBuffer {
     }
 }
 
-public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
-    public let argumentBufferArray : _ArgumentBufferArray
+public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
+    public let argumentBufferArray : ArgumentBufferArray
     
     @inlinable
     public init(handle: Handle) {
-        self.argumentBufferArray = _ArgumentBufferArray(handle: handle)
+        self.argumentBufferArray = ArgumentBufferArray(handle: handle)
     }
     
     @available(*, deprecated, renamed: "init(renderGraph:flags:)")
@@ -733,7 +817,7 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
     }
     
     public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        self.argumentBufferArray = _ArgumentBufferArray(renderGraph: renderGraph, flags: flags)
+        self.argumentBufferArray = ArgumentBufferArray(renderGraph: renderGraph, flags: flags)
         self.argumentBufferArray.label = "Argument Buffer Array \(K.self)"
     }
     
@@ -751,7 +835,7 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
     }
     
     @inlinable
-    public var handle: _ArgumentBufferArray.Handle {
+    public var handle: ArgumentBufferArray.Handle {
         return self.argumentBufferArray.handle
     }
     
@@ -789,19 +873,19 @@ public struct ArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
         self.argumentBufferArray._bindings.reserveCapacity(capacity)
     }
     
-    public subscript(index: Int) -> ArgumentBuffer<K> {
+    public subscript(index: Int) -> TypedArgumentBuffer<K> {
         get {
             if index >= self.argumentBufferArray._bindings.count {
                 self.argumentBufferArray._bindings.append(contentsOf: repeatElement(nil, count: index - self.argumentBufferArray._bindings.count + 1))
             }
             
             if let buffer = self.argumentBufferArray._bindings[index] {
-                return ArgumentBuffer(handle: buffer.handle)
+                return TypedArgumentBuffer(handle: buffer.handle)
             }
             
-            let buffer = _ArgumentBuffer(flags: [self.flags, .resourceView], sourceArray: self.argumentBufferArray)
+            let buffer = ArgumentBuffer(flags: [self.flags, .resourceView], sourceArray: self.argumentBufferArray)
             self.argumentBufferArray._bindings[index] = buffer
-            return ArgumentBuffer(handle: buffer.handle)
+            return TypedArgumentBuffer(handle: buffer.handle)
         }
     }
 }

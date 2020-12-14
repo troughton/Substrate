@@ -35,7 +35,7 @@ public struct NilSet : ShaderDescriptorSet {
     @inlinable
     public init() {}
     
-    public mutating func encode(into argBuffer: _ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?) {
+    public mutating func encode(into argBuffer: ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?) {
     }
 }
 
@@ -246,11 +246,39 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.encoder.insertDebugSignpost(string)
     }
     
-    public func setArgumentBuffer<K>(_ argumentBuffer: ArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
+    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, key: FunctionArgumentKey) {
+        self.encoder.setBytes(bytes, length: length, key: key)
+    }
+    
+    public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey) {
+        self.encoder.setBuffer(buffer, offset: offset, key: key)
+    }
+    
+    public func setBufferOffset(_ offset: Int, key: FunctionArgumentKey) {
+        self.encoder.setBufferOffset(offset, key: key)
+    }
+    
+    public func setSampler(_ descriptor: SamplerDescriptor?, key: FunctionArgumentKey) {
+        self.encoder.setSampler(descriptor, key: key)
+    }
+    
+    public func setTexture(_ texture: Texture?, key: FunctionArgumentKey) {
+        self.encoder.setTexture(texture, key: key)
+    }
+    
+    public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
         self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
     }
     
-    public func setArgumentBufferArray<K>(_ argumentBufferArray: ArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
+    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
+        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
+    }
+    
+    public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
+        self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
+    }
+    
+    public func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
         self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
     }
     
@@ -482,6 +510,41 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         self.encoder.setThreadgroupMemoryLength(length, index: index)
     }
     
+    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, key: FunctionArgumentKey) {
+        self.encoder.setBytes(bytes, length: length, key: key)
+    }
+    
+    public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey) {
+        self.encoder.setBuffer(buffer, offset: offset, key: key)
+    }
+    
+    public func setBufferOffset(_ offset: Int, key: FunctionArgumentKey) {
+        self.encoder.setBufferOffset(offset, key: key)
+    }
+    
+    public func setSampler(_ descriptor: SamplerDescriptor?, key: FunctionArgumentKey) {
+        self.encoder.setSampler(descriptor, key: key)
+    }
+    
+    public func setTexture(_ texture: Texture?, key: FunctionArgumentKey) {
+        self.encoder.setTexture(texture, key: key)
+    }
+    
+    public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
+        self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
+    }
+    
+    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
+        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
+    }
+    
+    public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
+        self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
+    }
+    
+    public func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
+        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
+    }
     
     public func dispatchThreads(_ threadsPerGrid: Size, threadsPerThreadgroup: Size) {
         self.updateEncoderState()

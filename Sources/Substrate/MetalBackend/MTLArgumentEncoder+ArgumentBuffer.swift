@@ -9,7 +9,7 @@
 
 import Metal
 
-extension _ArgumentBuffer {
+extension ArgumentBuffer {
     func setArguments(storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
         if self.stateFlags.contains(.initialised) { return }
         
@@ -28,7 +28,7 @@ extension _ArgumentBuffer {
     }
 }
 
-extension _ArgumentBufferArray {
+extension ArgumentBufferArray {
     func setArguments(storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
         var argEncoder : MetalArgumentEncoder? = nil
         
@@ -47,7 +47,7 @@ extension _ArgumentBufferArray {
 }
 
 extension MetalArgumentEncoder {
-    func encodeArguments(from argBuffer: _ArgumentBuffer, resourceMap: FrameResourceMap<MetalBackend>) {
+    func encodeArguments(from argBuffer: ArgumentBuffer, resourceMap: FrameResourceMap<MetalBackend>) {
         for (bindingPath, binding) in argBuffer.bindings {
             
             let bindingIndex = bindingPath.bindIndex

@@ -26,7 +26,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
-    subscript(buffer: _ArgumentBuffer) -> Backend.ArgumentBufferReference {
+    subscript(buffer: ArgumentBuffer) -> Backend.ArgumentBufferReference {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
@@ -34,7 +34,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
-    subscript(buffer: _ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference {
+    subscript(buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {

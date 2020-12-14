@@ -150,11 +150,11 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.disposeBuffer(buffer)
     }
     
-    @usableFromInline func dispose(argumentBuffer: _ArgumentBuffer) {
+    @usableFromInline func dispose(argumentBuffer: ArgumentBuffer) {
         self.resourceRegistry.disposeArgumentBuffer(argumentBuffer)
     }
     
-    @usableFromInline func dispose(argumentBufferArray: _ArgumentBufferArray) {
+    @usableFromInline func dispose(argumentBufferArray: ArgumentBufferArray) {
         self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray)
     }
     
@@ -306,11 +306,11 @@ final class MetalBackend : SpecificRenderBackend {
         return !self.isAppleSiliconGPU
     }
     
-    static func fillArgumentBuffer(_ argumentBuffer: _ArgumentBuffer, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
-    static func fillArgumentBufferArray(_ argumentBufferArray: _ArgumentBufferArray, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
     

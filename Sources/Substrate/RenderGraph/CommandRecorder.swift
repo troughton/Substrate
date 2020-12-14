@@ -89,10 +89,10 @@ enum RenderGraphCommand {
     public typealias SetSamplerStateArgs = (bindingPath: ResourceBindingPath, descriptor: SamplerDescriptor)
     case setSamplerState(UnsafePointer<SetSamplerStateArgs>)
     
-    public typealias SetArgumentBufferArgs = (bindingPath: ResourceBindingPath, argumentBuffer: _ArgumentBuffer)
+    public typealias SetArgumentBufferArgs = (bindingPath: ResourceBindingPath, argumentBuffer: ArgumentBuffer)
     case setArgumentBuffer(UnsafePointer<SetArgumentBufferArgs>)
     
-    public typealias SetArgumentBufferArrayArgs = (bindingPath: ResourceBindingPath, argumentBuffer: _ArgumentBufferArray, isBound: Bool)
+    public typealias SetArgumentBufferArrayArgs = (bindingPath: ResourceBindingPath, argumentBuffer: ArgumentBufferArray, isBound: Bool)
     case setArgumentBufferArray(UnsafePointer<SetArgumentBufferArrayArgs>)
     
     // Render
@@ -368,7 +368,7 @@ final class RenderGraphCommandRecorder {
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func resourceUsageNode<C : CommandEncoder>(`for` resource: _ArgumentBuffer, encoder: C, usageType: ResourceUsageType, stages: RenderStages, firstCommandOffset: Int) -> ResourceUsagePointer {
+    func resourceUsageNode<C : CommandEncoder>(`for` resource: ArgumentBuffer, encoder: C, usageType: ResourceUsageType, stages: RenderStages, firstCommandOffset: Int) -> ResourceUsagePointer {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
         assert(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
@@ -492,7 +492,7 @@ final class RenderGraphCommandRecorder {
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func addResourceUsage<C : CommandEncoder>(`for` resource: _ArgumentBuffer, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages) {
+    func addResourceUsage<C : CommandEncoder>(`for` resource: ArgumentBuffer, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages) {
         let _ = self.resourceUsageNode(for: resource, encoder: encoder, usageType: usageType, stages: stages, firstCommandOffset: commandIndex)
     }
     

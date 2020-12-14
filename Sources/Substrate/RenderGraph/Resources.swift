@@ -218,18 +218,18 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
-    public var argumentBuffer : _ArgumentBuffer? {
+    public var argumentBuffer : ArgumentBuffer? {
         if self.type == .argumentBuffer {
-            return _ArgumentBuffer(handle: self.handle)
+            return ArgumentBuffer(handle: self.handle)
         } else {
             return nil
         }
     }
     
     @inlinable
-    public var argumentBufferArray : _ArgumentBufferArray? {
+    public var argumentBufferArray : ArgumentBufferArray? {
         if self.type == .argumentBufferArray {
-            return _ArgumentBufferArray(handle: self.handle)
+            return ArgumentBufferArray(handle: self.handle)
         } else {
             return nil
         }
@@ -253,9 +253,9 @@ public struct Resource : ResourceProtocol, Hashable {
             case .texture:
                 return Texture(handle: self.handle).stateFlags
             case .argumentBuffer:
-                return _ArgumentBuffer(handle: self.handle).stateFlags
+                return ArgumentBuffer(handle: self.handle).stateFlags
             case .argumentBufferArray:
-                return _ArgumentBufferArray(handle: self.handle).stateFlags
+                return ArgumentBufferArray(handle: self.handle).stateFlags
             default:
                 fatalError()
             }
@@ -267,9 +267,9 @@ public struct Resource : ResourceProtocol, Hashable {
             case .texture:
                 Texture(handle: self.handle).stateFlags = newValue
             case .argumentBuffer:
-                _ArgumentBuffer(handle: self.handle).stateFlags = newValue
+                ArgumentBuffer(handle: self.handle).stateFlags = newValue
             case .argumentBufferArray:
-                _ArgumentBufferArray(handle: self.handle).stateFlags = newValue
+                ArgumentBufferArray(handle: self.handle).stateFlags = newValue
             default:
                 fatalError()
             }
@@ -285,9 +285,9 @@ public struct Resource : ResourceProtocol, Hashable {
             case .texture:
                 return Texture(handle: self.handle).storageMode
             case .argumentBuffer:
-                return _ArgumentBuffer(handle: self.handle).storageMode
+                return ArgumentBuffer(handle: self.handle).storageMode
             case .argumentBufferArray:
-                return _ArgumentBufferArray(handle: self.handle).storageMode
+                return ArgumentBufferArray(handle: self.handle).storageMode
             default:
                 fatalError()
             }
@@ -303,9 +303,9 @@ public struct Resource : ResourceProtocol, Hashable {
             case .texture:
                 return Texture(handle: self.handle).label
             case .argumentBuffer:
-                return _ArgumentBuffer(handle: self.handle).label
+                return ArgumentBuffer(handle: self.handle).label
             case .argumentBufferArray:
-                return _ArgumentBufferArray(handle: self.handle).label
+                return ArgumentBufferArray(handle: self.handle).label
             default:
                 fatalError()
             }
@@ -317,9 +317,9 @@ public struct Resource : ResourceProtocol, Hashable {
             case .texture:
                 Texture(handle: self.handle).label = newValue
             case .argumentBuffer:
-                _ArgumentBuffer(handle: self.handle).label = newValue
+                ArgumentBuffer(handle: self.handle).label = newValue
             case .argumentBufferArray:
-                _ArgumentBufferArray(handle: self.handle).label = newValue
+                ArgumentBufferArray(handle: self.handle).label = newValue
             default:
                 fatalError()
             }
@@ -335,9 +335,9 @@ public struct Resource : ResourceProtocol, Hashable {
             case .texture:
                 return Texture(handle: self.handle)[waitIndexFor: queue, accessType: type]
             case .argumentBuffer:
-                return _ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type]
+                return ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type]
             case .argumentBufferArray:
-                return _ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type]
+                return ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type]
             default:
                 return 0
             }
@@ -349,9 +349,9 @@ public struct Resource : ResourceProtocol, Hashable {
             case .texture:
                 Texture(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
             case .argumentBuffer:
-                _ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
+                ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
             case .argumentBufferArray:
-                _ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
+                ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
             default:
                 fatalError()
             }
@@ -367,7 +367,7 @@ public struct Resource : ResourceProtocol, Hashable {
             case .texture:
                 return Texture(handle: self.handle).usages
             case .argumentBuffer:
-                return _ArgumentBuffer(handle: self.handle).usages
+                return ArgumentBuffer(handle: self.handle).usages
             default:
                 return ChunkArray()
             }
@@ -379,7 +379,7 @@ public struct Resource : ResourceProtocol, Hashable {
             case .texture:
                 Texture(handle: self.handle).usages = newValue
             case .argumentBuffer:
-                _ArgumentBuffer(handle: self.handle).usages = newValue
+                ArgumentBuffer(handle: self.handle).usages = newValue
             default:
                 fatalError()
             }
@@ -394,9 +394,9 @@ public struct Resource : ResourceProtocol, Hashable {
         case .texture:
             return Texture(handle: self.handle).isKnownInUse
         case .argumentBuffer:
-            return _ArgumentBuffer(handle: self.handle).isKnownInUse
+            return ArgumentBuffer(handle: self.handle).isKnownInUse
         case .argumentBufferArray:
-            return _ArgumentBufferArray(handle: self.handle).isKnownInUse
+            return ArgumentBufferArray(handle: self.handle).isKnownInUse
         case .heap:
             return Heap(handle: self.handle).isKnownInUse
         default:
@@ -412,9 +412,9 @@ public struct Resource : ResourceProtocol, Hashable {
         case .texture:
             return Texture(handle: self.handle).isValid
         case .argumentBuffer:
-            return _ArgumentBuffer(handle: self.handle).isValid
+            return ArgumentBuffer(handle: self.handle).isValid
         case .argumentBufferArray:
-            return _ArgumentBufferArray(handle: self.handle).isValid
+            return ArgumentBufferArray(handle: self.handle).isValid
         case .heap:
             return Heap(handle: self.handle).isValid
         default:
@@ -441,9 +441,9 @@ public struct Resource : ResourceProtocol, Hashable {
         case .texture:
             Texture(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         case .argumentBuffer:
-            _ArgumentBuffer(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+            ArgumentBuffer(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         case .argumentBufferArray:
-            _ArgumentBufferArray(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
+            ArgumentBufferArray(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         case .heap:
             Heap(handle: self.handle).markAsUsed(renderGraphIndexMask: renderGraphIndexMask)
         default:
@@ -459,9 +459,9 @@ public struct Resource : ResourceProtocol, Hashable {
         case .texture:
             Texture(handle: self.handle).dispose()
         case .argumentBuffer:
-            _ArgumentBuffer(handle: self.handle).dispose()
+            ArgumentBuffer(handle: self.handle).dispose()
         case .argumentBufferArray:
-            _ArgumentBufferArray(handle: self.handle).dispose()
+            ArgumentBufferArray(handle: self.handle).dispose()
         case .heap:
             Heap(handle: self.handle).dispose()
         default:
@@ -478,9 +478,9 @@ extension Resource: CustomStringConvertible {
         case .texture:
             return Texture(handle: self.handle).description
         case .argumentBuffer:
-            return _ArgumentBuffer(handle: self.handle).description
+            return ArgumentBuffer(handle: self.handle).description
         case .argumentBufferArray:
-            return _ArgumentBufferArray(handle: self.handle).description
+            return ArgumentBufferArray(handle: self.handle).description
         case .heap:
             return Heap(handle: self.handle).description
         default:

@@ -28,9 +28,9 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
             self._reserveCapacity(PersistentBufferRegistry.instance.maxIndex)
         case is Texture.Type:
             self._reserveCapacity(PersistentTextureRegistry.instance.maxIndex)
-        case is _ArgumentBuffer.Type:
+        case is ArgumentBuffer.Type:
             self._reserveCapacity(PersistentArgumentBufferRegistry.instance.maxIndex)
-        case is _ArgumentBufferArray.Type:
+        case is ArgumentBufferArray.Type:
             self._reserveCapacity(PersistentArgumentBufferArrayRegistry.instance.maxIndex)
         case is Heap.Type:
             self._reserveCapacity(HeapRegistry.instance.maxIndex)
@@ -237,9 +237,9 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
             self.reserveCapacity(TransientBufferRegistry.instances[self.transientRegistryIndex].capacity)
         case is Texture.Type:
             self.reserveCapacity(TransientTextureRegistry.instances[self.transientRegistryIndex].capacity)
-        case is _ArgumentBuffer.Type:
+        case is ArgumentBuffer.Type:
             break
-        case is _ArgumentBufferArray.Type:
+        case is ArgumentBufferArray.Type:
             self.reserveCapacity(TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].capacity)
         case is Heap.Type:
             break
@@ -254,11 +254,11 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
             self.count = Int.AtomicRepresentation.atomicLoad(at: TransientBufferRegistry.instances[self.transientRegistryIndex].count, ordering: .relaxed)
         case is Texture.Type:
             self.count = Int.AtomicRepresentation.atomicLoad(at: TransientTextureRegistry.instances[self.transientRegistryIndex].count, ordering: .relaxed)
-        case is _ArgumentBuffer.Type:
+        case is ArgumentBuffer.Type:
             let count = TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].count
             self.reserveCapacity(count)
             self.count = count
-        case is _ArgumentBufferArray.Type:
+        case is ArgumentBufferArray.Type:
             self.count = TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].count
         case is Heap.Type:
             break

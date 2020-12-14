@@ -17,7 +17,7 @@ import Vulkan
 
 @usableFromInline
 protocol PipelineReflection : class {
-    func bindingPath(argumentBuffer: _ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?
+    func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?
     func bindingPath(argumentName: String, arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath?
     func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath
     func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection?
@@ -81,8 +81,8 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     
     func dispose(texture: Texture)
     func dispose(buffer: Buffer)
-    func dispose(argumentBuffer: _ArgumentBuffer)
-    func dispose(argumentBufferArray: _ArgumentBufferArray)
+    func dispose(argumentBuffer: ArgumentBuffer)
+    func dispose(argumentBufferArray: ArgumentBufferArray)
     func dispose(heap: Heap)
     
     var pushConstantPath : ResourceBindingPath { get }
@@ -167,12 +167,12 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func dispose(argumentBuffer: _ArgumentBuffer) {
+    public static func dispose(argumentBuffer: ArgumentBuffer) {
         return _backend.dispose(argumentBuffer: argumentBuffer)
     }
     
     @inlinable
-    public static func dispose(argumentBufferArray: _ArgumentBufferArray) {
+    public static func dispose(argumentBufferArray: ArgumentBufferArray) {
         return _backend.dispose(argumentBufferArray: argumentBufferArray)
     }
     

@@ -298,7 +298,7 @@ final class VulkanPipelineReflection : PipelineReflection {
         return nil
     }
     
-    public func bindingPath(argumentBuffer: _ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
+    public func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath? {
         
         // TODO: handle the arrayIndex parameter for argument buffer arrays.
         

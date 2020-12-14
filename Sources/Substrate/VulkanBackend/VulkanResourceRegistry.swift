@@ -65,8 +65,8 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     var heapReferences = PersistentResourceMap<Heap, VulkanHeap>()
     var textureReferences = PersistentResourceMap<Texture, VkImageReference>()
     var bufferReferences = PersistentResourceMap<Buffer, VkBufferReference>()
-    var argumentBufferReferences = PersistentResourceMap<_ArgumentBuffer, VulkanArgumentBuffer>()
-    var argumentBufferArrayReferences = PersistentResourceMap<_ArgumentBufferArray, VulkanArgumentBuffer>()
+    var argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, VulkanArgumentBuffer>()
+    var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, VulkanArgumentBuffer>()
     
     var samplers = [SamplerDescriptor: VkSampler]()
     
@@ -181,7 +181,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer) -> VulkanArgumentBuffer {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer {
         if let baseArray = argumentBuffer.sourceArray {
             _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
             return self.argumentBufferReferences[argumentBuffer]!
@@ -203,7 +203,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray) -> VulkanArgumentBuffer {
+    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer {
         if let vkArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
             return vkArgumentBuffer
         }
@@ -228,11 +228,11 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         return self.bufferReferences[buffer]
     }
 
-    public subscript(argumentBuffer: _ArgumentBuffer) -> VulkanArgumentBuffer? {
+    public subscript(argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer? {
         return self.argumentBufferReferences[argumentBuffer]
     }
 
-    public subscript(argumentBufferArray: _ArgumentBufferArray) -> VulkanArgumentBuffer? {
+    public subscript(argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
 
@@ -271,7 +271,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         }
     }
     
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer) {
+    func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
         if let vkBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
             assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Vulkan RenderGraph backend.")
             
@@ -280,7 +280,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         }
     }
     
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray) {
+    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
         if let vkBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
             _ = vkBuffer
         }
@@ -300,8 +300,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     private var textureReferences : TransientResourceMap<Texture, VkImageReference>
     private var bufferReferences : TransientResourceMap<Buffer, VkBufferReference>
-    private var argumentBufferReferences : TransientResourceMap<_ArgumentBuffer, VulkanArgumentBuffer>
-    private var argumentBufferArrayReferences : TransientResourceMap<_ArgumentBufferArray, VulkanArgumentBuffer>
+    private var argumentBufferReferences : TransientResourceMap<ArgumentBuffer, VulkanArgumentBuffer>
+    private var argumentBufferArrayReferences : TransientResourceMap<ArgumentBufferArray, VulkanArgumentBuffer>
     
     var textureWaitEvents: TransientResourceMap<Texture, ContextWaitEvent>
     var bufferWaitEvents: TransientResourceMap<Buffer, ContextWaitEvent>
@@ -596,7 +596,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: _ArgumentBuffer) -> VulkanArgumentBuffer {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer {
         if let baseArray = argumentBuffer.sourceArray {
             _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
             return self.argumentBufferReferences[argumentBuffer]!
@@ -616,7 +616,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: _ArgumentBufferArray) -> VulkanArgumentBuffer {
+    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer {
 //        if let vkArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
 //            return vkArgumentBuffer
 //        }
@@ -654,11 +654,11 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         return self.bufferReferences[buffer]
     }
 
-    public subscript(argumentBuffer: _ArgumentBuffer) -> VulkanArgumentBuffer? {
+    public subscript(argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer? {
         return self.argumentBufferReferences[argumentBuffer]
     }
 
-    public subscript(argumentBufferArray: _ArgumentBufferArray) -> VulkanArgumentBuffer? {
+    public subscript(argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
     
@@ -726,12 +726,12 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         }
     }
     
-    func disposeArgumentBuffer(_ buffer: _ArgumentBuffer, waitEvent: ContextWaitEvent) {
+    func disposeArgumentBuffer(_ buffer: ArgumentBuffer, waitEvent: ContextWaitEvent) {
         // No-op; this should be managed by resetting the descriptor set pool.
         // FIXME: should we manage individual descriptor sets instead?
     }
     
-    func disposeArgumentBufferArray(_ buffer: _ArgumentBufferArray, waitEvent: ContextWaitEvent) {
+    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray, waitEvent: ContextWaitEvent) {
         // No-op; this should be managed by resetting the descriptor set pool.
         // FIXME: should we manage individual descriptor sets instead?
     }
