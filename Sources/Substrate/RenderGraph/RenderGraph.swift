@@ -843,6 +843,16 @@ public final class RenderGraph {
         self.completionNotifyQueue.append(function)
     }
     
+    /// Returns true if this RenderGraph already has the maximum number of GPU frames in-flight, and would have to wait
+    /// for the ring buffers to become available before executing.
+    public var hasMaximumFrameCountInFlight: Bool {
+        if self.context.accessSemaphore.wait(timeout: .now()) == .success {
+            self.context.accessSemaphore.signal()
+            return false
+        }
+        return true
+    }
+    
     public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
         if GPUResourceUploader.renderGraph !== self {
             GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
@@ -861,6 +871,8 @@ public final class RenderGraph {
             return
         }
         
+        self.context.accessSemaphore.wait()
+        
         RenderGraph.activeRenderGraphSemaphore.wait()
         RenderGraph.activeRenderGraph = self
         defer {
@@ -870,7 +882,6 @@ public final class RenderGraph {
         
         let jobManager = RenderGraph.jobManager
         
-        self.context.accessSemaphore.wait()
         
         RenderGraph.resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag, threadCount: jobManager.threadCount)
         RenderGraph.executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag, threadCount: jobManager.threadCount)
