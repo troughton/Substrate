@@ -910,7 +910,13 @@ public final class RenderGraph {
             completionQueue.forEach { $0() }
         }
         
+        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+        autoreleasepool {
+            self.context.executeRenderGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
+        }
+        #else
         self.context.executeRenderGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
+        #endif
         
         // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
         passes.forEach {
