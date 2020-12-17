@@ -335,6 +335,13 @@ final class MetalPipelineReflection : PipelineReflection {
             }
         }
         
+        testPath.stages = [] // Check to see if we have an active binding for that path within a compute shader.
+        if pathInCache(testPath) {
+            var path = path
+            path.stages = []
+            return path
+        }
+        
         return path
     }
     
