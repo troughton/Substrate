@@ -166,7 +166,9 @@ extension ReflectionPrinter {
             newLine()
             
             if pass.pushConstants.count == 1, !pass.pushConstants.first!.type.isKnownSwiftType {
-                print("public typealias PushConstants = \(pass.pushConstants.first!.type.name)")
+                if pass.pushConstants.first!.type.name != "PushConstants" {
+                    print("public typealias PushConstants = \(pass.pushConstants.first!.type.name)")
+                }
             } else {
                 print("public struct PushConstants : NoArgConstructable {")
                 
