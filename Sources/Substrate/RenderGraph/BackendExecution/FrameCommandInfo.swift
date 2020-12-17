@@ -27,6 +27,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     let baseCommandBufferSignalValue: UInt64
     
     let passes: [RenderPassRecord]
+    let passEncoderIndices: [Int]
     var commandEncoders: [CommandEncoderInfo<Backend.RenderTargetDescriptor>]
     
     // storedTextures contain all textures that are stored to (i.e. textures that aren't eligible to be memoryless on iOS).
@@ -93,6 +94,17 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
             }
             
             self.commandEncoders = commandEncoders
+            
+            var passEncoderIndices = [Int](repeating: 0, count: passes.count)
+            var encoderIndex = 0
+            for i in passEncoderIndices.indices {
+                if !self.commandEncoders[encoderIndex].passRange.contains(i) {
+                    encoderIndex += 1
+                }
+                passEncoderIndices[i] = encoderIndex
+            }
+            
+            self.passEncoderIndices = passEncoderIndices
         }
     }
     
@@ -101,7 +113,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     }
 
     public func encoderIndex(for passIndex: Int) -> Int {
-        return self.commandEncoders.firstIndex(where: { $0.passRange.contains(passIndex) })!
+        return self.passEncoderIndices[passIndex]
     }
     
     public func encoderIndex(for pass: RenderPassRecord) -> Int {
@@ -109,7 +121,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     }
     
     public func encoder(for passIndex: Int) -> CommandEncoderInfo<Backend.RenderTargetDescriptor> {
-        return self.commandEncoders.first(where: { $0.passRange.contains(passIndex) })!
+        return self.commandEncoders[self.encoderIndex(for: passIndex)]
     }
     
     public func encoder(for pass: RenderPassRecord) -> CommandEncoderInfo<Backend.RenderTargetDescriptor> {
