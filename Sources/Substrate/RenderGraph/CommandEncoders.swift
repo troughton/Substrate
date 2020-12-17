@@ -709,7 +709,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                             let argumentBuffer = boundResource.resource.argumentBuffer!
                             
                             // The command might be either a setArgumentBuffer or setArgumentBufferArray command.
-                            // Check to see whether the resource is an ArgumentBuffer or _ArgumentBufferArray to distinguish.
+                            // Check to see whether the resource is an ArgumentBuffer or ArgumentBufferArray to distinguish.
                             let setArgumentBufferArgs = bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetArgumentBufferArgs.self)
                             
                             if Resource(setArgumentBufferArgs.pointee.argumentBuffer).type == .argumentBufferArray {

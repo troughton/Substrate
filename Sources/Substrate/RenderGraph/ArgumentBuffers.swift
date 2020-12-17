@@ -625,7 +625,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
             return 0
         }
         nonmutating set {
-            // Argument buffer array waits are handled at _ArgumentBuffer granularity
+            // Argument buffer array waits are handled at ArgumentBuffer granularity
            _ = newValue
         }
     }

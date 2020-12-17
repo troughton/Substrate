@@ -22,7 +22,7 @@ extension ResourceType {
         case .argumentBuffer:
             return "ArgumentBuffer"
         case .argumentBufferArray:
-            return "_ArgumentBufferArray"
+            return "ArgumentBufferArray"
         default:
             fatalError()
         }
