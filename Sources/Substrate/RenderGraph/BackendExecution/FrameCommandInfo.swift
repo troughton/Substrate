@@ -54,11 +54,10 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
                     name = "[\(passes[passRange.first!].pass.name)...\(passes[passRange.last!].pass.name)] (\(passRange.count) passes)"
                 }
                 
-                let type = passes[passRange.first!].pass.passType
                 let queueFamilyIndex = 0 // TODO: correctly compute this for Vulkan.
                 
                 if let previousEncoder = commandEncoders.last,
-                   previousEncoder.usesWindowTexture != usesWindowTexture || previousEncoder.type != type || previousEncoder.queueFamilyIndex != queueFamilyIndex {
+                   previousEncoder.usesWindowTexture != usesWindowTexture || previousEncoder.queueFamilyIndex != queueFamilyIndex {
                     commandBufferIndex += 1
                 }
                 
