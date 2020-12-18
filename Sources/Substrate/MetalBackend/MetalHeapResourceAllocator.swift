@@ -37,6 +37,8 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     private var waitEvent : ContextWaitEvent = .init()
     private var nextFrameWaitEvent : ContextWaitEvent = .init()
     
+    private var isPurgeable = false
+    
     let device : MTLDevice
     
     public init(device: MTLDevice) {
@@ -44,6 +46,9 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     }
     
     func resetHeap() {
+        self.heap?.setPurgeableState(.empty)
+        self.isPurgeable = true
+        
         self.aliasingFences.removeAll(keepingCapacity: true)
         self.nextAliasingIndex = 0
     }
@@ -51,7 +56,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     func reserveCapacity(_ capacity: Int) {
         if (self.heap?.currentAllocatedSize ?? 0) < capacity {
             let descriptor = MTLHeapDescriptor()
-            descriptor.size = max((self.heap?.currentAllocatedSize ?? 0) * 2, capacity)
+            descriptor.size = max(((self.heap?.currentAllocatedSize ?? 0) * 3) / 2, capacity)
             if #available(OSX 10.15, iOS 13.0, tvOS 13.0, *) {
                 descriptor.hazardTrackingMode = .substrateTrackedHazards
             }
@@ -64,18 +69,20 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         self.waitEvent = self.nextFrameWaitEvent
         self.nextFrameWaitEvent = .init()
         
-        for i in (1..<MetalHeapResourceAllocator.historyFrames).reversed() {
-            self.frameMemoryUsages[i] = self.frameMemoryUsages[i - 1]
+        if let currentAllocatedSize = self.heap?.currentAllocatedSize, currentAllocatedSize > 0 {
+            for i in (1..<MetalHeapResourceAllocator.historyFrames).reversed() {
+                self.frameMemoryUsages[i] = self.frameMemoryUsages[i - 1]
+            }
+            self.frameMemoryUsages[0] = self.heap?.currentAllocatedSize ?? 0
+            
+            let memoryHighWaterMark = self.frameMemoryUsages.max()!
+            
+            if memoryHighWaterMark > 0, (self.heap?.size ?? 0) > 2 * memoryHighWaterMark {
+                self.heap = nil
+                self.reserveCapacity(memoryHighWaterMark)
+            }
         }
-        self.frameMemoryUsages[0] = self.heap?.currentAllocatedSize ?? 0
-        
-        let memoryHighWaterMark = self.frameMemoryUsages.max()!
-        
-        if (self.heap?.size ?? 0) > 2 * memoryHighWaterMark {
-            self.heap = nil
-            self.reserveCapacity(memoryHighWaterMark)
-        }
-
+       
         self.frameBuffers.forEach { $0.release() }
         self.frameTextures.forEach { $0.release() }
         
@@ -88,6 +95,11 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     }
 
     private func useResource(_ resource: MTLResource) -> [FenceDependency] {
+        if self.isPurgeable {
+            self.heap?.setPurgeableState(.nonVolatile)
+            self.isPurgeable = false
+        }
+        
         let aliasingIndex = self.nextAliasingIndex
         self.resourceAliasingIndices[ObjectIdentifier(resource)] = aliasingIndex
       

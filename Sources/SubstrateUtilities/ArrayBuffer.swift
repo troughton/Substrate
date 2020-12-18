@@ -255,7 +255,7 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     @inlinable
     public func reserveCapacity(_ capacity: Int) {
         if self.capacity < capacity {
-            let newCapacity = Swift.max(self.capacity * 2, capacity)
+            let newCapacity = Swift.max((self.capacity * 3) / 2, capacity)
 
             let newBaseAddress = Allocator.allocate(capacity: newCapacity, allocator: self.allocator) as UnsafeMutablePointer<Element>
             
