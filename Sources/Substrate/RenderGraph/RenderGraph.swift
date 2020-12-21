@@ -8,9 +8,9 @@
 
 import Foundation
 import SubstrateUtilities
-import OSLog
+import Atomics
 
-public protocol RenderPass : class {
+public protocol RenderPass : AnyObject {
     var name : String { get }
     
     var readResources : [Resource] { get }
@@ -142,8 +142,8 @@ public protocol ReflectableDrawRenderPass : DrawRenderPass {
 
 extension ReflectableDrawRenderPass {
     @inlinable
-    public func execute(renderCommandEncoder: RenderCommandEncoder) {
-        return self.execute(renderCommandEncoder: TypedRenderCommandEncoder(encoder: renderCommandEncoder)) async
+    public func execute(renderCommandEncoder: RenderCommandEncoder) async {
+        return await self.execute(renderCommandEncoder: TypedRenderCommandEncoder(encoder: renderCommandEncoder))
     }
 }
 
@@ -154,7 +154,7 @@ public protocol ReflectableComputeRenderPass : ComputeRenderPass {
 
 extension ReflectableComputeRenderPass {
     @inlinable
-    public func execute(computeCommandEncoder: ComputeCommandEncoder) {
+    public func execute(computeCommandEncoder: ComputeCommandEncoder) async {
         return await self.execute(computeCommandEncoder: TypedComputeCommandEncoder(encoder: computeCommandEncoder))
     }
 }
@@ -255,23 +255,23 @@ final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : Ref
 
 final class CallbackCPURenderPass : CPURenderPass {
     public let name : String
-    public let executeFunc : () async -> Void
+    public let executeFunc : () -> Void
     
-    public init(name: String, execute: @escaping () async -> Void) {
+    public init(name: String, execute: @escaping () -> Void) {
         self.name = name
         self.executeFunc = execute
     }
     
     public func execute() {
-        await self.executeFunc()
+        self.executeFunc()
     }
 }
 
 final class CallbackBlitRenderPass : BlitRenderPass {
     public let name : String
-    public let executeFunc : (BlitCommandEncoder) -> Void
+    public let executeFunc : (BlitCommandEncoder) async -> Void
     
-    public init(name: String, execute: @escaping (BlitCommandEncoder) -> Void) {
+    public init(name: String, execute: @escaping (BlitCommandEncoder) async -> Void) {
         self.name = name
         self.executeFunc = execute
     }
@@ -290,7 +290,7 @@ final class CallbackExternalRenderPass : ExternalRenderPass {
         self.executeFunc = execute
     }
     
-    public func execute(externalCommandEncoder: ExternalCommandEncoder) {
+    public func execute(externalCommandEncoder: ExternalCommandEncoder) async {
         await self.executeFunc(externalCommandEncoder)
     }
 }
@@ -310,6 +310,7 @@ final class RenderPassRecord {
     @usableFromInline var readResources : HashSet<Resource>! = nil
     @usableFromInline var writtenResources : HashSet<Resource>! = nil
     @usableFromInline var resourceUsages : ChunkArray<(Resource, ResourceUsage)>! = nil
+    @usableFromInline var unmanagedReferences : ChunkArray<Releasable>! = nil
     @usableFromInline /* internal(set) */ var commandRange : Range<Int>?
     @usableFromInline /* internal(set) */ var passIndex : Int
     @usableFromInline /* internal(set) */ var isActive : Bool
@@ -335,8 +336,12 @@ public enum DependencyType {
     //    case transitive
 }
 
-public protocol RenderGraphContext : class {
+public protocol RenderGraphContext : AnyObject {
     
+}
+
+struct RenderGraphExecutionResult {
+    var gpuTime: Double
 }
 
 // _RenderGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
@@ -345,7 +350,7 @@ protocol _RenderGraphContext : RenderGraphContext {
     var accessSemaphore : DispatchSemaphore { get }
     var renderGraphQueue: Queue { get }
     func beginFrameResourceAccess() // Access is ended when a renderGraph is submitted.
-    func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>, completion: @escaping (_ gpuTime: Double) -> Void)
+    func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>) -> Task.Handle<RenderGraphExecutionResult>
 }
 
 public enum RenderGraphTagType : UInt64 {
@@ -374,32 +379,28 @@ public enum RenderGraphTagType : UInt64 {
     }
 }
 
-public final class RenderGraph {
-    
-    public static var jobManager : RenderGraphJobManager = DefaultRenderGraphJobManager()
-    
+@globalActor
+actor class RenderGraphSharedActor {
+    static let shared = RenderGraphSharedActor()
+}
+
+public final actor class RenderGraph {
     static let activeRenderGraphSemaphore = DispatchSemaphore(value: 1)
     public private(set) static var activeRenderGraph : RenderGraph? = nil
-    
-    /// executionAllocator is used for allocations that last one execution of the RenderGraph.
-    static var executionAllocator : TagAllocator! = nil
-    
-    /// resourceUsagesAllocator is used for resource usages, and lasts one execution of the RenderGraph.
-    static var resourceUsagesAllocator : TagAllocator! = nil
-    
-    private static var threadUnmanagedReferences : [ExpandingBuffer<Releasable>]! = nil
     
     private var renderPasses : [RenderPassRecord] = []
     private var usedResources : Set<Resource> = []
     
-    public static private(set) var globalSubmissionIndex : UInt64 = 0
+    public static private(set) var globalSubmissionIndex : ManagedAtomic<UInt64> = .init(0)
     private var previousFrameCompletionTime : UInt64 = 0
     public private(set) var lastGraphCPUTime = 1000.0 / 60.0
     public private(set) var lastGraphGPUTime = 1000.0 / 60.0
     
-    var submissionNotifyQueue = [() -> Void]()
-    var completionNotifyQueue = [() -> Void]()
+    var submissionNotifyQueue = [() async -> Void]()
+    var completionNotifyQueue = [() async -> Void]()
     let context : _RenderGraphContext
+    
+    private var availableAllocatorIndices: [Int] = []
     
     public let transientRegistryIndex : Int
     
@@ -427,10 +428,12 @@ public final class RenderGraph {
         TransientRegistryManager.free(self.transientRegistryIndex)
     }
     
+    @actorIndependent
     public var queue: Queue {
         return self.context.renderGraphQueue
     }
     
+    @actorIndependent
     public var activeRenderGraphMask: ActiveRenderGraphMask {
         return 1 << self.queue.index
     }
@@ -548,12 +551,12 @@ public final class RenderGraph {
     }
     
     public func addCPUCallbackPass(file: String = #fileID, line: Int = #line,
-                                   _ execute: @escaping () async -> Void) {
+                                   _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
     }
     
     public func addCPUCallbackPass(name: String,
-                                   _ execute: @escaping () async -> Void) {
+                                   _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: name, execute: execute))
     }
     
@@ -576,17 +579,14 @@ public final class RenderGraph {
     // Backend will look over all resource usages and figure out necessary resource transitions and creation/destruction times (could be synced with command numbers e.g. before command 300, transition resource A to state X).
     // Then, it will execute the command list.
     
-    func executePass(_ passRecord: RenderPassRecord, threadIndex: Int) async {
-        let unmanagedReferences = RenderGraph.threadUnmanagedReferences[threadIndex]
-        
+    func executePass(_ passRecord: RenderPassRecord, executionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView) async {
         let renderPassScratchTag = RenderGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
         
         let commandRecorder = RenderGraphCommandRecorder(renderGraphTransientRegistryIndex: self.transientRegistryIndex,
                                                         renderGraphQueue: self.queue,
                                                         renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
-                                                        renderGraphExecutionAllocator: TagAllocator.ThreadView(allocator: RenderGraph.executionAllocator, threadIndex: threadIndex),
-                                                        resourceUsageAllocator: TagAllocator.ThreadView(allocator: RenderGraph.resourceUsagesAllocator, threadIndex: threadIndex),
-                                                        unmanagedReferences: unmanagedReferences)
+                                                        renderGraphExecutionAllocator: executionAllocator,
+                                                        resourceUsageAllocator: resourceUsageAllocator)
         
         
         
@@ -612,7 +612,7 @@ public final class RenderGraph {
             ece.endEncoding()
             
         case let cpuPass as CPURenderPass:
-            await cpuPass.execute()
+            cpuPass.execute()
             
         default:
             fatalError("Unknown pass type for pass \(passRecord)")
@@ -623,15 +623,15 @@ public final class RenderGraph {
         passRecord.readResources = commandRecorder.readResources
         passRecord.writtenResources = commandRecorder.writtenResources
         passRecord.resourceUsages = commandRecorder.resourceUsages
+        passRecord.unmanagedReferences = commandRecorder.unmanagedReferences
         
         TaggedHeap.free(tag: renderPassScratchTag)
     }
     
-    func fillUsedResourcesFromPass(passRecord: RenderPassRecord, threadIndex: Int) {
-        let usageAllocator = TagAllocator.ThreadView(allocator: RenderGraph.resourceUsagesAllocator, threadIndex: threadIndex)
-        
-        passRecord.readResources = .init(allocator: .tagThreadView(usageAllocator))
-        passRecord.writtenResources = .init(allocator: .tagThreadView(usageAllocator))
+    @actorIndependent
+    func fillUsedResourcesFromPass(passRecord: RenderPassRecord, resourceUsageAllocator: TagAllocator.ThreadView) {
+        passRecord.readResources = .init(allocator: .tagThreadView(resourceUsageAllocator))
+        passRecord.writtenResources = .init(allocator: .tagThreadView(resourceUsageAllocator))
         
         for resource in passRecord.pass.writtenResources {
             resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
@@ -643,28 +643,30 @@ public final class RenderGraph {
         }
     }
     
-    func evaluateResourceUsages(renderPasses: [RenderPassRecord]) async {
-        await Task.withGroup(resultType: Void.self) { group in
-        
-            for passRecord in renderPasses where passRecord.pass.passType == .cpu {
-                if passRecord.pass.writtenResources.isEmpty {
-                    self.executePass(passRecord, threadIndex: jobManager.threadIndex)
-                } else {
-                    let threadIndex = jobManager.threadIndex
-                    self.fillUsedResourcesFromPass(passRecord: passRecord, threadIndex: threadIndex)
-                }
+    func evaluateResourceUsages(renderPasses: [RenderPassRecord], executionAllocator: TagAllocator, resourceUsagesAllocator: TagAllocator) async {
+        for passRecord in renderPasses where passRecord.pass.passType == .cpu {
+            let allocatorIndex = await self.retrieveAllocatorIndex()
+            if passRecord.pass.writtenResources.isEmpty {
+                await self.executePass(passRecord,
+                                        executionAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex),
+                                        resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
+            } else {
+                self.fillUsedResourcesFromPass(passRecord: passRecord, resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
             }
-            
+            await self.depositAllocatorIndex(allocatorIndex)
+        }
+        _ = await try! Task.withGroup(resultType: Void.self) { group async -> Void in
             for passRecord in renderPasses where passRecord.pass.passType != .cpu {
-                group.add {
-                    let threadIndex = jobManager.threadIndex
-                    
+                await group.add { () async -> Void in
+                    let allocatorIndex = await self.retrieveAllocatorIndex()
                     if passRecord.pass.writtenResources.isEmpty {
-                        await self.executePass(passRecord, threadIndex: threadIndex)
+                        await self.executePass(passRecord,
+                                                executionAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex),
+                                                resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
                     } else {
-                        let threadIndex = jobManager.threadIndex
-                        self.fillUsedResourcesFromPass(passRecord: passRecord, threadIndex: threadIndex)
+                        self.fillUsedResourcesFromPass(passRecord: passRecord, resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
                     }
+                    await self.depositAllocatorIndex(allocatorIndex)
                 }
             }
         }
@@ -719,16 +721,28 @@ public final class RenderGraph {
         }
     }
     
-    func compile(renderPasses: [RenderPassRecord]) -> ([RenderPassRecord], DependencyTable<DependencyType>) {
-        
+    func retrieveAllocatorIndex() async -> Int {
+        return self.availableAllocatorIndices.removeFirst()
+    }
+    
+    func depositAllocatorIndex(_ index: Int) async {
+        self.availableAllocatorIndices.append(index)
+    }
+    
+    func compile() async -> ([RenderPassRecord], DependencyTable<DependencyType>, Set<Resource>) {
+        let renderPasses = self.renderPasses
+    
+        self.availableAllocatorIndices = Array(0..<renderPasses.count)
+        let resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag, threadCount: renderPasses.count)
+        let executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag, threadCount: renderPasses.count)
+    
         renderPasses.enumerated().forEach { $1.passIndex = $0 } // We may have inserted early blit passes, so we need to set the pass indices now.
         
-        runAsyncAndBlock {
-            self.evaluateResourceUsages(renderPasses: renderPasses)
-        }
+        await self.evaluateResourceUsages(renderPasses: renderPasses, executionAllocator: executionAllocator, resourceUsagesAllocator: resourceUsagesAllocator)
         
         var dependencyTable = DependencyTable<DependencyType>(capacity: renderPasses.count, defaultValue: .none)
         var passHasSideEffects = [Bool](repeating: false, count: renderPasses.count)
+    
         
         for (i, pass) in renderPasses.enumerated() {
             for resource in pass.writtenResources {
@@ -773,7 +787,11 @@ public final class RenderGraph {
         while i < activePasses.count {
             let passRecord = activePasses[i]
             if passRecord.commandRange == nil {
-                self.executePass(passRecord, threadIndex: 0)
+                let allocatorIndex = await self.retrieveAllocatorIndex()
+                await self.executePass(passRecord,
+                                        executionAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex),
+                                        resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
+                await self.depositAllocatorIndex(allocatorIndex)
             }
             if passRecord.pass.passType == .cpu || passRecord.commandRange!.count == 0 {
                 passRecord.isActive = false // We've definitely executed the pass now, so there's no more work to be done on it by the GPU backends.
@@ -797,7 +815,7 @@ public final class RenderGraph {
             }
         }
         
-        let allocator = TagAllocator.ThreadView(allocator: RenderGraph.resourceUsagesAllocator, threadIndex: 0)
+        let allocator = TagAllocator.ThreadView(allocator: resourceUsagesAllocator, threadIndex: 0)
         
         // Index the commands for each pass in a sequential manner for the entire frame.
         var commandCount = 0
@@ -829,19 +847,19 @@ public final class RenderGraph {
         // Compilation is finished, so reset that tag.
         TaggedHeap.free(tag: RenderGraphTagType.renderGraphCompilation.tag)
         
-        return (activePasses, activePassDependencies)
+        return (activePasses, activePassDependencies, self.usedResources)
     }
 
     @available(*, deprecated, renamed: "onSubmission")
-    public func waitForGPUSubmission(_ function: @escaping () -> Void) {
+    public func waitForGPUSubmission(_ function: @escaping () -> Void) async {
         self.submissionNotifyQueue.append(function)
     }
     
-    public func onSubmission(_ function: @escaping () -> Void) {
+    public func onSubmission(_ function: @escaping () async -> Void) async {
         self.submissionNotifyQueue.append(function)
     }
     
-    public func onGPUCompletion(_ function: @escaping () -> Void) {
+    public func onGPUCompletion(_ function: @escaping () async -> Void) async {
         self.completionNotifyQueue.append(function)
     }
     
@@ -855,93 +873,76 @@ public final class RenderGraph {
         return true
     }
     
+    @RenderGraphSharedActor
+    private func executeOnSharedActor() async -> Task.Handle<RenderGraphExecutionResult> {
+        self.context.accessSemaphore.wait()
+        self.context.beginFrameResourceAccess()
+        let (passes, dependencyTable, usedResources) = await self.compile()
+        
+        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+        return autoreleasepool {
+            return self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
+        }
+        #else
+        return self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
+        #endif
+    }
     
-    @usableFromInline static let pointsOfInterestHandler = OSLog(subsystem: "com.substrate.RenderGraph", category: .pointsOfInterest)
+    private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
+        self.lastGraphGPUTime = result.gpuTime
+        
+        let completionTime = DispatchTime.now().uptimeNanoseconds
+        let elapsed = completionTime - self.previousFrameCompletionTime
+        self.previousFrameCompletionTime = completionTime
+        self.lastGraphCPUTime = Double(elapsed) * 1e-6
+        //            print("Frame \(currentFrameIndex) completed in \(self.lastGraphCPUTime)ms.")
+        
+        self.completionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
+    }
     
-    public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
+    public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) async {
         if GPUResourceUploader.renderGraph !== self {
-            GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
+            await GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
         }
         
         guard !self.renderPasses.isEmpty else {
             onSubmission?()
             onGPUCompletion?()
-            
-            self.submissionNotifyQueue.forEach { $0() }
+    
+            self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
             self.submissionNotifyQueue.removeAll(keepingCapacity: true)
-            
-            self.completionNotifyQueue.forEach { $0() }
+    
+            self.completionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
             self.completionNotifyQueue.removeAll(keepingCapacity: true)
             
             return
         }
         
-        self.context.accessSemaphore.wait()
+        let onCompletion = await self.executeOnSharedActor()
         
-        RenderGraph.activeRenderGraphSemaphore.wait()
-        RenderGraph.activeRenderGraph = self
-        defer {
-            RenderGraph.activeRenderGraph = nil
-            RenderGraph.activeRenderGraphSemaphore.signal()
-        }
-        
-        let jobManager = RenderGraph.jobManager
-        
-        
-        RenderGraph.resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag, threadCount: jobManager.threadCount)
-        RenderGraph.executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag, threadCount: jobManager.threadCount)
-        
-        let threadCount = jobManager.threadCount
-        
-        RenderGraph.threadUnmanagedReferences = (0..<threadCount).map { i in
-            return ExpandingBuffer(allocator: AllocatorType(TagAllocator.ThreadView(allocator: RenderGraph.executionAllocator, threadIndex: i)), initialCapacity: 0)
-        }
-        
-        self.context.beginFrameResourceAccess()
-        
-        let (passes, dependencyTable) = self.compile(renderPasses: self.renderPasses)
-        
-        let completionQueue = self.completionNotifyQueue
-        let completion: (Double) -> Void = { gpuTime in
-            self.lastGraphGPUTime = gpuTime
-//            print("Frame completed in \(gpuTime)")
-            
-            let completionTime = DispatchTime.now().uptimeNanoseconds
-            let elapsed = completionTime - self.previousFrameCompletionTime
-            self.previousFrameCompletionTime = completionTime
-            self.lastGraphCPUTime = Double(elapsed) * 1e-6
-            //            print("Frame \(currentFrameIndex) completed in \(self.lastGraphCPUTime)ms.")
-            
+        _ = Task.runDetached {
+            let result = await try onCompletion.get()
+            await self.didCompleteRender(result)
             onGPUCompletion?()
-            completionQueue.forEach { $0() }
         }
-        
-        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-        autoreleasepool {
-            self.context.executeRenderGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
-        }
-        #else
-        self.context.executeRenderGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
-        #endif
         
         // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
-        passes.forEach {
-            $0.commands = nil
-        }
-        
         self.renderPasses.forEach {
             $0.commands = nil
+            $0.unmanagedReferences?.forEach {
+                $0.release()
+            }
         }
         
         onSubmission?()
-        
-        self.submissionNotifyQueue.forEach { $0() }
+    
+        self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
         self.submissionNotifyQueue.removeAll(keepingCapacity: true)
         self.completionNotifyQueue.removeAll(keepingCapacity: true)
         
         self.reset()
         
-        RenderGraph.globalSubmissionIndex += 1
+        RenderGraph.globalSubmissionIndex.wrappingIncrement(ordering: .relaxed)
     }
     
     private func reset() {
@@ -955,19 +956,8 @@ public final class RenderGraph {
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferArrayRegistry.instance.clear()
         
-        RenderGraph.threadUnmanagedReferences.forEach { unmanagedReferences in
-            for reference in unmanagedReferences {
-                reference.release()
-            }
-            unmanagedReferences.removeAll()
-        }
-        RenderGraph.threadUnmanagedReferences = nil
-        
         self.renderPasses.removeAll(keepingCapacity: true)
         self.usedResources.removeAll(keepingCapacity: true)
-        
-        RenderGraph.executionAllocator = nil
-        RenderGraph.resourceUsagesAllocator = nil
         
         TaggedHeap.free(tag: RenderGraphTagType.renderGraphExecution.tag)
         TaggedHeap.free(tag: RenderGraphTagType.resourceUsageNodes.tag)

@@ -148,7 +148,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         let drawablesToPresent = self.drawablesToPresentOnScheduled
         self.drawablesToPresentOnScheduled = []
         if !drawablesToPresent.isEmpty {
-            RenderGraph.jobManager.asyncOnMainThread {
+            DispatchQueue.main.async {
                 self.commandBuffer.waitUntilScheduled()
                 for drawable in drawablesToPresent {
                     drawable.present()

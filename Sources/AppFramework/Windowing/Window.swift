@@ -65,7 +65,7 @@ public struct WindowCreationFlags : OptionSet {
     public static let resizable = WindowCreationFlags(rawValue: 1 << 2)
 }
 
-public protocol Window : class {
+public protocol Window : AnyObject {
     var id : Int { get }
     var title : String { get set }
     
@@ -100,7 +100,7 @@ extension Window {
     }
 }
 
-public protocol FrameUpdateable : class {
+public protocol FrameUpdateable : AnyObject {
     func update(frame: UInt64, deltaTime: Double)
 }
 

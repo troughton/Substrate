@@ -34,8 +34,8 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     
     var compactedResourceCommands = [CompactedResourceCommand<Backend.CompactedResourceCommandType>]()
        
-    let emptyFrameCompletionHandlerSemaphore = DispatchSemaphore(value: 1)
-    var enqueuedEmptyFrameCompletionHandlers = [(queueCBIndex: UInt64, handler: (Double) -> Void)]()
+    let enqueuedEmptyFrameCompletionSemaphoresLock = DispatchSemaphore(value: 1)
+    var enqueuedEmptyFrameCompletionSemaphores = [(UInt64, AsyncSemaphore)]()
     
     public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
@@ -52,6 +52,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     deinit {
         backend.freeSyncEvent(for: self.renderGraphQueue)
         self.renderGraphQueue.dispose()
+        self.enqueuedEmptyFrameCompletionSemaphoresLock.wait()
     }
     
     public func beginFrameResourceAccess() {
@@ -62,7 +63,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
-    public func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>, completion: @escaping (Double) -> Void) {
+    public func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>) -> Task.Handle<RenderGraphExecutionResult> {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         self.resourceRegistry.prepareFrame()
@@ -78,12 +79,19 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             self.backend.setActiveContext(nil)
         }
         
+        let taskCompletionSemaphore = AsyncSemaphore(value: 0)
+        var executionResult = RenderGraphExecutionResult(gpuTime: 0.0)
+        
         if passes.isEmpty {
-            // Enqueue the completion handler to run immediately
-            self.emptyFrameCompletionHandlerSemaphore.withSemaphore {
-                self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, completion))
+            self.enqueuedEmptyFrameCompletionSemaphoresLock.withSemaphore {
+                self.enqueuedEmptyFrameCompletionSemaphores.append((self.queueCommandBufferIndex, taskCompletionSemaphore))
             }
-            return
+            
+            return Task.runDetached {
+                await taskCompletionSemaphore.wait()
+                taskCompletionSemaphore.deinit()
+                return executionResult
+            }
         }
         
         var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
@@ -134,17 +142,18 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                     }
                     if cbIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
                         let gpuEndTime = commandBuffer.gpuEndTime
-                        completion((gpuEndTime - gpuStartTime) * 1000.0)
+                        executionResult.gpuTime = (gpuEndTime - gpuStartTime) * 1000.0
+                        taskCompletionSemaphore.signal()
+                        
                         self.accessSemaphore.signal()
                         
-                        self.emptyFrameCompletionHandlerSemaphore.withSemaphore {
+                        self.enqueuedEmptyFrameCompletionSemaphoresLock.withSemaphore {
                             // Notify any completion handlers that were enqueued for frames with no work.
-                            while let (afterCBIndex, completionHandler) = self.enqueuedEmptyFrameCompletionHandlers.first {
+                            while let (afterCBIndex, completionSemaphore) = self.enqueuedEmptyFrameCompletionSemaphores.first {
                                 if afterCBIndex > queueCBIndex { break }
-                                
-                                completionHandler(0.0)
+                                completionSemaphore.signal()
                                 self.accessSemaphore.signal()
-                                self.enqueuedEmptyFrameCompletionHandlers.removeFirst()
+                                self.enqueuedEmptyFrameCompletionSemaphores.removeFirst()
                             }
                         }
                     }
@@ -190,6 +199,12 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         
         for passRecord in passes {
             passRecord.pass = nil // Release references to the RenderPasses.
+        }
+        
+        return Task.runDetached {
+            await taskCompletionSemaphore.wait()
+            taskCompletionSemaphore.deinit()
+            return executionResult
         }
     }
 }

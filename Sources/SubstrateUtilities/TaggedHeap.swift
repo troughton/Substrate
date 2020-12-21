@@ -243,6 +243,10 @@ public struct LockingTagAllocator {
         self.header.initialize(to: header)
     }
     
+    public func dispose() {
+        self.header.pointee.lock.deinit()
+    }
+    
     @inlinable
     public var isValid : Bool {
         return TaggedHeap.tagMatches(self.header.pointee.tag, pointer: self.header.pointee.memory)

@@ -226,13 +226,13 @@ final class RenderGraphCommandRecorder {
     @usableFromInline let resourceUsageAllocator : TagAllocator.ThreadView
     @usableFromInline var commands : ChunkArray<RenderGraphCommand> // Lifetime: RenderGraph compilation (copied to another array for the backend).
     @usableFromInline var dataAllocator : TagAllocator.ThreadView // Lifetime: RenderGraph execution.
-    @usableFromInline let unmanagedReferences : ExpandingBuffer<Releasable> // Lifetime: RenderGraph execution.
+    @usableFromInline var unmanagedReferences : ChunkArray<Releasable> // Lifetime: RenderGraph execution.
     @usableFromInline var readResources : HashSet<Resource>
     @usableFromInline var writtenResources : HashSet<Resource>
     
     @usableFromInline var resourceUsages = ChunkArray<(Resource, ResourceUsage)>()
     
-    init(renderGraphTransientRegistryIndex: Int, renderGraphQueue: Queue, renderPassScratchAllocator: ThreadLocalTagAllocator, renderGraphExecutionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView, unmanagedReferences: ExpandingBuffer<Releasable>) {
+    init(renderGraphTransientRegistryIndex: Int, renderGraphQueue: Queue, renderPassScratchAllocator: ThreadLocalTagAllocator, renderGraphExecutionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView) {
         assert(_isPOD(RenderGraphCommand.self))
         self.renderGraphTransientRegistryIndex = renderGraphTransientRegistryIndex
         self.activeRenderGraphMask = 1 << renderGraphQueue.index
@@ -242,7 +242,7 @@ final class RenderGraphCommandRecorder {
         self.dataAllocator = renderGraphExecutionAllocator
         self.readResources = .init(allocator: .tagThreadView(renderGraphExecutionAllocator))
         self.writtenResources = .init(allocator: .tagThreadView(renderGraphExecutionAllocator))
-        self.unmanagedReferences = unmanagedReferences
+        self.unmanagedReferences = .init()
     }
     
     @inlinable
@@ -303,6 +303,10 @@ final class RenderGraphCommandRecorder {
     @inlinable
     public func insertDebugSignpost(_ string: String) {
         self.record(RenderGraphCommand.insertDebugSignpost, string)
+    }
+    
+    func addUnmanagedReference(_ item: Releasable) {
+        self.unmanagedReferences.append(item, allocator: .tagThreadView(self.dataAllocator))
     }
     
     func boundResourceUsageNode<C : CommandEncoder>(`for` resource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {

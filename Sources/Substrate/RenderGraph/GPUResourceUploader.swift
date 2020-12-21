@@ -18,11 +18,10 @@ extension DispatchSemaphore {
     }
 }
 
-public final class GPUResourceUploader {
+public final actor class GPUResourceUploader {
     // Useful to bypass uploading when running in GPU-less mode.
     public static var skipUpload = false
     
-    static let lock = DispatchSemaphore(value: 1)
     @usableFromInline static var renderGraph : RenderGraph! = nil
     private static var maxUploadSize = 128 * 1024 * 1024
     private static var enqueuedPasses = [UploadResourcePass]()
@@ -56,7 +55,7 @@ public final class GPUResourceUploader {
     
     private init() {}
 
-    private static func flushHoldingLock() {
+    public static func flush() async {
         var enqueuedBytes = 0
         for pass in self.enqueuedPasses {
             if enqueuedBytes > 0, enqueuedBytes + pass.stagingBufferLength > self.maxUploadSize {
@@ -69,45 +68,35 @@ public final class GPUResourceUploader {
         self.enqueuedPasses.removeAll()
         
         if self.renderGraph.hasEnqueuedPasses {
-            self.renderGraph.execute()
+            await self.renderGraph.execute()
         }
     }
     
-    public static func flush() {
-        self.lock.withSemaphore {
-            self.flushHoldingLock()
-        }
-    }
-    
-    public static func addCopyPass(_ pass: @escaping (_ bce: BlitCommandEncoder) -> Void) {
+    public static func addCopyPass(_ pass: @escaping (_ bce: BlitCommandEncoder) -> Void) async {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
-        self.lock.withSemaphore {
-            renderGraph.addBlitCallbackPass(pass)
-        }
+        await renderGraph.addBlitCallbackPass(pass)
     }
     
-    public static func addUploadPass(stagingBufferLength: Int, pass: @escaping (RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) {
+    public static func addUploadPass(stagingBufferLength: Int, pass: @escaping (RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) async {
         if GPUResourceUploader.skipUpload {
             return
         }
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
-        self.lock.withSemaphore {
-            self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
-        }
-            
+        self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
+        
+        await renderGraph.addPass(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
+        self.enqueuedBytes += stagingBufferLength
     }
     
-    public static func generateMipmaps(for texture: Texture) {
-        self.lock.withSemaphore {
-            self.renderGraph.addBlitCallbackPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
-                bce.generateMipmaps(for: texture)
-            }
+    public static func generateMipmaps(for texture: Texture) async {
+        await self.renderGraph.addBlitCallbackPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
+            bce.generateMipmaps(for: texture)
         }
     }
     
-    public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int, onUploadCompleted: ((Buffer, UnsafeRawPointer) -> Void)? = nil) {
+    public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int, onUploadCompleted: ((Buffer, UnsafeRawPointer) -> Void)? = nil) async {
         assert(offset + count <= buffer.length)
         
         if buffer.storageMode == .shared || buffer.storageMode == .managed {
@@ -117,7 +106,7 @@ public final class GPUResourceUploader {
             onUploadCompleted?(buffer, bytes)
         } else {
             assert(buffer.storageMode == .private)
-            self.addUploadPass(stagingBufferLength: count, pass: { slice, bce in
+            await self.addUploadPass(stagingBufferLength: count, pass: { slice, bce in
                 slice.withContents {
                     $0.copyMemory(from: bytes, byteCount: count)
                 }
@@ -127,19 +116,19 @@ public final class GPUResourceUploader {
         }
     }
     
-    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, onUploadCompleted: ((Texture, UnsafeRawPointer) -> Void)? = nil) {
+    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, onUploadCompleted: ((Texture, UnsafeRawPointer) -> Void)? = nil) async {
         let rowCount = (texture.height >> mipmapLevel) / texture.descriptor.pixelFormat.rowsPerBlock
-        self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: 0, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * rowCount, onUploadCompleted: onUploadCompleted)
+        await self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: 0, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * rowCount, onUploadCompleted: onUploadCompleted)
     }
         
-    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, slice: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int, onUploadCompleted: ((Texture, UnsafeRawPointer) -> Void)? = nil) {
+    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, slice: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int, onUploadCompleted: ((Texture, UnsafeRawPointer) -> Void)? = nil) async {
         if texture.storageMode == .shared || texture.storageMode == .managed {
             texture.replace(region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
             onUploadCompleted?(texture, bytes)
         } else {
             assert(texture.storageMode == .private)
             
-            self.addUploadPass(stagingBufferLength: bytesPerImage, pass: { bufferSlice, bce in
+            await self.addUploadPass(stagingBufferLength: bytesPerImage, pass: { bufferSlice, bce in
                 bufferSlice.withContents {
                     $0.copyMemory(from: bytes, byteCount: bytesPerImage)
                 }
