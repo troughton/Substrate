@@ -312,7 +312,9 @@ public struct TagAllocator {
     }
     
     @inlinable
-    public init(tag: TaggedHeap.Tag, threadCount: Int) {
+    public init(tag: TaggedHeap.Tag, threadCount: Int = Threading.threadCount) {
+        Threading.initialise()
+
         let firstBlock = TaggedHeap.allocateBlocks(tag: tag, count: 1)
         self.memory = firstBlock
         
@@ -371,8 +373,6 @@ public struct TagAllocator {
     
     /// Calls a statically-set function to determine the current thread.
     public struct DynamicThreadView {
-        public static var threadIndexRetrievalFunc : (() -> Int) = { return 0 }
-        
         @usableFromInline var allocator : TagAllocator
         
         @inlinable
@@ -382,12 +382,12 @@ public struct TagAllocator {
         
         @inlinable
         public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
-            return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: DynamicThreadView.threadIndexRetrievalFunc())
+            return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: Threading.threadIndex)
         }
         
         @inlinable
         public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
-            return self.allocator.allocate(capacity: capacity, threadIndex: DynamicThreadView.threadIndexRetrievalFunc())
+            return self.allocator.allocate(capacity: capacity, threadIndex: Threading.threadIndex)
         }
 
         @inlinable
@@ -419,13 +419,11 @@ public struct TagAllocator {
         
         @inlinable
         public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
-            assert(DynamicThreadView.threadIndexRetrievalFunc() == threadIndex)
             return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: self.threadIndex)
         }
         
         @inlinable
         public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
-            assert(DynamicThreadView.threadIndexRetrievalFunc() == threadIndex)
             return self.allocator.allocate(capacity: capacity, threadIndex: self.threadIndex)
         }
 
@@ -438,6 +436,11 @@ public struct TagAllocator {
         public func deallocate<T>(_ pointer: UnsafeMutablePointer<T>) {
             // No-op.
         }
+    }
+    
+    @inlinable
+    public var threadView : ThreadView {
+        return ThreadView(allocator: self, threadIndex: Threading.threadIndex)
     }
 }
 

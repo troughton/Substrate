@@ -21,10 +21,14 @@ public final class SDLUpdateScheduler : UpdateScheduler  {
         while !application.inputManager.shouldQuit {
             #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
             autoreleasepool {
-                application.update()
+                runAsyncAndBlock {
+                    await application.update()
+                }
             }
             #else
-            application.update()
+            runAsyncAndBlock {
+                await application.update()
+            }
             #endif
         }
     }
@@ -64,7 +68,9 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
         }
         
         autoreleasepool {
-            application.update()
+            runAsyncAndBlock {
+                await self.application.update()
+            }
         }
     }
 

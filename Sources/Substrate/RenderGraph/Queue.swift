@@ -155,13 +155,9 @@ public struct Queue : Equatable {
         }
     }
     
-    func waitForCommand(_ index: UInt64) {
+    func waitForCommand(_ index: UInt64) async {
         while self.lastCompletedCommand < index {
-            #if os(Windows)
-            _sleep(0)
-            #else
-            sched_yield()
-            #endif
+            await Task.yield()
         }
     }
 }

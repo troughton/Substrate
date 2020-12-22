@@ -101,7 +101,7 @@ extension Window {
 }
 
 public protocol FrameUpdateable : AnyObject {
-    func update(frame: UInt64, deltaTime: Double)
+    func update(frame: UInt64, deltaTime: Double) async
 }
 
 public protocol WindowDelegate : FrameUpdateable {

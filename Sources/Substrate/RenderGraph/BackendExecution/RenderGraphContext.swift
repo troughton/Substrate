@@ -186,7 +186,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                         commandBuffer!.waitForEvent(event, value: waitEventValues[Int(queue.index)])
                     } else {
                         // It's not a queue known to this backend, so the best we can do is sleep and wait until the queue is completd.
-                        queue.waitForCommand(waitEventValues[Int(queue.index)])
+                        runAsyncAndBlock { await queue.waitForCommand(waitEventValues[Int(queue.index)]) }
                     }
                 }
             }

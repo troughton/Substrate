@@ -13,20 +13,20 @@ import Foundation
 public protocol ApplicationDelegate : AnyObject {
     func applicationWillInitialise()
     func applicationDidInitialise(_ application: Application)
-    func applicationWillUpdate(_ application: Application, frame: UInt64, deltaTime: Double)
-    func applicationDidUpdate(_ application: Application, frame: UInt64, deltaTime: Double)
-    func applicationDidBeginImGuiFrame(_ application: Application, frame: UInt64, deltaTime: Double)
-    func applicationRenderedImGui(_ application: Application, frame: UInt64, renderData: ImGui.RenderData, window: Window, scissorRect: ScissorRect)
+    func applicationWillUpdate(_ application: Application, frame: UInt64, deltaTime: Double) async
+    func applicationDidUpdate(_ application: Application, frame: UInt64, deltaTime: Double) async
+    func applicationDidBeginImGuiFrame(_ application: Application, frame: UInt64, deltaTime: Double) async
+    func applicationRenderedImGui(_ application: Application, frame: UInt64, renderData: ImGui.RenderData, window: Window, scissorRect: ScissorRect) async
     func applicationWillExit(_ application: Application)
 }
 
 extension ApplicationDelegate {
     public func applicationWillInitialise() {}
     public func applicationDidInitialise(_ application: Application) {}
-    public func applicationWillUpdate(_ application: Application, frame: UInt64, deltaTime: Double) {}
-    public func applicationDidUpdate(_ application: Application, frame: UInt64, deltaTime: Double) {}
-    public func applicationDidBeginImGuiFrame(_ application: Application, frame: UInt64, deltaTime: Double) {}
-    public func applicationRenderedImGui(_ application: Application, frame: UInt64, renderData: ImGui.RenderData, window: Window, scissorRect: ScissorRect) {}
+    public func applicationWillUpdate(_ application: Application, frame: UInt64, deltaTime: Double) async {}
+    public func applicationDidUpdate(_ application: Application, frame: UInt64, deltaTime: Double) async {}
+    public func applicationDidBeginImGuiFrame(_ application: Application, frame: UInt64, deltaTime: Double) async {}
+    public func applicationRenderedImGui(_ application: Application, frame: UInt64, renderData: ImGui.RenderData, window: Window, scissorRect: ScissorRect) async {}
     public func applicationWillExit(_ application: Application) {}
 }
 
@@ -118,14 +118,16 @@ public class Application {
         }
     }
     
-    func updateFrameUpdateables(frame: UInt64, deltaTime: Double) {
+    func updateFrameUpdateables(frame: UInt64, deltaTime: Double) async {
         if !self.windows.isEmpty {
             ImGui.beginFrame(windows: self.windows, inputLayer: self.imguiInputLayer, deltaTime: deltaTime)
-            self.delegate?.applicationDidBeginImGuiFrame(self, frame: frame, deltaTime: deltaTime)
+            await self.delegate?.applicationDidBeginImGuiFrame(self, frame: frame, deltaTime: deltaTime)
         }
         
-        self.updateables.forEach {
-            $0.update(frame: frame, deltaTime: deltaTime)
+        await try! Task.withGroup(resultType: Void.self) { group in
+            for updateable in self.updateables {
+                await group.add { await updateable.update(frame: frame, deltaTime: deltaTime) }
+            }
         }
         
         if !self.windows.isEmpty {
@@ -142,26 +144,26 @@ public class Application {
                 let viewport = ImGui.platformIO.pointee.Viewports.Data[i]!
                 let window = viewport.pointee.window
                 let imguiData = ImGui.renderData(drawData: viewport.pointee.DrawData, clipScale: viewport.pointee.DpiScale)
-                self.delegate?.applicationRenderedImGui(self, frame: frame, renderData: imguiData, window: window, scissorRect: window.drawableSize.scissorRect)
+                await self.delegate?.applicationRenderedImGui(self, frame: frame, renderData: imguiData, window: window, scissorRect: window.drawableSize.scissorRect)
             }
             #endif
         }
     }
     
-    public func update() {
+    public func update() async {
         let currentTime = DispatchTime.now().uptimeNanoseconds
         let deltaTime = Double(currentTime - self.timeLastUpdate) * 1e-9
         
-        self.delegate?.applicationWillUpdate(self, frame: self.currentFrame, deltaTime: deltaTime)
+        await self.delegate?.applicationWillUpdate(self, frame: self.currentFrame, deltaTime: deltaTime)
         
         for window in self.windows {
             window.cycleFrames()
         }
         self.processInput(frame: self.currentFrame)
         
-        self.updateFrameUpdateables(frame: self.currentFrame, deltaTime: deltaTime)
+        await self.updateFrameUpdateables(frame: self.currentFrame, deltaTime: deltaTime)
         
-        self.delegate?.applicationDidUpdate(self, frame: self.currentFrame, deltaTime: deltaTime)
+        await self.delegate?.applicationDidUpdate(self, frame: self.currentFrame, deltaTime: deltaTime)
         
         self.currentFrame += 1
         self.timeLastUpdate = currentTime

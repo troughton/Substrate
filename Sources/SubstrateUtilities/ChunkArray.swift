@@ -23,10 +23,8 @@ public struct ChunkArray<Element>: Collection {
     
     @inlinable
     public init() {
-        precondition(_isPOD(Element.self))
         self.count = 0
     }
-    
     
     @inlinable
     public var startIndex: Int { 0 }
@@ -81,11 +79,6 @@ public struct ChunkArray<Element>: Collection {
     
     @inlinable
     public mutating func append(_ element: Element, allocator: AllocatorType) {
-        if case .system = allocator {
-        } else {
-            precondition(_isPOD(Element.self))
-        }
-        
         let insertionIndex = self.count
         let indexInChunk = insertionIndex % ChunkArray.elementsPerChunk
         if indexInChunk == 0 {
@@ -156,6 +149,14 @@ public struct ChunkArray<Element>: Collection {
         return value
     }
     
+    public mutating func removeAll(allocator: AllocatorType) {
+        var nextChunk = self.next
+        while let chunk = nextChunk {
+            nextChunk = chunk.pointee.next
+            Allocator.deallocate(chunk, allocator: allocator)
+        }
+        self = ChunkArray()
+    }
     
     public struct Iterator : IteratorProtocol {
         public typealias Element = ChunkArray.Element

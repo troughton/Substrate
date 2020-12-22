@@ -393,8 +393,8 @@ public final actor class RenderGraph {
     
     public static private(set) var globalSubmissionIndex : ManagedAtomic<UInt64> = .init(0)
     private var previousFrameCompletionTime : UInt64 = 0
-    public private(set) var lastGraphCPUTime = 1000.0 / 60.0
-    public private(set) var lastGraphGPUTime = 1000.0 / 60.0
+    private var _lastGraphCPUTime = 1000.0 / 60.0
+    private var _lastGraphGPUTime = 1000.0 / 60.0
     
     var submissionNotifyQueue = [() async -> Void]()
     var completionNotifyQueue = [() async -> Void]()
@@ -446,32 +446,42 @@ public final actor class RenderGraph {
         return !self.renderPasses.isEmpty
     }
     
+    public func lastGraphDurations() async -> (cpuTime: Double, gpuTime: Double) {
+        return (self._lastGraphCPUTime, self._lastGraphGPUTime)
+    }
+    
     /// Useful for creating resources that may be used later in the frame.
+    @asyncHandler
     public func insertEarlyBlitPass(name: String,
                                     _ execute: @escaping (BlitCommandEncoder) async -> Void)  {
         self.renderPasses.insert(RenderPassRecord(pass: CallbackBlitRenderPass(name: name, execute: execute),
                                                   passIndex: 0), at: 0)
     }
     
+    @asyncHandler
     public func insertEarlyBlitPass(_ pass: BlitRenderPass)  {
         self.renderPasses.insert(RenderPassRecord(pass: pass,
                                                   passIndex: 0), at: 0)
     }
     
+    @asyncHandler
     public func addPass(_ renderPass: RenderPass)  {
         self.renderPasses.append(RenderPassRecord(pass: renderPass, passIndex: self.renderPasses.count))
     }
     
+    @asyncHandler
     public func addBlitCallbackPass(file: String = #fileID, line: Int = #line,
                                     _ execute: @escaping (BlitCommandEncoder) async -> Void) {
         self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
     }
     
+    @asyncHandler
     public func addBlitCallbackPass(name: String,
                                     _ execute: @escaping (BlitCommandEncoder) async -> Void) {
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
     
+    @asyncHandler
     public func addClearPass(file: String = #fileID, line: Int = #line,
                              renderTarget: RenderTargetDescriptor,
                              colorClearOperations: [ColorClearOperation] = [],
@@ -482,28 +492,31 @@ public final actor class RenderGraph {
                                             execute: { _ in }))
     }
     
+    @asyncHandler
     public func addDrawCallbackPass(file: String = #fileID, line: Int = #line,
                                     descriptor: RenderTargetDescriptor,
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
-                                    _ execute: @escaping (RenderCommandEncoder) -> Void) async {
+                                    _ execute: @escaping (RenderCommandEncoder) async -> Void) {
         self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                             execute: execute))
     }
     
+    @asyncHandler
     public func addDrawCallbackPass(name: String,
                                     descriptor: RenderTargetDescriptor,
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
-                                    _ execute: @escaping (RenderCommandEncoder) -> Void) async {
+                                    _ execute: @escaping (RenderCommandEncoder) async -> Void) {
         self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                             execute: execute))
     }
     
+    @asyncHandler
     public func addDrawCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                        descriptor: RenderTargetDescriptor,
                                        colorClearOperations: [ColorClearOperation] = [],
@@ -516,6 +529,7 @@ public final actor class RenderGraph {
                                                        reflection: reflection, execute: execute))
     }
     
+    @asyncHandler
     public func addDrawCallbackPass<R>(name: String,
                                        descriptor: RenderTargetDescriptor,
                                        colorClearOperations: [ColorClearOperation] = [],
@@ -527,44 +541,52 @@ public final actor class RenderGraph {
         colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
         reflection: reflection, execute: execute))
     }
-
+    
+    @asyncHandler
     public func addComputeCallbackPass(file: String = #fileID, line: Int = #line,
                                        _ execute: @escaping (ComputeCommandEncoder) async -> Void) {
         self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
     }
     
+    @asyncHandler
     public func addComputeCallbackPass(name: String,
                                        _ execute: @escaping (ComputeCommandEncoder) async -> Void) {
         self.addPass(CallbackComputeRenderPass(name: name, execute: execute))
     }
-
+    
+    @asyncHandler
     public func addComputeCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                           reflection: R.Type,
                                           _ execute: @escaping (TypedComputeCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", reflection: reflection, execute: execute))
     }
     
+    @asyncHandler
     public func addComputeCallbackPass<R>(name: String,
                                           reflection: R.Type,
                                           _ execute: @escaping (TypedComputeCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackComputeRenderPass(name: name, reflection: reflection, execute: execute))
     }
     
+    @asyncHandler
     public func addCPUCallbackPass(file: String = #fileID, line: Int = #line,
                                    _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
     }
     
+    @asyncHandler
     public func addCPUCallbackPass(name: String,
                                    _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: name, execute: execute))
     }
     
+    @asyncHandler
     public func addExternalCallbackPass(file: String = #fileID, line: Int = #line,
                                         _ execute: @escaping (ExternalCommandEncoder) async -> Void) {
         self.addPass(CallbackExternalRenderPass(name: "Anonymous External Encoder Pass at \(file):\(line)", execute: execute))
     }
     
+    @asyncHandler
     public func addExternalCallbackPass(name: String,
                                         _ execute: @escaping (ExternalCommandEncoder) async -> Void) {
         self.addPass(CallbackExternalRenderPass(name: name, execute: execute))
@@ -889,25 +911,26 @@ public final actor class RenderGraph {
     }
     
     private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
-        self.lastGraphGPUTime = result.gpuTime
+        self._lastGraphGPUTime = result.gpuTime
         
         let completionTime = DispatchTime.now().uptimeNanoseconds
         let elapsed = completionTime - self.previousFrameCompletionTime
         self.previousFrameCompletionTime = completionTime
-        self.lastGraphCPUTime = Double(elapsed) * 1e-6
+        self._lastGraphCPUTime = Double(elapsed) * 1e-6
         //            print("Frame \(currentFrameIndex) completed in \(self.lastGraphCPUTime)ms.")
         
         self.completionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
     }
     
-    public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) async {
+    @asyncHandler
+    public func execute(onSubmission: (() async -> Void)? = nil, onGPUCompletion: (() async -> Void)? = nil) {
         if GPUResourceUploader.renderGraph !== self {
-            await GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
+            GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
         }
         
         guard !self.renderPasses.isEmpty else {
-            onSubmission?()
-            onGPUCompletion?()
+            await onSubmission?()
+            await onGPUCompletion?()
     
             self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
             self.submissionNotifyQueue.removeAll(keepingCapacity: true)
@@ -923,7 +946,7 @@ public final actor class RenderGraph {
         _ = Task.runDetached {
             let result = await try onCompletion.get()
             await self.didCompleteRender(result)
-            onGPUCompletion?()
+            await onGPUCompletion?()
         }
         
         // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
@@ -934,7 +957,7 @@ public final actor class RenderGraph {
             }
         }
         
-        onSubmission?()
+        await onSubmission?()
     
         self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
         self.submissionNotifyQueue.removeAll(keepingCapacity: true)

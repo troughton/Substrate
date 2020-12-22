@@ -253,7 +253,7 @@ public struct ArgumentBuffer : ResourceProtocol {
             }
         }
         nonmutating _modify {
-            self.waitForCPUAccess(accessType: .write)
+            runAsyncAndBlock { await self.waitForCPUAccess(accessType: .write) }
             
             if self._usesPersistentRegistry {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)

@@ -590,7 +590,7 @@ extension ResourceProtocol {
         
         for queue in QueueRegistry.allQueues {
             let waitIndex = self[waitIndexFor: queue, accessType: accessType]
-            queue.waitForCommand(waitIndex)
+            runAsyncAndBlock { await queue.waitForCommand(waitIndex) }
         }
     }
     
@@ -831,7 +831,7 @@ public struct Buffer : ResourceProtocol {
     
     @inlinable
     public subscript(range: Range<Int>, accessType accessType: ResourceAccessType) -> RawBufferSlice {
-        self.waitForCPUAccess(accessType: accessType)
+        runAsyncAndBlock { await self.waitForCPUAccess(accessType: accessType) }
         return RawBufferSlice(buffer: self, range: range, accessType: accessType)
     }
     
@@ -850,7 +850,7 @@ public struct Buffer : ResourceProtocol {
     
     @inlinable
     public subscript<T>(byteRange range: Range<Int>, as type: T.Type, accessType accessType: ResourceAccessType = .readWrite) -> BufferSlice<T> {
-        self.waitForCPUAccess(accessType: accessType)
+        runAsyncAndBlock { await self.waitForCPUAccess(accessType: accessType) }
         return BufferSlice(buffer: self, range: range, accessType: accessType)
     }
     
@@ -1260,22 +1260,25 @@ public struct Texture : ResourceProtocol {
         }
     }
     
+    @asyncHandler
     @inlinable
     public func copyBytes(to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
-        self.waitForCPUAccess(accessType: .read)
+        await self.waitForCPUAccess(accessType: .read)
         RenderBackend.copyTextureBytes(from: self, to: bytes, bytesPerRow: bytesPerRow, region: region, mipmapLevel: mipmapLevel)
     }
     
+    @asyncHandler
     @inlinable
     public func replace(region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        self.waitForCPUAccess(accessType: .write)
+        await self.waitForCPUAccess(accessType: .write)
         
         RenderBackend.replaceTextureRegion(texture: self, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
     }
     
+    @asyncHandler
     @inlinable
     public func replace(region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
-        self.waitForCPUAccess(accessType: .write)
+        await self.waitForCPUAccess(accessType: .write)
         
         RenderBackend.replaceTextureRegion(texture: self, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
     }
