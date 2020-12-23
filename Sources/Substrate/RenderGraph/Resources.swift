@@ -588,9 +588,11 @@ extension ResourceProtocol {
         guard self.flags.contains(.persistent) else { return }
         if !self.stateFlags.contains(.initialised) { return }
         
-        for queue in QueueRegistry.allQueues {
-            let waitIndex = self[waitIndexFor: queue, accessType: accessType]
-            runAsyncAndBlock { await queue.waitForCommand(waitIndex) }
+        runAsyncAndBlock {
+            for queue in QueueRegistry.allQueues {
+                let waitIndex = self[waitIndexFor: queue, accessType: accessType]
+                await queue.waitForCommand(waitIndex)
+            }
         }
     }
     
@@ -831,7 +833,7 @@ public struct Buffer : ResourceProtocol {
     
     @inlinable
     public subscript(range: Range<Int>, accessType accessType: ResourceAccessType) -> RawBufferSlice {
-        runAsyncAndBlock { await self.waitForCPUAccess(accessType: accessType) }
+        self.waitForCPUAccess(accessType: accessType)
         return RawBufferSlice(buffer: self, range: range, accessType: accessType)
     }
     
@@ -850,7 +852,7 @@ public struct Buffer : ResourceProtocol {
     
     @inlinable
     public subscript<T>(byteRange range: Range<Int>, as type: T.Type, accessType accessType: ResourceAccessType = .readWrite) -> BufferSlice<T> {
-        runAsyncAndBlock { await self.waitForCPUAccess(accessType: accessType) }
+        self.waitForCPUAccess(accessType: accessType)
         return BufferSlice(buffer: self, range: range, accessType: accessType)
     }
     

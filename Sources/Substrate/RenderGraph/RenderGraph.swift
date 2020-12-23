@@ -899,6 +899,9 @@ public final actor class RenderGraph {
     private func executeOnSharedActor() async -> Task.Handle<RenderGraphExecutionResult> {
         self.context.accessSemaphore.wait()
         self.context.beginFrameResourceAccess()
+        RenderGraph.activeRenderGraph = self // FIXME: we should use task local values instead.
+        defer { RenderGraph.activeRenderGraph = nil }
+        
         let (passes, dependencyTable, usedResources) = await self.compile()
         
         #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
