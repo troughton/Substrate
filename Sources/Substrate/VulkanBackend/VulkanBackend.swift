@@ -42,6 +42,7 @@ public final class VulkanBackend : SpecificRenderBackend {
     let stateCaches : VulkanStateCaches
     
     var activeContext : RenderGraphContextImpl<VulkanBackend>? = nil
+    let activeContextLock = SpinLock()
     
     var queueSyncSemaphores = [VkSemaphore?](repeating: nil, count: QueueRegistry.maxQueues)
     
@@ -63,9 +64,15 @@ public final class VulkanBackend : SpecificRenderBackend {
     }
     
     func setActiveContext(_ context: RenderGraphContextImpl<VulkanBackend>?) {
-        assert(self.activeContext == nil || context == nil)
-//        self.stateCaches.checkForLibraryReload()
-        self.activeContext = context
+        if context != nil {
+            self.activeContextLock.lock()
+            assert(self.activeContext == nil)
+            self.activeContext = context
+        } else {
+            assert(self.activeContext != nil)
+            self.activeContext = nil
+            self.activeContextLock.unlock()
+        }
     }
     
     public func materialisePersistentTexture(_ texture: Texture) -> Bool {

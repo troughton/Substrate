@@ -70,6 +70,7 @@ final class MetalBackend : SpecificRenderBackend {
     let stateCaches : MetalStateCaches
     let enableValidation : Bool
     let enableShaderHotReloading : Bool
+    let activeContextLock = SpinLock()
     
     var activeContext : RenderGraphContextImpl<MetalBackend>? = nil
     
@@ -92,11 +93,18 @@ final class MetalBackend : SpecificRenderBackend {
     }
     
     func setActiveContext(_ context: RenderGraphContextImpl<MetalBackend>?) {
-        assert(self.activeContext == nil || context == nil)
-        if context != nil, self.enableShaderHotReloading {
-            self.stateCaches.checkForLibraryReload()
+        if context != nil {
+            self.activeContextLock.lock()
+            assert(self.activeContext == nil)
+            if self.enableShaderHotReloading {
+                self.stateCaches.checkForLibraryReload()
+            }
+            self.activeContext = context
+        } else {
+            assert(self.activeContext != nil)
+            self.activeContext = nil
+            self.activeContextLock.unlock()
         }
-        self.activeContext = context
     }
     
     @usableFromInline func materialisePersistentTexture(_ texture: Texture) -> Bool {
