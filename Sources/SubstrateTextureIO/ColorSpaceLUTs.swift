@@ -46,7 +46,7 @@ enum ColorSpaceLUTs {
     }
     
     static let linearToSRGBLUT: [UInt8] = {
-        return (0..<UInt8.max).map { return floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: .linearSRGB, to: .sRGB), type: UInt8.self) }
+        return (0...UInt8.max).map { return floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: .linearSRGB, to: .sRGB), type: UInt8.self) }
     }()
     
     static func linearToSRGB(_ value: UInt8) -> UInt8 {
@@ -54,7 +54,7 @@ enum ColorSpaceLUTs {
     }
     
     static let sRGBToLinearLUT: [UInt8] = {
-        return (0..<UInt8.max).map { return floatToUnorm(srgbToLinearFloat($0), type: UInt8.self) }
+        return (0...UInt8.max).map { return floatToUnorm(srgbToLinearFloat($0), type: UInt8.self) }
     }()
     
     static func sRGBToLinear(_ value: UInt8) -> UInt8 {
