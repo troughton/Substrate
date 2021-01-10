@@ -24,7 +24,7 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "swift-atomics", url: "https://github.com/apple/swift-atomics", from: "0.0.1"),
-        .package(name: "SPIRV-Cross", url: "https://github.com/troughton/SPIRV-Cross-SPM", .exact("0.33.3")),
+        .package(name: "SPIRV-Cross", url: "https://github.com/troughton/SPIRV-Cross-SPM", from: "0.44.0"),
         .package(url: "https://github.com/sharplet/Regex", from: "2.1.0"),
         .package(url: "https://github.com/troughton/Cstb", from: "1.0.3"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "0.3.1"),

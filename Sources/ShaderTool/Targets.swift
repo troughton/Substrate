@@ -53,6 +53,59 @@ enum Target: Equatable {
         }
     }
     
+    var metalVersion: (major: Int, minor: Int)? {
+        switch self {
+        case .metal(let platform, let deploymentTarget):
+            let components = deploymentTarget.split(separator: ".")
+
+            let majorVersion = components.first.flatMap { Int($0) } ?? 10
+            let minorVersion = components.dropFirst().first.flatMap { Int($0) } ?? 0
+            
+            switch platform {
+            case .macOS:
+                switch (majorVersion, minorVersion) {
+                case _ where majorVersion >= 11:
+                    return (2, 3)
+                case (10, 16):
+                    return (2, 3)
+                case (10, 15):
+                    return (2, 2)
+                case (10, 14):
+                    return (2, 1)
+                case (10, 13):
+                    return (2, 0)
+                case (10, 12):
+                    return (1, 2)
+                case (10, 11):
+                    return (1, 1)
+                default:
+                    return (1, 0)
+                }
+            case .macOSAppleSilicon:
+                return (2, 3)
+            case .iOS:
+                switch majorVersion {
+                case _ where majorVersion >= 14:
+                    return (2, 3)
+                case 13:
+                    return (2, 2)
+                case 12:
+                    return (2, 1)
+                case 11:
+                    return (2, 0)
+                case 10:
+                    return (1, 2)
+                case 9:
+                    return (1, 1)
+                default:
+                    return (1, 0)
+                }
+            }
+        default:
+            return nil
+        }
+    }
+    
     var isAppleSilicon: Bool {
         if let platform = self.metalPlatform, platform != .macOS {
             return true
@@ -175,16 +228,20 @@ final class MetalCompiler : TargetCompiler {
                 var options : spvc_compiler_options! = nil
                 spvc_compiler_create_compiler_options(compiler.compiler, &options)
                 
-                spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_VERSION, makeMSLVersion(major: 2, minor: 1, patch: 0))
-                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ARGUMENT_BUFFERS, 1)
-                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FORCE_ACTIVE_ARGUMENT_BUFFER_RESOURCES, 1)
-                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_IOS_FRAMEBUFFER_FETCH_SUBPASS, 1)
-                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ENABLE_DECORATION_BINDING, 1)
+                let targetMetalVersion = self.target.metalVersion ?? (2, 1)
+                spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_VERSION, makeMSLVersion(major: targetMetalVersion.major, minor: targetMetalVersion.minor, patch: 0))
+                if targetMetalVersion.major >= 2 {
+                    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ARGUMENT_BUFFERS, 1)
+                    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FORCE_ACTIVE_ARGUMENT_BUFFER_RESOURCES, 1)
+                    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_ENABLE_DECORATION_BINDING, 1)
+                }
                 switch self.target {
                 case .metal(.iOS, _), .metal(.macOSAppleSilicon, _):
                     spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, SPVC_MSL_PLATFORM_IOS.rawValue)
+                    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FRAMEBUFFER_FETCH_SUBPASS, 1)
                 default:
                     spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, SPVC_MSL_PLATFORM_MACOS.rawValue)
+                    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FRAMEBUFFER_FETCH_SUBPASS, 0)
                 }
                 
                 spvc_compiler_install_compiler_options(compiler.compiler, options)
