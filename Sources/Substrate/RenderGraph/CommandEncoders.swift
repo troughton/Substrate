@@ -1373,6 +1373,9 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
             assert(self.currentComputePipeline != nil, "No compute pipeline is set for pass \(renderPass.name).")
             return
         }
+        precondition(threadsPerGrid.width > 0 && threadsPerGrid.height > 0 && threadsPerGrid.depth > 0)
+        precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
+        
         self.needsUpdateBindings = true // to track barriers between resources bound for the compute command
 
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
@@ -1387,6 +1390,9 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
             assert(self.currentComputePipeline != nil, "No compute pipeline is set for pass \(renderPass.name).")
             return
         }
+        precondition(threadgroupsPerGrid.width > 0 && threadgroupsPerGrid.height > 0 && threadgroupsPerGrid.depth > 0)
+        precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
+        
         self.needsUpdateBindings = true // to track barriers between resources bound for the compute command
         
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
@@ -1401,6 +1407,8 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
             assert(self.currentComputePipeline != nil, "No compute pipeline is set for pass \(renderPass.name).")
             return
         }
+        precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
+        
         self.needsUpdateBindings = true // to track barriers between resources bound for the compute command
         
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
