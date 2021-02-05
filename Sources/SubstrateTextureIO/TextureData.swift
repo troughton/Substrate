@@ -659,18 +659,19 @@ extension TextureData where T == UInt8 {
     }
     
     private func _convertSRGBToLinear() {
-        self._applyUnchecked({ ColorSpaceLUTs.sRGBToLinear($0) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+        self._applyUnchecked({ ColorSpaceLUTs.sRGBToLinear($0) }, channelRange: self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount)
     }
     
     private func _convertLinearToSRGB() {
-        self._applyUnchecked({ ColorSpaceLUTs.linearToSRGB($0) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+        self._applyUnchecked({ ColorSpaceLUTs.linearToSRGB($0) }, channelRange: self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount)
     }
     
     private func _convertSRGBPostmultipliedToPremultiplied() {
+        let alphaChannel = self.channelCount - 1
         for y in 0..<self.height {
             for x in 0..<self.width {
-                let alpha = self[x, y, channel: 3]
-                for c in 0..<3 {
+                let alpha = self[x, y, channel: alphaChannel]
+                for c in 0..<alphaChannel {
                     let channelVal = self[x, y, channel: c]
                     self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPostmultToPremult(value: channelVal, alpha: alpha))
                 }
@@ -679,10 +680,11 @@ extension TextureData where T == UInt8 {
     }
     
     private func _convertLinearPostmultipliedToPremultiplied() {
+        let alphaChannel = self.channelCount - 1
         for y in 0..<self.height {
             for x in 0..<self.width {
-                let alpha = self[x, y, channel: 3]
-                for c in 0..<3 {
+                let alpha = self[x, y, channel: alphaChannel]
+                for c in 0..<alphaChannel {
                     let channelVal = self[x, y, channel: c]
                     self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.postmultToPremult(value: channelVal, alpha: alpha))
                 }
@@ -691,10 +693,11 @@ extension TextureData where T == UInt8 {
     }
     
     private func _convertSRGBPremultipliedToPostmultiplied() {
+        let alphaChannel = self.channelCount - 1
         for y in 0..<self.height {
             for x in 0..<self.width {
-                let alpha = self[x, y, channel: 3]
-                for c in 0..<3 {
+                let alpha = self[x, y, channel: alphaChannel]
+                for c in 0..<alphaChannel {
                     let channelVal = self[x, y, channel: c]
                     self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPremultToPostmult(value: channelVal, alpha: alpha))
                 }
@@ -703,10 +706,11 @@ extension TextureData where T == UInt8 {
     }
     
     private func _convertLinearPremultipliedToPostmultiplied() {
+        let alphaChannel = self.channelCount - 1
         for y in 0..<self.height {
             for x in 0..<self.width {
-                let alpha = self[x, y, channel: 3]
-                for c in 0..<3 {
+                let alpha = self[x, y, channel: alphaChannel]
+                for c in 0..<alphaChannel {
                     let channelVal = self[x, y, channel: c]
                     self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.premultToPostmult(value: channelVal, alpha: alpha))
                 }
@@ -750,7 +754,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         }
         
         let sourceColorSpace = self.colorSpace
-        self.apply({ floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+        self.apply({ floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }, channelRange: self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount)
     }
     
     @_specialize(kind: full, where T == UInt8)
@@ -774,10 +778,11 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         
         let sourceColorSpace = self.colorSpace
         
+        let alphaChannel = self.channelCount - 1
         for y in 0..<self.height {
             for x in 0..<self.width {
-                let alpha = unormToFloat(self[x, y, channel: 3])
-                for c in 0..<3 {
+                let alpha = unormToFloat(self[x, y, channel: alphaChannel])
+                for c in 0..<alphaChannel {
                     let floatVal = unormToFloat(self[x, y, channel: c])
                     let linearVal = TextureColourSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) * alpha
                     self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
@@ -790,7 +795,7 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
     @_specialize(kind: full, where T == UInt16)
     @_specialize(kind: full, where T == UInt32)
     public mutating func convertToPostmultipliedAlpha() {
-        guard case .premultiplied = self.alphaMode, self.channelCount == 4 else { return }
+        guard case .premultiplied = self.alphaMode else { return }
         self.ensureUniqueness()
         defer { self.alphaMode = .postmultiplied }
         
@@ -805,11 +810,12 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         }
         
         let sourceColorSpace = self.colorSpace
+        let alphaChannel = self.channelCount - 1
         
         for y in 0..<self.height {
             for x in 0..<self.width {
-                let alpha = unormToFloat(self[x, y, channel: 3])
-                for c in 0..<3 {
+                let alpha = unormToFloat(self[x, y, channel: alphaChannel])
+                for c in 0..<alphaChannel {
                     let floatVal = unormToFloat(self[x, y, channel: c])
                     let linearVal = clamp(TextureColourSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)
                     self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
