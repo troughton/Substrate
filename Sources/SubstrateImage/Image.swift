@@ -178,7 +178,7 @@ extension ImageColorSpace: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let gamma = try container.decode(Float.self, forKey: .gamma)
-        if !gamma.isFinite {
+        if !gamma.isFinite || gamma < 0 {
             self = .undefined
         } else if gamma == 0 {
             self = .sRGB // sRGB is encoded as gamma of 0.0
@@ -193,7 +193,7 @@ extension ImageColorSpace: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .undefined:
-            try container.encode(.infinity as Float, forKey: .gamma)
+            try container.encode(-1.0 as Float, forKey: .gamma)
         case .sRGB:
             try container.encode(0.0 as Float, forKey: .gamma)
         case .linearSRGB:
