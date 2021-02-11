@@ -7,7 +7,10 @@ import LodePNG
 import zlib
 #endif
 
-public enum TextureFileFormat: String, CaseIterable, Hashable {
+@available(*, deprecated, renamed: "ImageFileFormat")
+public typealias TextureFileFormat = ImageFileFormat
+
+public enum ImageFileFormat: String, CaseIterable, Hashable {
     case png
     case bmp
     case tga
@@ -212,7 +215,7 @@ fileprivate extension LodePNGEncoderSettings {
 }
 
 fileprivate extension LodePNGInfo {
-    mutating func setColorSpace(_ colorSpace: TextureColorSpace) {
+    mutating func setColorSpace(_ colorSpace: ImageColorSpace) {
         switch colorSpace {
         case .undefined:
             break
@@ -229,49 +232,49 @@ fileprivate extension LodePNGInfo {
     }
 }
 
-extension TextureData {
-    public typealias SaveFormat = TextureFileFormat
+extension Image {
+    public typealias SaveFormat = ImageFileFormat
     
     public func write(to url: URL) throws {
-        guard let saveFormat = TextureFileFormat(extension: url.pathExtension) else {
+        guard let saveFormat = ImageFileFormat(extension: url.pathExtension) else {
             throw TextureSaveError.unknownFormat(url.pathExtension)
         }
         
         switch saveFormat {
         case .png:
-            if let texture = self as? TextureData<UInt8> {
+            if let texture = self as? Image<UInt8> {
                 try texture.writePNG(to: url)
-            } else if let texture = self as? TextureData<UInt16> {
+            } else if let texture = self as? Image<UInt16> {
                 try texture.writePNG(to: url)
             } else {
                 throw TextureSaveError.unexpectedDataFormat(found: T.self, required: [UInt8.self, UInt16.self])
             }
         case .hdr:
-            if let texture = self as? TextureData<Float> {
+            if let texture = self as? Image<Float> {
                 try texture.writeHDR(to: url)
             } else {
                 throw TextureSaveError.unexpectedDataFormat(found: T.self, required: [Float.self])
             }
         case .bmp:
-            if let texture = self as? TextureData<UInt8> {
+            if let texture = self as? Image<UInt8> {
                 try texture.writeBMP(to: url)
             } else {
                 throw TextureSaveError.unexpectedDataFormat(found: T.self, required: [UInt8.self])
             }
         case .tga:
-            if let texture = self as? TextureData<UInt8> {
+            if let texture = self as? Image<UInt8> {
                 try texture.writeTGA(to: url)
             } else {
                 throw TextureSaveError.unexpectedDataFormat(found: T.self, required: [UInt8.self])
             }
         case .jpg:
-            if let texture = self as? TextureData<UInt8> {
+            if let texture = self as? Image<UInt8> {
                 try texture.writeJPEG(to: url)
             } else {
                 throw TextureSaveError.unexpectedDataFormat(found: T.self, required: [UInt8.self])
             }
         case .exr:
-            if let texture = self as? TextureData<Float> {
+            if let texture = self as? Image<Float> {
                 try texture.writeEXR(to: url)
             } else {
                 throw TextureSaveError.unexpectedDataFormat(found: T.self, required: [Float.self])
@@ -280,7 +283,7 @@ extension TextureData {
     }
 }
 
-extension TextureData where T == UInt8 {
+extension Image where ComponentType == UInt8 {
     public func writeBMP(to url: URL) throws {
         let result = stbi_write_bmp(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress)
         if result == 0 {
@@ -335,7 +338,7 @@ extension TextureData where T == UInt8 {
     }
 }
 
-extension TextureData where T == UInt16 {
+extension Image where ComponentType == UInt16 {
     public func writePNG(to url: URL, compressionSettings: PNGCompressionSettings = .default) throws {
         var texture = self
         texture.convertToPostmultipliedAlpha()
@@ -378,7 +381,7 @@ extension TextureData where T == UInt16 {
 }
 
 
-extension TextureData where T == Float {
+extension Image where ComponentType == Float {
     
     public func writeHDR(to url: URL) throws {
         let result = stbi_write_hdr(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress)

@@ -1,12 +1,32 @@
 //
-//  TextureConversion.swift
-//  SubstrateTextureIO
+//  ImageConversion.swift
+//  SubstrateImageIO
 //
 //
 
 import Foundation
 import stb_image_resize
-import Substrate
+
+//@available(*, deprecated, renamed: "ImageColorSpace")
+public typealias TextureColorSpace = ImageColorSpace
+
+//@available(*, deprecated, renamed: "ImageColorSpace")
+public typealias TextureColourSpace = ImageColorSpace
+
+//@available(*, deprecated, renamed: "Image")
+public typealias TextureData = Image
+
+//@available(*, deprecated, renamed: "AnyImage")
+public typealias AnyTextureData = AnyImage
+
+//@available(*, deprecated, renamed: "ImageAlphaMode")
+public typealias TextureAlphaMode = ImageAlphaMode
+
+//@available(*, deprecated, renamed: "ImageEdgeWrapMode")
+public typealias TextureEdgeWrapMode = ImageEdgeWrapMode
+
+//@available(*, deprecated, renamed: "ImageResizeFilter")
+public typealias TextureResizeFilter = ImageResizeFilter
 
 @inlinable
 func clamp<T: Comparable>(_ val: T, min minValue: T, max maxValue: T) -> T {
@@ -92,21 +112,18 @@ public func unormToFloat<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>
     }
 }
 
-public enum TextureLoadingError : Error {
+public enum ImageLoadingError : Error {
     case invalidFile(URL)
     case invalidData
     case pngDecodingError(String)
     case exrParseError(String)
     case unsupportedMultipartEXR(URL)
     case unsupportedMultipartEXRData
-    case noSupportedPixelFormat
-    case privateTextureRequiresRenderGraph
-    case invalidTextureDataFormat(URL, Any.Type)
-    case mismatchingPixelFormat(expected: PixelFormat, actual: PixelFormat)
-    case mismatchingDimensions(expected: Size, actual: Size)
+    case privateImageRequiresRenderGraph
+    case invalidImageDataFormat(URL, Any.Type)
 }
 
-public enum TextureColorSpace: Hashable {
+public enum ImageColorSpace: Hashable {
     /// The texture values use no defined color space.
     case undefined
     /// The IEC 61966-2-1:1999 color space.
@@ -145,7 +162,7 @@ public enum TextureColorSpace: Hashable {
     }
     
     @inlinable
-    public static func convert(_ value: Float, from: TextureColorSpace, to: TextureColorSpace) -> Float {
+    public static func convert(_ value: Float, from: ImageColorSpace, to: ImageColorSpace) -> Float {
         if from == to { return value }
         
         let inLinearSRGB = from.toLinearSRGB(value)
@@ -153,7 +170,7 @@ public enum TextureColorSpace: Hashable {
     }
 }
 
-extension TextureColorSpace: Codable {
+extension ImageColorSpace: Codable {
     public enum CodingKeys: CodingKey {
         case gamma
     }
@@ -187,20 +204,20 @@ extension TextureColorSpace: Codable {
     }
 }
 
-public typealias TextureColourSpace = TextureColorSpace
+public typealias ImageColourSpace = ImageColorSpace
 
-public enum TextureAlphaMode {
+public enum ImageAlphaMode: String, Codable {
     case none
     case premultiplied
     case postmultiplied
     
     case inferred
     
-    func inferFromFileFormat(fileExtension: String, channelCount: Int) -> TextureAlphaMode {
+    func inferFromFileFormat(fileExtension: String, channelCount: Int) -> ImageAlphaMode {
         if channelCount != 2 && channelCount != 4 {
             return .none
         }
-        if case .inferred = self, let format = TextureFileFormat(extension: fileExtension) {
+        if case .inferred = self, let format = ImageFileFormat(extension: fileExtension) {
             switch format {
             case .png:
                 return .postmultiplied
@@ -219,7 +236,7 @@ public enum TextureAlphaMode {
     }
 }
 
-public enum TextureEdgeWrapMode {
+public enum ImageEdgeWrapMode {
     case zero
     case wrap
     case reflect
@@ -240,7 +257,7 @@ public enum TextureEdgeWrapMode {
     }
 }
 
-public enum TextureResizeFilter {
+public enum ImageResizeFilter {
     /// Mitchell for downscaling, and Catmull-Rom for upscaling
     case `default`
     /// A trapezoid with 1-pixel wide ramps, producing the same result as a box box for integer scale ratios
@@ -274,8 +291,8 @@ public enum TextureResizeFilter {
 }
 
 @usableFromInline
-final class TextureDataStorage<T> {
-    @usableFromInline let data : UnsafeMutableBufferPointer<T>
+final class ImageStorage<T> {
+    public let data : UnsafeMutableBufferPointer<T>
     @usableFromInline let deallocateFunc : ((UnsafeMutablePointer<T>) -> Void)?
     
     @inlinable
@@ -308,33 +325,35 @@ final class TextureDataStorage<T> {
     }
 }
 
-public protocol AnyTextureData {
+public protocol AnyImage: Codable {
+    var fileInfo: ImageFileInfo { get }
+    var data: Data { get }
+    
     var width : Int { get }
     var height : Int { get }
     var channelCount : Int { get }
     
-    var colorSpace : TextureColorSpace { get }
-    var alphaMode: TextureAlphaMode { get }
+    var colorSpace : ImageColorSpace { get }
+    var alphaMode: ImageAlphaMode { get }
     
-    mutating func reinterpretColor(as colorSpace: TextureColorSpace)
-    mutating func reinterpretAlphaMode(as alphaMode: TextureAlphaMode)
-    
-    func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode) throws
-    var preferredPixelFormat: PixelFormat { get }
+    mutating func reinterpretColor(as colorSpace: ImageColorSpace)
+    mutating func reinterpretAlphaMode(as alphaMode: ImageAlphaMode)
 }
 
-public struct TextureData<T> : AnyTextureData {
+public struct Image<ComponentType> : AnyImage {
+    public typealias T = ComponentType
+    
     public let width : Int
     public let height : Int
     public let channelCount : Int
     
-    public internal(set) var colorSpace : TextureColorSpace
-    public internal(set) var alphaMode: TextureAlphaMode
+    public internal(set) var colorSpace : ImageColorSpace
+    public internal(set) var alphaMode: ImageAlphaMode
     
-    @usableFromInline var storage: TextureDataStorage<T>
+    @usableFromInline var storage: ImageStorage<T>
     
     @available(*, deprecated, renamed: "colorSpace")
-    public internal(set) var colourSpace: TextureColorSpace {
+    public internal(set) var colourSpace: ImageColorSpace {
         get {
             return self.colorSpace
         }
@@ -343,7 +362,7 @@ public struct TextureData<T> : AnyTextureData {
         }
     }
     
-    public init(width: Int, height: Int, channels: Int, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .none) {
+    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none) {
         precondition(_isPOD(T.self))
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
@@ -351,7 +370,7 @@ public struct TextureData<T> : AnyTextureData {
         self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
     }
     
-    init(width: Int, height: Int, channels: Int, colorSpace: TextureColorSpace, alphaModeAllowInferred alphaMode: TextureAlphaMode) {
+    init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace, alphaModeAllowInferred alphaMode: ImageAlphaMode) {
         precondition(_isPOD(T.self))
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
@@ -367,16 +386,16 @@ public struct TextureData<T> : AnyTextureData {
     }
     
     @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:)")
-    public init(width: Int, height: Int, channels: Int, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) {
+    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace, premultipliedAlpha: Bool) {
         self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
     @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:)")
-    public init(width: Int, height: Int, channels: Int, colourSpace: TextureColorSpace, premultipliedAlpha: Bool = false) {
+    public init(width: Int, height: Int, channels: Int, colourSpace: ImageColorSpace, premultipliedAlpha: Bool = false) {
         self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Cannot infer the alpha mode when T is not Comparable.")
         
@@ -391,12 +410,12 @@ public struct TextureData<T> : AnyTextureData {
     }
 
     @available(*, deprecated, renamed: "init(width:height:channels:data:colorSpace:alphaMode:deallocateFunc:)")
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace, premultipliedAlpha: Bool, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace, premultipliedAlpha: Bool, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         self.init(width: width, height: height, channels: channels, data: data, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, deallocateFunc: deallocateFunc)
     }
     
     @available(*, deprecated, renamed: "init(width:height:channels:data:colorSpace:alphaMode:deallocateFunc:)")
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colourSpace: TextureColorSpace, premultipliedAlpha: Bool = false, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colourSpace: ImageColorSpace, premultipliedAlpha: Bool = false, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         self.init(width: width, height: height, channels: channels, data: data, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, deallocateFunc: deallocateFunc)
     }
     
@@ -407,6 +426,39 @@ public struct TextureData<T> : AnyTextureData {
         }
     }
     
+    public var fileInfo: ImageFileInfo {
+        let isFloatingPoint: Bool
+        let isSigned: Bool
+        switch T.self {
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+        case is Float16.Type:
+            isFloatingPoint = true
+            isSigned = true
+        #endif
+        case is Float.Type, is Double.Type:
+            isFloatingPoint = true
+            isSigned = true
+        #if arch(x86_64)
+        case is Float80.Type:
+            isFloatingPoint = true
+            isSigned = true
+        #endif
+        case is Int8.Type, is Int16.Type, is Int32.Type, is Int64.Type:
+            isFloatingPoint = false
+            isSigned = false
+        default:
+            isFloatingPoint = false
+            isSigned = false
+        }
+        return ImageFileInfo(width: self.width, height: self.height, channelCount: self.channelCount,
+                             bitDepth: MemoryLayout<ComponentType>.size * 8, isSigned: isSigned, isFloatingPoint: isFloatingPoint,
+                             colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+    }
+    
+    public var data: Data {
+        return Data(buffer: self.storage.data)
+    }
+    
     @available(*, deprecated, renamed: "alphaMode")
     @inlinable
     public var premultipliedAlpha: Bool {
@@ -414,12 +466,12 @@ public struct TextureData<T> : AnyTextureData {
     }
     
     /// Reinterprets the texture's pixel data as belonging to the specified color space.
-    public mutating func reinterpretColor(as colorSpace: TextureColorSpace) {
+    public mutating func reinterpretColor(as colorSpace: ImageColorSpace) {
         self.colorSpace = colorSpace
     }
     
     /// Reinterprets the texture's alpha data as using the specified alpha mode.
-    public mutating func reinterpretAlphaMode(as alphaMode: TextureAlphaMode) {
+    public mutating func reinterpretAlphaMode(as alphaMode: ImageAlphaMode) {
         precondition(alphaMode != .inferred, "Cannot reinterpret the alpha mode as inferred.")
         self.alphaMode = alphaMode
     }
@@ -490,7 +542,7 @@ public struct TextureData<T> : AnyTextureData {
     }
 
     @inlinable
-    public func cropped(originX: Int, originY: Int, width: Int, height: Int, clampOutOfBounds: Bool = false) -> TextureData<T> {
+    public func cropped(originX: Int, originY: Int, width: Int, height: Int, clampOutOfBounds: Bool = false) -> Image<T> {
         precondition(clampOutOfBounds || (originX >= 0 && originY >= 0))
         precondition(clampOutOfBounds || (originX + width <= self.width && originY + height <= self.height))
         
@@ -498,7 +550,7 @@ public struct TextureData<T> : AnyTextureData {
             return self
         }
         
-        let result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        let result = Image<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
         for y in 0..<height {
             let clampedY = clampOutOfBounds ? clamp(y + originY, min: 0, max: self.height - 1) : (y + originY)
@@ -514,12 +566,12 @@ public struct TextureData<T> : AnyTextureData {
     }
     
     @inlinable
-    public func resized(width: Int, height: Int, wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter = .default) -> TextureData<T> {
+    public func resized(width: Int, height: Int, wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default) -> Image<T> {
         if width == self.width && height == self.height {
             return self
         }
         
-        let result = TextureData<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        let result = Image<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
         var flags : Int32 = 0
         if self.alphaMode == .premultiplied {
@@ -545,7 +597,7 @@ public struct TextureData<T> : AnyTextureData {
         case is UInt32.Type:
             dataType = STBIR_TYPE_UINT32
         default:
-            fatalError("Unsupported TextureData type \(T.self) for mip chain generation.")
+            fatalError("Unsupported Image type \(T.self) for mip chain generation.")
         }
         
         stbir_resize(self.storage.data.baseAddress, Int32(self.width), Int32(self.height), 0,
@@ -561,7 +613,7 @@ public struct TextureData<T> : AnyTextureData {
         return result
     }
     
-    public func generateMipChain(wrapMode: TextureEdgeWrapMode, filter: TextureResizeFilter = .default, compressedBlockSize: Int, mipmapCount: Int? = nil) -> [TextureData<T>] {
+    public func generateMipChain(wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default, compressedBlockSize: Int, mipmapCount: Int? = nil) -> [Image<T>] {
         var results = [self]
         
         var width = self.width
@@ -585,8 +637,30 @@ public struct TextureData<T> : AnyTextureData {
     }
 }
 
-extension TextureData where T: Comparable {
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+extension Image: Hashable {
+    @inlinable
+    public static func ==(lhs: Image, rhs: Image) -> Bool {
+        if lhs.storage === rhs.storage {
+            return true
+        }
+        if lhs.fileInfo != rhs.fileInfo {
+            return false
+        }
+        return lhs.withUnsafeBufferPointer { lhs in
+            return rhs.withUnsafeBufferPointer { rhs in
+                return lhs.count == rhs.count && memcmp(lhs.baseAddress!, rhs.baseAddress!, lhs.count * MemoryLayout<ComponentType>.stride) == 0
+            }
+        }
+    }
+    
+    @inlinable
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.fileInfo)
+    }
+}
+
+extension Image where T: Comparable {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         precondition(width >= 1 && height >= 1 && channels >= 1)
         
         self.width = width
@@ -622,7 +696,7 @@ extension TextureData where T: Comparable {
     }
 }
 
-extension TextureData where T: SIMDScalar {
+extension Image where T: SIMDScalar {
     @inlinable
     public subscript(x: Int, y: Int) -> SIMD4<T> {
         get {
@@ -645,7 +719,7 @@ extension TextureData where T: SIMDScalar {
     }
 }
 
-extension TextureData where T == UInt8 {
+extension Image where ComponentType == UInt8 {
     private func _applyUnchecked(_ function: (UInt8) -> UInt8, channelRange: Range<Int>) {
         for y in 0..<self.height {
             let yBase = y * self.width * self.channelCount
@@ -719,9 +793,9 @@ extension TextureData where T == UInt8 {
     }
 }
 
-extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
+extension Image where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
     @inlinable
-    public init(_ data: TextureData<Float>) {
+    public init(_ data: Image<Float>) {
         self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
@@ -733,10 +807,10 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         }
     }
     
-    @_specialize(kind: full, where T == UInt8)
-    @_specialize(kind: full, where T == UInt16)
-    @_specialize(kind: full, where T == UInt32)
-    public mutating func convert(toColorSpace: TextureColorSpace) {
+    @_specialize(kind: full, where ComponentType == UInt8)
+    @_specialize(kind: full, where ComponentType == UInt16)
+    @_specialize(kind: full, where ComponentType == UInt32)
+    public mutating func convert(toColorSpace: ImageColorSpace) {
         if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
             return
         }
@@ -745,21 +819,21 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         if T.self == UInt8.self {
             self.ensureUniqueness()
             if self.colorSpace == .sRGB, toColorSpace == .linearSRGB {
-                (self as! TextureData<UInt8>)._convertSRGBToLinear()
+                (self as! Image<UInt8>)._convertSRGBToLinear()
                 return
             } else if self.colorSpace == .linearSRGB, toColorSpace == .sRGB {
-                (self as! TextureData<UInt8>)._convertLinearToSRGB()
+                (self as! Image<UInt8>)._convertLinearToSRGB()
                 return
             }
         }
         
         let sourceColorSpace = self.colorSpace
-        self.apply({ floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }, channelRange: self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount)
+        self.apply({ floatToUnorm(ImageColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }, channelRange: self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount)
     }
     
-    @_specialize(kind: full, where T == UInt8)
-    @_specialize(kind: full, where T == UInt16)
-    @_specialize(kind: full, where T == UInt32)
+    @_specialize(kind: full, where ComponentType == UInt8)
+    @_specialize(kind: full, where ComponentType == UInt16)
+    @_specialize(kind: full, where ComponentType == UInt32)
     public mutating func convertToPremultipliedAlpha() {
         guard case .postmultiplied = self.alphaMode else { return }
         self.ensureUniqueness()
@@ -768,10 +842,10 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         
         if T.self == UInt8.self {
             if self.colorSpace == .sRGB {
-                (self as! TextureData<UInt8>)._convertSRGBPostmultipliedToPremultiplied()
+                (self as! Image<UInt8>)._convertSRGBPostmultipliedToPremultiplied()
                 return
             } else if self.colorSpace == .linearSRGB || self.colorSpace == .undefined {
-                (self as! TextureData<UInt8>)._convertLinearPostmultipliedToPremultiplied()
+                (self as! Image<UInt8>)._convertLinearPostmultipliedToPremultiplied()
                 return
             }
         }
@@ -784,16 +858,16 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
                 let alpha = unormToFloat(self[x, y, channel: alphaChannel])
                 for c in 0..<alphaChannel {
                     let floatVal = unormToFloat(self[x, y, channel: c])
-                    let linearVal = TextureColourSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) * alpha
-                    self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
+                    let linearVal = ImageColorSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) * alpha
+                    self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(ImageColorSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
                 }
             }
         }
     }
     
-    @_specialize(kind: full, where T == UInt8)
-    @_specialize(kind: full, where T == UInt16)
-    @_specialize(kind: full, where T == UInt32)
+    @_specialize(kind: full, where ComponentType == UInt8)
+    @_specialize(kind: full, where ComponentType == UInt16)
+    @_specialize(kind: full, where ComponentType == UInt32)
     public mutating func convertToPostmultipliedAlpha() {
         guard case .premultiplied = self.alphaMode else { return }
         self.ensureUniqueness()
@@ -801,10 +875,10 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
         
         if T.self == UInt8.self {
             if self.colorSpace == .sRGB {
-                (self as! TextureData<UInt8>)._convertSRGBPremultipliedToPostmultiplied()
+                (self as! Image<UInt8>)._convertSRGBPremultipliedToPostmultiplied()
                 return
             } else if self.colorSpace == .linearSRGB || self.colorSpace == .undefined {
-                (self as! TextureData<UInt8>)._convertLinearPremultipliedToPostmultiplied()
+                (self as! Image<UInt8>)._convertLinearPremultipliedToPostmultiplied()
                 return
             }
         }
@@ -817,29 +891,42 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & UnsignedInteg
                 let alpha = unormToFloat(self[x, y, channel: alphaChannel])
                 for c in 0..<alphaChannel {
                     let floatVal = unormToFloat(self[x, y, channel: c])
-                    let linearVal = clamp(TextureColourSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)
-                    self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
+                    let linearVal = clamp(ImageColorSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)
+                    self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(ImageColorSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
                 }
             }
         }
     }
 }
 
-extension TextureData {
+extension Image {
+    @available(*, deprecated, renamed: "withImageReinterpreted(as:perform:)")
     @inlinable
-    public func withTextureReinterpreted<U, Result>(as: U.Type, perform: (TextureData<U>) throws -> Result) rethrows -> Result{
+    public func withTextureReinterpreted<U, Result>(as type: U.Type, perform: (Image<U>) throws -> Result) rethrows -> Result {
+        return try self.withImageReinterpreted(as: type, perform: perform)
+    }
+    
+    @inlinable
+    public func withImageReinterpreted<U, Result>(as: U.Type, perform: (Image<U>) throws -> Result) rethrows -> Result {
         precondition(MemoryLayout<U>.stride == MemoryLayout<T>.stride, "\(U.self) is not layout compatible with \(T.self)")
         let storage = self.storage
         return try self.withUnsafeBufferPointer { buffer in
             return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
-                let data = TextureData<U>(width: self.width, height: self.height, channels: self.channelCount, data: UnsafeMutablePointer(mutating: reboundBuffer.baseAddress!), colorSpace: self.colorSpace, alphaMode: self.alphaMode, deallocateFunc: { [storage] _ in _ = storage })
+                let data = Image<U>(width: self.width, height: self.height, channels: self.channelCount, data: UnsafeMutablePointer(mutating: reboundBuffer.baseAddress!), colorSpace: self.colorSpace, alphaMode: self.alphaMode, deallocateFunc: { [storage] _ in _ = storage })
                 return try perform(data)
             }
         }
     }
     
+    @available(*, deprecated, renamed: "withMutableImageReinterpreted(as:perform:)")
     @inlinable
-    public mutating func withMutableTextureReinterpreted<U, Result>(as: U.Type, perform: (inout TextureData<U>) throws -> Result) rethrows -> Result{
+    public mutating func withMutableTextureReinterpreted<U, Result>(as type: U.Type, perform: (inout Image<U>) throws -> Result) rethrows -> Result {
+        return try self.withMutableImageReinterpreted(as: type, perform: perform)
+    }
+    
+    
+    @inlinable
+    public mutating func withMutableImageReinterpreted<U, Result>(as: U.Type, perform: (inout Image<U>) throws -> Result) rethrows -> Result {
         precondition(MemoryLayout<U>.stride == MemoryLayout<T>.stride, "\(U.self) is not layout compatible with \(T.self)")
         let width = self.width
         let height = self.height
@@ -849,16 +936,16 @@ extension TextureData {
         let storage = self.storage
         return try self.withUnsafeMutableBufferPointer { buffer in
             return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
-                var data = TextureData<U>(width: width, height: height, channels: channels, data: reboundBuffer.baseAddress!, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { [storage] _ in _ = storage })
+                var data = Image<U>(width: width, height: height, channels: channels, data: reboundBuffer.baseAddress!, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { [storage] _ in _ = storage })
                 return try perform(&data)
             }
         }
     }
 }
 
-extension TextureData where T: BinaryInteger & FixedWidthInteger & SignedInteger {
+extension Image where T: BinaryInteger & FixedWidthInteger & SignedInteger {
     @inlinable
-    public init(_ data: TextureData<Float>) {
+    public init(_ data: Image<Float>) {
         self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
@@ -871,10 +958,10 @@ extension TextureData where T: BinaryInteger & FixedWidthInteger & SignedInteger
     }
 }
 
-extension TextureData where T == Float {
+extension Image where ComponentType == Float {
     
     @inlinable
-    public init<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ data: TextureData<I>) {
+    public init<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ data: Image<I>) {
         self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
@@ -887,7 +974,7 @@ extension TextureData where T == Float {
     }
     
     @inlinable
-    public init<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ data: TextureData<I>) {
+    public init<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ data: Image<I>) {
         self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
@@ -899,18 +986,18 @@ extension TextureData where T == Float {
         }
     }
     
-    public mutating func convert(toColorSpace: TextureColorSpace) {
+    public mutating func convert(toColorSpace: ImageColorSpace) {
         if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
             return
         }
         
         let sourceColorSpace = self.colorSpace
-        self.apply({ TextureColorSpace.convert($0, from: sourceColorSpace, to: toColorSpace) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+        self.apply({ ImageColorSpace.convert($0, from: sourceColorSpace, to: toColorSpace) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
         self.colorSpace = toColorSpace
     }
     
     @available(*, deprecated, renamed: "convert(toColorSpace:)")
-    public mutating func convert(toColourSpace: TextureColorSpace) {
+    public mutating func convert(toColourSpace: ImageColorSpace) {
         self.convert(toColorSpace: toColourSpace)
     }
     
@@ -978,9 +1065,9 @@ extension TextureData where T == Float {
 }
 
 
-extension TextureData where T: BinaryFloatingPoint {
+extension Image where T: BinaryFloatingPoint {
     @inlinable
-    public init<Other: BinaryFloatingPoint>(_ data: TextureData<Other>) {
+    public init<Other: BinaryFloatingPoint>(_ data: Image<Other>) {
         self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in

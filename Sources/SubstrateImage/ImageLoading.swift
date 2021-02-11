@@ -1,67 +1,72 @@
 //
-//  TextureLoader.swift
-//  SubstrateTextureIO
+//  ImageLoader.swift
+//  SubstrateImageIO
 //
 //  Created by Thomas Roughton on 1/04/17.
 //
 //
 
 import Foundation
-import Substrate
 import stb_image
 import tinyexr
 import LodePNG
 
-extension StorageMode {
-    public static var preferredForLoadedImage: StorageMode {
-        return RenderBackend.hasUnifiedMemory ? .managed : .private
-    }
-}
+//@available(*, deprecated, renamed: "ImageFileInfo")
+public typealias TextureFileInfo = ImageFileInfo
 
-public struct TextureFileInfo {
+public struct ImageFileInfo: Hashable, Codable {
     public let width : Int
     public let height : Int
     public let channelCount : Int
     
     public let bitDepth: Int
+    public let isSigned: Bool
     public let isFloatingPoint: Bool
     
-    public let colorSpace: TextureColorSpace
+    public let colorSpace: ImageColorSpace
+    public let alphaMode: ImageAlphaMode
     
-    init(width: Int, height: Int, channelCount: Int, bitDepth: Int, isFloatingPoint: Bool, colorSpace: TextureColorSpace) {
+    init(width: Int, height: Int, channelCount: Int,
+         bitDepth: Int,
+         isSigned: Bool,
+         isFloatingPoint: Bool,
+         colorSpace: ImageColorSpace,
+         alphaMode: ImageAlphaMode) {
         self.width = width
         self.height = height
         self.channelCount = channelCount
         self.bitDepth = bitDepth
+        self.isSigned = isSigned
         self.isFloatingPoint = isFloatingPoint
         self.colorSpace = colorSpace
+        self.alphaMode = alphaMode
     }
     
     public init(url: URL) throws {
-        guard let format = TextureFileFormat(extension: url.pathExtension) else {
-            throw TextureLoadingError.invalidFile(url)
+        guard let format = ImageFileFormat(extension: url.pathExtension) else {
+            throw ImageLoadingError.invalidFile(url)
         }
         do {
             try self.init(format: format, data: try Data(contentsOf: url, options: .mappedIfSafe))
         } catch {
-            if case TextureLoadingError.invalidData = error {
-                throw TextureLoadingError.invalidFile(url)
+            if case ImageLoadingError.invalidData = error {
+                throw ImageLoadingError.invalidFile(url)
             }
             throw error
         }
     }
     
     public init(data: Data) throws {
-        if let info = try? TextureFileInfo(format: .png, data: data) {
+        if let info = try? ImageFileInfo(format: .png, data: data) {
             self = info
-        } else if let info = try? TextureFileInfo(format: .exr, data: data) {
+        } else if let info = try? ImageFileInfo(format: .exr, data: data) {
             self = info
         } else {
             try self.init(format: .bmp, data: data)
         }
     }
     
-    public init(format: TextureFileFormat, data: Data) throws {
+    public init(format: ImageFileFormat, data: Data) throws {
         switch format {
         case .exr:
             var header = EXRHeader()
@@ -80,23 +85,26 @@ public struct TextureFileInfo {
                 var version = EXRVersion()
                 var result = ParseEXRVersionFromMemory(&version, memory.baseAddress, memory.count)
                 if result != TINYEXR_SUCCESS {
-                    throw TextureLoadingError.exrParseError("Unable to parse EXR version")
+                    throw ImageLoadingError.exrParseError("Unable to parse EXR version")
                 }
                 
                 result = ParseEXRHeaderFromMemory(&header, &version, memory.baseAddress, memory.count, &error)
                 if result != TINYEXR_SUCCESS {
-                    throw TextureLoadingError.exrParseError(String(cString: error!))
+                    throw ImageLoadingError.exrParseError(String(cString: error!))
                 }
             }
             
             self.width = Int(header.data_window.2 - header.data_window.0 + 1)
             self.height = Int(header.data_window.3 - header.data_window.1 + 1)
             
-            self.channelCount = Int(header.num_channels)
+            let channelCount = Int(header.num_channels)
+            self.channelCount = channelCount
             
             self.colorSpace = .linearSRGB
             self.isFloatingPoint = true
+            self.isSigned = true
             self.bitDepth = 32
+            self.alphaMode = channelCount == 2 || channelCount == 4 ? .premultiplied : .none
             
         case .png:
             var state = LodePNGState()
@@ -108,7 +116,7 @@ public struct TextureFileInfo {
             
             let result = data.withUnsafeBytes { lodepng_inspect(&width, &height, &state, $0.baseAddress?.assumingMemoryBound(to: UInt8.self), $0.count) }
             if result != 0 {
-                throw TextureLoadingError.invalidData
+                throw ImageLoadingError.invalidData
             }
             
             self.width = Int(width)
@@ -116,16 +124,21 @@ public struct TextureFileInfo {
             switch state.info_png.color.colortype {
             case LCT_GREY:
                 self.channelCount = 1
+                self.alphaMode = .none
             case LCT_GREY_ALPHA:
                 self.channelCount = 2
+                self.alphaMode = .postmultiplied
             case LCT_RGB:
                 self.channelCount = 3
+                self.alphaMode = .none
             case LCT_RGBA, LCT_PALETTE:
                 self.channelCount = 4
+                self.alphaMode = .postmultiplied
             default:
-                throw TextureLoadingError.noSupportedPixelFormat
+                throw ImageLoadingError.invalidData
             }
             self.bitDepth = Int(state.info_png.color.bitdepth)
+            self.isSigned = false
             self.isFloatingPoint = false
             
             if state.info_png.srgb_defined != 0 {
@@ -145,7 +158,7 @@ public struct TextureFileInfo {
             var height : Int32 = 0
             var componentsPerPixel : Int32 = 0
             guard data.withUnsafeBytes({ stbi_info_from_memory($0.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32($0.count), &width, &height, &componentsPerPixel) }) != 0 else {
-                throw TextureLoadingError.invalidData
+                throw ImageLoadingError.invalidData
             }
             
             self.width = Int(width)
@@ -163,16 +176,18 @@ public struct TextureFileInfo {
                 self.isFloatingPoint = false
             }
             
+            self.isSigned = false
             self.colorSpace = isHDR ? .linearSRGB : .undefined
+            self.alphaMode = componentsPerPixel == 2 || componentsPerPixel == 4 ? .inferred : .none
         }
         
     }
 }
 
 
-extension TextureData where T == UInt8 {
-    public init(fileAt url: URL, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .inferred) throws {
-        let fileInfo = try TextureFileInfo(url: url)
+extension Image where ComponentType == UInt8 {
+    public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
+        let fileInfo = try ImageFileInfo(url: url)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         let channels = fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
@@ -181,14 +196,14 @@ extension TextureData where T == UInt8 {
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
         guard let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
-            throw TextureLoadingError.invalidTextureDataFormat(url, T.self)
+            throw ImageLoadingError.invalidImageDataFormat(url, T.self)
         }
         
         self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)), deallocateFunc: { stbi_image_free($0) })
     }
     
-    public init(data: Data, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .inferred) throws {
-        let fileInfo = try TextureFileInfo(format: .png, data: data)
+    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
+        let fileInfo = try ImageFileInfo(format: .png, data: data)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         self = try data.withUnsafeBytes { data in
@@ -196,20 +211,20 @@ extension TextureData where T == UInt8 {
             var height : Int32 = 0
             var componentsPerPixel : Int32 = 0
             guard stbi_info_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel) != 0 else {
-                throw TextureLoadingError.invalidData
+                throw ImageLoadingError.invalidData
             }
             
             let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
             let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
             
-            return TextureData(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
+            return Image(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
         }
     }
 }
 
-extension TextureData where T == Int8 {
+extension Image where ComponentType == Int8 {
     public init(fileAt url: URL) throws {
-        let fileInfo = try TextureFileInfo(url: url)
+        let fileInfo = try ImageFileInfo(url: url)
         
         let channels = fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
         
@@ -217,14 +232,14 @@ extension TextureData where T == Int8 {
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
         guard let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
-            throw TextureLoadingError.invalidTextureDataFormat(url, T.self)
+            throw ImageLoadingError.invalidImageDataFormat(url, T.self)
         }
         
         self.init(width: Int(width), height: Int(height), channels: Int(channels), data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: .undefined, alphaMode: .none, deallocateFunc: { stbi_image_free($0) })
     }
     
-    public init(data: Data, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .inferred) throws {
-        let fileInfo = try TextureFileInfo(format: .png, data: data)
+    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
+        let fileInfo = try ImageFileInfo(format: .png, data: data)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         self = try data.withUnsafeBytes { data in
@@ -232,20 +247,20 @@ extension TextureData where T == Int8 {
             var height : Int32 = 0
             var componentsPerPixel : Int32 = 0
             guard stbi_info_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel) != 0 else {
-                throw TextureLoadingError.invalidData
+                throw ImageLoadingError.invalidData
             }
             
             let channels = componentsPerPixel == 3 ? 4 : componentsPerPixel
             let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
             
-            return TextureData(width: Int(width), height: Int(height), channels: Int(channels), data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
+            return Image(width: Int(width), height: Int(height), channels: Int(channels), data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
         }
     }
 }
 
-extension TextureData where T == UInt16 {
-    public init(fileAt url: URL, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .inferred) throws {
-        let fileInfo = try TextureFileInfo(url: url)
+extension Image where ComponentType == UInt16 {
+    public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
+        let fileInfo = try ImageFileInfo(url: url)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         let channels = fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
@@ -255,14 +270,14 @@ extension TextureData where T == UInt16 {
         var componentsPerPixel : Int32 = 0
         
         guard let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
-            throw TextureLoadingError.invalidTextureDataFormat(url, T.self)
+            throw ImageLoadingError.invalidImageDataFormat(url, T.self)
         }
         
         self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)), deallocateFunc: { stbi_image_free($0) })
     }
     
-    public init(data: Data, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .inferred) throws {
-        let fileInfo = try TextureFileInfo(data: data)
+    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
+        let fileInfo = try ImageFileInfo(data: data)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         let channels = fileInfo.channelCount == 3 ? 4 : Int32(fileInfo.channelCount)
@@ -273,31 +288,31 @@ extension TextureData where T == UInt16 {
             var componentsPerPixel : Int32 = 0
             let data = stbi_load_16_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, channels)!
             
-            return TextureData(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
+            return Image(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
         }
     }
     
     @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
-    public init(fileAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+    public init(fileAt url: URL, colorSpace: ImageColorSpace, premultipliedAlpha: Bool) throws {
         try self.init(fileAt: url, colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha)
     }
     
     @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
-    public init(fileAt url: URL, colourSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+    public init(fileAt url: URL, colourSpace: ImageColorSpace, premultipliedAlpha: Bool) throws {
         try self.init(fileAt: url, colorSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
     }
 }
 
 
-extension TextureData where T == Float {
+extension Image where ComponentType == Float {
     
-    public init(fileAt url: URL, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .inferred) throws {
+    public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
         if url.pathExtension.lowercased() == "exr" {
             try self.init(exrAt: url)
             return
         }
         
-        let fileInfo = try TextureFileInfo(url: url)
+        let fileInfo = try ImageFileInfo(url: url)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         let channels = fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
@@ -338,8 +353,8 @@ extension TextureData where T == Float {
         }
     }
     
-    public init(data: Data, colorSpace: TextureColorSpace = .undefined, alphaMode: TextureAlphaMode = .inferred) throws {
-        let fileInfo = try TextureFileInfo(data: data)
+    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
+        let fileInfo = try ImageFileInfo(data: data)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         let channels = fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
@@ -356,13 +371,13 @@ extension TextureData where T == Float {
             
             if isHDR {
                 let data = stbi_loadf_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels))!
-                return TextureData(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
+                return Image(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
                 
             } else if is16Bit {
                 let data = stbi_load_16_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels))!
                 defer { stbi_image_free(data) }
                 
-                var result = TextureData(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
+                var result = Image(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
                 
                 for i in 0..<dataCount {
                     result.storage.data[i] = unormToFloat(data[i])
@@ -375,7 +390,7 @@ extension TextureData where T == Float {
                 let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels))!
                 defer { stbi_image_free(data) }
                 
-                var result = TextureData(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
+                var result = Image(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
                 
                 for i in 0..<dataCount {
                     result.storage.data[i] = unormToFloat(data[i])
@@ -388,12 +403,12 @@ extension TextureData where T == Float {
     }
     
     @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
-    public init(fileAt url: URL, colorSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+    public init(fileAt url: URL, colorSpace: ImageColorSpace, premultipliedAlpha: Bool) throws {
         try self.init(fileAt: url, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
     @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
-    public init(fileAt url: URL, colourSpace: TextureColorSpace, premultipliedAlpha: Bool) throws {
+    public init(fileAt url: URL, colourSpace: ImageColorSpace, premultipliedAlpha: Bool) throws {
         try self.init(fileAt: url, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
@@ -418,12 +433,12 @@ extension TextureData where T == Float {
             var version = EXRVersion()
             var result = ParseEXRVersionFromMemory(&version, memory.baseAddress, memory.count)
             if result != TINYEXR_SUCCESS {
-                throw TextureLoadingError.exrParseError("Unable to parse EXR version")
+                throw ImageLoadingError.exrParseError("Unable to parse EXR version")
             }
             
             result = ParseEXRHeaderFromMemory(&header, &version, memory.baseAddress, memory.count, &error)
             if result != TINYEXR_SUCCESS {
-                throw TextureLoadingError.exrParseError(String(cString: error!))
+                throw ImageLoadingError.exrParseError(String(cString: error!))
             }
             
             for i in 0..<Int(header.num_channels) {
@@ -432,7 +447,7 @@ extension TextureData where T == Float {
             
             result = LoadEXRImageFromMemory(&image, &header, memory.baseAddress, memory.count, &error)
             if result != TINYEXR_SUCCESS {
-                throw TextureLoadingError.exrParseError(String(cString: error!))
+                throw ImageLoadingError.exrParseError(String(cString: error!))
             }
         }
         
@@ -491,7 +506,7 @@ extension TextureData where T == Float {
         self.inferAlphaMode()
     }
     
-    init(exrAt url: URL) throws {
+    public init(exrAt url: URL) throws {
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         try self.init(exrData: data)
     }

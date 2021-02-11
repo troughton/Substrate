@@ -18,7 +18,8 @@ let package = Package(
         
         .library(name: "Substrate", targets: ["Substrate"]),
         .library(name: "SubstrateUtilities", targets: ["SubstrateUtilities"]),
-        .library(name: "SubstrateTextureIO", targets: ["SubstrateTextureIO"]),
+        .library(name: "SubstrateImage", targets: ["SubstrateImage"]),
+        .library(name: "SubstrateTextureIO", targets: ["SubstrateImage", "SubstrateTextureIO"]),
         .library(name: "AppFramework", targets: ["AppFramework"]),
         .executable(name: "ShaderTool", targets: ["ShaderTool"])
     ],
@@ -39,7 +40,15 @@ let package = Package(
         .target(name: "SwiftFrameGraph", dependencies: ["Substrate"]),
         
         // Substrate
-        .target(name: "SubstrateTextureIO", dependencies: ["Substrate", .product(name: "stb_image", package: "Cstb"), .product(name: "stb_image_resize", package: "Cstb"), .product(name: "stb_image_write", package: "Cstb"), .product(name: "tinyexr", package: "Cstb"), .product(name: "LodePNG", package: "LodePNG")]),
+        .target(name: "SubstrateImage", dependencies: [
+                    .product(name: "stb_image", package: "Cstb"),
+                    .product(name: "stb_image_resize", package: "Cstb"),
+                    .product(name: "stb_image_write", package: "Cstb"),
+                    .product(name: "tinyexr", package: "Cstb"),
+                    .product(name: "LodePNG", package: "LodePNG")]),
+        
+        .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage"]),
+        
         .target(name: "SubstrateCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
         .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "Substrate/CMakeLists.txt", "Substrate/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"]),
         .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"]),

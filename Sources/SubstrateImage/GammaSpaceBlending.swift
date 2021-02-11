@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 10/09/20.
 //
 
-extension TextureData where T == UInt8 {
+extension Image where ComponentType == UInt8 {
     /// This method adjusts the texture values such that the results look more-or-less correct when blended in sRGB gamma space.
     /// The texture must already be in the sRGB color space and use premultiplied alpha, and the resulting texture will use postmultiplied alpha.
     /// This is useful when taking a GPU-generated texture and converting it so that blending will behave consistently in applications such as
@@ -70,7 +70,7 @@ extension TextureData where T == UInt8 {
     }
 }
 
-extension TextureData where T == Float {
+extension Image where ComponentType == Float {
     /// This method adjusts the texture values such that the results look more-or-less correct when blended in sRGB gamma space.
     /// The texture must already be in the sRGB color space and use premultiplied alpha, and the resulting texture will use postmultiplied alpha.
     /// This is useful when taking a GPU-generated texture and converting it so that blending will behave consistently in applications such as
@@ -133,11 +133,11 @@ extension TextureData where T == Float {
                 let alpha = self[x, y, channel: alphaChannel]
                 guard alpha > 0 && alpha < 1.0 else { continue }
                 
-                let adjustedAlpha = 1.0 - TextureColorSpace.convert(1.0 - alpha, from: .linearSRGB, to: .sRGB)
+                let adjustedAlpha = 1.0 - ImageColorSpace.convert(1.0 - alpha, from: .linearSRGB, to: .sRGB)
                 
                 for c in 0..<alphaChannel {
                     let premultColor = self[x, y, channel: c]
-                    self[x, y, channel: c] = (TextureColorSpace.convert((1.0 - alpha) + TextureColorSpace.convert(premultColor, from: .sRGB, to: .linearSRGB), from: .linearSRGB, to: .sRGB) - (1.0 - adjustedAlpha)) / adjustedAlpha
+                    self[x, y, channel: c] = (ImageColorSpace.convert((1.0 - alpha) + ImageColorSpace.convert(premultColor, from: .sRGB, to: .linearSRGB), from: .linearSRGB, to: .sRGB) - (1.0 - adjustedAlpha)) / adjustedAlpha
                 }
                 self[x, y, channel: alphaChannel] = adjustedAlpha
             }
@@ -190,11 +190,11 @@ extension TextureData where T == Float {
             for x in 0..<self.width {
                 let adjustedAlpha = self[x, y, channel: alphaChannel]
                 
-                let alpha = 1.0 - TextureColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
+                let alpha = 1.0 - ImageColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
                 
                 for c in 0..<alphaChannel {
                     let srgbBlendColor = self[x, y, channel: c]
-                    self[x, y, channel: c] = TextureColorSpace.convert(srgbBlendColor * adjustedAlpha + (1.0 - adjustedAlpha), from: .sRGB, to: .linearSRGB) - (1.0 - alpha)
+                    self[x, y, channel: c] = ImageColorSpace.convert(srgbBlendColor * adjustedAlpha + (1.0 - adjustedAlpha), from: .sRGB, to: .linearSRGB) - (1.0 - alpha)
                 }
                 self[x, y, channel: alphaChannel] = alpha
             }

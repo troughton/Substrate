@@ -46,7 +46,7 @@ enum ColorSpaceLUTs {
     }
     
     static let linearToSRGBLUT: [UInt8] = {
-        return (0...UInt8.max).map { return floatToUnorm(TextureColorSpace.convert(unormToFloat($0), from: .linearSRGB, to: .sRGB), type: UInt8.self) }
+        return (0...UInt8.max).map { return floatToUnorm(ImageColorSpace.convert(unormToFloat($0), from: .linearSRGB, to: .sRGB), type: UInt8.self) }
     }()
     
     static func linearToSRGB(_ value: UInt8) -> UInt8 {
@@ -107,8 +107,8 @@ enum ColorSpaceLUTs {
             }
             
             let floatVal = unormToFloat(value)
-            let linearVal = clamp(TextureColourSpace.convert(floatVal, from: .sRGB, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)
-            return floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: .sRGB), type: UInt8.self)
+            let linearVal = clamp(ImageColorSpace.convert(floatVal, from: .sRGB, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)
+            return floatToUnorm(ImageColorSpace.convert(linearVal, from: .linearSRGB, to: .sRGB), type: UInt8.self)
         }
     }()
     
@@ -122,8 +122,8 @@ enum ColorSpaceLUTs {
             let value = UInt8(truncatingIfNeeded: i & 0xFF)
             
             let floatVal = unormToFloat(value)
-            let linearVal = TextureColourSpace.convert(floatVal, from: .sRGB, to: .linearSRGB) * alpha
-            return floatToUnorm(TextureColourSpace.convert(linearVal, from: .linearSRGB, to: .sRGB), type: UInt8.self)
+            let linearVal = ImageColorSpace.convert(floatVal, from: .sRGB, to: .linearSRGB) * alpha
+            return floatToUnorm(ImageColorSpace.convert(linearVal, from: .linearSRGB, to: .sRGB), type: UInt8.self)
         }
     }()
     
@@ -135,7 +135,7 @@ enum ColorSpaceLUTs {
     static let linearBlendedSRGBToSRGBBlendedSRGB_AlphaLUT: [UInt8] = {
         return (0..<256).map { i in
             let alpha = unormToFloat(UInt8(truncatingIfNeeded: i))
-            let adjustedAlpha = 1.0 - TextureColorSpace.convert(1.0 - alpha, from: .linearSRGB, to: .sRGB)
+            let adjustedAlpha = 1.0 - ImageColorSpace.convert(1.0 - alpha, from: .linearSRGB, to: .sRGB)
             return floatToUnorm(adjustedAlpha, type: UInt8.self)
         }
     }()
@@ -149,10 +149,10 @@ enum ColorSpaceLUTs {
             let value = UInt8(truncatingIfNeeded: i & 0xFF)
             guard alpha > 0 && alpha < 1.0 else { return value }
             
-            let adjustedAlpha = 1.0 - TextureColorSpace.convert(1.0 - alpha, from: .linearSRGB, to: .sRGB)
+            let adjustedAlpha = 1.0 - ImageColorSpace.convert(1.0 - alpha, from: .linearSRGB, to: .sRGB)
             
             let premultColor = unormToFloat(value)
-            let adjustedColor = (TextureColorSpace.convert((1.0 - alpha) + TextureColorSpace.convert(premultColor, from: .sRGB, to: .linearSRGB), from: .linearSRGB, to: .sRGB) - (1.0 - adjustedAlpha)) / adjustedAlpha
+            let adjustedColor = (ImageColorSpace.convert((1.0 - alpha) + ImageColorSpace.convert(premultColor, from: .sRGB, to: .linearSRGB), from: .linearSRGB, to: .sRGB) - (1.0 - adjustedAlpha)) / adjustedAlpha
             return floatToUnorm(adjustedColor, type: UInt8.self)
         }
     }()
@@ -170,7 +170,7 @@ enum ColorSpaceLUTs {
     static let sRGBBlendedSRGBToLinearBlendedSRGB_AlphaLUT: [UInt8] = {
         return (0..<256).map { i in
             let adjustedAlpha = unormToFloat(UInt8(truncatingIfNeeded: i))
-            let alpha = 1.0 - TextureColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
+            let alpha = 1.0 - ImageColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
             return floatToUnorm(alpha, type: UInt8.self)
         }
     }()
@@ -185,10 +185,10 @@ enum ColorSpaceLUTs {
             let value = UInt8(truncatingIfNeeded: i & 0xFF)
             guard adjustedAlpha > 0 && adjustedAlpha < 1.0 else { return value }
             
-            let alpha = 1.0 - TextureColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
+            let alpha = 1.0 - ImageColorSpace.convert(1.0 - adjustedAlpha, from: .sRGB, to: .linearSRGB)
             
             let srgbBlendColor = unormToFloat(value)
-            let premultColor = TextureColorSpace.convert((TextureColorSpace.convert(srgbBlendColor * adjustedAlpha + (1.0 - adjustedAlpha), from: .sRGB, to: .linearSRGB) - (1.0 - alpha)), from: .linearSRGB, to: .sRGB)
+            let premultColor = ImageColorSpace.convert((ImageColorSpace.convert(srgbBlendColor * adjustedAlpha + (1.0 - adjustedAlpha), from: .sRGB, to: .linearSRGB) - (1.0 - alpha)), from: .linearSRGB, to: .sRGB)
             
             return floatToUnorm(premultColor, type: UInt8.self)
         }
