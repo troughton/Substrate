@@ -147,6 +147,7 @@ final class ShaderCompiler {
     let reflectionFile : URL?
     let compileWithDebugInfo: Bool
     let legalizeHLSL: Bool
+    let invariantPosition: Bool
     
     let sourceFiles : [DXCSourceFile]
     let targets : [Target]
@@ -161,12 +162,13 @@ final class ShaderCompiler {
     
     var spirvCompilers : [SPIRVCompiler] = []
     
-    init(directory: URL, reflectionFile: URL? = nil, targets: [Target] = [.defaultTarget], compileWithDebugInfo: Bool, legalizeHLSL: Bool) throws {
+    init(directory: URL, reflectionFile: URL? = nil, targets: [Target] = [.defaultTarget], compileWithDebugInfo: Bool, legalizeHLSL: Bool, invariantPosition: Bool) throws {
         self.baseDirectory = directory
         self.sourceDirectory = directory.appendingPathComponent("Source/RenderPasses")
         self.reflectionFile = reflectionFile
         self.compileWithDebugInfo = compileWithDebugInfo
         self.legalizeHLSL = legalizeHLSL
+        self.invariantPosition = invariantPosition
 
         for (i, target) in targets.enumerated() {
             guard !targets.dropFirst(i + 1).contains(target) else {
@@ -235,7 +237,7 @@ final class ShaderCompiler {
             self.spirvCompilers = spirvFiles.compactMap { file in
                 guard file.exists else { return nil }
                 do {
-                    return try SPIRVCompiler(file: file, context: self.context)
+                    return try SPIRVCompiler(file: file, context: self.context, forceInvariantPosition: self.invariantPosition)
                 } catch {
                     print("Error generating SPIRV compiler for file \(file): \(error)")
                     return nil

@@ -206,6 +206,11 @@ final class MetalDriver {
         } else {
             arguments.append("-O")
         }
+        
+        if let metalVersion = target.metalVersion, (metalVersion.major == 2 && metalVersion.minor >= 3) || metalVersion.major >= 3 {
+            arguments.append("-fpreserve-invariance")
+        }
+        
         arguments.append(contentsOf: [
                             target.metalTargetVersion!,
                             target.metalStandardLibrary,

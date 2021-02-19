@@ -42,6 +42,9 @@ struct ShaderTool: ParsableCommand {
     
     @Flag(help: "Skip HLSL legalization (done using SPIRV-Opt). HLSL legalization is usually required, but some well-behaved sources may not need it and it may be easier to view the cross-compiled sources with it disabled.")
     var skipHLSLLegalization: Bool = false
+    
+    @Flag(help: "Force position inputs and outputs to be marked as being invariant, ensuring the same result in different passes.")
+    var invariantPosition: Bool = false
 
     func run() throws {
         let reflectionURL = URL(fileURLWithPath: reflectionFile)
@@ -54,7 +57,8 @@ struct ShaderTool: ParsableCommand {
                                           reflectionFile: reflectionURL,
                                           targets: target.isEmpty ? [Target.defaultTarget] : target,
                                           compileWithDebugInfo: self.debug,
-                                          legalizeHLSL: !self.skipHLSLLegalization)
+                                          legalizeHLSL: !self.skipHLSLLegalization,
+                                          invariantPosition: self.invariantPosition)
         compiler.compile()
         compiler.generateReflection()
     }

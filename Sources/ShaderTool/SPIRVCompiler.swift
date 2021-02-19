@@ -8,6 +8,7 @@
 import Foundation
 import SPIRV_Cross
 import Substrate
+import SPIRVCrossExtras
 
 final class SPIRVContext {
     let spvContext : spvc_context
@@ -43,14 +44,16 @@ final class SPIRVCompiler {
     let context : SPIRVContext
     let file : SPIRVFile
     let compiler : spvc_compiler
+    let forceInvariantPosition: Bool
     var currentEntryPoint : EntryPoint? = nil
     
     var activeResourceIds : Set<SpvId> = []
     var shaderResources : spvc_resources? = nil
     
-    init(file: SPIRVFile, context: SPIRVContext) throws {
+    init(file: SPIRVFile, context: SPIRVContext, forceInvariantPosition: Bool) throws {
         self.context = context
         self.file = file
+        self.forceInvariantPosition = forceInvariantPosition
         
         let spv = try Data(contentsOf: file.url)
         
@@ -70,7 +73,6 @@ final class SPIRVCompiler {
     
     func compiledSource() throws -> String {
         if self.file.target.isMetal {
-            
             // Set the push constant at buffer(0) and all argument buffers after it.
             var binding = spvc_msl_resource_binding()
             spvc_msl_resource_binding_init(&binding)
@@ -85,6 +87,14 @@ final class SPIRVCompiler {
                 binding.binding = ~3 // kArgumentBufferBinding
                 binding.msl_buffer = UInt32(i + 1)
                 spvc_compiler_msl_add_resource_binding(self.compiler, &binding)
+            }
+        }
+        
+        if self.forceInvariantPosition {
+            // Set any Position builtins as invariant.
+            if file.entryPoint.type == .vertex || file.entryPoint.type == .fragment,
+               spvc_compiler_set_entry_point(self.compiler, file.entryPoint.name, file.entryPoint.type.executionModel) == SPVC_SUCCESS {
+                spvc_compiler_make_position_invariant(self.compiler)
             }
         }
         

@@ -54,9 +54,12 @@ let package = Package(
         .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"]),
     
         // ShaderTool
+        .target(name: "SPIRVCrossExtras",
+                dependencies: [.product(name: "SPIRV-Cross", package: "SPIRV-Cross")]),
+        
         .target(
             name: "ShaderTool",
-            dependencies: [.product(name: "SPIRV-Cross", package: "SPIRV-Cross"), "Substrate", "Regex", .product(name: "ArgumentParser", package: "swift-argument-parser")]),
+            dependencies: [.product(name: "SPIRV-Cross", package: "SPIRV-Cross"), "SPIRVCrossExtras", "Substrate", "Regex", .product(name: "ArgumentParser", package: "swift-argument-parser")]),
         
         // AppFramework
         .systemLibrary(
