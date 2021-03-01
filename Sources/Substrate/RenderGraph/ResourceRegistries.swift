@@ -125,7 +125,7 @@ public final class TransientRegistryManager {
     
     @usableFromInline
     struct Chunk {
-        @usableFromInline static let itemsPerChunk = 4096
+        @usableFromInline static let itemsPerChunk = 256
         
         @usableFromInline let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -167,7 +167,7 @@ public final class TransientRegistryManager {
         }
     }
     
-    @usableFromInline static let maxChunks = 128
+    @usableFromInline static let maxChunks = 2048
     
     @usableFromInline var lock = SpinLock()
     
@@ -408,7 +408,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     struct Chunk {
-        @usableFromInline static let itemsPerChunk = 4096
+        @usableFromInline static let itemsPerChunk = 256
         
         @usableFromInline let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -450,7 +450,7 @@ public enum TextureViewBaseInfo {
         }
     }
     
-    @usableFromInline static let maxChunks = 128
+    @usableFromInline static let maxChunks = 2048
     
     @usableFromInline var lock = SpinLock()
     
@@ -613,7 +613,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     struct Chunk {
-        @usableFromInline static let itemsPerChunk = 2048
+        @usableFromInline static let itemsPerChunk = 256
         
         @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
         @usableFromInline let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
@@ -642,7 +642,7 @@ public enum TextureViewBaseInfo {
         }
     }
     
-    @usableFromInline static let maxChunks = 256
+    @usableFromInline static let maxChunks = 2048
     
     @usableFromInline var lock = SpinLock()
     
@@ -1014,7 +1014,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     struct Chunk {
-        @usableFromInline static let itemsPerChunk = 2048
+        @usableFromInline static let itemsPerChunk = 256
         
         @usableFromInline let bindings : UnsafeMutablePointer<[ArgumentBuffer?]>
         @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
@@ -1038,7 +1038,7 @@ public enum TextureViewBaseInfo {
         }
     }
     
-    @usableFromInline static let maxChunks = 256
+    @usableFromInline static let maxChunks = 2048
     
     @usableFromInline var lock = SpinLock()
     
@@ -1126,7 +1126,7 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     struct Chunk {
-        @usableFromInline static let itemsPerChunk = 4096
+        @usableFromInline static let itemsPerChunk = 256
         
         @usableFromInline let descriptors : UnsafeMutablePointer<HeapDescriptor>
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
@@ -1150,7 +1150,7 @@ public enum TextureViewBaseInfo {
         }
     }
     
-    @usableFromInline static let maxChunks = 128
+    @usableFromInline static let maxChunks = 2048
     
     @usableFromInline var lock = SpinLock()
     
