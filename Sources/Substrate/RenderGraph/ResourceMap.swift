@@ -25,15 +25,15 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
     public mutating func reserveCapacity() {
         switch R.self {
         case is Buffer.Type:
-            self._reserveCapacity(PersistentBufferRegistry.instance.maxIndex)
+            self._reserveCapacity(PersistentBufferRegistry.instance.nextFreeIndex)
         case is Texture.Type:
-            self._reserveCapacity(PersistentTextureRegistry.instance.maxIndex)
+            self._reserveCapacity(PersistentTextureRegistry.instance.nextFreeIndex)
         case is ArgumentBuffer.Type:
-            self._reserveCapacity(PersistentArgumentBufferRegistry.instance.maxIndex)
+            self._reserveCapacity(PersistentArgumentBufferRegistry.instance.nextFreeIndex)
         case is ArgumentBufferArray.Type:
-            self._reserveCapacity(PersistentArgumentBufferArrayRegistry.instance.maxIndex)
+            self._reserveCapacity(PersistentArgumentBufferArrayRegistry.instance.nextFreeIndex)
         case is Heap.Type:
-            self._reserveCapacity(HeapRegistry.instance.maxIndex)
+            self._reserveCapacity(HeapRegistry.instance.nextFreeIndex)
         default:
             fatalError()
         }

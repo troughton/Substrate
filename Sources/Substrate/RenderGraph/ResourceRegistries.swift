@@ -172,7 +172,7 @@ public final class TransientRegistryManager {
     @usableFromInline var lock = SpinLock()
     
     @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var maxIndex = 0
+    @usableFromInline var nextFreeIndex = 0
     @usableFromInline var enqueuedDisposals = [Buffer]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
@@ -187,11 +187,11 @@ public final class TransientRegistryManager {
             if let reusedIndex = self.freeIndices.popFirst() {
                 index = reusedIndex
             } else {
-                index = self.maxIndex
-                if self.maxIndex % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(self.maxIndex / Chunk.itemsPerChunk)
+                index = self.nextFreeIndex
+                if self.nextFreeIndex % Chunk.itemsPerChunk == 0 {
+                    self.allocateChunk(self.nextFreeIndex / Chunk.itemsPerChunk)
                 }
-                self.maxIndex += 1
+                self.nextFreeIndex += 1
             }
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
@@ -212,8 +212,9 @@ public final class TransientRegistryManager {
     }
     
     @usableFromInline var chunkCount : Int {
-        if self.maxIndex == 0 { return 0 }
-        return (self.maxIndex / Chunk.itemsPerChunk) + 1
+        let lastUsedIndex = self.nextFreeIndex - 1
+        if lastUsedIndex < 0 { return 0 }
+        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
     }
     
     @usableFromInline
@@ -455,7 +456,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var lock = SpinLock()
     
     @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var maxIndex = 0
+    @usableFromInline var nextFreeIndex = 0
     @usableFromInline var enqueuedDisposals = [Texture]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
@@ -471,11 +472,11 @@ public enum TextureViewBaseInfo {
             if let reusedIndex = self.freeIndices.popFirst() {
                 index = reusedIndex
             } else {
-                index = self.maxIndex
-                if self.maxIndex % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(self.maxIndex / Chunk.itemsPerChunk)
+                index = self.nextFreeIndex
+                if self.nextFreeIndex % Chunk.itemsPerChunk == 0 {
+                    self.allocateChunk(self.nextFreeIndex / Chunk.itemsPerChunk)
                 }
-                self.maxIndex += 1
+                self.nextFreeIndex += 1
             }
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
@@ -512,11 +513,11 @@ public enum TextureViewBaseInfo {
             if let reusedIndex = self.freeIndices.popFirst() {
                 index = reusedIndex
             } else {
-                index = self.maxIndex
-                if self.maxIndex % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(self.maxIndex / Chunk.itemsPerChunk)
+                index = self.nextFreeIndex
+                if self.nextFreeIndex % Chunk.itemsPerChunk == 0 {
+                    self.allocateChunk(self.nextFreeIndex / Chunk.itemsPerChunk)
                 }
-                self.maxIndex += 1
+                self.nextFreeIndex += 1
             }
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
@@ -537,8 +538,9 @@ public enum TextureViewBaseInfo {
     }
     
     @usableFromInline var chunkCount : Int {
-        if self.maxIndex == 0 { return 0 }
-        return (self.maxIndex / Chunk.itemsPerChunk) + 1
+        let lastUsedIndex = self.nextFreeIndex - 1
+        if lastUsedIndex < 0 { return 0 }
+        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
     }
     
     @usableFromInline
@@ -718,7 +720,8 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline var chunkCount : Int {
         if self.count == 0 { return 0 }
-        return (self.count / Chunk.itemsPerChunk) + 1
+        let lastUsedIndex = self.count - 1
+        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
     }
     
     @usableFromInline
@@ -809,7 +812,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var lock = SpinLock()
     
     @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var maxIndex = 0
+    @usableFromInline var nextFreeIndex = 0
     
     @usableFromInline var enqueuedDisposals = [ArgumentBuffer]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
@@ -825,11 +828,11 @@ public enum TextureViewBaseInfo {
             if let reusedIndex = self.freeIndices.popFirst() {
                 index = reusedIndex
             } else {
-                index = self.maxIndex
+                index = self.nextFreeIndex
                 if index % Chunk.itemsPerChunk == 0 {
                     self.allocateChunk(index / Chunk.itemsPerChunk)
                 }
-                self.maxIndex += 1
+                self.nextFreeIndex += 1
             }
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
@@ -858,11 +861,11 @@ public enum TextureViewBaseInfo {
             if let reusedIndex = self.freeIndices.popFirst() {
                 index = reusedIndex
             } else {
-                index = self.maxIndex
+                index = self.nextFreeIndex
                 if index % Chunk.itemsPerChunk == 0 {
                     self.allocateChunk(index / Chunk.itemsPerChunk)
                 }
-                self.maxIndex += 1
+                self.nextFreeIndex += 1
             }
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
@@ -887,8 +890,9 @@ public enum TextureViewBaseInfo {
     }
     
     @usableFromInline var chunkCount : Int {
-        if self.maxIndex == 0 { return 0 }
-        return (self.maxIndex / Chunk.itemsPerChunk) + 1
+        let lastUsedIndex = self.nextFreeIndex - 1
+        if lastUsedIndex < 0 { return 0 }
+        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
     }
     
     @usableFromInline
@@ -1043,7 +1047,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var lock = SpinLock()
     
     @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var maxIndex = 0
+    @usableFromInline var nextFreeIndex = 0
     
     @usableFromInline var enqueuedDisposals = [ArgumentBufferArray]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
@@ -1060,11 +1064,11 @@ public enum TextureViewBaseInfo {
             if let reusedIndex = self.freeIndices.popFirst() {
                 index = reusedIndex
             } else {
-                index = self.maxIndex
+                index = self.nextFreeIndex
                 if index % Chunk.itemsPerChunk == 0 {
                     self.allocateChunk(index / Chunk.itemsPerChunk)
                 }
-                self.maxIndex += 1
+                self.nextFreeIndex += 1
             }
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
@@ -1081,8 +1085,9 @@ public enum TextureViewBaseInfo {
     
     @usableFromInline
     var chunkCount : Int {
-        if self.maxIndex == 0 { return 0 }
-        return (self.maxIndex / Chunk.itemsPerChunk) + 1
+        let lastUsedIndex = self.nextFreeIndex - 1
+        if lastUsedIndex < 0 { return 0 }
+        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
     }
     
     @usableFromInline
@@ -1155,7 +1160,7 @@ public enum TextureViewBaseInfo {
     @usableFromInline var lock = SpinLock()
     
     @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var maxIndex = 0
+    @usableFromInline var nextFreeIndex = 0
     @usableFromInline var enqueuedDisposals = [Heap]()
     @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
     
@@ -1170,11 +1175,11 @@ public enum TextureViewBaseInfo {
             if let reusedIndex = self.freeIndices.popFirst() {
                 index = reusedIndex
             } else {
-                index = self.maxIndex
-                if self.maxIndex % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(self.maxIndex / Chunk.itemsPerChunk)
+                index = self.nextFreeIndex
+                if self.nextFreeIndex % Chunk.itemsPerChunk == 0 {
+                    self.allocateChunk(self.nextFreeIndex / Chunk.itemsPerChunk)
                 }
-                self.maxIndex += 1
+                self.nextFreeIndex += 1
             }
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
@@ -1187,8 +1192,9 @@ public enum TextureViewBaseInfo {
     }
     
     @usableFromInline var chunkCount : Int {
-        if self.maxIndex == 0 { return 0 }
-        return (self.maxIndex / Chunk.itemsPerChunk) + 1
+        let lastUsedIndex = self.nextFreeIndex - 1
+        if lastUsedIndex < 0 { return 0 }
+        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
     }
     
     @usableFromInline
