@@ -1239,14 +1239,20 @@ public struct Texture : ResourceProtocol {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
-    @available(*, deprecated, renamed: "init(windowId:descriptor:isMinimised:nativeWindow:renderGraph:)")
+    @available(*, deprecated, renamed: "init(descriptor:isMinimised:nativeWindow:renderGraph:)")
     @inlinable
     public init(windowId: Int, descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, frameGraph: RenderGraph) {
-        self.init(windowId: windowId, descriptor: descriptor, isMinimised: isMinimised, nativeWindow: nativeWindow, renderGraph: frameGraph)
+        self.init(descriptor: descriptor, isMinimised: isMinimised, nativeWindow: nativeWindow, renderGraph: frameGraph)
+    }
+    
+    @available(*, deprecated, renamed: "init(descriptor:isMinimised:nativeWindow:renderGraph:)")
+    @inlinable
+    public init(windowId: Int, descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, renderGraph: RenderGraph) {
+        self.init(descriptor: descriptor, isMinimised: isMinimised, nativeWindow: nativeWindow, renderGraph: renderGraph)
     }
     
     @inlinable
-    public init(windowId: Int, descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, renderGraph: RenderGraph) {
+    public init(descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, renderGraph: RenderGraph) {
         self.init(descriptor: descriptor, renderGraph: renderGraph, flags: isMinimised ? [] : .windowHandle)
         
         if !isMinimised {
