@@ -62,11 +62,11 @@ public struct ImageFileInfo: Hashable, Codable {
         } else if let info = try? ImageFileInfo(format: .exr, data: data) {
             self = info
         } else {
-            try self.init(format: .bmp, data: data)
+            try self.init(format: nil, data: data)
         }
     }
     
-    public init(format: ImageFileFormat, data: Data) throws {
+    public init(format: ImageFileFormat?, data: Data) throws {
         switch format {
         case .exr:
             var header = EXRHeader()
@@ -152,7 +152,14 @@ public struct ImageFileInfo: Hashable, Codable {
             } else {
                 self.colorSpace = .undefined
             }
-        
+        case nil:
+            if let format = try? Self.init(format: .exr, data: data) {
+                self = format
+                return
+            } else {
+                fallthrough
+            }
+            
         default:
             var width : Int32 = 0
             var height : Int32 = 0
@@ -203,7 +210,7 @@ extension Image where ComponentType == UInt8 {
     }
     
     public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
-        let fileInfo = try ImageFileInfo(format: .png, data: data)
+        let fileInfo = try ImageFileInfo(format: nil, data: data)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         self = try data.withUnsafeBytes { data in
