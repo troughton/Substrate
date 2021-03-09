@@ -39,7 +39,12 @@ extension Texture {
 }
 
 extension Image {
-    public init(texture: Texture, mipmapLevel: Int = 0, hasPremultipliedAlpha: Bool = true) {
+    @available(*, deprecated, renamed: "init(texture:mipmapLevel:alphaMode:)")
+    public init(texture: Texture, mipmapLevel: Int = 0, hasPremultipliedAlpha: Bool) {
+        self.init(texture: texture, mipmapLevel: mipmapLevel, alphaMode: hasPremultipliedAlpha ? .premultiplied : .postmultiplied)
+    }
+    
+    public init(texture: Texture, mipmapLevel: Int = 0, alphaMode: ImageAlphaMode = .premultiplied) {
         let pixelFormat = texture.descriptor.pixelFormat
         precondition(pixelFormat.bytesPerPixel == Double(MemoryLayout<T>.stride * pixelFormat.channelCount))
         precondition(texture.descriptor.textureType == .type2D)
@@ -58,7 +63,7 @@ extension Image {
             }
             GPUResourceUploader.flush()
             
-            self.init(texture: cpuVisibleTexture, hasPremultipliedAlpha: hasPremultipliedAlpha)
+            self.init(texture: cpuVisibleTexture, alphaMode: alphaMode)
             cpuVisibleTexture.dispose()
             
             return
@@ -67,7 +72,7 @@ extension Image {
         assert(texture.storageMode != .private)
         
         self.init(width: max(texture.width >> mipmapLevel, 1), height: max(texture.height >> mipmapLevel, 1),
-                  channels: pixelFormat.channelCount, colorSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, alphaMode: hasPremultipliedAlpha ? .premultiplied : .postmultiplied)
+                  channels: pixelFormat.channelCount, colorSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, alphaMode: alphaMode)
         
         texture.waitForCPUAccess(accessType: .read)
         
