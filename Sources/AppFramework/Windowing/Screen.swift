@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import SwiftMath
+import SubstrateMath
 
 public struct Screen {
     var position : WindowPosition

@@ -10,6 +10,7 @@
 import Metal
 import MetalKit
 import SubstrateUtilities
+import OSLog
 
 protocol MTLResourceReference {
     associatedtype Resource : MTLResource
@@ -634,6 +635,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         return textureReference
     }
     
+    var lastTimeWindowHandleCalled = DispatchTime.now().uptimeNanoseconds
+    
     @discardableResult
     public func allocateWindowHandleTexture(_ texture: Texture) throws -> MTLTextureReference {
         precondition(texture.flags.contains(.windowHandle))
@@ -644,10 +647,17 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         
         // The texture reference should always be present but the texture itself might not be.
         if self.textureReferences[texture]!._texture == nil {
+            let currentTime = DispatchTime.now().uptimeNanoseconds
+            let elapsed = currentTime - lastTimeWindowHandleCalled
+//            print("allocateWindowHandleTexture: \(Double(elapsed) * 1e-6)")
+            lastTimeWindowHandleCalled = currentTime
+            
+            os_signpost(.begin, log: RenderGraph.pointsOfInterestHandler, name: "allocateWindowHandleTexture")
             guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
                   let mtlDrawable = windowReference.nextDrawable() else {
                 throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
             }
+            os_signpost(.end, log: RenderGraph.pointsOfInterestHandler, name: "allocateWindowHandleTexture")
             
             let drawableTexture = mtlDrawable.texture
             if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {

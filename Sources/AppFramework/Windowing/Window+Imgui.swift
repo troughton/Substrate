@@ -8,7 +8,7 @@
 
 import CImGui
 import ImGui
-import SwiftMath
+import SubstrateMath
 import Dispatch
 import Substrate
 

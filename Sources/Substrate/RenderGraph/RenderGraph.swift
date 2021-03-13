@@ -8,6 +8,7 @@
 
 import Foundation
 import SubstrateUtilities
+import OSLog
 
 public protocol RenderPass : class {
     var name : String { get }
@@ -853,10 +854,16 @@ public final class RenderGraph {
         return true
     }
     
+    
+    @usableFromInline static let pointsOfInterestHandler = OSLog(subsystem: "com.substrate.RenderGraph", category: .pointsOfInterest)
+    
     public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
         if GPUResourceUploader.renderGraph !== self {
             GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
         }
+        
+        os_signpost(.begin, log: Self.pointsOfInterestHandler, name: "RenderGraph.execute")
+        defer { os_signpost(.end, log: Self.pointsOfInterestHandler, name: "RenderGraph.execute") }
         
         guard !self.renderPasses.isEmpty else {
             onSubmission?()
@@ -871,7 +878,9 @@ public final class RenderGraph {
             return
         }
         
+        os_signpost(.begin, log: Self.pointsOfInterestHandler, name: "RenderGraph accessSemaphore wait")
         self.context.accessSemaphore.wait()
+        os_signpost(.end, log: Self.pointsOfInterestHandler, name: "RenderGraph accessSemaphore wait")
         
         RenderGraph.activeRenderGraphSemaphore.wait()
         RenderGraph.activeRenderGraph = self
@@ -899,6 +908,7 @@ public final class RenderGraph {
         let completionQueue = self.completionNotifyQueue
         let completion: (Double) -> Void = { gpuTime in
             self.lastGraphGPUTime = gpuTime
+//            print("Frame completed in \(gpuTime)")
             
             let completionTime = DispatchTime.now().uptimeNanoseconds
             let elapsed = completionTime - self.previousFrameCompletionTime
@@ -910,6 +920,7 @@ public final class RenderGraph {
             completionQueue.forEach { $0() }
         }
         
+        os_signpost(.begin, log: Self.pointsOfInterestHandler, name: "RenderGraph context executeRenderGraph")
         #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
         autoreleasepool {
             self.context.executeRenderGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
@@ -917,6 +928,7 @@ public final class RenderGraph {
         #else
         self.context.executeRenderGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
         #endif
+        os_signpost(.end, log: Self.pointsOfInterestHandler, name: "RenderGraph context executeRenderGraph")
         
         // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
         passes.forEach {

@@ -7,7 +7,7 @@
 
 import ImGui
 import Substrate
-import SwiftMath
+import SubstrateMath
 
 public final class TextureLookup {
     private static var maxIndex : UInt32 = 1

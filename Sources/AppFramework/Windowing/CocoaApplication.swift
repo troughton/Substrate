@@ -7,7 +7,7 @@
 
 #if os(macOS)
 
-import SwiftMath
+import SubstrateMath
 import Substrate
 import Cocoa
 import MetalKit

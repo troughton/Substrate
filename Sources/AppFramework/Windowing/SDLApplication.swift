@@ -7,7 +7,7 @@
 
 #if canImport(CSDL2) && !(os(macOS) && arch(arm64))
 
-import SwiftMath
+import SubstrateMath
 import Substrate
 import ImGui
 import CSDL2

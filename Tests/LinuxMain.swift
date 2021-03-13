@@ -1,6 +1,6 @@
 import XCTest
-@testable import SubstrateTests
+@testable import SubstrateMathTests
 
 XCTMain([
-     testCase(SubstrateTests.allTests),
+     testCase(SubstrateMathTests.allTests),
 ])

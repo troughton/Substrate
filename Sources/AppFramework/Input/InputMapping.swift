@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import SwiftMath
+import SubstrateMath
 
 public enum InputTrigger : String {
     case onStart

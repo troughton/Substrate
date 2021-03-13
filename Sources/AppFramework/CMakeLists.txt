@@ -11,7 +11,7 @@ target_sources(AppFramework PRIVATE
 )
 
 target_link_libraries(AppFramework PRIVATE
-  Substrate CNativeFileDialog CImGui SubstrateUtilities _NumericsShims RealModule SwiftMath)
+  Substrate CNativeFileDialog CImGui SubstrateUtilities _NumericsShims RealModule SubstrateMath)
 
 install(TARGETS AppFramework
   ARCHIVE DESTINATION lib

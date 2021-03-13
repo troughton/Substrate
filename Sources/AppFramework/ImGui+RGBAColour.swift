@@ -7,7 +7,7 @@
 
 import CImGui
 import ImGui
-import SwiftMath
+import SubstrateMath
 
 extension ImGui {
     @discardableResult

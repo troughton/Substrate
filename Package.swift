@@ -20,6 +20,7 @@ let package = Package(
         .library(name: "SubstrateUtilities", targets: ["SubstrateUtilities"]),
         .library(name: "SubstrateImage", targets: ["SubstrateImage"]),
         .library(name: "SubstrateTextureIO", targets: ["SubstrateImage", "SubstrateTextureIO"]),
+        .library(name: "SubstrateMath", targets: ["SubstrateMath"]),
         .library(name: "AppFramework", targets: ["AppFramework"]),
         .executable(name: "ShaderTool", targets: ["ShaderTool"])
     ],
@@ -31,13 +32,17 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "0.3.1"),
         .package(name: "LodePNG", url: "https://github.com/troughton/LodePNG-SPM", from: "0.0.1"),
         .package(url: "https://github.com/troughton/SwiftImGui", from: "1.7.32"),
-        .package(url: "https://github.com/troughton/SwiftMath", from: "5.1.2")
+        .package(url: "https://github.com/apple/swift-numerics", from: "0.0.6"),
     ],
     targets: [
         // FrameGraph compatibility libraries
         .target(name: "FrameGraphTextureIO", dependencies: ["SubstrateTextureIO"]),
         .target(name: "FrameGraphUtilities", dependencies: ["SubstrateUtilities"]),
         .target(name: "SwiftFrameGraph", dependencies: ["Substrate"]),
+        
+        // SubstrateMath
+        .target(name: "SubstrateMath", dependencies: [.product(name: "RealModule", package: "swift-numerics")]),
+        .testTarget(name: "SubstrateMathTests", dependencies: ["SubstrateMath", .product(name: "RealModule", package: "swift-numerics")]),
         
         // Substrate
         .target(name: "SubstrateImage", dependencies: [
@@ -73,7 +78,7 @@ let package = Package(
         .target(name: "CNativeFileDialog", exclude: ["CMakeLists.txt"]),
         .target(
             name: "AppFramework",
-            dependencies: ["SubstrateUtilities", "Substrate", "SwiftMath", .product(name: "ImGui", package: "SwiftImGui"), "CNativeFileDialog", "CSDL2"] + vulkanDependencies,
+            dependencies: ["SubstrateUtilities", "Substrate", "SubstrateMath", .product(name: "ImGui", package: "SwiftImGui"), "CNativeFileDialog", "CSDL2"] + vulkanDependencies,
             exclude: ["CMakeLists.txt", "Input/CMakeLists.txt", "UpdateScheduler/CMakeLists.txt", "Windowing/CMakeLists.txt"]),
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14

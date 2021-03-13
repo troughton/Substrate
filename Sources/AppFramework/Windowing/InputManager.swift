@@ -6,7 +6,7 @@
 //
 //
 
-import SwiftMath
+import SubstrateMath
 
 public struct RawInputState : InputSourceState {
     private var state : Float

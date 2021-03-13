@@ -37,7 +37,7 @@ include(CTest)
 
 include_directories(ModuleMaps/SubstrateCExtras)
 
-add_subdirectory(SwiftMath) 
+add_subdirectory(SubstrateMath) 
 add_subdirectory(swiftimgui)
 add_subdirectory(Sources)
 

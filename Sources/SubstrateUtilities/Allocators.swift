@@ -91,6 +91,13 @@ public final class Allocator {
     }
     
     @inlinable
+    public static func emplace<T>(value: T, allocator: AllocatorType) -> AllocatedHandle<T> {
+        let memory = self.allocate(type: T.self, capacity: 1, allocator: allocator)
+        memory.initialize(to: value)
+        return AllocatedHandle(pointer: memory)
+    }
+    
+    @inlinable
     public static func deallocate(_ memory: UnsafeMutableRawPointer, allocator: AllocatorType) {
         switch allocator {
         case .system:
@@ -125,3 +132,27 @@ public final class Allocator {
     }
 }
 
+@dynamicMemberLookup
+public struct AllocatedHandle<T> {
+    public let pointer: UnsafeMutablePointer<T>
+    
+    @inlinable
+    public init(pointer: UnsafeMutablePointer<T>) {
+        self.pointer = pointer
+    }
+    
+    @inlinable
+    public subscript<U>(dynamicMember keyPath: KeyPath<T, U>) -> U {
+        return self.pointer.pointee[keyPath: keyPath]
+    }
+    
+    @inlinable
+    public subscript<U>(dynamicMember keyPath: WritableKeyPath<T, U>) -> U {
+        get {
+            return self.pointer.pointee[keyPath: keyPath]
+        }
+        set {
+            self.pointer.pointee[keyPath: keyPath] = newValue
+        }
+    }
+}

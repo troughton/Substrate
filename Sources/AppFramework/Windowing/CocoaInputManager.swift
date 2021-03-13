@@ -10,7 +10,7 @@
 
 import AppKit
 import Carbon
-import SwiftMath
+import SubstrateMath
 import Cocoa
 import ImGui
 import CImGui
