@@ -70,6 +70,65 @@ extension Image where ComponentType == UInt8 {
     }
 }
 
+extension Image where ComponentType == UInt8 {
+    private func _convertPremultSRGBBlendedSRGBToPremultLinearBlendedSRGB() {
+        let alphaChannel = self.channelCount - 1
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let alpha = self[x, y, channel: alphaChannel]
+                for c in 0..<alphaChannel {
+                    let channelVal = self[x, y, channel: c]
+                    self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.premultSRGBBlendedSRGBToPremultLinearBlendedSRGB(alpha: alpha, value: channelVal))
+                }
+            }
+        }
+    }
+}
+
+extension Image where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
+    /// Converts to postmultiplied alpha, assuming that the source premultiplied alpha values were intended
+    /// to be blended in gamma space.
+    public mutating func convertPremultGammaBlendedToPostmultLinearBlended() {
+        precondition(self.alphaMode == .premultiplied)
+        if self.colorSpace == .linearSRGB { return }
+        
+        let colorSpace = self.colorSpace
+        self.reinterpretColor(as: .undefined)
+        self.convertToPostmultipliedAlpha()
+        self.reinterpretColor(as: colorSpace)
+    }
+    
+    @_specialize(kind: full, where ComponentType == UInt8)
+    @_specialize(kind: full, where ComponentType == UInt16)
+    @_specialize(kind: full, where ComponentType == UInt32)
+    public mutating func convertPremultGammaBlendedToPremultLinearBlended() {
+        precondition(self.alphaMode == .premultiplied)
+        if self.colorSpace == .linearSRGB { return }
+        
+        self.ensureUniqueness()
+        
+        if T.self == UInt8.self, self.colorSpace == .sRGB {
+            (self as! Image<UInt8>)._convertPremultSRGBBlendedSRGBToPremultLinearBlendedSRGB()
+            return
+        }
+        
+        let sourceColorSpace = self.colorSpace
+        
+        let alphaChannel = self.channelCount - 1
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let alpha = unormToFloat(self[x, y, channel: alphaChannel])
+                for c in 0..<alphaChannel {
+                    let floatVal = unormToFloat(self[x, y, channel: c])
+                    let postMultFloatVal = clamp(floatVal / alpha, min: 0.0, max: 1.0)
+                    let linearVal = ImageColorSpace.convert(postMultFloatVal, from: sourceColorSpace, to: .linearSRGB) * alpha
+                    self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(ImageColorSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
+                }
+            }
+        }
+    }
+}
+
 extension Image where ComponentType == Float {
     /// This method adjusts the texture values such that the results look more-or-less correct when blended in sRGB gamma space.
     /// The texture must already be in the sRGB color space and use premultiplied alpha, and the resulting texture will use postmultiplied alpha.
@@ -199,5 +258,14 @@ extension Image where ComponentType == Float {
                 self[x, y, channel: alphaChannel] = alpha
             }
         }
+    }
+    
+    /// Converts to postmultiplied alpha, assuming that the source premultiplied alpha values were intended
+    /// to be blended in gamma space.
+    public mutating func convertPremultGammaBlendedToPostmultLinearBlended() {
+        let colorSpace = self.colorSpace
+        self.reinterpretColor(as: .undefined)
+        self.convertToPostmultipliedAlpha()
+        self.reinterpretColor(as: colorSpace)
     }
 }

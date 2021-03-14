@@ -202,4 +202,22 @@ enum ColorSpaceLUTs {
         return postmultSRGBBlendedSRGBToPremultLinearBlendedSRGB_ColorLUT[Int(alpha) * 256 + Int(value)]
     }
     
+    // Converts from a premultiplied alpha RGB value that is designed to be blended in sRGB space
+    // to a premultiplied alpha RGB value in sRGB space that is designed to be blended in linear space.
+    static let premultSRGBBlendedSRGBToPremultLinearBlendedSRGB_ColorLUT: [UInt8] = {
+        return (0..<256 * 256).map { i in
+            let alpha = unormToFloat(UInt8(truncatingIfNeeded: i >> 8))
+            let value = UInt8(truncatingIfNeeded: i & 0xFF)
+            guard alpha > 0 && alpha < 1.0 else { return value }
+            
+            let floatVal = unormToFloat(value)
+            let postMultFloatVal = clamp(floatVal / alpha, min: 0.0, max: 1.0)
+            let linearVal = ImageColorSpace.convert(postMultFloatVal, from: .sRGB, to: .linearSRGB) * alpha
+            return floatToUnorm(ImageColorSpace.convert(linearVal, from: .linearSRGB, to: .sRGB), type: UInt8.self)
+        }
+    }()
+    
+    static func premultSRGBBlendedSRGBToPremultLinearBlendedSRGB(alpha: UInt8, value: UInt8) -> UInt8 {
+        return premultSRGBBlendedSRGBToPremultLinearBlendedSRGB_ColorLUT[Int(alpha) * 256 + Int(value)]
+    }
 }
