@@ -117,6 +117,11 @@ public struct RenderBackend {
     }
     
     @inlinable
+    public static var isInitialised: Bool {
+        return _backend != nil
+    }
+    
+    @inlinable
     public static func materialisePersistentTexture(_ texture: Texture) -> Bool {
         return _backend.materialisePersistentTexture(texture)
     }
