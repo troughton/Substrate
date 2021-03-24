@@ -339,7 +339,7 @@ extension Image where ComponentType == UInt8 {
 }
 
 extension Image where ComponentType == UInt16 {
-    public func writePNG(to url: URL, compressionSettings: PNGCompressionSettings = .default) throws {
+    public func pngData(compressionSettings: PNGCompressionSettings = .default) throws -> Data {
         var texture = self
         texture.convertToPostmultipliedAlpha()
         
@@ -376,7 +376,11 @@ extension Image where ComponentType == UInt16 {
             throw TextureSaveError.errorWritingFile(error.map { String(cString: $0) } ?? "(no error message)")
         }
         
-        try Data(bytesNoCopy: UnsafeMutableRawPointer(outBuffer), count: outSize, deallocator: .free).write(to: url)
+        return Data(bytesNoCopy: UnsafeMutableRawPointer(outBuffer), count: outSize, deallocator: .free)
+    }
+    
+    public func writePNG(to url: URL, compressionSettings: PNGCompressionSettings = .default) throws {
+        try self.pngData(compressionSettings: compressionSettings).write(to: url)
     }
 }
 
