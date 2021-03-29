@@ -246,7 +246,7 @@ extension Image where ComponentType == Int8 {
     }
     
     public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
-        let fileInfo = try ImageFileInfo(format: .png, data: data)
+        let fileInfo = try ImageFileInfo(format: nil, data: data)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         self = try data.withUnsafeBytes { data in
