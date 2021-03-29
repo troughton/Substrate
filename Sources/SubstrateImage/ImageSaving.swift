@@ -385,6 +385,23 @@ extension Image where ComponentType == UInt16 {
 }
 
 
+public enum EXRPixelType {
+    case half
+    case float
+    case uint
+    
+    fileprivate var tinyEXRType: Int32 {
+        switch self {
+        case .half:
+            return TINYEXR_PIXELTYPE_HALF
+        case .float:
+            return TINYEXR_PIXELTYPE_FLOAT
+        case .uint:
+            return TINYEXR_PIXELTYPE_UINT
+        }
+    }
+}
+
 extension Image where ComponentType == Float {
     
     public func writeHDR(to url: URL) throws {
@@ -394,15 +411,113 @@ extension Image where ComponentType == Float {
         }
     }
     
-    public func writeEXR(to url: URL) throws {
+    func withEXRImage<R>(pixelType: EXRPixelType, _ perform: (_ image: UnsafePointer<EXRImage>, _ header: UnsafePointer<EXRHeader>) throws -> R) rethrows -> R {
+        var header = EXRHeader()
+        InitEXRHeader(&header)
+
+        var image = EXRImage()
+        InitEXRImage(&image)
+
+        image.num_channels = Int32(self.channelCount)
+        image.width = Int32(self.width)
+        image.height = Int32(self.height)
+        
+        header.num_channels = Int32(self.channelCount);
+        header.channels = .allocate(capacity: self.channelCount)
+        
+        
+        // Must be BGR(A) order, since most of EXR viewers expect this channel order.
+        if self.channelCount >= 3 {
+            for (i, char) in "BGR".enumerated() {
+                header.channels[i].name.0 = CChar(char.unicodeScalars.first!.value)
+                header.channels[i].name.1 = 0
+            }
+        } else {
+            for (i, char) in zip(0..<self.channelCount, "RGBA") {
+                header.channels[i].name.0 = CChar(char.unicodeScalars.first!.value)
+                header.channels[i].name.1 = 0
+            }
+        }
+        
+        if self.channelCount >= 4 {
+            header.channels[3].name.0 = CChar("A".unicodeScalars.first!.value)
+            header.channels[3].name.1 = 0
+        }
+
+        header.pixel_types = .allocate(capacity: self.channelCount)
+        header.requested_pixel_types = .allocate(capacity: self.channelCount)
+        for i in 0..<self.channelCount {
+            header.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT; // pixel type of input image
+            header.requested_pixel_types[i] = pixelType.tinyEXRType // pixel type of output image to be stored in .EXR
+        }
+        
+        defer {
+            header.channels.deallocate()
+            header.pixel_types.deallocate()
+            header.requested_pixel_types.deallocate()
+        }
+        
+        var imageBuffer = [Float](unsafeUninitializedCapacity: self.width * self.height * self.channelCount) { (buffer, count) in
+            count = self.width * self.height * self.channelCount
+        
+            self.withUnsafeBufferPointer { sourceBuffer in
+                for channel in 0..<self.channelCount {
+                    let destination = buffer.baseAddress! + channel * self.width * self.height
+                    let sourceStride = self.channelCount
+                    
+                    for i in 0..<self.width * self.height {
+                        destination[i] = buffer[channel + i * sourceStride]
+                    }
+                }
+            }
+        }
+        
+        let result = try imageBuffer.withUnsafeMutableBytes { (imageBuffer) -> R in
+            var imagePointers = (0..<self.channelCount).map { (imageBuffer.baseAddress! + $0 * self.width * self.height * MemoryLayout<Float>.stride).assumingMemoryBound(to: UInt8.self) as UnsafeMutablePointer<UInt8>? }
+            
+            if self.channelCount == 3 || self.channelCount == 4 {
+                imagePointers.swapAt(0, 2) // BGRA instead of RGBA
+            }
+            
+            return try imagePointers.withUnsafeMutableBufferPointer { imagePointers -> R in
+                image.images = imagePointers.baseAddress
+                return try perform(&image, &header)
+            }
+        }
+        
+        return result
+    }
+    
+    public func exrData(pixelType: EXRPixelType = .float) throws -> Data {
         var texture = self
         texture.convert(toColorSpace: .linearSRGB)
         texture.convertToPremultipliedAlpha()
         
-        var error : UnsafePointer<Int8>? = nil
-        let exrResult = SaveEXR(texture.storage.data.baseAddress, Int32(texture.width), Int32(texture.height), Int32(texture.channelCount), 0, url.path, &error)
-        if exrResult < 0 {
-            throw TextureSaveError.errorWritingFile(error.map { String(cString: $0) } ?? "(no error message)")
+        return try texture.withEXRImage(pixelType: pixelType) { (image, header) -> Data in
+            var memory: UnsafeMutablePointer<UInt8>? = nil
+            var error : UnsafePointer<Int8>? = nil
+            let dataSize = SaveEXRImageToMemory(image, header, &memory, &error)
+            
+            if memory == nil || error != nil {
+                throw TextureSaveError.errorWritingFile(error.map { String(cString: $0) } ?? "(no error message)")
+            }
+            
+            return Data(bytesNoCopy: memory!, count: dataSize, deallocator: .free)
+        }
+    }
+    
+    public func writeEXR(to url: URL, pixelType: EXRPixelType = .float) throws {
+        var texture = self
+        texture.convert(toColorSpace: .linearSRGB)
+        texture.convertToPremultipliedAlpha()
+        
+        try texture.withEXRImage(pixelType: pixelType) { (image, header) -> Void in
+            var error : UnsafePointer<Int8>? = nil
+            let result = SaveEXRImageToFile(image, header, url.path, &error)
+            
+            if result != TINYEXR_SUCCESS || error != nil {
+                throw TextureSaveError.errorWritingFile(error.map { String(cString: $0) } ?? "(no error message)")
+            }
         }
     }
 }
