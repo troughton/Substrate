@@ -301,12 +301,12 @@ extension Image where ComponentType == UInt16 {
     
     @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
     public init(fileAt url: URL, colorSpace: ImageColorSpace, premultipliedAlpha: Bool) throws {
-        try self.init(fileAt: url, colorSpace: colorSpace, premultipliedAlpha: premultipliedAlpha)
+        try self.init(fileAt: url, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
     @available(*, deprecated, renamed: "init(fileAt:colorSpace:alphaMode:)")
     public init(fileAt url: URL, colourSpace: ImageColorSpace, premultipliedAlpha: Bool) throws {
-        try self.init(fileAt: url, colorSpace: colourSpace, premultipliedAlpha: premultipliedAlpha)
+        try self.init(fileAt: url, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
 }
 
