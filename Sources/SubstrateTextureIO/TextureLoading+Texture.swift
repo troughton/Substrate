@@ -185,6 +185,13 @@ extension Texture {
         try self.fillInternal(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, options: options, isPartiallyInitialised: true)
     }
     
+    public init(decodingImageData imageData: Data, colorSpace: ImageColorSpace = .undefined, sourceAlphaMode: ImageAlphaMode = .inferred, gpuAlphaMode: ImageAlphaMode = .none, mipmapped: Bool, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, options: TextureLoadingOptions = .default) throws {
+        let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
+        
+        self = Texture._createPersistentTextureWithoutDescriptor(flags: .persistent)
+        try self.fillInternal(imageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, options: options, isPartiallyInitialised: true)
+    }
+    
     @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:alphaMode:storageMode:usage:)")
     public init(fileAt url: URL, mipmapped: Bool, colorSpace: ImageColorSpace, premultipliedAlpha: Bool, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
         try self.init(fileAt: url, colorSpace: colorSpace, sourceAlphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
@@ -199,26 +206,17 @@ extension Texture {
         return try textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
     }
     
-    public static func loadSourceImage(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> AnyImage {
-        if url.pathExtension.lowercased() == "exr" {
-            var textureData = try Image<Float>(exrAt: url)
-            if colorSpace != .undefined {
-                textureData.reinterpretColor(as: colorSpace)
-            } else if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
-                textureData.reinterpretColor(as: .sRGB)
-            }
-            
-            let pixelFormat = textureData.preferredPixelFormat
-            guard pixelFormat != .invalid else {
-                throw TextureLoadingError.noSupportedPixelFormat
-            }
-            
-            if options.contains(.autoConvertColorSpace) {
-                if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
-                    textureData.convert(toColorSpace: .sRGB)
-                } else if !pixelFormat.isSRGB {
-                    textureData.convert(toColorSpace: .linearSRGB)
-                }
+    private static func loadSourceImage(_ image: Image<UInt8>, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> Image<UInt8> {
+        var textureData = image
+        
+        if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
+            textureData.reinterpretColor(as: .sRGB)
+        }
+        
+        if textureData.alphaMode != .none {
+            if options.contains(.assumeSourceImageUsesGammaSpaceBlending), textureData.colorSpace == .sRGB {
+                textureData.convertToPostmultipliedAlpha()
+                textureData.convertPostmultSRGBBlendedSRGBToPremultLinearBlendedSRGB()
             }
             
             switch gpuAlphaMode {
@@ -229,147 +227,171 @@ extension Texture {
             default:
                 break
             }
-            
-            return textureData
+        }
+        
+        if (options.contains(.autoExpandSRGBToRGBA) && textureData.colorSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
+            var needsChannelExpansion = true
+            if (textureData.channelCount == 1 && RenderBackend.supportsPixelFormat(.r8Unorm_sRGB)) ||
+                (textureData.channelCount == 2 && RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB)) {
+                needsChannelExpansion = false
+            }
+            if needsChannelExpansion {
+                let sourceData = textureData
+                textureData = Image<UInt8>(width: sourceData.width, height: sourceData.height, channels: 4, colorSpace: sourceData.colorSpace, alphaMode: sourceData.alphaMode)
+                
+                if sourceData.channelCount == 1 {
+                    sourceData.forEachPixel { (x, y, channel, val) in
+                        textureData[x, y] = SIMD4(val, val, val, .max)
+                    }
+                } else if sourceData.channelCount == 2 {
+                    sourceData.forEachPixel { (x, y, channel, val) in
+                        if channel == 0 {
+                            textureData[x, y] = SIMD4(val, val, val, .max)
+                        } else {
+                            textureData[x, y, channel: 3] = val
+                        }
+                    }
+                } else {
+                    precondition(sourceData.channelCount == 3)
+                    sourceData.forEachPixel { (x, y, channel, val) in
+                        textureData[x, y, channel: channel] = val
+                        textureData[x, y, channel: 3] = .max
+                    }
+                }
+            }
+        }
+        
+        let pixelFormat = textureData.preferredPixelFormat
+        guard pixelFormat != .invalid else {
+            throw TextureLoadingError.noSupportedPixelFormat
+        }
+        
+        if options.contains(.autoConvertColorSpace) {
+            if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
+                textureData.convert(toColorSpace: .sRGB)
+            } else if !pixelFormat.isSRGB {
+                textureData.convert(toColorSpace: .linearSRGB)
+            }
+        }
+        
+        return textureData
+    }
+    
+    private static func loadSourceImage(_ image: Image<UInt16>, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> Image<UInt16> {
+        var textureData = image
+        if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
+            textureData.reinterpretColor(as: .sRGB)
+        }
+        
+        let pixelFormat = textureData.preferredPixelFormat
+        guard pixelFormat != .invalid else {
+            throw TextureLoadingError.noSupportedPixelFormat
+        }
+        
+        if textureData.alphaMode != .none {
+            switch gpuAlphaMode {
+            case .premultiplied:
+                textureData.convertToPremultipliedAlpha()
+            case .postmultiplied:
+                textureData.convertToPostmultipliedAlpha()
+            default:
+                break
+            }
+        }
+        
+        if options.contains(.autoConvertColorSpace) {
+            if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
+                textureData.convert(toColorSpace: .sRGB)
+            } else if !pixelFormat.isSRGB {
+                textureData.convert(toColorSpace: .linearSRGB)
+            }
+        }
+        
+        return textureData
+    }
+    
+    private static func loadSourceImage(_ image: Image<Float>, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> Image<Float> {
+        var textureData = image
+        if colorSpace != .undefined {
+            textureData.reinterpretColor(as: colorSpace)
+        } else if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
+            textureData.reinterpretColor(as: .sRGB)
+        }
+        
+        let pixelFormat = textureData.preferredPixelFormat
+        guard pixelFormat != .invalid else {
+            throw TextureLoadingError.noSupportedPixelFormat
+        }
+        
+        if options.contains(.autoConvertColorSpace) {
+            if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
+                textureData.convert(toColorSpace: .sRGB)
+            } else if !pixelFormat.isSRGB {
+                textureData.convert(toColorSpace: .linearSRGB)
+            }
+        }
+        
+        if textureData.alphaMode != .none {
+            switch gpuAlphaMode {
+            case .premultiplied:
+                textureData.convertToPremultipliedAlpha()
+            case .postmultiplied:
+                textureData.convertToPostmultipliedAlpha()
+            default:
+                break
+            }
+        }
+        
+        return textureData
+    }
+    
+    public static func loadSourceImage(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> AnyImage {
+        if url.pathExtension.lowercased() == "exr" {
+            let textureData = try Image<Float>(exrAt: url)
+            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
         }
         
         let fileInfo = try ImageFileInfo(url: url)
         
-        let hasAlphaChannel = fileInfo.channelCount == 2 || fileInfo.channelCount == 4
         let is16Bit = fileInfo.bitDepth == 16
         let isHDR = fileInfo.isFloatingPoint
         
         if isHDR {
-            var textureData = try Image<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
-            if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
-                textureData.reinterpretColor(as: .sRGB)
-            }
-            
-            let pixelFormat = textureData.preferredPixelFormat
-            guard pixelFormat != .invalid else {
-                throw TextureLoadingError.noSupportedPixelFormat
-            }
-            if options.contains(.autoConvertColorSpace) {
-                if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
-                    textureData.convert(toColorSpace: .sRGB)
-                } else if !pixelFormat.isSRGB {
-                    textureData.convert(toColorSpace: .linearSRGB)
-                }
-            }
-            
-            if hasAlphaChannel {
-                switch gpuAlphaMode {
-                case .premultiplied:
-                    textureData.convertToPremultipliedAlpha()
-                case .postmultiplied:
-                    textureData.convertToPostmultipliedAlpha()
-                default:
-                    break
-                }
-            }
-            
-            return textureData
+            let textureData = try Image<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
             
         } else if is16Bit {
-            var textureData = try Image<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
-            if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
-                textureData.reinterpretColor(as: .sRGB)
-            }
-            
-            let pixelFormat = textureData.preferredPixelFormat
-            guard pixelFormat != .invalid else {
-                throw TextureLoadingError.noSupportedPixelFormat
-            }
-            
-            if options.contains(.autoConvertColorSpace) {
-                if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
-                    textureData.convert(toColorSpace: .sRGB)
-                } else if !pixelFormat.isSRGB {
-                    textureData.convert(toColorSpace: .linearSRGB)
-                }
-            }
-            
-            if hasAlphaChannel {
-                switch gpuAlphaMode {
-                case .premultiplied:
-                    textureData.convertToPremultipliedAlpha()
-                case .postmultiplied:
-                    textureData.convertToPostmultipliedAlpha()
-                default:
-                    break
-                }
-            }
-            
-            return textureData
+            let textureData = try Image<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
             
         } else {
-            var textureData = try Image<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
-            if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
-                textureData.reinterpretColor(as: .sRGB)
-            }
+            let textureData = try Image<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+        }
+    }
+    
+    public static func loadSourceImage(decodingImageData imageData: Data, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> AnyImage {
+        if let _ = try? ImageFileInfo(format: .exr, data: imageData) {
+            let textureData = try Image<Float>(exrData: imageData)
+            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+        }
+        
+        let fileInfo = try ImageFileInfo(data: imageData)
+        
+        let is16Bit = fileInfo.bitDepth == 16
+        let isHDR = fileInfo.isFloatingPoint
+        
+        if isHDR {
+            let textureData = try Image<Float>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
             
-            if hasAlphaChannel {
-                if options.contains(.assumeSourceImageUsesGammaSpaceBlending), textureData.colorSpace == .sRGB {
-                    textureData.convertToPostmultipliedAlpha()
-                    textureData.convertPostmultSRGBBlendedSRGBToPremultLinearBlendedSRGB()
-                }
-                
-                switch gpuAlphaMode {
-                case .premultiplied:
-                    textureData.convertToPremultipliedAlpha()
-                case .postmultiplied:
-                    textureData.convertToPostmultipliedAlpha()
-                default:
-                    break
-                }
-            }
+        } else if is16Bit {
+            let textureData = try Image<UInt16>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
             
-            if (options.contains(.autoExpandSRGBToRGBA) && textureData.colorSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
-                var needsChannelExpansion = true
-                if (textureData.channelCount == 1 && RenderBackend.supportsPixelFormat(.r8Unorm_sRGB)) ||
-                    (textureData.channelCount == 2 && RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB)) {
-                    needsChannelExpansion = false
-                }
-                if needsChannelExpansion {
-                    let sourceData = textureData
-                    textureData = Image<UInt8>(width: sourceData.width, height: sourceData.height, channels: 4, colorSpace: sourceData.colorSpace, alphaMode: sourceData.alphaMode)
-                    
-                    if sourceData.channelCount == 1 {
-                        sourceData.forEachPixel { (x, y, channel, val) in
-                            textureData[x, y] = SIMD4(val, val, val, .max)
-                        }
-                    } else if sourceData.channelCount == 2 {
-                        sourceData.forEachPixel { (x, y, channel, val) in
-                            if channel == 0 {
-                                textureData[x, y] = SIMD4(val, val, val, .max)
-                            } else {
-                                textureData[x, y, channel: 3] = val
-                            }
-                        }
-                    } else {
-                        precondition(sourceData.channelCount == 3)
-                        sourceData.forEachPixel { (x, y, channel, val) in
-                            textureData[x, y, channel: channel] = val
-                            textureData[x, y, channel: 3] = .max
-                        }
-                    }
-                }
-            }
-            
-            let pixelFormat = textureData.preferredPixelFormat
-            guard pixelFormat != .invalid else {
-                throw TextureLoadingError.noSupportedPixelFormat
-            }
-            
-            if options.contains(.autoConvertColorSpace) {
-                if pixelFormat.isSRGB, textureData.colorSpace != .sRGB {
-                    textureData.convert(toColorSpace: .sRGB)
-                } else if !pixelFormat.isSRGB {
-                    textureData.convert(toColorSpace: .linearSRGB)
-                }
-            }
-            
-            return textureData
+        } else {
+            let textureData = try Image<UInt8>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
+            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
         }
     }
 
@@ -390,7 +412,24 @@ extension Texture {
         }
     }
     
+    private func fillInternal(imageData: Data, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) throws {
+        precondition(storageMode != .private || usage.contains(.blitDestination))
+        
+        let textureData = try Texture.loadSourceImage(decodingImageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options)
+        
+        if isPartiallyInitialised {
+            let descriptor = TextureDescriptor(type: .type2D, format: textureData.preferredPixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
+            self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
+        }
+        
+        try textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
+    }
+    
     public func fill(fromFileAt url: URL, colorSpace: ImageColorSpace = .undefined, sourceAlphaMode: ImageAlphaMode = .inferred, gpuAlphaMode: ImageAlphaMode = .none, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
         try self.fillInternal(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: self.descriptor.mipmapLevelCount > 1, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
+    }
+    
+    public func fill(decodingImageData imageData: Data, colorSpace: ImageColorSpace = .undefined, sourceAlphaMode: ImageAlphaMode = .inferred, gpuAlphaMode: ImageAlphaMode = .none, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) throws {
+        try self.fillInternal(imageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: self.descriptor.mipmapLevelCount > 1, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
     }
 }

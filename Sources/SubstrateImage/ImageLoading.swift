@@ -361,7 +361,13 @@ extension Image where ComponentType == Float {
     }
     
     public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred) throws {
+        if let exrImage = try? Image<Float>(exrData: data) {
+            self = exrImage
+            return
+        }
+        
         let fileInfo = try ImageFileInfo(data: data)
+                
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         
         let channels = fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
