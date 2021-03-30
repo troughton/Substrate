@@ -862,9 +862,6 @@ public final class RenderGraph {
             GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
         }
         
-        os_signpost(.begin, log: Self.pointsOfInterestHandler, name: "RenderGraph.execute")
-        defer { os_signpost(.end, log: Self.pointsOfInterestHandler, name: "RenderGraph.execute") }
-        
         guard !self.renderPasses.isEmpty else {
             onSubmission?()
             onGPUCompletion?()
@@ -878,9 +875,7 @@ public final class RenderGraph {
             return
         }
         
-        os_signpost(.begin, log: Self.pointsOfInterestHandler, name: "RenderGraph accessSemaphore wait")
         self.context.accessSemaphore.wait()
-        os_signpost(.end, log: Self.pointsOfInterestHandler, name: "RenderGraph accessSemaphore wait")
         
         RenderGraph.activeRenderGraphSemaphore.wait()
         RenderGraph.activeRenderGraph = self
@@ -920,7 +915,6 @@ public final class RenderGraph {
             completionQueue.forEach { $0() }
         }
         
-        os_signpost(.begin, log: Self.pointsOfInterestHandler, name: "RenderGraph context executeRenderGraph")
         #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
         autoreleasepool {
             self.context.executeRenderGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
@@ -928,7 +922,6 @@ public final class RenderGraph {
         #else
         self.context.executeRenderGraph(passes: passes, usedResources: self.usedResources, dependencyTable: dependencyTable, completion: completion)
         #endif
-        os_signpost(.end, log: Self.pointsOfInterestHandler, name: "RenderGraph context executeRenderGraph")
         
         // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
         passes.forEach {

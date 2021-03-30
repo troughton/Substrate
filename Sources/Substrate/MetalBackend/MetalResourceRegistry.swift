@@ -652,12 +652,10 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
 //            print("allocateWindowHandleTexture: \(Double(elapsed) * 1e-6)")
             lastTimeWindowHandleCalled = currentTime
             
-            os_signpost(.begin, log: RenderGraph.pointsOfInterestHandler, name: "allocateWindowHandleTexture")
             guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
                   let mtlDrawable = windowReference.nextDrawable() else {
                 throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
             }
-            os_signpost(.end, log: RenderGraph.pointsOfInterestHandler, name: "allocateWindowHandleTexture")
             
             let drawableTexture = mtlDrawable.texture
             if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
