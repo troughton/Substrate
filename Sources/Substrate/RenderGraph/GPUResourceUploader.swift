@@ -24,8 +24,8 @@ public final class GPUResourceUploader {
     
     static let lock = DispatchSemaphore(value: 1)
     @usableFromInline static var renderGraph : RenderGraph! = nil
-    private static var enqueuedBytes = 0
     private static var maxUploadSize = 128 * 1024 * 1024
+    private static var enqueuedPasses = [UploadResourcePass]()
     
     @usableFromInline
     final class UploadResourcePass : BlitRenderPass {
@@ -57,8 +57,20 @@ public final class GPUResourceUploader {
     private init() {}
 
     private static func flushHoldingLock() {
-        self.renderGraph.execute()
-        self.enqueuedBytes = 0
+        var enqueuedBytes = 0
+        for pass in self.enqueuedPasses {
+            if enqueuedBytes > 0, enqueuedBytes + pass.stagingBufferLength > self.maxUploadSize {
+                self.renderGraph.execute()
+                enqueuedBytes = 0
+            }
+            self.renderGraph.addPass(pass)
+            enqueuedBytes += pass.stagingBufferLength
+        }
+        self.enqueuedPasses.removeAll()
+        
+        if self.renderGraph.hasEnqueuedPasses {
+            self.renderGraph.execute()
+        }
     }
     
     public static func flush() {
@@ -82,12 +94,7 @@ public final class GPUResourceUploader {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
         self.lock.withSemaphore {
-            if self.enqueuedBytes + stagingBufferLength >= self.maxUploadSize {
-                self.flushHoldingLock()
-            }
-            
-            renderGraph.addPass(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
-            self.enqueuedBytes += stagingBufferLength
+            self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
         }
             
     }
