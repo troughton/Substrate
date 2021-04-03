@@ -1,7 +1,5 @@
 # Substrate
 
-_Note: The current version of Substrate on `master` only has support for Metal and does not work with Vulkan. If you want to use the Vulkan backend, the `Vulkan` branch contains the last version tested to be working, although its API has fallen significantly behind `master`. We plan to restore the Vulkan backend to a working state in the future._
-
 ## What is this?
 
 In short: this is a way to code against a higher-level, Swift-native, reduced-friction version of the Metal rendering API and have your rendering code run in a fairly efficient manner, cross-platform on both Metal and Vulkan.
