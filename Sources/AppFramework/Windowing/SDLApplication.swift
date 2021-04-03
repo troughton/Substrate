@@ -61,7 +61,7 @@ public class SDLMetalWindow : SDLWindow {
     var metalView : SDL_MetalView? = nil
     
     public convenience init(id: Int, title: String, dimensions: WindowSize, flags: WindowCreationFlags, renderGraph: RenderGraph) {
-        let options : SDLWindowOptions = [.allowHighDpi, SDLWindowOptions(flags)]
+        let options : SDLWindowOptions = [.allowHighDpi, .metal, SDLWindowOptions(flags)]
         let sdlWindowPointer = SDL_CreateWindow(title, Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(SDL_WINDOWPOS_UNDEFINED_MASK), Int32(dimensions.width), Int32(dimensions.height), options.rawValue)
             
         self.init(id: id, title: title, dimensions: dimensions, sdlWindowPointer: sdlWindowPointer, renderGraph: renderGraph)

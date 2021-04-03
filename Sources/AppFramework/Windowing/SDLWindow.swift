@@ -297,6 +297,9 @@ public struct SDLWindowOptions: OptionSet {
     // window supports Vulkan
     public static let vulkan = SDLWindowOptions(rawValue: SDLWindowOptions.RawValue(SDL_WINDOW_VULKAN.rawValue))
 
+    // window supports Metal
+    public static let metal = SDLWindowOptions(rawValue: SDLWindowOptions.RawValue(SDL_WINDOW_METAL.rawValue))
+
 }
 
 #endif
