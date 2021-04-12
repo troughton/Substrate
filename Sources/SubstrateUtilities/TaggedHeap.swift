@@ -8,8 +8,12 @@
 
 import Foundation
 
-// For debugging: use the system allocator rather than the tagged heap.
-@usableFromInline let useSystemAllocator = false
+extension UnsafeMutableRawBufferPointer {
+    fileprivate func contains(_ pointer: UnsafeRawPointer) -> Bool {
+        guard let start = self.baseAddress else { return false }
+        return pointer >= UnsafeRawPointer(start) && pointer < UnsafeRawPointer(start + self.count)
+    }
+}
 
 public enum TaggedHeap {
     // Block based allocator
@@ -21,8 +25,15 @@ public enum TaggedHeap {
     // A per-tag list of blocks assigned to that tag. Could use a dictionary of [Tag : BitSet] and a pool of free [BitSet]s? Means data is malloc'ed instead, but does that really matter?
     // Also need a spin-lock.
     
+    public enum Strategy {
+        case suballocate(capacity: Int)
+        case allocatePerBlock
+    }
+    
     public typealias Tag = UInt64
     public static let blockSize = 2 * 1024 * 1024
+    
+    static var strategy: Strategy = .allocatePerBlock
     
     static var blockCount : Int = 0
     static var bitSetStorageCount : Int = 0
@@ -33,6 +44,8 @@ public enum TaggedHeap {
     static var blocksByTag : [Tag : BitSet]! = nil
     static var freeBitsets : [BitSet]! = nil
     
+    static var allocationsByTag : [Tag : [UnsafeMutableRawBufferPointer]] = [:]
+    
     #if os(macOS) || targetEnvironment(macCatalyst)
     public static let defaultHeapCapacity = 512 * 1024 * 1024 // 2 * 1024 * 1024 * 1024
     #else
@@ -40,14 +53,23 @@ public enum TaggedHeap {
     #endif
     
     public static func initialise(capacity: Int = TaggedHeap.defaultHeapCapacity) {
-        self.blockCount = (capacity + TaggedHeap.blockSize - 1) / TaggedHeap.blockSize
-        self.bitSetStorageCount = (self.blockCount + BitSet.bitsPerElement) / BitSet.bitsPerElement
-        
-        self.heapMemory = UnsafeMutableRawPointer.allocate(byteCount: TaggedHeap.blockSize * blockCount, alignment: TaggedHeap.blockSize)
-        
-        self.filledBlocks = AtomicBitSet(storageCount: bitSetStorageCount)
-        self.blocksByTag = [:]
-        self.freeBitsets = []
+        self.initialise(strategy: .suballocate(capacity: capacity))
+    }
+    
+    public static func initialise(strategy: Strategy = .suballocate(capacity: TaggedHeap.defaultHeapCapacity)) {
+        self.strategy = strategy
+        switch strategy {
+        case .allocatePerBlock:
+            self.allocationsByTag = [:]
+        case .suballocate(let capacity):
+            self.blockCount = (capacity + TaggedHeap.blockSize - 1) / TaggedHeap.blockSize
+            self.bitSetStorageCount = (self.blockCount + BitSet.bitsPerElement) / BitSet.bitsPerElement
+            
+            self.heapMemory = UnsafeMutableRawPointer.allocate(byteCount: TaggedHeap.blockSize * blockCount, alignment: TaggedHeap.blockSize)
+            self.filledBlocks = AtomicBitSet(storageCount: bitSetStorageCount)
+            self.blocksByTag = [:]
+            self.freeBitsets = []
+        }
     }
     
     static func findContiguousBlock(count: Int) -> Int {
@@ -71,11 +93,19 @@ public enum TaggedHeap {
     }
     
     public static func allocateBlocks(tag: Tag, count: Int) -> UnsafeMutableRawPointer {
+        if case .allocatePerBlock = self.strategy {
+            let pointer = UnsafeMutableRawBufferPointer.allocate(byteCount: TaggedHeap.blockSize * count, alignment: TaggedHeap.blockSize)
+            self.spinLock.withLock {
+                self.allocationsByTag[tag, default: []].append(pointer)
+            }
+            return pointer.baseAddress!
+        }
+        
         var blockIndex = self.findContiguousBlock(count: count)
         if blockIndex == .max {
             print("TaggedHeap error: no free blocks available! Reallocating a heap with double the capacity; all previous allocations will be leaked.")
             self.spinLock.withLock {
-                self.initialise(capacity: 2 * self.blockCount * self.blockSize)
+                self.initialise(strategy: .suballocate(capacity: 2 * self.blockCount * self.blockSize))
             }
             return self.allocateBlocks(tag: tag, count: count)
         }
@@ -96,6 +126,17 @@ public enum TaggedHeap {
     /// For debugging only; not efficient.
     public static func tag(for pointer: UnsafeRawPointer) -> Tag? {
         return self.spinLock.withLock {
+            if case .allocatePerBlock = self.strategy {
+                for (tag, allocationList) in self.allocationsByTag {
+                    for allocation in allocationList {
+                        if allocation.contains(pointer) {
+                            return tag
+                        }
+                    }
+                }
+                return nil
+            }
+    
             let block = (pointer - UnsafeRawPointer(self.heapMemory!)) / self.blockSize
             assert(block >= 0 && block < self.blockCount)
             for (tag, blocks) in self.blocksByTag {
@@ -110,6 +151,12 @@ public enum TaggedHeap {
     /// For debugging only; not efficient.
     public static func tagMatches(_ tag: Tag, pointer: UnsafeRawPointer) -> Bool {
         return self.spinLock.withLock {
+            if case .allocatePerBlock = self.strategy {
+                return self.allocationsByTag[tag]?.contains(where: {
+                    $0.contains(pointer)
+                }) ?? false
+            }
+            
             let block = (pointer - UnsafeRawPointer(self.heapMemory!)) / self.blockSize
             assert(block >= 0 && block < self.blockCount)
             
@@ -121,6 +168,14 @@ public enum TaggedHeap {
     }
     
     public static func free(tag: Tag) {
+        if case .allocatePerBlock = self.strategy {
+            self.spinLock.withLock {
+                guard let allocations = self.allocationsByTag.removeValue(forKey: tag) else { return }
+                allocations.forEach { $0.deallocate() }
+            }
+            return
+        }
+        
         // Should use a bit-list to track all blocks associated with a specific tag.
         self.spinLock.withLock {
             guard let blocks = self.blocksByTag.removeValue(forKey: tag) else { return }
@@ -193,10 +248,6 @@ public struct LockingTagAllocator {
     
     @inlinable
     public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
-        if useSystemAllocator {
-            return .allocate(byteCount: bytes, alignment: alignment)
-        }
-        
         self.header.pointee.lock.lock()
         defer { self.header.pointee.lock.unlock() }
         return self.header.pointee.allocate(bytes: bytes, alignment: alignment)
@@ -204,27 +255,16 @@ public struct LockingTagAllocator {
     
     @inlinable
     public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
-        if useSystemAllocator {
-            return .allocate(capacity: capacity)
-        }
-        
         return self.allocate(bytes: capacity * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment).bindMemory(to: T.self, capacity: capacity)
     }
     
     @inlinable
     public func deallocate(_ pointer: UnsafeMutableRawPointer) {
-        if useSystemAllocator {
-            return pointer.deallocate()
-        }
-        
         // No-op.
     }
 
     @inlinable
     public func deallocate<T>(_ pointer: UnsafeMutablePointer<T>) {
-        if useSystemAllocator {
-            return pointer.deallocate()
-        }
         // No-op.
     }
 }
@@ -292,9 +332,6 @@ public struct TagAllocator {
     
     @inlinable
     public func allocate(bytes: Int, alignment: Int, threadIndex: Int) -> UnsafeMutableRawPointer {
-        if useSystemAllocator {
-            return .allocate(byteCount: bytes, alignment: alignment)
-        }
         let blockPtr = self.blocks.advanced(by: threadIndex)
         let alignedOffset = (blockPtr.pointee.offset + alignment - 1) & ~(alignment - 1)
         if let memory = blockPtr.pointee.memory, alignedOffset + bytes <= blockPtr.pointee.size {
@@ -318,17 +355,11 @@ public struct TagAllocator {
     
     @inlinable
     public func deallocate(_ pointer: UnsafeMutableRawPointer) {
-        if useSystemAllocator {
-            return pointer.deallocate()
-        }
         // No-op.
     }
     
     @inlinable
     public func deallocate<T>(_ pointer: UnsafeMutablePointer<T>) {
-        if useSystemAllocator {
-            return pointer.deallocate()
-        }
         // No-op.
     }
     
@@ -345,33 +376,21 @@ public struct TagAllocator {
         
         @inlinable
         public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
-            if useSystemAllocator {
-                return .allocate(byteCount: bytes, alignment: alignment)
-            }
             return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: DynamicThreadView.threadIndexRetrievalFunc())
         }
         
         @inlinable
         public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
-            if useSystemAllocator {
-                return .allocate(capacity: capacity)
-            }
             return self.allocator.allocate(capacity: capacity, threadIndex: DynamicThreadView.threadIndexRetrievalFunc())
         }
 
         @inlinable
         public func deallocate(_ pointer: UnsafeMutableRawPointer) {
-            if useSystemAllocator {
-                return pointer.deallocate()
-            }
             // No-op.
         }
         
         @inlinable
         public func deallocate<T>(_ pointer: UnsafeMutablePointer<T>) {
-            if useSystemAllocator {
-                return pointer.deallocate()
-            }
             // No-op.
         }
     }
@@ -394,36 +413,23 @@ public struct TagAllocator {
         
         @inlinable
         public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
-            if useSystemAllocator {
-                return .allocate(byteCount: bytes, alignment: alignment)
-            }
-            
             assert(DynamicThreadView.threadIndexRetrievalFunc() == threadIndex)
             return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: self.threadIndex)
         }
         
         @inlinable
         public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
-            if useSystemAllocator {
-                return .allocate(capacity: capacity)
-            }
             assert(DynamicThreadView.threadIndexRetrievalFunc() == threadIndex)
             return self.allocator.allocate(capacity: capacity, threadIndex: self.threadIndex)
         }
 
         @inlinable
         public func deallocate(_ pointer: UnsafeMutableRawPointer) {
-            if useSystemAllocator {
-                return pointer.deallocate()
-            }
             // No-op.
         }
         
         @inlinable
         public func deallocate<T>(_ pointer: UnsafeMutablePointer<T>) {
-            if useSystemAllocator {
-                return pointer.deallocate()
-            }
             // No-op.
         }
     }
