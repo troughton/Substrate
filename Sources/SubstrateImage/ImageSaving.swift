@@ -10,7 +10,7 @@ import zlib
 @available(*, deprecated, renamed: "ImageFileFormat")
 public typealias TextureFileFormat = ImageFileFormat
 
-public enum ImageFileFormat: String, CaseIterable, Hashable {
+public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
     case png
     case bmp
     case tga
@@ -37,12 +37,48 @@ public enum ImageFileFormat: String, CaseIterable, Hashable {
         }
     }
     
+    public init?(uti: String) {
+        switch uti {
+        case "public.png":
+            self = .png
+        case "com.microsoft.bmp":
+            self = .bmp
+        case "com.truevision.tga-image":
+            self = .tga
+        case "public.radiance":
+            self = .hdr
+        case "public.jpeg":
+            self = .jpg
+        case "com.ilm.openexr-image":
+            self = .exr
+        default:
+            return nil
+        }
+    }
+    
     public var isLinearHDR : Bool {
         switch self {
         case .hdr, .exr:
             return true
         default:
             return false
+        }
+    }
+    
+    public var uti: String {
+        switch self {
+        case .png:
+            return "public.png"
+        case .bmp:
+            return "com.microsoft.bmp"
+        case .tga:
+            return "com.truevision.tga-image"
+        case .hdr:
+            return "public.radiance"
+        case .jpg:
+            return "public.jpeg"
+        case .exr:
+            return "com.ilm.openexr-image"
         }
     }
     
