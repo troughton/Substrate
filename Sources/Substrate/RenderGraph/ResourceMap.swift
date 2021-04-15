@@ -174,7 +174,7 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
     public mutating func removeAll(iterating iterator: (R, V, _ isPersistent: Bool) -> Void) {
         for bucket in 0..<self.capacity {
             if let key = self.keys[bucket] {
-                iterator(key, self.values[bucket], false)
+                iterator(key, self.values[bucket], true)
                 self.keys[bucket] = nil
                 self.values.advanced(by: bucket).deinitialize(count: 1)
             }
