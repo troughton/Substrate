@@ -26,14 +26,14 @@ public enum TaggedHeap {
     // Also need a spin-lock.
     
     public enum Strategy {
-        case suballocate(capacity: Int)
-        case allocatePerBlock
+        case suballocate(capacity: Int, blockSize: Int = 2 * 1024 * 1024)
+        case allocatePerBlock(blockSize: Int = 64 * 1024)
     }
     
     public typealias Tag = UInt64
-    public static let blockSize = 2 * 1024 * 1024
+    public static var blockSize = 64 * 1024
     
-    static var strategy: Strategy = .allocatePerBlock
+    static var strategy: Strategy = .allocatePerBlock()
     
     static var blockCount : Int = 0
     static var bitSetStorageCount : Int = 0
@@ -59,9 +59,11 @@ public enum TaggedHeap {
     public static func initialise(strategy: Strategy = .suballocate(capacity: TaggedHeap.defaultHeapCapacity)) {
         self.strategy = strategy
         switch strategy {
-        case .allocatePerBlock:
+        case .allocatePerBlock(let blockSize):
+            self.blockSize = blockSize
             self.allocationsByTag = [:]
-        case .suballocate(let capacity):
+        case .suballocate(let capacity, let blockSize):
+            self.blockSize = blockSize
             self.blockCount = (capacity + TaggedHeap.blockSize - 1) / TaggedHeap.blockSize
             self.bitSetStorageCount = (self.blockCount + BitSet.bitsPerElement) / BitSet.bitsPerElement
             
