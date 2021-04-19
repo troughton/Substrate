@@ -27,7 +27,10 @@ public struct DependencyTable<T> {
         self.capacity = capacity
         
         self.storage.removeAll(keepingCapacity: true)
-        self.storage.append(contentsOf: repeatElement(value, count: (capacity * capacity + capacity) / 2))
+        
+        let elementCount = (capacity * capacity + capacity) / 2
+        self.storage.reserveCapacity(elementCount)
+        self.storage.append(contentsOf: repeatElement(value, count: elementCount))
     }
     
     @inlinable
