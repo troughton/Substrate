@@ -80,7 +80,8 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
                 let previousPass = passes[i - 1]
                 assert(pass.passIndex != previousPass.passIndex)
                 
-                if pass.pass.passType != .draw || renderTargetDescriptors[previousPass.passIndex] !== renderTargetDescriptors[pass.passIndex] {
+                if (pass.pass.passType != .draw && !(pass.pass.passType == .blit && previousPass.pass.passType == .blit)) ||
+                    renderTargetDescriptors[previousPass.passIndex] !== renderTargetDescriptors[pass.passIndex] {
                     // Save the current command encoder and start a new one
                     addEncoder(encoderFirstPass..<i, encoderUsesWindowTexture)
                     encoderFirstPass = i
