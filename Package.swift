@@ -57,7 +57,8 @@ let package = Package(
         .target(name: "SubstrateCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
         .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "Substrate/CMakeLists.txt", "Substrate/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"]),
         .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"]),
-    
+        .testTarget(name: "SubstrateUtilitiesTests", dependencies: ["SubstrateUtilities"]),
+        
         // ShaderTool
         .target(name: "SPIRVCrossExtras",
                 dependencies: [.product(name: "SPIRV-Cross", package: "SPIRV-Cross")]),
