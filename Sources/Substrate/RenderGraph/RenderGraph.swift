@@ -926,6 +926,7 @@ public final class RenderGraph {
         await Self.activeRenderGraphLock.lock()
         
         let onCompletion = await self.executeOnSharedActor()
+        await onSubmission?()
         
         _ = Task.runDetached {
             let result = await onCompletion.get()
@@ -940,8 +941,6 @@ public final class RenderGraph {
                 $0.release()
             }
         }
-        
-        await onSubmission?()
         
         self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
         self.submissionNotifyQueue.removeAll(keepingCapacity: true)
