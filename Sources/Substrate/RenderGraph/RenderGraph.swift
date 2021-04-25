@@ -349,7 +349,7 @@ struct RenderGraphExecutionResult {
 // _RenderGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
 protocol _RenderGraphContext : RenderGraphContext {
     var transientRegistryIndex : Int { get }
-    var accessSemaphore : DispatchSemaphore { get }
+    var accessSemaphore : AsyncSemaphore { get }
     var renderGraphQueue: Queue { get }
     func beginFrameResourceAccess() async // Access is ended when a renderGraph is submitted.
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>) async -> Task.Handle<RenderGraphExecutionResult, Never>
@@ -454,15 +454,15 @@ public final class RenderGraph {
     public func insertEarlyBlitPass(name: String,
                                     _ execute: @escaping (BlitCommandEncoder) async -> Void) async {
         self.renderPassLock.withLock {
-        self.renderPasses.insert(RenderPassRecord(pass: CallbackBlitRenderPass(name: name, execute: execute),
-                                                  passIndex: 0), at: 0)
+            self.renderPasses.insert(RenderPassRecord(pass: CallbackBlitRenderPass(name: name, execute: execute),
+                                                      passIndex: 0), at: 0)
         }
     }
     
     public func insertEarlyBlitPass(_ pass: BlitRenderPass) {
         self.renderPassLock.withLock {
-        self.renderPasses.insert(RenderPassRecord(pass: pass,
-                                                  passIndex: 0), at: 0)
+            self.renderPasses.insert(RenderPassRecord(pass: pass,
+                                                      passIndex: 0), at: 0)
         }
     }
     
@@ -474,16 +474,12 @@ public final class RenderGraph {
     
     public func addBlitCallbackPass(file: String = #fileID, line: Int = #line,
                                     _ execute: @escaping (BlitCommandEncoder) async -> Void) {
-        self.renderPassLock.withLock {
-            self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
-        }
+        self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
     }
     
     public func addBlitCallbackPass(name: String,
                                     _ execute: @escaping (BlitCommandEncoder) async -> Void) {
-        self.renderPassLock.withLock {
-            self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
-        }
+        self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
     
     public func addClearPass(file: String = #fileID, line: Int = #line,
@@ -492,8 +488,8 @@ public final class RenderGraph {
                              depthClearOperation: DepthClearOperation = .keep,
                              stencilClearOperation: StencilClearOperation = .keep) {
         self.addPass(CallbackDrawRenderPass(name: "Clear Pass at \(file):\(line)", descriptor: renderTarget,
-                                                  colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
-                                                  execute: { _ in }))
+                                            colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                            execute: { _ in }))
     }
     
     public func addDrawCallbackPass(file: String = #fileID, line: Int = #line,
@@ -503,8 +499,8 @@ public final class RenderGraph {
                                     stencilClearOperation: StencilClearOperation = .keep,
                                     _ execute: @escaping (RenderCommandEncoder) async -> Void) {
         self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
-                                                  colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
-                                                  execute: execute))
+                                            colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                            execute: execute))
     }
     
     public func addDrawCallbackPass(name: String,
@@ -514,8 +510,8 @@ public final class RenderGraph {
                                     stencilClearOperation: StencilClearOperation = .keep,
                                     _ execute: @escaping (RenderCommandEncoder) async -> Void) {
         self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor,
-                                                  colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
-                                                  execute: execute))
+                                            colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                            execute: execute))
     }
     
     public func addDrawCallbackPass<R>(file: String = #fileID, line: Int = #line,
@@ -526,8 +522,8 @@ public final class RenderGraph {
                                        reflection: R.Type,
                                        _ execute: @escaping (TypedRenderCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
-                                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
-                                                             reflection: reflection, execute: execute))
+                                                       colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                                       reflection: reflection, execute: execute))
     }
     
     public func addDrawCallbackPass<R>(name: String,
@@ -538,8 +534,8 @@ public final class RenderGraph {
                                        reflection: R.Type,
                                        _ execute: @escaping (TypedRenderCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackDrawRenderPass(name: name, descriptor: descriptor,
-                                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
-                                                             reflection: reflection, execute: execute))
+                                                       colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                                       reflection: reflection, execute: execute))
     }
     
     public func addComputeCallbackPass(file: String = #fileID, line: Int = #line,
@@ -883,8 +879,7 @@ public final class RenderGraph {
     /// Returns true if this RenderGraph already has the maximum number of GPU frames in-flight, and would have to wait
     /// for the ring buffers to become available before executing.
     public var hasMaximumFrameCountInFlight: Bool {
-        if self.context.accessSemaphore.wait(timeout: .now()) == .success {
-            self.context.accessSemaphore.signal()
+        if self.context.accessSemaphore.currentValue > 0 {
             return false
         }
         return true
@@ -892,7 +887,7 @@ public final class RenderGraph {
     
     @RenderGraphSharedActor
     private func executeOnSharedActor() async -> Task.Handle<RenderGraphExecutionResult, Never> {
-        self.context.accessSemaphore.wait()
+        await self.context.accessSemaphore.wait()
         await self.context.beginFrameResourceAccess()
         RenderGraph.activeRenderGraph = self // FIXME: we should use task local values instead.
         defer { RenderGraph.activeRenderGraph = nil }
@@ -900,9 +895,9 @@ public final class RenderGraph {
         let (passes, dependencyTable, usedResources) = await self.compile()
         
         #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-//        return autoreleasepool {
-            return await self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
-//        }
+        //        return autoreleasepool {
+        return await self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
+        //        }
         #else
         return await self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
         #endif
@@ -920,21 +915,17 @@ public final class RenderGraph {
         self.completionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
     }
     
-    public func execute(onSubmission: (() async -> Void)? = nil, onGPUCompletion: (() async -> Void)? = nil) {
-        detach {
-            await self._execute(onSubmission: onSubmission, onGPUCompletion: onGPUCompletion)
-        }
-    }
-    
-    private func _execute(onSubmission: (() async -> Void)? = nil, onGPUCompletion: (() async -> Void)? = nil) async {
+    @RenderGraphSharedActor
+    public func execute(onSubmission: (() async -> Void)? = nil, onGPUCompletion: (() async -> Void)? = nil) async {
         if GPUResourceUploader.renderGraph !== self {
             await GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
         }
         
         self.renderPassLock.lock()
-        defer { self.renderPassLock.unlock() }
+        let renderPasses = self.renderPasses
+        self.renderPassLock.unlock()
         
-        guard !self.renderPasses.isEmpty else {
+        guard !renderPasses.isEmpty else {
             await onSubmission?()
             await onGPUCompletion?()
             
@@ -956,7 +947,7 @@ public final class RenderGraph {
         }
         
         // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
-        self.renderPasses.forEach {
+        renderPasses.forEach {
             $0.commands = nil
             $0.unmanagedReferences?.forEach {
                 $0.release()

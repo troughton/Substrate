@@ -77,7 +77,7 @@ public protocol Window : AnyObject {
     
     var delegate : WindowDelegate? { get set }
     
-    var texture : Texture { get async }
+    func texture() async -> Texture // since async gets don't work properly in protocol requirements yet.
     
     var drawableSize : WindowSize { get }
 

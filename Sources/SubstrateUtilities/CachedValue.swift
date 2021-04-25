@@ -38,7 +38,7 @@ public struct Cached<T> {
 }
 
 
-public struct CachedAsync<T> {
+public final class CachedAsync<T> {
     public var constructor : (() async -> T)! = nil
     @usableFromInline var _value : T? = nil
     
@@ -47,20 +47,18 @@ public struct CachedAsync<T> {
     }
     
     @inlinable
-    public var value : T {
-        mutating get async {
-            if let value = _value {
-                return value
-            } else {
-                let result = await constructor()
-                _value = result
-                return result
-            }
+    public func getValue() async -> T {
+        if let value = _value {
+            return value
+        } else {
+            let result = await constructor()
+            _value = result
+            return result
         }
     }
     
     @inlinable
-    public mutating func reset() {
+    public func reset() {
         _value = nil
     }
 }

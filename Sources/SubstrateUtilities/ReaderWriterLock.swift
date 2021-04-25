@@ -109,3 +109,108 @@ public struct ReaderWriterLock {
         return result
     }
 }
+
+
+
+/// An implementation of a spin-lock using test-and-swap
+/// Necessary for fibers since fibers can move between threads.
+public struct AsyncReaderWriterLock {
+    // either the number of readers or .max for writer-lock.
+    @usableFromInline let value : UnsafeMutablePointer<UInt32.AtomicRepresentation>
+    
+    @inlinable
+    public init() {
+        self.value = UnsafeMutablePointer.allocate(capacity: 1)
+        UInt32.AtomicRepresentation.atomicStore(LockState.free.rawValue, at: self.value, ordering: .relaxed)
+    }
+    
+    @inlinable
+    public func `deinit`() {
+        self.value.deallocate()
+    }
+    
+    @inlinable
+    public func acquireWriteAccess() async {
+        while true {
+            if UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == 0 {
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: 0, desired: .max, at: self.value, successOrdering: .acquiring, failureOrdering: .relaxed).exchanged {
+                    return
+                }
+            }
+            await Task.yield()
+        }
+    }
+    
+    @inlinable
+    public func acquireReadAccess() async {
+        while true {
+            let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
+            
+            if previousReaders != .max {
+                let newReaders = previousReaders &+ 1
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: newReaders, at: self.value, successOrdering: .acquiring, failureOrdering: .relaxed).exchanged {
+                    return
+                }
+            }
+            await Task.yield()
+        }
+    }
+    
+    @inlinable
+    public func transformReadToWriteAccess() async {
+        let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
+        if previousReaders == 1 {
+            if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: .max, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
+                return
+            }
+        }
+
+        await self.releaseReadAccess()
+        await self.acquireWriteAccess()
+    }
+    
+    @inlinable
+    public func releaseReadAccess() async {
+        while true {
+            let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
+            if previousReaders != .max /* && previousReaders > 0 */ {
+                let newReaders = previousReaders &- 1
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: newReaders, at: self.value, successOrdering: .relaxed, failureOrdering: .relaxed).exchanged {
+                    return
+                }
+            }
+            
+            await Task.yield()
+        }
+    }
+    
+    @inlinable
+    public func releaseWriteAccess() async {
+        while true {
+            let previousReaders = UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed)
+            if previousReaders == .max {
+                if UInt32.AtomicRepresentation.atomicWeakCompareExchange(expected: previousReaders, desired: 0, at: self.value, successOrdering: .releasing, failureOrdering: .relaxed).exchanged {
+                    return
+                }
+            }
+            
+            await Task.yield()
+        }
+    }
+    
+    @inlinable
+    public func withReadLock<T>(_ perform: () async throws -> T) async rethrows -> T {
+        await self.acquireReadAccess()
+        let result = try await perform()
+        await self.releaseReadAccess()
+        return result
+    }
+    
+    @inlinable
+    public func withWriteLock<T>(_ perform: () async throws -> T) async rethrows -> T {
+        await self.acquireWriteAccess()
+        let result = try await perform()
+        await self.releaseWriteAccess()
+        return result
+    }
+}

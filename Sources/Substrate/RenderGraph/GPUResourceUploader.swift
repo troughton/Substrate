@@ -59,7 +59,7 @@ public final class GPUResourceUploader {
         var enqueuedBytes = 0
         for pass in self.enqueuedPasses {
             if enqueuedBytes > 0, enqueuedBytes + pass.stagingBufferLength > self.maxUploadSize {
-                self.renderGraph.execute()
+                await self.renderGraph.execute()
                 enqueuedBytes = 0
             }
             self.renderGraph.addPass(pass)
@@ -68,7 +68,7 @@ public final class GPUResourceUploader {
         self.enqueuedPasses.removeAll()
         
         if self.renderGraph.hasEnqueuedPasses {
-            self.renderGraph.execute()
+            await self.renderGraph.execute()
         }
     }
     

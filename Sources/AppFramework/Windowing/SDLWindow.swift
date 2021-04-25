@@ -104,7 +104,11 @@ open class SDLWindow : Window {
     
     public var swapChain : SwapChain! = nil
     
-    @Cached public var texture : Texture
+    var _texture : Cached<Texture>
+    
+    public func texture() async -> Texture {
+        return self._texture.wrappedValue
+    }
     
     public var textureDescriptor : TextureDescriptor {
         return TextureDescriptor(type: .type2D, format: self.swapChain.format, width: Int(self.drawableSize.width), height: Int(self.drawableSize.height), mipmapped: false)

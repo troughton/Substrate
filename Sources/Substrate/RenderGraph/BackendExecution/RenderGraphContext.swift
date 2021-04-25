@@ -16,7 +16,7 @@ extension TaggedHeap.Tag {
 }
 
 final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContext {
-    public var accessSemaphore: DispatchSemaphore
+    public var accessSemaphore: AsyncSemaphore
        
     let backend: Backend
     let resourceRegistry: Backend.TransientResourceRegistry
@@ -43,7 +43,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.commandQueue = backend.makeQueue(renderGraphQueue: self.renderGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
         self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount)
-        self.accessSemaphore = DispatchSemaphore(value: inflightFrameCount)
+        self.accessSemaphore = AsyncSemaphore(value: Int32(inflightFrameCount))
         
         self.commandGenerator = ResourceCommandGenerator()
         self.syncEvent = backend.makeSyncEvent(for: self.renderGraphQueue)
@@ -52,6 +52,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     deinit {
         backend.freeSyncEvent(for: self.renderGraphQueue)
         self.renderGraphQueue.dispose()
+        self.accessSemaphore.deinit()
         self.enqueuedEmptyFrameCompletionSemaphoresLock.wait()
     }
     

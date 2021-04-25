@@ -175,6 +175,11 @@ public struct AsyncSemaphore {
     }
     
     @inlinable
+    public var currentValue: Int32 {
+        return Int32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .acquiring)
+    }
+    
+    @inlinable
     public func wait() async {
         // If the value was greater than 0, we can proceed immediately.
         while Int32.AtomicRepresentation.atomicLoadThenWrappingDecrement(at: self.value, ordering: .acquiring) <= 0 {
