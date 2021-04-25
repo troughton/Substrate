@@ -136,8 +136,11 @@ public enum TextureLoadingError : Error {
     case mismatchingDimensions(expected: Size, actual: Size)
 }
 
+
+struct CopyDataResult: Sendable {}
+
 extension Image {
-    public func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode = .gpuDefault) throws {
+    public func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws {
         if self.colorSpace == .sRGB, !texture.descriptor.pixelFormat.isSRGB {
             print("Warning: the source texture data is in the sRGB color space but the texture's pixel format is linear RGB.")
         }
@@ -149,31 +152,36 @@ extension Image {
             throw TextureLoadingError.mismatchingDimensions(expected: Size(width: self.width, height: self.height), actual: texture.descriptor.size)
         }
         
-        if texture.descriptor.mipmapLevelCount > 1, case .cpu(let wrapMode, let filter) = mipGenerationMode {
-            let mips = self.generateMipChain(wrapMode: wrapMode, filter: filter, compressedBlockSize: 1, mipmapCount: texture.descriptor.mipmapLevelCount)
-                           
-            for (i, data) in mips.enumerated().prefix(texture.descriptor.mipmapLevelCount) {
-                data.withUnsafeBufferPointer { buffer in
-                    GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [data] _, _ in
-                        _ = data
-                    })
-                }
-            }
-        } else {
-            self.withUnsafeBufferPointer { buffer in
-                GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [self] _, _ in
-                    _ = self
-                })
-            }
-            if texture.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
-                if self.channelCount == 4, self.alphaMode != .premultiplied {
-                    if _isDebugAssertConfiguration() {
-                        print("Warning: generating mipmaps using the GPU's default mipmap generation for texture \(texture.label ?? "Texture(handle: \(texture.handle))") which expects premultiplied alpha, but the texture has an alpha mode of \(self.alphaMode). Fringing may be visible")
+        await withTaskGroup(of: CopyDataResult.self) { taskGroup in
+            if texture.descriptor.mipmapLevelCount > 1, case .cpu(let wrapMode, let filter) = mipGenerationMode {
+                let mips = self.generateMipChain(wrapMode: wrapMode, filter: filter, compressedBlockSize: 1, mipmapCount: texture.descriptor.mipmapLevelCount)
+                               
+                for (i, data) in mips.enumerated().prefix(texture.descriptor.mipmapLevelCount) {
+                    taskGroup.spawn {
+                        await data.withUnsafeBufferPointer { buffer in
+                            await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size)
+                        }
+                        return CopyDataResult()
                     }
                 }
-                GPUResourceUploader.generateMipmaps(for: texture)
+            } else {
+                taskGroup.spawn {
+                    await self.withUnsafeBufferPointer { buffer in
+                        await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size)
+                    }
+                    if texture.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
+                        if self.channelCount == 4, self.alphaMode != .premultiplied {
+                            if _isDebugAssertConfiguration() {
+                                print("Warning: generating mipmaps using the GPU's default mipmap generation for texture \(texture.label ?? "Texture(handle: \(texture.handle))") which expects premultiplied alpha, but the texture has an alpha mode of \(self.alphaMode). Fringing may be visible")
+                            }
+                        }
+                        await GPUResourceUploader.generateMipmaps(for: texture)
+                    }
+                    return CopyDataResult()
+                }
             }
         }
+        
     }
 }
 

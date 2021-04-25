@@ -66,7 +66,7 @@ final class MetalStateCaches {
         self.depthStates.append((defaultDepthDescriptor, defaultDepthState))
     }
     
-    func checkForLibraryReload() {
+    func checkForLibraryReload() async {
         self.libraryURL?.removeCachedResourceValue(forKey: .contentModificationDateKey)
         
         guard let libraryURL = self.libraryURL else { return }
@@ -75,7 +75,7 @@ final class MetalStateCaches {
            currentModificationDate > self.loadedLibraryModificationDate {
             
             for queue in QueueRegistry.allQueues {
-                runAsyncAndBlock { await queue.waitForCommand(queue.lastSubmittedCommand) } // Wait for all commands to finish on all queues.
+                await queue.waitForCommand(queue.lastSubmittedCommand) // Wait for all commands to finish on all queues.
             }
             
             // Metal won't pick up the changes if we use the makeLibrary(filePath:) initialiser,

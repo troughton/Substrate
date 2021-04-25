@@ -70,7 +70,7 @@ final class MetalBackend : SpecificRenderBackend {
     let stateCaches : MetalStateCaches
     let enableValidation : Bool
     let enableShaderHotReloading : Bool
-    let activeContextLock = SpinLock()
+    let activeContextLock = AsyncSpinLock()
     
     var activeContext : RenderGraphContextImpl<MetalBackend>? = nil
     
@@ -84,6 +84,10 @@ final class MetalBackend : SpecificRenderBackend {
         self.enableShaderHotReloading = enableShaderHotReloading
     }
     
+    deinit {
+        self.activeContextLock.deinit()
+    }
+    
     public var api : RenderAPI {
         return .metal
     }
@@ -92,18 +96,18 @@ final class MetalBackend : SpecificRenderBackend {
         return self.device
     }
     
-    func setActiveContext(_ context: RenderGraphContextImpl<MetalBackend>?) {
+    func setActiveContext(_ context: RenderGraphContextImpl<MetalBackend>?) async {
         if context != nil {
-            self.activeContextLock.lock()
+            await self.activeContextLock.lock()
             assert(self.activeContext == nil)
             if self.enableShaderHotReloading {
-                self.stateCaches.checkForLibraryReload()
+                await self.stateCaches.checkForLibraryReload()
             }
             self.activeContext = context
         } else {
             assert(self.activeContext != nil)
             self.activeContext = nil
-            self.activeContextLock.unlock()
+            await self.activeContextLock.unlock()
         }
     }
     
@@ -226,8 +230,10 @@ final class MetalBackend : SpecificRenderBackend {
         return self.isAppleSiliconGPU
     }
     
-    @usableFromInline func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
-        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+    @usableFromInline func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer? {
+        guard let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock({ resourceRegistry[buffer] }) else {
+            return nil
+        }
         return bufferReference.buffer.contents() + bufferReference.offset + range.lowerBound
     }
     

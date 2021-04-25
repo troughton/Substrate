@@ -39,12 +39,7 @@ extension Texture {
 }
 
 extension Image {
-    @available(*, deprecated, renamed: "init(texture:mipmapLevel:alphaMode:)")
-    public init(texture: Texture, mipmapLevel: Int = 0, hasPremultipliedAlpha: Bool) {
-        self.init(texture: texture, mipmapLevel: mipmapLevel, alphaMode: hasPremultipliedAlpha ? .premultiplied : .postmultiplied)
-    }
-    
-    public init(texture: Texture, mipmapLevel: Int = 0, alphaMode: ImageAlphaMode = .premultiplied) {
+    public init(texture: Texture, mipmapLevel: Int = 0, alphaMode: ImageAlphaMode = .premultiplied) async {
         let pixelFormat = texture.descriptor.pixelFormat
         precondition(pixelFormat.bytesPerPixel == Double(MemoryLayout<T>.stride * pixelFormat.channelCount))
         precondition(texture.descriptor.textureType == .type2D)
@@ -57,13 +52,13 @@ extension Image {
             descriptor.mipmapLevelCount = 1
             
             let cpuVisibleTexture = Texture(descriptor: descriptor, flags: .persistent)
-            GPUResourceUploader.addCopyPass { encoder in
+            await GPUResourceUploader.addCopyPass { encoder in
                 encoder.copy(from: texture, sourceSlice: 0, sourceLevel: mipmapLevel, sourceOrigin: Origin(), sourceSize: descriptor.size, to: cpuVisibleTexture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: Origin())
                 encoder.synchronize(texture: cpuVisibleTexture)
             }
-            GPUResourceUploader.flush()
+            await GPUResourceUploader.flush()
             
-            self.init(texture: cpuVisibleTexture, alphaMode: alphaMode)
+            await self.init(texture: cpuVisibleTexture, alphaMode: alphaMode)
             cpuVisibleTexture.dispose()
             
             return
@@ -74,15 +69,13 @@ extension Image {
         self.init(width: max(texture.width >> mipmapLevel, 1), height: max(texture.height >> mipmapLevel, 1),
                   channels: pixelFormat.channelCount, colorSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, alphaMode: alphaMode)
         
-        texture.waitForCPUAccess(accessType: .read)
-        
         let bytesPerRow = self.width * self.channelCount * MemoryLayout<T>.stride
         let width = self.width
         let height = self.height
-        self.withUnsafeMutableBufferPointer { storage in
-            texture.copyBytes(to: storage.baseAddress!, bytesPerRow: bytesPerRow,
-                              region: Region(x: 0, y: 0, width: width, height: height),
-                              mipmapLevel: mipmapLevel)
+        await self.withUnsafeMutableBufferPointer { storage in
+            await texture.copyBytes(to: storage.baseAddress!, bytesPerRow: bytesPerRow,
+                                    region: Region(x: 0, y: 0, width: width, height: height),
+                                    mipmapLevel: mipmapLevel)
             
             if pixelFormat == .bgra8Unorm_sRGB {
                 let buffer = storage.baseAddress as! UnsafeMutablePointer<UInt8>
@@ -97,6 +90,6 @@ extension Image {
                 }
             }
         }
-       
+        
     }
 }

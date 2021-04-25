@@ -55,15 +55,16 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.enqueuedEmptyFrameCompletionSemaphoresLock.wait()
     }
     
-    public func beginFrameResourceAccess() {
-        self.backend.setActiveContext(self)
+    public func beginFrameResourceAccess() async {
+        await self.backend.setActiveContext(self)
     }
     
     var resourceMap : FrameResourceMap<Backend> {
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
-    public func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>) -> Task.Handle<RenderGraphExecutionResult> {
+    @RenderGraphSharedActor
+    public func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>) async -> Task.Handle<RenderGraphExecutionResult, Never> {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         self.resourceRegistry.prepareFrame()
@@ -75,8 +76,6 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             
             self.commandGenerator.reset()
             self.compactedResourceCommands.removeAll(keepingCapacity: true)
-            
-            self.backend.setActiveContext(nil)
         }
         
         let taskCompletionSemaphore = AsyncSemaphore(value: 0)
@@ -87,7 +86,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 self.enqueuedEmptyFrameCompletionSemaphores.append((self.queueCommandBufferIndex, taskCompletionSemaphore))
             }
             
-            return Task.runDetached {
+            return detach { [executionResult] in
                 await taskCompletionSemaphore.wait()
                 taskCompletionSemaphore.deinit()
                 return executionResult
@@ -96,7 +95,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         
         var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
         self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
-        self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
+        await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
         backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &self.compactedResourceCommands)
         
@@ -186,7 +185,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                         commandBuffer!.waitForEvent(event, value: waitEventValues[Int(queue.index)])
                     } else {
                         // It's not a queue known to this backend, so the best we can do is sleep and wait until the queue is completd.
-                        runAsyncAndBlock { await queue.waitForCommand(waitEventValues[Int(queue.index)]) }
+                        await queue.waitForCommand(waitEventValues[Int(queue.index)])
                     }
                 }
             }
@@ -201,7 +200,9 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             passRecord.pass = nil // Release references to the RenderPasses.
         }
         
-        return Task.runDetached {
+        await self.backend.setActiveContext(nil)
+        
+        return detach { [executionResult] in
             await taskCompletionSemaphore.wait()
             taskCompletionSemaphore.deinit()
             return executionResult

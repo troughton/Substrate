@@ -48,7 +48,8 @@ extension ImGui {
         return screens
     }
     
-    public static func initialisePlatformInterface() {
+    @MainActor
+    public static func initialisePlatformInterface() async {
         
         let (pixels, width, height, bytesPerPixel) = ImGui.getFontTexDataAsAlpha8()
         
@@ -56,7 +57,7 @@ extension ImGui {
         textureDescriptor.storageMode = .private
         textureDescriptor.usageHint = [.shaderRead, .blitDestination]
         let fontTexture = Texture(descriptor: textureDescriptor, flags: .persistent)
-        GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, in: fontTexture, withBytes: pixels, bytesPerRow: width * bytesPerPixel)
+        _ = GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, in: fontTexture, withBytes: pixels, bytesPerRow: width * bytesPerPixel)
         
         ImGui.setFontTexID(UnsafeMutableRawPointer(bitPattern: UInt(exactly: fontTexture.handle)!))
         

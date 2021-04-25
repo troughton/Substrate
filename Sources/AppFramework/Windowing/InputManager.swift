@@ -57,7 +57,7 @@ public struct RawInputState : InputSourceState {
 public protocol InputManager {
     var shouldQuit : Bool { get set }
     
-    func update(frame: UInt64, windows: [Window])
+    func update(frame: UInt64, windows: [Window]) async
     var inputState : InputState<RawInputState> { get }
 }
 

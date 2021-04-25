@@ -36,3 +36,31 @@ public struct Cached<T> {
         _value = nil
     }
 }
+
+
+public struct CachedAsync<T> {
+    public var constructor : (() async -> T)! = nil
+    @usableFromInline var _value : T? = nil
+    
+    @inlinable
+    public init() {
+    }
+    
+    @inlinable
+    public var value : T {
+        mutating get async {
+            if let value = _value {
+                return value
+            } else {
+                let result = await constructor()
+                _value = result
+                return result
+            }
+        }
+    }
+    
+    @inlinable
+    public mutating func reset() {
+        _value = nil
+    }
+}

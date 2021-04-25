@@ -15,13 +15,13 @@ import ImGui
 
 public class CocoaApplication : Application {
     
-    public init(delegate: ApplicationDelegate?, updateables: @autoclosure () -> [FrameUpdateable], updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) {
+    public init(delegate: ApplicationDelegate?, updateables: @autoclosure () async -> [FrameUpdateable], updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) async {
         delegate?.applicationWillInitialise()
         
-        let updateables = updateables()
+        let updateables = await updateables()
         precondition(!updateables.isEmpty)
         
-        super.init(delegate: delegate, updateables: updateables, inputManager: CocoaInputManager(), updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
+        await super.init(delegate: delegate, updateables: updateables, inputManager: CocoaInputManager(), updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
     }
     
     public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, renderGraph: RenderGraph) -> Window {

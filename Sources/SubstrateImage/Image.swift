@@ -545,6 +545,17 @@ public struct Image<ComponentType> : AnyImage {
         self.ensureUniqueness()
         return try perform(self.storage.data)
     }
+    
+    @inlinable
+    public func withUnsafeBufferPointer<R>(_ perform: (UnsafeBufferPointer<T>) async throws -> R) async rethrows -> R {
+        return try await perform(UnsafeBufferPointer(self.storage.data))
+    }
+    
+    @inlinable
+    public mutating func withUnsafeMutableBufferPointer<R>(_ perform: (UnsafeMutableBufferPointer<T>) async throws -> R) async rethrows -> R {
+        self.ensureUniqueness()
+        return try await perform(self.storage.data)
+    }
 
     @inlinable
     public func cropped(originX: Int, originY: Int, width: Int, height: Int, clampOutOfBounds: Bool = false) -> Image<T> {

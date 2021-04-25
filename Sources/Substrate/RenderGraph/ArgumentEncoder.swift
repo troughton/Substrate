@@ -61,8 +61,14 @@ public struct BufferBacked<T> {
     }
     
     public mutating func updateBuffer() {
-        if var value = self.wrappedValue {
-            self._buffer = OffsetView(value: Buffer(length: MemoryLayout<T>.size, storageMode: .shared, bytes: &value), offset: 0)
+        if let value = self.wrappedValue {
+            let buffer = Buffer(length: MemoryLayout<T>.size, storageMode: .shared)
+            buffer.withMutableContents(range: buffer.range, { [value] memory, _ in
+                withUnsafeBytes(of: value) { valueBytes in
+                    memory.copyMemory(from: valueBytes)
+                }
+            })
+            self._buffer = OffsetView(value: buffer, offset: 0)
         }
     }
     

@@ -66,7 +66,7 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func updateLabel(on resource: Resource)
     var requiresEmulatedInputAttachments : Bool { get }
     
-    func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer
+    func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer?
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
     
     func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int)
@@ -212,7 +212,7 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
+    public static func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer? {
         return _backend.bufferContents(for: buffer, range: range)
     }
     

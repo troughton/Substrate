@@ -138,12 +138,12 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+    public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) async {
         self.init(renderGraph: renderGraph, flags: flags)
         self.label = "Descriptor Set for \(String(reflecting: A.self))"
         
         var arguments = arguments
-        arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
+        await arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
     }
     
     @inlinable
@@ -252,20 +252,23 @@ public struct ArgumentBuffer : ResourceProtocol {
                 yield TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].enqueuedBindings[indexInChunk]
             }
         }
-        nonmutating _modify {
-            runAsyncAndBlock { await self.waitForCPUAccess(accessType: .write) }
-            
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield &PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].enqueuedBindings[indexInChunk]
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield &TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].enqueuedBindings[indexInChunk]
-            }
-            
-            self.stateFlags.remove(.initialised)
-        }
     }
+    
+    @inlinable
+    func enqueueBinding(key: FunctionArgumentKey, arrayIndex: Int, resource: ArgumentBuffer.ArgumentResource) async {
+        await self.waitForCPUAccess(accessType: .write)
+        
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
+            PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].enqueuedBindings[indexInChunk].append((key, arrayIndex, resource))
+        } else {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
+            TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].enqueuedBindings[indexInChunk].append((key, arrayIndex, resource))
+        }
+        
+        self.stateFlags.remove(.initialised)
+    }
+    
     
     @inlinable
     public var bindings : ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)> {

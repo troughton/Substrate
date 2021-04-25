@@ -50,13 +50,37 @@ let package = Package(
                     .product(name: "stb_image_resize", package: "Cstb"),
                     .product(name: "stb_image_write", package: "Cstb"),
                     .product(name: "tinyexr", package: "Cstb"),
-                    .product(name: "LodePNG", package: "LodePNG")]),
+                    .product(name: "LodePNG", package: "LodePNG")],
+                swiftSettings: [
+                    .unsafeFlags([
+                        "-Xfrontend", "-enable-experimental-concurrency",
+                        "-Xfrontend", "-disable-availability-checking",
+                    ])
+                ]),
         
-        .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage"]),
+        .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage"],
+                swiftSettings: [
+                    .unsafeFlags([
+                        "-Xfrontend", "-enable-experimental-concurrency",
+                        "-Xfrontend", "-disable-availability-checking",
+                    ])
+                ]),
         
         .target(name: "SubstrateCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
-        .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "Substrate/CMakeLists.txt", "Substrate/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"]),
-        .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"]),
+        .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "Substrate/CMakeLists.txt", "Substrate/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"],
+                swiftSettings: [
+                    .unsafeFlags([
+                        "-Xfrontend", "-enable-experimental-concurrency",
+                        "-Xfrontend", "-disable-availability-checking",
+                    ])
+                ]),
+        .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"],
+                swiftSettings: [
+                    .unsafeFlags([
+                        "-Xfrontend", "-enable-experimental-concurrency",
+                        "-Xfrontend", "-disable-availability-checking",
+                    ])
+                ]),
         .testTarget(name: "SubstrateUtilitiesTests", dependencies: ["SubstrateUtilities"]),
         
         // ShaderTool
@@ -80,7 +104,13 @@ let package = Package(
         .target(
             name: "AppFramework",
             dependencies: ["SubstrateUtilities", "Substrate", "SubstrateMath", .product(name: "ImGui", package: "SwiftImGui"), "CNativeFileDialog", "CSDL2"] + vulkanDependencies,
-            exclude: ["CMakeLists.txt", "Input/CMakeLists.txt", "UpdateScheduler/CMakeLists.txt", "Windowing/CMakeLists.txt"]),
+            exclude: ["CMakeLists.txt", "Input/CMakeLists.txt", "UpdateScheduler/CMakeLists.txt", "Windowing/CMakeLists.txt"],
+            swiftSettings: [
+                .unsafeFlags([
+                    "-Xfrontend", "-enable-experimental-concurrency",
+                    "-Xfrontend", "-disable-availability-checking",
+                ])
+            ]),
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14
 )

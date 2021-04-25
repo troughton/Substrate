@@ -9,26 +9,39 @@
 import Dispatch
 import Substrate
 
+@_silgen_name("swift_task_runAndBlockThread")
+public func runAsyncAndBlock(_ asyncFun: @escaping () async -> ())
+
 public protocol UpdateScheduler {
+}
+
+func asyncAutoreleasepool(invoking body: @escaping () async -> Void) async -> Void {
+    let group = DispatchGroup()
+    group.enter()
+    autoreleasepool {
+        _ = Task.runDetached { () async -> Void in
+            await body()
+            group.leave()
+        }
+    }
+    while group.wait(timeout: .now()) == .timedOut {
+        await Task.yield()
+    }
 }
 
 #if canImport(CSDL2) && !(os(macOS) && arch(arm64))
 
 public final class SDLUpdateScheduler : UpdateScheduler  {
-    public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowRenderGraph: RenderGraph) {
-        let application = SDLApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
+    public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowRenderGraph: RenderGraph) async {
+        let application = await SDLApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
     
         while !application.inputManager.shouldQuit {
             #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-            autoreleasepool {
-                runAsyncAndBlock {
-                    await application.update()
-                }
-            }
-            #else
-            runAsyncAndBlock {
+            await asyncAutoreleasepool {
                 await application.update()
             }
+            #else
+            await application.update()
             #endif
         }
     }
@@ -42,11 +55,12 @@ import MetalKit
 
 public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDelegate  {
     private var application : CocoaApplication! = nil
+    var previousTask: Task.Handle<Void, Never>?
     
-    public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowRenderGraph: RenderGraph) {
+    public init(appDelegate: ApplicationDelegate?, windowDelegates: @autoclosure () async -> [WindowDelegate], windowRenderGraph: RenderGraph) async {
         super.init()
         
-        self.application = CocoaApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
+        self.application = await CocoaApplication(delegate: appDelegate, updateables: await windowDelegates(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
         
         let mainWindow = application.windows.first! as! MTKWindow
     
@@ -67,8 +81,10 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
             (window as! MTKWindow).mtkView.draw()
         }
         
-        autoreleasepool {
-            runAsyncAndBlock {
+        let previousTask = self.previousTask
+        self.previousTask = detach {
+            await previousTask?.get()
+            await asyncAutoreleasepool {
                 await self.application.update()
             }
         }

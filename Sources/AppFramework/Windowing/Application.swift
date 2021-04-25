@@ -48,9 +48,9 @@ public class Application {
     
     public weak var delegate : ApplicationDelegate? = nil
     
-    init(delegate: ApplicationDelegate?, updateables: [FrameUpdateable], inputManager: @autoclosure () -> InputManager, updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) {
+    @MainActor
+    init(delegate: ApplicationDelegate?, updateables: [FrameUpdateable], inputManager: @autoclosure () -> InputManager, updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) async {
         ImGui.createContext()
-        RenderGraph.initialise()
         
         self.inputManager = inputManager()
         self.windows = []
@@ -72,7 +72,7 @@ public class Application {
         delegate?.applicationDidInitialise(self)
         
         // ImGui.initialisePlatformInterface is called after applicationDidInitialise to give the application a chance to e.g. set its own fonts.
-        ImGui.initialisePlatformInterface()
+        await ImGui.initialisePlatformInterface()
     }
     
     public func addUpdateable(_ updateable: FrameUpdateable) {
@@ -109,8 +109,8 @@ public class Application {
         }
     }
     
-    func processInput(frame: UInt64) {
-        self.inputManager.update(frame: frame, windows: self.windows)
+    func processInput(frame: UInt64) async {
+        await self.inputManager.update(frame: frame, windows: self.windows)
         
         var inputState = self.inputManager.inputState
         for layer in self.inputLayers {
@@ -118,15 +118,21 @@ public class Application {
         }
     }
     
+    @MainActor
     func updateFrameUpdateables(frame: UInt64, deltaTime: Double) async {
         if !self.windows.isEmpty {
             ImGui.beginFrame(windows: self.windows, inputLayer: self.imguiInputLayer, deltaTime: deltaTime)
             await self.delegate?.applicationDidBeginImGuiFrame(self, frame: frame, deltaTime: deltaTime)
         }
         
-        await try! Task.withGroup(resultType: Void.self) { group in
+        struct Result: Sendable {}
+        
+        await withTaskGroup(of: Result.self) { group in
             for updateable in self.updateables {
-                await group.add { await updateable.update(frame: frame, deltaTime: deltaTime) }
+                group.spawn {
+                    await updateable.update(frame: frame, deltaTime: deltaTime)
+                    return Result()
+                }
             }
         }
         
@@ -159,7 +165,7 @@ public class Application {
         for window in self.windows {
             window.cycleFrames()
         }
-        self.processInput(frame: self.currentFrame)
+        await self.processInput(frame: self.currentFrame)
         
         await self.updateFrameUpdateables(frame: self.currentFrame, deltaTime: deltaTime)
         

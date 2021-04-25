@@ -109,7 +109,7 @@ public struct AsyncSpinLock {
     @inlinable
     public func withLock<T>(_ perform: () async throws -> T) async rethrows -> T {
         await self.lock()
-        let result = await try perform()
+        let result = try await perform()
         self.unlock()
         return result
     }

@@ -103,7 +103,7 @@ extension CAMetalLayer : SwapChain {
 
 public class SDLApplication : Application {
     
-    public init(delegate: ApplicationDelegate?, updateables: @autoclosure () -> [FrameUpdateable], updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) {
+    public init(delegate: ApplicationDelegate?, updateables: @autoclosure () -> [FrameUpdateable], updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) async {
         delegate?.applicationWillInitialise()
         
         guard SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) == 0 else {
@@ -114,7 +114,7 @@ public class SDLApplication : Application {
         let updateables = updateables()
         precondition(!updateables.isEmpty)
         
-        super.init(delegate: delegate, updateables: updateables, inputManager: SDLInputManager(), updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
+        await super.init(delegate: delegate, updateables: updateables, inputManager: SDLInputManager(), updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
     }
     
     public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, renderGraph: RenderGraph) -> Window {

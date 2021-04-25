@@ -157,7 +157,7 @@ public struct Queue : Equatable {
     
     func waitForCommand(_ index: UInt64) async {
         while self.lastCompletedCommand < index {
-            await Task.yieldHack()
+            await Task.yield()
         }
     }
 }

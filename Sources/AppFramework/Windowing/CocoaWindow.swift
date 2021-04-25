@@ -155,6 +155,8 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
     
     public let id : Int
     
+    var _texture = CachedAsync<Texture>()
+    
     public var drawableSize: WindowSize {
         let drawableSize = self.mtkView.drawableSize
         return WindowSize(Float(drawableSize.width), Float(drawableSize.height))
@@ -256,7 +258,6 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
         win.contentView = self.mtkView
         win.initialFirstResponder = self.mtkView
         
-        self._texture = Cached()
         
         super.init()
         
@@ -265,8 +266,7 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
         win.isReleasedWhenClosed = false
         
         self._texture.constructor = { [unowned(unsafe) self] in
-            let texture = Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView.layer as Any, renderGraph: renderGraph)
-            return texture
+            return await self.getTexture(renderGraph: renderGraph)
         }
     }
     
@@ -281,7 +281,16 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
         }
     }
     
-    @Cached public var texture : Texture
+    @MainActor
+    private func getTexture(renderGraph: RenderGraph) async -> Texture {
+        return Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView.layer as Any, renderGraph: renderGraph)
+    }
+    
+    public var texture : Texture {
+        get async {
+            return await _texture.value
+        }
+    }
     
     public var textureDescriptor : TextureDescriptor {
         return TextureDescriptor(type: .type2D, format: PixelFormat(rawValue: mtkView.colorPixelFormat.rawValue)!, width: Int(exactly: self.drawableSize.width)!, height: Int(exactly: self.drawableSize.height)!, mipmapped: false)

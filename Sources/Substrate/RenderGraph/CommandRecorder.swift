@@ -21,12 +21,6 @@ import MetalPerformanceShaders
 import Vulkan
 #endif
 
-public protocol Releasable {
-    func release()
-}
-
-extension Unmanaged : Releasable { }
-
 public final class ReferenceBox<T> {
     public var value : T
     
@@ -226,7 +220,7 @@ final class RenderGraphCommandRecorder {
     @usableFromInline let resourceUsageAllocator : TagAllocator.ThreadView
     @usableFromInline var commands : ChunkArray<RenderGraphCommand> // Lifetime: RenderGraph compilation (copied to another array for the backend).
     @usableFromInline var dataAllocator : TagAllocator.ThreadView // Lifetime: RenderGraph execution.
-    @usableFromInline var unmanagedReferences : ChunkArray<Releasable> // Lifetime: RenderGraph execution.
+    @usableFromInline var unmanagedReferences : ChunkArray<Unmanaged<AnyObject>> // Lifetime: RenderGraph execution.
     @usableFromInline var readResources : HashSet<Resource>
     @usableFromInline var writtenResources : HashSet<Resource>
     
@@ -305,8 +299,8 @@ final class RenderGraphCommandRecorder {
         self.record(RenderGraphCommand.insertDebugSignpost, string)
     }
     
-    func addUnmanagedReference(_ item: Releasable) {
-        self.unmanagedReferences.append(item, allocator: .tagThreadView(self.dataAllocator))
+    func addUnmanagedReference<T>(_ item: Unmanaged<T>) {
+        self.unmanagedReferences.append(Unmanaged<AnyObject>.fromOpaque(item.toOpaque()), allocator: .tagThreadView(self.dataAllocator))
     }
     
     func boundResourceUsageNode<C : CommandEncoder>(`for` resource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {

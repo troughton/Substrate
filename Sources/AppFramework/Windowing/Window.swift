@@ -77,7 +77,7 @@ public protocol Window : AnyObject {
     
     var delegate : WindowDelegate? { get set }
     
-    var texture : Texture { get }
+    var texture : Texture { get async }
     
     var drawableSize : WindowSize { get }
 

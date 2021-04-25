@@ -35,7 +35,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     func freeSyncEvent(for queue: Queue)
     func syncEvent(for queue: Queue) -> Event?
     
-    func setActiveContext(_ context: RenderGraphContextImpl<Self>?)
+    func setActiveContext(_ context: RenderGraphContextImpl<Self>?) async
     
     var resourceRegistry: PersistentResourceRegistry { get }
     func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> TransientResourceRegistry

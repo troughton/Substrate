@@ -584,15 +584,22 @@ extension ResourceProtocol {
         }
     }
     
-    public func waitForCPUAccess(accessType: ResourceAccessType) {
+    public func checkHasCPUAccess(accessType: ResourceAccessType) {
+        if self.flags.contains(.persistent) { return }
+        
+        for queue in QueueRegistry.allQueues {
+            let waitIndex = self[waitIndexFor: queue, accessType: accessType]
+            precondition(queue.lastCompletedCommand >= waitIndex, "Resource \(self) is not accessible by the CPU for access type: \(accessType); use withContentsAsync or withMutableContentsAsync instead.")
+        }
+    }
+    
+    public func waitForCPUAccess(accessType: ResourceAccessType) async {
         guard self.flags.contains(.persistent) else { return }
         if !self.stateFlags.contains(.initialised) { return }
         
-        runAsyncAndBlock {
-            for queue in QueueRegistry.allQueues {
-                let waitIndex = self[waitIndexFor: queue, accessType: accessType]
-                await queue.waitForCommand(waitIndex)
-            }
+        for queue in QueueRegistry.allQueues {
+            let waitIndex = self[waitIndexFor: queue, accessType: accessType]
+            await queue.waitForCommand(waitIndex)
         }
     }
     
@@ -740,12 +747,6 @@ public struct Buffer : ResourceProtocol {
         assert(Resource(handle: handle).type == .buffer)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
-   
-    @available(*, deprecated, renamed: "init(length:storageMode:cacheMode:usage:bytes:renderGraph:flags:)")
-    @inlinable
-    public init(length: Int, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache, usage: BufferUsage = .unknown, bytes: UnsafeRawPointer? = nil, frameGraph: RenderGraph?, flags: ResourceFlags = []) {
-        self.init(length: length, storageMode: storageMode, cacheMode: cacheMode, usage: usage, bytes: bytes, renderGraph: frameGraph, flags: flags)
-    }
     
     @inlinable
     public init(length: Int, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache, usage: BufferUsage = .unknown, bytes: UnsafeRawPointer? = nil, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
@@ -780,19 +781,13 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-    @available(*, deprecated, renamed: "init(descriptor:bytes:renderGraph:flags:)")
-    @inlinable
-    public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, frameGraph: RenderGraph?, flags: ResourceFlags = []) {
-        self.init(descriptor: descriptor, bytes: bytes, renderGraph: frameGraph, flags: flags)
-    }
-    
     @inlinable
     public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.init(descriptor: descriptor, renderGraph: renderGraph, flags: flags)
         
         if let bytes = bytes {
             assert(self.descriptor.storageMode != .private)
-            self[0..<self.descriptor.length, accessType: .write].withContents { $0.copyMemory(from: bytes, byteCount: self.descriptor.length) }
+            self.withMutableContents { contents, _ in contents.copyMemory(from: UnsafeRawBufferPointer(start: bytes, count: descriptor.length)) }
         }
     }
     
@@ -822,76 +817,129 @@ public struct Buffer : ResourceProtocol {
         
         if let bytes = bytes {
             assert(self.descriptor.storageMode != .private)
-            self[0..<self.descriptor.length, accessType: .write].withContents { $0.copyMemory(from: bytes, byteCount: self.descriptor.length) }
+            self.withMutableContents { contents, _ in contents.copyMemory(from: UnsafeRawBufferPointer(start: bytes, count: descriptor.length)) }
         }
     }
     
     @inlinable
-    public subscript(range: Range<Int>) -> RawBufferSlice {
-        return self[range, accessType: .readWrite]
+    public func withContents<A>(_ perform: (UnsafeRawBufferPointer) throws -> A) rethrows -> A {
+        self.checkHasCPUAccess(accessType: .read)
+        let contents = RenderBackend.bufferContents(for: self, range: self.range)
+        return try perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: self.length))
     }
     
     @inlinable
-    public subscript(range: Range<Int>, accessType accessType: ResourceAccessType) -> RawBufferSlice {
-        self.waitForCPUAccess(accessType: accessType)
-        return RawBufferSlice(buffer: self, range: range, accessType: accessType)
+    public func withContents<A>(range: Range<Int>, _ perform: (UnsafeRawBufferPointer) throws -> A) rethrows -> A {
+        self.checkHasCPUAccess(accessType: .read)
+        let contents = RenderBackend.bufferContents(for: self, range: range)
+        return try perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
     }
     
-    public func withDeferredSlice(range: Range<Int>, perform: @escaping (RawBufferSlice) -> Void) {
-        if self.flags.contains(.persistent) {
-            perform(self[range])
+    @inlinable
+    public func withMutableContents<A>(_ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) throws -> A) rethrows -> A {
+        self.checkHasCPUAccess(accessType: .readWrite)
+        let contents = RenderBackend.bufferContents(for: self, range: self.range)
+        var modifiedRange = self.range
+        
+        let result = try perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: self.length), &modifiedRange)
+        
+        RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        self.stateFlags.formUnion(.initialised)
+        return result
+    }
+    
+    @inlinable
+    public func withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) throws -> A) rethrows -> A {
+        self.checkHasCPUAccess(accessType: .readWrite)
+        let contents = RenderBackend.bufferContents(for: self, range: range)
+        var modifiedRange = range
+       
+        let result = try perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
+        
+        RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        self.stateFlags.formUnion(.initialised)
+        return result
+    }
+    
+    @inlinable
+    public func withContentsAsync(_ perform: @escaping (UnsafeRawBufferPointer) -> Void) async {
+        await self.waitForCPUAccess(accessType: .read)
+        if let contents = RenderBackend.bufferContents(for: self, range: self.range) {
+            perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: self.length))
         } else {
-            self._deferredSliceActions.append(DeferredRawBufferSlice(range: range, closure: perform))
+            self._deferredSliceActions.append(EmptyBufferSlice(closure: { $0.withContents(perform) }))
         }
     }
     
     @inlinable
-    public subscript<T>(as type: T.Type, accessType accessType: ResourceAccessType = .readWrite) -> BufferSlice<T> {
-        return self[byteRange: self.range, as: type, accessType: .readWrite]
-    }
-    
-    @inlinable
-    public subscript<T>(byteRange range: Range<Int>, as type: T.Type, accessType accessType: ResourceAccessType = .readWrite) -> BufferSlice<T> {
-        self.waitForCPUAccess(accessType: accessType)
-        return BufferSlice(buffer: self, range: range, accessType: accessType)
-    }
-    
-    public func withDeferredSlice<T>(byteRange range: Range<Int>, perform: @escaping (BufferSlice<T>) -> Void) {
-        if self.flags.contains(.persistent) {
-            perform(self[byteRange: range, as: T.self])
+    public func withContentsAsync(range: Range<Int>, _ perform: @escaping (UnsafeRawBufferPointer) -> Void) async {
+        await self.waitForCPUAccess(accessType: .read)
+        if let contents = RenderBackend.bufferContents(for: self, range: range) {
+            perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
         } else {
-            self._deferredSliceActions.append(DeferredTypedBufferSlice(range: range, closure: perform))
+            self._deferredSliceActions.append(EmptyBufferSlice(closure: { $0.withContents(range: range, perform) }))
         }
     }
     
     @inlinable
-    public func fillWhenMaterialised<C : Collection>(from source: C) {
+    public func withMutableContentsAsync(_ perform: @escaping (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) -> Void) async {
+        await self.waitForCPUAccess(accessType: .readWrite)
+        if let _ = RenderBackend.bufferContents(for: self, range: self.range) {
+            self.withMutableContents(perform)
+        } else {
+            self._deferredSliceActions.append(EmptyBufferSlice(closure: { $0.withMutableContents(range: range, perform) }))
+        }
+    }
+    
+    @inlinable
+    public func withMutableContentsAsync(range: Range<Int>, _ perform: @escaping (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) -> Void) async {
+        await self.waitForCPUAccess(accessType: .readWrite)
+        if let _ = RenderBackend.bufferContents(for: self, range: range) {
+            self.withMutableContents(range: range, perform)
+        } else {
+            self._deferredSliceActions.append(EmptyBufferSlice(closure: { $0.withMutableContents(range: range, perform) }))
+        }
+    }
+    
+    @inlinable
+    public func fill(with perform: @escaping (_ buffer: UnsafeMutableRawBufferPointer, _ filledRange: inout Range<Int>) -> Void) {
+        if let _ = RenderBackend.bufferContents(for: self, range: self.range) {
+            self.withMutableContents(perform)
+        } else {
+            self._deferredSliceActions.append(EmptyBufferSlice(closure: {
+                $0.withMutableContents(perform)
+            }))
+        }
+    }
+    
+    @inlinable
+    public func fill<C : Collection>(from source: C) {
         let requiredCapacity = source.count * MemoryLayout<C.Element>.stride
         assert(self.length >= requiredCapacity)
         
-        self.withDeferredSlice(byteRange: 0..<requiredCapacity) { (slice: BufferSlice<C.Element>) -> Void in
-            slice.withContents { (contents: UnsafeMutablePointer<C.Element>) in
-                _ = UnsafeMutableBufferPointer(start: contents, count: source.count).initialize(from: source)
-            }
-        }
-    }
-    
-    public func onMaterialiseGPUBacking(perform: @escaping (Buffer) -> Void) {
-        if self.flags.contains(.persistent) {
-            perform(self)
+        if let contents = RenderBackend.bufferContents(for: self, range: range) {
+            contents.bindMemory(to: C.Element.self, capacity: source.count).initialize(from: source)
+            let range = 0..<source.count * MemoryLayout<C.Element>.stride
+            RenderBackend.buffer(self, didModifyRange: range)
+            self.stateFlags.formUnion(.initialised)
         } else {
-            self._deferredSliceActions.append(EmptyBufferSlice(closure: perform))
+            self._deferredSliceActions.append(EmptyBufferSlice(closure: {
+                $0.withMutableContents(range: range, {
+                    let initializedBuffer = $0.bindMemory(to: C.Element.self).initialize(from: source)
+                    $1 = 0..<initializedBuffer.1 * MemoryLayout<C.Element>.stride
+                })
+            }))
         }
     }
     
-    func applyDeferredSliceActions() {
+    func applyDeferredSliceActions() async {
         // TODO: Add support for deferred slice actions to persistent resources. 
         guard !self.flags.contains(.historyBuffer) else {
             return
         }
         
         for action in self._deferredSliceActions {
-            action.apply(self)
+            await action.apply(self)
         }
         self._deferredSliceActions.removeAll(keepingCapacity: true)
     }
@@ -986,7 +1034,7 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public var _deferredSliceActions : [DeferredBufferSlice] {
+    var _deferredSliceActions : [DeferredBufferSlice] {
         get {
             assert(!self._usesPersistentRegistry)
             
@@ -1262,24 +1310,21 @@ public struct Texture : ResourceProtocol {
         }
     }
     
-    @asyncHandler
     @inlinable
-    public func copyBytes(to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
+    public func copyBytes(to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) async {
         await self.waitForCPUAccess(accessType: .read)
         RenderBackend.copyTextureBytes(from: self, to: bytes, bytesPerRow: bytesPerRow, region: region, mipmapLevel: mipmapLevel)
     }
     
-    @asyncHandler
     @inlinable
-    public func replace(region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
+    public func replace(region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) async {
         await self.waitForCPUAccess(accessType: .write)
         
         RenderBackend.replaceTextureRegion(texture: self, region: region, mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
     }
     
-    @asyncHandler
     @inlinable
-    public func replace(region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
+    public func replace(region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) async {
         await self.waitForCPUAccess(accessType: .write)
         
         RenderBackend.replaceTextureRegion(texture: self, region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
@@ -1513,35 +1558,7 @@ extension Texture: CustomStringConvertible {
 }
 
 public protocol DeferredBufferSlice {
-    func apply(_ buffer: Buffer)
-}
-
-final class DeferredRawBufferSlice : DeferredBufferSlice {
-    let range : Range<Int>
-    let closure : (RawBufferSlice) -> Void
-    
-    init(range: Range<Int>, closure: @escaping (RawBufferSlice) -> Void) {
-        self.range = range
-        self.closure = closure
-    }
-    
-    func apply(_ buffer: Buffer) {
-        self.closure(buffer[self.range])
-    }
-}
-
-final class DeferredTypedBufferSlice<T> : DeferredBufferSlice {
-    let range : Range<Int>
-    let closure : (BufferSlice<T>) -> Void
-    
-    init(range: Range<Int>, closure: @escaping (BufferSlice<T>) -> Void) {
-        self.range = range
-        self.closure = closure
-    }
-    
-    func apply(_ buffer: Buffer) {
-        self.closure(buffer[byteRange: self.range, as: T.self])
-    }
+    func apply(_ buffer: Buffer) async
 }
 
 final class EmptyBufferSlice : DeferredBufferSlice {
@@ -1553,122 +1570,5 @@ final class EmptyBufferSlice : DeferredBufferSlice {
     
     func apply(_ buffer: Buffer) {
         self.closure(buffer)
-    }
-}
-
-public final class RawBufferSlice {
-    public let buffer : Buffer
-    @usableFromInline var _range : Range<Int>
-    
-    @usableFromInline
-    let contents : UnsafeMutableRawPointer
-    
-    @usableFromInline
-    let accessType : ResourceAccessType
-    
-    var writtenToGPU = false
-    
-    @inlinable
-    internal init(buffer: Buffer, range: Range<Int>, accessType: ResourceAccessType) {
-        self.buffer = buffer
-        self._range = range
-        self.contents = RenderBackend.bufferContents(for: self.buffer, range: self._range)
-        self.accessType = accessType
-    }
-    
-    @inlinable
-    public func withContents<A>(_ perform: (UnsafeMutableRawPointer) throws -> A) rethrows -> A {
-        return try perform(self.contents)
-    }
-    
-    @inlinable
-    public var range : Range<Int> {
-        return self._range
-    }
-    
-    public func setBytesWrittenCount(_ bytesAccessed: Int) {
-        assert(bytesAccessed <= self.range.count)
-        self._range = self.range.lowerBound..<(self.range.lowerBound + bytesAccessed)
-        self.writtenToGPU = false
-    }
-    
-    public func forceFlush() {
-        if self.accessType == .read { return }
-        
-        RenderBackend.buffer(self.buffer, didModifyRange: self.range)
-        self.writtenToGPU = true
-        
-        self.buffer.stateFlags.formUnion(.initialised)
-    }
-    
-    deinit {
-        if !self.writtenToGPU {
-            self.forceFlush()
-        }
-    }
-}
-
-public final class BufferSlice<T> {
-    public let buffer : Buffer
-    @usableFromInline var _range : Range<Int>
-    @usableFromInline
-    let contents : UnsafeMutablePointer<T>
-    @usableFromInline
-    let accessType : ResourceAccessType
-    
-    var writtenToGPU = false
-    
-    @inlinable
-    internal init(buffer: Buffer, range: Range<Int>, accessType: ResourceAccessType) {
-        self.buffer = buffer
-        self._range = range
-        self.contents = RenderBackend.bufferContents(for: self.buffer, range: self._range).bindMemory(to: T.self, capacity: range.count)
-        self.accessType = accessType
-    }
-    
-    @inlinable
-    public subscript(index: Int) -> T {
-        get {
-            assert(self.accessType != .write)
-            return self.contents[index]
-        }
-        set {
-            assert(self.accessType != .read)
-            self.contents[index] = newValue
-        }
-    }
-    
-    @inlinable
-    public var range : Range<Int> {
-        return self._range
-    }
-    
-    @inlinable
-    public func withContents<A>(_ perform: (UnsafeMutablePointer<T>) throws -> A) rethrows -> A {
-        return try perform(self.contents)
-    }
-    
-    public func setElementsWrittenCount(_ elementsAccessed: Int) {
-        assert(self.accessType != .read)
-        
-        let bytesAccessed = elementsAccessed * MemoryLayout<T>.stride
-        assert(bytesAccessed <= self.range.count)
-        self._range = self.range.lowerBound..<(self.range.lowerBound + bytesAccessed)
-        self.writtenToGPU = false
-    }
-    
-    public func forceFlush() {
-        if self.accessType == .read { return }
-        
-        RenderBackend.buffer(self.buffer, didModifyRange: self.range)
-        self.writtenToGPU = true
-        
-        self.buffer.stateFlags.formUnion(.initialised)
-    }
-    
-    deinit {
-        if !self.writtenToGPU {
-            self.forceFlush()
-        }
     }
 }

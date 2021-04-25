@@ -13,8 +13,8 @@ import Substrate
 public final class ExternallyDrivenScheduler : UpdateScheduler  {
     private var application : Application! = nil
     
-    public init(appDelegate: ApplicationDelegate?, updateables: @escaping @autoclosure () -> [FrameUpdateable], windowRenderGraph: RenderGraph) {
-        self.application = CocoaApplication(delegate: appDelegate, updateables: updateables(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
+    public init(appDelegate: ApplicationDelegate?, updateables: @escaping @autoclosure () -> [FrameUpdateable], windowRenderGraph: RenderGraph) async {
+        self.application = await CocoaApplication(delegate: appDelegate, updateables: updateables(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
     }
     
     public func update() {

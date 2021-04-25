@@ -57,6 +57,7 @@ public enum TaggedHeap {
     }
     
     public static func initialise(strategy: Strategy = .suballocate(capacity: TaggedHeap.defaultHeapCapacity)) {
+        Threading.initialise()
         self.strategy = strategy
         switch strategy {
         case .allocatePerBlock(let blockSize):
@@ -105,14 +106,14 @@ public enum TaggedHeap {
         
         var blockIndex = self.findContiguousBlock(count: count)
         if blockIndex == .max {
-            print("TaggedHeap error: no free blocks available! Reallocating a heap with double the capacity; all previous allocations will be leaked.")
+            print("TaggedHeap error: no free blocks available! Switching to per-block allocations; all previous allocations will be leaked.")
             self.spinLock.withLock {
-                self.initialise(strategy: .suballocate(capacity: 2 * self.blockCount * self.blockSize))
+                self.initialise(strategy: .allocatePerBlock())
             }
             return self.allocateBlocks(tag: tag, count: count)
         }
         
-        return self.spinLock.withLock {
+        let block = self.spinLock.withLock { () -> UnsafeMutableRawPointer in
             while !self.filledBlocks.testBitsAreClear(in: blockIndex..<(blockIndex + count)) {
                 blockIndex = self.findContiguousBlock(count: count)
             }
@@ -123,6 +124,7 @@ public enum TaggedHeap {
             
             return self.heapMemory.unsafelyUnwrapped + blockIndex * TaggedHeap.blockSize
         }
+        return block
     }
     
     /// For debugging only; not efficient.
@@ -311,16 +313,17 @@ public struct TagAllocator {
         return self.memory.advanced(by: MemoryLayout<Header>.stride).assumingMemoryBound(to: AllocationBlock.self)
     }
     
+    public var tag: TaggedHeap.Tag {
+        return self.header.pointee.tag
+    }
+    
     @inlinable
     public init(tag: TaggedHeap.Tag, threadCount: Int = Threading.threadCount) {
-        Threading.initialise()
-
         let firstBlock = TaggedHeap.allocateBlocks(tag: tag, count: 1)
         self.memory = firstBlock
         
         let header = Header(tag: tag, threadCount: threadCount)
-        self.header.initialize(to: header)
-        
+        firstBlock.bindMemory(to: Header.self, capacity: 1).initialize(to: header)
         firstBlock.advanced(by: MemoryLayout<Header>.stride).bindMemory(to: AllocationBlock.self, capacity: threadCount)
         self.blocks.initialize(repeating: AllocationBlock(), count: threadCount)
         self.blocks[0].memory = firstBlock
@@ -329,7 +332,7 @@ public struct TagAllocator {
     
     @inlinable
     public var isValid : Bool {
-        return TaggedHeap.tagMatches(self.header.pointee.tag, pointer: self.memory)
+        return TaggedHeap.tagMatches(self.tag, pointer: self.memory)
     }
     
     @inlinable

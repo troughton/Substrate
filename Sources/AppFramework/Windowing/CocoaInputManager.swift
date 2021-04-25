@@ -62,7 +62,8 @@ public final class CocoaInputManager : InputManagerInternal {
     
     public var shouldQuit: Bool = false
     
-    public func update(frame: UInt64, windows: [Window]) {
+    @MainActor
+    public func update(frame: UInt64, windows: [Window]) async {
         let frame = UInt32(truncatingIfNeeded: frame)
         
         self.handleEvents(frame: frame, windows: windows)
