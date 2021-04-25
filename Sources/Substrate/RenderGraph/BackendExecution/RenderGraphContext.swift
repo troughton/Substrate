@@ -192,7 +192,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             }
             waitedEvents = pointwiseMax(waitEventValues, waitedEvents)
             
-            commandBuffer!.encodeCommands(encoderIndex: i)
+            await commandBuffer!.encodeCommands(encoderIndex: i)
         }
         
         processCommandBuffer()

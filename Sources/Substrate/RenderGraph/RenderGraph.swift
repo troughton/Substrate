@@ -387,7 +387,7 @@ actor RenderGraphSharedActor {
 }
 
 public final class RenderGraph {
-    static let activeRenderGraphSemaphore = DispatchSemaphore(value: 1)
+    static let activeRenderGraphLock = AsyncSpinLock()
     public private(set) static var activeRenderGraph : RenderGraph? = nil
     
     private var renderPasses : [RenderPassRecord] = []
@@ -402,8 +402,6 @@ public final class RenderGraph {
     var submissionNotifyQueue = [() async -> Void]()
     var completionNotifyQueue = [() async -> Void]()
     let context : _RenderGraphContext
-    
-    private var availableAllocatorIndices: [Int] = []
     
     public let transientRegistryIndex : Int
     
@@ -589,7 +587,7 @@ public final class RenderGraph {
     // Backend will look over all resource usages and figure out necessary resource transitions and creation/destruction times (could be synced with command numbers e.g. before command 300, transition resource A to state X).
     // Then, it will execute the command list.
     
-    func executePass(_ passRecord: RenderPassRecord, executionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView) async {
+    func executePass(_ passRecord: RenderPassRecord, executionAllocator: TagAllocator, resourceUsageAllocator: TagAllocator) async {
         let renderPassScratchTag = RenderGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
         
         let commandRecorder = RenderGraphCommandRecorder(renderGraphTransientRegistryIndex: self.transientRegistryIndex,
@@ -639,9 +637,9 @@ public final class RenderGraph {
     }
     
     @actorIndependent
-    func fillUsedResourcesFromPass(passRecord: RenderPassRecord, resourceUsageAllocator: TagAllocator.ThreadView) {
-        passRecord.readResources = .init(allocator: .tagThreadView(resourceUsageAllocator))
-        passRecord.writtenResources = .init(allocator: .tagThreadView(resourceUsageAllocator))
+    func fillUsedResourcesFromPass(passRecord: RenderPassRecord, resourceUsageAllocator: TagAllocator) {
+        passRecord.readResources = .init(allocator: .tag(resourceUsageAllocator))
+        passRecord.writtenResources = .init(allocator: .tag(resourceUsageAllocator))
         
         for resource in passRecord.pass.writtenResources {
             resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
@@ -653,31 +651,28 @@ public final class RenderGraph {
         }
     }
     
+    @RenderGraphSharedActor
     func evaluateResourceUsages(renderPasses: [RenderPassRecord], executionAllocator: TagAllocator, resourceUsagesAllocator: TagAllocator) async {
         for passRecord in renderPasses where passRecord.pass.passType == .cpu {
-            let allocatorIndex = await self.retrieveAllocatorIndex()
             if passRecord.pass.writtenResources.isEmpty {
                 await self.executePass(passRecord,
-                                       executionAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex),
-                                       resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
+                                       executionAllocator: executionAllocator,
+                                       resourceUsageAllocator: executionAllocator)
             } else {
-                self.fillUsedResourcesFromPass(passRecord: passRecord, resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
+                self.fillUsedResourcesFromPass(passRecord: passRecord, resourceUsageAllocator: executionAllocator)
             }
-            await self.depositAllocatorIndex(allocatorIndex)
         }
         
         await withTaskGroup(of: EmptyResult.self) { group async -> Void in
             for passRecord in renderPasses where passRecord.pass.passType != .cpu {
                 _ = await group.add { () async -> EmptyResult in
-                    let allocatorIndex = await self.retrieveAllocatorIndex()
                     if passRecord.pass.writtenResources.isEmpty {
                         await self.executePass(passRecord,
-                                               executionAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex),
-                                               resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
+                                               executionAllocator: executionAllocator,
+                                               resourceUsageAllocator: executionAllocator)
                     } else {
-                        self.fillUsedResourcesFromPass(passRecord: passRecord, resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
+                        self.fillUsedResourcesFromPass(passRecord: passRecord, resourceUsageAllocator: executionAllocator)
                     }
-                    await self.depositAllocatorIndex(allocatorIndex)
                     
                     return EmptyResult()
                 }
@@ -734,18 +729,10 @@ public final class RenderGraph {
         }
     }
     
-    func retrieveAllocatorIndex() async -> Int {
-        return self.availableAllocatorIndices.removeFirst()
-    }
-    
-    func depositAllocatorIndex(_ index: Int) async {
-        self.availableAllocatorIndices.append(index)
-    }
-    
+    @RenderGraphSharedActor
     func compile() async -> ([RenderPassRecord], DependencyTable<DependencyType>, Set<Resource>) {
         let renderPasses = self.renderPasses
         
-        self.availableAllocatorIndices = Array(0..<renderPasses.count)
         let resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag, threadCount: renderPasses.count)
         let executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag, threadCount: renderPasses.count)
         
@@ -800,11 +787,9 @@ public final class RenderGraph {
         while i < activePasses.count {
             let passRecord = activePasses[i]
             if passRecord.commandRange == nil {
-                let allocatorIndex = await self.retrieveAllocatorIndex()
                 await self.executePass(passRecord,
-                                       executionAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex),
-                                       resourceUsageAllocator: TagAllocator.ThreadView(allocator: executionAllocator, threadIndex: allocatorIndex))
-                await self.depositAllocatorIndex(allocatorIndex)
+                                       executionAllocator: executionAllocator,
+                                       resourceUsageAllocator: executionAllocator)
             }
             if passRecord.pass.passType == .cpu || passRecord.commandRange!.count == 0 {
                 passRecord.isActive = false // We've definitely executed the pass now, so there's no more work to be done on it by the GPU backends.
@@ -938,6 +923,8 @@ public final class RenderGraph {
             return
         }
         
+        await Self.activeRenderGraphLock.lock()
+        
         let onCompletion = await self.executeOnSharedActor()
         
         _ = Task.runDetached {
@@ -962,6 +949,7 @@ public final class RenderGraph {
         
         self.reset()
         
+        Self.activeRenderGraphLock.unlock()
         RenderGraph.globalSubmissionIndex.wrappingIncrement(ordering: .relaxed)
     }
     

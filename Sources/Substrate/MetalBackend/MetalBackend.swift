@@ -291,13 +291,13 @@ final class MetalBackend : SpecificRenderBackend {
     }
     
     @usableFromInline
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: Substrate.RenderTargetDescriptor) -> PipelineReflection? {
-        return self.stateCaches.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: Substrate.RenderTargetDescriptor) async -> PipelineReflection? {
+        return await self.stateCaches.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
     }
     
     @usableFromInline
-    func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection? {
-        return self.stateCaches.computePipelineReflection(descriptor: descriptor)
+    func computePipelineReflection(descriptor: ComputePipelineDescriptor) async -> PipelineReflection? {
+        return await self.stateCaches.computePipelineReflection(descriptor: descriptor)
     }
 
     @usableFromInline var pushConstantPath: ResourceBindingPath {

@@ -76,8 +76,8 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState
     
     // Note: The pipeline reflection functions may return nil if reflection information could not be created for the pipeline.
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection?
-    func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection?
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) async -> PipelineReflection?
+    func computePipelineReflection(descriptor: ComputePipelineDescriptor) async -> PipelineReflection?
     
     func dispose(texture: Texture)
     func dispose(buffer: Buffer)
@@ -152,13 +152,13 @@ public struct RenderBackend {
     }
     
     @inlinable
-    static func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection? {
-        return _backend.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
+    static func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) async -> PipelineReflection? {
+        return await _backend.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
     }
     
     @inlinable
-    static func computePipelineReflection(descriptor: ComputePipelineDescriptor) -> PipelineReflection? {
-        return _backend.computePipelineReflection(descriptor: descriptor)
+    static func computePipelineReflection(descriptor: ComputePipelineDescriptor) async -> PipelineReflection? {
+        return await _backend.computePipelineReflection(descriptor: descriptor)
     }
     
     @inlinable

@@ -57,7 +57,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         }
     }
     
-    func encodeCommands(encoderIndex: Int) {
+    func encodeCommands(encoderIndex: Int) async {
         let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
         
         switch encoderInfo.type {
@@ -74,7 +74,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             renderEncoder.encoder.label = encoderInfo.name
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                await renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             }
             renderEncoder.endEncoding()
             
@@ -84,7 +84,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             computeEncoder.encoder.label = encoderInfo.name
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                computeEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                await computeEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             }
             computeEncoder.endEncoding()
             

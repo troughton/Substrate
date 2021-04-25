@@ -65,7 +65,7 @@ protocol BackendQueue: AnyObject {
 protocol BackendCommandBuffer: AnyObject {
     associatedtype Backend: SpecificRenderBackend
     
-    func encodeCommands(encoderIndex: Int)
+    func encodeCommands(encoderIndex: Int) async
     
     func waitForEvent(_ event: Backend.Event, value: UInt64)
     func signalEvent(_ event: Backend.Event, value: UInt64)

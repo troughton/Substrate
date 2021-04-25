@@ -217,16 +217,16 @@ final class RenderGraphCommandRecorder {
     @usableFromInline let renderGraphTransientRegistryIndex: Int
     @usableFromInline let activeRenderGraphMask: ActiveRenderGraphMask
     @usableFromInline let renderPassScratchAllocator : ThreadLocalTagAllocator
-    @usableFromInline let resourceUsageAllocator : TagAllocator.ThreadView
+    @usableFromInline let resourceUsageAllocator : TagAllocator
     @usableFromInline var commands : ChunkArray<RenderGraphCommand> // Lifetime: RenderGraph compilation (copied to another array for the backend).
-    @usableFromInline var dataAllocator : TagAllocator.ThreadView // Lifetime: RenderGraph execution.
+    @usableFromInline var dataAllocator : TagAllocator // Lifetime: RenderGraph execution.
     @usableFromInline var unmanagedReferences : ChunkArray<Unmanaged<AnyObject>> // Lifetime: RenderGraph execution.
     @usableFromInline var readResources : HashSet<Resource>
     @usableFromInline var writtenResources : HashSet<Resource>
     
     @usableFromInline var resourceUsages = ChunkArray<(Resource, ResourceUsage)>()
     
-    init(renderGraphTransientRegistryIndex: Int, renderGraphQueue: Queue, renderPassScratchAllocator: ThreadLocalTagAllocator, renderGraphExecutionAllocator: TagAllocator.ThreadView, resourceUsageAllocator: TagAllocator.ThreadView) {
+    init(renderGraphTransientRegistryIndex: Int, renderGraphQueue: Queue, renderPassScratchAllocator: ThreadLocalTagAllocator, renderGraphExecutionAllocator: TagAllocator, resourceUsageAllocator: TagAllocator) {
         assert(_isPOD(RenderGraphCommand.self))
         self.renderGraphTransientRegistryIndex = renderGraphTransientRegistryIndex
         self.activeRenderGraphMask = 1 << renderGraphQueue.index
@@ -234,8 +234,8 @@ final class RenderGraphCommandRecorder {
         self.renderPassScratchAllocator = renderPassScratchAllocator
         self.resourceUsageAllocator = resourceUsageAllocator
         self.dataAllocator = renderGraphExecutionAllocator
-        self.readResources = .init(allocator: .tagThreadView(renderGraphExecutionAllocator))
-        self.writtenResources = .init(allocator: .tagThreadView(renderGraphExecutionAllocator))
+        self.readResources = .init(allocator: .tag(renderGraphExecutionAllocator))
+        self.writtenResources = .init(allocator: .tag(renderGraphExecutionAllocator))
         self.unmanagedReferences = .init()
     }
     
@@ -246,7 +246,7 @@ final class RenderGraphCommandRecorder {
     
     @inlinable
     public func copyData<T>(_ data: T) -> UnsafePointer<T> {
-        let result = self.dataAllocator.allocate(capacity: 1) as UnsafeMutablePointer<T>
+        let result = self.dataAllocator.dynamicThreadView.allocate(capacity: 1) as UnsafeMutablePointer<T>
         result.initialize(to: data)
         return UnsafePointer(result)
     }
@@ -254,32 +254,32 @@ final class RenderGraphCommandRecorder {
     @inlinable
     public func record<T>(_ commandGenerator: (UnsafePointer<T>) -> RenderGraphCommand, _ data: T) {
         let command = commandGenerator(copyData(data))
-        self.commands.append(command, allocator: .tagThreadView(self.dataAllocator))
+        self.commands.append(command, allocator: .tag(self.dataAllocator))
     }
     
     @inlinable
     public func record(_ command: RenderGraphCommand) {
-        self.commands.append(command, allocator: .tagThreadView(self.dataAllocator))
+        self.commands.append(command, allocator: .tag(self.dataAllocator))
     }
     
     @inlinable
     public func record(_ commandGenerator: (UnsafePointer<CChar>) -> RenderGraphCommand, _ string: String) {
         let cStringAddress = string.withCString { label -> UnsafePointer<CChar> in
             let numChars = strlen(label)
-            let destination : UnsafeMutablePointer<CChar> = self.dataAllocator.allocate(capacity: numChars + 1)
+            let destination : UnsafeMutablePointer<CChar> = self.dataAllocator.dynamicThreadView.allocate(capacity: numChars + 1)
             destination.initialize(from: label, count: numChars)
             destination[numChars] = 0
             return UnsafePointer(destination)
         }
         
         let command = commandGenerator(cStringAddress)
-        self.commands.append(command, allocator: .tagThreadView(self.dataAllocator))
+        self.commands.append(command, allocator: .tag(self.dataAllocator))
     }
     
     @discardableResult
     @inlinable
     public func copyBytes(_ bytes: UnsafeRawPointer, length: Int) -> UnsafeRawPointer {
-        let newBytes = self.dataAllocator.allocate(bytes: length, alignment: 16)
+        let newBytes = self.dataAllocator.dynamicThreadView.allocate(bytes: length, alignment: 16)
         newBytes.copyMemory(from: bytes, byteCount: length)
         return UnsafeRawPointer(newBytes)
     }
@@ -300,7 +300,7 @@ final class RenderGraphCommandRecorder {
     }
     
     func addUnmanagedReference<T>(_ item: Unmanaged<T>) {
-        self.unmanagedReferences.append(Unmanaged<AnyObject>.fromOpaque(item.toOpaque()), allocator: .tagThreadView(self.dataAllocator))
+        self.unmanagedReferences.append(Unmanaged<AnyObject>.fromOpaque(item.toOpaque()), allocator: .tag(self.dataAllocator))
     }
     
     func boundResourceUsageNode<C : CommandEncoder>(`for` resource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
@@ -360,7 +360,7 @@ final class RenderGraphCommandRecorder {
         }
         
         let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: activeRange, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
+        self.resourceUsages.append((Resource(resource), usage), allocator: .tag(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
     }
@@ -387,7 +387,7 @@ final class RenderGraphCommandRecorder {
         }
         
         let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .fullResource, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
+        self.resourceUsages.append((Resource(resource), usage), allocator: .tag(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
     }
@@ -433,7 +433,7 @@ final class RenderGraphCommandRecorder {
         }
         
         let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .buffer(bufferRange), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
+        self.resourceUsages.append((Resource(resource), usage), allocator: .tag(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
     }
@@ -477,14 +477,14 @@ final class RenderGraphCommandRecorder {
         
         var subresourceMask = SubresourceMask()
         if let slice = slice, let level = level {
-            subresourceMask.clear(subresourceCount: resource.descriptor.subresourceCount, allocator: .tagThreadView(self.dataAllocator))
-            subresourceMask[slice: slice, level: level, descriptor: resource.descriptor, allocator: .tagThreadView(self.dataAllocator)] = true
+            subresourceMask.clear(subresourceCount: resource.descriptor.subresourceCount, allocator: .tag(self.dataAllocator))
+            subresourceMask[slice: slice, level: level, descriptor: resource.descriptor, allocator: .tag(self.dataAllocator)] = true
         } else {
             assert(slice == nil && level == nil)
         }
         
         let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .texture(subresourceMask), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
+        self.resourceUsages.append((Resource(resource), usage), allocator: .tag(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
     }

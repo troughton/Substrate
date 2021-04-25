@@ -852,9 +852,9 @@ public protocol AnyRenderCommandEncoder {
     
     func setStencilReferenceValues(front frontReferenceValue: UInt32, back backReferenceValue: UInt32)
     
-    func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int, baseInstance: Int)
+    func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int, baseInstance: Int) async
     
-    func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int, baseVertex: Int, baseInstance: Int)
+    func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int, baseVertex: Int, baseInstance: Int)  async
 }
 
 public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEncoder {
@@ -1107,13 +1107,13 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         }
     }
     
-    public func setRenderPipelineDescriptor(_ descriptor: RenderPipelineDescriptor, retainExistingBindings: Bool = true) {
+    public func setRenderPipelineDescriptor(_ descriptor: RenderPipelineDescriptor, retainExistingBindings: Bool = true) async {
         if !retainExistingBindings {
             self.resetAllBindings()
         }
         
         self.renderPipelineDescriptor = descriptor
-        self.currentPipelineReflection = RenderBackend.renderPipelineReflection(descriptor: descriptor, renderTarget: self.drawRenderPass.renderTargetDescriptor)
+        self.currentPipelineReflection = await RenderBackend.renderPipelineReflection(descriptor: descriptor, renderTarget: self.drawRenderPass.renderTargetDescriptor)
         
         self.pipelineStateChanged = true
         self.needsUpdateBindings = true
@@ -1330,12 +1330,12 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
         }
     }
     
-    public func setComputePipelineDescriptor(_ descriptor: ComputePipelineDescriptor, retainExistingBindings: Bool = true) {
+    public func setComputePipelineDescriptor(_ descriptor: ComputePipelineDescriptor, retainExistingBindings: Bool = true) async {
         if !retainExistingBindings {
             self.resetAllBindings()
         }
         
-        self.currentPipelineReflection = RenderBackend.computePipelineReflection(descriptor: descriptor)
+        self.currentPipelineReflection = await RenderBackend.computePipelineReflection(descriptor: descriptor)
         
         self.pipelineStateChanged = true
         self.needsUpdateBindings = true

@@ -18,8 +18,8 @@ public final class FGMTLParallelRenderCommandEncoder {
     let parallelEncoder: MTLParallelRenderCommandEncoder
     let renderPassDescriptor : MTLRenderPassDescriptor
     let isAppleSiliconGPU: Bool
+    var pendingTasks = [Task.Handle<Void, Never>]()
     
-    let dispatchGroup = DispatchGroup()
     var currentEncoder : FGMTLThreadRenderCommandEncoder? = nil
     
     init(encoder: MTLParallelRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor, isAppleSiliconGPU: Bool) {
@@ -37,15 +37,15 @@ public final class FGMTLParallelRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
         if pass.commandRange!.count < FGMTLParallelRenderCommandEncoder.commandCountThreshold {
             if let currentEncoder = currentEncoder {
-                currentEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
+                await currentEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
             } else {
                 let encoder = self.parallelEncoder.makeRenderCommandEncoder()!
                 let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor, isAppleSiliconGPU: self.isAppleSiliconGPU)
                 
-                fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
+                await fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
                 
                 self.currentEncoder = fgEncoder
             }
@@ -58,18 +58,21 @@ public final class FGMTLParallelRenderCommandEncoder {
             let encoder = self.parallelEncoder.makeRenderCommandEncoder()!
             let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor, isAppleSiliconGPU: self.isAppleSiliconGPU)
             
-            DispatchQueue.global().async(group: self.dispatchGroup) {
-                fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
+            let task = detach {
+                await fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
                 fgEncoder.endEncoding()
             }
+            self.pendingTasks.append(task)
         }
         
     }
     
-    func endEncoding() {
+    func endEncoding() async {
         self.currentEncoder?.endEncoding()
         
-        self.dispatchGroup.wait()
+        for task in self.pendingTasks {
+            await task.get()
+        }
         self.parallelEncoder.endEncoding()
     }
 }
@@ -106,7 +109,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
@@ -115,7 +118,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
             self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
-            self.executeCommand(command, encoder: encoder, renderTarget: renderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
+            await self.executeCommand(command, encoder: encoder, renderTarget: renderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
             self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
         }
     }
@@ -124,7 +127,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         self.encoder.endEncoding()
     }
     
-    func executeCommand(_ command: RenderGraphCommand, encoder: MTLRenderCommandEncoder, renderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: RenderGraphCommand, encoder: MTLRenderCommandEncoder, renderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
         switch command {
         case .clearRenderTargets:
             break
@@ -260,7 +263,7 @@ public final class FGMTLThreadRenderCommandEncoder {
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
             self.pipelineDescriptor = descriptor
-            let state = stateCaches[descriptor, renderTarget: renderTarget]!
+            let state = await stateCaches[descriptor, renderTarget: renderTarget]!
             if state !== self.boundPipelineState {
                 encoder.setRenderPipelineState(state)
                 self.boundPipelineState = state
@@ -382,17 +385,17 @@ public final class FGMTLComputeCommandEncoder {
         self.baseBufferOffsets.deallocate()
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
             self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
-            self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+            await self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
             self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
         }
     }
     
-    func executeCommand(_ command: RenderGraphCommand, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executeCommand(_ command: RenderGraphCommand, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
         switch command {
         case .insertDebugSignpost(let cString):
             encoder.insertDebugSignpost(String(cString: cString))
@@ -463,7 +466,7 @@ public final class FGMTLComputeCommandEncoder {
         case .setComputePipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue()
             self.pipelineDescriptor = descriptor.pipelineDescriptor
-            let state = stateCaches[descriptor.pipelineDescriptor, descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth]!
+            let state = await stateCaches[descriptor.pipelineDescriptor, descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth]!
             if state !== self.boundPipelineState {
                 encoder.setComputePipelineState(state)
                 self.boundPipelineState = state
