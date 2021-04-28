@@ -107,7 +107,7 @@ final class MetalBackend : SpecificRenderBackend {
         } else {
             assert(self.activeContext != nil)
             self.activeContext = nil
-            await self.activeContextLock.unlock()
+            self.activeContextLock.unlock()
         }
     }
     
