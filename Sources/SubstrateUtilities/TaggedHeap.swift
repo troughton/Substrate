@@ -343,6 +343,9 @@ public struct TagAllocator {
     
     @inlinable
     public func allocate(bytes: Int, alignment: Int, threadIndex: Int) -> UnsafeMutableRawPointer {
+        assert(self.isValid)
+        assert((0..<self.header.pointee.threadCount).contains(threadIndex), "Thread index \(threadIndex) is not in the range \(0..<self.header.pointee.threadCount)")
+        
         let blockPtr = self.blocks.advanced(by: threadIndex)
         let alignedOffset = (blockPtr.pointee.offset + alignment - 1) & ~(alignment - 1)
         if let memory = blockPtr.pointee.memory, alignedOffset + bytes <= blockPtr.pointee.size {

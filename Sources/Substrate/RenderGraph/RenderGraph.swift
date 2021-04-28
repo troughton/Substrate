@@ -733,8 +733,8 @@ public final class RenderGraph {
     func compile() async -> ([RenderPassRecord], DependencyTable<DependencyType>, Set<Resource>) {
         let renderPasses = self.renderPasses
         
-        let resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag, threadCount: renderPasses.count)
-        let executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag, threadCount: renderPasses.count)
+        let resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag)
+        let executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag)
         
         renderPasses.enumerated().forEach { $1.passIndex = $0 } // We may have inserted early blit passes, so we need to set the pass indices now.
         
