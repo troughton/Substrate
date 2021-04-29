@@ -273,6 +273,10 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return self.bufferReferences[buffer]
     }
 
+    public subscript(heap: Heap) -> MTLHeap? {
+        return self.heapReferences[heap]
+    }
+
     public subscript(argumentBuffer: ArgumentBuffer) -> MTLBufferReference? {
         return self.argumentBufferReferences[argumentBuffer]
     }
@@ -280,7 +284,6 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     public subscript(argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
-    
     
     public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
         if let state = self.samplerReferences[descriptor] {

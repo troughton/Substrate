@@ -125,6 +125,8 @@ final class MetalBackend : SpecificRenderBackend {
                 self.resourceRegistry[buffer]?.buffer.label = buffer.label
             } else if let texture = resource.texture {
                 self.resourceRegistry[texture]?.texture.label = texture.label
+            } else if let heap = resource.heap {
+                self.resourceRegistry[heap]?.label = heap.label
             }
         }
     }
@@ -136,10 +138,42 @@ final class MetalBackend : SpecificRenderBackend {
                 return ResourcePurgeableState(mtlBuffer.setPurgeableState(mtlState))!
             } else if let texture = resource.texture, let mtlTexture = self.resourceRegistry[texture]?.texture {
                 return ResourcePurgeableState(mtlTexture.setPurgeableState(mtlState))!
+            } else if let heap = resource.heap, let mtlHeap = self.resourceRegistry[heap] {
+                return ResourcePurgeableState(mtlHeap.setPurgeableState(mtlState))!
             }
             return .nonDiscardable
         }
-        
+    }
+    
+    @usableFromInline func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
+        let sizeAndAlign = self.device.heapBufferSizeAndAlign(length: buffer.length, options: MTLResourceOptions(storageMode: buffer.storageMode, cacheMode: buffer.cacheMode, isAppleSiliconGPU: self.isAppleSiliconGPU))
+        return (sizeAndAlign.size, sizeAndAlign.align)
+    }
+    
+    @usableFromInline func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
+        let sizeAndAlign = self.device.heapTextureSizeAndAlign(descriptor: MTLTextureDescriptor(texture, usage: MTLTextureUsage(texture.usageHint), isAppleSiliconGPU: self.isAppleSiliconGPU))
+        return (sizeAndAlign.size, sizeAndAlign.align)
+    }
+    
+    @usableFromInline func usedSize(for heap: Heap) -> Int {
+        return self.resourceRegistry.accessLock.withReadLock {
+            let mtlHeap = self.resourceRegistry[heap]
+            return mtlHeap?.usedSize ?? heap.size
+        }
+    }
+    
+    @usableFromInline func currentAllocatedSize(for heap: Heap) -> Int {
+        return self.resourceRegistry.accessLock.withReadLock {
+            let mtlHeap = self.resourceRegistry[heap]
+            return mtlHeap?.currentAllocatedSize ?? heap.size
+        }
+    }
+    
+    @usableFromInline func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int {
+        return self.resourceRegistry.accessLock.withReadLock {
+            let mtlHeap = self.resourceRegistry[heap]
+            return mtlHeap?.maxAvailableSize(alignment: alignment) ?? 0
+        }
     }
     
     @usableFromInline func dispose(texture: Texture) {

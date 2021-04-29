@@ -177,6 +177,27 @@ public final class VulkanBackend : SpecificRenderBackend {
         fatalError("copyTextureBytes is unimplemented on Vulkan")
     }
     
+    
+    @usableFromInline func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
+        fatalError("sizeAndAlignment(for:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
+        fatalError("sizeAndAlignment(for:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func usedSize(for heap: Heap) -> Int {
+        fatalError("usedSize(for:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func currentAllocatedSize(for heap: Heap) -> Int {
+        fatalError("currentAllocatedSize(for:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int {
+        fatalError("maxAvailableSize(forAlignment:in:) is unimplemented on Vulkan")
+    }
+    
     @usableFromInline
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
         

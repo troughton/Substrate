@@ -600,7 +600,7 @@ extension ResourceProtocol {
             return []
         }
         nonmutating set {
-            fatalError()
+            _ = newValue
         }
     }
 }
@@ -637,6 +637,18 @@ public struct Heap : ResourceProtocol {
     @inlinable
     public var size : Int {
         return self.descriptor.size
+    }
+    
+    public var usedSize: Int {
+        return RenderBackend.usedSize(for: self)
+    }
+    
+    public var currentAllocatedSize: Int {
+        return RenderBackend.currentAllocatedSize(for: self)
+    }
+    
+    public func maxAvailableSize(forAlignment alignment: Int) -> Int {
+        return RenderBackend.maxAvailableSize(forAlignment: alignment, in: self)
     }
     
     @inlinable

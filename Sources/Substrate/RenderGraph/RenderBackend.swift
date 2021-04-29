@@ -47,6 +47,9 @@ public enum RenderAPI {
 public protocol RenderBackendProtocol : AnyObject {
     func backingResource(_ resource: Resource) -> Any?
     
+    func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int)
+    func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int)
+    
     func supportsPixelFormat(_ format: PixelFormat, usage: TextureUsage) -> Bool
     var hasUnifiedMemory : Bool { get }
     
@@ -73,6 +76,10 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int)
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int)
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int)
+    
+    func usedSize(for heap: Heap) -> Int
+    func currentAllocatedSize(for heap: Heap) -> Int
+    func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int
     
     func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState
     
@@ -243,6 +250,31 @@ public struct RenderBackend {
     }
     
     @inlinable
+    public static func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
+        return _backend.sizeAndAlignment(for: texture)
+    }
+    
+    @inlinable
+    public static func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
+        return _backend.sizeAndAlignment(for: buffer)
+    }
+    
+    @inlinable
+    static func usedSize(for heap: Heap) -> Int {
+        return _backend.usedSize(for: heap)
+    }
+    
+    @inlinable
+    static func currentAllocatedSize(for heap: Heap) -> Int {
+        return _backend.currentAllocatedSize(for: heap)
+    }
+    
+    @inlinable
+    static func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int {
+        return _backend.maxAvailableSize(forAlignment: alignment, in: heap)
+    }
+    
+    @inlinable
     public static var renderDevice : Any {
         return _backend.renderDevice
     }
@@ -266,7 +298,7 @@ public enum FunctionType : UInt {
     case kernel
 }
 
-public protocol VertexAttribute : class {
+public protocol VertexAttribute : AnyObject {
     
     var name: String? { get }
     
@@ -281,7 +313,7 @@ public protocol VertexAttribute : class {
     var isPatchControlPointData: Bool { get }
 }
 
-public protocol Attribute : class {
+public protocol Attribute : AnyObject {
     
     var name: String? { get }
     
