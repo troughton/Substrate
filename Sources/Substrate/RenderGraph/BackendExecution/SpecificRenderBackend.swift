@@ -46,14 +46,14 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: ArgumentBufferArrayReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
 }
 
-protocol BackendRenderTargetDescriptor: class {
+protocol BackendRenderTargetDescriptor: AnyObject {
     init(renderPass: RenderPassRecord)
     var descriptor: RenderTargetDescriptor { get }
     func descriptorMergedWithPass(_ pass: RenderPassRecord, storedTextures: inout [Texture]) -> Self
     func finalise(storedTextures: inout [Texture])
 }
 
-protocol BackendQueue: class {
+protocol BackendQueue: AnyObject {
     associatedtype Backend: SpecificRenderBackend
     
     func makeCommandBuffer(
@@ -62,7 +62,7 @@ protocol BackendQueue: class {
         compactedResourceCommands: [CompactedResourceCommand<Backend.CompactedResourceCommandType>]) -> Backend.CommandBuffer
 }
 
-protocol BackendCommandBuffer: class {
+protocol BackendCommandBuffer: AnyObject {
     associatedtype Backend: SpecificRenderBackend
     
     func encodeCommands(encoderIndex: Int)
@@ -78,7 +78,7 @@ protocol BackendCommandBuffer: class {
     var error: Error? { get }
 }
 
-protocol ResourceRegistry: class {
+protocol ResourceRegistry: AnyObject {
     associatedtype Backend: SpecificRenderBackend
     
     subscript(buffer: Buffer) -> Backend.BufferReference? { get }

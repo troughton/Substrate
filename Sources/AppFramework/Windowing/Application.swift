@@ -10,7 +10,7 @@ import Substrate
 import ImGui
 import Foundation
 
-public protocol ApplicationDelegate : class {
+public protocol ApplicationDelegate : AnyObject {
     func applicationWillInitialise()
     func applicationDidInitialise(_ application: Application)
     func applicationWillUpdate(_ application: Application, frame: UInt64, deltaTime: Double)

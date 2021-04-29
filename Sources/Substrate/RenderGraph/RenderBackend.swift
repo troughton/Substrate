@@ -16,7 +16,7 @@ import Vulkan
 #endif
 
 @usableFromInline
-protocol PipelineReflection : class {
+protocol PipelineReflection : AnyObject {
     func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?
     func bindingPath(argumentName: String, arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath?
     func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath
@@ -43,7 +43,8 @@ public enum RenderAPI {
 #endif
 }
 
-public protocol RenderBackendProtocol : class {
+
+public protocol RenderBackendProtocol : AnyObject {
     func backingResource(_ resource: Resource) -> Any?
     
     func supportsPixelFormat(_ format: PixelFormat, usage: TextureUsage) -> Bool

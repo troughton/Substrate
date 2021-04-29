@@ -5,7 +5,7 @@
 
 import Foundation
 
-public protocol RenderGraphJobManager : class {
+public protocol RenderGraphJobManager : AnyObject {
     var threadIndex : Int { get }
     var threadCount : Int { get }
     

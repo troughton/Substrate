@@ -10,7 +10,7 @@ import Foundation
 import SubstrateUtilities
 import OSLog
 
-public protocol RenderPass : class {
+public protocol RenderPass : AnyObject {
     var name : String { get }
     
     var readResources : [Resource] { get }
@@ -335,7 +335,7 @@ public enum DependencyType {
     //    case transitive
 }
 
-public protocol RenderGraphContext : class {
+public protocol RenderGraphContext : AnyObject {
     
 }
 

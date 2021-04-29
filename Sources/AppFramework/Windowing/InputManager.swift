@@ -61,6 +61,6 @@ public protocol InputManager {
     var inputState : InputState<RawInputState> { get }
 }
 
-protocol InputManagerInternal : class, InputManager {
+protocol InputManagerInternal : AnyObject, InputManager {
     var inputState : InputState<RawInputState> { get set }
 }

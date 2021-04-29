@@ -39,7 +39,7 @@ public enum InputActionState : InputSourceState {
     }
 }
 
-public protocol InputLayer : class {
+public protocol InputLayer : AnyObject {
     func processInput(rawInput: inout InputState<RawInputState>, frame: UInt64)
 }
 

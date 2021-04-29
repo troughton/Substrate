@@ -10,7 +10,7 @@ import Vulkan
 import SubstrateCExtras
 import Dispatch
 
-protocol VulkanCommandEncoder : class {
+protocol VulkanCommandEncoder : AnyObject {
     
     var device : VulkanDevice { get }
     var queueFamily : QueueFamily { get }

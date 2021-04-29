@@ -20,7 +20,7 @@ import Vulkan
 #endif
 
 @usableFromInline
-protocol CommandEncoder : class {
+protocol CommandEncoder : AnyObject {
     var passRecord : RenderPassRecord { get }
     
     var commandRecorder : RenderGraphCommandRecorder { get }
