@@ -706,6 +706,21 @@ public struct Heap : ResourceProtocol {
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
         UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
+    
+    public var childResources: Set<Resource> {
+        _read {
+            HeapRegistry.instance.lock.lock()
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
+            yield HeapRegistry.instance.chunks[chunkIndex].childResources[indexInChunk]
+            HeapRegistry.instance.lock.unlock()
+        }
+        nonmutating _modify {
+            HeapRegistry.instance.lock.lock()
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
+            yield &HeapRegistry.instance.chunks[chunkIndex].childResources[indexInChunk]
+            HeapRegistry.instance.lock.unlock()
+        }
+    }
 
     public func dispose() {
         guard self._usesPersistentRegistry else {

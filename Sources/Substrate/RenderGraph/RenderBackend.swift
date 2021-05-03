@@ -64,6 +64,10 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
     func materialiseHeap(_ heap: Heap) -> Bool
     
+    func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any?
+    func replaceBackingResource(for texture: Texture, with: Any?) -> Any?
+    func replaceBackingResource(for heap: Heap, with: Any?) -> Any?
+    
     func registerWindowTexture(texture: Texture, context: Any)
     func registerExternalResource(_ resource: Resource, backingResource: Any)
     
@@ -157,6 +161,18 @@ public struct RenderBackend {
     @inlinable
     public static func materialiseHeap(_ heap: Heap) -> Bool {
         return _backend.materialiseHeap(heap)
+    }
+    
+    static func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
+        return _backend.replaceBackingResource(for: buffer, with: with)
+    }
+    
+    static func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
+        return _backend.replaceBackingResource(for: texture, with: with)
+    }
+    
+    static func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
+        return _backend.replaceBackingResource(for: heap, with: with)
     }
     
     @inlinable

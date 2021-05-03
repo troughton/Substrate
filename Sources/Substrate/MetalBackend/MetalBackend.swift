@@ -118,6 +118,30 @@ final class MetalBackend : SpecificRenderBackend {
     @usableFromInline func materialiseHeap(_ heap: Heap) -> Bool {
         return self.resourceRegistry.allocateHeap(heap) != nil
     }
+    
+    @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
+        self.resourceRegistry.accessLock.withWriteLock {
+            let oldValue = self.resourceRegistry[buffer]?._buffer.takeUnretainedValue()
+            self.resourceRegistry.bufferReferences[buffer] = (with as! MTLBuffer?).map { MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained($0), offset: 0) }
+            return oldValue
+        }
+    }
+    
+    @usableFromInline func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
+        self.resourceRegistry.accessLock.withWriteLock {
+            let oldValue = self.resourceRegistry[texture]?._texture.takeUnretainedValue()
+            self.resourceRegistry.textureReferences[texture] = (with as! MTLTexture?).map { MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained($0)) }
+            return oldValue
+        }
+    }
+    
+    @usableFromInline func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
+        self.resourceRegistry.accessLock.withWriteLock {
+            let oldValue = self.resourceRegistry[heap]
+            self.resourceRegistry.heapReferences[heap] = with as! MTLHeap?
+            return oldValue
+        }
+    }
 
     @usableFromInline func updateLabel(on resource: Resource) {
         self.resourceRegistry.accessLock.withReadLock {

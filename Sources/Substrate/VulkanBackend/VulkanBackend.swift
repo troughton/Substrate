@@ -167,6 +167,19 @@ public final class VulkanBackend : SpecificRenderBackend {
         return false
     }
     
+    
+    @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
+        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
+        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
+        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
+    }
+    
     @usableFromInline
     func registerExternalResource(_ resource: Resource, backingResource: Any) {
         fatalError("registerExternalResource is unimplemented on Vulkan")
