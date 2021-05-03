@@ -952,7 +952,7 @@ public final class RenderGraph {
         PersistentTextureRegistry.instance.clear(afterRenderGraph: self)
         PersistentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)
-        PersistentArgumentBufferArrayRegistry.instance.clear()
+        PersistentArgumentBufferArrayRegistry.instance.clear(afterRenderGraph: self)
         
         RenderGraph.threadUnmanagedReferences.forEach { unmanagedReferences in
             for reference in unmanagedReferences {

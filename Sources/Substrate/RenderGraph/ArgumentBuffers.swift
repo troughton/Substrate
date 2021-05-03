@@ -424,7 +424,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
         PersistentArgumentBufferRegistry.instance.dispose(self)
@@ -556,7 +556,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
     }
     
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
         for binding in self._bindings {

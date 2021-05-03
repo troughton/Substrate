@@ -723,7 +723,7 @@ public struct Heap : ResourceProtocol {
     }
 
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
         HeapRegistry.instance.dispose(self)
@@ -802,6 +802,7 @@ public struct Buffer : ResourceProtocol {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
             let didAllocate = RenderBackend.materialisePersistentBuffer(self)
             assert(didAllocate, "Allocation failed for persistent buffer \(self)")
+            if !didAllocate { self.dispose() }
         }
     }
     
@@ -839,6 +840,8 @@ public struct Buffer : ResourceProtocol {
             self.dispose()
             return nil
         }
+        
+        heap.childResources.insert(Resource(self))
     }
     
     @inlinable
@@ -1100,9 +1103,10 @@ public struct Buffer : ResourceProtocol {
     }
 
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
+        self.heap?.childResources.remove(Resource(self))
         PersistentBufferRegistry.instance.dispose(self)
     }
     
@@ -1175,6 +1179,7 @@ public struct Texture : ResourceProtocol {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
             let didAllocate = RenderBackend.materialisePersistentTexture(self)
             assert(didAllocate, "Allocation failed for persistent texture \(self)")
+            if !didAllocate { self.dispose() }
         }
     }
         
@@ -1194,6 +1199,7 @@ public struct Texture : ResourceProtocol {
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         let didAllocate = RenderBackend.materialisePersistentTexture(self)
         assert(didAllocate, "Allocation failed for persistent texture \(self)")
+        if !didAllocate { self.dispose() }
     }
     
     @inlinable
@@ -1211,6 +1217,8 @@ public struct Texture : ResourceProtocol {
             self.dispose()
             return nil
         }
+        
+        heap.childResources.insert(Resource(self))
     }
     
     @available(*, deprecated, renamed: "init(descriptor:externalResource:renderGraph:flags:)")
@@ -1507,9 +1515,10 @@ public struct Texture : ResourceProtocol {
     }
     
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
+        self.heap?.childResources.remove(Resource(self))
         PersistentTextureRegistry.instance.dispose(self)
     }
     
