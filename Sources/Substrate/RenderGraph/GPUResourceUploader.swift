@@ -79,6 +79,12 @@ public final class GPUResourceUploader {
         }
     }
     
+    public static func onSubmission(_ perform: @escaping () -> Void) {
+        self.lock.withSemaphore {
+            self.renderGraph.onSubmission(perform)
+        }
+    }
+    
     public static func addCopyPass(_ pass: @escaping (_ bce: BlitCommandEncoder) -> Void) {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
@@ -96,7 +102,6 @@ public final class GPUResourceUploader {
         self.lock.withSemaphore {
             self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
         }
-            
     }
     
     public static func generateMipmaps(for texture: Texture) {
@@ -107,14 +112,19 @@ public final class GPUResourceUploader {
         }
     }
     
-    public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int, onUploadCompleted: ((Buffer, UnsafeRawPointer) -> Void)? = nil) {
+    @available(*, deprecated, renamed: "uploadBytes(_:count:to:offset:onBytesCopied:)")
+    public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int, onUploadCompleted: @escaping ((Buffer, UnsafeRawPointer) -> Void)) {
+        self.uploadBytes(bytes, count: count, to: buffer, offset: offset, onBytesCopied: onUploadCompleted)
+    }
+    
+    public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int, onBytesCopied: ((Buffer, UnsafeRawPointer) -> Void)? = nil) {
         assert(offset + count <= buffer.length)
         
         if buffer.storageMode == .shared || buffer.storageMode == .managed {
             buffer[offset..<(offset + count), accessType: .write].withContents {
                 $0.copyMemory(from: bytes, byteCount: count)
             }
-            onUploadCompleted?(buffer, bytes)
+            onBytesCopied?(buffer, bytes)
         } else {
             assert(buffer.storageMode == .private)
             self.addUploadPass(stagingBufferLength: count, pass: { slice, bce in
@@ -122,20 +132,31 @@ public final class GPUResourceUploader {
                     $0.copyMemory(from: bytes, byteCount: count)
                 }
                 bce.copy(from: slice.buffer, sourceOffset: slice.range.lowerBound, to: buffer, destinationOffset: offset, size: count)
-                onUploadCompleted?(buffer, bytes)
+                onBytesCopied?(buffer, bytes)
             })
         }
     }
     
-    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, onUploadCompleted: ((Texture, UnsafeRawPointer) -> Void)? = nil) {
+    @available(*, deprecated, renamed: "replaceTextureRegion(_:mipmapLevel:in:withBytes:bytesPerRow:onBytesCopied:)")
+    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, onUploadCompleted: @escaping ((Texture, UnsafeRawPointer) -> Void)) {
+        self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, onBytesCopied: onUploadCompleted)
+    }
+    
+    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, onBytesCopied: ((Texture, UnsafeRawPointer) -> Void)? = nil) {
         let rowCount = (texture.height >> mipmapLevel) / texture.descriptor.pixelFormat.rowsPerBlock
-        self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: 0, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * rowCount, onUploadCompleted: onUploadCompleted)
+        self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: 0, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * rowCount, onBytesCopied: onBytesCopied)
     }
         
-    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, slice: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int, onUploadCompleted: ((Texture, UnsafeRawPointer) -> Void)? = nil) {
+    
+    @available(*, deprecated, renamed: "replaceTextureRegion(_:mipmapLevel:slice:in:withBytes:bytesPerRow:bytesPerImage:onBytesCopied:)")
+    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, slice: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int, onUploadCompleted: @escaping ((Texture, UnsafeRawPointer) -> Void)) {
+        self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: slice, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage, onBytesCopied: onUploadCompleted)
+    }
+    
+    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, slice: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int, onBytesCopied: ((Texture, UnsafeRawPointer) -> Void)? = nil) {
         if texture.storageMode == .shared || texture.storageMode == .managed {
             texture.replace(region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
-            onUploadCompleted?(texture, bytes)
+            onBytesCopied?(texture, bytes)
         } else {
             assert(texture.storageMode == .private)
             
@@ -145,7 +166,7 @@ public final class GPUResourceUploader {
                 }
                 bce.copy(from: bufferSlice.buffer, sourceOffset: bufferSlice.range.lowerBound, sourceBytesPerRow: bytesPerRow, sourceBytesPerImage: bytesPerImage, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: region.origin)
                 
-                onUploadCompleted?(texture, bytes)
+                onBytesCopied?(texture, bytes)
             })
         }
     }

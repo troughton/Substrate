@@ -104,7 +104,7 @@ extension Image: TextureCopyable {
     }
 }
 
-public struct TextureLoadingOptions: OptionSet {
+public struct TextureLoadingOptions: OptionSet, Hashable {
     public let rawValue: UInt32
     
     @inlinable
@@ -154,14 +154,14 @@ extension Image {
                            
             for (i, data) in mips.enumerated().prefix(texture.descriptor.mipmapLevelCount) {
                 data.withUnsafeBufferPointer { buffer in
-                    GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [data] _, _ in
+                    GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size, onBytesCopied: { [data] _, _ in
                         _ = data
                     })
                 }
             }
         } else {
             self.withUnsafeBufferPointer { buffer in
-                GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size, onUploadCompleted: { [self] _, _ in
+                GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size, onBytesCopied: { [self] _, _ in
                     _ = self
                 })
             }
