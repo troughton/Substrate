@@ -6,13 +6,15 @@ import RealModule
 
 @frozen
 public struct Matrix4x4<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
-    public var c0: SIMD4<Scalar> = SIMD4(1, 0, 0, 0)
-    public var c1: SIMD4<Scalar> = SIMD4(0, 1, 0, 0)
-    public var c2: SIMD4<Scalar> = SIMD4(0, 0, 1, 0)
-    public var c3: SIMD4<Scalar> = SIMD4(0, 0, 0, 1)
+    public var c0: SIMD4<Scalar>
+    public var c1: SIMD4<Scalar>
+    public var c2: SIMD4<Scalar>
+    public var c3: SIMD4<Scalar>
     
     @inlinable
-    public init() {}
+    public init() {
+        self.init(diagonal: SIMD4(repeating: 1.0))
+    }
     
     /// Creates an instance using the vector to initialize the diagonal elements
     @inlinable

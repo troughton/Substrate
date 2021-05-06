@@ -12,12 +12,13 @@ import RealModule
 /// however, all operations treat it as a column-major type
 /// It's conceptually a Matrix4x3f but happens to be stored as a 3x4f.
 public struct AffineMatrix<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable, CustomStringConvertible {
-    public var r0 : SIMD4<Scalar> = SIMD4(1, 0, 0, 0)
-    public var r1 : SIMD4<Scalar> = SIMD4(0, 1, 0, 0)
-    public var r2 : SIMD4<Scalar> = SIMD4(0, 0, 1, 0)
+    public var r0 : SIMD4<Scalar>
+    public var r1 : SIMD4<Scalar>
+    public var r2 : SIMD4<Scalar>
     
     @inlinable
     public init() {
+        self.init(diagonal: SIMD3(repeating: 1.0))
     }
     
     @inlinable

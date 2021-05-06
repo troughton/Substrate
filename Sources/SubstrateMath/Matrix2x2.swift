@@ -7,10 +7,12 @@ import RealModule
 /// A column-major 2x2 matrix.
 @frozen
 public struct Matrix2x2<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
-    public var columns: SIMD4<Scalar> = .init(1, 0, 0, 1)
+    public var columns: SIMD4<Scalar>
   
     @inlinable
-    public init() {}
+    public init() {
+        self.columns = SIMD4(1.0, 0.0, 0.0, 1.0)
+    }
     
     /// Creates an instance using the vector to initialize the diagonal elements
     @inlinable
