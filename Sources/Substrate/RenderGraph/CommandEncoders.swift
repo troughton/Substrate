@@ -184,7 +184,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.resourceBindingCommands = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         self.usagePointersToUpdate = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         
-        self.pushDebugGroup(passRecord.pass.name)
+        self.pushDebugGroup(passRecord.name)
     }
     
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, key: FunctionArgumentKey) {
@@ -1436,7 +1436,7 @@ public final class BlitCommandEncoder : CommandEncoder {
         
         assert(passRecord.pass === renderPass)
         
-        self.pushDebugGroup(passRecord.pass.name)
+        self.pushDebugGroup(passRecord.name)
     }
     
     public func endEncoding() {
@@ -1544,7 +1544,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
         
         assert(passRecord.pass === renderPass)
         
-        self.pushDebugGroup(passRecord.pass.name)
+        self.pushDebugGroup(passRecord.name)
     }
     
     public func endEncoding() {

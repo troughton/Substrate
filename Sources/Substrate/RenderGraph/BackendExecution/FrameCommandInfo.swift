@@ -50,9 +50,9 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
             let addEncoder = { (passRange: Range<Int>, usesWindowTexture: Bool) -> Void in
                 let name: String
                 if passRange.count <= 3 {
-                    name = passes[passRange].lazy.map { $0.pass.name }.joined(separator: ", ")
+                    name = passes[passRange].lazy.map { $0.name }.joined(separator: ", ")
                 } else {
-                    name = "[\(passes[passRange.first!].pass.name)...\(passes[passRange.last!].pass.name)] (\(passRange.count) passes)"
+                    name = "[\(passes[passRange.first!].name)...\(passes[passRange.last!].name)] (\(passRange.count) passes)"
                 }
                 
                 let queueFamilyIndex = 0 // TODO: correctly compute this for Vulkan.
@@ -63,7 +63,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
                 }
                 
                 commandEncoders.append(CommandEncoderInfo(name: name,
-                                                          type: passes[passRange.first!].pass.passType,
+                                                          type: passes[passRange.first!].type,
                                                           renderTargetDescriptor: renderTargetDescriptors[passRange.lowerBound],
                                                           commandBufferIndex: commandBufferIndex,
                                                           queueFamilyIndex: queueFamilyIndex,
@@ -80,7 +80,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
                 let previousPass = passes[i - 1]
                 assert(pass.passIndex != previousPass.passIndex)
                 
-                if (pass.pass.passType != .draw && !(pass.pass.passType == .blit && previousPass.pass.passType == .blit)) ||
+                if (pass.type != .draw && !(pass.type == .blit && previousPass.type == .blit)) ||
                     renderTargetDescriptors[previousPass.passIndex] !== renderTargetDescriptors[pass.passIndex] {
                     // Save the current command encoder and start a new one
                     addEncoder(encoderFirstPass..<i, encoderUsesWindowTexture)
@@ -141,7 +141,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
         
         var currentDescriptor : Backend.RenderTargetDescriptor? = nil
         for (i, passRecord) in passes.enumerated() {
-            if passRecord.pass.passType == .draw {
+            if passRecord.type == .draw {
                 if let descriptor = currentDescriptor {
                     currentDescriptor = descriptor.descriptorMergedWithPass(passRecord, storedTextures: &storedTextures)
                 } else {

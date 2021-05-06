@@ -244,7 +244,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             var previousUsageStages: RenderStages = []
             
             for usage in resource.usages
-                where usage.renderPassRecord.pass.passType != .external &&
+                where usage.renderPassRecord.type != .external &&
                     usage.resource == resource // rather than a view of this resource.
                     //                        && usage.inArgumentBuffer
                      {
@@ -407,8 +407,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         frameCommandInfo.encoderIndex(for: previousWrite.renderPassRecord) == frameCommandInfo.encoderIndex(for: usage.renderPassRecord),
                         !(previousWrite.type.isRenderTarget && usage.type == .readWriteRenderTarget) {
                         
-                        assert(!usage.stages.isEmpty || usage.renderPassRecord.pass.passType != .draw)
-                        assert(!previousWrite.stages.isEmpty || previousWrite.renderPassRecord.pass.passType != .draw)
+                        assert(!usage.stages.isEmpty || usage.renderPassRecord.type != .draw)
+                        assert(!previousWrite.stages.isEmpty || previousWrite.renderPassRecord.type != .draw)
                         
                         self.commands.append(FrameResourceCommand(command: .memoryBarrier(Resource(resource), afterUsage: previousWrite.type, afterStages: previousWrite.stages, beforeCommand: usage.commandRange.lowerBound, beforeUsage: usage.type, beforeStages: usage.stages, activeRange: activeSubresources), index: previousWrite.commandRange.last!))
                     }
@@ -569,7 +569,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 // Process all the reads since the last write.
                 for readIndex in ((lastWriteIndex ?? -1) + 1)..<usagesArray.count {
                     let read = usagesArray[readIndex]
-                    guard read.affectsGPUBarriers, read.isRead, read.renderPassRecord.pass.passType != .external else { continue }
+                    guard read.affectsGPUBarriers, read.isRead, read.renderPassRecord.type != .external else { continue }
                     
                     storeFences.append(FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: read.renderPassRecord), index: read.commandRange.last!, stages: read.stages))
                 }
