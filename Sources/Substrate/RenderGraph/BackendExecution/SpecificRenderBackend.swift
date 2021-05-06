@@ -41,9 +41,16 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> TransientResourceRegistry
     
     func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<Self>, commandInfo: FrameCommandInfo<Self>, commandGenerator: ResourceCommandGenerator<Self>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>])
+    func didCompleteFrame(_ index: UInt64, queue: Queue)
     
     static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
     static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: ArgumentBufferArrayReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
+}
+
+extension SpecificRenderBackend {
+    func didCompleteFrame(_ index: UInt64, queue: Queue) {
+        
+    }
 }
 
 protocol BackendRenderTargetDescriptor: AnyObject {

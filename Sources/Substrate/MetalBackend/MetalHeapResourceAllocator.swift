@@ -46,7 +46,9 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     }
     
     func resetHeap() {
-        self.heap?.setPurgeableState(.empty)
+        if let heap = self.heap {
+            MetalResourcePurgeabilityManager.instance.setPurgeableState(on: heap, to: .empty)
+        }
         self.isPurgeable = true
         
         self.aliasingFences.removeAll(keepingCapacity: true)
@@ -96,7 +98,9 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
 
     private func useResource(_ resource: MTLResource) -> [FenceDependency] {
         if self.isPurgeable {
-            self.heap?.setPurgeableState(.nonVolatile)
+            if let heap = self.heap {
+                MetalResourcePurgeabilityManager.instance.setPurgeableState(on: heap, to: .nonVolatile)
+            }
             self.isPurgeable = false
         }
         

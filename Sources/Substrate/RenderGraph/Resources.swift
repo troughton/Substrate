@@ -161,7 +161,9 @@ extension ResourceProtocol {
         return lhs.handle == rhs.handle
     }
     
-    /// Note that setting the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
+    /// Destructive changes to purgeability will be applied once all pending GPU commands have completed,
+    /// while non-destructive changes will be applied immediately.
+    /// Note that using the resource after setting the purgeable state to discardable or discarded results in invalid behaviour.
     public var purgeableState: ResourcePurgeableState {
         get {
             return RenderBackend.updatePurgeableState(for: Resource(self), to: nil)
@@ -171,7 +173,9 @@ extension ResourceProtocol {
         }
     }
     
-    /// Note that updating the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
+    /// Destructive changes to purgeability will be applied once all pending GPU commands have completed,
+    /// while non-destructive changes will be applied immediately.
+    /// Note that using the resource after setting the purgeable state to discardable or discarded results in invalid behaviour.
     @discardableResult
     public func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState {
         let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: to)

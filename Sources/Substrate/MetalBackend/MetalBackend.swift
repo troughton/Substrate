@@ -159,11 +159,17 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.accessLock.withReadLock {
             let mtlState = MTLPurgeableState(newState)
             if let buffer = resource.buffer, let mtlBuffer = self.resourceRegistry[buffer]?.buffer {
-                return ResourcePurgeableState(mtlBuffer.setPurgeableState(mtlState))!
+                return ResourcePurgeableState(
+                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlBuffer, to: mtlState)
+                )!
             } else if let texture = resource.texture, let mtlTexture = self.resourceRegistry[texture]?.texture {
-                return ResourcePurgeableState(mtlTexture.setPurgeableState(mtlState))!
+                return ResourcePurgeableState(
+                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlTexture, to: mtlState)
+                )!
             } else if let heap = resource.heap, let mtlHeap = self.resourceRegistry[heap] {
-                return ResourcePurgeableState(mtlHeap.setPurgeableState(mtlState))!
+                return ResourcePurgeableState(
+                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlHeap, to: mtlState)
+                )!
             }
             return .nonDiscardable
         }
@@ -595,6 +601,10 @@ final class MetalBackend : SpecificRenderBackend {
         useResources(&compactedResourceCommands)
         
         compactedResourceCommands.sort()
+    }
+    
+    func didCompleteFrame(_ index: UInt64, queue: Queue) {
+        MetalResourcePurgeabilityManager.instance.processPurgeabilityChanges()
     }
 
 }
