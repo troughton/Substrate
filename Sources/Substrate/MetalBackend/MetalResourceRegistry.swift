@@ -143,14 +143,11 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 return nil
             }
             guard let mtlTextureObj = mtlHeap.makeTexture(descriptor: descriptor) else {
-                let sizeAndAlign = self.device.heapTextureSizeAndAlign(descriptor: descriptor)
-                print("Warning: failed to allocate texture \(texture) from heap \(heap); heap has \(mtlHeap.maxAvailableSize(alignment: sizeAndAlign.align)) bytes available (total used size \(mtlHeap.usedSize)) but the texture requires \(sizeAndAlign.size).")
                 return nil
             }
             mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(mtlTextureObj))
         } else {
             guard let mtlTextureObj = self.device.makeTexture(descriptor: descriptor) else {
-                print("Warning: failed to allocate texture \(texture).")
                 return nil
             }
             mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(mtlTextureObj))
@@ -182,13 +179,11 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 return nil
             }
             guard let mtlBufferObj = mtlHeap.makeBuffer(length: buffer.descriptor.length, options: options) else {
-                print("Warning: failed to allocate buffer \(buffer) from heap \(heap).")
                 return nil
             }
             mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
         } else {
             guard let mtlBufferObj = self.device.makeBuffer(length: buffer.descriptor.length, options: options) else {
-                print("Warning: failed to allocate buffer \(buffer).")
                 return nil
             }
             mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
