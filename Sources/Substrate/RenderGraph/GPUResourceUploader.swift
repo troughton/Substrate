@@ -25,7 +25,7 @@ public final class GPUResourceUploader {
     static let lock = DispatchSemaphore(value: 1)
     @usableFromInline static var renderGraph : RenderGraph! = nil
     private static var maxUploadSize = 128 * 1024 * 1024
-    private static var enqueuedPasses = [UploadResourcePass]()
+    private static var enqueuedPasses = [BlitRenderPass]()
     
     @usableFromInline
     final class UploadResourcePass : BlitRenderPass {
@@ -59,12 +59,13 @@ public final class GPUResourceUploader {
     private static func flushHoldingLock() {
         var enqueuedBytes = 0
         for pass in self.enqueuedPasses {
-            if enqueuedBytes > 0, enqueuedBytes + pass.stagingBufferLength > self.maxUploadSize {
+            let passStagingBufferLength = (pass as? UploadResourcePass)?.stagingBufferLength ?? 0
+            if enqueuedBytes > 0, enqueuedBytes + passStagingBufferLength > self.maxUploadSize {
                 self.renderGraph.execute()
                 enqueuedBytes = 0
             }
             self.renderGraph.addPass(pass)
-            enqueuedBytes += pass.stagingBufferLength
+            enqueuedBytes += passStagingBufferLength
         }
         self.enqueuedPasses.removeAll()
         
@@ -89,7 +90,7 @@ public final class GPUResourceUploader {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
         self.lock.withSemaphore {
-            renderGraph.addBlitCallbackPass(pass)
+            self.enqueuedPasses.append(CallbackBlitRenderPass(name: "Blit Callback Pass", execute: pass))
         }
     }
     
@@ -106,9 +107,9 @@ public final class GPUResourceUploader {
     
     public static func generateMipmaps(for texture: Texture) {
         self.lock.withSemaphore {
-            self.renderGraph.addBlitCallbackPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
+            self.enqueuedPasses.append(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
                 bce.generateMipmaps(for: texture)
-            }
+            })
         }
     }
     
