@@ -47,6 +47,7 @@ fileprivate class TemporaryBufferArena {
             while let block = iterator.next() {
                 if block.length >= bytes {
                     self.currentBlock = block
+                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: block, to: .nonVolatile)
                     iterator.removeLast()
                     break
                 }
@@ -65,13 +66,19 @@ fileprivate class TemporaryBufferArena {
     }
     
     func reset() {
+        if let currentBlock = self.currentBlock {
+            self.usedBlocks.append(currentBlock)
+        }
+        self.currentBlock = nil
         self.currentBlockPos = 0
         self.availableBlocks.prependAndClear(contentsOf: usedBlocks)
+        for block in self.availableBlocks {
+            MetalResourcePurgeabilityManager.instance.setPurgeableState(on: block, to: .empty)
+        }
     }
 }
 
 class MetalTemporaryBufferAllocator : MetalBufferAllocator {
-    
     private var arenas : [TemporaryBufferArena]
     
     let numFrames : Int
@@ -107,10 +114,10 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
     }
     
     public func cycleFrames() {
+        self.arenas[self.currentIndex].reset()
         self.currentIndex = (self.currentIndex + 1) % self.numFrames
         self.waitEvent = self.nextFrameWaitEvent
         self.nextFrameWaitEvent = .init()
-        self.arenas[self.currentIndex].reset()
     }
 }
 

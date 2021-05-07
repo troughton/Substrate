@@ -138,12 +138,12 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) async {
+    public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.init(renderGraph: renderGraph, flags: flags)
         self.label = "Descriptor Set for \(String(reflecting: A.self))"
         
         var arguments = arguments
-        await arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
+        arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
     }
     
     @inlinable
@@ -427,7 +427,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
         PersistentArgumentBufferRegistry.instance.dispose(self)
@@ -559,7 +559,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
     }
     
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
         for binding in self._bindings {

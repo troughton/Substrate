@@ -305,8 +305,39 @@ public enum RenderPassType {
     case external // Using things like Metal Performance Shaders.
 }
 
+// A draw render pass that caches the properties of an actual DrawRenderPass
+// but that doesn't retain any of the member variables.
+@usableFromInline
+final class ProxyDrawRenderPass: DrawRenderPass {
+    @usableFromInline let name: String
+    @usableFromInline let renderTargetDescriptor: RenderTargetDescriptor
+    @usableFromInline let colorClearOperations: [ColorClearOperation]
+    @usableFromInline let depthClearOperation: DepthClearOperation
+    @usableFromInline let stencilClearOperation: StencilClearOperation
+    
+    init(_ renderPass: DrawRenderPass) {
+        self.name = renderPass.name
+        self.renderTargetDescriptor = renderPass.renderTargetDescriptor
+        self.depthClearOperation = renderPass.depthClearOperation
+        self.stencilClearOperation = renderPass.stencilClearOperation
+        self.colorClearOperations = (0..<renderTargetDescriptor.colorAttachments.count).map {
+            renderPass.colorClearOperation(attachmentIndex: $0)
+        }
+    }
+    
+    @usableFromInline func colorClearOperation(attachmentIndex: Int) -> ColorClearOperation {
+        return self.colorClearOperations.dropFirst(attachmentIndex).first ?? .keep
+    }
+    
+    @usableFromInline func execute(renderCommandEncoder: RenderCommandEncoder) {
+        fatalError()
+    }
+}
+
 @usableFromInline
 final class RenderPassRecord {
+    @usableFromInline let name: String
+    @usableFromInline let type: RenderPassType
     @usableFromInline var pass : RenderPass!
     @usableFromInline var commands : ChunkArray<RenderGraphCommand>! = nil
     @usableFromInline var readResources : HashSet<Resource>! = nil
@@ -320,6 +351,8 @@ final class RenderPassRecord {
     @usableFromInline /* internal(set) */ var hasSideEffects : Bool = false
     
     init(pass: RenderPass, passIndex: Int) {
+        self.name = pass.name
+        self.type = pass.passType
         self.pass = pass
         self.passIndex = passIndex
         self.commandRange = nil
@@ -633,6 +666,14 @@ public final class RenderGraph {
         passRecord.resourceUsages = commandRecorder.resourceUsages
         passRecord.unmanagedReferences = commandRecorder.unmanagedReferences
         
+        // Remove our reference to the render pass once we've executed it so it can
+        // release any references to member variables.
+        if passRecord.type == .draw {
+            passRecord.pass = ProxyDrawRenderPass(passRecord.pass as! DrawRenderPass)
+        } else {
+            passRecord.pass = nil
+        }
+        
         TaggedHeap.free(tag: renderPassScratchTag)
     }
     
@@ -664,7 +705,7 @@ public final class RenderGraph {
         }
         
         await withTaskGroup(of: EmptyResult.self) { group async -> Void in
-            for passRecord in renderPasses where passRecord.pass.passType != .cpu {
+            for passRecord in renderPasses where passRecord.type != .cpu {
                 _ = await group.add { () async -> EmptyResult in
                     if passRecord.pass.writtenResources.isEmpty {
                         await self.executePass(passRecord,
@@ -791,7 +832,7 @@ public final class RenderGraph {
                                        executionAllocator: executionAllocator,
                                        resourceUsageAllocator: executionAllocator)
             }
-            if passRecord.pass.passType == .cpu || passRecord.commandRange!.count == 0 {
+            if passRecord.type == .cpu || passRecord.commandRange!.count == 0 {
                 passRecord.isActive = false // We've definitely executed the pass now, so there's no more work to be done on it by the GPU backends.
                 activePasses.remove(at: i)
             } else {
@@ -961,7 +1002,7 @@ public final class RenderGraph {
         PersistentTextureRegistry.instance.clear(afterRenderGraph: self)
         PersistentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)
-        PersistentArgumentBufferArrayRegistry.instance.clear()
+        PersistentArgumentBufferArrayRegistry.instance.clear(afterRenderGraph: self)
         
         self.renderPasses.removeAll(keepingCapacity: true)
         self.usedResources.removeAll(keepingCapacity: true)

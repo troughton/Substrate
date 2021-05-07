@@ -94,6 +94,14 @@ public final class QueueRegistry {
             return nil
         }
     }
+    
+    public static var lastSubmittedCommands: QueueCommandIndices {
+        var commands = QueueCommandIndices(repeating: 0)
+        for (i, queue) in self.allQueues.enumerated() {
+            commands[i] = queue.lastSubmittedCommand
+        }
+        return commands
+    }
 }
 
 public struct Queue : Equatable {

@@ -142,8 +142,10 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                     }
                     if cbIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
                         let gpuEndTime = commandBuffer.gpuEndTime
+                        
                         executionResult.gpuTime = (gpuEndTime - gpuStartTime) * 1000.0
                         taskCompletionSemaphore.signal()
+                        detach { await self.backend.didCompleteFrame(queueCBIndex, queue: self.renderGraphQueue) }
                         
                         self.accessSemaphore.signal()
                         

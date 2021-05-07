@@ -274,7 +274,11 @@ public final class TransientRegistryManager {
     
     func dispose(_ buffer: Buffer) {
         self.lock.withLock {
-            self.enqueuedDisposals.append(buffer)
+            if buffer.isKnownInUse {
+                self.enqueuedDisposals.append(buffer)
+            } else {
+                self.disposeImmediately(buffer: buffer)
+            }
         }
     }
 }
@@ -585,8 +589,6 @@ public enum TextureViewBaseInfo {
     
     func clear(afterRenderGraph: RenderGraph) {
         self.lock.withLock {
-            self.processEnqueuedDisposals()
-            
             let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
             for chunkIndex in 0..<self.chunkCount {
@@ -596,13 +598,19 @@ public enum TextureViewBaseInfo {
                     UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
                 }
             }
+            
+            self.processEnqueuedDisposals()
         }
         
     }
     
     func dispose(_ texture: Texture) {
         self.lock.withLock {
-            self.enqueuedDisposals.append(texture)
+            if texture.isKnownInUse {
+                self.enqueuedDisposals.append(texture)
+            } else {
+                self.disposeImmediately(texture: texture)
+            }
         }
     }
 }
@@ -938,8 +946,6 @@ public enum TextureViewBaseInfo {
     
     func clear(afterRenderGraph: RenderGraph) {
         self.lock.withLock {
-            self.processEnqueuedDisposals()
-            
             let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
             for chunkIndex in 0..<self.chunkCount {
@@ -949,12 +955,18 @@ public enum TextureViewBaseInfo {
                     UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
                 }
             }
+            
+            self.processEnqueuedDisposals()
         }
     }
     
     func dispose(_ buffer: ArgumentBuffer) {
         self.lock.withLock {
-            self.enqueuedDisposals.append(buffer)
+            if buffer.isKnownInUse {
+                self.enqueuedDisposals.append(buffer)
+            } else {
+                self.disposeImmediately(argumentBuffer: buffer)
+            }
         }
     }
 }
@@ -1096,30 +1108,48 @@ public enum TextureViewBaseInfo {
         self.chunks.advanced(by: index).initialize(to: Chunk())
     }
     
-    func clear() {
-        self.lock.withLock {
-            for argumentBufferArray in self.enqueuedDisposals {
-                RenderBackend.dispose(argumentBufferArray: argumentBufferArray)
-                
-                let index = argumentBufferArray.index
-                let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-                
-                self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
-                self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
-                self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
-                
-                self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
-                
-                self.freeIndices.append(index)
-            }
+    func disposeImmediately(argumentBufferArray: ArgumentBufferArray) {
+        RenderBackend.dispose(argumentBufferArray: argumentBufferArray)
+        
+        let index = argumentBufferArray.index
+        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
+        
+        self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
+        
+        self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
+        
+        self.freeIndices.append(index)
+    }
+    
+    func processEnqueuedDisposals() {
+        var i = 0
+        while i < self.enqueuedDisposals.count {
+            let buffer = self.enqueuedDisposals[i]
             
-            self.enqueuedDisposals.removeAll(keepingCapacity: true)
+            if !buffer.isKnownInUse {
+                self.disposeImmediately(argumentBufferArray: buffer)
+                self.enqueuedDisposals.remove(at: i, preservingOrder: false)
+            } else {
+                i += 1
+            }
+        }
+    }
+    
+    func clear(afterRenderGraph: RenderGraph) {
+        self.lock.withLock {
+            self.processEnqueuedDisposals()
         }
     }
     
     func dispose(_ buffer: ArgumentBufferArray) {
         self.lock.withLock {
-            self.enqueuedDisposals.append(buffer)
+            if buffer.isKnownInUse {
+                self.enqueuedDisposals.append(buffer)
+            } else {
+                self.disposeImmediately(argumentBufferArray: buffer)
+            }
         }
     }
 }
@@ -1136,6 +1166,7 @@ public enum TextureViewBaseInfo {
         @usableFromInline let descriptors : UnsafeMutablePointer<HeapDescriptor>
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         @usableFromInline let labels : UnsafeMutablePointer<String?>
+        @usableFromInline let childResources : UnsafeMutablePointer<Set<Resource>>
         /// The RenderGraphs that are currently using this resource.
         @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         
@@ -1143,6 +1174,7 @@ public enum TextureViewBaseInfo {
             self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
+            self.childResources = .allocate(capacity: Chunk.itemsPerChunk)
             self.activeRenderGraphs = .allocate(capacity: Chunk.itemsPerChunk)
             
             self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
@@ -1152,6 +1184,8 @@ public enum TextureViewBaseInfo {
             self.descriptors.deallocate()
             self.generations.deallocate()
             self.labels.deallocate()
+            self.childResources.deallocate()
+            self.activeRenderGraphs.deallocate()
         }
     }
     
@@ -1185,6 +1219,7 @@ public enum TextureViewBaseInfo {
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
             self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
+            self.chunks[chunkIndex].childResources.advanced(by: indexInChunk).initialize(to: [])
             self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
             
             return UInt64(truncatingIfNeeded: index)
@@ -1211,6 +1246,7 @@ public enum TextureViewBaseInfo {
         
         self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].childResources.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].activeRenderGraphs.deinitialize(count: 1)
         
         self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
@@ -1234,8 +1270,6 @@ public enum TextureViewBaseInfo {
     
     func clear(afterRenderGraph: RenderGraph) {
         self.lock.withLock {
-            self.processEnqueuedDisposals()
-            
             let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
             for chunkIndex in 0..<self.chunkCount {
@@ -1243,12 +1277,18 @@ public enum TextureViewBaseInfo {
                     UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
                 }
             }
+            
+            self.processEnqueuedDisposals()
         }
     }
     
     func dispose(_ heap: Heap) {
         self.lock.withLock {
-            self.enqueuedDisposals.append(heap)
+            if heap.isKnownInUse {
+                self.enqueuedDisposals.append(heap)
+            } else {
+                self.disposeImmediately(heap: heap)
+            }
         }
     }
 }

@@ -1,0 +1,72 @@
+//
+//  File.swift
+//  
+//
+//  Created by Thomas Roughton on 6/05/21.
+//
+
+#if canImport(Metal)
+
+import Foundation
+import Metal
+import OrderedCollections
+import SubstrateUtilities
+
+struct MTLPendingPurgeabilityChange {
+    let resource: MTLResource
+    let state: MTLPurgeableState
+    let after: QueueCommandIndices
+}
+
+// A utility to ensure that volatile/empty purgeable states only get applied once all GPU commands in-flight have completed.
+final class MetalResourcePurgeabilityManager {
+    static let instance = MetalResourcePurgeabilityManager()
+    
+    let lock = SpinLock()
+    var pendingPurgabilityChanges: OrderedDictionary<ObjectIdentifier, MTLPendingPurgeabilityChange> = [:]
+    
+    @discardableResult
+    func setPurgeableState(on resource: MTLResource, to state: MTLPurgeableState) -> MTLPurgeableState {
+        self.lock.withLock {
+            switch state {
+            case .volatile, .empty:
+                let pendingCommands = QueueRegistry.lastSubmittedCommands
+                if !QueueRegistry.allQueues.enumerated()
+                    .allSatisfy({ i, queue in queue.lastCompletedCommand >= pendingCommands[i] }) {
+                    self.pendingPurgabilityChanges.updateValue(MTLPendingPurgeabilityChange(resource: resource, state: state, after: pendingCommands), forKey: ObjectIdentifier(resource))
+                    return resource.setPurgeableState(.keepCurrent)
+                } else {
+                    fallthrough
+                }
+            default:
+                let pendingValue = self.pendingPurgabilityChanges.removeValue(forKey: ObjectIdentifier(resource))
+                let trueValue = resource.setPurgeableState(state)
+                return pendingValue?.state == .empty ? .empty : trueValue
+            }
+        }
+    }
+    
+    @discardableResult
+    func setPurgeableState(on heap: MTLHeap, to state: MTLPurgeableState) -> MTLPurgeableState {
+        self.setPurgeableState(on: unsafeBitCast(heap, to: MTLResource.self), to: state) // We only call updatePurgeableState, and it's an Objective-C protocol (meaning the function is accessed through objc_msgsend, so the unsafe cast is fine.
+    }
+    
+    func processPurgeabilityChanges() {
+        self.lock.withLock {
+            var processedCount = 0
+            for (_, value) in self.pendingPurgabilityChanges {
+                let requirement = value.after
+                let isComplete = QueueRegistry.allQueues.enumerated()
+                    .allSatisfy { i, queue in queue.lastCompletedCommand >= requirement[i] }
+                if !isComplete {
+                    break
+                }
+                value.resource.setPurgeableState(value.state)
+                processedCount += 1
+            }
+            self.pendingPurgabilityChanges.removeFirst(processedCount)
+        }
+    }
+}
+
+#endif

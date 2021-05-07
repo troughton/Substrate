@@ -104,7 +104,7 @@ extension Image: TextureCopyable {
     }
 }
 
-public struct TextureLoadingOptions: OptionSet {
+public struct TextureLoadingOptions: OptionSet, Hashable {
     public let rawValue: UInt32
     
     @inlinable

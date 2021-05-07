@@ -130,6 +130,30 @@ final class MetalBackend : SpecificRenderBackend {
     @usableFromInline func materialiseHeap(_ heap: Heap) -> Bool {
         return self.resourceRegistry.allocateHeap(heap) != nil
     }
+    
+    @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
+        self.resourceRegistry.accessLock.withWriteLock {
+            let oldValue = self.resourceRegistry[buffer]?._buffer.takeUnretainedValue()
+            self.resourceRegistry.bufferReferences[buffer] = (with as! MTLBuffer?).map { MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained($0), offset: 0) }
+            return oldValue
+        }
+    }
+    
+    @usableFromInline func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
+        self.resourceRegistry.accessLock.withWriteLock {
+            let oldValue = self.resourceRegistry[texture]?._texture.takeUnretainedValue()
+            self.resourceRegistry.textureReferences[texture] = (with as! MTLTexture?).map { MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained($0)) }
+            return oldValue
+        }
+    }
+    
+    @usableFromInline func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
+        self.resourceRegistry.accessLock.withWriteLock {
+            let oldValue = self.resourceRegistry[heap]
+            self.resourceRegistry.heapReferences[heap] = with as! MTLHeap?
+            return oldValue
+        }
+    }
 
     @usableFromInline func updateLabel(on resource: Resource) {
         self.resourceRegistry.accessLock.withReadLock {
@@ -137,6 +161,8 @@ final class MetalBackend : SpecificRenderBackend {
                 self.resourceRegistry[buffer]?.buffer.label = buffer.label
             } else if let texture = resource.texture {
                 self.resourceRegistry[texture]?.texture.label = texture.label
+            } else if let heap = resource.heap {
+                self.resourceRegistry[heap]?.label = heap.label
             }
         }
     }
@@ -145,13 +171,51 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.accessLock.withReadLock {
             let mtlState = MTLPurgeableState(newState)
             if let buffer = resource.buffer, let mtlBuffer = self.resourceRegistry[buffer]?.buffer {
-                return ResourcePurgeableState(mtlBuffer.setPurgeableState(mtlState))!
+                return ResourcePurgeableState(
+                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlBuffer, to: mtlState)
+                )!
             } else if let texture = resource.texture, let mtlTexture = self.resourceRegistry[texture]?.texture {
-                return ResourcePurgeableState(mtlTexture.setPurgeableState(mtlState))!
+                return ResourcePurgeableState(
+                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlTexture, to: mtlState)
+                )!
+            } else if let heap = resource.heap, let mtlHeap = self.resourceRegistry[heap] {
+                return ResourcePurgeableState(
+                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlHeap, to: mtlState)
+                )!
             }
             return .nonDiscardable
         }
-        
+    }
+    
+    @usableFromInline func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
+        let sizeAndAlign = self.device.heapBufferSizeAndAlign(length: buffer.length, options: MTLResourceOptions(storageMode: buffer.storageMode, cacheMode: buffer.cacheMode, isAppleSiliconGPU: self.isAppleSiliconGPU))
+        return (sizeAndAlign.size, sizeAndAlign.align)
+    }
+    
+    @usableFromInline func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
+        let sizeAndAlign = self.device.heapTextureSizeAndAlign(descriptor: MTLTextureDescriptor(texture, usage: MTLTextureUsage(texture.usageHint), isAppleSiliconGPU: self.isAppleSiliconGPU))
+        return (sizeAndAlign.size, sizeAndAlign.align)
+    }
+    
+    @usableFromInline func usedSize(for heap: Heap) -> Int {
+        return self.resourceRegistry.accessLock.withReadLock {
+            let mtlHeap = self.resourceRegistry[heap]
+            return mtlHeap?.usedSize ?? heap.size
+        }
+    }
+    
+    @usableFromInline func currentAllocatedSize(for heap: Heap) -> Int {
+        return self.resourceRegistry.accessLock.withReadLock {
+            let mtlHeap = self.resourceRegistry[heap]
+            return mtlHeap?.currentAllocatedSize ?? heap.size
+        }
+    }
+    
+    @usableFromInline func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int {
+        return self.resourceRegistry.accessLock.withReadLock {
+            let mtlHeap = self.resourceRegistry[heap]
+            return mtlHeap?.maxAvailableSize(alignment: alignment) ?? 0
+        }
     }
     
     @usableFromInline func dispose(texture: Texture) {
@@ -551,6 +615,10 @@ final class MetalBackend : SpecificRenderBackend {
         useResources(&compactedResourceCommands)
         
         compactedResourceCommands.sort()
+    }
+    
+    func didCompleteFrame(_ index: UInt64, queue: Queue) {
+        MetalResourcePurgeabilityManager.instance.processPurgeabilityChanges()
     }
 
 }

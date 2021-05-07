@@ -143,15 +143,11 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 return nil
             }
             guard let mtlTextureObj = mtlHeap.makeTexture(descriptor: descriptor) else {
-                print("Warning: failed to allocate texture \(texture) from heap \(heap).")
-                texture.dispose()
                 return nil
             }
             mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(mtlTextureObj))
         } else {
             guard let mtlTextureObj = self.device.makeTexture(descriptor: descriptor) else {
-                print("Warning: failed to allocate texture \(texture).")
-                texture.dispose()
                 return nil
             }
             mtlTexture = MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained(mtlTextureObj))
@@ -183,15 +179,11 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 return nil
             }
             guard let mtlBufferObj = mtlHeap.makeBuffer(length: buffer.descriptor.length, options: options) else {
-                print("Warning: failed to allocate buffer \(buffer) from heap \(heap).")
-                buffer.dispose()
                 return nil
             }
             mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
         } else {
             guard let mtlBufferObj = self.device.makeBuffer(length: buffer.descriptor.length, options: options) else {
-                print("Warning: failed to allocate buffer \(buffer).")
-                buffer.dispose()
                 return nil
             }
             mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
@@ -273,6 +265,10 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return self.bufferReferences[buffer]
     }
 
+    public subscript(heap: Heap) -> MTLHeap? {
+        return self.heapReferences[heap]
+    }
+
     public subscript(argumentBuffer: ArgumentBuffer) -> MTLBufferReference? {
         return self.argumentBufferReferences[argumentBuffer]
     }
@@ -280,7 +276,6 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     public subscript(argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
-    
     
     public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
         if let state = self.samplerReferences[descriptor] {

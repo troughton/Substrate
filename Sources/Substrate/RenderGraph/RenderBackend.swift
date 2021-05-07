@@ -46,6 +46,9 @@ public enum RenderAPI {
 public protocol RenderBackendProtocol : AnyObject {
     func backingResource(_ resource: Resource) -> Any?
     
+    func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int)
+    func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int)
+    
     func supportsPixelFormat(_ format: PixelFormat, usage: TextureUsage) -> Bool
     var hasUnifiedMemory : Bool { get }
     
@@ -60,6 +63,10 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
     func materialiseHeap(_ heap: Heap) -> Bool
     
+    func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any?
+    func replaceBackingResource(for texture: Texture, with: Any?) -> Any?
+    func replaceBackingResource(for heap: Heap, with: Any?) -> Any?
+    
     func registerWindowTexture(texture: Texture, context: Any)
     func registerExternalResource(_ resource: Resource, backingResource: Any)
     
@@ -72,6 +79,10 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int)
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int)
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int)
+    
+    func usedSize(for heap: Heap) -> Int
+    func currentAllocatedSize(for heap: Heap) -> Int
+    func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int
     
     func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState
     
@@ -149,6 +160,18 @@ public struct RenderBackend {
     @inlinable
     public static func materialiseHeap(_ heap: Heap) -> Bool {
         return _backend.materialiseHeap(heap)
+    }
+    
+    static func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
+        return _backend.replaceBackingResource(for: buffer, with: with)
+    }
+    
+    static func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
+        return _backend.replaceBackingResource(for: texture, with: with)
+    }
+    
+    static func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
+        return _backend.replaceBackingResource(for: heap, with: with)
     }
     
     @inlinable
@@ -239,6 +262,31 @@ public struct RenderBackend {
     @inlinable
     static func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState {
         return _backend.updatePurgeableState(for: resource, to: to)
+    }
+    
+    @inlinable
+    public static func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
+        return _backend.sizeAndAlignment(for: texture)
+    }
+    
+    @inlinable
+    public static func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
+        return _backend.sizeAndAlignment(for: buffer)
+    }
+    
+    @inlinable
+    static func usedSize(for heap: Heap) -> Int {
+        return _backend.usedSize(for: heap)
+    }
+    
+    @inlinable
+    static func currentAllocatedSize(for heap: Heap) -> Int {
+        return _backend.currentAllocatedSize(for: heap)
+    }
+    
+    @inlinable
+    static func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int {
+        return _backend.maxAvailableSize(forAlignment: alignment, in: heap)
     }
     
     @inlinable

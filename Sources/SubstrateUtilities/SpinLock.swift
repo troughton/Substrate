@@ -94,6 +94,13 @@ public struct AsyncSpinLock {
     }
     
     @inlinable
+    public func lockSync() {
+        while UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue ||
+                UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: self.value, ordering: .acquiring) == LockState.taken.rawValue {
+        }
+    }
+    
+    @inlinable
     public func lock() async {
         while UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue ||
                 UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: self.value, ordering: .acquiring) == LockState.taken.rawValue {

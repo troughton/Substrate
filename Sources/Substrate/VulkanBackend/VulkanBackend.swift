@@ -174,6 +174,19 @@ public final class VulkanBackend : SpecificRenderBackend {
         return false
     }
     
+    
+    @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
+        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
+        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
+        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
+    }
+    
     @usableFromInline
     func registerExternalResource(_ resource: Resource, backingResource: Any) {
         fatalError("registerExternalResource is unimplemented on Vulkan")
@@ -182,6 +195,27 @@ public final class VulkanBackend : SpecificRenderBackend {
     @usableFromInline
     func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
         fatalError("copyTextureBytes is unimplemented on Vulkan")
+    }
+    
+    
+    @usableFromInline func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
+        fatalError("sizeAndAlignment(for:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
+        fatalError("sizeAndAlignment(for:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func usedSize(for heap: Heap) -> Int {
+        fatalError("usedSize(for:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func currentAllocatedSize(for heap: Heap) -> Int {
+        fatalError("currentAllocatedSize(for:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int {
+        fatalError("maxAvailableSize(forAlignment:in:) is unimplemented on Vulkan")
     }
     
     @usableFromInline

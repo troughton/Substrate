@@ -161,7 +161,9 @@ extension ResourceProtocol {
         return lhs.handle == rhs.handle
     }
     
-    /// Note that setting the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
+    /// Destructive changes to purgeability will be applied once all pending GPU commands have completed,
+    /// while non-destructive changes will be applied immediately.
+    /// Note that using the resource after setting the purgeable state to discardable or discarded results in invalid behaviour.
     public var purgeableState: ResourcePurgeableState {
         get {
             return RenderBackend.updatePurgeableState(for: Resource(self), to: nil)
@@ -171,7 +173,9 @@ extension ResourceProtocol {
         }
     }
     
-    /// Note that updating the purgeable state to discardable or discarded while the resource is in use results in invalid behaviour.
+    /// Destructive changes to purgeability will be applied once all pending GPU commands have completed,
+    /// while non-destructive changes will be applied immediately.
+    /// Note that using the resource after setting the purgeable state to discardable or discarded results in invalid behaviour.
     @discardableResult
     public func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState {
         let oldValue = RenderBackend.updatePurgeableState(for: Resource(self), to: to)
@@ -609,7 +613,7 @@ extension ResourceProtocol {
             return []
         }
         nonmutating set {
-            fatalError()
+            _ = newValue
         }
     }
 }
@@ -646,6 +650,18 @@ public struct Heap : ResourceProtocol {
     @inlinable
     public var size : Int {
         return self.descriptor.size
+    }
+    
+    public var usedSize: Int {
+        return RenderBackend.usedSize(for: self)
+    }
+    
+    public var currentAllocatedSize: Int {
+        return RenderBackend.currentAllocatedSize(for: self)
+    }
+    
+    public func maxAvailableSize(forAlignment alignment: Int) -> Int {
+        return RenderBackend.maxAvailableSize(forAlignment: alignment, in: self)
     }
     
     @inlinable
@@ -703,9 +719,24 @@ public struct Heap : ResourceProtocol {
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
         UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: HeapRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
+    
+    public var childResources: Set<Resource> {
+        _read {
+            HeapRegistry.instance.lock.lock()
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
+            yield HeapRegistry.instance.chunks[chunkIndex].childResources[indexInChunk]
+            HeapRegistry.instance.lock.unlock()
+        }
+        nonmutating _modify {
+            HeapRegistry.instance.lock.lock()
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
+            yield &HeapRegistry.instance.chunks[chunkIndex].childResources[indexInChunk]
+            HeapRegistry.instance.lock.unlock()
+        }
+    }
 
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
         HeapRegistry.instance.dispose(self)
@@ -778,6 +809,7 @@ public struct Buffer : ResourceProtocol {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
             let didAllocate = RenderBackend.materialisePersistentBuffer(self)
             assert(didAllocate, "Allocation failed for persistent buffer \(self)")
+            if !didAllocate { self.dispose() }
         }
     }
     
@@ -809,6 +841,8 @@ public struct Buffer : ResourceProtocol {
             self.dispose()
             return nil
         }
+        
+        heap.childResources.insert(Resource(self))
     }
     
     @inlinable
@@ -1123,9 +1157,10 @@ public struct Buffer : ResourceProtocol {
     }
 
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
+        self.heap?.childResources.remove(Resource(self))
         PersistentBufferRegistry.instance.dispose(self)
     }
     
@@ -1198,6 +1233,7 @@ public struct Texture : ResourceProtocol {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
             let didAllocate = RenderBackend.materialisePersistentTexture(self)
             assert(didAllocate, "Allocation failed for persistent texture \(self)")
+            if !didAllocate { self.dispose() }
         }
     }
         
@@ -1217,6 +1253,7 @@ public struct Texture : ResourceProtocol {
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         let didAllocate = RenderBackend.materialisePersistentTexture(self)
         assert(didAllocate, "Allocation failed for persistent texture \(self)")
+        if !didAllocate { self.dispose() }
     }
     
     @inlinable
@@ -1234,6 +1271,8 @@ public struct Texture : ResourceProtocol {
             self.dispose()
             return nil
         }
+        
+        heap.childResources.insert(Resource(self))
     }
     
     @available(*, deprecated, renamed: "init(descriptor:externalResource:renderGraph:flags:)")
@@ -1530,9 +1569,10 @@ public struct Texture : ResourceProtocol {
     }
     
     public func dispose() {
-        guard self._usesPersistentRegistry else {
+        guard self._usesPersistentRegistry, self.isValid else {
             return
         }
+        self.heap?.childResources.remove(Resource(self))
         PersistentTextureRegistry.instance.dispose(self)
     }
     

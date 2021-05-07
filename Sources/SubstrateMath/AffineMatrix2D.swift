@@ -7,12 +7,13 @@ import RealModule
 
 /// A matrix that can represent 2D affine transformations.
 public struct AffineMatrix2D<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable, CustomStringConvertible {
-    public var c0 : SIMD2<Scalar> = SIMD2(1, 0)
-    public var c1 : SIMD2<Scalar> = SIMD2(0, 1)
-    public var c2 : SIMD2<Scalar> = SIMD2(0, 0)
+    public var c0 : SIMD2<Scalar>
+    public var c1 : SIMD2<Scalar>
+    public var c2 : SIMD2<Scalar>
     
     @inlinable
     public init() {
+        self.init(diagonal: SIMD2(repeating: 1.0))
     }
     
     @inlinable

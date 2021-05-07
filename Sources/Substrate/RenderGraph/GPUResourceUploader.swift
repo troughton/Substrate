@@ -25,7 +25,7 @@ public final class GPUResourceUploader {
     @usableFromInline static var renderGraph : RenderGraph! = nil
     private static var maxUploadSize = 128 * 1024 * 1024
     private static var enqueuedPassLock = SpinLock()
-    private static var enqueuedPasses = [UploadResourcePass]()
+    private static var enqueuedPasses = [BlitRenderPass]()
     
     @usableFromInline
     final class UploadResourcePass : BlitRenderPass {
@@ -58,12 +58,13 @@ public final class GPUResourceUploader {
     public static func flush() async {
         var enqueuedBytes = 0
         for pass in self.enqueuedPasses {
-            if enqueuedBytes > 0, enqueuedBytes + pass.stagingBufferLength > self.maxUploadSize {
+            let passStagingBufferLength = (pass as? UploadResourcePass)?.stagingBufferLength ?? 0
+            if enqueuedBytes > 0, enqueuedBytes + passStagingBufferLength > self.maxUploadSize {
                 await self.renderGraph.execute()
                 enqueuedBytes = 0
             }
             self.renderGraph.addPass(pass)
-            enqueuedBytes += pass.stagingBufferLength
+            enqueuedBytes += passStagingBufferLength
         }
         self.enqueuedPasses.removeAll()
         
@@ -75,7 +76,9 @@ public final class GPUResourceUploader {
     public static func addCopyPass(_ pass: @escaping (_ bce: BlitCommandEncoder) async -> Void) {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
-        renderGraph.addBlitCallbackPass(pass)
+        self.enqueuedPassLock.withLock {
+            self.enqueuedPasses.append(CallbackBlitRenderPass(name: "GPUResourceUploader Copy Pass", execute: pass))
+        }
     }
     
     public static func addUploadPass(stagingBufferLength: Int, pass: @escaping (_ buffer: Buffer, _ bce: BlitCommandEncoder) async -> Void) {
@@ -84,13 +87,15 @@ public final class GPUResourceUploader {
         }
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
-        self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
+        self.enqueuedPassLock.withLock {
+            self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
+        }
     }
     
     public static func generateMipmaps(for texture: Texture) {
-        self.renderGraph.addBlitCallbackPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
+        self.enqueuedPasses.append(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
             bce.generateMipmaps(for: texture)
-        }
+        })
     }
     
     public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int) -> Task.Handle<Void, Never> {
@@ -106,19 +111,19 @@ public final class GPUResourceUploader {
         } else {
             assert(buffer.storageMode == .private)
             
-            let group = DispatchGroup()
-            group.enter()
+            let lock = AsyncSpinLock()
+            lock.lockSync()
             
             self.addUploadPass(stagingBufferLength: count, pass: { stagingBuffer, bce in
                 stagingBuffer.withMutableContents { contents, _ in contents.copyMemory(from: UnsafeRawBufferPointer(start: bytes, count: count)) }
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBuffer.range.lowerBound, to: buffer, destinationOffset: offset, size: count)
-                group.leave()
+                lock.unlock()
             })
             
             return detach {
-                while group.wait(timeout: .now()) == .timedOut {
-                    await Task.yield()
-                }
+                await lock.lock()
+                lock.unlock()
+                lock.deinit()
             }
         }
     }
@@ -136,8 +141,8 @@ public final class GPUResourceUploader {
         } else {
             assert(texture.storageMode == .private)
             
-            let group = DispatchGroup()
-            group.enter()
+            let lock = AsyncSpinLock()
+            lock.lockSync()
             
             self.addUploadPass(stagingBufferLength: bytesPerImage, pass: { stagingBuffer, bce in
                 stagingBuffer.withMutableContents { contents, _ in
@@ -145,13 +150,13 @@ public final class GPUResourceUploader {
                 }
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBuffer.range.lowerBound, sourceBytesPerRow: bytesPerRow, sourceBytesPerImage: bytesPerImage, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: region.origin)
                 
-                group.leave()
+                lock.unlock()
             })
             
             return detach {
-                while group.wait(timeout: .now()) == .timedOut {
-                    await Task.yield()
-                }
+                await lock.lock()
+                lock.unlock()
+                lock.deinit()
             }
         }
     }

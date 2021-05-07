@@ -33,6 +33,7 @@ let package = Package(
         .package(name: "LodePNG", url: "https://github.com/troughton/LodePNG-SPM", from: "0.0.1"),
         .package(url: "https://github.com/troughton/SwiftImGui", from: "1.7.32"),
         .package(url: "https://github.com/apple/swift-numerics", from: "0.1.0"),
+        .package(url: "https://github.com/apple/swift-collections/", .upToNextMajor(from: "0.0.2"))
     ],
     targets: [
         // FrameGraph compatibility libraries
@@ -67,7 +68,7 @@ let package = Package(
                 ]),
         
         .target(name: "SubstrateCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
-        .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "Substrate/CMakeLists.txt", "Substrate/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"],
+        .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross"), .product(name: "OrderedCollections", package: "swift-collections")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "Substrate/CMakeLists.txt", "Substrate/BackendExecution/CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"],
                 swiftSettings: [
                     .unsafeFlags([
                         "-Xfrontend", "-enable-experimental-concurrency",

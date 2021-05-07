@@ -7,12 +7,14 @@ import RealModule
 
 @frozen
 public struct Matrix3x3<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
-    public var c0: SIMD3<Scalar> = SIMD3(1, 0, 0)
-    public var c1: SIMD3<Scalar> = SIMD3(0, 1, 0)
-    public var c2: SIMD3<Scalar> = SIMD3(0, 0, 1)
+    public var c0: SIMD3<Scalar>
+    public var c1: SIMD3<Scalar>
+    public var c2: SIMD3<Scalar>
   
     @inlinable
-    public init() {}
+    public init() {
+        self.init(diagonal: SIMD3(repeating: 1.0))
+    }
     
     /// Creates an instance using the vector to initialize the diagonal elements
     @inlinable

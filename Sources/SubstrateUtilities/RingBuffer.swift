@@ -8,7 +8,7 @@
 
 import Foundation
 
-public final class RingBuffer<Element> : Collection {
+public final class RingBuffer<Element> : RandomAccessCollection, RangeReplaceableCollection {
     
 //    public typealias SubSequence = Slice<RingBuffer<Element>>
     public typealias Index = Int
@@ -49,6 +49,16 @@ public final class RingBuffer<Element> : Collection {
         self.reserveCapacity(self.count + 1)
         self.buffer.advanced(by: self.endIndex % self.capacity).initialize(to: element)
         self.endIndex += 1
+    }
+    
+    @inlinable
+    public func remove(at index: Int) -> Element {
+        let element = self.buffer.advanced(by: index % self.capacity).move()
+        self.endIndex -= 1
+        for i in index..<self.endIndex {
+            self.buffer.advanced(by: i % self.capacity).moveInitialize(from: self.buffer.advanced(by: (i + 1) % self.capacity), count: 1)
+        }
+        return element
     }
     
     @inlinable
