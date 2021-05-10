@@ -62,6 +62,21 @@ public final class RingBuffer<Element> : RandomAccessCollection, RangeReplaceabl
     }
     
     @inlinable
+    public func removeFirst(_ k: Int) {
+        precondition(k <= self.count)
+        guard k > 0 else { return }
+        
+        self.buffer.advanced(by: self.startIndex % self.capacity).deinitialize(count: k)
+        self.startIndex = self.startIndex &+ k
+        
+        if self.startIndex >= self.capacity {
+            assert(self.endIndex >= self.startIndex)
+            self.startIndex -= self.capacity
+            self.endIndex -= self.capacity
+        }
+    }
+    
+    @inlinable
     public func popFirst() -> Element? {
         if self.startIndex < self.endIndex {
             return self.removeFirst()

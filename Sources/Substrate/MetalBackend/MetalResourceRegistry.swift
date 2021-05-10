@@ -290,7 +290,9 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
 
     func disposeHeap(_ heap: Heap) {
-        self.heapReferences.removeValue(forKey: heap)
+        if let mtlHeap = self.heapReferences.removeValue(forKey: heap) {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlHeap)))
+        }
     }
     
     func disposeTexture(_ texture: Texture) {
@@ -298,26 +300,26 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             if texture.flags.contains(.windowHandle) {
                 return
             }
-            mtlTexture._texture.release()
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlTexture._texture.toOpaque())))
         }
     }
     
     func disposeBuffer(_ buffer: Buffer) {
         if let mtlBuffer = self.bufferReferences.removeValue(forKey: buffer) {
-            mtlBuffer._buffer.release()
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
     func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
         if let mtlBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
             assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal RenderGraph backend.")
-            mtlBuffer._buffer.release()
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
     func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
         if let mtlBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
-            mtlBuffer._buffer.release()
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
@@ -375,7 +377,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     public private(set) var frameDrawables : [CAMetalDrawable] = []
     
-    public init(device: MTLDevice, inflightFrameCount: Int, transientRegistryIndex: Int, persistentRegistry: MetalPersistentResourceRegistry) {
+    public init(device: MTLDevice, inflightFrameCount: Int, queue: Queue, transientRegistryIndex: Int, persistentRegistry: MetalPersistentResourceRegistry) {
         self.device = device
         self.persistentRegistry = persistentRegistry
         
@@ -413,9 +415,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             self.memorylessTextureAllocator = nil
         }
         
-        self.privateAllocator = MetalHeapResourceAllocator(device: device)
-        self.depthRenderTargetAllocator = MetalHeapResourceAllocator(device: device)
-        self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device)
+        self.privateAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
+        self.depthRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
+        self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
         
         self.prepareFrame()
     }

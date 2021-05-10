@@ -18,6 +18,7 @@ import Metal
 // Any resource with an index higher than that cannot be used while a resource with a lower index is still in use.
 
 class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
+    let queue: Queue
     var heap : MTLHeap? = nil
     
     static let historyFrames = 30 // The number of frames to keep track of the memory usage for
@@ -41,8 +42,9 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     
     let device : MTLDevice
     
-    public init(device: MTLDevice) {
+    public init(device: MTLDevice, queue: Queue) {
         self.device = device
+        self.queue = queue
     }
     
     func resetHeap() {
@@ -80,6 +82,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
             let memoryHighWaterMark = self.frameMemoryUsages.max()!
             
             if memoryHighWaterMark > 0, (self.heap?.size ?? 0) > 2 * memoryHighWaterMark {
+                CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(self.heap!)), after: self.waitEvent.waitValue, on: self.queue)
                 self.heap = nil
                 self.reserveCapacity(memoryHighWaterMark)
             }
@@ -111,6 +114,8 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     }
     
     private func depositResource(_ resource: MTLResource, fences: [FenceDependency], waitEvent: ContextWaitEvent) {
+        CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(resource)), after: waitEvent.waitValue, on: self.queue)
+        
         let aliasingIndex = self.resourceAliasingIndices.removeValue(forKey: ObjectIdentifier(resource))!
 
         guard resource.heap === self.heap else {

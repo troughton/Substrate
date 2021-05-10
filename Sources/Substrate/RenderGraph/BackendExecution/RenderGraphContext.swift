@@ -42,7 +42,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.renderGraphQueue = Queue()
         self.commandQueue = backend.makeQueue(renderGraphQueue: self.renderGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
-        self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount)
+        self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount, queue: self.renderGraphQueue)
         self.accessSemaphore = DispatchSemaphore(value: inflightFrameCount)
         
         self.commandGenerator = ResourceCommandGenerator()
@@ -128,6 +128,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                     }
                     self.renderGraphQueue.lastCompletedCommand = queueCBIndex
                     self.renderGraphQueue.lastCompletionTime = DispatchTime.now()
+                    CommandEndActionManager.manager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
                     
                     if cbIndex == 0 {
                         gpuStartTime = commandBuffer.gpuStartTime
@@ -135,7 +136,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                     if cbIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
                         let gpuEndTime = commandBuffer.gpuEndTime
                         completion((gpuEndTime - gpuStartTime) * 1000.0)
-                        self.backend.didCompleteFrame(queueCBIndex, queue: self.renderGraphQueue)
+                        self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue)
                         self.accessSemaphore.signal()
                         
                         self.emptyFrameCompletionHandlerSemaphore.withSemaphore {
