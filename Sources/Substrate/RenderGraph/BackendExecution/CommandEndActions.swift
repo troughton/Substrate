@@ -68,7 +68,7 @@ final class CommandEndActionManager {
             do {
                 var processedCount = 0
                 for action in self.queueCommandEndActions[Int(queue.index)] {
-                    guard action.after >= command else {
+                    guard action.after <= command else {
                         break
                     }
                     action.type.execute()
