@@ -336,6 +336,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     typealias Backend = MetalBackend
     
     let device: MTLDevice
+    let queue: Queue
     let persistentRegistry : MetalPersistentResourceRegistry
     var accessLock = SpinLock()
     
@@ -352,8 +353,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     private var heapResourceUsageFences = [Resource : [FenceDependency]]()
     private var heapResourceDisposalFences = [Resource : [FenceDependency]]()
-    
-    private var enqueuedTextureViewDisposals = [Unmanaged<MTLTexture>]()
     
     private let frameSharedBufferAllocator : MetalTemporaryBufferAllocator
     private let frameSharedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
@@ -379,6 +378,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     public init(device: MTLDevice, inflightFrameCount: Int, queue: Queue, transientRegistryIndex: Int, persistentRegistry: MetalPersistentResourceRegistry) {
         self.device = device
+        self.queue = queue
         self.persistentRegistry = persistentRegistry
         
         self.textureReferences = .init(transientRegistryIndex: transientRegistryIndex)
@@ -632,8 +632,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         return textureReference
     }
     
-    var lastTimeWindowHandleCalled = DispatchTime.now().uptimeNanoseconds
-    
     @discardableResult
     public func allocateWindowHandleTexture(_ texture: Texture) throws -> MTLTextureReference {
         precondition(texture.flags.contains(.windowHandle))
@@ -644,11 +642,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         
         // The texture reference should always be present but the texture itself might not be.
         if self.textureReferences[texture]!._texture == nil {
-            let currentTime = DispatchTime.now().uptimeNanoseconds
-            let elapsed = currentTime - lastTimeWindowHandleCalled
-//            print("allocateWindowHandleTexture: \(Double(elapsed) * 1e-6)")
-            lastTimeWindowHandleCalled = currentTime
-            
             guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
                   let mtlDrawable = windowReference.nextDrawable() else {
                 throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
@@ -836,7 +829,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
                 return
             }
             if texture.isTextureView {
-                self.enqueuedTextureViewDisposals.append(mtlTexture._texture)
+                CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(mtlTexture._texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
                 return
             }
             
@@ -898,11 +891,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.bufferReferences.removeAll()
         self.argumentBufferReferences.removeAll()
         self.argumentBufferArrayReferences.removeAll()
-        
-        for texture in self.enqueuedTextureViewDisposals {
-            texture.release()
-        }
-        self.enqueuedTextureViewDisposals.removeAll(keepingCapacity: true)
         
         self.heapResourceUsageFences.removeAll(keepingCapacity: true)
         self.heapResourceDisposalFences.removeAll(keepingCapacity: true)
