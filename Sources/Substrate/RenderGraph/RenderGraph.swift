@@ -420,7 +420,7 @@ public final class RenderGraph {
     /// resourceUsagesAllocator is used for resource usages, and lasts one execution of the RenderGraph.
     static var resourceUsagesAllocator : TagAllocator! = nil
     
-    private static var threadUnmanagedReferences : [ExpandingBuffer<Releasable>]! = nil
+    private static var threadUnmanagedReferences : [ExpandingBuffer<Unmanaged<AnyObject>>]! = nil
     
     private var renderPasses : [RenderPassRecord] = []
     private var usedResources : Set<Resource> = []

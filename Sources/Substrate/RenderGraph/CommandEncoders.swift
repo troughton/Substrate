@@ -1250,14 +1250,14 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             // Set the depth-stencil and pipeline states here to filter out unused states.
             if self.depthStencilStateChanged {
                 let box = Unmanaged.passRetained(ReferenceBox(self.depthStencilDescriptor!))
-                commandRecorder.unmanagedReferences.append(box)
+                commandRecorder.unmanagedReferences.append(.fromOpaque(box.toOpaque()))
                 commandRecorder.record(RenderGraphCommand.setDepthStencilDescriptor(box))
                 self.depthStencilStateChanged = false
             }
             
             if self.pipelineStateChanged {
                 let box = Unmanaged.passRetained(ReferenceBox(self.renderPipelineDescriptor!))
-                commandRecorder.unmanagedReferences.append(box)
+                commandRecorder.unmanagedReferences.append(.fromOpaque(box.toOpaque()))
                 commandRecorder.record(RenderGraphCommand.setRenderPipelineDescriptor(box))
                 // self.pipelineStateChanged = false // set by super.updateResourceUsages
             }
@@ -1344,7 +1344,7 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
         self.currentComputePipeline = pipelineBox
         
         let box = Unmanaged.passRetained(pipelineBox)
-        commandRecorder.unmanagedReferences.append(box)
+        commandRecorder.unmanagedReferences.append(.fromOpaque(box.toOpaque()))
         commandRecorder.record(.setComputePipelineDescriptor(box))
     }
     
@@ -1559,7 +1559,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
     
     func encodeCommand(usingResources resources: [(Resource, ResourceUsageType, ActiveResourceRange)], _ command: @escaping (_ commandBuffer: UnsafeRawPointer) -> Void) {
         let commandBox = Unmanaged.passRetained(ExternalCommandBox(command: command))
-        self.commandRecorder.unmanagedReferences.append(commandBox)
+        self.commandRecorder.unmanagedReferences.append(.fromOpaque(commandBox.toOpaque()))
         
         for (resource, usageType, activeRange) in resources {
             _ = commandRecorder.boundResourceUsageNode(for: resource, encoder: self, usageType: usageType, stages: .compute, activeRange: activeRange, inArgumentBuffer: false, firstCommandOffset: self.nextCommandOffset)
@@ -1584,10 +1584,10 @@ public final class ExternalCommandEncoder : CommandEncoder {
     public func encodeRayIntersection(intersector: MPSRayIntersector, intersectionType: MPSIntersectionType, rayBuffer: Buffer, rayBufferOffset: Int, intersectionBuffer: Buffer, intersectionBufferOffset: Int, rayCount: Int, accelerationStructure: MPSAccelerationStructure) {
         
         let intersector = Unmanaged.passRetained(intersector)
-        self.commandRecorder.unmanagedReferences.append(intersector)
+        self.commandRecorder.unmanagedReferences.append(.fromOpaque(intersector.toOpaque()))
         
         let accelerationStructure = Unmanaged.passRetained(accelerationStructure)
-        self.commandRecorder.unmanagedReferences.append(accelerationStructure)
+        self.commandRecorder.unmanagedReferences.append(.fromOpaque(accelerationStructure.toOpaque()))
         
         commandRecorder.addResourceUsage(for: rayBuffer, bufferRange: rayBufferOffset..<(rayBufferOffset + rayCount * MemoryLayout<MPSRayOriginMinDistanceDirectionMaxDistance>.stride), commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
         commandRecorder.addResourceUsage(for: intersectionBuffer, bufferRange: intersectionBufferOffset..<(intersectionBufferOffset + rayCount * MemoryLayout<MPSIntersectionDistancePrimitiveIndexInstanceIndexCoordinates>.stride), commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
@@ -1599,10 +1599,10 @@ public final class ExternalCommandEncoder : CommandEncoder {
     public func encodeRayIntersection(intersector: MPSRayIntersector, intersectionType: MPSIntersectionType, rayBuffer: Buffer, rayBufferOffset: Int, intersectionBuffer: Buffer, intersectionBufferOffset: Int, rayCountBuffer: Buffer, rayCountBufferOffset: Int, accelerationStructure: MPSAccelerationStructure) {
         
         let intersector = Unmanaged.passRetained(intersector)
-        self.commandRecorder.unmanagedReferences.append(intersector)
+        self.commandRecorder.unmanagedReferences.append(.fromOpaque(intersector.toOpaque()))
         
         let accelerationStructure = Unmanaged.passRetained(accelerationStructure)
-        self.commandRecorder.unmanagedReferences.append(accelerationStructure)
+        self.commandRecorder.unmanagedReferences.append(.fromOpaque(accelerationStructure.toOpaque()))
         
         commandRecorder.addResourceUsage(for: rayBuffer, bufferRange: rayBufferOffset..<rayBuffer.length, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
         commandRecorder.addResourceUsage(for: intersectionBuffer, bufferRange: intersectionBufferOffset..<intersectionBuffer.length, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
