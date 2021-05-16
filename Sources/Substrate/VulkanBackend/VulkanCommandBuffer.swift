@@ -14,7 +14,7 @@ import Foundation
 
 // Represents all resources that are associated with a particular command buffer
 // and should be freed once the command buffer has finished execution.
-public final class VulkanCommandBuffer: BackendCommandBuffer {
+final class VulkanCommandBuffer: BackendCommandBuffer {
     typealias Backend = VulkanBackend
 
     struct Error: Swift.Error {

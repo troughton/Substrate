@@ -314,36 +314,6 @@ public enum FunctionType : UInt {
     case kernel
 }
 
-public protocol VertexAttribute : AnyObject {
-    
-    var name: String? { get }
-    
-    var attributeIndex: Int { get }
-    
-    var attributeType: DataType { get }
-    
-    var isActive: Bool { get }
-    
-    var isPatchData: Bool { get }
-    
-    var isPatchControlPointData: Bool { get }
-}
-
-public protocol Attribute : AnyObject {
-    
-    var name: String? { get }
-    
-    var attributeIndex: Int { get }
-    
-    var attributeType: DataType { get }
-    
-    var isActive: Bool { get }
-    
-    var isPatchData: Bool { get }
-    
-    var isPatchControlPointData: Bool { get }
-}
-
 public enum FunctionConstantValue : Hashable {
     case int8(Int8)
     case int16(Int16)

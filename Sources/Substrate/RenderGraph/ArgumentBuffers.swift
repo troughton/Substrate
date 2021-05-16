@@ -47,21 +47,6 @@ public struct MetalIndexedFunctionArgument : FunctionArgumentKey {
 }
 #endif
 
-
-public struct FunctionArgumentCodingKey : FunctionArgumentKey {
-    public let codingKey : CodingKey
-    
-    @inlinable
-    public init(_ codingKey: CodingKey) {
-        self.codingKey = codingKey
-    }
-    
-    @inlinable
-    public var stringValue: String {
-        return self.codingKey.stringValue
-    }
-}
-
 extension FunctionArgumentKey {
     
     @inlinable

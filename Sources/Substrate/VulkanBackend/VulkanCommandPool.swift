@@ -12,7 +12,7 @@ import SubstrateUtilities
 import Dispatch
 
 /// Wraps a Vulkan queue.
-public final class VulkanDeviceQueue {
+final class VulkanDeviceQueue {
     let commandBufferManagementQueue = DispatchQueue(label: "Vulkan Command Buffer Management")
 
     public let device: VulkanDevice

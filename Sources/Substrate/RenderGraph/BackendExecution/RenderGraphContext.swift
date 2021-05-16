@@ -62,7 +62,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
-    public func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>, completion: @escaping (Double) -> Void) {
+    func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>, completion: @escaping (Double) -> Void) {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         self.resourceRegistry.prepareFrame()

@@ -28,10 +28,6 @@ extension RenderPass {
     public var writtenResources : [Resource] { return [] }
 }
 
-protocol ReflectableRenderPass {
-    associatedtype Reflection : RenderPassReflection
-}
-
 public protocol DrawRenderPass : RenderPass {
     var renderTargetDescriptor : RenderTargetDescriptor { get }
     func execute(renderCommandEncoder: RenderCommandEncoder)
@@ -687,7 +683,7 @@ public final class RenderGraph {
     func evaluateResourceUsages(renderPasses: [RenderPassRecord]) {
         let jobManager = RenderGraph.jobManager
         
-        for passRecord in renderPasses where passRecord.pass.passType == .cpu {
+        for passRecord in renderPasses where passRecord.type == .cpu {
             if passRecord.pass.writtenResources.isEmpty {
                 self.executePass(passRecord, threadIndex: jobManager.threadIndex)
             } else {

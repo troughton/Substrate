@@ -357,7 +357,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         usagePointersToUpdate.removeAll()
     }
    
-    public func updateResourceUsages(endingEncoding: Bool = false) {
+    func updateResourceUsages(endingEncoding: Bool = false) {
         guard self.needsUpdateBindings || endingEncoding else {
             return
         }
@@ -777,7 +777,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.pendingArgumentBufferCountLastUpdate = self.pendingArgumentBuffers.count
     }
     
-    public func resetAllBindings() {
+    @usableFromInline func resetAllBindings() {
         self.resourceBindingCommandCountLastUpdate = 0
         self.pendingArgumentBufferByKeyCountLastUpdate = 0
         self.pendingArgumentBufferCountLastUpdate = 0
@@ -801,7 +801,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         })
     }
     
-    public func endEncoding() {
+    @usableFromInline func endEncoding() {
         self.updateResourceUsages(endingEncoding: true)
         self.popDebugGroup() // Pass Name
     }
@@ -1245,7 +1245,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         commandRecorder.record(RenderGraphCommand.drawIndexedPrimitives, (primitiveType, UInt32(indexCount), indexType, indexBuffer, UInt32(indexBufferOffset), UInt32(instanceCount), Int32(baseVertex), UInt32(baseInstance)))
     }
     
-    public override func updateResourceUsages(endingEncoding: Bool = false) {
+    override func updateResourceUsages(endingEncoding: Bool = false) {
         if !endingEncoding {
             // Set the depth-stencil and pipeline states here to filter out unused states.
             if self.depthStencilStateChanged {
@@ -1278,7 +1278,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         }
     }
     
-    public override func endEncoding() {
+    @usableFromInline override func endEncoding() {
         // Reset any dynamic state to the defaults.
         let renderTargetSize = self.drawRenderPass.renderTargetDescriptor.size
         if self.nonDefaultDynamicState.contains(.viewport) {
@@ -1439,7 +1439,7 @@ public final class BlitCommandEncoder : CommandEncoder {
         self.pushDebugGroup(passRecord.name)
     }
     
-    public func endEncoding() {
+    @usableFromInline func endEncoding() {
         self.popDebugGroup() // Pass Name
     }
     
@@ -1547,7 +1547,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
         self.pushDebugGroup(passRecord.name)
     }
     
-    public func endEncoding() {
+    @usableFromInline func endEncoding() {
         self.popDebugGroup() // Pass Name
     }
     

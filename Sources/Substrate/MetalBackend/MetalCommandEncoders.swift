@@ -12,7 +12,7 @@ import SubstrateUtilities
 
 typealias FGMTLRenderCommandEncoder = FGMTLThreadRenderCommandEncoder
 
-public final class FGMTLParallelRenderCommandEncoder {
+final class FGMTLParallelRenderCommandEncoder {
     static let commandCountThreshold = Int.max // 512
     
     let parallelEncoder: MTLParallelRenderCommandEncoder
@@ -74,7 +74,7 @@ public final class FGMTLParallelRenderCommandEncoder {
     }
 }
 
-public final class FGMTLThreadRenderCommandEncoder {
+final class FGMTLThreadRenderCommandEncoder {
     let encoder: MTLRenderCommandEncoder
     let isAppleSiliconGPU: Bool
     
@@ -362,7 +362,7 @@ public final class FGMTLThreadRenderCommandEncoder {
     }
 }
 
-public final class FGMTLComputeCommandEncoder {
+final class FGMTLComputeCommandEncoder {
     let encoder: MTLComputeCommandEncoder
     let isAppleSiliconGPU: Bool
     
@@ -510,7 +510,7 @@ public final class FGMTLComputeCommandEncoder {
     }
 }
 
-public final class FGMTLBlitCommandEncoder {
+final class FGMTLBlitCommandEncoder {
     let encoder: MTLBlitCommandEncoder
     let isAppleSiliconGPU: Bool
     

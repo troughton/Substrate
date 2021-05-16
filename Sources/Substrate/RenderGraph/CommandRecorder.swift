@@ -21,7 +21,7 @@ import MetalPerformanceShaders
 import Vulkan
 #endif
 
-public final class ReferenceBox<T> {
+@usableFromInline final class ReferenceBox<T> {
     public var value : T
     
     public init(_ value: T) {

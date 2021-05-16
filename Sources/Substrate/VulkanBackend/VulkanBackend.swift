@@ -12,7 +12,7 @@ import SubstrateCExtras
 import SubstrateUtilities
 import Foundation
 
-public final class VulkanBackend : SpecificRenderBackend {
+final class VulkanBackend : SpecificRenderBackend {
     typealias BufferReference = VkBufferReference
     typealias TextureReference = VkImageReference
     typealias ArgumentBufferReference = VulkanArgumentBuffer
