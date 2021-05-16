@@ -128,6 +128,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                     }
                     self.renderGraphQueue.lastCompletedCommand = queueCBIndex
                     self.renderGraphQueue.lastCompletionTime = DispatchTime.now()
+                    
                     CommandEndActionManager.manager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
                     
                     if cbIndex == 0 {

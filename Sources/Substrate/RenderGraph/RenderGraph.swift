@@ -10,13 +10,55 @@ import Foundation
 import SubstrateUtilities
 import OSLog
 
+
+/// A render pass is the fundamental unit of work within Substrate. All GPU commands are submitted by enqueuing
+/// render passes on a `RenderGraph` and then executing that `RenderGraph`.
+///
+/// There are five sub-protocols of `RenderPass` that a render pass can conform to: `DrawRenderPass`,
+/// `ComputeRenderPass`, `CPURenderPass`, `BlitRenderPass`, and `ExternalRenderPass`.
+/// When implementing a render pass, you should declare a conformance to one of the subprotocols rather than to
+/// `RenderPass` directly.
+///
+/// Render passes are executed in a deferred manner. When you add a render pass to a render graph (via `RenderGraph.addPass()`,
+/// you are requesting that the render graph call the `execute` method on the render pass when `RenderGraph.execute`
+/// is called on the render graph. Passes may execute concurrently in any order, with the exception of `CPURenderPass` passes, which are
+/// always executed in the order they were submitted.
+///
+/// - SeeAlso: `RenderGraph`
+/// - SeeAlso: `DrawRenderPass`
+/// - SeeAlso: `ComputeRenderPass`
+/// - SeeAlso: `BlitRenderPass`
+/// - SeeAlso: `ExternalRenderPass`
+/// - SeeAlso: `CPURenderPass`
+///
 public protocol RenderPass : AnyObject {
+    /// The debug name for the pass.
     var name : String { get }
     
+    /// Render passes can optionally declare a list of resources that are read and written by the pass.
+    /// When `writtenResources` is non-empty, execution of the pass is delayed until it is determined
+    /// that some other pass has a dependency on a resource within `writtenResources`. If no other pass
+    /// reads from any of the resources this pass writes to, the pass' `execute` method will never be called.
+    /// This is useful for conditionally avoiding CPU work performed within the `execute` method.
+    ///
+    /// A pass can implicitly declare dependencies on other passes by including resources written by those passes within
+    /// its `readResources` list.
+    ///
+    /// If  `writtenResources` contains persistent or history-buffer resources, a pass that writes to them is never culled
+    /// even if no other pass reads from them within the same render graph.
+    ///
+    /// `readResources` is ignored if `writtenResources` is empty.
     var readResources : [Resource] { get }
-    var writtenResources : [Resource] { get }
     
-    var passType : RenderPassType { get }
+    /// Render passes can optionally declare a list of resources that are read and written by the pass.
+    /// When `writtenResources` is non-empty, execution of the pass is delayed until it is determined
+    /// that some other pass has a dependency on a resource within `writtenResources`. If no other pass
+    /// reads from any of the resources this pass writes to, the pass' `execute` method will never be called.
+    /// This is useful for conditionally avoiding CPU work performed within the `execute` method.
+    ///
+    /// If  `writtenResources` contains persistent or history-buffer resources, a pass that writes to them is never culled
+    /// even if no other pass reads from them within the same render graph.
+    var writtenResources : [Resource] { get }
 }
 
 extension RenderPass {
@@ -28,21 +70,48 @@ extension RenderPass {
     public var writtenResources : [Resource] { return [] }
 }
 
+/// A `DrawRenderPass` is any pass that uses the GPU's raster pipeline to draw to some number of render targets.
+/// Typically, a `DrawRenderPass` would consist of setting a vertex and fragment shader, binding some number of shader resources,
+/// and then drawing some primitives.
 public protocol DrawRenderPass : RenderPass {
+    /// A description of the render target to render to for this render pass.
+    /// A render target consists of some number of colour attachments and zero or one depth and stencil attachments.
+    /// Each attachment may additionally specify a _resolve_ attachment for use in MSAA resolve.
+    ///
+    /// Passes that share compatible render target descriptors (with no conflicting attachments) may be merged by the render graph
+    /// to benefit performance, although this should have no observable change in behaviour.
+    ///
+    /// - SeeAlso: `RenderTargetDescriptor`
     var renderTargetDescriptor : RenderTargetDescriptor { get }
+    
+    /// `execute` is called by the render graph to allow a `DrawRenderPass` to encode GPU work for the render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass.
+    ///
+    /// - Parameter renderCommandEncoder: A draw render pass uses the passed-in `RenderCommandEncoder`
+    /// to set GPU state and enqueue rendering commands.
+    ///
+    /// - SeeAlso: `RenderCommandEncoder`
     func execute(renderCommandEncoder: RenderCommandEncoder)
     
+    /// The operation to perform on each render target attachment at the start of the render pass.
+    ///
+    /// - Parameter attachmentIndex: The index of the attachment (within the
+    /// `renderTargetDescriptor`'s `colorAttachments`array) to return the operation for.
+    ///
+    /// - Returns: The operation to perform on attachment `attachmentIndex` at the start
+    /// of the render pass.
     func colorClearOperation(attachmentIndex: Int) -> ColorClearOperation
+    
+    /// The operation to perform on the depth attachment at the start of the render pass.
+    /// Ignored if there is no depth attachment specified in the `renderTargetDescriptor`.
     var depthClearOperation: DepthClearOperation { get }
+    
+    /// The operation to perform on the stencil attachment at the start of the render pass.
+    /// Ignored if there is no depth attachment specified in the `renderTargetDescriptor`.
     var stencilClearOperation: StencilClearOperation { get }
 }
 
 extension DrawRenderPass {
-    @inlinable
-    public var passType : RenderPassType {
-        return .draw
-    }
-    
     @inlinable
     public func colorClearOperation(attachmentIndex: Int) -> ColorClearOperation {
         return .keep
@@ -86,53 +155,75 @@ extension DrawRenderPass {
     }
 }
 
+/// A `ComputeRenderPass` is any pass that uses the GPU's compute pipeline to perform arbitrary work through a series of sized dispatches.
 public protocol ComputeRenderPass : RenderPass {
+    /// `execute` is called by the render graph to allow a `ComputeRenderPass` to encode GPU work for the render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass.
+    ///
+    /// - Parameter computeCommandEncoder: A compute render pass uses the passed-in `ComputeCommandEncoder`
+    /// to set GPU state and enqueue dispatches.
+    ///
+    /// - SeeAlso: `ComputeCommandEncoder`
     func execute(computeCommandEncoder: ComputeCommandEncoder)
 }
 
-extension ComputeRenderPass {
-    @inlinable
-    public var passType : RenderPassType {
-        return .compute
-    }
-}
-
+/// A `CPURenderPass` is a pass that does not encode any GPU work but may access GPU resources.
+/// For example, a `CPURenderPass` might fill GPU-visible `Buffer`s with CPU-generated data.
 public protocol CPURenderPass : RenderPass {
+    /// `execute` is called by the render graph to allow a `CPURenderPass` to perform work that accesses GPU resources.
+    /// It will be called in sequence order of the submission of `CPURenderPass` instances to the render graph.
     func execute()
 }
 
-extension CPURenderPass {
-    @inlinable
-    public var passType : RenderPassType {
-        return .cpu
-    }
-}
-
+/// A `BlitRenderPass` is a pass that uses GPU's blit/copy pipeline to copy data between GPU resources.
 public protocol BlitRenderPass : RenderPass {
+    /// `execute` is called by the render graph to allow a `BlitRenderPass` to encode GPU work for the render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass.
+    ///
+    /// - Parameter blitCommandEncoder: A blit render pass uses the passed-in `BlitCommandEncoder`
+    /// to copy data between GPU resources.
+    ///
+    /// - SeeAlso: `BlitCommandEncoder`
     func execute(blitCommandEncoder: BlitCommandEncoder)
 }
 
-extension BlitRenderPass {
-    @inlinable
-    public var passType : RenderPassType {
-        return .blit
-    }
-}
-
+/// An `ExternalRenderPass` is a pass that bypasses Substrate to encode directly to an underlying GPU command buffer.
 public protocol ExternalRenderPass : RenderPass {
+    /// `execute` is called by the render graph to allow an `ExternalRenderPass` to encode arbitrary GPU work for the render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass.
+    ///
+    /// - Parameter externalCommandEncoder: An external render pass uses the passed-in `ExternalRenderPass`
+    /// to encode arbitrary GPU work.
+    ///
+    /// - SeeAlso: `ExternalCommandEncoder`
     func execute(externalCommandEncoder: ExternalCommandEncoder)
 }
 
-extension ExternalRenderPass {
-    @inlinable
-    public var passType : RenderPassType {
-        return .external
-    }
-}
-
+/// A `ReflectableDrawRenderPass` is a `DrawRenderPass` that has an associated `RenderPassReflection` type.
+/// `RenderPassReflection` represents the reflection data from a compiled shader, and defines the resources,
+/// shader functions, and pipeline constants used by a particular render pass. Substrate's `ShaderTool` will automatically
+/// generate `RenderPassReflection`-conforming types for any shaders compiled using it.
+///
+/// `ReflectableRenderPass` instances are usually easier to write since much of the data that would normally need
+/// to be manually specified is instead inferred from the shader code. They're also less error-prone: for example, renaming a variable in a shader
+/// and then regenerating the `RenderPassReflection` (e.g. using `ShaderTool`) will result in compile-time errors in the Swift code,
+/// enabling you to easily find and correct the errors.
+///
+/// - SeeAlso: `DrawRenderPass`
 public protocol ReflectableDrawRenderPass : DrawRenderPass {
-    
     associatedtype Reflection : RenderPassReflection
+    
+    /// `execute` is called by the render graph to allow a `ReflectableDrawRenderPass` to encode GPU work for the render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass.
+    /// For passes conforming to `ReflectableDrawRenderPass`, this method should be implemented instead
+    /// of `execute(renderCommandEncoder: RenderCommandEncoder)`.
+    ///
+    /// - Parameter renderCommandEncoder: A draw render pass uses the passed-in `RenderCommandEncoder`
+    /// to set GPU state and enqueue rendering commands, configured by the `ReflectableDrawRenderPass`' associated
+    /// `Reflection` type.
+    ///
+    /// - SeeAlso: `TypedRenderCommandEncoder`
+    /// - SeeAlso: `RenderPassReflection`
     func execute(renderCommandEncoder: TypedRenderCommandEncoder<Reflection>)
 }
 
@@ -143,8 +234,30 @@ extension ReflectableDrawRenderPass {
     }
 }
 
+/// A `ReflectableComputeRenderPass` is a `ComputeRenderPass` that has an associated `RenderPassReflection` type.
+/// `RenderPassReflection` represents the reflection data from a compiled shader, and defines the resources,
+/// shader functions, and pipeline constants used by a particular render pass. Substrate's `ShaderTool` will automatically
+/// generate `RenderPassReflection`-conforming types for any shaders compiled using it.
+///
+/// `ReflectableRenderPass` instances are usually easier to write since much of the data that would normally need
+/// to be manually specified is instead inferred from the shader code. They're also less error-prone: for example, renaming a variable in a shader
+/// and then regenerating the `RenderPassReflection` (e.g. using `ShaderTool`) will result in compile-time errors in the Swift code,
+/// enabling you to easily find and correct the errors.
+///
+/// - SeeAlso: `ComputeRenderPass`
 public protocol ReflectableComputeRenderPass : ComputeRenderPass {
     associatedtype Reflection : RenderPassReflection
+    
+    /// `execute` is called by the render graph to allow a `ReflectableDrawRenderPass` to encode GPU work for the render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass.
+    /// For passes conforming to `ReflectableComputeRenderPass`, this method should be implemented instead
+    /// of `execute(computeCommandEncoder: ComputeCommandEncoder)`.
+    ///
+    /// - Parameter computeCommandEncoder: A compute render pass uses the passed-in `ComputeCommandEncoder`
+    /// to set GPU state and enqueue dispatches.
+    ///
+    /// - SeeAlso: `TypedComputeCommandEncoder`
+    /// - SeeAlso: `RenderPassReflection`
     func execute(computeCommandEncoder: TypedComputeCommandEncoder<Reflection>)
 }
 
@@ -163,13 +276,13 @@ final class CallbackDrawRenderPass : DrawRenderPass {
     public let stencilClearOperation: StencilClearOperation
     public let executeFunc : (RenderCommandEncoder) -> Void
     
-    public init(name: String, descriptor: RenderTargetDescriptor,
+    public init(name: String, renderTarget: RenderTargetDescriptor,
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
                 execute: @escaping (RenderCommandEncoder) -> Void) {
         self.name = name
-        self.renderTargetDescriptor = descriptor
+        self.renderTargetDescriptor = renderTarget
         self.colorClearOperations = colorClearOperations
         self.depthClearOperation = depthClearOperation
         self.stencilClearOperation = stencilClearOperation
@@ -196,13 +309,13 @@ final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : Reflec
     public let stencilClearOperation: StencilClearOperation
     public let executeFunc : (TypedRenderCommandEncoder<R>) -> Void
     
-    public init(name: String, descriptor: RenderTargetDescriptor,
+    public init(name: String, renderTarget: RenderTargetDescriptor,
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
                 reflection: R.Type, execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
         self.name = name
-        self.renderTargetDescriptor = descriptor
+        self.renderTargetDescriptor = renderTarget
         self.colorClearOperations = colorClearOperations
         self.depthClearOperation = depthClearOperation
         self.stencilClearOperation = stencilClearOperation
@@ -291,14 +404,6 @@ final class CallbackExternalRenderPass : ExternalRenderPass {
     }
 }
 
-public enum RenderPassType {
-    case cpu
-    case draw
-    case compute
-    case blit
-    case external // Using things like Metal Performance Shaders.
-}
-
 // A draw render pass that caches the properties of an actual DrawRenderPass
 // but that doesn't retain any of the member variables.
 @usableFromInline
@@ -328,6 +433,31 @@ final class ProxyDrawRenderPass: DrawRenderPass {
     }
 }
 
+@usableFromInline enum RenderPassType {
+    case cpu
+    case draw
+    case compute
+    case blit
+    case external // Using things like Metal Performance Shaders.
+    
+    init?(pass: RenderPass) {
+        switch pass {
+        case is DrawRenderPass:
+            self = .draw
+        case is ComputeRenderPass:
+            self = .compute
+        case is BlitRenderPass:
+            self = .blit
+        case is ExternalRenderPass:
+            self = .external
+        case is CPURenderPass:
+            self = .cpu
+        default:
+            return nil
+        }
+    }
+}
+
 @usableFromInline
 final class RenderPassRecord {
     @usableFromInline let name: String
@@ -345,7 +475,7 @@ final class RenderPassRecord {
     
     init(pass: RenderPass, passIndex: Int) {
         self.name = pass.name
-        self.type = pass.passType
+        self.type = RenderPassType(pass: pass)!
         self.pass = pass
         self.passIndex = passIndex
         self.commandRange = nil
@@ -353,7 +483,7 @@ final class RenderPassRecord {
     }
 }
 
-public enum DependencyType {
+@usableFromInline enum DependencyType {
     /// No dependency
     case none
     /// If the dependency is active, it must be executed first
@@ -364,12 +494,8 @@ public enum DependencyType {
     //    case transitive
 }
 
-public protocol RenderGraphContext : AnyObject {
-    
-}
-
 // _RenderGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
-protocol _RenderGraphContext : RenderGraphContext {
+protocol _RenderGraphContext : AnyObject {
     var transientRegistryIndex : Int { get }
     var accessSemaphore : DispatchSemaphore { get }
     var renderGraphQueue: Queue { get }
@@ -377,7 +503,7 @@ protocol _RenderGraphContext : RenderGraphContext {
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>, completion: @escaping (_ gpuTime: Double) -> Void)
 }
 
-public enum RenderGraphTagType : UInt64 {
+@usableFromInline enum RenderGraphTagType : UInt64 {
     static let renderGraphTag : UInt64 = 0xf9322463 // CRC-32 of "RenderGraph"
     
     /// Scratch data that exists only while a render pass is being executed.
@@ -403,6 +529,7 @@ public enum RenderGraphTagType : UInt64 {
     }
 }
 
+/// Each RenderGraph executes on its own GPU queue, although executions are synchronised by submission order.
 public final class RenderGraph {
     
     public static var jobManager : RenderGraphJobManager = DefaultRenderGraphJobManager()
@@ -432,8 +559,19 @@ public final class RenderGraph {
     
     public let transientRegistryIndex : Int
     
+    /// Creates a new RenderGraph instance. There may only be up to eight RenderGraph's at any given time.
+    ///
+    /// - Parameter inflightFrameCount: The maximum number of render graph submission that may be executing on the GPU at any given time; if there are `inflightFrameCount` submissions still pending or executing on the GPU at the time
+    /// of a `RenderGraph.execute()` call, the CPU will wait until at least one of those submissions has completed.
+    /// Commonly two (for double buffering) or three (for triple buffering).
+    /// Note that each in-flight frame incurs a memory cost for any transient buffers that are shared with the CPU.
+    ///
+    /// - Parameter transientTextureCapacity: The maximum number of transient `Texture`s that can be used in a single `RenderGraph` submission.
+    ///
+    /// - Parameter transientBufferCapacity: The maximum number of transient `Buffer`s that can be used in a single `RenderGraph` submission.
+    ///
+    /// - Parameter transientArgumentBufferArrayCapacity: The maximum number of transient `ArgumentBufferArray`s that can be used in a single `RenderGraph` submission.
     public init(inflightFrameCount: Int, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384, transientArgumentBufferArrayCapacity: Int = 1024) {
-        
         self.transientRegistryIndex = TransientRegistryManager.allocate()
         
         TransientBufferRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientBufferCapacity)
@@ -456,6 +594,7 @@ public final class RenderGraph {
         TransientRegistryManager.free(self.transientRegistryIndex)
     }
     
+    /// The logical command queue corresponding to this render graph.
     public var queue: Queue {
         return self.context.renderGraphQueue
     }
@@ -464,14 +603,17 @@ public final class RenderGraph {
         return 1 << self.queue.index
     }
     
+    @available(*, deprecated)
     public static func initialise() {
         
     }
     
+    /// - Returns: whether there are any passes scheduled for execution in the next `RenderGraph.execute` call.
     public var hasEnqueuedPasses: Bool {
         return !self.renderPasses.isEmpty
     }
     
+    /// Enqueue a blit render pass for execution before any other enqueued render passes.
     /// Useful for creating resources that may be used later in the frame.
     public func insertEarlyBlitPass(name: String,
                                     _ execute: @escaping (BlitCommandEncoder) -> Void)  {
@@ -479,57 +621,144 @@ public final class RenderGraph {
                                                   passIndex: 0), at: 0)
     }
     
+    /// Enqueue a blit render pass for execution before any other enqueued render passes.
+    /// Useful for creating resources that may be used later in the frame.
     public func insertEarlyBlitPass(_ pass: BlitRenderPass)  {
         self.renderPasses.insert(RenderPassRecord(pass: pass,
                                                   passIndex: 0), at: 0)
     }
     
+    /// Enqueue `renderPass` for execution at the next `RenderGraph.execute` call on this render graph.
+    /// Passes will be executed by the GPU in the order they are enqueued, but may be executed out-of-order on the CPU if they
+    /// are not `CPURenderPass`es.
+    ///
+    /// - Parameter renderPass: The pass to enqueue.
     public func addPass(_ renderPass: RenderPass)  {
         self.renderPasses.append(RenderPassRecord(pass: renderPass, passIndex: self.renderPasses.count))
     }
     
+    /// Enqueue the blit operations performed in `execute` for execution at the next `RenderGraph.execute` call on this render graph.
+    /// Passes will be executed by the GPU in the order they are enqueued, but may be executed out-of-order on the CPU.
+    ///
+    /// - Parameter execute: A closure to execute that will be passed a blit command encoder, where the caller can use the command
+    /// encoder to encode GPU blit commands.
     public func addBlitCallbackPass(file: String = #fileID, line: Int = #line,
                                     _ execute: @escaping (BlitCommandEncoder) -> Void) {
         self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
     }
     
+    /// Enqueue the blit operations performed in `execute` for execution at the next `RenderGraph.execute` call on this render graph.
+    /// Passes will be executed by the GPU in the order they are enqueued, but may be executed out-of-order on the CPU.
+    ///
+    /// - Parameter name: The name of the pass.
+    /// - Parameter execute: A closure to execute that will be passed a blit command encoder, where the caller can use the command
+    /// encoder to encode GPU blit commands.
     public func addBlitCallbackPass(name: String,
                                     _ execute: @escaping (BlitCommandEncoder) -> Void) {
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
     
+    /// Enqueue a draw render pass that does nothing other than clear the passed-in render target according to the specified operations.
+    ///
+    /// - Parameter renderTarget: The render target descriptor for the render targets to clear.
+    /// - Parameter colorClearOperation: An array of color clear operations corresponding to the elements in `renderTarget`'s `colorAttachments` array.
+    /// - Parameter depthClearOperation: The operation to perform on the render target's depth attachment, if present.
+    /// - Parameter stencilClearOperation: The operation to perform on the render target's stencil attachment, if present.
     public func addClearPass(file: String = #fileID, line: Int = #line,
                              renderTarget: RenderTargetDescriptor,
                              colorClearOperations: [ColorClearOperation] = [],
                              depthClearOperation: DepthClearOperation = .keep,
                              stencilClearOperation: StencilClearOperation = .keep) {
-        self.addPass(CallbackDrawRenderPass(name: "Clear Pass at \(file):\(line)", descriptor: renderTarget,
+        self.addPass(CallbackDrawRenderPass(name: "Clear Pass at \(file):\(line)", renderTarget: renderTarget,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                             execute: { _ in }))
     }
     
+    /// Enqueue a draw render pass comprised of the specified render operations in `execute` and the provided clear operations.
+    ///
+    /// - Parameter renderTarget: The render target descriptor for the render targets to clear.
+    /// - Parameter colorClearOperation: An array of color clear operations corresponding to the elements in `renderTarget`'s `colorAttachments` array.
+    /// - Parameter depthClearOperation: The operation to perform on the render target's depth attachment, if present.
+    /// - Parameter stencilClearOperation: The operation to perform on the render target's stencil attachment, if present.
+    /// - Parameter execute: A closure to execute that will be passed a render command encoder, where the caller can use the command
+    /// encoder to encode GPU rendering commands.
+    ///
+    /// - SeeAlso: `addDrawCallbackPass(file:line:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:reflection:execute:)`
+    public func addDrawCallbackPass(file: String = #fileID, line: Int = #line,
+                                    renderTarget: RenderTargetDescriptor,
+                                    colorClearOperations: [ColorClearOperation] = [],
+                                    depthClearOperation: DepthClearOperation = .keep,
+                                    stencilClearOperation: StencilClearOperation = .keep,
+                                    _ execute: @escaping (RenderCommandEncoder) -> Void) {
+        self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", renderTarget: renderTarget,
+                                            colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                            execute: execute))
+    }
+    
+    @available(*, deprecated, renamed:"addDrawCallbackPass(file:line:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:execute:)")
     public func addDrawCallbackPass(file: String = #fileID, line: Int = #line,
                                     descriptor: RenderTargetDescriptor,
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
                                     _ execute: @escaping (RenderCommandEncoder) -> Void) {
-        self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
+        self.addDrawCallbackPass(file: file, line: line, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, execute)
+    }
+    
+    /// Enqueue a draw render pass comprised of the specified render operations in `execute` and the provided clear operations.
+    ///
+    /// - Parameter name: The name of the pass.
+    /// - Parameter renderTarget: The render target descriptor for the render targets to clear.
+    /// - Parameter colorClearOperation: An array of color clear operations corresponding to the elements in `renderTarget`'s `colorAttachments` array.
+    /// - Parameter depthClearOperation: The operation to perform on the render target's depth attachment, if present.
+    /// - Parameter stencilClearOperation: The operation to perform on the render target's stencil attachment, if present.
+    /// - Parameter execute: A closure to execute that will be passed a render command encoder, where the caller can use the command
+    /// encoder to encode GPU rendering commands.
+    ///
+    /// - SeeAlso: `addDrawCallbackPass(name:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:reflection:execute:)`
+    public func addDrawCallbackPass(name: String,
+                                    renderTarget: RenderTargetDescriptor,
+                                    colorClearOperations: [ColorClearOperation] = [],
+                                    depthClearOperation: DepthClearOperation = .keep,
+                                    stencilClearOperation: StencilClearOperation = .keep,
+                                    _ execute: @escaping (RenderCommandEncoder) -> Void) {
+        self.addPass(CallbackDrawRenderPass(name: name, renderTarget: renderTarget,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                             execute: execute))
     }
     
+    @available(*, deprecated, renamed:"addDrawCallbackPass(name:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:execute:)")
     public func addDrawCallbackPass(name: String,
                                     descriptor: RenderTargetDescriptor,
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
                                     _ execute: @escaping (RenderCommandEncoder) -> Void) {
-        self.addPass(CallbackDrawRenderPass(name: name, descriptor: descriptor,
-                                            colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
-                                            execute: execute))
+        self.addDrawCallbackPass(name: name, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, execute)
     }
     
+    
+    /// Enqueue a draw render pass comprised of the specified render operations in `execute` and the provided clear operations.
+    ///
+    /// - Parameter renderTarget: The render target descriptor for the render targets to clear.
+    /// - Parameter colorClearOperation: An array of color clear operations corresponding to the elements in `renderTarget`'s `colorAttachments` array.
+    /// - Parameter depthClearOperation: The operation to perform on the render target's depth attachment, if present.
+    /// - Parameter stencilClearOperation: The operation to perform on the render target's stencil attachment, if present.
+    /// - Parameter execute: A closure to execute that will be passed a render command encoder, where the caller can use the command
+    /// encoder to encode GPU rendering commands.
+    public func addDrawCallbackPass<R>(file: String = #fileID, line: Int = #line,
+                                       renderTarget: RenderTargetDescriptor,
+                                       colorClearOperations: [ColorClearOperation] = [],
+                                       depthClearOperation: DepthClearOperation = .keep,
+                                       stencilClearOperation: StencilClearOperation = .keep,
+                                       reflection: R.Type,
+                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+        self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", renderTarget: renderTarget,
+                                                       colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                                       reflection: reflection, execute: execute))
+    }
+    
+    @available(*, deprecated, renamed:"addDrawCallbackPass(file:line:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:reflection:execute:)")
     public func addDrawCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                        descriptor: RenderTargetDescriptor,
                                        colorClearOperations: [ColorClearOperation] = [],
@@ -537,11 +766,34 @@ public final class RenderGraph {
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
                                        _ execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
-        self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", descriptor: descriptor,
+        self.addDrawCallbackPass(file: file, line: line, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, reflection: reflection, execute)
+    }
+    
+    /// Enqueue a draw render pass comprised of the specified render operations in `execute` and the provided clear operations, using the render pass reflection specified in `reflection`.
+    ///
+    /// - Parameter name: The name of the pass.
+    /// - Parameter renderTarget: The render target descriptor for the render targets to clear.
+    /// - Parameter colorClearOperation: An array of color clear operations corresponding to the elements in `renderTarget`'s `colorAttachments` array.
+    /// - Parameter depthClearOperation: The operation to perform on the render target's depth attachment, if present.
+    /// - Parameter stencilClearOperation: The operation to perform on the render target's stencil attachment, if present.
+    /// - Parameter reflection: The generated shader reflection for this render pass.
+    /// - Parameter execute: A closure to execute that will be passed a render command encoder, where the caller can use the command
+    /// encoder to encode GPU rendering commands.
+    ///
+    /// - SeeAlso: `ReflectableDrawRenderPass`
+    public func addDrawCallbackPass<R>(name: String,
+                                       renderTarget: RenderTargetDescriptor,
+                                       colorClearOperations: [ColorClearOperation] = [],
+                                       depthClearOperation: DepthClearOperation = .keep,
+                                       stencilClearOperation: StencilClearOperation = .keep,
+                                       reflection: R.Type,
+                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+        self.addPass(ReflectableCallbackDrawRenderPass(name: name, renderTarget: renderTarget,
                                                        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                                        reflection: reflection, execute: execute))
     }
     
+    @available(*, deprecated, renamed:"addDrawCallbackPass(name:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:reflection:execute:)")
     public func addDrawCallbackPass<R>(name: String,
                                        descriptor: RenderTargetDescriptor,
                                        colorClearOperations: [ColorClearOperation] = [],
@@ -549,48 +801,94 @@ public final class RenderGraph {
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
                                        _ execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
-        self.addPass(ReflectableCallbackDrawRenderPass(name: name, descriptor: descriptor,
-        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
-        reflection: reflection, execute: execute))
+        self.addDrawCallbackPass(name: name, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, reflection: reflection, execute)
     }
 
+    /// Enqueue a compute render pass comprised of the specified compute/dispatch operations in `execute`.
+    ///
+    /// - Parameter execute: A closure to execute that will be passed a compute command encoder, where the caller can use the command
+    /// encoder to encode commands for the GPU's compute pipeline.
+    ///
+    /// - SeeAlso: `addComputeCallbackPass(reflection:_:)`
     public func addComputeCallbackPass(file: String = #fileID, line: Int = #line,
                                        _ execute: @escaping (ComputeCommandEncoder) -> Void) {
         self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
     }
     
+    /// Enqueue a compute render pass comprised of the specified compute/dispatch operations in `execute`.
+    ///
+    /// - Parameter name: The name of the pass.
+    /// - Parameter execute: A closure to execute that will be passed a compute command encoder, where the caller can use the command
+    /// encoder to encode commands for the GPU's compute pipeline.
+    ///
+    /// - SeeAlso: `addComputeCallbackPass(name:reflection:_:)`
     public func addComputeCallbackPass(name: String,
                                        _ execute: @escaping (ComputeCommandEncoder) -> Void) {
         self.addPass(CallbackComputeRenderPass(name: name, execute: execute))
     }
 
+    /// Enqueue a compute render pass comprised of the specified compute/dispatch operations in `execute`, using the render pass reflection specified in `reflection`.
+    ///
+    /// - Parameter reflection: The generated shader reflection for this render pass.
+    /// - Parameter execute: A closure to execute that will be passed a compute command encoder, where the caller can use the command
+    /// encoder to encode commands for the GPU's compute pipeline.
+    ///
+    /// - SeeAlso: `ReflectableComputeRenderPass`
     public func addComputeCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                           reflection: R.Type,
                                           _ execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
         self.addPass(ReflectableCallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", reflection: reflection, execute: execute))
     }
     
+    /// Enqueue a compute render pass comprised of the specified compute/dispatch operations in `execute`, using the render pass reflection specified in `reflection`.
+    ///
+    /// - Parameter name: The name of the pass.
+    /// - Parameter reflection: The generated shader reflection for this render pass.
+    /// - Parameter execute: A closure to execute that will be passed a compute command encoder, where the caller can use the command
+    /// encoder to encode commands for the GPU's compute pipeline.
+    ///
+    /// - SeeAlso: `ReflectableComputeRenderPass`
     public func addComputeCallbackPass<R>(name: String,
                                           reflection: R.Type,
                                           _ execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
         self.addPass(ReflectableCallbackComputeRenderPass(name: name, reflection: reflection, execute: execute))
     }
     
+    /// Enqueue a CPU render pass comprised of the operations in `execute`.
+    /// This enables you to access GPU resources such as transient buffers or textures associated with the render graph.
+    ///
+    /// - Parameter execute: A closure to execute during render graph execution.
     public func addCPUCallbackPass(file: String = #fileID, line: Int = #line,
                                    _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
     }
     
+    /// Enqueue a CPU render pass comprised of the operations in `execute`.
+    /// This enables you to access GPU resources such as transient buffers or textures associated with the render graph.
+    ///
+    /// - Parameter name: The name of the pass.
+    /// - Parameter execute: A closure to execute during render graph execution.
     public func addCPUCallbackPass(name: String,
                                    _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: name, execute: execute))
     }
     
+    /// Enqueue an external render pass comprised of the GPU operations in `execute`.
+    /// External render passes allow you to directly encode commands to the underlying GPU command buffer.
+    ///
+    /// - Parameter execute: A closure to execute that will be passed a external command encoder, where the caller can use the command
+    /// encoder to encode commands directly to an underlying GPU command buffer.
     public func addExternalCallbackPass(file: String = #fileID, line: Int = #line,
                                         _ execute: @escaping (ExternalCommandEncoder) -> Void) {
         self.addPass(CallbackExternalRenderPass(name: "Anonymous External Encoder Pass at \(file):\(line)", execute: execute))
     }
     
+    /// Enqueue an external render pass comprised of the GPU operations in `execute`.
+    /// External render passes allow you to directly encode commands to the underlying GPU command buffer.
+    ///
+    /// - Parameter name: The name of the pass.
+    /// - Parameter execute: A closure to execute that will be passed a external command encoder, where the caller can use the command
+    /// encoder to encode commands directly to an underlying GPU command buffer.
     public func addExternalCallbackPass(name: String,
                                         _ execute: @escaping (ExternalCommandEncoder) -> Void) {
         self.addPass(CallbackExternalRenderPass(name: name, execute: execute))
@@ -873,10 +1171,12 @@ public final class RenderGraph {
         self.submissionNotifyQueue.append(function)
     }
     
+    /// Enqueue `function` to be executed once the render graph is submitted to the GPU.
     public func onSubmission(_ function: @escaping () -> Void) {
         self.submissionNotifyQueue.append(function)
     }
     
+    /// Enqueue `function` to be executed once the render graph has completed on the GPU.
     public func onGPUCompletion(_ function: @escaping () -> Void) {
         self.completionNotifyQueue.append(function)
     }
@@ -890,7 +1190,6 @@ public final class RenderGraph {
         }
         return true
     }
-    
     
     @usableFromInline static let pointsOfInterestHandler = OSLog(subsystem: "com.substrate.RenderGraph", category: .pointsOfInterest)
     

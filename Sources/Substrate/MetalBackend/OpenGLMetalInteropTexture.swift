@@ -52,6 +52,8 @@ let GL_R32F : GLuint = 0x822E
 let GL_DEPTH_COMPONENT : GLuint = 0x1902
 #endif
 
+
+/// OpenGLMetalInteropTexture is a utility class that exposes both a Metal and an OpenGL texture with the same backing memory.
 @available(OSX, deprecated: 10.14)
 @available(iOS, deprecated: 12.0)
 public final class OpenGLMetalInteropTexture {

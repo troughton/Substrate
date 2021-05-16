@@ -87,6 +87,8 @@ extension CommandEncoder {
  A requirement for resource binding is that subsequently bound pipeline states are compatible with the pipeline state bound at the time of the first draw call.
  */
 
+/// `ResourceBindingEncoder` is the common superclass `CommandEncoder` for all command encoders that can bind resources.
+/// You never instantiate a `ResourceBindingEncoder` directly; instead, you are provided with one of its concrete subclasses in a render pass' `execute` method.
 public class ResourceBindingEncoder : CommandEncoder {
     
     @usableFromInline
@@ -857,6 +859,7 @@ public protocol AnyRenderCommandEncoder {
     func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int, baseVertex: Int, baseInstance: Int)
 }
 
+/// `RenderCommandEncoder` allows you to encode rendering commands to be executed by the GPU within a single `DrawRenderPass`.
 public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEncoder {
     
     @usableFromInline
@@ -1101,6 +1104,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         }
     }
     
+    /// The debug label for this render command encoder. Inferred from the render pass' name by default.
     public var label : String = "" {
         didSet {
             commandRecorder.setLabel(label)
