@@ -1189,6 +1189,13 @@ public final class RenderGraph {
         return true
     }
     
+    /// Process the render passes that have been enqueued on this render graph through calls to `addPass()` or similar by culling passes that don't produce
+    /// any read resources, calling `execute` on each pass, then submitting the encoded commands to the GPU for execution.
+    /// If there are any operations enqueued on the `GPUResourceUploader`, those will be processed before any passes in this render graph.
+    /// Only one render graph will execute at any given time, and operations between render graphs are synchronised in submission order.
+    ///
+    /// - Parameter onSubmission: an optional closure to execute once the render graph has been submitted to the GPU.
+    /// - Parameter onGPUCompletion: an optional closure to execute once the render graph has completed executing on the GPU.
     public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
         if GPUResourceUploader.renderGraph !== self {
             GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
