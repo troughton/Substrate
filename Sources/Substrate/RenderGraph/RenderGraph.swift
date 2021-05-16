@@ -8,8 +8,6 @@
 
 import Foundation
 import SubstrateUtilities
-import OSLog
-
 
 /// A render pass is the fundamental unit of work within Substrate. All GPU commands are submitted by enqueuing
 /// render passes on a `RenderGraph` and then executing that `RenderGraph`.
@@ -1190,8 +1188,6 @@ public final class RenderGraph {
         }
         return true
     }
-    
-    @usableFromInline static let pointsOfInterestHandler = OSLog(subsystem: "com.substrate.RenderGraph", category: .pointsOfInterest)
     
     public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
         if GPUResourceUploader.renderGraph !== self {
