@@ -12,7 +12,7 @@ import Substrate
 public protocol UpdateScheduler {
 }
 
-#if canImport(CSDL2) && !(os(macOS) && arch(arm64))
+#if canImport(CSDL2) && !(os(iOS) || os(tvOS) || (os(macOS) && arch(arm64)))
 
 public final class SDLUpdateScheduler : UpdateScheduler  {
     public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowRenderGraph: RenderGraph) {
@@ -83,14 +83,14 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
     public init(appDelegate: ApplicationDelegate?, viewController: UIViewController, windowDelegate: @escaping @autoclosure () -> WindowDelegate, windowRenderGraph: RenderGraph) {
         super.init()
 
-        self.application = CocoaApplication(delegate: appDelegate, viewController: viewController, windowDelegate: windowDelegate, updateScheduler: self, windowRenderGraph: windowRenderGraph)
-
-        let mainWindow = windows.first! as! MTKWindow
-
+        self.application = CocoaApplication(delegate: appDelegate, viewController: viewController, windowDelegate: windowDelegate(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
+        
+        let mainWindow = application.windows.first! as! MTKWindow
+        
         let view = mainWindow.mtkView
         view.delegate = self
 
-        for window in windows.dropFirst() {
+        for window in application.windows.dropFirst() {
             (window as! MTKWindow).mtkView.isPaused = true
             (window as! MTKWindow).mtkView.enableSetNeedsDisplay = true
         }
@@ -98,7 +98,6 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
 
     public func draw(in view: MTKView) {
         if application.inputManager.shouldQuit {
-            Application.exit()
             return
         }
         
