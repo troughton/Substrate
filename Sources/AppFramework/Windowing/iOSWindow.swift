@@ -90,7 +90,7 @@ public class CocoaWindow : Window, MTKWindow {
 
         self._texture = Cached()
         self._texture.constructor = { [unowned(unsafe) self] in
-            let texture = Texture(descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView, renderGraph: renderGraph)
+            let texture = Texture(descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView.layer, renderGraph: renderGraph)
             return texture
         }
     }
