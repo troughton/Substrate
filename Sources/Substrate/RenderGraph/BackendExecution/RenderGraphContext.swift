@@ -79,9 +79,13 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         }
         
         if passes.isEmpty {
-            // Enqueue the completion handler to run immediately
-            self.emptyFrameCompletionHandlerSemaphore.withSemaphore {
-                self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, completion))
+            if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
+                completion(0.0)
+            } else {
+                // Enqueue the completion handler to run immediately
+                self.emptyFrameCompletionHandlerSemaphore.withSemaphore {
+                    self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, completion))
+                }
             }
             return
         }

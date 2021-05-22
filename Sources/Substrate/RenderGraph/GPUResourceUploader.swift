@@ -57,6 +57,8 @@ public final class GPUResourceUploader {
     private init() {}
 
     private static func flushHoldingLock() {
+        precondition(self.enqueuedPasses.isEmpty || self.renderGraph != nil, "GPUResourceUploader has not been initialised.")
+        
         var enqueuedBytes = 0
         for pass in self.enqueuedPasses {
             let passStagingBufferLength = (pass as? UploadResourcePass)?.stagingBufferLength ?? 0
@@ -69,7 +71,7 @@ public final class GPUResourceUploader {
         }
         self.enqueuedPasses.removeAll()
         
-        if self.renderGraph.hasEnqueuedPasses {
+        if self.renderGraph?.hasEnqueuedPasses ?? false {
             self.renderGraph.execute()
         }
     }

@@ -188,6 +188,10 @@ extension ResourceProtocol {
     public func markAsUsed(by renderGraph: RenderGraph) {
         self.markAsUsed(activeRenderGraphMask: 1 << renderGraph.queue.index)
     }
+    
+    public var backingResource: Any? {
+        return RenderBackend.backingResource(self)
+    }
 }
 
 public struct Resource : ResourceProtocol, Hashable {

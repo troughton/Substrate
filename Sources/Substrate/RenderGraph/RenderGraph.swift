@@ -1089,6 +1089,10 @@ public final class RenderGraph {
                 assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another RenderGraph is being used in this RenderGraph.")
                 assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
             }
+            
+            if pass.type == .external {
+                passHasSideEffects[i] = true
+            }
         }
         
         for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
