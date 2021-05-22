@@ -14,8 +14,7 @@ import Atomics
 // Fixed-capacity registries (transient buffers, transient textures, and transient argument buffer arrays) have permanently-allocated storage.
 // Chunk-based registries allocate storage in blocks. This avoids excessive memory usage while simultaneously ensuring that the memory for a resource is never reallocated (which would cause issues in multithreaded contexts, requiring locks for all access).
 
-
-public final class TransientRegistryManager {
+@usableFromInline final class TransientRegistryManager {
     public static let maxTransientRegistries = UInt8.bitWidth
     
     static var allocatedRegistries : UInt8 = 0

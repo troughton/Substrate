@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 20/01/18.
 //
 
-#if canImport(CSDL2) && !(os(macOS) && arch(arm64))
+#if canImport(CSDL2) && !(os(iOS) || os(tvOS) || (os(macOS) && arch(arm64)))
 
 import SubstrateMath
 import Substrate

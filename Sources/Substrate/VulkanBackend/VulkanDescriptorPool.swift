@@ -9,7 +9,7 @@
 import Vulkan
 import SubstrateCExtras
 
-public final class VulkanDescriptorPool {
+final class VulkanDescriptorPool {
     public static let maxSetsPerPool : UInt32 = 64
     
     private let vkDescriptorPool : VkDescriptorPool

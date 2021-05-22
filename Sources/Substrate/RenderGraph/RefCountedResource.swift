@@ -6,6 +6,7 @@
 //
 
 /// RefCountedResource is a property wrapper that automatically manages the lifetime of its wrapped resource.
+/// It must have sole ownership over the wrapped resource.
 @propertyWrapper
 public final class RefCountedResource<R: ResourceProtocol>: Hashable {
     public var wrappedValue: R {

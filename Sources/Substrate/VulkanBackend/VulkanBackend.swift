@@ -12,7 +12,7 @@ import SubstrateCExtras
 import SubstrateUtilities
 import Foundation
 
-public final class VulkanBackend : SpecificRenderBackend {
+final class VulkanBackend : SpecificRenderBackend {
     typealias BufferReference = VkBufferReference
     typealias TextureReference = VkImageReference
     typealias ArgumentBufferReference = VulkanArgumentBuffer
@@ -287,7 +287,7 @@ public final class VulkanBackend : SpecificRenderBackend {
         fatalError()
     }
     
-    func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> VulkanTransientResourceRegistry {
+    func makeTransientRegistry(index: Int, inflightFrameCount: Int, queue: Queue) -> VulkanTransientResourceRegistry {
         return VulkanTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
     }
     

@@ -38,17 +38,17 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     func setActiveContext(_ context: RenderGraphContextImpl<Self>?) async
     
     var resourceRegistry: PersistentResourceRegistry { get }
-    func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> TransientResourceRegistry
+    func makeTransientRegistry(index: Int, inflightFrameCount: Int, queue: Queue) -> TransientResourceRegistry
     
     func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<Self>, commandInfo: FrameCommandInfo<Self>, commandGenerator: ResourceCommandGenerator<Self>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>])
-    func didCompleteFrame(_ index: UInt64, queue: Queue) async
+    func didCompleteCommand(_ index: UInt64, queue: Queue)
     
     static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
     static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: ArgumentBufferArrayReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
 }
 
 extension SpecificRenderBackend {
-    func didCompleteFrame(_ index: UInt64, queue: Queue) async {
+    func didCompleteCommand(_ index: UInt64, queue: Queue) {
         
     }
 }

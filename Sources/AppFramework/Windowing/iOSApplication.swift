@@ -14,18 +14,17 @@ import MetalKit
 import ImGui
 
 final class CocoaInputManager : InputManagerInternal {
-    
-    var inputState = InputState<RawInputState>()
+    public var inputState = InputState<RawInputState>()
     
     var shouldQuit: Bool = false
-    var frame: UInt64 = 0
+    var frame: UInt32 = 0
     
-    init() {
+    public init() {
         
     }
     
     func updateMousePosition(_ touch: UITouch) {
-        var location = touch.preciseLocation(in: touch.window)
+        let location = touch.preciseLocation(in: touch.window)
         
         inputState[.mouse][.mouseX] = RawInputState(value: Float(location.x), frame: self.frame)
         inputState[.mouse][.mouseY] = RawInputState(value: Float(location.y), frame: self.frame)
@@ -76,8 +75,8 @@ final class CocoaInputManager : InputManagerInternal {
         inputState[.keyboardScanCode][.backspace] = RawInputState(active: true, frame: self.frame)
     }
     
-    func update() {
-        self.frame = self.frame &+ 1
+    func update(frame: UInt64, windows: [Window]) {
+        self.frame = UInt32(truncatingIfNeeded: frame)
     }
 }
 
@@ -85,27 +84,27 @@ public class CocoaApplication : Application {
     
     let contentScaleFactor : Float
     
-    public init(delegate: AppDelegate?, viewController: UIViewController, windowDelegate: @autoclosure () -> WindowDelegate, updateScheduler: MetalUpdateScheduler, windowRenderGraph: RenderGraph) {
+    public init(delegate: ApplicationDelegate?, viewController: UIViewController, windowDelegate: @autoclosure () -> WindowDelegate, updateScheduler: MetalUpdateScheduler, windowRenderGraph: RenderGraph) {
         delegate?.applicationWillInitialise()
         
         let inputManager = CocoaInputManager()
         
         let windowDelegate = windowDelegate()
         
-        let window = CocoaWindow(viewController: viewController, inputManager: inputManager)
+        let window = CocoaWindow(viewController: viewController, inputManager: inputManager, renderGraph: windowRenderGraph)
         window.delegate = windowDelegate
         
-        let windows : [Window] = [window]
         self.contentScaleFactor = Float(viewController.view.contentScaleFactor)
         
-        super.init(updateables: [windowDelegate], windows: windows, inputManager: inputManager, updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
+        super.init(delegate: delegate, updateables: [windowDelegate], inputManager: inputManager, updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
     }
     
-    public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags) -> Window {
+    public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, renderGraph: RenderGraph) -> Window {
         fatalError("Can't create windows on iOS")
     }
     
     public override func setCursorPosition(to position: SIMD2<Float>) {
+        
     }
     
     public override var screens : [Screen] {

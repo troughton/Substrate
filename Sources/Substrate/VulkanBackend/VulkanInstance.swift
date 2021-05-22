@@ -12,7 +12,7 @@ import SubstrateCExtras
 // public typealias VkCmdPushDescriptorSetKHRFunc = @convention(c) (VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout, UInt32, UInt32, UnsafePointer<VkWriteDescriptorSet>) -> Void
 // public fileprivate(set) var vkCmdPushDescriptorSetKHR : VkCmdPushDescriptorSetKHRFunc! = nil
 
-public struct VulkanVersion: CustomStringConvertible {
+struct VulkanVersion: CustomStringConvertible {
     var value : UInt32
     
     init(_ value: UInt32) {

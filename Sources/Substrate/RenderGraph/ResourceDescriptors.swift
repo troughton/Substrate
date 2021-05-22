@@ -180,13 +180,22 @@ extension TextureDescriptor {
 }
 
 public struct BufferDescriptor: Hashable {
-    public var length : Int = 0
+    /// The minimum length, in bytes, of the buffer's allocation.
+    public var length : Int
+    /// The storage mode for the buffer, representing the pool of memory from which the buffer should be allocated.
     public var storageMode : StorageMode
+    /// The CPU cache mode for the created buffer, if it is CPU-visible. Write-combined buffers _may_ have better write performance from the CPU but will have considerable overhead when being read by the CPU.
     public var cacheMode : CPUCacheMode
     
-    /// This usage hint is only needed for persistent resources.
+    /// The ways in which the created buffer will be used by the GPU. Only required for persistent or history buffers; transient buffers will infer their usage.
     public var usageHint: BufferUsage
     
+    /// Creates a new `BufferDescriptor`.
+    ///
+    /// - Parameter length: The minimum length, in bytes, of the buffer's allocation.
+    /// - Parameter storageMode: The storage mode for the buffer, representing the pool of memory from which the buffer should be allocated.
+    /// - Parameter cacheMode: The CPU cache mode for the created buffer, if it is CPU-visible. Write-combined buffers _may_ have better write performance from the CPU but will have considerable overhead when being read by the CPU.
+    /// - Parameter usage: The ways in which the created buffer will be used by the GPU. Only required for persistent or history buffers; transient buffers will infer their usage.
     public init(length: Int, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache, usage: BufferUsage = .unknown) {
         self.length = length
         self.storageMode = storageMode

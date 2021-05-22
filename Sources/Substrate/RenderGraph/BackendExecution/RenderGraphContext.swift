@@ -42,7 +42,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.renderGraphQueue = Queue()
         self.commandQueue = backend.makeQueue(renderGraphQueue: self.renderGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
-        self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount)
+        self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount, queue: self.renderGraphQueue)
         self.accessSemaphore = AsyncSemaphore(value: Int32(inflightFrameCount))
         
         self.commandGenerator = ResourceCommandGenerator()
@@ -65,7 +65,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     }
     
     @RenderGraphSharedActor
-    public func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>) async -> Task.Handle<RenderGraphExecutionResult, Never> {
+    func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>) async -> Task.Handle<RenderGraphExecutionResult, Never> {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         self.resourceRegistry.prepareFrame()
@@ -137,6 +137,8 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                     self.renderGraphQueue.lastCompletedCommand = queueCBIndex
                     self.renderGraphQueue.lastCompletionTime = DispatchTime.now()
                     
+                    CommandEndActionManager.manager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
+                    
                     if cbIndex == 0 {
                         gpuStartTime = commandBuffer.gpuStartTime
                     }
@@ -145,7 +147,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                         
                         executionResult.gpuTime = (gpuEndTime - gpuStartTime) * 1000.0
                         taskCompletionSemaphore.signal()
-                        detach { await self.backend.didCompleteFrame(queueCBIndex, queue: self.renderGraphQueue) }
+                        self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue)
                         
                         self.accessSemaphore.signal()
                         

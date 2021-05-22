@@ -9,7 +9,7 @@ import SubstrateUtilities
 import SubstrateCExtras
 
 // This 'PerformOrder' type is necessary to make sure the command goes to the right Command Encoder
-public enum PerformOrder : Comparable {
+@usableFromInline enum PerformOrder : Comparable {
     case before // Before the command index
     case after // After the command index
     

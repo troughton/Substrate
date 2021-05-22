@@ -290,7 +290,9 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
 
     func disposeHeap(_ heap: Heap) {
-        self.heapReferences.removeValue(forKey: heap)
+        if let mtlHeap = self.heapReferences.removeValue(forKey: heap) {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlHeap)))
+        }
     }
     
     func disposeTexture(_ texture: Texture) {
@@ -298,26 +300,26 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             if texture.flags.contains(.windowHandle) {
                 return
             }
-            mtlTexture._texture.release()
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlTexture._texture.toOpaque())))
         }
     }
     
     func disposeBuffer(_ buffer: Buffer) {
         if let mtlBuffer = self.bufferReferences.removeValue(forKey: buffer) {
-            mtlBuffer._buffer.release()
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
     func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
         if let mtlBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
             assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal RenderGraph backend.")
-            mtlBuffer._buffer.release()
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
     func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
         if let mtlBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
-            mtlBuffer._buffer.release()
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
@@ -334,6 +336,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     typealias Backend = MetalBackend
     
     let device: MTLDevice
+    let queue: Queue
     let persistentRegistry : MetalPersistentResourceRegistry
     var accessLock = SpinLock()
     
@@ -350,8 +353,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     private var heapResourceUsageFences = [Resource : [FenceDependency]]()
     private var heapResourceDisposalFences = [Resource : [FenceDependency]]()
-    
-    private var enqueuedTextureViewDisposals = [Unmanaged<MTLTexture>]()
     
     private let frameSharedBufferAllocator : MetalTemporaryBufferAllocator
     private let frameSharedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
@@ -375,8 +376,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     public private(set) var frameDrawables : [CAMetalDrawable] = []
     
-    public init(device: MTLDevice, inflightFrameCount: Int, transientRegistryIndex: Int, persistentRegistry: MetalPersistentResourceRegistry) {
+    public init(device: MTLDevice, inflightFrameCount: Int, queue: Queue, transientRegistryIndex: Int, persistentRegistry: MetalPersistentResourceRegistry) {
         self.device = device
+        self.queue = queue
         self.persistentRegistry = persistentRegistry
         
         self.textureReferences = .init(transientRegistryIndex: transientRegistryIndex)
@@ -413,9 +415,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             self.memorylessTextureAllocator = nil
         }
         
-        self.privateAllocator = MetalHeapResourceAllocator(device: device)
-        self.depthRenderTargetAllocator = MetalHeapResourceAllocator(device: device)
-        self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device)
+        self.privateAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
+        self.depthRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
+        self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
         
         self.prepareFrame()
     }
@@ -630,8 +632,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         return textureReference
     }
     
-    var lastTimeWindowHandleCalled = DispatchTime.now().uptimeNanoseconds
-    
     @discardableResult
     public func allocateWindowHandleTexture(_ texture: Texture) throws -> MTLTextureReference {
         precondition(texture.flags.contains(.windowHandle))
@@ -642,11 +642,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         
         // The texture reference should always be present but the texture itself might not be.
         if self.textureReferences[texture]!._texture == nil {
-            let currentTime = DispatchTime.now().uptimeNanoseconds
-            let elapsed = currentTime - lastTimeWindowHandleCalled
-//            print("allocateWindowHandleTexture: \(Double(elapsed) * 1e-6)")
-            lastTimeWindowHandleCalled = currentTime
-            
             guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
                   let mtlDrawable = windowReference.nextDrawable() else {
                 throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
@@ -834,7 +829,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
                 return
             }
             if texture.isTextureView {
-                self.enqueuedTextureViewDisposals.append(mtlTexture._texture)
+                CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(mtlTexture._texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
                 return
             }
             
@@ -896,11 +891,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.bufferReferences.removeAll()
         self.argumentBufferReferences.removeAll()
         self.argumentBufferArrayReferences.removeAll()
-        
-        for texture in self.enqueuedTextureViewDisposals {
-            texture.release()
-        }
-        self.enqueuedTextureViewDisposals.removeAll(keepingCapacity: true)
         
         self.heapResourceUsageFences.removeAll(keepingCapacity: true)
         self.heapResourceDisposalFences.removeAll(keepingCapacity: true)

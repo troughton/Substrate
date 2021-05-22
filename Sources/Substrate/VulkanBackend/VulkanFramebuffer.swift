@@ -9,7 +9,7 @@
 import Vulkan
 import SubstrateCExtras
 
-public class VulkanFramebuffer {
+final class VulkanFramebuffer {
     let device : VulkanDevice
     let framebuffer : VkFramebuffer
     

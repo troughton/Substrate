@@ -11,6 +11,7 @@ import UIKit
 import Metal
 import MetalKit
 import Substrate
+import SubstrateUtilities
 
 import ImGui
 
@@ -89,13 +90,13 @@ public class CocoaWindow : Window, MTKWindow {
 
         self._texture = Cached()
         self._texture.constructor = { [unowned(unsafe) self] in
-            let texture = Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView, frameGRaph: renderGraph)
+            let texture = Texture(descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView, renderGraph: renderGraph)
             return texture
         }
     }
     
     public var textureDescriptor : TextureDescriptor {
-        return TextureDescriptor(type .type2D, format: PixelFormat(rawValue: mtkView.colorPixelFormat.rawValue)!, width: Int(exactly: self.drawableSize.width)!, height: Int(exactly: self.drawableSize.height)!, mipmapped: false)
+        return TextureDescriptor(type: .type2D, format: PixelFormat(rawValue: mtkView.colorPixelFormat.rawValue)!, width: Int(exactly: self.drawableSize.width)!, height: Int(exactly: self.drawableSize.height)!, mipmapped: false)
     }
     
     public var drawableSize: WindowSize {

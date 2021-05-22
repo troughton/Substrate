@@ -412,8 +412,8 @@ final class MetalBackend : SpecificRenderBackend {
         self.queueSyncEvents[Int(queue.index)] = nil
     }
 
-    func makeTransientRegistry(index: Int, inflightFrameCount: Int) -> MetalTransientResourceRegistry {
-        return MetalTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
+    func makeTransientRegistry(index: Int, inflightFrameCount: Int, queue: Queue) -> MetalTransientResourceRegistry {
+        return MetalTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, queue: queue, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
     }
 
     func generateFenceCommands(queue: Queue, frameCommandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>, compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
@@ -617,7 +617,7 @@ final class MetalBackend : SpecificRenderBackend {
         compactedResourceCommands.sort()
     }
     
-    func didCompleteFrame(_ index: UInt64, queue: Queue) {
+    func didCompleteCommand(_ index: UInt64, queue: Queue) {
         MetalResourcePurgeabilityManager.instance.processPurgeabilityChanges()
     }
 

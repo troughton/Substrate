@@ -87,6 +87,8 @@ extension CommandEncoder {
  A requirement for resource binding is that subsequently bound pipeline states are compatible with the pipeline state bound at the time of the first draw call.
  */
 
+/// `ResourceBindingEncoder` is the common superclass `CommandEncoder` for all command encoders that can bind resources.
+/// You never instantiate a `ResourceBindingEncoder` directly; instead, you are provided with one of its concrete subclasses in a render pass' `execute` method.
 public class ResourceBindingEncoder : CommandEncoder {
     
     @usableFromInline
@@ -357,7 +359,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         usagePointersToUpdate.removeAll()
     }
    
-    public func updateResourceUsages(endingEncoding: Bool = false) {
+    func updateResourceUsages(endingEncoding: Bool = false) {
         guard self.needsUpdateBindings || endingEncoding else {
             return
         }
@@ -777,7 +779,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.pendingArgumentBufferCountLastUpdate = self.pendingArgumentBuffers.count
     }
     
-    public func resetAllBindings() {
+    @usableFromInline func resetAllBindings() {
         self.resourceBindingCommandCountLastUpdate = 0
         self.pendingArgumentBufferByKeyCountLastUpdate = 0
         self.pendingArgumentBufferCountLastUpdate = 0
@@ -801,7 +803,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         })
     }
     
-    public func endEncoding() {
+    @usableFromInline func endEncoding() {
         self.updateResourceUsages(endingEncoding: true)
         self.popDebugGroup() // Pass Name
     }
@@ -857,6 +859,7 @@ public protocol AnyRenderCommandEncoder {
     func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int, baseVertex: Int, baseInstance: Int)  async
 }
 
+/// `RenderCommandEncoder` allows you to encode rendering commands to be executed by the GPU within a single `DrawRenderPass`.
 public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEncoder {
     
     @usableFromInline
@@ -1101,6 +1104,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         }
     }
     
+    /// The debug label for this render command encoder. Inferred from the render pass' name by default.
     public var label : String = "" {
         didSet {
             commandRecorder.setLabel(label)
@@ -1245,7 +1249,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         commandRecorder.record(RenderGraphCommand.drawIndexedPrimitives, (primitiveType, UInt32(indexCount), indexType, indexBuffer, UInt32(indexBufferOffset), UInt32(instanceCount), Int32(baseVertex), UInt32(baseInstance)))
     }
     
-    public override func updateResourceUsages(endingEncoding: Bool = false) {
+    override func updateResourceUsages(endingEncoding: Bool = false) {
         if !endingEncoding {
             // Set the depth-stencil and pipeline states here to filter out unused states.
             if self.depthStencilStateChanged {
@@ -1278,7 +1282,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         }
     }
     
-    public override func endEncoding() {
+    @usableFromInline override func endEncoding() {
         // Reset any dynamic state to the defaults.
         let renderTargetSize = self.drawRenderPass.renderTargetDescriptor.size
         if self.nonDefaultDynamicState.contains(.viewport) {
@@ -1439,7 +1443,7 @@ public final class BlitCommandEncoder : CommandEncoder {
         self.pushDebugGroup(passRecord.name)
     }
     
-    public func endEncoding() {
+    @usableFromInline func endEncoding() {
         self.popDebugGroup() // Pass Name
     }
     
@@ -1547,7 +1551,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
         self.pushDebugGroup(passRecord.name)
     }
     
-    public func endEncoding() {
+    @usableFromInline func endEncoding() {
         self.popDebugGroup() // Pass Name
     }
     

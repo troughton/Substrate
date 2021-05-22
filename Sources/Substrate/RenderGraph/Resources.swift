@@ -756,6 +756,16 @@ extension Heap: CustomStringConvertible {
 }
 
 
+/// `Buffer` represents a contiguous block of untyped GPU-visible memory.
+/// Whenever data is accessed or written on the GPU, it is represented in Swift CPU code as a `Buffer`.
+///
+/// By default, `Buffer`s are transient and associated with a particular (usually the currently-executing) `RenderGraph`.
+/// They are given backing GPU memory when the `RenderGraph` executes and are invalidated once the `RenderGraph`
+/// has been submitted to the GPU. This is a useful default when passing data to the GPU that changes per frame.
+///
+/// If a `Buffer` needs to persist across multiple frames, `ResourceFlags.persistent` must be passed to its initialiser;
+/// persistent buffers are created immediately and are valid until `Buffer.dispose()` is called on the buffer instance.
+/// Note that `Buffer`s are _not_ reference-counted; you must manually manage their lifetime.
 public struct Buffer : ResourceProtocol {
     public struct TextureViewDescriptor {
         public var descriptor : TextureDescriptor
@@ -773,12 +783,25 @@ public struct Buffer : ResourceProtocol {
     @usableFromInline let _handle : UnsafeRawPointer
     @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
+    /// Retrieves a `Buffer` from an existing valid `Buffer` handle.
+    ///
+    /// - Parameter handle: the handle for the buffer to retrieve.
     @inlinable
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .buffer)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
+    /// Creates a new GPU-visible buffer.
+    ///
+    /// - Parameter length: The minimum length, in bytes, of the buffer's allocation.
+    /// - Parameter storageMode: The storage mode for the buffer, representing the pool of memory from which the buffer should be allocated.
+    /// - Parameter cacheMode: The CPU cache mode for the created buffer, if it is CPU-visible. Write-combined buffers _may_ have better write performance from the CPU but will have considerable overhead when being read by the CPU.
+    /// - Parameter usage: The ways in which the created buffer will be used by the GPU. Only required for persistent or history buffers; transient buffers will infer their usage.
+    /// - Parameter bytes: `length` bytes to optionally copy to the buffer. The buffer must be CPU-visible, and it must either be persistent or be created during `RenderGraph` execution.
+    /// - Parameter renderGraph: The render graph that this buffer will be used with, if this is a transient buffer. Only necessary for transient buffers created outside of `RenderGraph` execution (e.g. in a render pass' `init` method).
+    /// - Parameter flags: The flags with which to create the buffer; for example, `ResourceFlags.persistent` for a persistent buffer.
+    /// - SeeAlso: `init(descriptor:renderGraph:flags)`
     @inlinable
     public init(length: Int, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache, usage: BufferUsage = .unknown, bytes: UnsafeRawPointer? = nil, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.init(descriptor: BufferDescriptor(length: length, storageMode: storageMode, cacheMode: cacheMode, usage: usage), bytes: bytes, renderGraph: renderGraph, flags: flags)
@@ -790,6 +813,11 @@ public struct Buffer : ResourceProtocol {
         self.init(descriptor: descriptor, renderGraph: frameGraph, flags: flags)
     }
     
+    /// Creates a new GPU-visible buffer.
+    ///
+    /// - Parameter descriptor: The descriptor representing the properties with which the buffer should be created.
+    /// - Parameter renderGraph: The render graph that this buffer will be used with, if this is a transient buffer. Only necessary for transient buffers created outside of `RenderGraph` execution (e.g. in a render pass' `init` method).
+    /// - Parameter flags: The flags with which to create the buffer; for example, `ResourceFlags.persistent` for a persistent buffer.
     @inlinable
     public init(descriptor: BufferDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         let index : UInt64
@@ -813,6 +841,18 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
+    @available(*, deprecated, renamed: "init(descriptor:bytes:renderGraph:flags:)")
+    @inlinable
+    public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, frameGraph: RenderGraph?, flags: ResourceFlags = []) {
+        self.init(descriptor: descriptor, bytes: bytes, renderGraph: frameGraph, flags: flags)
+    }
+    
+    /// Creates a new GPU-visible buffer.
+    ///
+    /// - Parameter descriptor: The descriptor representing the properties with which the buffer should be created.
+    /// - Parameter bytes: `length` bytes to optionally copy to the buffer. The buffer must be CPU-visible, and it must either be persistent or be created during `RenderGraph` execution.
+    /// - Parameter renderGraph: The render graph that this buffer will be used with, if this is a transient buffer. Only necessary for transient buffers created outside of `RenderGraph` execution (e.g. in a render pass' `init` method).
+    /// - Parameter flags: The flags with which to create the buffer; for example, `ResourceFlags.persistent` for a persistent buffer.
     @inlinable
     public init(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.init(descriptor: descriptor, renderGraph: renderGraph, flags: flags)
@@ -823,13 +863,27 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
+    /// Suballocates a new persistent GPU-visible buffer from the provided heap.
+    ///
+    /// - Parameter length: The minimum length, in bytes, of the buffer's allocation.
+    /// - Parameter usage: The ways in which the created buffer will be used by the GPU.
+    /// - Parameter bytes: `length` bytes to optionally copy to the buffer. The buffer must be CPU-visible (i.e. allocated from a CPU-visible heap).
+    /// - Parameter heap: The `Heap` from which to suballocate the buffer's memory.
+    /// - Parameter flags: The flags with which to create the buffer. Must include `ResourceFlags.persistent`.
+    /// - Returns: nil if the buffer could not be created (e.g. there is not enough unfragmented available space on the heap).
     @inlinable
     public init?(length: Int, usage: BufferUsage = .unknown, bytes: UnsafeRawPointer? = nil, heap: Heap, flags: ResourceFlags = [.persistent]) {
         self.init(descriptor: BufferDescriptor(length: length, storageMode: heap.storageMode, cacheMode: heap.cacheMode, usage: usage), bytes: bytes, heap: heap, flags: flags)
     }
     
+    /// Suballocates a new persistent GPU-visible buffer from the provided heap.
+    ///
+    /// - Parameter descriptor: The descriptor representing the properties with which the buffer should be created. Properties which are already specified by the heap are ignored.
+    /// - Parameter heap: The `Heap` from which to suballocate the buffer's memory.
+    /// - Parameter flags: The flags with which to create the buffer. Must include `ResourceFlags.persistent`.
+    /// - Returns: nil if the buffer could not be created (e.g. there is not enough unfragmented available space on the heap).
     @inlinable
-    public init?(descriptor: BufferDescriptor, heap: Heap, flags: ResourceFlags = [.persistent]) {
+    public init?(descriptor: BufferDescriptor, bytes: UnsafeRawPointer? = nil, heap: Heap, flags: ResourceFlags = [.persistent]) {
         assert(flags.contains(.persistent), "Heap-allocated resources must be persistent.")
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         
@@ -843,11 +897,7 @@ public struct Buffer : ResourceProtocol {
         }
         
         heap.childResources.insert(Resource(self))
-    }
-    
-    @inlinable
-    public init?(descriptor: BufferDescriptor, bytes: UnsafeRawPointer?, heap: Heap, flags: ResourceFlags = [.persistent]) {
-        self.init(descriptor: descriptor, heap: heap, flags: flags)
+        
         
         if let bytes = bytes {
             assert(self.descriptor.storageMode != .private)

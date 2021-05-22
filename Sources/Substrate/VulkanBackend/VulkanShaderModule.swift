@@ -427,7 +427,7 @@ extension VkDescriptorSetLayoutBinding {
     }
 }
 
-public class VulkanDescriptorSetLayout {
+final class VulkanDescriptorSetLayout {
     unowned(unsafe) let pipelineReflection: VulkanPipelineReflection
     let vkLayout : VkDescriptorSetLayout
     let set : UInt32
@@ -474,12 +474,12 @@ public class VulkanDescriptorSetLayout {
     }
 }
 
-public enum PipelineLayoutKey : Hashable {
+enum PipelineLayoutKey : Hashable {
     case graphics(vertexShader: String, fragmentShader: String?)
     case compute(String)
 }
 
-public class VulkanShaderModule {
+final class VulkanShaderModule {
     let device: VulkanDevice
     let vkModule : VkShaderModule
     let compiler : spvc_compiler
@@ -549,7 +549,7 @@ public class VulkanShaderModule {
     }
 }
 
-public class VulkanShaderLibrary {
+final class VulkanShaderLibrary {
     let device: VulkanDevice
     let url : URL
     let modules : [VulkanShaderModule]
