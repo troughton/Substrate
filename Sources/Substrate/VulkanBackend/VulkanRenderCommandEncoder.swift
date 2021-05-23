@@ -22,7 +22,23 @@ struct DynamicStateCreateInfo {
         self.info.pDynamicStates = UnsafePointer(states.buffer)
     }
     
-    static let `default` = DynamicStateCreateInfo(states: [VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_BIAS, VK_DYNAMIC_STATE_BLEND_CONSTANTS, VK_DYNAMIC_STATE_STENCIL_REFERENCE])
+    //
+    static let `default` = DynamicStateCreateInfo(states: [VK_DYNAMIC_STATE_VIEWPORT,
+                                                           VK_DYNAMIC_STATE_SCISSOR,
+                                                           VK_DYNAMIC_STATE_DEPTH_BIAS,
+                                                           VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+                                                           VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+                                                           
+                                                           // TODO: use ExtendedDynamicState extension.
+//                                                           VK_DYNAMIC_STATE_CULL_MODE_EXT,
+//                                                           VK_DYNAMIC_STATE_FRONT_FACE_EXT,
+//                                                           VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY_EXT,
+//                                                           VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE_EXT,
+//                                                           VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE_EXT,
+//                                                           VK_DYNAMIC_STATE_DEPTH_COMPARE_OP_EXT,
+//                                                           VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE_EXT,
+//                                                           VK_DYNAMIC_STATE_STENCIL_OP_EXT,
+    ])
 }
 
 struct VulkanRenderPipelineDescriptor : Hashable {

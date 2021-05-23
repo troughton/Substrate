@@ -87,6 +87,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     var depthStencilDescriptorChanged : Bool = false
     var hasSetPushConstants : Bool = false
     
+    @StateBacked<TypedRenderPipelineDescriptor<R>, RenderPipelineState>
     public var pipeline : TypedRenderPipelineDescriptor<R> {
         didSet {
             self.pipelineDescriptorChanged = true
@@ -347,6 +348,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     
     var descriptorSetChangeMask : UInt8 = 0
     
+    @StateBacked<TypedComputePipelineDescriptor<R>, ComputePipelineState>
     public var pipeline : TypedComputePipelineDescriptor<R> {
         didSet {
             self.pipelineDescriptorChanged = true

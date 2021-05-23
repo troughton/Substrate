@@ -31,7 +31,7 @@ final class MetalStateCaches {
     var renderPipelineAccessLock = ReaderWriterLock()
     var computePipelineAccessLock = ReaderWriterLock()
     
-    private var functionCache = [FunctionCacheKey : MTLFunction]()
+    private var functionCache = [FunctionDescriptor : MTLFunction]()
     private var computeStates = [String : [(ComputePipelineDescriptor, Bool, MTLComputePipelineState, MetalPipelineReflection)]]() // Bool meaning threadgroupSizeIsMultipleOfThreadExecutionWidth
     
     private var renderStates = [RenderPipelineFunctionNames : [(MetalRenderPipelineDescriptor, MTLRenderPipelineState, MetalPipelineReflection)]]()
@@ -104,19 +104,18 @@ final class MetalStateCaches {
         }
     }
     
-    func function(named name: String, functionConstants: FunctionConstants?) -> MTLFunction? {
-        let cacheKey = FunctionCacheKey(name: name, constants: functionConstants)
-        if let function = self.functionCache[cacheKey] {
+    func function(for functionDescriptor: FunctionDescriptor) -> MTLFunction? {
+        if let function = self.functionCache[functionDescriptor] {
             return function
         }
         
         do {
-            let function = try self.library.makeFunction(name: name, constantValues: functionConstants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
+            let function = try self.library.makeFunction(name: functionDescriptor.name, constantValues: functionDescriptor.constants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
                        
-            self.functionCache[cacheKey] = function
+            self.functionCache[functionDescriptor] = function
             return function
         } catch {
-            print("MetalRenderGraph: Error creating function named \(name)\(functionConstants.map { " with constants \($0)" } ?? ""): \(error)")
+            print("MetalRenderGraph: Error creating function named \(functionDescriptor.name)\(functionDescriptor.constants.map { " with constants \($0)" } ?? ""): \(error)")
             return nil
         }
     }
@@ -190,13 +189,17 @@ final class MetalStateCaches {
             }
         }
         
-        guard let function = self.function(named: descriptor.function, functionConstants: descriptor._functionConstants) else {
+        guard let function = self.function(for: descriptor.functionDescriptor) else {
             return nil
         }
         
         let mtlDescriptor = MTLComputePipelineDescriptor()
         mtlDescriptor.computeFunction = function
         mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
+        
+        if !descriptor.linkedFunctions.isEmpty {
+            
+        }
         
         var reflection : MTLComputePipelineReflection? = nil
         do {

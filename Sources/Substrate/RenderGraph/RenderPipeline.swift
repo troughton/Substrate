@@ -26,6 +26,39 @@ public struct BlendDescriptor : Hashable {
     }
 }
 
+@propertyWrapper
+public struct StateBacked<T, State: AnyObject> {
+    public var wrappedValue: T
+    public var state: State?
+    
+    public init(wrappedValue: T) {
+        self.wrappedValue = wrappedValue
+    }
+}
+
+public struct FunctionDescriptor : Hashable, ExpressibleByStringLiteral {
+    public var name : String = ""
+    public var constants : FunctionConstants? = nil
+    
+    @inlinable
+    init() {
+        
+    }
+    
+    public init(functionName: String) {
+        self.name = functionName
+    }
+    
+    public init(stringLiteral value: String) {
+        self.init(functionName: value)
+    }
+    
+    @inlinable
+    public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) {
+        self.constants = try! FunctionConstants(functionConstants)
+    }
+}
+
 public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
     public var descriptor : RenderPipelineDescriptor
     
@@ -185,6 +218,16 @@ public struct RenderPipelineDescriptor : Hashable {
     }
 }
 
+public final class RenderPipelineState {
+    public let state: OpaquePointer
+    let reflection: PipelineReflection
+    
+    init(state: OpaquePointer, reflection: PipelineReflection) {
+        self.state = state
+        self.reflection = reflection
+    }
+}
+
 public struct TypedComputePipelineDescriptor<R : RenderPassReflection> {
     public var descriptor : ComputePipelineDescriptor
     
@@ -213,32 +256,62 @@ public struct TypedComputePipelineDescriptor<R : RenderPassReflection> {
     
     public mutating func flushConstants() {
         if self.constantsChanged {
-            self.descriptor._functionConstants = FunctionConstants(constants)
+            self.descriptor.functionConstants = FunctionConstants(constants)
         }
         self.constantsChanged = false
     }
 }
 
 public struct ComputePipelineDescriptor : Hashable {
-    public var function : String! = nil
-    public var _functionConstants : FunctionConstants? = nil
+    public var function = FunctionDescriptor()
+    
+    public var functionName : FunctionDescriptor {
+        get {
+            return self.functionDescriptor.name
+        }
+        set {
+            self.functionDescriptor.name = newValue
+        }
+    }
+    
+    public var functionConstants : FunctionConstants? {
+        get {
+            return self.functionDescriptor.constants
+        }
+        set {
+            self.functionDescriptor.constants = newValue
+        }
+    }
+    
+    public var linkedFunctions: [FunctionDescriptor] = []
     
     @inlinable
     init() {
         
     }
     
+    @inlinable
     public init(function: String) {
-        self.function = function
+        self.functionDescriptor = .init(function: function)
     }
     
     @inlinable
     public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) {
-        self._functionConstants = try! FunctionConstants(functionConstants)
+        self.functionConstants = try! FunctionConstants(functionConstants)
     }
     
     @inlinable
     public mutating func setFunctionConstants(_ functionConstants: FunctionConstants) {
-        self._functionConstants = functionConstants
+        self.functionConstants = functionConstants
+    }
+}
+
+public final class ComputePipelineState {
+    public let state: OpaquePointer
+    let reflection: PipelineReflection
+    
+    init(state: OpaquePointer, reflection: PipelineReflection) {
+        self.state = state
+        self.reflection = reflection
     }
 }
