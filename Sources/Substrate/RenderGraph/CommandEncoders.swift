@@ -1617,3 +1617,97 @@ public final class ExternalCommandEncoder : CommandEncoder {
     
     #endif
 }
+
+@available(iOS 14.0, *)
+public final class AccelerationStructureCommandEncoder {
+    /**
+     * @brief Encode an acceleration structure build into the command buffer. All bottom-level acceleration
+     * structure builds must have completed before a top-level acceleration structure build may begin. Note
+     * that this requires the use of fences and multiple acceleration structure encoders if the acceleration
+     * structures are allocated from heaps. The resulting acceleration structure will not retain any
+     * references to the input vertex buffer, instance buffer, etc.
+     *
+     * The acceleration structure build will not be completed until the command buffer has been committed
+     * and finished executing. However, it is safe to encode ray tracing work against the acceleration
+     * structure as long as the command buffers are scheduled and synchronized such that the command buffer
+     * will have completed by the time the ray tracing starts.
+     *
+     * The acceleration structure and scratch buffer must be at least the size returned by the
+     * [MTLDevice accelerationStructureSizesWithDescriptor:] query.
+     *
+     * @param accelerationStructure Acceleration structure storage to build into
+     * @param descriptor            Object describing the acceleration structure to build
+     * @param scratchBuffer         Scratch buffer to use while building the acceleration structure. The
+     *                              contents may be overwritten and are undefined after the build has
+     *                              started/completed.
+     * @param scratchBufferOffset   Offset into the scratch buffer
+     */
+    // vk{Cmd}BuildAccelerationStructuresKHR
+    func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int) {}
+
+        
+        /**
+         * @brief Encode an acceleration structure refit into the command buffer. Refitting can be used to
+         * update the acceleration structure when geometry changes and is much faster than rebuilding from
+         * scratch. However, the quality of the acceleration structure and the subsequent ray tracing
+         * performance will degrade depending on how much the geometry changes.
+         *
+         * Refitting can not be used after certain changes, such as adding or removing geometry. Acceleration
+         * structures can be refit in place by specifying the same source and destination acceleration structures
+         * or by providing a nil destination acceleration structure. If the source and destination acceleration
+         * structures are not the same, they must not overlap in memory.
+         *
+         * The destination acceleration structure must be at least as large as the source acceleration structure,
+         * unless the source acceleration structure has been compacted, in which case the destination acceleration
+         * structure must be at least as large as the compacted size of the source acceleration structure.
+         *
+         * The scratch buffer must be at least the size returned by the accelerationStructureSizesWithDescriptor
+         * method of the MTLDevice.
+         *
+         * @param descriptor                       Object describing the acceleration structure to build
+         * @param sourceAccelerationStructure      Acceleration structure to copy from
+         * @param destinationAccelerationStructure Acceleration structure to copy to
+         * @param scratchBuffer                    Scratch buffer to use while refitting the acceleration
+         *                                         structure. The contents may be overwritten and are undefined
+         *                                         after the refit has started/completed.
+         * @param scratchBufferOffset              Offset into the scratch buffer.
+         */
+    
+    // VkAccelerationStructureBuildGeometryInfoKHR with VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
+    func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int) {}
+
+        
+        /**
+         * @brief Copy an acceleration structure. The source and destination acceleration structures must not
+         * overlap in memory. If this is a top level acceleration structure, references to bottom level
+         * acceleration structures will be preserved.
+         *
+         * The destination acceleration structure must be at least as large as the source acceleration structure,
+         * unless the source acceleration structure has been compacted, in which case the destination acceleration
+         * structure must be at least as large as the compacted size of the source acceleration structure.
+         *
+         * @param sourceAccelerationStructure      Acceleration structure to copy from
+         * @param destinationAccelerationStructure Acceleration structure to copy to
+         */
+        // vkCmdCopyAccelerationStructureKHR
+    func copy(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure) {}
+
+        // vkCmdWriteAccelerationStructuresPropertiesKHR
+    func writeCompactedSize(accelerationStructure: AccelerationStructure, buffer: Buffer, offset: Int) {}
+
+        
+        /**
+         * @brief Copy and compact an acceleration structure. The source and destination acceleration structures
+         * must not overlap in memory. If this is a top level acceleration structure, references to bottom level
+         * acceleration structures will be preserved.
+         *
+         * The destination acceleration structure must be at least as large as the compacted size of the source
+         * acceleration structure, which is computed by the writeCompactedAccelerationStructureSize method.
+         *
+         * @param sourceAccelerationStructure      Acceleration structure to copy and compact
+         * @param destinationAccelerationStructure Acceleration structure to copy to
+         */
+        // vkCmdCopyAccelerationStructureKHR
+    func copyAndCompact(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure) {}
+
+}

@@ -1291,3 +1291,139 @@ public enum TextureViewBaseInfo {
         }
     }
 }
+
+
+@usableFromInline final class AccelerationStructureRegistry {
+    
+    @usableFromInline static let instance = AccelerationStructureRegistry()
+    
+    @usableFromInline
+    struct Chunk {
+        @usableFromInline static let itemsPerChunk = 256
+        
+        @usableFromInline let descriptors : UnsafeMutablePointer<AccelerationStructureDescriptor>
+        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
+        @usableFromInline let labels : UnsafeMutablePointer<String?>
+        /// The RenderGraphs that are currently using this resource.
+        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
+        
+        init() {
+            self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
+            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
+            self.labels = .allocate(capacity: Chunk.itemsPerChunk)
+            self.activeRenderGraphs = .allocate(capacity: Chunk.itemsPerChunk)
+            
+            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
+        }
+        
+        func deallocate() {
+            self.descriptors.deallocate()
+            self.generations.deallocate()
+            self.labels.deallocate()
+            self.activeRenderGraphs.deallocate()
+        }
+    }
+    
+    @usableFromInline static let maxChunks = 2048
+    
+    @usableFromInline var lock = SpinLock()
+    
+    @usableFromInline var freeIndices = RingBuffer<Int>()
+    @usableFromInline var nextFreeIndex = 0
+    @usableFromInline var enqueuedDisposals = [AccelerationStructure]()
+    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
+    
+    init() {
+        self.chunks = .allocate(capacity: Self.maxChunks)
+    }
+    
+    @usableFromInline
+    func allocate(descriptor: AccelerationStructureDescriptor) -> UInt64 {
+        return self.lock.withLock {
+            let index : Int
+            if let reusedIndex = self.freeIndices.popFirst() {
+                index = reusedIndex
+            } else {
+                index = self.nextFreeIndex
+                if self.nextFreeIndex % Chunk.itemsPerChunk == 0 {
+                    self.allocateChunk(self.nextFreeIndex / Chunk.itemsPerChunk)
+                }
+                self.nextFreeIndex += 1
+            }
+            
+            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
+            self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
+            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
+            self.chunks[chunkIndex].childResources.advanced(by: indexInChunk).initialize(to: [])
+            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
+            
+            return UInt64(truncatingIfNeeded: index)
+        }
+    }
+    
+    @usableFromInline var chunkCount : Int {
+        let lastUsedIndex = self.nextFreeIndex - 1
+        if lastUsedIndex < 0 { return 0 }
+        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
+    }
+    
+    @usableFromInline
+    func allocateChunk(_ index: Int) {
+        assert(index < Self.maxChunks)
+        self.chunks.advanced(by: index).initialize(to: Chunk())
+    }
+    
+    private func disposeImmediately(structure: AccelerationStructure) {
+        RenderBackend.dispose(accelerationStructure: structure)
+        
+        let index = heap.index
+        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
+        
+        self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].childResources.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].activeRenderGraphs.deinitialize(count: 1)
+        
+        self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
+        
+        self.freeIndices.append(index)
+    }
+    
+    func processEnqueuedDisposals() {
+        var i = 0
+        while i < self.enqueuedDisposals.count {
+            let structure = self.enqueuedDisposals[i]
+            
+            if !structure.isKnownInUse {
+                self.disposeImmediately(structure: structure)
+                self.enqueuedDisposals.remove(at: i, preservingOrder: false)
+            } else {
+                i += 1
+            }
+        }
+    }
+    
+    func clear(afterRenderGraph: RenderGraph) {
+        self.lock.withLock {
+            let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
+            
+            for chunkIndex in 0..<self.chunkCount {
+                for i in 0..<Chunk.itemsPerChunk {
+                    UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
+                }
+            }
+            
+            self.processEnqueuedDisposals()
+        }
+    }
+    
+    func dispose(_ structure: AccelerationStructure) {
+        self.lock.withLock {
+            if structure.isKnownInUse {
+                self.enqueuedDisposals.append(structure)
+            } else {
+                self.disposeImmediately(structure: structure)
+            }
+        }
+    }
+}

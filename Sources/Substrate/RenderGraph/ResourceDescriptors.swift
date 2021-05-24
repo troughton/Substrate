@@ -222,3 +222,61 @@ public struct HeapDescriptor {
         self.cacheMode = cacheMode
     }
 }
+
+public struct AccelerationStructureFlags: OptionSet {
+    public let rawValue: Int
+    
+    @inlinable
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+    
+    public static var refittable: AccelerationStructureFlags { .init(rawValue: 1 << 0) }
+    public static var preferFastBuild: AccelerationStructureFlags { .init(rawValue: 1 << 1) }
+}
+
+public struct AccelerationStructureDescriptor {
+    public struct TriangleGeometryDescriptor {
+        public var triangleCount: Int
+        
+        public var indexBuffer: Buffer
+        public var indexBufferOffset: Int
+        public var indexType: IndexType
+        
+        public var vertexBuffer: Buffer
+        public var vertexBufferOffset: Int
+        public var vertexStride: Int
+    }
+
+    public struct BoundingBoxGeometryDescriptor {
+        public var boundingBoxCount: Int
+        
+        public var boundingBoxBuffer: Buffer
+        public var boundingBoxBufferOffset: Int
+        public var boundingBoxStride: Int
+    }
+    
+    public struct BottomLevelStructureDescriptor {
+        public var boundingBoxes: [BoundingBoxGeometryDescriptor]
+        public var triangles: [TriangleGeometryDescriptor]
+    }
+    
+    public struct TopLevelGeometryDescriptor {
+        public var bottomLevelStructures: [AccelerationStructure]
+        
+        public var instanceCount: Int
+        public var instanceDescriptorBuffer: Buffer
+        public var instanceDescriptorBufferOffset: Int
+        public var instanceDescriptorStride: Int
+    }
+    
+    public enum StructureType {
+        case triangle(TriangleGeometryDescriptor)
+        case boundingBox(BoundingBoxGeometryDescriptor)
+        case bottomLevel(BottomLevelStructureDescriptor)
+        case topLevel(TopLevelGeometryDescriptor)
+    }
+    
+    public var type: StructureType
+    public var flags: AccelerationStructureFlags
+}

@@ -46,6 +46,11 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         return persistentRegistry[sampler]
     }
     
+    
+    subscript(accelerationStructure: AccelerationStructure) -> Backend.AccelerationStructureReference {
+        return persistentRegistry[accelerationStructure]
+    }
+    
     func bufferForCPUAccess(_ buffer: Buffer) -> Backend.BufferReference {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!

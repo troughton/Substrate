@@ -19,8 +19,7 @@ public enum ResourceType : UInt8 {
     case imageblockData
     case imageblock
     case visibleFunctionTable
-    case primitiveAccelerationStructure
-    case instanceAccelerationStructure
+    case accelerationStructure
     case intersectionFunctionTable
 }
 
@@ -1592,6 +1591,98 @@ public struct Texture : ResourceProtocol {
 extension Texture: CustomStringConvertible {
     public var description: String {
         return "Texture(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")descriptor: \(self.descriptor), stateFlags: \(self.stateFlags), flags: \(self.flags) }"
+    }
+}
+
+public
+
+public struct AccelerationStructure : ResourceProtocol {
+    @usableFromInline let _handle : UnsafeRawPointer
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    
+    @inlinable
+    public init(handle: Handle) {
+        assert(Resource(handle: handle).type == .heap)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+    }
+    
+    @inlinable
+    public init(descriptor: AccelerationStructureDescriptor) {
+        let flags : ResourceFlags = .persistent
+        
+        let index = AccelerationStructureRegistry.instance.allocate(descriptor: descriptor)
+        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.accelerationStructure.rawValue) << Self.typeBitsRange.lowerBound)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        
+        
+        // vkCreateAccelerationStructureKHR
+        if !RenderBackend.materialiseAccelerationStructure(self) {
+            self.dispose()
+            return nil
+        }
+    }
+    
+    @inlinable
+    public internal(set) var descriptor : AccelerationStructureDescriptor {
+        get {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            return AccelerationStructureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
+        }
+        nonmutating set {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            AccelerationStructureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk] = newValue
+        }
+    }
+    
+    @inlinable
+    public var label : String? {
+        get {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            return AccelerationStructureRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
+        }
+        nonmutating set {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            AccelerationStructureRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+        }
+    }
+    
+    public var storageMode: StorageMode {
+        return .private
+    }
+    
+    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
+    @inlinable
+    public var isKnownInUse: Bool {
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: AccelerationStructureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+        if activeRenderGraphMask != 0 {
+            return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
+        }
+        return false
+    }
+    
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: AccelerationStructureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+    }
+    
+    public func dispose() {
+        guard self.isValid else {
+            return
+        }
+        AccelerationStructureRegistry.instance.dispose(self)
+    }
+    
+    @inlinable
+    public var isValid : Bool {
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
+        return HeapRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+    }
+}
+
+extension AccelerationStructure: CustomStringConvertible {
+    public var description: String {
+        return "AccelerationStructure(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")descriptor: \(self.descriptor) }"
     }
 }
 

@@ -181,7 +181,7 @@ final class MetalStateCaches {
     public subscript(descriptor: ComputePipelineDescriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth: Bool) -> MTLComputePipelineState? {
         // Figure out whether the thread group size is always a multiple of the thread execution width and set the optimisation hint appropriately.
         
-        if let possibleMatches = self.computeStates[descriptor.function] {
+        if let possibleMatches = self.computeStates[descriptor] {
             for (testDescriptor, testThreadgroupMultiple, state, _) in possibleMatches {
                 if testThreadgroupMultiple == threadgroupSizeIsMultipleOfThreadExecutionWidth && testDescriptor == descriptor {
                     return state
@@ -189,7 +189,7 @@ final class MetalStateCaches {
             }
         }
         
-        guard let function = self.function(for: descriptor.functionDescriptor) else {
+        guard let function = self.function(for: descriptor.function) else {
             return nil
         }
         
@@ -197,8 +197,12 @@ final class MetalStateCaches {
         mtlDescriptor.computeFunction = function
         mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
         
-        if !descriptor.linkedFunctions.isEmpty {
-            
+        if !descriptor.linkedFunctions.isEmpty, #available(iOS 14.0, macOS 11.0, *) {
+            let linkedFunctions = MTLLinkedFunctions()
+            linkedFunctions.functions = descriptor.linkedFunctions.compactMap { // We print an error in function(for:)
+                self.function(for: $0)
+            }
+            mtlDescriptor.linkedFunctions = linkedFunctions
         }
         
         var reflection : MTLComputePipelineReflection? = nil
