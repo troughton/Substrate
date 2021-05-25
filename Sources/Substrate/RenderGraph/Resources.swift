@@ -690,6 +690,7 @@ public struct Heap : ResourceProtocol {
         nonmutating set {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             HeapRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+            RenderBackend.updateLabel(on: self)
         }
     }
     
