@@ -494,6 +494,7 @@ final class RenderPassRecord {
 
 // _RenderGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
 protocol _RenderGraphContext : AnyObject {
+    var queue: DispatchQueue { get }
     var transientRegistryIndex : Int { get }
     var accessSemaphore : DispatchSemaphore { get }
     var renderGraphQueue: Queue { get }
@@ -1227,8 +1228,14 @@ public final class RenderGraph {
             RenderGraph.activeRenderGraphSemaphore.signal()
         }
         
+        self.context.queue.sync {
+            self._execute(onSubmission: onSubmission, onGPUCompletion: onGPUCompletion)
+        }
+    }
+    
+    private func _execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
+
         let jobManager = RenderGraph.jobManager
-        
         
         RenderGraph.resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag, threadCount: jobManager.threadCount)
         RenderGraph.executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag, threadCount: jobManager.threadCount)

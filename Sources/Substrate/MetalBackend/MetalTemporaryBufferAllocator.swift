@@ -41,13 +41,12 @@ fileprivate class TemporaryBufferArena {
                 self.currentBlock = nil
             }
             
-            
             // Try to get memory block from availableBlocks
             let iterator = self.availableBlocks.makeIterator()
             while let block = iterator.next() {
                 if block.length >= bytes {
+                    block.setPurgeableState(.nonVolatile)
                     self.currentBlock = block
-                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: block, to: .nonVolatile)
                     iterator.removeLast()
                     break
                 }
@@ -56,6 +55,7 @@ fileprivate class TemporaryBufferArena {
                 let allocationSize = max(bytes, self.blockSize)
                 
                 self.currentBlock = device.makeBuffer(length: allocationSize, options: [self.options, .substrateTrackedHazards])
+                self.currentBlock!.label = "Block for TemporaryBufferArena \(ObjectIdentifier(self))"
             }
             self.currentBlockPos = 0
             return self.allocate(bytes: bytes, alignedTo: alignment)
@@ -65,6 +65,13 @@ fileprivate class TemporaryBufferArena {
         return retVal
     }
     
+    func makePurgeable() {
+        precondition(self.usedBlocks.isEmpty && self.currentBlock == nil)
+        for block in self.availableBlocks {
+            block.setPurgeableState(.empty)
+        }
+    }
+    
     func reset() {
         if let currentBlock = self.currentBlock {
             self.usedBlocks.append(currentBlock)
@@ -72,9 +79,6 @@ fileprivate class TemporaryBufferArena {
         self.currentBlock = nil
         self.currentBlockPos = 0
         self.availableBlocks.prependAndClear(contentsOf: usedBlocks)
-        for block in self.availableBlocks {
-            MetalResourcePurgeabilityManager.instance.setPurgeableState(on: block, to: .empty)
-        }
     }
 }
 
@@ -110,6 +114,12 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
             self.nextFrameWaitEvent = waitEvent
         }  else {
             self.nextFrameWaitEvent.afterStages.formUnion(waitEvent.afterStages)
+        }
+    }
+    
+    func makePurgeable() {
+        for arena in self.arenas {
+            arena.makePurgeable()
         }
     }
     
