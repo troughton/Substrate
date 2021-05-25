@@ -17,7 +17,7 @@ import Glibc
 import CRT
 #endif
 
-@usableFromInline final class QueueRegistry {
+public final class QueueRegistry {
     public static let instance = QueueRegistry()
     
     public static let maxQueues = UInt8.bitWidth

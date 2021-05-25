@@ -31,25 +31,25 @@ struct QueueEndAction {
 
 final class CommandEndActionManager {
     static let manager = CommandEndActionManager()
-    let lock = SpinLock()
+    let queue = DispatchQueue(label: "CommandEndActionManager Queue")
     
     var deviceCommandEndActions = RingBuffer<CommandEndAction>()
     var queueCommandEndActions = [RingBuffer<QueueEndAction>](repeating: .init(), count: QueueRegistry.maxQueues)
     
     func enqueue(action: CommandEndActionType, after commandIndices: QueueCommandIndices = QueueRegistry.lastSubmittedCommands) {
-        self.lock.withLock {
+        self.queue.sync {
             self.deviceCommandEndActions.append(CommandEndAction(type: action, after: commandIndices))
         }
     }
     
     func enqueue(action: CommandEndActionType, after commandIndex: UInt64, on queue: Queue) {
-        self.lock.withLock {
+        self.queue.sync {
             self.queueCommandEndActions[Int(queue.index)].append(QueueEndAction(type: action, after: commandIndex))
         }
     }
     
     func didCompleteCommand(_ command: UInt64, on queue: Queue) {
-        self.lock.withLock {
+        self.queue.async {
             do {
                 var processedCount = 0
                 for action in self.deviceCommandEndActions {

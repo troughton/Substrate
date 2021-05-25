@@ -48,13 +48,15 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     }
     
     func resetHeap() {
-        if let heap = self.heap {
-            MetalResourcePurgeabilityManager.instance.setPurgeableState(on: heap, to: .empty)
-        }
-        self.isPurgeable = true
-        
         self.aliasingFences.removeAll(keepingCapacity: true)
         self.nextAliasingIndex = 0
+    }
+    
+    func makePurgeable() {
+        if let heap = self.heap {
+            heap.setPurgeableState(.empty)
+        }
+        self.isPurgeable = true
     }
     
     func reserveCapacity(_ capacity: Int) {
@@ -65,6 +67,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
                 descriptor.hazardTrackingMode = .substrateTrackedHazards
             }
             self.heap = self.device.makeHeap(descriptor: descriptor)!
+            self.heap!.label = "Heap for MetalHeapResourceAllocator \(ObjectIdentifier(self))"
             self.resetHeap()
         }
     }
@@ -102,7 +105,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     private func useResource(_ resource: MTLResource) -> [FenceDependency] {
         if self.isPurgeable {
             if let heap = self.heap {
-                MetalResourcePurgeabilityManager.instance.setPurgeableState(on: heap, to: .nonVolatile)
+                heap.setPurgeableState(.nonVolatile)
             }
             self.isPurgeable = false
         }

@@ -603,7 +603,11 @@ final class MetalBackend : SpecificRenderBackend {
         compactedResourceCommands.sort()
     }
     
-    func didCompleteCommand(_ index: UInt64, queue: Queue) {
+    func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<MetalBackend>) {
+        if index >= queue.lastSubmittedCommand {
+            // If there are no more pending commands on the queue, we can make all of the transient allocators purgeable.
+            context.resourceRegistry.makeTransientAllocatorsPurgeable()
+        }
         MetalResourcePurgeabilityManager.instance.processPurgeabilityChanges()
     }
 

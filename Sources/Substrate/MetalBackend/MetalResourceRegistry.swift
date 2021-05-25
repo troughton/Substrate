@@ -884,6 +884,25 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.frameDrawables.removeAll(keepingCapacity: true)
     }
     
+    func makeTransientAllocatorsPurgeable() {
+        self.stagingTextureAllocator.makePurgeable()
+        self.privateAllocator.makePurgeable()
+        self.historyBufferAllocator.makePurgeable()
+        
+        self.colorRenderTargetAllocator.makePurgeable()
+        self.depthRenderTargetAllocator.makePurgeable()
+        
+        self.frameSharedBufferAllocator.makePurgeable()
+        self.frameSharedWriteCombinedBufferAllocator.makePurgeable()
+        
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        self.frameManagedBufferAllocator?.makePurgeable()
+        self.frameManagedWriteCombinedBufferAllocator?.makePurgeable()
+        #endif
+        
+        self.frameArgumentBufferAllocator.makePurgeable()
+    }
+    
     func cycleFrames() {
         // Clear all transient resources at the end of the frame.
         
