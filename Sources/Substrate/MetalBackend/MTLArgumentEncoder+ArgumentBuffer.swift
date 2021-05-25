@@ -20,7 +20,7 @@ extension ArgumentBuffer {
         for i in 0..<argEncoder.encoder.encodedLength {
             destPointer.advanced(by: i).storeBytes(of: 0 as UInt8, as: UInt8.self)
         }
-
+        
         argEncoder.encoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
         argEncoder.encodeArguments(from: self, resourceMap: resourceMap)
         

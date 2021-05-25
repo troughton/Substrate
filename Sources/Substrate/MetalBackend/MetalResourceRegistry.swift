@@ -71,13 +71,17 @@ struct MTLTextureUsageProperties {
 final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     typealias Backend = MetalBackend
     
+    @available(macOS 11.0, iOS 14.0, *)
+    typealias AccelerationStructureReference = MTLAccelerationStructure
+    
     var accessLock = ReaderWriterLock()
     
     var heapReferences = PersistentResourceMap<Heap, MTLHeap>()
     var textureReferences = PersistentResourceMap<Texture, MTLTextureReference>()
     var bufferReferences = PersistentResourceMap<Buffer, MTLBufferReference>()
     var argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, MTLBufferReference>() 
-    var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, MTLBufferReference>() 
+    var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, MTLBufferReference>()
+    var accelerationStructureReferences = PersistentResourceMap<Resource, MTLResource>()
     
     var windowReferences = [Texture : CAMetalLayer]()
     
@@ -248,6 +252,17 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return storage
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @discardableResult
+    public func allocateAccelerationStructure(_ structure: AccelerationStructure) -> MTLAccelerationStructure? {
+        let mtlStructure = self.device.makeAccelerationStructure(size: structure.size)
+        
+        assert(self.accelerationStructureReferences[Resource(structure)] == nil)
+        self.accelerationStructureReferences[Resource(structure)] = mtlStructure
+        
+        return mtlStructure
+    }
+    
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
         self.prepareFrame()
         if let texture = resource.texture {
@@ -275,6 +290,11 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
 
     public subscript(argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public subscript(structure: AccelerationStructure) -> AnyObject? {
+        return self.accelerationStructureReferences[Resource(structure)]
     }
     
     public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
@@ -322,6 +342,14 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    func disposeAccelerationStructure(_ structure: AccelerationStructure) {
+        if let mtlStructure = self.accelerationStructureReferences.removeValue(forKey: Resource(structure)) {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlStructure)))
+        }
+    }
+    
     
     func cycleFrames() {
         // No-op for now.

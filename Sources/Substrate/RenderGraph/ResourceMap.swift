@@ -35,7 +35,9 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
         case is Heap.Type:
             self._reserveCapacity(HeapRegistry.instance.nextFreeIndex)
         default:
-            fatalError()
+            if #available(macOS 11.0, iOS 14.0, *), R.self is AccelerationStructure.Type {
+                self._reserveCapacity(AccelerationStructureRegistry.instance.nextFreeIndex)
+            }
         }
     }
     
@@ -244,7 +246,11 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
         case is Heap.Type:
             break
         default:
-            fatalError()
+            if #available(macOS 11.0, iOS 14.0, *), R.self is AccelerationStructure.Type {
+                break
+            } else {
+                fatalError()
+            }
         }
     }
 

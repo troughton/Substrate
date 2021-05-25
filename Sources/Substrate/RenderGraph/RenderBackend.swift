@@ -64,9 +64,15 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
     func materialiseHeap(_ heap: Heap) -> Bool
     
+    @available(macOS 11.0, iOS 14.0, *)
+    func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool
+    
     func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any?
     func replaceBackingResource(for texture: Texture, with: Any?) -> Any?
     func replaceBackingResource(for heap: Heap, with: Any?) -> Any?
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any?
     
     func registerWindowTexture(texture: Texture, context: Any)
     func registerExternalResource(_ resource: Resource, backingResource: Any)
@@ -96,6 +102,9 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func dispose(argumentBuffer: ArgumentBuffer)
     func dispose(argumentBufferArray: ArgumentBufferArray)
     func dispose(heap: Heap)
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    func dispose(accelerationStructure: AccelerationStructure)
     
     var pushConstantPath : ResourceBindingPath { get }
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
@@ -163,6 +172,12 @@ public struct RenderBackend {
         return _backend.materialiseHeap(heap)
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @inlinable
+    public static func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
+        return _backend.materialiseAccelerationStructure(structure)
+    }
+    
     static func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
         return _backend.replaceBackingResource(for: buffer, with: with)
     }
@@ -173,6 +188,11 @@ public struct RenderBackend {
     
     static func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
         return _backend.replaceBackingResource(for: heap, with: with)
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    static func replaceBackingResource(for accelerationStructure: AccelerationStructure, with: Any?) -> Any? {
+        return _backend.replaceBackingResource(for: accelerationStructure, with: with)
     }
     
     @inlinable
@@ -208,6 +228,12 @@ public struct RenderBackend {
     @inlinable
     public static func dispose(heap: Heap) {
         return _backend.dispose(heap: heap)
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    @inlinable
+    public static func dispose(accelerationStructure: AccelerationStructure) {
+        return _backend.dispose(accelerationStructure: accelerationStructure)
     }
     
     @inlinable

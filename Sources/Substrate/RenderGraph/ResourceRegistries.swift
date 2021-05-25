@@ -1293,6 +1293,7 @@ public enum TextureViewBaseInfo {
 }
 
 
+@available(macOS 11.0, iOS 14.0, *)
 @usableFromInline final class AccelerationStructureRegistry {
     
     @usableFromInline static let instance = AccelerationStructureRegistry()
@@ -1301,14 +1302,14 @@ public enum TextureViewBaseInfo {
     struct Chunk {
         @usableFromInline static let itemsPerChunk = 256
         
-        @usableFromInline let descriptors : UnsafeMutablePointer<AccelerationStructureDescriptor>
+        @usableFromInline let sizes : UnsafeMutablePointer<Int>
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         @usableFromInline let labels : UnsafeMutablePointer<String?>
         /// The RenderGraphs that are currently using this resource.
         @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         
         init() {
-            self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
+            self.sizes = .allocate(capacity: Chunk.itemsPerChunk)
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
             self.activeRenderGraphs = .allocate(capacity: Chunk.itemsPerChunk)
@@ -1317,7 +1318,7 @@ public enum TextureViewBaseInfo {
         }
         
         func deallocate() {
-            self.descriptors.deallocate()
+            self.sizes.deallocate()
             self.generations.deallocate()
             self.labels.deallocate()
             self.activeRenderGraphs.deallocate()
@@ -1338,7 +1339,7 @@ public enum TextureViewBaseInfo {
     }
     
     @usableFromInline
-    func allocate(descriptor: AccelerationStructureDescriptor) -> UInt64 {
+    func allocate(size: Int) -> UInt64 {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -1352,9 +1353,8 @@ public enum TextureViewBaseInfo {
             }
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
+            self.chunks[chunkIndex].sizes.advanced(by: indexInChunk).initialize(to: size)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            self.chunks[chunkIndex].childResources.advanced(by: indexInChunk).initialize(to: [])
             self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
             
             return UInt64(truncatingIfNeeded: index)
@@ -1376,12 +1376,11 @@ public enum TextureViewBaseInfo {
     private func disposeImmediately(structure: AccelerationStructure) {
         RenderBackend.dispose(accelerationStructure: structure)
         
-        let index = heap.index
+        let index = structure.index
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
         
-        self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
+        self.chunks[chunkIndex].sizes.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].childResources.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].activeRenderGraphs.deinitialize(count: 1)
         
         self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1

@@ -89,22 +89,22 @@ public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
     @inlinable
     public var vertexFunction: R.VertexFunction! {
         get {
-            guard let function = self.descriptor.vertexFunction else {
+            guard !self.descriptor.vertexFunction.name.isEmpty else {
                 fatalError("No valid pipeline function set.")
             }
-            return R.VertexFunction(rawValue: function)!
+            return R.VertexFunction(rawValue: self.descriptor.vertexFunction.name)!
         }
         set {
-            self.descriptor.vertexFunction = newValue?.rawValue
+            self.descriptor.vertexFunction.name = newValue?.rawValue ?? ""
         }
     }
     
     public var fragmentFunction: R.FragmentFunction? {
         get {
-            return self.descriptor.fragmentFunction.map { R.FragmentFunction(rawValue: $0)! }
+            return R.FragmentFunction(rawValue: self.descriptor.fragmentFunction.name)
         }
         set {
-            self.descriptor.fragmentFunction = newValue?.rawValue
+            self.descriptor.fragmentFunction.name = newValue?.rawValue ?? ""
         }
     }
     
@@ -189,8 +189,8 @@ public struct RenderPipelineDescriptor : Hashable {
     
     public var vertexDescriptor : VertexDescriptor? = nil
     
-    public var vertexFunction: String? = nil
-    public var fragmentFunction: String? = nil
+    public var vertexFunction: FunctionDescriptor = .init()
+    public var fragmentFunction: FunctionDescriptor = .init()
     
     /* Rasterization and visibility state */
     public var isAlphaToCoverageEnabled: Bool = false
@@ -200,7 +200,15 @@ public struct RenderPipelineDescriptor : Hashable {
     // Color attachment names to blend descriptors
     public var blendStates : [BlendDescriptor?]
     public var writeMasks : [ColorWriteMask]
-    public var functionConstants : FunctionConstants? = nil
+    public var functionConstants : FunctionConstants? {
+        get {
+            return self.vertexFunction.constants ?? self.fragmentFunction.constants
+        }
+        set {
+            self.vertexFunction.constants = newValue
+            self.fragmentFunction.constants = newValue
+        }
+    }
     
     @inlinable
     public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) {
@@ -237,10 +245,10 @@ public struct TypedComputePipelineDescriptor<R : RenderPassReflection> {
     
     public var function: R.ComputeFunction? {
         get {
-            return self.descriptor.function.map { R.ComputeFunction(rawValue: $0)! }
+            return R.ComputeFunction(rawValue: self.descriptor.function.name)
         }
         set {
-            self.descriptor.function = newValue?.rawValue
+            self.descriptor.function.name = newValue?.rawValue ?? ""
         }
     }
     
@@ -265,21 +273,21 @@ public struct TypedComputePipelineDescriptor<R : RenderPassReflection> {
 public struct ComputePipelineDescriptor : Hashable {
     public var function = FunctionDescriptor()
     
-    public var functionName : FunctionDescriptor {
+    public var functionName : String {
         get {
-            return self.functionDescriptor.name
+            return self.function.name
         }
         set {
-            self.functionDescriptor.name = newValue
+            self.function.name = newValue
         }
     }
     
     public var functionConstants : FunctionConstants? {
         get {
-            return self.functionDescriptor.constants
+            return self.function.constants
         }
         set {
-            self.functionDescriptor.constants = newValue
+            self.function.constants = newValue
         }
     }
     
@@ -292,7 +300,7 @@ public struct ComputePipelineDescriptor : Hashable {
     
     @inlinable
     public init(function: String) {
-        self.functionDescriptor = .init(function: function)
+        self.function = .init(functionName: function)
     }
     
     @inlinable

@@ -223,6 +223,7 @@ public struct HeapDescriptor {
     }
 }
 
+@available(macOS 11.0, iOS 14.0, *)
 public struct AccelerationStructureFlags: OptionSet {
     public let rawValue: Int
     
@@ -235,6 +236,7 @@ public struct AccelerationStructureFlags: OptionSet {
     public static var preferFastBuild: AccelerationStructureFlags { .init(rawValue: 1 << 1) }
 }
 
+@available(macOS 11.0, iOS 14.0, *)
 public struct AccelerationStructureDescriptor {
     public struct TriangleGeometryDescriptor {
         public var triangleCount: Int
@@ -256,13 +258,21 @@ public struct AccelerationStructureDescriptor {
         public var boundingBoxStride: Int
     }
     
-    public struct BottomLevelStructureDescriptor {
-        public var boundingBoxes: [BoundingBoxGeometryDescriptor]
-        public var triangles: [TriangleGeometryDescriptor]
+    public enum GeometryType {
+        case triangle(TriangleGeometryDescriptor)
+        case boundingBox(BoundingBoxGeometryDescriptor)
     }
     
-    public struct TopLevelGeometryDescriptor {
-        public var bottomLevelStructures: [AccelerationStructure]
+    public struct GeometryDescriptor {
+        public var geometry: GeometryType
+        
+        public var intersectionFunctionTableOffset: Int
+        public var isOpaque: Bool
+        public var canInvokeIntersectionFunctionsMultipleTimesPerIntersection: Bool
+    }
+    
+    public struct InstanceStructureDescriptor {
+        public var primitiveStructures: [AccelerationStructure]
         
         public var instanceCount: Int
         public var instanceDescriptorBuffer: Buffer
@@ -271,10 +281,8 @@ public struct AccelerationStructureDescriptor {
     }
     
     public enum StructureType {
-        case triangle(TriangleGeometryDescriptor)
-        case boundingBox(BoundingBoxGeometryDescriptor)
-        case bottomLevel(BottomLevelStructureDescriptor)
-        case topLevel(TopLevelGeometryDescriptor)
+        case bottomLevelPrimitive([GeometryDescriptor])
+        case topLevelInstance(InstanceStructureDescriptor)
     }
     
     public var type: StructureType

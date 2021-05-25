@@ -23,7 +23,6 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     associatedtype ArgumentBufferReference
     associatedtype ArgumentBufferArrayReference
     associatedtype SamplerReference
-    associatedtype AccelerationStructureReference = Void
     
     associatedtype InterEncoderDependencyType: Dependency
     
@@ -135,7 +134,9 @@ extension BackendTransientResourceRegistry {
 
 protocol BackendPersistentResourceRegistry: ResourceRegistry where Backend.PersistentResourceRegistry == Self {
     subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference { get }
-    subscript(accelerationStructure: AccelerationStructure) -> Backend.AccelerationStructureReference { get }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    subscript(accelerationStructure: AccelerationStructure) -> AnyObject? { get }
     
     func allocateBuffer(_ buffer: Buffer) -> Backend.BufferReference?
     func allocateTexture(_ texture: Texture) -> Backend.TextureReference?

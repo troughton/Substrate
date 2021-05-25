@@ -108,14 +108,16 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         
         var functionNames = [FixedSizeBuffer<CChar>]()
         
-        let specialisationInfo = stateCaches[self.descriptor.functionConstants, pipelineReflection: pipelineReflection]
-        let specialisationInfoPtr = specialisationInfo == nil ? nil : escapingPointer(to: &specialisationInfo!.info)
         
         var stages = [VkPipelineShaderStageCreateInfo]()
         
-        for (name, stageFlag) in [(self.descriptor.vertexFunction, VK_SHADER_STAGE_VERTEX_BIT), (self.descriptor.fragmentFunction, VK_SHADER_STAGE_FRAGMENT_BIT)] {
-            guard let name = name else { continue }
+        for (function, stageFlag) in [(self.descriptor.vertexFunction, VK_SHADER_STAGE_VERTEX_BIT), (self.descriptor.fragmentFunction, VK_SHADER_STAGE_FRAGMENT_BIT)] {
+            let name = function.name
+            guard !name.isEmpty else { continue }
             let module = stateCaches.shaderLibrary.moduleForFunction(name)!
+            
+            let specialisationInfo = stateCaches[function.constants, pipelineReflection: pipelineReflection]
+            let specialisationInfoPtr = specialisationInfo == nil ? nil : escapingPointer(to: &specialisationInfo!.info)
             
             let entryPoint = module.entryPointForFunction(named: name)
             let cEntryPoint = entryPoint.withCString { (cString) -> FixedSizeBuffer<CChar> in

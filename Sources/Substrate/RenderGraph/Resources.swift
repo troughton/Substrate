@@ -1594,8 +1594,7 @@ extension Texture: CustomStringConvertible {
     }
 }
 
-public
-
+@available(macOS 11.0, iOS 14.0, *)
 public struct AccelerationStructure : ResourceProtocol {
     @usableFromInline let _handle : UnsafeRawPointer
     @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
@@ -1607,30 +1606,25 @@ public struct AccelerationStructure : ResourceProtocol {
     }
     
     @inlinable
-    public init(descriptor: AccelerationStructureDescriptor) {
+    public init(size: Int) {
         let flags : ResourceFlags = .persistent
         
-        let index = AccelerationStructureRegistry.instance.allocate(descriptor: descriptor)
+        let index = AccelerationStructureRegistry.instance.allocate(size: size)
         let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.accelerationStructure.rawValue) << Self.typeBitsRange.lowerBound)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
-        
         // vkCreateAccelerationStructureKHR
         if !RenderBackend.materialiseAccelerationStructure(self) {
+            assertionFailure("Allocation failed for persistent texture \(self)")
             self.dispose()
-            return nil
         }
     }
     
     @inlinable
-    public internal(set) var descriptor : AccelerationStructureDescriptor {
+    public var size : Int {
         get {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            return AccelerationStructureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
-        }
-        nonmutating set {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            AccelerationStructureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk] = newValue
+            return AccelerationStructureRegistry.instance.chunks[chunkIndex].sizes[indexInChunk]
         }
     }
     
@@ -1643,6 +1637,7 @@ public struct AccelerationStructure : ResourceProtocol {
         nonmutating set {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
             AccelerationStructureRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+            RenderBackend.updateLabel(on: self)
         }
     }
     
@@ -1680,9 +1675,10 @@ public struct AccelerationStructure : ResourceProtocol {
     }
 }
 
+@available(macOS 11.0, iOS 14.0, *)
 extension AccelerationStructure: CustomStringConvertible {
     public var description: String {
-        return "AccelerationStructure(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")descriptor: \(self.descriptor) }"
+        return "AccelerationStructure(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")size: \(self.size) }"
     }
 }
 

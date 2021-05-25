@@ -119,6 +119,11 @@ final class MetalBackend : SpecificRenderBackend {
         return self.resourceRegistry.allocateHeap(heap) != nil
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
+        return self.resourceRegistry.allocateAccelerationStructure(structure) != nil
+    }
+    
     @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
         self.resourceRegistry.accessLock.withWriteLock {
             let oldValue = self.resourceRegistry[buffer]?._buffer.takeUnretainedValue()
@@ -139,6 +144,15 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.accessLock.withWriteLock {
             let oldValue = self.resourceRegistry[heap]
             self.resourceRegistry.heapReferences[heap] = with as! MTLHeap?
+            return oldValue
+        }
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any? {
+        self.resourceRegistry.accessLock.withWriteLock {
+            let oldValue = self.resourceRegistry[structure]
+            self.resourceRegistry.accelerationStructureReferences[Resource(structure)] = with as! MTLAccelerationStructure?
             return oldValue
         }
     }
@@ -224,6 +238,11 @@ final class MetalBackend : SpecificRenderBackend {
     
     @usableFromInline func dispose(heap: Heap) {
         self.resourceRegistry.disposeHeap(heap)
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func dispose(accelerationStructure: AccelerationStructure) {
+        self.resourceRegistry.disposeAccelerationStructure(accelerationStructure)
     }
     
     public func supportsPixelFormat(_ pixelFormat: PixelFormat, usage: TextureUsage) -> Bool {

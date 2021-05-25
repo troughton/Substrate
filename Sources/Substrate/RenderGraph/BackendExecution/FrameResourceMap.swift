@@ -46,8 +46,8 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         return persistentRegistry[sampler]
     }
     
-    
-    subscript(accelerationStructure: AccelerationStructure) -> Backend.AccelerationStructureReference {
+    @available(macOS 11.0, iOS 14.0, *)
+    subscript(accelerationStructure: AccelerationStructure) -> AnyObject? {
         return persistentRegistry[accelerationStructure]
     }
     
