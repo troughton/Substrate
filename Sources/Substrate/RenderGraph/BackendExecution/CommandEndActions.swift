@@ -34,7 +34,7 @@ final class CommandEndActionManager {
     let queue = DispatchQueue(label: "CommandEndActionManager Queue")
     
     var deviceCommandEndActions = RingBuffer<CommandEndAction>()
-    var queueCommandEndActions = [RingBuffer<QueueEndAction>](repeating: .init(), count: QueueRegistry.maxQueues)
+    var queueCommandEndActions = (0..<QueueRegistry.maxQueues).map { _ in RingBuffer<QueueEndAction>() }
     
     func enqueue(action: CommandEndActionType, after commandIndices: QueueCommandIndices = QueueRegistry.lastSubmittedCommands) {
         self.queue.sync {
