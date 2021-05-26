@@ -1303,6 +1303,7 @@ public final class RenderGraph {
         PersistentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferArrayRegistry.instance.clear(afterRenderGraph: self)
+        HeapRegistry.instance.clear(afterRenderGraph: self)
         
         RenderGraph.threadUnmanagedReferences.forEach { unmanagedReferences in
             for reference in unmanagedReferences {
