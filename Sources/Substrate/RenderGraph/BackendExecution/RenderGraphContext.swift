@@ -26,7 +26,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     
     // var compactedResourceCommands = [CompactedResourceCommand<MetalCompactedResourceCommandType>]()
        
-    var queueCommandBufferIndex: UInt64 = 0
+    var queueCommandBufferIndex: UInt64 = 0 // The last command buffer submitted
     let syncEvent: Backend.Event
        
     let commandQueue: Backend.QueueImpl

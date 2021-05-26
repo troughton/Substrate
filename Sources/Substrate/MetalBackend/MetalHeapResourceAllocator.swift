@@ -61,6 +61,10 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     
     func reserveCapacity(_ capacity: Int) {
         if (self.heap?.currentAllocatedSize ?? 0) < capacity {
+            if let heap = self.heap {
+                CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(heap)), after: self.waitEvent.waitValue + 1, on: self.queue)
+            }
+            
             let descriptor = MTLHeapDescriptor()
             descriptor.size = max(((self.heap?.currentAllocatedSize ?? 0) * 3) / 2, capacity)
             if #available(OSX 10.15, iOS 13.0, tvOS 13.0, *) {
