@@ -211,6 +211,11 @@ final class VulkanBackend : SpecificRenderBackend {
         fatalError("maxAvailableSize(forAlignment:in:) is unimplemented on Vulkan")
     }
     
+    
+    @usableFromInline func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes {
+        fatalError("accelerationStructureSizes(for:) is unimplemented on Vulkan")
+    }
+    
     @usableFromInline
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
         

@@ -22,9 +22,9 @@ extension AccelerationStructureDescriptor.TriangleGeometryDescriptor {
         let mtlTriangleDescriptor = MTLAccelerationStructureTriangleGeometryDescriptor()
         mtlTriangleDescriptor.triangleCount = self.triangleCount
         
-        let indexBuffer = resourceRegistry[self.indexBuffer]!
-        mtlTriangleDescriptor.indexBuffer = indexBuffer.buffer
-        mtlTriangleDescriptor.indexBufferOffset = indexBuffer.offset + self.indexBufferOffset
+        let indexBuffer = self.indexBuffer.map { resourceRegistry[$0]! }
+        mtlTriangleDescriptor.indexBuffer = indexBuffer?.buffer
+        mtlTriangleDescriptor.indexBufferOffset = (indexBuffer?.offset ?? 0) + self.indexBufferOffset
         mtlTriangleDescriptor.indexType = MTLIndexType(self.indexType)
         
         let vertexBuffer = resourceRegistry[self.vertexBuffer]!

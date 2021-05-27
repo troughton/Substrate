@@ -220,6 +220,14 @@ final class MetalBackend : SpecificRenderBackend {
         }
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes {
+        return self.resourceRegistry.accessLock.withReadLock {
+            let sizes = self.device.accelerationStructureSizes(descriptor: descriptor.metalDescriptor(resourceRegistry: self.resourceRegistry))
+            return AccelerationStructureSizes(accelerationStructureSize: sizes.accelerationStructureSize, buildScratchBufferSize: sizes.buildScratchBufferSize, refitScratchBufferSize: sizes.refitScratchBufferSize)
+        }
+    }
+    
     @usableFromInline func dispose(texture: Texture) {
         self.resourceRegistry.disposeTexture(texture)
     }

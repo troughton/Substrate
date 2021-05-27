@@ -63,14 +63,12 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func materialisePersistentTexture(_ texture: Texture) -> Bool
     func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
     func materialiseHeap(_ heap: Heap) -> Bool
-    
     @available(macOS 11.0, iOS 14.0, *)
     func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool
     
     func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any?
     func replaceBackingResource(for texture: Texture, with: Any?) -> Any?
     func replaceBackingResource(for heap: Heap, with: Any?) -> Any?
-    
     @available(macOS 11.0, iOS 14.0, *)
     func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any?
     
@@ -92,6 +90,9 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int
     
     func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes
     
     // Note: The pipeline reflection functions may return nil if reflection information could not be created for the pipeline.
     func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> PipelineReflection?
@@ -314,6 +315,12 @@ public struct RenderBackend {
     @inlinable
     static func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int {
         return _backend.maxAvailableSize(forAlignment: alignment, in: heap)
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    @inlinable
+    static func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes {
+        return _backend.accelerationStructureSizes(for: descriptor)
     }
     
     @inlinable

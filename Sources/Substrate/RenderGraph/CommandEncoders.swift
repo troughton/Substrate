@@ -1619,7 +1619,34 @@ public final class ExternalCommandEncoder : CommandEncoder {
 }
 
 @available(iOS 14.0, *)
-public final class AccelerationStructureCommandEncoder {
+public final class AccelerationStructureCommandEncoder : CommandEncoder {
+    
+    @usableFromInline let commandRecorder : RenderGraphCommandRecorder
+    @usableFromInline let passRecord: RenderPassRecord
+    @usableFromInline let startCommandIndex: Int
+    let accelerationStructureRenderPass : AccelerationStructureRenderPass
+    
+    init(commandRecorder: RenderGraphCommandRecorder, accelerationStructureRenderPass: AccelerationStructureRenderPass, passRecord: RenderPassRecord) {
+        self.commandRecorder = commandRecorder
+        self.accelerationStructureRenderPass = renderPass
+        self.passRecord = passRecord
+        self.startCommandIndex = self.commandRecorder.nextCommandIndex
+        
+        assert(passRecord.pass === renderPass)
+        
+        self.pushDebugGroup(passRecord.name)
+    }
+    
+    @usableFromInline func endEncoding() {
+        self.popDebugGroup() // Pass Name
+    }
+    
+    public var label : String = "" {
+        didSet {
+            commandRecorder.setLabel(label)
+        }
+    }
+    
     /**
      * @brief Encode an acceleration structure build into the command buffer. All bottom-level acceleration
      * structure builds must have completed before a top-level acceleration structure build may begin. Note
