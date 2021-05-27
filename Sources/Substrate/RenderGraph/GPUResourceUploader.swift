@@ -30,20 +30,22 @@ public final class GPUResourceUploader {
     @usableFromInline
     final class UploadResourcePass : BlitRenderPass {
         public let name: String = "GPU Resource Upload"
+        public let cacheMode: CPUCacheMode
         
         @usableFromInline let closure : (RawBufferSlice, _ bce: BlitCommandEncoder) -> Void
         @usableFromInline let stagingBufferLength: Int
         
         @inlinable
-        init(stagingBufferLength: Int, closure: @escaping (_ stagingBuffer: RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) {
+        init(stagingBufferLength: Int, cacheMode: CPUCacheMode, closure: @escaping (_ stagingBuffer: RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) {
             assert(stagingBufferLength > 0)
             self.stagingBufferLength = stagingBufferLength
+            self.cacheMode = cacheMode
             self.closure = closure
         }
         
         @inlinable
         public func execute(blitCommandEncoder: BlitCommandEncoder) {
-            let stagingBuffer = Buffer(descriptor: BufferDescriptor(length: self.stagingBufferLength, storageMode: .shared, cacheMode: .writeCombined, usage: .blitSource))
+            let stagingBuffer = Buffer(descriptor: BufferDescriptor(length: self.stagingBufferLength, storageMode: .shared, cacheMode: self.cacheMode, usage: .blitSource))
             let bufferSlice = stagingBuffer[stagingBuffer.range, accessType: .write]
             self.closure(bufferSlice, blitCommandEncoder)
         }
@@ -96,14 +98,14 @@ public final class GPUResourceUploader {
         }
     }
     
-    public static func addUploadPass(stagingBufferLength: Int, pass: @escaping (RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) {
+    public static func addUploadPass(stagingBufferLength: Int, cacheMode: CPUCacheMode = .defaultCache, pass: @escaping (RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) {
         if GPUResourceUploader.skipUpload {
             return
         }
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
         self.lock.withSemaphore {
-            self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
+            self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, cacheMode: cacheMode, closure: pass))
         }
     }
     
@@ -130,7 +132,7 @@ public final class GPUResourceUploader {
             onBytesCopied?(buffer, bytes)
         } else {
             assert(buffer.storageMode == .private)
-            self.addUploadPass(stagingBufferLength: count, pass: { slice, bce in
+            self.addUploadPass(stagingBufferLength: count, cacheMode: .writeCombined, pass: { slice, bce in
                 slice.withContents {
                     $0.copyMemory(from: bytes, byteCount: count)
                 }
@@ -163,7 +165,7 @@ public final class GPUResourceUploader {
         } else {
             assert(texture.storageMode == .private)
             
-            self.addUploadPass(stagingBufferLength: bytesPerImage, pass: { bufferSlice, bce in
+            self.addUploadPass(stagingBufferLength: bytesPerImage, cacheMode: .writeCombined, pass: { bufferSlice, bce in
                 bufferSlice.withContents {
                     $0.copyMemory(from: bytes, byteCount: bytesPerImage)
                 }
