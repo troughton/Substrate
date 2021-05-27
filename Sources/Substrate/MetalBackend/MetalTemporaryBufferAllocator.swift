@@ -52,7 +52,7 @@ fileprivate class TemporaryBufferArena {
                 }
             }
             if self.currentBlock == nil {
-                let allocationSize = max(bytes, self.blockSize)
+                let allocationSize = max(bytes * 3 / 2, self.blockSize)
                 
                 self.currentBlock = device.makeBuffer(length: allocationSize, options: [self.options, .substrateTrackedHazards])
                 self.currentBlock!.label = "Block for TemporaryBufferArena \(ObjectIdentifier(self))"
