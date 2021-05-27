@@ -17,7 +17,7 @@ import Glibc
 import CRT
 #endif
 
-@usableFromInline final class QueueRegistry {
+public final class QueueRegistry {
     public static let instance = QueueRegistry()
     
     public static let maxQueues = UInt8.bitWidth
@@ -99,6 +99,14 @@ import CRT
         var commands = QueueCommandIndices(repeating: 0)
         for (i, queue) in self.allQueues.enumerated() {
             commands[i] = queue.lastSubmittedCommand
+        }
+        return commands
+    }
+    
+    public static var lastCompletedCommands: QueueCommandIndices {
+        var commands = QueueCommandIndices(repeating: 0)
+        for (i, queue) in self.allQueues.enumerated() {
+            commands[i] = queue.lastCompletedCommand
         }
         return commands
     }

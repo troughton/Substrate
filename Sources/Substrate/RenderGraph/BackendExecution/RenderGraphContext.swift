@@ -17,14 +17,16 @@ extension TaggedHeap.Tag {
 
 final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContext {
     public var accessSemaphore: DispatchSemaphore
-       
+    
+    let queue = DispatchQueue(label: "Render Graph Context Queue")
+    
     let backend: Backend
     let resourceRegistry: Backend.TransientResourceRegistry
     let commandGenerator: ResourceCommandGenerator<Backend>
     
     // var compactedResourceCommands = [CompactedResourceCommand<MetalCompactedResourceCommandType>]()
        
-    var queueCommandBufferIndex: UInt64 = 0
+    var queueCommandBufferIndex: UInt64 = 0 // The last command buffer submitted
     let syncEvent: Backend.Event
        
     let commandQueue: Backend.QueueImpl
@@ -61,7 +63,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     var resourceMap : FrameResourceMap<Backend> {
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
-    
+
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>, completion: @escaping (Double) -> Void) {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
@@ -141,8 +143,11 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                     if cbIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
                         let gpuEndTime = commandBuffer.gpuEndTime
                         completion((gpuEndTime - gpuStartTime) * 1000.0)
-                        self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue)
                         self.accessSemaphore.signal()
+                        
+                        self.queue.async {
+                            self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
+                        }
                         
                         self.emptyFrameCompletionHandlerSemaphore.withSemaphore {
                             // Notify any completion handlers that were enqueued for frames with no work.

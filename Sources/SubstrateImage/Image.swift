@@ -745,55 +745,56 @@ extension Image where ComponentType == UInt8 {
         self._applyUnchecked({ ColorSpaceLUTs.linearToSRGB($0) }, channelRange: self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount)
     }
     
-    private func _convertSRGBPostmultipliedToPremultiplied() {
-        let alphaChannel = self.channelCount - 1
-        for y in 0..<self.height {
-            for x in 0..<self.width {
-                let alpha = self[x, y, channel: alphaChannel]
+    private func _convertWithAlpha(using lut: UnsafeBufferPointer<UInt8>) {
+        let buffer = self.storage.data
+        if self.channelCount == 4 {
+            let simdBuffer = UnsafeMutableRawBufferPointer(buffer).bindMemory(to: SIMD4<UInt8>.self)
+            for i in 0..<simdBuffer.count {
+                let sourcePixels = simdBuffer[i]
+                let alpha = sourcePixels.w
+                let alphaLut = lut.baseAddress.unsafelyUnwrapped.advanced(by: Int(alpha) &* 256)
+                
+                simdBuffer[i] = SIMD4(
+                    alphaLut[Int(sourcePixels.x)],
+                    alphaLut[Int(sourcePixels.y)],
+                    alphaLut[Int(sourcePixels.z)],
+                    alpha
+                )
+            }
+            _ = UnsafeMutableRawBufferPointer(simdBuffer).bindMemory(to: UInt8.self)
+        } else {
+            let alphaChannel = self.channelCount - 1
+            for pixelBase in stride(from: 0, to: buffer.count, by: self.channelCount) {
+                let alpha = buffer[pixelBase + alphaChannel]
                 for c in 0..<alphaChannel {
-                    let channelVal = self[x, y, channel: c]
-                    self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPostmultToPremult(value: channelVal, alpha: alpha))
+                    let lutIndex = Int(alpha) &* 256 &+ Int(buffer[pixelBase + c])
+                    buffer[pixelBase + c] = lut[lutIndex]
                 }
             }
+        }
+    }
+    
+    private func _convertSRGBPostmultipliedToPremultiplied() {
+        ColorSpaceLUTs.sRGBPostmultToPremultAlphaLUT.withUnsafeBufferPointer {
+            self._convertWithAlpha(using: $0)
         }
     }
     
     private func _convertLinearPostmultipliedToPremultiplied() {
-        let alphaChannel = self.channelCount - 1
-        for y in 0..<self.height {
-            for x in 0..<self.width {
-                let alpha = self[x, y, channel: alphaChannel]
-                for c in 0..<alphaChannel {
-                    let channelVal = self[x, y, channel: c]
-                    self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.postmultToPremult(value: channelVal, alpha: alpha))
-                }
-            }
+        ColorSpaceLUTs.postmultToPremultAlphaLUT.withUnsafeBufferPointer {
+            self._convertWithAlpha(using: $0)
         }
     }
     
     private func _convertSRGBPremultipliedToPostmultiplied() {
-        let alphaChannel = self.channelCount - 1
-        for y in 0..<self.height {
-            for x in 0..<self.width {
-                let alpha = self[x, y, channel: alphaChannel]
-                for c in 0..<alphaChannel {
-                    let channelVal = self[x, y, channel: c]
-                    self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.sRGBPremultToPostmult(value: channelVal, alpha: alpha))
-                }
-            }
+        ColorSpaceLUTs.sRGBPremultToPostmultAlphaLUT.withUnsafeBufferPointer {
+            self._convertWithAlpha(using: $0)
         }
     }
     
     private func _convertLinearPremultipliedToPostmultiplied() {
-        let alphaChannel = self.channelCount - 1
-        for y in 0..<self.height {
-            for x in 0..<self.width {
-                let alpha = self[x, y, channel: alphaChannel]
-                for c in 0..<alphaChannel {
-                    let channelVal = self[x, y, channel: c]
-                    self.setUnchecked(x: x, y: y, channel: c, value: ColorSpaceLUTs.premultToPostmult(value: channelVal, alpha: alpha))
-                }
-            }
+        ColorSpaceLUTs.postmultToPremultAlphaLUT.withUnsafeBufferPointer {
+            self._convertWithAlpha(using: $0)
         }
     }
 }

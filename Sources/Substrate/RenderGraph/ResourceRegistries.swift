@@ -1221,7 +1221,9 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].childResources.advanced(by: indexInChunk).initialize(to: [])
             self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
             
-            return UInt64(truncatingIfNeeded: index)
+            let generation = self.chunks[chunkIndex].generations[indexInChunk]
+            
+            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
         }
     }
     
