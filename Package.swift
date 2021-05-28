@@ -52,6 +52,7 @@ let package = Package(
                     .product(name: "stb_image_write", package: "Cstb"),
                     .product(name: "tinyexr", package: "Cstb"),
                     .product(name: "LodePNG", package: "LodePNG")]),
+        .testTarget(name: "SubstrateImageTests", dependencies: ["SubstrateImage"]),
         
         .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage"]),
         
