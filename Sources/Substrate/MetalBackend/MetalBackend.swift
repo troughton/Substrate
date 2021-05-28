@@ -21,7 +21,7 @@ extension MTLResourceOptions {
 extension MTLHazardTrackingMode {
     static var substrateTrackedHazards : MTLHazardTrackingMode {
         // This gives us a convenient way to toggle whether the RenderGraph or Metal should handle resource tracking.
-        return .untracked
+        return MTLResourceOptions.substrateTrackedHazards == .hazardTrackingModeUntracked ? .untracked : .tracked
     }
 }
 
