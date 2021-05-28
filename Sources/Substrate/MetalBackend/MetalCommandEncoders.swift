@@ -668,4 +668,101 @@ final class FGMTLExternalCommandEncoder {
     
 }
 
+@available(macOS 11.0, iOS 14.0, *)
+final class FGMTLAccelerationStructureCommandEncoder {
+    let encoder: MTLAccelerationStructureCommandEncoder
+    let isAppleSiliconGPU: Bool
+    
+    init(encoder: MTLAccelerationStructureCommandEncoder, isAppleSiliconGPU: Bool) {
+        self.encoder = encoder
+        self.isAppleSiliconGPU = isAppleSiliconGPU
+    }
+    
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+        var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
+        
+        for (i, command) in zip(pass.commandRange!, pass.commands) {
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+            self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+        }
+    }
+    
+    func executeCommand(_ command: RenderGraphCommand, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+        switch command {
+        case .insertDebugSignpost(let cString):
+            encoder.insertDebugSignpost(String(cString: cString))
+            
+        case .setLabel(let label):
+            encoder.label = String(cString: label)
+            
+        case .pushDebugGroup(let groupName):
+            encoder.pushDebugGroup(String(cString: groupName))
+            
+        case .popDebugGroup:
+            encoder.popDebugGroup()
+            
+        case .buildAccelerationStructure(let args):
+            let structure = resourceMap[args.pointee.structure]! as! MTLAccelerationStructure
+            let descriptor = args.pointee.descriptor.metalDescriptor(resourceMap: resourceMap)
+            let scratchBuffer = resourceMap[args.pointee.scratchBuffer]!
+            let scratchBufferOffset = args.pointee.scratchBufferOffset
+            encoder.build(accelerationStructure: structure, descriptor: descriptor, scratchBuffer: scratchBuffer.buffer, scratchBufferOffset: scratchBuffer.offset + scratchBufferOffset)
+            
+        case .refitAccelerationStructure(let args):
+            let source = resourceMap[args.pointee.source]! as! MTLAccelerationStructure
+            let descriptor = args.pointee.descriptor.metalDescriptor(resourceMap: resourceMap)
+            let destination = args.pointee.destination.map { resourceMap[$0]! as! MTLAccelerationStructure }
+            let scratchBuffer = resourceMap[args.pointee.scratchBuffer]!
+            let scratchBufferOffset = args.pointee.scratchBufferOffset
+            
+            encoder.refit(sourceAccelerationStructure: source, descriptor: descriptor, destinationAccelerationStructure: destination, scratchBuffer: scratchBuffer.buffer, scratchBufferOffset: scratchBuffer.offset + scratchBufferOffset)
+            
+        case .copyAccelerationStructure(let args):
+            let source = resourceMap[args.pointee.source]! as! MTLAccelerationStructure
+            let destination = resourceMap[args.pointee.destination]! as! MTLAccelerationStructure
+            encoder.copy(sourceAccelerationStructure: source, destinationAccelerationStructure: destination)
+            
+        case .writeCompactedAccelerationStructureSize(let args):
+            let structure = resourceMap[args.pointee.structure]! as! MTLAccelerationStructure
+            let buffer = resourceMap[args.pointee.toBuffer]!
+            let bufferOffset = args.pointee.bufferOffset
+            encoder.writeCompactedSize(accelerationStructure: structure, buffer: buffer.buffer, offset: buffer.offset + bufferOffset)
+            
+        case .copyAndCompactAccelerationStructure(let args):
+            let source = resourceMap[args.pointee.source]! as! MTLAccelerationStructure
+            let destination = resourceMap[args.pointee.destination]! as! MTLAccelerationStructure
+            encoder.copyAndCompact(sourceAccelerationStructure: source, destinationAccelerationStructure: destination)
+            
+        default:
+            fatalError()
+        }
+    }
+    
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+        while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
+            defer { resourceCommandIndex += 1 }
+            
+            switch resourceCommands[resourceCommandIndex].command {
+            case .resourceMemoryBarrier, .scopedMemoryBarrier:
+                break
+                
+            case .useResources(let resources, let usage, _):
+                encoder.__use(resources.baseAddress!, count: resources.count, usage: usage)
+                
+            case .updateFence(let fence, _):
+                encoder.updateFence(fence.fence)
+                
+            case .waitForFence(let fence, _):
+                encoder.waitForFence(fence.fence)
+            }
+            
+        }
+    }
+    
+    func endEncoding() {
+        self.encoder.endEncoding()
+    }
+}
+
 #endif // canImport(Metal)

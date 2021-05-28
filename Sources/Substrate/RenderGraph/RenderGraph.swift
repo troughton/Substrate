@@ -927,6 +927,18 @@ public final class RenderGraph {
         self.addPass(CallbackExternalRenderPass(name: name, execute: execute))
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    public func addAccelerationStructureCallbackPass(file: String = #fileID, line: Int = #line,
+                                        _ execute: @escaping (AccelerationStructureCommandEncoder) -> Void) {
+        self.addPass(CallbackAccelerationStructureRenderPass(name: "Anonymous Acceleration Structure Encoder Pass at \(file):\(line)", execute: execute))
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public func addAccelerationStructureCallbackPass(name: String,
+                                        _ execute: @escaping (AccelerationStructureCommandEncoder) -> Void) {
+        self.addPass(CallbackAccelerationStructureRenderPass(name: name, execute: execute))
+    }
+    
     // When passes are added:
     // Check pass.writtenResources. If not empty, add the pass to the deferred queue and record its resource usages.
     // If it is empty, run the execute method eagerly and infer read/written resources from that.
@@ -971,16 +983,17 @@ public final class RenderGraph {
             externalPass.execute(externalCommandEncoder: ece)
             ece.endEncoding()
             
-        case let accelerationStructurePass as AccelerationStructureRenderPass:
-            let asce = AccelerationStructureCommandEncoder(commandRecorder: commandRecorder, renderPass: accelerationStructurePass, passRecord: passRecord)
-            accelerationStructurePass.execute(accelerationStructureCommandEncoder: asce)
-            asce.endEncoding()
-            
         case let cpuPass as CPURenderPass:
             cpuPass.execute()
             
         default:
-            fatalError("Unknown pass type for pass \(passRecord)")
+            if #available(macOS 11.0, iOS 14.0, *), let accelerationStructurePass = passRecord.pass as? AccelerationStructureRenderPass {
+                let asce = AccelerationStructureCommandEncoder(commandRecorder: commandRecorder, accelerationStructureRenderPass: accelerationStructurePass, passRecord: passRecord)
+                accelerationStructurePass.execute(accelerationStructureCommandEncoder: asce)
+                asce.endEncoding()
+            } else {
+                fatalError("Unknown pass type for pass \(passRecord)")
+            }
         }
         
         passRecord.commands = commandRecorder.commands

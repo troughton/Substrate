@@ -152,7 +152,7 @@ final class MetalBackend : SpecificRenderBackend {
     @usableFromInline func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any? {
         self.resourceRegistry.accessLock.withWriteLock {
             let oldValue = self.resourceRegistry[structure]
-            self.resourceRegistry.accelerationStructureReferences[Resource(structure)] = with as! MTLAccelerationStructure?
+            self.resourceRegistry.accelerationStructureReferences[structure] = with as! MTLAccelerationStructure?
             return oldValue
         }
     }
@@ -223,7 +223,7 @@ final class MetalBackend : SpecificRenderBackend {
     @available(macOS 11.0, iOS 14.0, *)
     @usableFromInline func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes {
         return self.resourceRegistry.accessLock.withReadLock {
-            let sizes = self.device.accelerationStructureSizes(descriptor: descriptor.metalDescriptor(resourceRegistry: self.resourceRegistry))
+            let sizes = self.device.accelerationStructureSizes(descriptor: descriptor.metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>(persistentRegistry: self.resourceRegistry, transientRegistry: nil)))
             return AccelerationStructureSizes(accelerationStructureSize: sizes.accelerationStructureSize, buildScratchBufferSize: sizes.buildScratchBufferSize, refitScratchBufferSize: sizes.refitScratchBufferSize)
         }
     }
@@ -341,6 +341,10 @@ final class MetalBackend : SpecificRenderBackend {
                 return bufferReference?.buffer
             } else if let texture = resource.texture {
                 return resourceRegistry[texture]?.texture
+            } else if let heap = resource.heap {
+                return resourceRegistry[heap]
+            } else if let accelerationStructure = resource.accelerationStructure, #available(macOS 11.0, iOS 14.0, *) {
+                return resourceRegistry[accelerationStructure]
             }
             return nil
         }
@@ -531,6 +535,10 @@ final class MetalBackend : SpecificRenderBackend {
                 return resourceMap[texture].map { unsafeBitCast($0._texture, to: Unmanaged<MTLResource>.self) }
             } else if let argumentBuffer = resource.argumentBuffer {
                 return unsafeBitCast(resourceMap[argumentBuffer]._buffer, to: Unmanaged<MTLResource>.self)
+            } else if let heap = resource.heap {
+                return Unmanaged.passUnretained(resourceMap.persistentRegistry[heap] as! MTLResource)
+            } else if let accelerationStructure = resource.accelerationStructure, #available(macOS 11.0, iOS 14.0, *) {
+                return Unmanaged.passUnretained(resourceMap.persistentRegistry[accelerationStructure] as! MTLResource)
             }
             fatalError()
         }
@@ -603,7 +611,7 @@ final class MetalBackend : SpecificRenderBackend {
                 if !isRTBarrier {
                     if resource.type == .texture {
                         scope.formUnion(.textures)
-                    } else if resource.type == .buffer || resource.type == .argumentBuffer || resource.type == .argumentBufferArray {
+                    } else if resource.type == .buffer || resource.type == .argumentBuffer || resource.type == .argumentBufferArray || resource.type == .accelerationStructure {
                         scope.formUnion(.buffers)
                     } else {
                         assertionFailure()

@@ -110,7 +110,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         
         func processCommandBuffer() {
             if let commandBuffer = commandBuffer {
-                commandBuffer.presentSwapchains(resourceRegistry: resourceMap.transientRegistry)
+                commandBuffer.presentSwapchains(resourceRegistry: resourceMap.transientRegistry!)
                 
                 // Make sure that the sync event value is what we expect, so we don't update it past
                 // the signal for another buffer before that buffer has completed.

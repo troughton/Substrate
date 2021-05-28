@@ -18,16 +18,16 @@ enum RenderTargetTextureError : Error {
 
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor.TriangleGeometryDescriptor {
-    func metalDescriptor(resourceRegistry: MetalPersistentResourceRegistry) -> MTLAccelerationStructureTriangleGeometryDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureTriangleGeometryDescriptor {
         let mtlTriangleDescriptor = MTLAccelerationStructureTriangleGeometryDescriptor()
         mtlTriangleDescriptor.triangleCount = self.triangleCount
         
-        let indexBuffer = self.indexBuffer.map { resourceRegistry[$0]! }
+        let indexBuffer = self.indexBuffer.map { resourceMap[$0]! }
         mtlTriangleDescriptor.indexBuffer = indexBuffer?.buffer
         mtlTriangleDescriptor.indexBufferOffset = (indexBuffer?.offset ?? 0) + self.indexBufferOffset
         mtlTriangleDescriptor.indexType = MTLIndexType(self.indexType)
         
-        let vertexBuffer = resourceRegistry[self.vertexBuffer]!
+        let vertexBuffer = resourceMap[self.vertexBuffer]!
         mtlTriangleDescriptor.vertexBuffer = vertexBuffer.buffer
         mtlTriangleDescriptor.vertexBufferOffset = vertexBuffer.offset + self.vertexBufferOffset
         mtlTriangleDescriptor.vertexStride = self.vertexStride
@@ -38,11 +38,11 @@ extension AccelerationStructureDescriptor.TriangleGeometryDescriptor {
 
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor.BoundingBoxGeometryDescriptor {
-    func metalDescriptor(resourceRegistry: MetalPersistentResourceRegistry) -> MTLAccelerationStructureBoundingBoxGeometryDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureBoundingBoxGeometryDescriptor {
         let mtlBoundingBoxDescriptor = MTLAccelerationStructureBoundingBoxGeometryDescriptor()
         mtlBoundingBoxDescriptor.boundingBoxCount = self.boundingBoxCount
         
-        let buffer = resourceRegistry[self.boundingBoxBuffer]!
+        let buffer = resourceMap[self.boundingBoxBuffer]!
         mtlBoundingBoxDescriptor.boundingBoxBuffer = buffer.buffer
         mtlBoundingBoxDescriptor.boundingBoxBufferOffset = buffer.offset + self.boundingBoxBufferOffset
         mtlBoundingBoxDescriptor.boundingBoxStride = self.boundingBoxStride
@@ -53,13 +53,13 @@ extension AccelerationStructureDescriptor.BoundingBoxGeometryDescriptor {
 
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor.GeometryDescriptor {
-    func metalDescriptor(resourceRegistry: MetalPersistentResourceRegistry) -> MTLAccelerationStructureGeometryDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureGeometryDescriptor {
         let mtlGeometryDescriptor: MTLAccelerationStructureGeometryDescriptor
         switch self.geometry {
         case .boundingBox(let boundingBox):
-            mtlGeometryDescriptor = boundingBox.metalDescriptor(resourceRegistry: resourceRegistry)
+            mtlGeometryDescriptor = boundingBox.metalDescriptor(resourceMap: resourceMap)
         case .triangle(let triangle):
-            mtlGeometryDescriptor = triangle.metalDescriptor(resourceRegistry: resourceRegistry)
+            mtlGeometryDescriptor = triangle.metalDescriptor(resourceMap: resourceMap)
         }
         
         mtlGeometryDescriptor.intersectionFunctionTableOffset = self.intersectionFunctionTableOffset
@@ -72,10 +72,10 @@ extension AccelerationStructureDescriptor.GeometryDescriptor {
 
 @available(iOS 14.0, macOS 11.0, *)
 extension Array where Element == AccelerationStructureDescriptor.GeometryDescriptor {
-    func metalDescriptor(resourceRegistry: MetalPersistentResourceRegistry) -> MTLPrimitiveAccelerationStructureDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLPrimitiveAccelerationStructureDescriptor {
         let mtlPrimitiveDescriptor = MTLPrimitiveAccelerationStructureDescriptor()
         mtlPrimitiveDescriptor.geometryDescriptors =
-            self.map { $0.metalDescriptor(resourceRegistry: resourceRegistry) }
+            self.map { $0.metalDescriptor(resourceMap: resourceMap) }
         
         return mtlPrimitiveDescriptor
     }
@@ -83,16 +83,16 @@ extension Array where Element == AccelerationStructureDescriptor.GeometryDescrip
 
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor.InstanceStructureDescriptor {
-    func metalDescriptor(resourceRegistry: MetalPersistentResourceRegistry) -> MTLInstanceAccelerationStructureDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLInstanceAccelerationStructureDescriptor {
         let mtlInstanceDescriptor = MTLInstanceAccelerationStructureDescriptor()
         mtlInstanceDescriptor.instanceCount = self.instanceCount
         
-        let instanceDescriptorBuffer = resourceRegistry[self.instanceDescriptorBuffer]!
+        let instanceDescriptorBuffer = resourceMap[self.instanceDescriptorBuffer]!
         mtlInstanceDescriptor.instanceDescriptorBuffer = instanceDescriptorBuffer.buffer
         mtlInstanceDescriptor.instanceDescriptorBufferOffset = instanceDescriptorBuffer.offset + self.instanceDescriptorBufferOffset
         mtlInstanceDescriptor.instanceDescriptorStride = self.instanceDescriptorStride
         
-        mtlInstanceDescriptor.instancedAccelerationStructures = self.primitiveStructures.map { resourceRegistry[$0]! as! MTLAccelerationStructure }
+        mtlInstanceDescriptor.instancedAccelerationStructures = self.primitiveStructures.map { resourceMap[$0]! as! MTLAccelerationStructure }
         
         return mtlInstanceDescriptor
     }
@@ -101,14 +101,14 @@ extension AccelerationStructureDescriptor.InstanceStructureDescriptor {
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor {
     
-    func metalDescriptor(resourceRegistry: MetalPersistentResourceRegistry) -> MTLAccelerationStructureDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureDescriptor {
         let descriptor: MTLAccelerationStructureDescriptor
         switch self.type {
         case .bottomLevelPrimitive(let bottomLevelDescriptor):
-            descriptor = bottomLevelDescriptor.metalDescriptor(resourceRegistry: resourceRegistry)
+            descriptor = bottomLevelDescriptor.metalDescriptor(resourceMap: resourceMap)
             
         case .topLevelInstance(let topLevelDescriptor):
-            descriptor = topLevelDescriptor.metalDescriptor(resourceRegistry: resourceRegistry)
+            descriptor = topLevelDescriptor.metalDescriptor(resourceMap: resourceMap)
         }
         
         if self.flags.contains(.preferFastBuild) {

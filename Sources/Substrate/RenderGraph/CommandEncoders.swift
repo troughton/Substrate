@@ -1618,7 +1618,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
     #endif
 }
 
-@available(iOS 14.0, *)
+@available(macOS 11.0, iOS 14.0, *)
 public final class AccelerationStructureCommandEncoder : CommandEncoder {
     
     @usableFromInline let commandRecorder : RenderGraphCommandRecorder
@@ -1628,7 +1628,7 @@ public final class AccelerationStructureCommandEncoder : CommandEncoder {
     
     init(commandRecorder: RenderGraphCommandRecorder, accelerationStructureRenderPass: AccelerationStructureRenderPass, passRecord: RenderPassRecord) {
         self.commandRecorder = commandRecorder
-        self.accelerationStructureRenderPass = renderPass
+        self.accelerationStructureRenderPass = accelerationStructureRenderPass
         self.passRecord = passRecord
         self.startCommandIndex = self.commandRecorder.nextCommandIndex
         
@@ -1647,94 +1647,89 @@ public final class AccelerationStructureCommandEncoder : CommandEncoder {
         }
     }
     
-    /**
-     * @brief Encode an acceleration structure build into the command buffer. All bottom-level acceleration
-     * structure builds must have completed before a top-level acceleration structure build may begin. Note
-     * that this requires the use of fences and multiple acceleration structure encoders if the acceleration
-     * structures are allocated from heaps. The resulting acceleration structure will not retain any
-     * references to the input vertex buffer, instance buffer, etc.
-     *
-     * The acceleration structure build will not be completed until the command buffer has been committed
-     * and finished executing. However, it is safe to encode ray tracing work against the acceleration
-     * structure as long as the command buffers are scheduled and synchronized such that the command buffer
-     * will have completed by the time the ray tracing starts.
-     *
-     * The acceleration structure and scratch buffer must be at least the size returned by the
-     * [MTLDevice accelerationStructureSizesWithDescriptor:] query.
-     *
-     * @param accelerationStructure Acceleration structure storage to build into
-     * @param descriptor            Object describing the acceleration structure to build
-     * @param scratchBuffer         Scratch buffer to use while building the acceleration structure. The
-     *                              contents may be overwritten and are undefined after the build has
-     *                              started/completed.
-     * @param scratchBufferOffset   Offset into the scratch buffer
-     */
-    // vk{Cmd}BuildAccelerationStructuresKHR
-    func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int) {}
-
-        
-        /**
-         * @brief Encode an acceleration structure refit into the command buffer. Refitting can be used to
-         * update the acceleration structure when geometry changes and is much faster than rebuilding from
-         * scratch. However, the quality of the acceleration structure and the subsequent ray tracing
-         * performance will degrade depending on how much the geometry changes.
-         *
-         * Refitting can not be used after certain changes, such as adding or removing geometry. Acceleration
-         * structures can be refit in place by specifying the same source and destination acceleration structures
-         * or by providing a nil destination acceleration structure. If the source and destination acceleration
-         * structures are not the same, they must not overlap in memory.
-         *
-         * The destination acceleration structure must be at least as large as the source acceleration structure,
-         * unless the source acceleration structure has been compacted, in which case the destination acceleration
-         * structure must be at least as large as the compacted size of the source acceleration structure.
-         *
-         * The scratch buffer must be at least the size returned by the accelerationStructureSizesWithDescriptor
-         * method of the MTLDevice.
-         *
-         * @param descriptor                       Object describing the acceleration structure to build
-         * @param sourceAccelerationStructure      Acceleration structure to copy from
-         * @param destinationAccelerationStructure Acceleration structure to copy to
-         * @param scratchBuffer                    Scratch buffer to use while refitting the acceleration
-         *                                         structure. The contents may be overwritten and are undefined
-         *                                         after the refit has started/completed.
-         * @param scratchBufferOffset              Offset into the scratch buffer.
-         */
+    private func addResourceUsages(for descriptor: AccelerationStructureDescriptor) {
+        switch descriptor.type {
+        case .bottomLevelPrimitive(let primitiveDescriptors):
+            for descriptor in primitiveDescriptors {
+                switch descriptor.geometry {
+                case .boundingBox(let boundingBoxDescriptor):
+                    commandRecorder.addResourceUsage(for: boundingBoxDescriptor.boundingBoxBuffer,
+                                                     bufferRange: boundingBoxDescriptor.boundingBoxBufferOffset..<(boundingBoxDescriptor.boundingBoxBufferOffset + boundingBoxDescriptor.boundingBoxCount * boundingBoxDescriptor.boundingBoxStride),
+                                                     commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+                case .triangle(let triangleDescriptor):
+                    commandRecorder.addResourceUsage(for: triangleDescriptor.vertexBuffer,
+                                                     bufferRange: triangleDescriptor.vertexBufferOffset..<min(triangleDescriptor.vertexBufferOffset + 3 * triangleDescriptor.vertexStride * triangleDescriptor.triangleCount, triangleDescriptor.vertexBuffer.length),
+                                                     commandIndex: self.nextCommandOffset, encoder: self, usageType: .vertexBuffer, stages: .compute, inArgumentBuffer: false)
+                    if let indexBuffer = triangleDescriptor.indexBuffer {
+                        let bytesPerIndex = triangleDescriptor.indexType == .uint16 ? MemoryLayout<UInt16>.stride : MemoryLayout<UInt32>.stride
+                        commandRecorder.addResourceUsage(for: indexBuffer,
+                                                         bufferRange: triangleDescriptor.indexBufferOffset..<(triangleDescriptor.indexBufferOffset + 3 * triangleDescriptor.triangleCount * bytesPerIndex),
+                                                         commandIndex: self.nextCommandOffset, encoder: self, usageType: .indexBuffer, stages: .compute, inArgumentBuffer: false)
+                    }
+                }
+            }
+        case .topLevelInstance(let instanceDescriptor):
+            for structure in instanceDescriptor.primitiveStructures {
+                commandRecorder.addResourceUsage(for: structure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+            }
+            commandRecorder.addResourceUsage(for: instanceDescriptor.instanceDescriptorBuffer, bufferRange: instanceDescriptor.instanceDescriptorBufferOffset..<(instanceDescriptor.instanceDescriptorBufferOffset + instanceDescriptor.instanceDescriptorStride * instanceDescriptor.instanceCount), commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+        }
+    }
     
-    // VkAccelerationStructureBuildGeometryInfoKHR with VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
-    func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int) {}
-
+    public func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int) {
+        commandRecorder.addResourceUsage(for: accelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: scratchBuffer, bufferRange: scratchBufferOffset..<scratchBuffer.length, commandIndex: self.nextCommandOffset, encoder: self, usageType: .readWrite, stages: .compute, inArgumentBuffer: false)
         
-        /**
-         * @brief Copy an acceleration structure. The source and destination acceleration structures must not
-         * overlap in memory. If this is a top level acceleration structure, references to bottom level
-         * acceleration structures will be preserved.
-         *
-         * The destination acceleration structure must be at least as large as the source acceleration structure,
-         * unless the source acceleration structure has been compacted, in which case the destination acceleration
-         * structure must be at least as large as the compacted size of the source acceleration structure.
-         *
-         * @param sourceAccelerationStructure      Acceleration structure to copy from
-         * @param destinationAccelerationStructure Acceleration structure to copy to
-         */
-        // vkCmdCopyAccelerationStructureKHR
-    func copy(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure) {}
+        self.addResourceUsages(for: descriptor)
+        
+        commandRecorder.record(RenderGraphCommand.buildAccelerationStructure, (accelerationStructure, descriptor, scratchBuffer, scratchBufferOffset))
+    }
+    
+    
+    public func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor) {
+        let scratchBuffer = Buffer(length: descriptor.sizes.buildScratchBufferSize, storageMode: .private)
+        self.build(accelerationStructure: accelerationStructure, descriptor: descriptor, scratchBuffer: scratchBuffer, scratchBufferOffset: 0)
+    }
+
+    public func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int) {
+        
+        commandRecorder.addResourceUsage(for: sourceAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+        self.addResourceUsages(for: descriptor)
+        if let destinationAccelerationStructure = destinationAccelerationStructure {
+            commandRecorder.addResourceUsage(for: destinationAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
+        }
+        commandRecorder.addResourceUsage(for: scratchBuffer, bufferRange: scratchBufferOffset..<scratchBuffer.length, commandIndex: self.nextCommandOffset, encoder: self, usageType: .readWrite, stages: .compute, inArgumentBuffer: false)
+        
+        commandRecorder.record(RenderGraphCommand.refitAccelerationStructure, (sourceAccelerationStructure, descriptor, destinationAccelerationStructure, scratchBuffer, scratchBufferOffset))
+    }
+    
+    
+    public func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?) {
+        let scratchBuffer = Buffer(length: descriptor.sizes.refitScratchBufferSize, storageMode: .private)
+        self.refit(sourceAccelerationStructure: sourceAccelerationStructure, descriptor: descriptor, destinationAccelerationStructure: destinationAccelerationStructure, scratchBuffer: scratchBuffer, scratchBufferOffset: 0)
+    }
+    
+    public func copy(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure) {
+        commandRecorder.addResourceUsage(for: sourceAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: destinationAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
+        
+        commandRecorder.record(RenderGraphCommand.copyAccelerationStructure, (sourceAccelerationStructure, destinationAccelerationStructure))
+    }
 
         // vkCmdWriteAccelerationStructuresPropertiesKHR
-    func writeCompactedSize(accelerationStructure: AccelerationStructure, buffer: Buffer, offset: Int) {}
+    public func writeCompactedSize(of accelerationStructure: AccelerationStructure, to buffer: Buffer, offset: Int) {
+        commandRecorder.addResourceUsage(for: accelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: buffer, bufferRange: offset..<(offset + MemoryLayout<UInt32>.stride), commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
+        
+        commandRecorder.record(RenderGraphCommand.writeCompactedAccelerationStructureSize, (accelerationStructure, buffer, offset))
+    }
 
         
-        /**
-         * @brief Copy and compact an acceleration structure. The source and destination acceleration structures
-         * must not overlap in memory. If this is a top level acceleration structure, references to bottom level
-         * acceleration structures will be preserved.
-         *
-         * The destination acceleration structure must be at least as large as the compacted size of the source
-         * acceleration structure, which is computed by the writeCompactedAccelerationStructureSize method.
-         *
-         * @param sourceAccelerationStructure      Acceleration structure to copy and compact
-         * @param destinationAccelerationStructure Acceleration structure to copy to
-         */
-        // vkCmdCopyAccelerationStructureKHR
-    func copyAndCompact(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure) {}
+    public func copyAndCompact(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure) {
+        commandRecorder.addResourceUsage(for: sourceAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: destinationAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
+        
+        commandRecorder.record(RenderGraphCommand.copyAndCompactAccelerationStructure, (sourceAccelerationStructure, destinationAccelerationStructure))
+    }
 
 }

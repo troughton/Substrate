@@ -245,6 +245,15 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @inlinable
+    public var accelerationStructure : AccelerationStructure? {
+        if self.type == .accelerationStructure {
+            return AccelerationStructure(handle: self.handle)
+        } else {
+            return nil
+        }
+    }
+    
+    @inlinable
     public var heap : Heap? {
         if self.type == .heap {
             return Heap(handle: self.handle)
@@ -265,6 +274,10 @@ public struct Resource : ResourceProtocol, Hashable {
                 return ArgumentBuffer(handle: self.handle).stateFlags
             case .argumentBufferArray:
                 return ArgumentBufferArray(handle: self.handle).stateFlags
+            case .heap:
+                return Heap(handle: self.handle).stateFlags
+            case .accelerationStructure:
+                return AccelerationStructure(handle: self.handle).stateFlags
             default:
                 fatalError()
             }
@@ -279,6 +292,10 @@ public struct Resource : ResourceProtocol, Hashable {
                 ArgumentBuffer(handle: self.handle).stateFlags = newValue
             case .argumentBufferArray:
                 ArgumentBufferArray(handle: self.handle).stateFlags = newValue
+            case .heap:
+                Heap(handle: self.handle).stateFlags = newValue
+            case .accelerationStructure:
+                AccelerationStructure(handle: self.handle).stateFlags = newValue
             default:
                 fatalError()
             }
@@ -297,6 +314,10 @@ public struct Resource : ResourceProtocol, Hashable {
                 return ArgumentBuffer(handle: self.handle).storageMode
             case .argumentBufferArray:
                 return ArgumentBufferArray(handle: self.handle).storageMode
+            case .heap:
+                return Heap(handle: self.handle).storageMode
+            case .accelerationStructure:
+                return AccelerationStructure(handle: self.handle).storageMode
             default:
                 fatalError()
             }
@@ -315,6 +336,8 @@ public struct Resource : ResourceProtocol, Hashable {
                 return ArgumentBuffer(handle: self.handle).label
             case .argumentBufferArray:
                 return ArgumentBufferArray(handle: self.handle).label
+            case .accelerationStructure:
+                return AccelerationStructure(handle: self.handle).label
             default:
                 fatalError()
             }
@@ -329,6 +352,8 @@ public struct Resource : ResourceProtocol, Hashable {
                 ArgumentBuffer(handle: self.handle).label = newValue
             case .argumentBufferArray:
                 ArgumentBufferArray(handle: self.handle).label = newValue
+            case .accelerationStructure:
+                AccelerationStructure(handle: self.handle).label = newValue
             default:
                 fatalError()
             }
@@ -347,6 +372,8 @@ public struct Resource : ResourceProtocol, Hashable {
                 return ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type]
             case .argumentBufferArray:
                 return ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type]
+            case .accelerationStructure:
+                return AccelerationStructure(handle: self.handle)[waitIndexFor: queue, accessType: type]
             default:
                 return 0
             }
@@ -361,6 +388,8 @@ public struct Resource : ResourceProtocol, Hashable {
                 ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
             case .argumentBufferArray:
                 ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
+            case .accelerationStructure:
+                AccelerationStructure(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
             default:
                 fatalError()
             }
@@ -377,6 +406,8 @@ public struct Resource : ResourceProtocol, Hashable {
                 return Texture(handle: self.handle).usages
             case .argumentBuffer:
                 return ArgumentBuffer(handle: self.handle).usages
+            case .accelerationStructure:
+                return AccelerationStructure(handle: self.handle).usages
             default:
                 return ChunkArray()
             }
@@ -389,6 +420,8 @@ public struct Resource : ResourceProtocol, Hashable {
                 Texture(handle: self.handle).usages = newValue
             case .argumentBuffer:
                 ArgumentBuffer(handle: self.handle).usages = newValue
+            case .accelerationStructure:
+                AccelerationStructure(handle: self.handle).usages = newValue
             default:
                 fatalError()
             }
@@ -408,6 +441,8 @@ public struct Resource : ResourceProtocol, Hashable {
             return ArgumentBufferArray(handle: self.handle).isKnownInUse
         case .heap:
             return Heap(handle: self.handle).isKnownInUse
+        case .accelerationStructure:
+            return AccelerationStructure(handle: self.handle).isKnownInUse
         default:
             fatalError()
         }
@@ -426,6 +461,8 @@ public struct Resource : ResourceProtocol, Hashable {
             return ArgumentBufferArray(handle: self.handle).isValid
         case .heap:
             return Heap(handle: self.handle).isValid
+        case .accelerationStructure:
+            return AccelerationStructure(handle: self.handle).isValid
         default:
             fatalError()
         }
@@ -455,6 +492,8 @@ public struct Resource : ResourceProtocol, Hashable {
             ArgumentBufferArray(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         case .heap:
             Heap(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
+        case .accelerationStructure:
+            AccelerationStructure(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
         default:
             break
         }
@@ -473,6 +512,8 @@ public struct Resource : ResourceProtocol, Hashable {
             ArgumentBufferArray(handle: self.handle).dispose()
         case .heap:
             Heap(handle: self.handle).dispose()
+        case .accelerationStructure:
+            AccelerationStructure(handle: self.handle).dispose()
         default:
             break
         }
@@ -492,6 +533,8 @@ extension Resource: CustomStringConvertible {
             return ArgumentBufferArray(handle: self.handle).description
         case .heap:
             return Heap(handle: self.handle).description
+        case .accelerationStructure:
+            return AccelerationStructure(handle: self.handle).description
         default:
             return "Resource(type: \(self.type), index: \(self.index), flags: \(self.flags))"
         }
@@ -1595,17 +1638,17 @@ extension Texture: CustomStringConvertible {
     }
 }
 
-@available(macOS 11.0, iOS 14.0, *)
 public struct AccelerationStructure : ResourceProtocol {
     @usableFromInline let _handle : UnsafeRawPointer
     @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     @inlinable
     public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .heap)
+        assert(Resource(handle: handle).type == .accelerationStructure)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
     @inlinable
     public init(size: Int) {
         let flags : ResourceFlags = .persistent
@@ -1642,6 +1685,42 @@ public struct AccelerationStructure : ResourceProtocol {
         }
     }
     
+    @inlinable
+    public var usages : ChunkArray<ResourceUsage> {
+        get {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            return AccelerationStructureRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
+        }
+        nonmutating set {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            AccelerationStructureRegistry.instance.chunks[chunkIndex].usages[indexInChunk] = newValue
+        }
+    }
+    
+    
+    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
+        get {
+            guard self._usesPersistentRegistry else { return 0 }
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            if type == .read {
+                return AccelerationStructureRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)]
+            } else {
+                return AccelerationStructureRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)]
+            }
+        }
+        nonmutating set {
+            guard self._usesPersistentRegistry else { return }
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            
+            if type == .read || type == .readWrite {
+                AccelerationStructureRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)] = newValue
+            }
+            if type == .write || type == .readWrite {
+                AccelerationStructureRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)] = newValue
+            }
+        }
+    }
+    
     public var storageMode: StorageMode {
         return .private
     }
@@ -1672,11 +1751,10 @@ public struct AccelerationStructure : ResourceProtocol {
     @inlinable
     public var isValid : Bool {
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
-        return HeapRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+        return AccelerationStructureRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
     }
 }
 
-@available(macOS 11.0, iOS 14.0, *)
 extension AccelerationStructure: CustomStringConvertible {
     public var description: String {
         return "AccelerationStructure(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")size: \(self.size) }"

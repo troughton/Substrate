@@ -194,6 +194,31 @@ enum RenderGraphCommand {
     
     #endif
     
+    // Acceleration Structure:
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public typealias BuildAccelerationStructureArgs = (structure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int)
+    @available(macOS 11.0, iOS 14.0, *)
+    case buildAccelerationStructure(UnsafePointer<BuildAccelerationStructureArgs>)
+
+    @available(macOS 11.0, iOS 14.0, *)
+    public typealias RefitAccelerationStructureArgs = (source: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destination: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int)
+    @available(macOS 11.0, iOS 14.0, *)
+    case refitAccelerationStructure(UnsafePointer<RefitAccelerationStructureArgs>)
+
+    @available(macOS 11.0, iOS 14.0, *)
+    public typealias CopyAccelerationStructureArgs = (source: AccelerationStructure, destination: AccelerationStructure)
+    @available(macOS 11.0, iOS 14.0, *)
+    case copyAccelerationStructure(UnsafePointer<CopyAccelerationStructureArgs>)
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public typealias WriteCompactedAccelerationStructureSizeArgs = (structure: AccelerationStructure, toBuffer: Buffer, bufferOffset: Int)
+    @available(macOS 11.0, iOS 14.0, *)
+    case writeCompactedAccelerationStructureSize(UnsafePointer<WriteCompactedAccelerationStructureSizeArgs>)
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    case copyAndCompactAccelerationStructure(UnsafePointer<CopyAccelerationStructureArgs>)
+    
     var isDrawCommand: Bool {
         switch self {
         case .clearRenderTargets, .drawPrimitives, .drawIndexedPrimitives:
@@ -486,6 +511,33 @@ final class RenderGraphCommandRecorder {
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
+    @available(macOS 11.0, iOS 14.0, *)
+    func resourceUsageNode<C : CommandEncoder>(`for` resource: AccelerationStructure, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
+        assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
+        
+        precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
+        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.renderGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
+        
+        assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
+        
+        if resource._usesPersistentRegistry {
+            resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
+        }
+        
+        if usageType.isRead {
+            self.readResources.insert(Resource(resource))
+        }
+        if usageType.isWrite {
+            self.writtenResources.insert(Resource(resource))
+        }
+        
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .fullResource, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
+        
+        return self.resourceUsages.pointerToLastUsage
+    }
+    
+    /// NOTE: Must be called _before_ the command that uses the resource.
     func addResourceUsage<C : CommandEncoder>(`for` resource: ArgumentBuffer, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages) {
         let _ = self.resourceUsageNode(for: resource, encoder: encoder, usageType: usageType, stages: stages, firstCommandOffset: commandIndex)
     }
@@ -499,4 +551,11 @@ final class RenderGraphCommandRecorder {
     func addResourceUsage<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
         let _ = self.resourceUsageNode(for: resource, slice: slice, level: level, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
     }
+    
+    /// NOTE: Must be called _before_ the command that uses the resource.
+    @available(macOS 11.0, iOS 14.0, *)
+    func addResourceUsage<C : CommandEncoder>(`for` resource: AccelerationStructure, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
+        let _ = self.resourceUsageNode(for: resource, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
+    }
+    
 }

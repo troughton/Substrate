@@ -81,7 +81,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     var bufferReferences = PersistentResourceMap<Buffer, MTLBufferReference>()
     var argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, MTLBufferReference>() 
     var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, MTLBufferReference>()
-    var accelerationStructureReferences = PersistentResourceMap<Resource, MTLResource>()
+    var accelerationStructureReferences = PersistentResourceMap<AccelerationStructure, MTLResource>()
     
     var windowReferences = [Texture : CAMetalLayer]()
     
@@ -257,8 +257,8 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     public func allocateAccelerationStructure(_ structure: AccelerationStructure) -> MTLAccelerationStructure? {
         let mtlStructure = self.device.makeAccelerationStructure(size: structure.size)
         
-        assert(self.accelerationStructureReferences[Resource(structure)] == nil)
-        self.accelerationStructureReferences[Resource(structure)] = mtlStructure
+        assert(self.accelerationStructureReferences[structure] == nil)
+        self.accelerationStructureReferences[structure] = mtlStructure
         
         return mtlStructure
     }
@@ -294,7 +294,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     
     @available(macOS 11.0, iOS 14.0, *)
     public subscript(structure: AccelerationStructure) -> AnyObject? {
-        return self.accelerationStructureReferences[Resource(structure)]
+        return self.accelerationStructureReferences[structure]
     }
     
     public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
@@ -357,7 +357,7 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     
     @available(macOS 11.0, iOS 14.0, *)
     func disposeAccelerationStructure(_ structure: AccelerationStructure) {
-        if let mtlStructure = self.accelerationStructureReferences.removeValue(forKey: Resource(structure)) {
+        if let mtlStructure = self.accelerationStructureReferences.removeValue(forKey: structure) {
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlStructure)))
         }
     }

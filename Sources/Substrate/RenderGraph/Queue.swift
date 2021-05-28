@@ -171,7 +171,7 @@ public struct Queue : Equatable {
         }
     }
     
-    func waitForCommand(_ index: UInt64) {
+    public func waitForCommand(_ index: UInt64) {
         while self.lastCompletedCommand < index {
             #if os(Windows)
             _sleep(0)
