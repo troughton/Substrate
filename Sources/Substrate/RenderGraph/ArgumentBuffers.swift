@@ -92,6 +92,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     public enum ArgumentResource {
         case buffer(Buffer, offset: Int)
         case texture(Texture)
+        case accelerationStructure(AccelerationStructure)
         case sampler(SamplerDescriptor)
         // Where offset is the source offset in the source Data.
         case bytes(offset: Int, length: Int)
@@ -441,6 +442,15 @@ public struct ArgumentBuffer : ResourceProtocol {
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         self.enqueuedBindings.append(
             (key, arrayIndex, .texture(texture))
+        )
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    @inlinable
+    public func setAccelerationStructure(_ structure: AccelerationStructure, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+        assert(!self.flags.contains(.persistent) || structure.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        self.enqueuedBindings.append(
+            (key, arrayIndex, .accelerationStructure(structure))
         )
     }
     

@@ -1686,6 +1686,18 @@ public struct AccelerationStructure : ResourceProtocol {
     }
     
     @inlinable
+    public internal(set) var descriptor : AccelerationStructureDescriptor? {
+        get {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            return AccelerationStructureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
+        }
+        nonmutating set {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
+            AccelerationStructureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk] = newValue
+        }
+    }
+    
+    @inlinable
     public var usages : ChunkArray<ResourceUsage> {
         get {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)

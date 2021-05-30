@@ -80,6 +80,9 @@ enum RenderGraphCommand {
     public typealias SetTextureArgs = (bindingPath: ResourceBindingPath, texture: Texture)
     case setTexture(UnsafePointer<SetTextureArgs>)
     
+    public typealias SetAccelerationStructureArgs = (bindingPath: ResourceBindingPath, structure: AccelerationStructure)
+    case setAccelerationStructure(UnsafePointer<SetAccelerationStructureArgs>)
+    
     public typealias SetSamplerStateArgs = (bindingPath: ResourceBindingPath, descriptor: SamplerDescriptor)
     case setSamplerState(UnsafePointer<SetSamplerStateArgs>)
     
@@ -558,4 +561,33 @@ final class RenderGraphCommandRecorder {
         let _ = self.resourceUsageNode(for: resource, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    func addResourceUsages<C: CommandEncoder>(for descriptor: AccelerationStructureDescriptor, commandIndex: Int, encoder: C) {
+        switch descriptor.type {
+        case .bottomLevelPrimitive(let primitiveDescriptors):
+            for descriptor in primitiveDescriptors {
+                switch descriptor.geometry {
+                case .boundingBox(let boundingBoxDescriptor):
+                    self.addResourceUsage(for: boundingBoxDescriptor.boundingBoxBuffer,
+                                          bufferRange: boundingBoxDescriptor.boundingBoxBufferOffset..<(boundingBoxDescriptor.boundingBoxBufferOffset + boundingBoxDescriptor.boundingBoxCount * boundingBoxDescriptor.boundingBoxStride),
+                                          commandIndex: commandIndex, encoder: encoder, usageType: .read, stages: .compute, inArgumentBuffer: false)
+                case .triangle(let triangleDescriptor):
+                    self.addResourceUsage(for: triangleDescriptor.vertexBuffer,
+                                          bufferRange: triangleDescriptor.vertexBufferOffset..<min(triangleDescriptor.vertexBufferOffset + 3 * triangleDescriptor.vertexStride * triangleDescriptor.triangleCount, triangleDescriptor.vertexBuffer.length),
+                                          commandIndex: commandIndex, encoder: encoder, usageType: .vertexBuffer, stages: .compute, inArgumentBuffer: false)
+                    if let indexBuffer = triangleDescriptor.indexBuffer {
+                        let bytesPerIndex = triangleDescriptor.indexType == .uint16 ? MemoryLayout<UInt16>.stride : MemoryLayout<UInt32>.stride
+                        self.addResourceUsage(for: indexBuffer,
+                                              bufferRange: triangleDescriptor.indexBufferOffset..<(triangleDescriptor.indexBufferOffset + 3 * triangleDescriptor.triangleCount * bytesPerIndex),
+                                              commandIndex: commandIndex, encoder: encoder, usageType: .indexBuffer, stages: .compute, inArgumentBuffer: false)
+                    }
+                }
+            }
+        case .topLevelInstance(let instanceDescriptor):
+            for structure in instanceDescriptor.primitiveStructures {
+                self.addResourceUsage(for: structure, commandIndex: commandIndex, encoder: encoder, usageType: .read, stages: .compute, inArgumentBuffer: false)
+            }
+            self.addResourceUsage(for: instanceDescriptor.instanceDescriptorBuffer, bufferRange: instanceDescriptor.instanceDescriptorBufferOffset..<(instanceDescriptor.instanceDescriptorBufferOffset + instanceDescriptor.instanceDescriptorStride * instanceDescriptor.instanceCount), commandIndex: commandIndex, encoder: encoder, usageType: .read, stages: .compute, inArgumentBuffer: false)
+        }
+    }
 }

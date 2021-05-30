@@ -39,6 +39,9 @@ final class MetalStateCaches {
     let defaultDepthState : MTLDepthStencilState
     private var depthStates = [(DepthStencilDescriptor, MTLDepthStencilState)]()
     
+    private var visibleFunctionTables = [ObjectIdentifier : [([FunctionDescriptor?], MTLResource)]]() // [MTLComputePipelineState : [([FunctionDescriptor?], MTLVisibleFunctionTable)]]
+    private var intersectionFunctionTables = [ObjectIdentifier : [(IntersectionFunctionTableDescriptor, MTLResource)]]() // [MTLComputePipelineState : [([FunctionDescriptor?], MTLVisibleFunctionTable)]]
+    
     public init(device: MTLDevice, libraryPath: String?) {
         self.device = device
         if let libraryPath = libraryPath {
@@ -99,6 +102,7 @@ final class MetalStateCaches {
             self.functionCache.removeAll(keepingCapacity: true)
             self.computeStates.removeAll(keepingCapacity: true)
             self.renderStates.removeAll(keepingCapacity: true)
+            self.visibleFunctionTables.removeAll(keepingCapacity: true)
             
             self.loadedLibraryModificationDate = currentModificationDate
         }
@@ -258,6 +262,44 @@ final class MetalStateCaches {
         self.depthStates.append((descriptor, state))
         
         return state
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public subscript(visibleFunctionTableFor functionTableDescriptor: [FunctionDescriptor?], computePipelineState computePipelineState: MTLComputePipelineState) -> MTLVisibleFunctionTable {
+        if let table = self.visibleFunctionTables[ObjectIdentifier(computePipelineState)]?.first(where: { $0.0 == functionTableDescriptor })?.1 {
+            return (table as! MTLVisibleFunctionTable)
+        }
+        
+        let mtlDescriptor = MTLVisibleFunctionTableDescriptor()
+        mtlDescriptor.functionCount = functionTableDescriptor.drop(while: { $0 == nil }).count
+        
+        let functionTable = computePipelineState.makeVisibleFunctionTable(descriptor: mtlDescriptor)!
+        for i in 0..<mtlDescriptor.functionCount {
+            guard let function = functionTableDescriptor[i], let mtlFunction = self.function(for: function) else { continue }
+            functionTable.setFunction(computePipelineState.functionHandle(function: mtlFunction), index: i)
+        }
+        
+        self.visibleFunctionTables[ObjectIdentifier(computePipelineState), default: []].append((functionTableDescriptor, functionTable))
+        return functionTable
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public subscript(intersectionFunctionTableFor functionTableDescriptor: IntersectionFunctionTableDescriptor, computePipelineState computePipelineState: MTLComputePipelineState) -> MTLVisibleFunctionTable {
+        if let table = self.visibleFunctionTables[ObjectIdentifier(computePipelineState)]?.first(where: { $0.0 == functionTableDescriptor })?.1 {
+            return (table as! MTLVisibleFunctionTable)
+        }
+        
+        let mtlDescriptor = MTLIntersectionFunctionTableDescriptor()
+        mtlDescriptor.functionCount = functionTableDescriptor.drop(while: { $0 == nil }).count
+        
+        let functionTable = computePipelineState.makeIntersectionFunctionTable(descriptor: <#T##MTLIntersectionFunctionTableDescriptor#>)(descriptor: mtlDescriptor)!
+        for i in 0..<mtlDescriptor.functionCount {
+            guard let function = functionTableDescriptor[i], let mtlFunction = self.function(for: function) else { continue }
+            functionTable.setFunction(computePipelineState.functionHandle(function: mtlFunction), index: i)
+        }
+        
+        self.visibleFunctionTables[ObjectIdentifier(computePipelineState), default: []].append((functionTableDescriptor, functionTable))
+        return functionTable
     }
 }
 

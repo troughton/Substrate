@@ -1032,7 +1032,9 @@ public final class RenderGraph {
     func evaluateResourceUsages(renderPasses: [RenderPassRecord]) {
         let jobManager = RenderGraph.jobManager
         
-        for passRecord in renderPasses where passRecord.type == .cpu {
+        for passRecord in renderPasses where passRecord.type == .cpu || passRecord.type == .accelerationStructure {
+            // CPU render passes are guaranteed to be executed in order, and we have to execute acceleration structure passes in order since they may modify the AccelerationStructure's descriptor property.
+            // FIXME: This may actually cause issues if we update AccelerationStructures multiple times in a single RenderGraph and use it in between, since all other passes will depend only on the resources declared in the last-updated descriptor.
             if passRecord.pass.writtenResources.isEmpty {
                 self.executePass(passRecord, threadIndex: jobManager.threadIndex)
             } else {

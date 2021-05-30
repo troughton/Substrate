@@ -223,7 +223,6 @@ public struct HeapDescriptor {
     }
 }
 
-@available(macOS 11.0, iOS 14.0, *)
 public struct AccelerationStructureFlags: OptionSet {
     public let rawValue: Int
     
@@ -236,7 +235,6 @@ public struct AccelerationStructureFlags: OptionSet {
     public static var preferFastBuild: AccelerationStructureFlags { .init(rawValue: 1 << 1) }
 }
 
-@available(macOS 11.0, iOS 14.0, *)
 public struct AccelerationStructureDescriptor {
     public struct TriangleGeometryDescriptor {
         public var triangleCount: Int
@@ -341,11 +339,13 @@ public struct AccelerationStructureDescriptor {
     public var type: StructureType
     public var flags: AccelerationStructureFlags
     
+    @available(macOS 11.0, iOS 14.0, *)
     public init(type: StructureType, flags: AccelerationStructureFlags = []) {
         self.type = type
         self.flags = flags
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
     public var sizes: AccelerationStructureSizes {
         return RenderBackend.accelerationStructureSizes(for: self)
     }

@@ -445,6 +445,16 @@ final class FGMTLComputeCommandEncoder {
             guard let mtlTexture = resourceMap[args.pointee.texture] else { break }
             encoder.setTexture(mtlTexture.texture, index: mtlBindingPath.bindIndex)
             
+            
+        case .setAccelerationStructure(let args):
+            guard #available(macOS 11.0, iOS 14.0, *), let mtlStructure = resourceMap[args.pointee.structure] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            encoder.setAccelerationStructure((mtlStructure as! MTLAccelerationStructure), bufferIndex: mtlBindingPath.bindIndex)
+            
+            
         case .setSamplerState(let args):
             let mtlBindingPath = args.pointee.bindingPath
             let state = resourceMap[args.pointee.descriptor]

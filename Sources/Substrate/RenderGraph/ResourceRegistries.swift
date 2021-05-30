@@ -1307,6 +1307,7 @@ public enum TextureViewBaseInfo {
         @usableFromInline let generations : UnsafeMutablePointer<UInt8>
         @usableFromInline let labels : UnsafeMutablePointer<String?>
         @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+        @usableFromInline let descriptors : UnsafeMutablePointer<AccelerationStructureDescriptor?>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
         @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
@@ -1319,6 +1320,7 @@ public enum TextureViewBaseInfo {
             self.generations = .allocate(capacity: Chunk.itemsPerChunk)
             self.labels = .allocate(capacity: Chunk.itemsPerChunk)
             self.usages = .allocate(capacity: Chunk.itemsPerChunk)
+            self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
             self.readWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
             self.writeWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
             self.activeRenderGraphs = .allocate(capacity: Chunk.itemsPerChunk)
@@ -1331,6 +1333,7 @@ public enum TextureViewBaseInfo {
             self.generations.deallocate()
             self.labels.deallocate()
             self.usages.deallocate()
+            self.descriptors.deallocate()
             self.readWaitIndices.deallocate()
             self.writeWaitIndices.deallocate()
             self.activeRenderGraphs.deallocate()
@@ -1368,6 +1371,7 @@ public enum TextureViewBaseInfo {
             self.chunks[chunkIndex].sizes.advanced(by: indexInChunk).initialize(to: size)
             self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
             self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
+            self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: nil)
             self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
@@ -1400,6 +1404,7 @@ public enum TextureViewBaseInfo {
         self.chunks[chunkIndex].sizes.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
         self.chunks[chunkIndex].usages.deinitialize(count: 1)
+        self.chunks[chunkIndex].descriptors.deinitialize(count: 1)
         self.chunks[chunkIndex].activeRenderGraphs.deinitialize(count: 1)
         
         self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1

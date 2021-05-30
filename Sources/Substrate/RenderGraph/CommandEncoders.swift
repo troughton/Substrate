@@ -255,6 +255,19 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    public func setAccelerationStructure(_ structure: AccelerationStructure?, key: FunctionArgumentKey) {
+        guard let structure = structure else { return }
+        
+        let args : RenderGraphCommand.SetAccelerationStructureArgs = (.nil, structure)
+        
+        self.resourceBindingCommands.append(
+            (key, .setAccelerationStructure(commandRecorder.copyData(args)))
+        )
+        
+        self.needsUpdateBindings = true
+    }
+    
     public func setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) {
         if A.self == NilSet.self {
             return
@@ -511,6 +524,17 @@ public class ResourceBindingEncoder : CommandEncoder {
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
                     argsPtr = UnsafeMutableRawPointer(mutating: args)
                     
+                case .setAccelerationStructure(let args):
+                    if let previousArgs = currentlyBound?.bindingCommand?.assumingMemoryBound(to: RenderGraphCommand.SetAccelerationStructureArgs.self) {
+                        if !self.pipelineStateChanged, previousArgs.pointee.structure == args.pointee.structure { // Ignore the duplicate binding.
+                            return currentlyBound
+                        }
+                    }
+                    
+                    identifier = args.pointee.structure.handle
+                    UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
+                    argsPtr = UnsafeMutableRawPointer(mutating: args)
+                    
                 default:
                     preconditionFailure()
                 }
@@ -624,7 +648,9 @@ public class ResourceBindingEncoder : CommandEncoder {
                     renderAPIResource = Resource(buffer)
                 case .texture(let texture):
                     renderAPIResource = Resource(texture)
-                default:
+                case .accelerationStructure(let structure):
+                    renderAPIResource = Resource(structure)
+                case .bytes, .sampler:
                     renderAPIResource = nil
                 }
                 
@@ -650,7 +676,9 @@ public class ResourceBindingEncoder : CommandEncoder {
                     bufferOffset = offset
                 case .texture(let texture):
                     renderAPIResource = Resource(texture)
-                default:
+                case .accelerationStructure(let structure):
+                    renderAPIResource = Resource(structure)
+                case .bytes, .sampler:
                     renderAPIResource = nil
                 }
                 
@@ -707,6 +735,8 @@ public class ResourceBindingEncoder : CommandEncoder {
                             self.commandRecorder.record(.setTexture(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetTextureArgs.self)))
                         case .buffer:
                             self.commandRecorder.record(.setBuffer(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetBufferArgs.self)))
+                        case .accelerationStructure:
+                            self.commandRecorder.record(.setAccelerationStructure(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetAccelerationStructureArgs.self)))
                         case .argumentBuffer:
                             let argumentBuffer = boundResource.resource.argumentBuffer!
                             
@@ -1647,42 +1677,14 @@ public final class AccelerationStructureCommandEncoder : CommandEncoder {
         }
     }
     
-    private func addResourceUsages(for descriptor: AccelerationStructureDescriptor) {
-        switch descriptor.type {
-        case .bottomLevelPrimitive(let primitiveDescriptors):
-            for descriptor in primitiveDescriptors {
-                switch descriptor.geometry {
-                case .boundingBox(let boundingBoxDescriptor):
-                    commandRecorder.addResourceUsage(for: boundingBoxDescriptor.boundingBoxBuffer,
-                                                     bufferRange: boundingBoxDescriptor.boundingBoxBufferOffset..<(boundingBoxDescriptor.boundingBoxBufferOffset + boundingBoxDescriptor.boundingBoxCount * boundingBoxDescriptor.boundingBoxStride),
-                                                     commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
-                case .triangle(let triangleDescriptor):
-                    commandRecorder.addResourceUsage(for: triangleDescriptor.vertexBuffer,
-                                                     bufferRange: triangleDescriptor.vertexBufferOffset..<min(triangleDescriptor.vertexBufferOffset + 3 * triangleDescriptor.vertexStride * triangleDescriptor.triangleCount, triangleDescriptor.vertexBuffer.length),
-                                                     commandIndex: self.nextCommandOffset, encoder: self, usageType: .vertexBuffer, stages: .compute, inArgumentBuffer: false)
-                    if let indexBuffer = triangleDescriptor.indexBuffer {
-                        let bytesPerIndex = triangleDescriptor.indexType == .uint16 ? MemoryLayout<UInt16>.stride : MemoryLayout<UInt32>.stride
-                        commandRecorder.addResourceUsage(for: indexBuffer,
-                                                         bufferRange: triangleDescriptor.indexBufferOffset..<(triangleDescriptor.indexBufferOffset + 3 * triangleDescriptor.triangleCount * bytesPerIndex),
-                                                         commandIndex: self.nextCommandOffset, encoder: self, usageType: .indexBuffer, stages: .compute, inArgumentBuffer: false)
-                    }
-                }
-            }
-        case .topLevelInstance(let instanceDescriptor):
-            for structure in instanceDescriptor.primitiveStructures {
-                commandRecorder.addResourceUsage(for: structure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
-            }
-            commandRecorder.addResourceUsage(for: instanceDescriptor.instanceDescriptorBuffer, bufferRange: instanceDescriptor.instanceDescriptorBufferOffset..<(instanceDescriptor.instanceDescriptorBufferOffset + instanceDescriptor.instanceDescriptorStride * instanceDescriptor.instanceCount), commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
-        }
-    }
-    
     public func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int) {
         commandRecorder.addResourceUsage(for: accelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
         commandRecorder.addResourceUsage(for: scratchBuffer, bufferRange: scratchBufferOffset..<scratchBuffer.length, commandIndex: self.nextCommandOffset, encoder: self, usageType: .readWrite, stages: .compute, inArgumentBuffer: false)
         
-        self.addResourceUsages(for: descriptor)
+        commandRecorder.addResourceUsages(for: descriptor, commandIndex: self.nextCommandOffset, encoder: self)
         
         commandRecorder.record(RenderGraphCommand.buildAccelerationStructure, (accelerationStructure, descriptor, scratchBuffer, scratchBufferOffset))
+        accelerationStructure.descriptor = descriptor
     }
     
     
@@ -1694,13 +1696,19 @@ public final class AccelerationStructureCommandEncoder : CommandEncoder {
     public func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int) {
         
         commandRecorder.addResourceUsage(for: sourceAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, inArgumentBuffer: false)
-        self.addResourceUsages(for: descriptor)
+        commandRecorder.addResourceUsages(for: descriptor, commandIndex: self.nextCommandOffset, encoder: self)
         if let destinationAccelerationStructure = destinationAccelerationStructure {
             commandRecorder.addResourceUsage(for: destinationAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
         }
         commandRecorder.addResourceUsage(for: scratchBuffer, bufferRange: scratchBufferOffset..<scratchBuffer.length, commandIndex: self.nextCommandOffset, encoder: self, usageType: .readWrite, stages: .compute, inArgumentBuffer: false)
         
         commandRecorder.record(RenderGraphCommand.refitAccelerationStructure, (sourceAccelerationStructure, descriptor, destinationAccelerationStructure, scratchBuffer, scratchBufferOffset))
+        
+        if let destinationStructure = destinationAccelerationStructure {
+            destinationStructure.descriptor = descriptor
+        } else {
+            sourceAccelerationStructure.descriptor = descriptor
+        }
     }
     
     
@@ -1714,6 +1722,8 @@ public final class AccelerationStructureCommandEncoder : CommandEncoder {
         commandRecorder.addResourceUsage(for: destinationAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
         
         commandRecorder.record(RenderGraphCommand.copyAccelerationStructure, (sourceAccelerationStructure, destinationAccelerationStructure))
+        
+        destinationAccelerationStructure.descriptor = sourceAccelerationStructure.descriptor
     }
 
         // vkCmdWriteAccelerationStructuresPropertiesKHR
@@ -1730,6 +1740,8 @@ public final class AccelerationStructureCommandEncoder : CommandEncoder {
         commandRecorder.addResourceUsage(for: destinationAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, inArgumentBuffer: false)
         
         commandRecorder.record(RenderGraphCommand.copyAndCompactAccelerationStructure, (sourceAccelerationStructure, destinationAccelerationStructure))
+        
+        destinationAccelerationStructure.descriptor = sourceAccelerationStructure.descriptor
     }
 
 }

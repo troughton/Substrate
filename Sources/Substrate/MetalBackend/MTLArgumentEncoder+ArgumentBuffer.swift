@@ -60,6 +60,9 @@ extension MetalArgumentEncoder {
             case .buffer(let buffer, let offset):
                 guard let mtlBuffer = resourceMap[buffer] else { continue }
                 self.encoder.setBuffer(mtlBuffer.buffer, offset: offset + mtlBuffer.offset, index: bindingIndex)
+            case .accelerationStructure(let structure):
+                guard #available(macOS 11.0, iOS 14.0, *), let mtlStructure = resourceMap[structure] else { continue }
+                self.encoder.setAccelerationStructure((mtlStructure as! MTLAccelerationStructure), index: bindingIndex)
             case .sampler(let descriptor):
                 let samplerState = resourceMap[descriptor]
                 self.encoder.setSamplerState(samplerState, index: bindingIndex)
