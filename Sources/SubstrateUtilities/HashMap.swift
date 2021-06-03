@@ -6,6 +6,7 @@ public protocol CustomHashable : Equatable {
 }
 
 extension ObjectIdentifier : CustomHashable {
+    @inlinable
     public var customHashValue : Int {
         return Int(bitPattern: self) / MemoryLayout<Int>.size
     }
@@ -34,10 +35,12 @@ public struct HashMap<K : CustomHashable, V> {
     // bucketCount minus one
     @usableFromInline var mask = 0
     
+    @inlinable
     public init(allocator: AllocatorType = .system) {
         self.allocator = allocator
     }
     
+    @inlinable
     public func `deinit`() {
         for bucket in 0..<self.bucketCount {
             if self.states[bucket] == .filled {
@@ -458,10 +461,12 @@ extension HashMap : Sequence {
         public let hashMap : HashMap<K, V>
         public var bucket = 0
         
+        @inlinable
         init(hashMap: HashMap<K, V>) {
             self.hashMap = hashMap
         }
         
+        @inlinable
         public mutating func next() -> (K, V)? {
             while self.bucket < hashMap.bucketCount {
                 defer { self.bucket += 1 }
@@ -474,6 +479,7 @@ extension HashMap : Sequence {
         }
     }
     
+    @inlinable
     public func makeIterator() -> HashMap<K, V>.Iterator {
         return Iterator(hashMap: self)
     }
@@ -487,10 +493,12 @@ extension HashMap {
         public let hashMap : HashMap<K, V>
         public var bucket = 0
         
+        @inlinable
         init(hashMap: HashMap<K, V>) {
             self.hashMap = hashMap
         }
         
+        @inlinable
         public mutating func next() -> V? {
             while self.bucket < hashMap.bucketCount {
                 defer { self.bucket += 1 }
@@ -506,15 +514,18 @@ extension HashMap {
     public struct ValuesSequence : Sequence {
         public let hashMap : HashMap<K, V>
         
+        @inlinable
         init(hashMap: HashMap<K, V>) {
             self.hashMap = hashMap
         }
         
+        @inlinable
         public func makeIterator() -> HashMap<K, V>.ValuesIterator {
             return ValuesIterator(hashMap: self.hashMap)
         }
     }
     
+    @inlinable
     public var valuesSequence : ValuesSequence {
         return ValuesSequence(hashMap: self)
     }

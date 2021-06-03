@@ -151,7 +151,7 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
     }
     
-    private func loadAndStoreActions(for attachment: RenderTargetAttachmentDescriptor, loadAction: MTLLoadAction, storedTextures: inout [Texture]) -> (MTLLoadAction, MTLStoreAction) {
+    private func loadAndStoreActions<Attachment: RenderTargetAttachmentDescriptor>(for attachment: Attachment, loadAction: MTLLoadAction, storedTextures: inout [Texture]) -> (MTLLoadAction, MTLStoreAction) {
         let usages = attachment.texture.usages
         
         var isFirstUsage: Bool? = nil
