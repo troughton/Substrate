@@ -57,6 +57,7 @@ public final class SDLUpdateScheduler : UpdateScheduler  {
 
 import MetalKit
 
+@MainActor
 public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDelegate  {
     private var application : CocoaApplication! = nil
     var previousTask: Task.Handle<Void, Never>?

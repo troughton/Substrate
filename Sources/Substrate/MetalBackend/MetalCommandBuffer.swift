@@ -146,20 +146,32 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         resourceRegistry.clearDrawables()
     }
     
-    func commit(onCompletion: @escaping (MetalCommandBuffer) -> Void) {
-        self.commandBuffer.addCompletedHandler { _ in
-            onCompletion(self)
+    @MainActor
+    func presentDrawables(_ drawablesToPresent: [MTLDrawable]) {
+        for drawable in drawablesToPresent {
+            drawable.present()
         }
+    }
+    
+    func commit(onCompletion: @escaping (MetalCommandBuffer) async -> Void) async {
+        self.commandBuffer.addCompletedHandler { _ in
+            detach {
+                await onCompletion(self)
+            }
+        }
+        
         self.commandBuffer.commit()
         
         let drawablesToPresent = self.drawablesToPresentOnScheduled
         self.drawablesToPresentOnScheduled = []
         if !drawablesToPresent.isEmpty {
-            DispatchQueue.main.async {
-                self.commandBuffer.waitUntilScheduled()
-                for drawable in drawablesToPresent {
-                    drawable.present()
+            detach {
+                await withUnsafeContinuation { continuation in
+                    self.commandBuffer.addScheduledHandler { _ in
+                        continuation.resume()
+                    }
                 }
+                await self.presentDrawables(drawablesToPresent)
             }
         }
     }

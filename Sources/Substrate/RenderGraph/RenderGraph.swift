@@ -501,11 +501,10 @@ struct RenderGraphExecutionResult {
 }
 
 // _RenderGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
-protocol _RenderGraphContext : AnyObject {
-    var queue: DispatchQueue { get }
-    var transientRegistryIndex : Int { get }
-    var accessSemaphore : AsyncSemaphore { get }
-    var renderGraphQueue: Queue { get }
+protocol _RenderGraphContext : Actor {
+    nonisolated var transientRegistryIndex : Int { get }
+    nonisolated var accessSemaphore : AsyncSemaphore { get }
+    nonisolated var renderGraphQueue: Queue { get }
     func beginFrameResourceAccess() async // Access is ended when a renderGraph is submitted.
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>) async -> Task.Handle<RenderGraphExecutionResult, Never>
 }
@@ -743,7 +742,7 @@ public final class RenderGraph {
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
-                                    _ execute: @escaping (RenderCommandEncoder) -> Void) {
+                                    _ execute: @escaping (RenderCommandEncoder) async -> Void) {
         self.addDrawCallbackPass(name: name, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, execute)
     }
     
@@ -762,7 +761,7 @@ public final class RenderGraph {
                                        depthClearOperation: DepthClearOperation = .keep,
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
-                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) -> Void) {
+                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", renderTarget: renderTarget,
                                                        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                                        reflection: reflection, execute: execute))

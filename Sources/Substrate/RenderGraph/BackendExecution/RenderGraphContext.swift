@@ -15,8 +15,8 @@ extension TaggedHeap.Tag {
     }
 }
 
-final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContext {
-    public var accessSemaphore: AsyncSemaphore
+final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContext {
+    public let accessSemaphore: AsyncSemaphore
        
     let backend: Backend
     let resourceRegistry: Backend.TransientResourceRegistry
@@ -30,11 +30,10 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     let commandQueue: Backend.QueueImpl
        
     public let transientRegistryIndex: Int
-    var renderGraphQueue: Queue
+    let renderGraphQueue: Queue
     
     var compactedResourceCommands = [CompactedResourceCommand<Backend.CompactedResourceCommandType>]()
        
-    let enqueuedEmptyFrameCompletionSemaphoresLock = DispatchSemaphore(value: 1)
     var enqueuedEmptyFrameCompletionSemaphores = [(UInt64, AsyncSemaphore)]()
     
     public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
@@ -53,18 +52,26 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         backend.freeSyncEvent(for: self.renderGraphQueue)
         self.renderGraphQueue.dispose()
         self.accessSemaphore.deinit()
-        self.enqueuedEmptyFrameCompletionSemaphoresLock.wait()
     }
     
     public func beginFrameResourceAccess() async {
         await self.backend.setActiveContext(self)
     }
     
-    var resourceMap : FrameResourceMap<Backend> {
+    nonisolated var resourceMap : FrameResourceMap<Backend> {
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
-    @RenderGraphSharedActor
+    func processEmptyFrameCompletionHandlers(afterSubmissionIndex: UInt64) {
+        // Notify any completion handlers that were enqueued for frames with no work.
+        while let (afterCBIndex, completionSemaphore) = self.enqueuedEmptyFrameCompletionSemaphores.first {
+            if afterCBIndex > afterSubmissionIndex { break }
+            completionSemaphore.signal()
+            self.accessSemaphore.signal()
+            self.enqueuedEmptyFrameCompletionSemaphores.removeFirst()
+        }
+    }
+    
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>) async -> Task.Handle<RenderGraphExecutionResult, Never> {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
@@ -83,9 +90,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         var executionResult = RenderGraphExecutionResult(gpuTime: 0.0)
         
         if passes.isEmpty {
-            self.enqueuedEmptyFrameCompletionSemaphoresLock.withSemaphore {
-                self.enqueuedEmptyFrameCompletionSemaphores.append((self.queueCommandBufferIndex, taskCompletionSemaphore))
-            }
+            self.enqueuedEmptyFrameCompletionSemaphores.append((self.queueCommandBufferIndex, taskCompletionSemaphore))
 
             if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
                 self.accessSemaphore.signal()
@@ -100,7 +105,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         
         var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
         self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
-        await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
+        self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
         backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &self.compactedResourceCommands)
         
@@ -114,7 +119,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         
         let syncEvent = backend.syncEvent(for: self.renderGraphQueue)!
         
-        func processCommandBuffer() {
+        func processCommandBuffer() async {
             if let commandBuffer = commandBuffer {
                 commandBuffer.presentSwapchains(resourceRegistry: resourceMap.transientRegistry)
                 
@@ -134,7 +139,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 self.renderGraphQueue.lastSubmittedCommand = queueCBIndex
                 self.renderGraphQueue.lastSubmissionTime = DispatchTime.now()
                 
-                commandBuffer.commit(onCompletion: { (commandBuffer) in
+                await commandBuffer.commit(onCompletion: { (commandBuffer) in
                     if let error = commandBuffer.error {
                         print("Error executing command buffer \(queueCBIndex): \(error)")
                     }
@@ -151,19 +156,11 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                         
                         executionResult.gpuTime = (gpuEndTime - gpuStartTime) * 1000.0
                         taskCompletionSemaphore.signal()
-                        self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue)
+                        self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
                         
                         self.accessSemaphore.signal()
                         
-                        self.enqueuedEmptyFrameCompletionSemaphoresLock.withSemaphore {
-                            // Notify any completion handlers that were enqueued for frames with no work.
-                            while let (afterCBIndex, completionSemaphore) = self.enqueuedEmptyFrameCompletionSemaphores.first {
-                                if afterCBIndex > queueCBIndex { break }
-                                completionSemaphore.signal()
-                                self.accessSemaphore.signal()
-                                self.enqueuedEmptyFrameCompletionSemaphores.removeFirst()
-                            }
-                        }
+                        await self.processEmptyFrameCompletionHandlers(afterSubmissionIndex: queueCBIndex)
                     }
                 })
                 committedCommandBufferCount += 1
@@ -177,7 +174,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         for (i, encoderInfo) in frameCommandInfo.commandEncoders.enumerated() {
             let commandBufferIndex = encoderInfo.commandBufferIndex
             if commandBufferIndex != committedCommandBufferCount {
-                processCommandBuffer()
+                await processCommandBuffer()
             }
             
             if commandBuffer == nil {
@@ -203,7 +200,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             await commandBuffer!.encodeCommands(encoderIndex: i)
         }
         
-        processCommandBuffer()
+        await processCommandBuffer()
         
         for passRecord in passes {
             passRecord.pass = nil // Release references to the RenderPasses.
@@ -216,5 +213,9 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             taskCompletionSemaphore.deinit()
             return executionResult
         }
+    }
+    
+    public func run<R>(_ action: () async throws -> R) reasync rethrows -> R {
+        return try await action()
     }
 }

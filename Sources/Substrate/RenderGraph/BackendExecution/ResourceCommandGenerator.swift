@@ -61,7 +61,7 @@ enum PreFrameCommands {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: RenderGraphContextImpl<Backend>, storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) async {
+    func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: RenderGraphContextImpl<Backend>, storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
         let queue = context.renderGraphQueue
         let queueIndex = Int(queue.index)
         let resourceMap = context.resourceMap
@@ -75,7 +75,7 @@ enum PreFrameCommands {
             let waitEvent = buffer.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(buffer)] : resourceRegistry.bufferWaitEvents[buffer]
             
             waitEventValues[queueIndex] = max(waitEvent!.waitValue, waitEventValues[queueIndex])
-            await buffer.applyDeferredSliceActions()
+            buffer.applyDeferredSliceActions()
             
         case .materialiseTexture(let texture):
             // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
@@ -579,7 +579,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
-    func executePreFrameCommands(context: RenderGraphContextImpl<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) async {
+    func executePreFrameCommands(context: RenderGraphContextImpl<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) {
         self.preFrameCommands.sort()
         
         var commandEncoderIndex = 0
@@ -588,12 +588,12 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 commandEncoderIndex += 1
             }
             let commandBufferIndex = frameCommandInfo.commandEncoders[commandEncoderIndex].commandBufferIndex
-            await command.command.execute(commandIndex: command.index,
-                                          commandGenerator: self,
-                                          context: context,
-                                          storedTextures: frameCommandInfo.storedTextures,
-                                          encoderDependencies: &self.commandEncoderDependencies,
-                                          waitEventValues: &frameCommandInfo.commandEncoders[commandEncoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
+            command.command.execute(commandIndex: command.index,
+                                    commandGenerator: self,
+                                    context: context,
+                                    storedTextures: frameCommandInfo.storedTextures,
+                                    encoderDependencies: &self.commandEncoderDependencies,
+                                    waitEventValues: &frameCommandInfo.commandEncoders[commandEncoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
         }
         
         self.preFrameCommands.removeAll(keepingCapacity: true)

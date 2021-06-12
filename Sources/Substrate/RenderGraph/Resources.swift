@@ -967,7 +967,7 @@ public struct Buffer : ResourceProtocol {
         if let contents = RenderBackend.bufferContents(for: self, range: self.range) {
             perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: self.length))
         } else {
-            self._deferredSliceActions.append(EmptyBufferSlice(closure: { $0.withContents(perform) }))
+            self._deferredSliceActions.append(DeferredBufferSlice(closure: { $0.withContents(perform) }))
         }
     }
     
@@ -977,7 +977,7 @@ public struct Buffer : ResourceProtocol {
         if let contents = RenderBackend.bufferContents(for: self, range: range) {
             perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
         } else {
-            self._deferredSliceActions.append(EmptyBufferSlice(closure: { $0.withContents(range: range, perform) }))
+            self._deferredSliceActions.append(DeferredBufferSlice(closure: { $0.withContents(range: range, perform) }))
         }
     }
     
@@ -987,7 +987,7 @@ public struct Buffer : ResourceProtocol {
         if let _ = RenderBackend.bufferContents(for: self, range: self.range) {
             self.withMutableContents(perform)
         } else {
-            self._deferredSliceActions.append(EmptyBufferSlice(closure: { $0.withMutableContents(range: range, perform) }))
+            self._deferredSliceActions.append(DeferredBufferSlice(closure: { $0.withMutableContents(range: range, perform) }))
         }
     }
     
@@ -997,7 +997,7 @@ public struct Buffer : ResourceProtocol {
         if let _ = RenderBackend.bufferContents(for: self, range: range) {
             self.withMutableContents(range: range, perform)
         } else {
-            self._deferredSliceActions.append(EmptyBufferSlice(closure: { $0.withMutableContents(range: range, perform) }))
+            self._deferredSliceActions.append(DeferredBufferSlice(closure: { $0.withMutableContents(range: range, perform) }))
         }
     }
     
@@ -1006,7 +1006,7 @@ public struct Buffer : ResourceProtocol {
         if let _ = RenderBackend.bufferContents(for: self, range: self.range) {
             self.withMutableContents(perform)
         } else {
-            self._deferredSliceActions.append(EmptyBufferSlice(closure: {
+            self._deferredSliceActions.append(DeferredBufferSlice(closure: {
                 $0.withMutableContents(perform)
             }))
         }
@@ -1023,7 +1023,7 @@ public struct Buffer : ResourceProtocol {
             RenderBackend.buffer(self, didModifyRange: range)
             self.stateFlags.formUnion(.initialised)
         } else {
-            self._deferredSliceActions.append(EmptyBufferSlice(closure: {
+            self._deferredSliceActions.append(DeferredBufferSlice(closure: {
                 $0.withMutableContents(range: range, {
                     let initializedBuffer = $0.bindMemory(to: C.Element.self).initialize(from: source)
                     $1 = 0..<initializedBuffer.1 * MemoryLayout<C.Element>.stride
@@ -1032,14 +1032,14 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-    func applyDeferredSliceActions() async {
+    func applyDeferredSliceActions() {
         // TODO: Add support for deferred slice actions to persistent resources. 
         guard !self.flags.contains(.historyBuffer) else {
             return
         }
         
         for action in self._deferredSliceActions {
-            await action.apply(self)
+            action.apply(self)
         }
         self._deferredSliceActions.removeAll(keepingCapacity: true)
     }
@@ -1663,11 +1663,8 @@ extension Texture: CustomStringConvertible {
     }
 }
 
-public protocol DeferredBufferSlice {
-    func apply(_ buffer: Buffer) async
-}
-
-final class EmptyBufferSlice : DeferredBufferSlice {
+@usableFromInline
+final class DeferredBufferSlice {
     let closure : (Buffer) -> Void
     
     init(closure: @escaping (Buffer) -> Void) {
