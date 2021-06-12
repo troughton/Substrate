@@ -188,6 +188,10 @@ extension ResourceProtocol {
     public func markAsUsed(by renderGraph: RenderGraph) {
         self.markAsUsed(activeRenderGraphMask: 1 << renderGraph.queue.index)
     }
+    
+    public var backingResource: Any? {
+        return RenderBackend.backingResource(self)
+    }
 }
 
 public struct Resource : ResourceProtocol, Hashable {
@@ -695,6 +699,7 @@ public struct Heap : ResourceProtocol {
         nonmutating set {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             HeapRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+            RenderBackend.updateLabel(on: self)
         }
     }
     
@@ -722,12 +727,23 @@ public struct Heap : ResourceProtocol {
     
     public var childResources: Set<Resource> {
         _read {
+            guard self.isValid else {
+                yield []
+                return
+            }
+            
             HeapRegistry.instance.lock.lock()
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             yield HeapRegistry.instance.chunks[chunkIndex].childResources[indexInChunk]
             HeapRegistry.instance.lock.unlock()
         }
         nonmutating _modify {
+            guard self.isValid else {
+                var resources = Set<Resource>()
+                yield &resources
+                return
+            }
+            
             HeapRegistry.instance.lock.lock()
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             yield &HeapRegistry.instance.chunks[chunkIndex].childResources[indexInChunk]

@@ -22,17 +22,16 @@ struct MTLPendingPurgeabilityChange {
 final class MetalResourcePurgeabilityManager {
     static let instance = MetalResourcePurgeabilityManager()
     
-    let lock = SpinLock()
+    let lock = DispatchSemaphore(value: 1)
     var pendingPurgabilityChanges: OrderedDictionary<ObjectIdentifier, MTLPendingPurgeabilityChange> = [:]
     
     @discardableResult
     func setPurgeableState(on resource: MTLResource, to state: MTLPurgeableState) -> MTLPurgeableState {
-        self.lock.withLock {
+        self.lock.withSemaphore {
             switch state {
             case .volatile, .empty:
                 let pendingCommands = QueueRegistry.lastSubmittedCommands
-                if !QueueRegistry.allQueues.enumerated()
-                    .allSatisfy({ i, queue in queue.lastCompletedCommand >= pendingCommands[i] }) {
+                if !all(QueueRegistry.lastCompletedCommands .>= pendingCommands) {
                     self.pendingPurgabilityChanges.updateValue(MTLPendingPurgeabilityChange(resource: resource, state: state, after: pendingCommands), forKey: ObjectIdentifier(resource))
                     return resource.setPurgeableState(.keepCurrent)
                 } else {
@@ -52,20 +51,20 @@ final class MetalResourcePurgeabilityManager {
     }
     
     func processPurgeabilityChanges() {
-        self.lock.withLock {
-            var processedCount = 0
-            for (_, value) in self.pendingPurgabilityChanges {
-                let requirement = value.after
-                let isComplete = QueueRegistry.allQueues.enumerated()
-                    .allSatisfy { i, queue in queue.lastCompletedCommand >= requirement[i] }
-                if !isComplete {
-                    break
-                }
-                value.resource.setPurgeableState(value.state)
-                processedCount += 1
+        guard self.lock.wait(timeout: .now()) == .success else { return }
+        var processedCount = 0
+        let lastCompletedCommands = QueueRegistry.lastCompletedCommands
+        for (_, value) in self.pendingPurgabilityChanges {
+            let requirement = value.after
+            let isComplete = all(lastCompletedCommands .>= requirement)
+            if !isComplete {
+                break
             }
-            self.pendingPurgabilityChanges.removeFirst(processedCount)
+            value.resource.setPurgeableState(value.state)
+            processedCount += 1
         }
+        self.pendingPurgabilityChanges.removeFirst(processedCount)
+        self.lock.signal()
     }
 }
 

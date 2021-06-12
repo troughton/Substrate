@@ -502,6 +502,7 @@ struct RenderGraphExecutionResult {
 
 // _RenderGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
 protocol _RenderGraphContext : AnyObject {
+    var queue: DispatchQueue { get }
     var transientRegistryIndex : Int { get }
     var accessSemaphore : AsyncSemaphore { get }
     var renderGraphQueue: Queue { get }
@@ -1104,6 +1105,10 @@ public final class RenderGraph {
                 assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another RenderGraph is being used in this RenderGraph.")
                 assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
             }
+            
+            if pass.type == .external {
+                passHasSideEffects[i] = true
+            }
         }
         
         for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
@@ -1304,6 +1309,7 @@ public final class RenderGraph {
         PersistentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferArrayRegistry.instance.clear(afterRenderGraph: self)
+        HeapRegistry.instance.clear(afterRenderGraph: self)
         
         self.renderPasses.removeAll(keepingCapacity: true)
         self.usedResources.removeAll(keepingCapacity: true)

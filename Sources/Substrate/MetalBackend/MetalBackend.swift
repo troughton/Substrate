@@ -21,7 +21,7 @@ extension MTLResourceOptions {
 extension MTLHazardTrackingMode {
     static var substrateTrackedHazards : MTLHazardTrackingMode {
         // This gives us a convenient way to toggle whether the RenderGraph or Metal should handle resource tracking.
-        return .untracked
+        return MTLResourceOptions.substrateTrackedHazards == .hazardTrackingModeUntracked ? .untracked : .tracked
     }
 }
 
@@ -617,7 +617,15 @@ final class MetalBackend : SpecificRenderBackend {
         compactedResourceCommands.sort()
     }
     
-    func didCompleteCommand(_ index: UInt64, queue: Queue) {
+    func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<MetalBackend>) {
+        if index >= queue.lastSubmittedCommand {
+            context.queue.asyncAfter(deadline: .now() + .seconds(5)) {
+                if index >= queue.lastSubmittedCommand {
+                    // If there are no more pending commands on the queue and there haven't been for a number of seconds, we can make all of the transient allocators purgeable.
+                    context.resourceRegistry.makeTransientAllocatorsPurgeable()
+                }
+            }
+        }
         MetalResourcePurgeabilityManager.instance.processPurgeabilityChanges()
     }
 

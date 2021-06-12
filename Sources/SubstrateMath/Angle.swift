@@ -25,13 +25,13 @@ public struct Angle<Scalar: BinaryFloatingPoint & Real> : Hashable {
 	/// Creates an instance using the value in radians
     @inlinable
     public init(radians val: Scalar) {
-        radians = val
+        radians = val.remainder(dividingBy: 2.0 * .pi)
     }
 	
 	/// Creates an instance using the value in degrees
     @inlinable
     public init(degrees val: Scalar) {
-        radians = val / 180.0 * .pi
+        self.init(radians: val / 180.0 * .pi)
     }
     
     // MARK: Constants
@@ -119,24 +119,28 @@ extension Angle {
     
     @inlinable
     public static func +=(lhs: inout Angle, rhs: Angle) {
-        lhs = Angle(radians: lhs.radians + rhs.degrees)
+        lhs = Angle(radians: (lhs.radians + rhs.radians))
     }
     
     @inlinable
     public static func +(lhs: Angle, rhs: Angle) -> Angle {
-        return Angle(radians: lhs.radians + rhs.degrees)
+        var result = lhs
+        result += rhs
+        return result
     }
     
     // MARK: subtraction
     
     @inlinable
     public static func -=(lhs: inout Angle, rhs: Angle) {
-        lhs = Angle(radians: lhs.radians - rhs.degrees)
+        lhs = Angle(radians: lhs.radians - rhs.radians)
     }
     
     @inlinable
     public static func -(lhs: Angle, rhs: Angle) -> Angle {
-        return Angle(radians: lhs.radians - rhs.degrees)
+        var result = lhs
+        result -= rhs
+        return result
     }
     
     // MARK: Modulus
@@ -161,30 +165,6 @@ extension Angle: Equatable {
     public static func ==(lhs: Angle, rhs: Angle) -> Bool {
         return lhs.radians == rhs.radians
     }
-}
-
-// MARK: - Comparable
-
-extension Angle: Comparable {
-    @inlinable
-	public static func <(lhs: Angle, rhs: Angle) -> Bool {
-		return lhs.radians < rhs.radians
-	}
-    
-    @inlinable
-	public static func <=(lhs: Angle, rhs: Angle) -> Bool {
-		return lhs.radians <= rhs.radians
-	}
-    
-    @inlinable
-	public static func >(lhs: Angle, rhs: Angle) -> Bool {
-		return lhs.radians > rhs.radians
-	}
-    
-    @inlinable
-	public static func >=(lhs: Angle, rhs: Angle) -> Bool {
-		return lhs.radians >= rhs.radians
-	}
 }
 
 // MARK: - Degrees

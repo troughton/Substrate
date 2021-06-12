@@ -58,6 +58,7 @@ let package = Package(
                         "-Xfrontend", "-disable-availability-checking",
                     ])
                 ]),
+        .testTarget(name: "SubstrateImageTests", dependencies: ["SubstrateImage"]),
         
         .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage"],
                 swiftSettings: [

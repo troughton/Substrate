@@ -58,6 +58,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
                 descriptor.cpuCacheMode     == textureRef.resource.texture.cpuCacheMode &&
                 descriptor.usage            == textureRef.resource.texture.usage {
                 let resourceRef = self.textures[currentIndex].remove(at: i, preservingOrder: false)
+                resourceRef.resource.texture.setPurgeableState(.nonVolatile)
                 return (resourceRef.resource, resourceRef.waitEvent)
             }
         }
@@ -79,6 +80,7 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         
         if bestIndex != -1 {
             let resourceRef = self.buffers[currentIndex].remove(at: bestIndex, preservingOrder: false)
+            resourceRef.resource.buffer.setPurgeableState(.nonVolatile)
             return (resourceRef.resource, resourceRef.waitEvent)
         } else {
             return nil
@@ -117,6 +119,19 @@ final class MetalPoolResourceAllocator : MetalBufferAllocator, MetalTextureAlloc
         // This slightly increases memory usage but greatly simplifies resource tracking, and besides, heaps should be used instead
         // for cases where memory usage is important.
         self.texturesUsedThisFrame.append(resourceRef)
+    }
+    
+    func makePurgeable() {
+        for bufferList in self.buffers {
+            for buffer in bufferList {
+                buffer.resource.buffer.setPurgeableState(.empty)
+            }
+        }
+        for textureList in self.textures {
+            for texture in textureList {
+                texture.resource.texture.setPurgeableState(.empty)
+            }
+        }
     }
     
     func cycleFrames() {

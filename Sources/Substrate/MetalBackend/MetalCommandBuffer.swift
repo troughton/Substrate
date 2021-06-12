@@ -31,10 +31,16 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         if backend.enableValidation, #available(OSX 10.16, iOS 14.0, *) {
             let commandBufferDescriptor = MTLCommandBufferDescriptor()
             commandBufferDescriptor.errorOptions = .encoderExecutionStatus
-            commandBufferDescriptor.retainedReferences = false
+            if MTLResourceOptions.substrateTrackedHazards == .hazardTrackingModeUntracked {
+                commandBufferDescriptor.retainedReferences = false
+            }
             self.commandBuffer = queue.makeCommandBuffer(descriptor: commandBufferDescriptor)!
         } else {
-            self.commandBuffer = queue.makeCommandBufferWithUnretainedReferences()!
+            if MTLResourceOptions.substrateTrackedHazards == .hazardTrackingModeUntracked {
+                self.commandBuffer = queue.makeCommandBufferWithUnretainedReferences()!
+            } else {
+                self.commandBuffer = queue.makeCommandBuffer()!
+            }
         }
         
         self.commandInfo = commandInfo

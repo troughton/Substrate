@@ -300,12 +300,18 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             if texture.flags.contains(.windowHandle) {
                 return
             }
+            if mtlTexture.texture.heap != nil {
+                mtlTexture.texture.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+            }
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlTexture._texture.toOpaque())))
         }
     }
     
     func disposeBuffer(_ buffer: Buffer) {
         if let mtlBuffer = self.bufferReferences.removeValue(forKey: buffer) {
+            if mtlBuffer.buffer.heap != nil {
+                mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+            }
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
@@ -313,12 +319,18 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
         if let mtlBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
             assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal RenderGraph backend.")
+            if mtlBuffer.buffer.heap != nil {
+                mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+            }
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
     func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
         if let mtlBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
+            if mtlBuffer.buffer.heap != nil {
+                mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+            }
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
@@ -882,6 +894,25 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     func clearDrawables() {
         self.frameDrawables.removeAll(keepingCapacity: true)
+    }
+    
+    func makeTransientAllocatorsPurgeable() {
+        self.stagingTextureAllocator.makePurgeable()
+        self.privateAllocator.makePurgeable()
+        self.historyBufferAllocator.makePurgeable()
+        
+        self.colorRenderTargetAllocator.makePurgeable()
+        self.depthRenderTargetAllocator.makePurgeable()
+        
+        self.frameSharedBufferAllocator.makePurgeable()
+        self.frameSharedWriteCombinedBufferAllocator.makePurgeable()
+        
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        self.frameManagedBufferAllocator?.makePurgeable()
+        self.frameManagedWriteCombinedBufferAllocator?.makePurgeable()
+        #endif
+        
+        self.frameArgumentBufferAllocator.makePurgeable()
     }
     
     func cycleFrames() {

@@ -93,6 +93,11 @@ extension Rect where Scalar: BinaryFloatingPoint {
     }
     
     @inlinable
+    public static var unitRect: Rect<Scalar> {
+        return Rect(origin: SIMD2<Scalar>.zero, size: SIMD2<Scalar>.one)
+    }
+    
+    @inlinable
     public var minPoint: SIMD2<Scalar> {
         get {
             return self.origin
@@ -194,6 +199,11 @@ extension Rect where Scalar: FixedWidthInteger {
     public init(minPoint: SIMD2<Scalar>, maxPoint: SIMD2<Scalar>) {
         self.origin = minPoint
         self.size = maxPoint &- minPoint
+    }
+    
+    @inlinable
+    public static var unitRect: Rect<Scalar> {
+        return Rect(origin: SIMD2<Scalar>.zero, size: SIMD2<Scalar>.one)
     }
     
     @inlinable

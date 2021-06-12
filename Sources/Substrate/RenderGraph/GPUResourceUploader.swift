@@ -30,20 +30,22 @@ public final class GPUResourceUploader {
     @usableFromInline
     final class UploadResourcePass : BlitRenderPass {
         public let name: String = "GPU Resource Upload"
+        public let cacheMode: CPUCacheMode
         
         @usableFromInline let closure : (_ buffer: Buffer, _ bce: BlitCommandEncoder) async -> Void
         @usableFromInline let stagingBufferLength: Int
         
         @inlinable
-        init(stagingBufferLength: Int, closure: @escaping (_ buffer: Buffer, _ bce: BlitCommandEncoder) async -> Void) {
+        init(stagingBufferLength: Int, cacheMode: CPUCacheMode, closure: @escaping (_ buffer: Buffer, _ bce: BlitCommandEncoder) async -> Void) {
             assert(stagingBufferLength > 0)
             self.stagingBufferLength = stagingBufferLength
+            self.cacheMode = cacheMode
             self.closure = closure
         }
         
         @inlinable
         public func execute(blitCommandEncoder: BlitCommandEncoder) async {
-            let stagingBuffer = Buffer(descriptor: BufferDescriptor(length: self.stagingBufferLength, storageMode: .shared, cacheMode: .writeCombined, usage: .blitSource))
+            let stagingBuffer = Buffer(descriptor: BufferDescriptor(length: self.stagingBufferLength, storageMode: .shared, cacheMode: self.cacheMode, usage: .blitSource))
             await self.closure(stagingBuffer, blitCommandEncoder)
         }
     }
@@ -68,7 +70,7 @@ public final class GPUResourceUploader {
         }
         self.enqueuedPasses.removeAll()
         
-        if self.renderGraph.hasEnqueuedPasses {
+        if self.renderGraph?.hasEnqueuedPasses ?? false {
             await self.renderGraph.execute()
         }
     }
@@ -81,14 +83,14 @@ public final class GPUResourceUploader {
         }
     }
     
-    public static func addUploadPass(stagingBufferLength: Int, pass: @escaping (_ buffer: Buffer, _ bce: BlitCommandEncoder) async -> Void) {
+    public static func addUploadPass(stagingBufferLength: Int, cacheMode: CPUCacheMode = .defaultCache, pass: @escaping (_ buffer: Buffer, _ bce: BlitCommandEncoder) async -> Void) {
         if GPUResourceUploader.skipUpload {
             return
         }
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
         self.enqueuedPassLock.withLock {
-            self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, closure: pass))
+            self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, cacheMode: cacheMode, closure: pass))
         }
     }
     
@@ -114,7 +116,7 @@ public final class GPUResourceUploader {
             let lock = AsyncSpinLock()
             lock.lockSync()
             
-            self.addUploadPass(stagingBufferLength: count, pass: { stagingBuffer, bce in
+            self.addUploadPass(stagingBufferLength: count, cacheMode: .writeCombined, pass: { stagingBuffer, bce in
                 stagingBuffer.withMutableContents { contents, _ in contents.copyMemory(from: UnsafeRawBufferPointer(start: bytes, count: count)) }
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBuffer.range.lowerBound, to: buffer, destinationOffset: offset, size: count)
                 lock.unlock()
@@ -144,7 +146,7 @@ public final class GPUResourceUploader {
             let lock = AsyncSpinLock()
             lock.lockSync()
             
-            self.addUploadPass(stagingBufferLength: bytesPerImage, pass: { stagingBuffer, bce in
+            self.addUploadPass(stagingBufferLength: bytesPerImage, cacheMode: .writeCombined, pass: { stagingBuffer, bce in
                 stagingBuffer.withMutableContents { contents, _ in
                     contents.copyMemory(from: UnsafeRawBufferPointer(start: bytes, count: bytesPerImage))
                 }

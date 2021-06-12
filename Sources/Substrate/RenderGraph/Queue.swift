@@ -17,7 +17,7 @@ import Glibc
 import CRT
 #endif
 
-@usableFromInline final class QueueRegistry {
+public final class QueueRegistry {
     public static let instance = QueueRegistry()
     
     public static let maxQueues = UInt8.bitWidth
@@ -102,6 +102,14 @@ import CRT
         }
         return commands
     }
+    
+    public static var lastCompletedCommands: QueueCommandIndices {
+        var commands = QueueCommandIndices(repeating: 0)
+        for (i, queue) in self.allQueues.enumerated() {
+            commands[i] = queue.lastCompletedCommand
+        }
+        return commands
+    }
 }
 
 public struct Queue : Equatable {
@@ -163,7 +171,7 @@ public struct Queue : Equatable {
         }
     }
     
-    func waitForCommand(_ index: UInt64) async {
+    public func waitForCommand(_ index: UInt64) async {
         while self.lastCompletedCommand < index {
             await Task.yield()
         }
