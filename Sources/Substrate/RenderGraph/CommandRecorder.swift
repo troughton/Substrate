@@ -103,6 +103,8 @@ enum RenderGraphCommand {
     
     case setRenderPipelineDescriptor(Unmanaged<ReferenceBox<RenderPipelineDescriptor>>)
     
+    case setRenderPipelineState(Unmanaged<RenderPipelineState>)
+    
     public typealias DrawPrimitivesArgs = (primitiveType: PrimitiveType, vertexStart: UInt32, vertexCount: UInt32, instanceCount: UInt32, baseInstance: UInt32)
     case drawPrimitives(UnsafePointer<DrawPrimitivesArgs>)
     
@@ -143,6 +145,8 @@ enum RenderGraphCommand {
     case dispatchThreadgroupsIndirect(UnsafePointer<DispatchThreadgroupsIndirectArgs>)
     
     case setComputePipelineDescriptor(Unmanaged<ComputePipelineDescriptorBox>)
+    
+    case setComputePipelineState(Unmanaged<ComputePipelineState>)
     
     case setStageInRegion(UnsafePointer<Region>)
     
@@ -199,27 +203,19 @@ enum RenderGraphCommand {
     
     // Acceleration Structure:
     
-    @available(macOS 11.0, iOS 14.0, *)
     public typealias BuildAccelerationStructureArgs = (structure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int)
-    @available(macOS 11.0, iOS 14.0, *)
+
     case buildAccelerationStructure(UnsafePointer<BuildAccelerationStructureArgs>)
 
-    @available(macOS 11.0, iOS 14.0, *)
     public typealias RefitAccelerationStructureArgs = (source: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destination: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int)
-    @available(macOS 11.0, iOS 14.0, *)
     case refitAccelerationStructure(UnsafePointer<RefitAccelerationStructureArgs>)
 
-    @available(macOS 11.0, iOS 14.0, *)
     public typealias CopyAccelerationStructureArgs = (source: AccelerationStructure, destination: AccelerationStructure)
-    @available(macOS 11.0, iOS 14.0, *)
     case copyAccelerationStructure(UnsafePointer<CopyAccelerationStructureArgs>)
     
-    @available(macOS 11.0, iOS 14.0, *)
     public typealias WriteCompactedAccelerationStructureSizeArgs = (structure: AccelerationStructure, toBuffer: Buffer, bufferOffset: Int)
-    @available(macOS 11.0, iOS 14.0, *)
     case writeCompactedAccelerationStructureSize(UnsafePointer<WriteCompactedAccelerationStructureSizeArgs>)
     
-    @available(macOS 11.0, iOS 14.0, *)
     case copyAndCompactAccelerationStructure(UnsafePointer<CopyAccelerationStructureArgs>)
     
     var isDrawCommand: Bool {

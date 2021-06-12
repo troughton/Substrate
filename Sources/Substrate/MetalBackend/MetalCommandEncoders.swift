@@ -266,6 +266,15 @@ final class FGMTLThreadRenderCommandEncoder {
                 self.boundPipelineState = state
             }
             
+        case .setRenderPipelineState(let statePtr):
+            let state = statePtr.takeUnretainedValue()
+            self.pipelineDescriptor = state.descriptor
+            let mtlState = Unmanaged<MTLRenderPipelineState>.fromOpaque(UnsafeRawPointer(state.state)).takeUnretainedValue()
+            if mtlState !== self.boundPipelineState {
+                encoder.setRenderPipelineState(mtlState)
+                self.boundPipelineState = mtlState
+            }
+            
         case .drawPrimitives(let args):
             encoder.drawPrimitives(type: MTLPrimitiveType(args.pointee.primitiveType), vertexStart: Int(args.pointee.vertexStart), vertexCount: Int(args.pointee.vertexCount), instanceCount: Int(args.pointee.instanceCount), baseInstance: Int(args.pointee.baseInstance))
             
@@ -477,6 +486,15 @@ final class FGMTLComputeCommandEncoder {
             if state !== self.boundPipelineState {
                 encoder.setComputePipelineState(state)
                 self.boundPipelineState = state
+            }
+            
+        case .setComputePipelineState(let statePtr):
+            let state = statePtr.takeUnretainedValue()
+            self.pipelineDescriptor = state.descriptor
+            let mtlState = Unmanaged<MTLComputePipelineState>.fromOpaque(UnsafeRawPointer(state.state)).takeUnretainedValue()
+            if mtlState !== self.boundPipelineState {
+                encoder.setComputePipelineState(mtlState)
+                self.boundPipelineState = mtlState
             }
             
         case .setStageInRegion(let regionPtr):

@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct IntersectionFunctionInputAttributes : OptionSet {
+public struct IntersectionFunctionInputAttributes : OptionSet, Hashable {
     public let rawValue: UInt
     
     @inlinable
@@ -26,12 +26,12 @@ public struct IntersectionFunctionInputAttributes : OptionSet {
 }
 
 public struct IntersectionFunctionTableDescriptor: Hashable, Equatable {
-    public enum FunctionType {
+    public enum FunctionType: Hashable {
         case defaultOpaqueFunction(inputAttributes: IntersectionFunctionInputAttributes)
         case function(FunctionDescriptor)
     }
     
-    public enum BufferType {
+    public enum BufferType: Hashable {
         case buffer(Buffer, offset: Int)
         case functionTable([FunctionDescriptor?])
     }

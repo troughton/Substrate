@@ -227,10 +227,12 @@ public struct RenderPipelineDescriptor : Hashable {
 }
 
 public final class RenderPipelineState {
+    public let descriptor: RenderPipelineDescriptor
     public let state: OpaquePointer
     let reflection: PipelineReflection
     
-    init(state: OpaquePointer, reflection: PipelineReflection) {
+    init(descriptor: RenderPipelineDescriptor, state: OpaquePointer, reflection: PipelineReflection) {
+        self.descriptor = descriptor
         self.state = state
         self.reflection = reflection
     }
@@ -315,10 +317,12 @@ public struct ComputePipelineDescriptor : Hashable {
 }
 
 public final class ComputePipelineState {
+    public let descriptor: ComputePipelineDescriptor
     public let state: OpaquePointer
     let reflection: PipelineReflection
     
-    init(state: OpaquePointer, reflection: PipelineReflection) {
+    init(descriptor: ComputePipelineDescriptor, state: OpaquePointer, reflection: PipelineReflection) {
+        self.descriptor = descriptor
         self.state = state
         self.reflection = reflection
     }

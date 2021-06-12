@@ -282,25 +282,6 @@ final class MetalStateCaches {
         self.visibleFunctionTables[ObjectIdentifier(computePipelineState), default: []].append((functionTableDescriptor, functionTable))
         return functionTable
     }
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    public subscript(intersectionFunctionTableFor functionTableDescriptor: IntersectionFunctionTableDescriptor, computePipelineState computePipelineState: MTLComputePipelineState) -> MTLVisibleFunctionTable {
-        if let table = self.visibleFunctionTables[ObjectIdentifier(computePipelineState)]?.first(where: { $0.0 == functionTableDescriptor })?.1 {
-            return (table as! MTLVisibleFunctionTable)
-        }
-        
-        let mtlDescriptor = MTLIntersectionFunctionTableDescriptor()
-        mtlDescriptor.functionCount = functionTableDescriptor.drop(while: { $0 == nil }).count
-        
-        let functionTable = computePipelineState.makeIntersectionFunctionTable(descriptor: <#T##MTLIntersectionFunctionTableDescriptor#>)(descriptor: mtlDescriptor)!
-        for i in 0..<mtlDescriptor.functionCount {
-            guard let function = functionTableDescriptor[i], let mtlFunction = self.function(for: function) else { continue }
-            functionTable.setFunction(computePipelineState.functionHandle(function: mtlFunction), index: i)
-        }
-        
-        self.visibleFunctionTables[ObjectIdentifier(computePipelineState), default: []].append((functionTableDescriptor, functionTable))
-        return functionTable
-    }
 }
 
 #endif // canImport(Metal)
