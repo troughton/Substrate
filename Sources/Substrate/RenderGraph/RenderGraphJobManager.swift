@@ -61,7 +61,7 @@ final class DefaultRenderGraphJobManager : RenderGraphJobManager {
         let queueCount = min(max(processorCount - 1, 1), 8)
         self.threadCount = queueCount + 1
         
-        let queues = (1...max(processorCount - 1, 1)).map { i -> DispatchQueue in
+        let queues = (1...queueCount).map { i -> DispatchQueue in
             let queue = DispatchQueue(label: "RenderGraph Job Queue \(i)", qos: .userInteractive, autoreleaseFrequency: .workItem, target: nil)
             queue.setSpecific(key: Self.queueIndexKey, value: i)
             
