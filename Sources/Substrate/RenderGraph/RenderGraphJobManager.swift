@@ -79,6 +79,8 @@ final class DefaultRenderGraphJobManager : RenderGraphJobManager {
         }
         
         self.queues = queues
+        
+        TagAllocator.DynamicThreadView.threadIndexRetrievalFunc = { DispatchQueue.getSpecific(key: Self.queueIndexKey) ?? 0 }
     }
     
     @inlinable
