@@ -34,6 +34,10 @@ extension MTLHeapDescriptor {
         }
         self.storageMode = MTLStorageMode(descriptor.storageMode, isAppleSiliconGPU: isAppleSiliconGPU)
         self.cpuCacheMode = MTLCPUCacheMode(descriptor.cacheMode)
+        
+        if #available(OSX 10.15, iOS 13.0, tvOS 13.0, *) {
+            self.hazardTrackingMode = .substrateTrackedHazards
+        }
     }
 }
 
