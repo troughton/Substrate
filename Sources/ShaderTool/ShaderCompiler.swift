@@ -306,10 +306,18 @@ final class ShaderCompiler {
                     guard task.terminationStatus == 0 else { print("Error compiling entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
                     
                     if self.legalizeHLSL {
+                        try? FileManager.default.removeItem(at: spvFileURL)
+                        
                         let optimisationTask = try self.spirvOptDriver!.optimise(sourceFile: tempFileURL, destinationFile: spvFileURL)
                         optimisationTask.waitUntilExit()
-                        guard optimisationTask.terminationStatus == 0 else { print("Error optimising entry point \(entryPoint.name) in file \(file): \(task.terminationReason)"); return }
-                        try? FileManager.default.removeItem(at: tempFileURL)
+                        if optimisationTask.terminationStatus != 0 {
+                            print("Error optimising entry point \(entryPoint.name) in file \(file)")
+                        } else {
+                            try? FileManager.default.removeItem(at: tempFileURL)
+                        }
+                        if !FileManager.default.fileExists(atPath: spvFileURL.path) {
+                            return
+                        }
                     }
                     
                     spvFileURL.removeCachedResourceValue(forKey: .contentModificationDateKey)

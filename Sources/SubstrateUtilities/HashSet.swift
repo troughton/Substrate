@@ -27,10 +27,12 @@ public struct HashSet<K : CustomHashable> {
     // bucketCount minus one
     @usableFromInline var mask = 0
     
+    @inlinable
     public init(allocator: AllocatorType = .system) {
         self.allocator = allocator
     }
     
+    @inlinable
     public func `deinit`() {
         for bucket in 0..<self.bucketCount {
             if self.states[bucket] == .filled {
@@ -349,10 +351,12 @@ extension HashSet : Sequence {
         public let hashSet : HashSet<K>
         public var bucket = 0
         
+        @inlinable
         init(hashSet: HashSet<K>) {
             self.hashSet = hashSet
         }
         
+        @inlinable
         public mutating func next() -> K? {
             while self.bucket < hashSet.bucketCount {
                 defer { self.bucket += 1 }
@@ -365,6 +369,7 @@ extension HashSet : Sequence {
         }
     }
     
+    @inlinable
     public func makeIterator() -> HashSet<K>.Iterator {
         return Iterator(hashSet: self)
     }

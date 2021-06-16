@@ -502,7 +502,7 @@ extension Image where ComponentType == Float {
                     let sourceStride = self.channelCount
                     
                     for i in 0..<self.width * self.height {
-                        destination[i] = buffer[channel + i * sourceStride]
+                        destination[i] = sourceBuffer[channel + i * sourceStride]
                     }
                 }
             }

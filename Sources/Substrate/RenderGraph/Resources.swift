@@ -760,12 +760,23 @@ public struct Heap : ResourceProtocol {
     
     public var childResources: Set<Resource> {
         _read {
+            guard self.isValid else {
+                yield []
+                return
+            }
+            
             HeapRegistry.instance.lock.lock()
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             yield HeapRegistry.instance.chunks[chunkIndex].childResources[indexInChunk]
             HeapRegistry.instance.lock.unlock()
         }
         nonmutating _modify {
+            guard self.isValid else {
+                var resources = Set<Resource>()
+                yield &resources
+                return
+            }
+            
             HeapRegistry.instance.lock.lock()
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
             yield &HeapRegistry.instance.chunks[chunkIndex].childResources[indexInChunk]

@@ -28,6 +28,7 @@ final class MetalStateCaches {
         var fragmentFunction : String
     }
     
+    var functionCacheAccessLock = ReaderWriterLock()
     var renderPipelineAccessLock = ReaderWriterLock()
     var computePipelineAccessLock = ReaderWriterLock()
     
@@ -109,16 +110,21 @@ final class MetalStateCaches {
     }
     
     func function(for functionDescriptor: FunctionDescriptor) -> MTLFunction? {
+        self.functionCacheAccessLock.acquireReadAccess()
         if let function = self.functionCache[functionDescriptor] {
+            self.functionCacheAccessLock.releaseReadAccess()
             return function
         }
         
         do {
             let function = try self.library.makeFunction(name: functionDescriptor.name, constantValues: functionDescriptor.constants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
                        
+            self.functionCacheAccessLock.transformReadToWriteAccess()
             self.functionCache[functionDescriptor] = function
+            self.functionCacheAccessLock.releaseWriteAccess()
             return function
         } catch {
+            self.functionCacheAccessLock.releaseReadAccess()
             print("MetalRenderGraph: Error creating function named \(functionDescriptor.name)\(functionDescriptor.constants.map { " with constants \($0)" } ?? ""): \(error)")
             return nil
         }
