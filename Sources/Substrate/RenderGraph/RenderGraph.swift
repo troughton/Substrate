@@ -1043,7 +1043,7 @@ public final class RenderGraph {
             }
         }
         
-        for passRecord in renderPasses where passRecord.type != .cpu {
+        for passRecord in renderPasses where passRecord.type != .cpu && passRecord.type != .accelerationStructure {
             jobManager.dispatchPassJob { [unowned(unsafe) jobManager] in
                 let threadIndex = jobManager.threadIndex
                 
