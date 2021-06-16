@@ -26,6 +26,8 @@ public final class GPUResourceUploader {
     @usableFromInline static var renderGraph : RenderGraph! = nil
     private static var maxUploadSize = 128 * 1024 * 1024
     private static var enqueuedPasses = [BlitRenderPass]()
+    private static var submissionNotifyQueue = [() -> Void]()
+    private static var completionNotifyQueue = [() -> Void]()
     
     @usableFromInline
     final class UploadResourcePass : BlitRenderPass {
@@ -73,8 +75,22 @@ public final class GPUResourceUploader {
         }
         self.enqueuedPasses.removeAll()
         
+        let submissionNotifyItems = self.submissionNotifyQueue
+        self.submissionNotifyQueue.removeAll()
+        
+        let completionNotifyItems = self.completionNotifyQueue
+        self.completionNotifyQueue.removeAll()
+        
         if self.renderGraph?.hasEnqueuedPasses ?? false {
-            self.renderGraph.execute()
+            self.renderGraph.execute(onSubmission: {
+                for item in submissionNotifyItems {
+                    item()
+                }
+            }, onGPUCompletion: {
+                for item in completionNotifyItems {
+                    item()
+                }
+            })
         }
     }
     
@@ -86,7 +102,13 @@ public final class GPUResourceUploader {
     
     public static func onSubmission(_ perform: @escaping () -> Void) {
         self.lock.withSemaphore {
-            self.renderGraph.onSubmission(perform)
+            self.submissionNotifyQueue.append(perform)
+        }
+    }
+    
+    public static func onCompletion(_ perform: @escaping () -> Void) {
+        self.lock.withSemaphore {
+            self.completionNotifyQueue.append(perform)
         }
     }
     
