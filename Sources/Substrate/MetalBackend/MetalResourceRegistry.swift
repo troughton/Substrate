@@ -40,8 +40,8 @@ struct MTLBufferReference : MTLResourceReference {
 struct MTLTextureReference : MTLResourceReference {
     var _texture : Unmanaged<MTLTexture>!
     
-    var texture : MTLTexture {
-        return _texture.takeUnretainedValue()
+    var texture : MTLTexture! {
+        return _texture?.takeUnretainedValue()
     }
     
     var resource : MTLTexture {
