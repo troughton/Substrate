@@ -22,179 +22,272 @@ public final class GPUResourceUploader {
     // Useful to bypass uploading when running in GPU-less mode.
     public static var skipUpload = false
     
-    static let lock = DispatchSemaphore(value: 1)
     @usableFromInline static var renderGraph : RenderGraph! = nil
     private static var maxUploadSize = 128 * 1024 * 1024
-    private static var enqueuedPasses = [BlitRenderPass]()
-    private static var submissionNotifyQueue = [() -> Void]()
-    private static var completionNotifyQueue = [() -> Void]()
+    private static let queue = DispatchQueue(label: "GPUResourceUploader Queue")
     
-    @usableFromInline
-    final class UploadResourcePass : BlitRenderPass {
-        public let name: String = "GPU Resource Upload"
-        public let cacheMode: CPUCacheMode
-        
-        @usableFromInline let closure : (RawBufferSlice, _ bce: BlitCommandEncoder) -> Void
-        @usableFromInline let stagingBufferLength: Int
-        
-        @inlinable
-        init(stagingBufferLength: Int, cacheMode: CPUCacheMode, closure: @escaping (_ stagingBuffer: RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) {
-            assert(stagingBufferLength > 0)
-            self.stagingBufferLength = stagingBufferLength
-            self.cacheMode = cacheMode
-            self.closure = closure
-        }
-        
-        @inlinable
-        public func execute(blitCommandEncoder: BlitCommandEncoder) {
-            let stagingBuffer = Buffer(descriptor: BufferDescriptor(length: self.stagingBufferLength, storageMode: .shared, cacheMode: self.cacheMode, usage: .blitSource))
-            let bufferSlice = stagingBuffer[stagingBuffer.range, accessType: .write]
-            self.closure(bufferSlice, blitCommandEncoder)
-        }
-    }
+    private static var defaultCacheAllocator: StagingBufferSubAllocator! = nil
+    private static var writeCombinedAllocator: StagingBufferSubAllocator! = nil
     
     public static func initialise(maxUploadSize: Int = 128 * 1024 * 1024) {
         self.maxUploadSize = maxUploadSize
-        self.renderGraph = RenderGraph(inflightFrameCount: 1)
+        self.renderGraph = RenderGraph(inflightFrameCount: 0) //
+    }
+    
+    @available(*, deprecated, message: "GPUResourceUploader now flushes immediately on each upload.")
+    public static func flush() {
+        
     }
     
     private init() {}
-
-    private static func flushHoldingLock() {
-        precondition(self.enqueuedPasses.isEmpty || self.renderGraph != nil, "GPUResourceUploader has not been initialised.")
-        
-        var enqueuedBytes = 0
-        for pass in self.enqueuedPasses {
-            let passStagingBufferLength = (pass as? UploadResourcePass)?.stagingBufferLength ?? 0
-            if enqueuedBytes > 0, enqueuedBytes + passStagingBufferLength > self.maxUploadSize {
-                self.renderGraph.execute()
-                enqueuedBytes = 0
+    
+    private static func allocator(cacheMode: CPUCacheMode) -> StagingBufferSubAllocator {
+        switch cacheMode {
+        case .defaultCache:
+            if self.defaultCacheAllocator == nil {
+                self.defaultCacheAllocator = .init(renderGraphQueue: self.renderGraph.queue, stagingBufferLength: self.maxUploadSize, cacheMode: cacheMode)
             }
-            self.renderGraph.addPass(pass)
-            enqueuedBytes += passStagingBufferLength
-        }
-        self.enqueuedPasses.removeAll()
-        
-        let submissionNotifyItems = self.submissionNotifyQueue
-        self.submissionNotifyQueue.removeAll()
-        
-        let completionNotifyItems = self.completionNotifyQueue
-        self.completionNotifyQueue.removeAll()
-        
-        if self.renderGraph?.hasEnqueuedPasses ?? false {
-            self.renderGraph.execute(onSubmission: {
-                for item in submissionNotifyItems {
-                    item()
-                }
-            }, onGPUCompletion: {
-                for item in completionNotifyItems {
-                    item()
-                }
-            })
+            return self.defaultCacheAllocator
+        case .writeCombined:
+            if self.writeCombinedAllocator == nil {
+                self.writeCombinedAllocator = .init(renderGraphQueue: self.renderGraph.queue, stagingBufferLength: self.maxUploadSize, cacheMode: cacheMode)
+            }
+            return self.writeCombinedAllocator
         }
     }
-    
-    public static func flush() {
-        self.lock.withSemaphore {
-            self.flushHoldingLock()
-        }
+
+    static var nextCommandIndex: UInt64 {
+        return self.renderGraph.queue.lastSubmittedCommand + 1
     }
     
-    public static func onSubmission(_ perform: @escaping () -> Void) {
-        self.lock.withSemaphore {
-            self.submissionNotifyQueue.append(perform)
-        }
+    private static func _flush(cacheMode: CPUCacheMode?) -> RenderGraphExecutionWaitToken {
+        let waitToken = self.renderGraph.execute()
+        return waitToken
     }
     
-    public static func onCompletion(_ perform: @escaping () -> Void) {
-        self.lock.withSemaphore {
-            self.completionNotifyQueue.append(perform)
-        }
-    }
-    
-    public static func addCopyPass(_ pass: @escaping (_ bce: BlitCommandEncoder) -> Void) {
+    @discardableResult
+    public static func runBlitPass(_ pass: @escaping (_ bce: BlitCommandEncoder) -> Void) -> RenderGraphExecutionWaitToken {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
-        self.lock.withSemaphore {
-            self.enqueuedPasses.append(CallbackBlitRenderPass(name: "Blit Callback Pass", execute: pass))
+        return self.queue.sync {
+            self.renderGraph.addPass(CallbackBlitRenderPass(name: "GPUResourceUploader Copy Pass", execute: pass))
+            return self._flush(cacheMode: nil)
         }
     }
     
-    public static func addUploadPass(stagingBufferLength: Int, cacheMode: CPUCacheMode = .defaultCache, pass: @escaping (RawBufferSlice, _ bce: BlitCommandEncoder) -> Void) {
-        if GPUResourceUploader.skipUpload {
-            return
-        }
-        precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
-        
-        self.lock.withSemaphore {
-            self.enqueuedPasses.append(UploadResourcePass(stagingBufferLength: stagingBufferLength, cacheMode: cacheMode, closure: pass))
-        }
-    }
-    
-    public static func generateMipmaps(for texture: Texture) {
-        self.lock.withSemaphore {
-            self.enqueuedPasses.append(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
+    @discardableResult
+    public static func generateMipmaps(for texture: Texture) -> RenderGraphExecutionWaitToken {
+        return self.queue.sync {
+            self.renderGraph.addPass(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
                 bce.generateMipmaps(for: texture)
             })
+            
+            return self._flush(cacheMode: nil)
         }
     }
     
-    @available(*, deprecated, renamed: "uploadBytes(_:count:to:offset:onBytesCopied:)")
-    public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int, onUploadCompleted: @escaping ((Buffer, UnsafeRawPointer) -> Void)) {
-        self.uploadBytes(bytes, count: count, to: buffer, offset: offset, onBytesCopied: onUploadCompleted)
+    @discardableResult
+    public static func withUploadBuffer(length: Int, cacheMode: CPUCacheMode = .writeCombined, fillBuffer: (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void, copyFromBuffer: @escaping (_ buffer: Buffer, _ offset: Int, _ blitEncoder: BlitCommandEncoder) -> Void) rethrows -> RenderGraphExecutionWaitToken {
+        if GPUResourceUploader.skipUpload {
+            return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
+        }
+        precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
+        
+        return try self.queue.sync {
+            let (stagingBuffer, stagingBufferOffset) = try self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: length, alignedTo: 256, submissionIndex: self.nextCommandIndex) { contents, writtenRange in
+                try fillBuffer(contents, &writtenRange)
+            }
+            
+            self.renderGraph.addBlitCallbackPass(name: "uploadBytes(length: \(length), cacheMode: \(cacheMode))") { bce in
+                copyFromBuffer(stagingBuffer, stagingBufferOffset, bce)
+            }
+            
+            return self._flush(cacheMode: cacheMode)
+        }
     }
     
-    public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int, onBytesCopied: ((Buffer, UnsafeRawPointer) -> Void)? = nil) {
+    @discardableResult
+    public static func uploadBytes(_ bytes: UnsafeRawPointer, count: Int, to buffer: Buffer, offset: Int) -> RenderGraphExecutionWaitToken {
+        self.uploadBytes(count: count, to: buffer, offset: offset) { (buffer, _) in buffer.copyMemory(from: UnsafeRawBufferPointer(start: bytes, count: count)) }
+    }
+    
+    @discardableResult
+    public static func uploadBytes(count: Int, to buffer: Buffer, offset: Int, _ bytes: (UnsafeMutableRawBufferPointer, inout Range<Int>) -> Void) -> RenderGraphExecutionWaitToken {
+        if GPUResourceUploader.skipUpload {
+            return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
+        }
+        precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
+        
         assert(offset + count <= buffer.length)
         
-        if buffer.storageMode == .shared || buffer.storageMode == .managed {
-            buffer[offset..<(offset + count), accessType: .write].withContents {
-                $0.copyMemory(from: bytes, byteCount: count)
-            }
-            onBytesCopied?(buffer, bytes)
-        } else {
-            assert(buffer.storageMode == .private)
-            self.addUploadPass(stagingBufferLength: count, cacheMode: .writeCombined, pass: { slice, bce in
-                slice.withContents {
-                    $0.copyMemory(from: bytes, byteCount: count)
+        return self.queue.sync {
+            if buffer.storageMode == .shared || buffer.storageMode == .managed {
+                buffer.withMutableContents(range: offset..<(offset + count)) {
+                    bytes($0, &$1)
                 }
-                bce.copy(from: slice.buffer, sourceOffset: slice.range.lowerBound, to: buffer, destinationOffset: offset, size: count)
-                onBytesCopied?(buffer, bytes)
-            })
+                return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
+            } else {
+                assert(buffer.storageMode == .private)
+                
+                let cacheMode = CPUCacheMode.writeCombined
+                
+                let (stagingBuffer, stagingBufferOffset) = self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: count, alignedTo: 256, submissionIndex: self.nextCommandIndex) { contents, writtenRange in
+                    bytes(contents, &writtenRange)
+                }
+                
+                self.renderGraph.addBlitCallbackPass(name: "uploadBytes(count: \(count), to: \(buffer), offset: \(offset))") { bce in
+                    bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, to: buffer, destinationOffset: offset, size: count)
+                }
+                
+                return self._flush(cacheMode: cacheMode)
+            }
         }
     }
     
-    @available(*, deprecated, renamed: "replaceTextureRegion(_:mipmapLevel:in:withBytes:bytesPerRow:onBytesCopied:)")
-    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, onUploadCompleted: @escaping ((Texture, UnsafeRawPointer) -> Void)) {
-        self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, onBytesCopied: onUploadCompleted)
-    }
-    
-    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, onBytesCopied: ((Texture, UnsafeRawPointer) -> Void)? = nil) {
+    @discardableResult
+    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) -> RenderGraphExecutionWaitToken {
         let rowCount = (texture.height >> mipmapLevel) / texture.descriptor.pixelFormat.rowsPerBlock
-        self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: 0, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * rowCount, onBytesCopied: onBytesCopied)
+        return self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: 0, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * rowCount)
     }
+    
+    @discardableResult
+    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, slice: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) -> RenderGraphExecutionWaitToken {
+        if GPUResourceUploader.skipUpload {
+            return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
+        }
+        precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
-    
-    @available(*, deprecated, renamed: "replaceTextureRegion(_:mipmapLevel:slice:in:withBytes:bytesPerRow:bytesPerImage:onBytesCopied:)")
-    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, slice: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int, onUploadCompleted: @escaping ((Texture, UnsafeRawPointer) -> Void)) {
-        self.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: slice, in: texture, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage, onBytesCopied: onUploadCompleted)
-    }
-    
-    public static func replaceTextureRegion(_ region: Region, mipmapLevel: Int, slice: Int, in texture: Texture, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int, onBytesCopied: ((Texture, UnsafeRawPointer) -> Void)? = nil) {
-        if texture.storageMode == .shared || texture.storageMode == .managed {
-            texture.replace(region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
-            onBytesCopied?(texture, bytes)
-        } else {
-            assert(texture.storageMode == .private)
-            
-            self.addUploadPass(stagingBufferLength: bytesPerImage, cacheMode: .writeCombined, pass: { bufferSlice, bce in
-                bufferSlice.withContents {
-                    $0.copyMemory(from: bytes, byteCount: bytesPerImage)
-                }
-                bce.copy(from: bufferSlice.buffer, sourceOffset: bufferSlice.range.lowerBound, sourceBytesPerRow: bytesPerRow, sourceBytesPerImage: bytesPerImage, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: region.origin)
+        return self.queue.sync {
+            if texture.storageMode == .shared || texture.storageMode == .managed {
+                texture.replace(region: region, mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
+                return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
+            } else {
+                assert(texture.storageMode == .private)
                 
-                onBytesCopied?(texture, bytes)
-            })
+                let cacheMode = CPUCacheMode.writeCombined
+                
+                let (stagingBuffer, stagingBufferOffset) = self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: bytesPerImage, alignedTo: 256, submissionIndex: self.nextCommandIndex) { contents, _ in
+                    contents.copyMemory(from: UnsafeRawBufferPointer(start: bytes, count: bytesPerImage))
+                }
+                
+                self.renderGraph.addBlitCallbackPass(name: "replaceTextureRegion(\(region), mipmapLevel: \(mipmapLevel), slice: \(slice), in: \(texture), withBytes: \(bytes), bytesPerRow: \(bytesPerRow), bytesPerImage: \(bytesPerImage))") { bce in
+                    bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, sourceBytesPerRow: bytesPerRow, sourceBytesPerImage: bytesPerImage, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: region.origin)
+                }
+                return self._flush(cacheMode: cacheMode)
+            }
+        }
+    }
+}
+
+extension GPUResourceUploader {
+    fileprivate final class StagingBufferSubAllocator {
+        
+        private static let blockAlignment = 64
+        private let queue = DispatchQueue(label: "StagingBufferSubAllocator Queue")
+        
+        let renderGraphQueue: Queue
+        let capacity: Int
+        let buffer: Buffer
+        let bufferContents: UnsafeMutableRawPointer
+        
+        var inUseRangeStart = 0
+        var inUseRangeEnd = 0
+        
+        let pendingCommands: RingBuffer<(command: UInt64, allocationRange: (lowerBound: Int, upperBound: Int), tempBuffer: Buffer?)> = .init()
+        
+        public init(renderGraphQueue: Queue, stagingBufferLength: Int = 128 * 1024 * 1024, cacheMode: CPUCacheMode) {
+            self.renderGraphQueue = renderGraphQueue
+            self.capacity = stagingBufferLength
+            self.buffer = Buffer(length: stagingBufferLength, storageMode: .managed, cacheMode: cacheMode, usage: .blitSource, flags: .persistent)
+            self.bufferContents = RenderBackend.bufferContents(for: self.buffer, range: self.buffer.range)
+        }
+        
+        deinit {
+            self.buffer.dispose()
+        }
+        
+        func withBufferContents(byteCount: Int, alignedTo alignment: Int, submissionIndex: UInt64, perform: (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void) rethrows -> (buffer: Buffer, offset: Int) {
+            
+            if byteCount > self.capacity {
+                // Allocate a buffer specifically for this staging command.
+                let buffer = Buffer(length: byteCount, storageMode: .shared, cacheMode: self.buffer.descriptor.cacheMode, usage: .blitSource, flags: .persistent)
+                
+                do {
+                    try buffer.withMutableContents { buffer, range in
+                        try perform(buffer, &range)
+                    }
+                } catch {
+                    buffer.dispose()
+                    throw error
+                }
+                self.queue.async {
+                    self.pendingCommands.append((submissionIndex, (0, 0), buffer))
+                }
+                
+                DispatchQueue.global().async {
+                    // Make sure the buffer gets disposed even if no more resource uploads are submitted.
+                    RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: submissionIndex).wait()
+                    self.queue.async {
+                        self.processCompletedCommands()
+                    }
+                }
+                
+                return (buffer, 0)
+            }
+            
+            let alignment = byteCount == 0 ? 1 : alignment // Don't align for empty allocations
+            
+            while true {
+                let allocationRange: Range<Int>? = self.queue.sync { () -> Range<Int>? in
+                    self.processCompletedCommands()
+                    
+                    var alignedPosition = ((self.inUseRangeEnd + alignment - 1) & ~(alignment - 1)) % self.capacity
+                    var allocationRange = alignedPosition..<(alignedPosition + byteCount)
+                    
+                    if allocationRange.endIndex > self.capacity {
+                        alignedPosition = 0
+                        allocationRange = alignedPosition..<(alignedPosition + byteCount)
+                    }
+                    
+                    if self.inUseRangeStart > self.inUseRangeEnd {
+                        if (self.inUseRangeStart..<self.capacity).overlaps(allocationRange) ||
+                            (0..<self.inUseRangeEnd).overlaps(allocationRange) {
+                            precondition(!self.pendingCommands.isEmpty && self.pendingCommands.allSatisfy({ self.renderGraphQueue.lastCompletedCommand < $0.command }))
+                            return nil
+                        }
+                    } else {
+                        if (self.inUseRangeStart..<self.inUseRangeEnd).overlaps(allocationRange) {
+                            precondition(!self.pendingCommands.isEmpty && self.pendingCommands.allSatisfy({ self.renderGraphQueue.lastCompletedCommand < $0.command }))
+                            return nil
+                        }
+                    }
+                    
+                    self.pendingCommands.append((submissionIndex, (self.inUseRangeEnd, allocationRange.endIndex), nil))
+                    self.inUseRangeEnd = allocationRange.endIndex
+                    
+                    return allocationRange
+                }
+                
+                if let allocationRange = allocationRange {
+                    var writtenRange = 0..<byteCount
+                    try perform(UnsafeMutableRawBufferPointer(start: self.bufferContents.advanced(by: allocationRange.lowerBound), count: byteCount), &writtenRange)
+                    RenderBackend.buffer(self.buffer, didModifyRange: (allocationRange.lowerBound + writtenRange.lowerBound)..<(allocationRange.lowerBound + writtenRange.lowerBound + writtenRange.count))
+                    
+                    return (self.buffer, allocationRange.lowerBound)
+                }
+            }
+        }
+        
+        private func processCompletedCommands() {
+            while self.pendingCommands.first?.command ?? .max <= self.renderGraphQueue.lastCompletedCommand {
+                let (_, range, tempBuffer) = self.pendingCommands.popFirst()!
+                if let tempBuffer = tempBuffer {
+                    tempBuffer.dispose()
+                } else {
+                    precondition(range.lowerBound == self.inUseRangeStart)
+                    self.inUseRangeStart = range.upperBound
+                }
+            }
         }
     }
 }

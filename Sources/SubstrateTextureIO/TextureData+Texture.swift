@@ -57,11 +57,10 @@ extension Image {
             descriptor.mipmapLevelCount = 1
             
             let cpuVisibleTexture = Texture(descriptor: descriptor, flags: .persistent)
-            GPUResourceUploader.addCopyPass { encoder in
+            GPUResourceUploader.runBlitPass { encoder in
                 encoder.copy(from: texture, sourceSlice: 0, sourceLevel: mipmapLevel, sourceOrigin: Origin(), sourceSize: descriptor.size, to: cpuVisibleTexture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: Origin())
                 encoder.synchronize(texture: cpuVisibleTexture)
             }
-            GPUResourceUploader.flush()
             
             self.init(texture: cpuVisibleTexture, alphaMode: alphaMode)
             cpuVisibleTexture.dispose()

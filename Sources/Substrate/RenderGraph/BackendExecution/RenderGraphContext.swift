@@ -16,12 +16,12 @@ extension TaggedHeap.Tag {
 }
 
 final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContext {
-    public var accessSemaphore: DispatchSemaphore
+    public var accessSemaphore: DispatchSemaphore?
     
     let queue = DispatchQueue(label: "Render Graph Context Queue")
     
     let backend: Backend
-    let resourceRegistry: Backend.TransientResourceRegistry
+    let resourceRegistry: Backend.TransientResourceRegistry?
     let commandGenerator: ResourceCommandGenerator<Backend>
     
     // var compactedResourceCommands = [CompactedResourceCommand<MetalCompactedResourceCommandType>]()
@@ -44,8 +44,8 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.renderGraphQueue = Queue()
         self.commandQueue = backend.makeQueue(renderGraphQueue: self.renderGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
-        self.resourceRegistry = backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount, queue: self.renderGraphQueue)
-        self.accessSemaphore = DispatchSemaphore(value: inflightFrameCount)
+        self.resourceRegistry = inflightFrameCount > 0 ? backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount, queue: self.renderGraphQueue) : nil
+        self.accessSemaphore = inflightFrameCount > 0 ? DispatchSemaphore(value: inflightFrameCount) : nil
         
         self.commandGenerator = ResourceCommandGenerator()
         self.syncEvent = backend.makeSyncEvent(for: self.renderGraphQueue)
@@ -67,12 +67,12 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>, completion: @escaping (Double) -> Void) {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
-        self.resourceRegistry.prepareFrame()
+        self.resourceRegistry?.prepareFrame()
         
         defer {
             TaggedHeap.free(tag: .renderGraphResourceCommandArrayTag)
             
-            self.resourceRegistry.cycleFrames()
+            self.resourceRegistry?.cycleFrames()
             
             self.commandGenerator.reset()
             self.compactedResourceCommands.removeAll(keepingCapacity: true)
@@ -83,7 +83,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         if passes.isEmpty {
             if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
                 completion(0.0)
-                self.accessSemaphore.signal()
+                self.accessSemaphore?.signal()
             } else {
                 // Enqueue the completion handler to run immediately
                 self.emptyFrameCompletionHandlerSemaphore.withSemaphore {
@@ -111,7 +111,9 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         
         func processCommandBuffer() {
             if let commandBuffer = commandBuffer {
-                commandBuffer.presentSwapchains(resourceRegistry: resourceMap.transientRegistry)
+                if let transientRegistry = resourceMap.transientRegistry {
+                    commandBuffer.presentSwapchains(resourceRegistry: transientRegistry)
+                }
                 
                 // Make sure that the sync event value is what we expect, so we don't update it past
                 // the signal for another buffer before that buffer has completed.
@@ -144,7 +146,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                     if cbIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
                         let gpuEndTime = commandBuffer.gpuEndTime
                         completion((gpuEndTime - gpuStartTime) * 1000.0)
-                        self.accessSemaphore.signal()
+                        self.accessSemaphore?.signal()
                         
                         self.queue.async {
                             self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
@@ -156,7 +158,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                                 if afterCBIndex > queueCBIndex { break }
                                 
                                 completionHandler(0.0)
-                                self.accessSemaphore.signal()
+                                self.accessSemaphore?.signal()
                                 self.enqueuedEmptyFrameCompletionHandlers.removeFirst()
                             }
                         }
@@ -190,7 +192,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                         commandBuffer!.waitForEvent(event, value: waitEventValues[Int(queue.index)])
                     } else {
                         // It's not a queue known to this backend, so the best we can do is sleep and wait until the queue is completd.
-                        queue.waitForCommand(waitEventValues[Int(queue.index)])
+                        queue.waitForCommandCompletion(waitEventValues[Int(queue.index)])
                     }
                 }
             }

@@ -8,13 +8,13 @@
 
 struct FrameResourceMap<Backend: SpecificRenderBackend> {
     let persistentRegistry : Backend.PersistentResourceRegistry
-    let transientRegistry : Backend.TransientResourceRegistry
+    let transientRegistry : Backend.TransientResourceRegistry?
     
     subscript(buffer: Buffer) -> Backend.BufferReference? {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
-            return transientRegistry[buffer] // Optional because the resource may be unused in this frame.
+            return transientRegistry?[buffer] // Optional because the resource may be unused in this frame.
         }
     }
     
@@ -22,7 +22,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
-            return transientRegistry[texture] // Optional because the resource may be unused in this frame.
+            return transientRegistry?[texture] // Optional because the resource may be unused in this frame.
         }
     }
     
@@ -30,7 +30,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
-            return transientRegistry[buffer]!
+            return transientRegistry![buffer]!
         }
     }
     
@@ -38,7 +38,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
-            return transientRegistry[buffer]!
+            return transientRegistry![buffer]!
         }
     }
     
@@ -50,7 +50,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateBufferIfNeeded(buffer, forceGPUPrivate: false) }
+            return transientRegistry!.accessLock.withLock { transientRegistry!.allocateBufferIfNeeded(buffer, forceGPUPrivate: false) }
         }
     }
     
@@ -58,13 +58,13 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
-            return transientRegistry.accessLock.withLock { transientRegistry.allocateTextureIfNeeded(texture, forceGPUPrivate: false, frameStoredTextures: [texture]) } // Conservatively mark the texture as stored this frame.
+            return transientRegistry!.accessLock.withLock { transientRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: false, frameStoredTextures: [texture]) } // Conservatively mark the texture as stored this frame.
         }
     }
     
     func renderTargetTexture(_ texture: Texture) throws -> Backend.TextureReference {
         if texture.flags.contains(.windowHandle) {
-            return try self.transientRegistry.allocateWindowHandleTexture(texture)
+            return try self.transientRegistry!.allocateWindowHandleTexture(texture)
         }
         return self[texture]!
     }

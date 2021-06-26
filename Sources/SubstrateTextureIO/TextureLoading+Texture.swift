@@ -154,16 +154,12 @@ extension Image {
                            
             for (i, data) in mips.enumerated().prefix(texture.descriptor.mipmapLevelCount) {
                 data.withUnsafeBufferPointer { buffer in
-                    GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size, onBytesCopied: { [data] _, _ in
-                        _ = data
-                    })
+                    _ = GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size)
                 }
             }
         } else {
             self.withUnsafeBufferPointer { buffer in
-                GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size, onBytesCopied: { [self] _, _ in
-                    _ = self
-                })
+                _ = GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size)
             }
             if texture.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
                 if self.channelCount == 4, self.alphaMode != .premultiplied {

@@ -76,7 +76,7 @@ final class MetalStateCaches {
            currentModificationDate > self.loadedLibraryModificationDate {
             
             for queue in QueueRegistry.allQueues {
-                queue.waitForCommand(queue.lastSubmittedCommand) // Wait for all commands to finish on all queues.
+                queue.waitForCommandCompletion(queue.lastSubmittedCommand) // Wait for all commands to finish on all queues.
             }
             
             // Metal won't pick up the changes if we use the makeLibrary(filePath:) initialiser,
