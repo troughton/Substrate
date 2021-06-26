@@ -136,9 +136,6 @@ public enum TextureLoadingError : Error {
     case mismatchingDimensions(expected: Size, actual: Size)
 }
 
-
-struct CopyDataResult: Sendable {}
-
 extension Image {
     public func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws {
         if self.colorSpace == .sRGB, !texture.descriptor.pixelFormat.isSRGB {
@@ -152,20 +149,19 @@ extension Image {
             throw TextureLoadingError.mismatchingDimensions(expected: Size(width: self.width, height: self.height), actual: texture.descriptor.size)
         }
         
-        await withTaskGroup(of: CopyDataResult.self) { taskGroup in
+        await withTaskGroup(of: Void.self) { taskGroup in
             if texture.descriptor.mipmapLevelCount > 1, case .cpu(let wrapMode, let filter) = mipGenerationMode {
                 let mips = self.generateMipChain(wrapMode: wrapMode, filter: filter, compressedBlockSize: 1, mipmapCount: texture.descriptor.mipmapLevelCount)
                                
                 for (i, data) in mips.enumerated().prefix(texture.descriptor.mipmapLevelCount) {
-                    taskGroup.spawn {
+                    taskGroup.async {
                         await data.withUnsafeBufferPointer { buffer in
-                            await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size)
+                            _ = await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size)
                         }
-                        return CopyDataResult()
                     }
                 }
             } else {
-                taskGroup.spawn {
+                taskGroup.async {
                     await self.withUnsafeBufferPointer { buffer in
                         await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size)
                     }
@@ -177,7 +173,6 @@ extension Image {
                         }
                         await GPUResourceUploader.generateMipmaps(for: texture)
                     }
-                    return CopyDataResult()
                 }
             }
         }

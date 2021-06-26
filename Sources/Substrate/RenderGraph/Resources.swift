@@ -121,7 +121,7 @@ public enum ResourcePurgeableState {
 
 public typealias ActiveRenderGraphMask = UInt8
 
-public protocol ResourceProtocol : Hashable {
+public protocol ResourceProtocol : Hashable, Sendable {
     init(handle: Handle)
     func dispose()
     
@@ -132,7 +132,7 @@ public protocol ResourceProtocol : Hashable {
     
     var label: String? { get nonmutating set }
     var storageMode: StorageMode { get }
-
+    
     /// The command buffer index on which to wait on a particular queue `queue` before it is safe to perform an access of type `type`.
     subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 { get nonmutating set }
     
@@ -532,7 +532,7 @@ extension ResourceProtocol {
     public var flags : ResourceFlags {
         return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.flagBitsRange)))
     }
-
+    
     @inlinable
     public var generation : UInt8 {
         return UInt8(truncatingIfNeeded: self.handle.bits(in: Self.generationBitsRange))
@@ -607,7 +607,7 @@ extension ResourceProtocol {
         
         for queue in QueueRegistry.allQueues {
             let waitIndex = self[waitIndexFor: queue, accessType: accessType]
-            await queue.waitForCommand(waitIndex)
+            await queue.waitForCommandCompletion(waitIndex)
         }
     }
     
@@ -750,7 +750,7 @@ public struct Heap : ResourceProtocol {
             HeapRegistry.instance.lock.unlock()
         }
     }
-
+    
     public func dispose() {
         guard self._usesPersistentRegistry, self.isValid else {
             return
@@ -841,8 +841,8 @@ public struct Buffer : ResourceProtocol {
             index = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
-                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
-             }
+                fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
+            }
             index = TransientBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
         
@@ -922,26 +922,26 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public func withContents<A>(_ perform: (UnsafeRawBufferPointer) throws -> A) rethrows -> A {
+    public func withContents<A>(_ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
         self.checkHasCPUAccess(accessType: .read)
         let contents = RenderBackend.bufferContents(for: self, range: self.range)
-        return try perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: self.length))
+        return try /* await */perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: self.length))
     }
     
     @inlinable
-    public func withContents<A>(range: Range<Int>, _ perform: (UnsafeRawBufferPointer) throws -> A) rethrows -> A {
+    public func withContents<A>(range: Range<Int>, _ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
         self.checkHasCPUAccess(accessType: .read)
         let contents = RenderBackend.bufferContents(for: self, range: range)
-        return try perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
+        return try /* await */perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
     }
     
     @inlinable
-    public func withMutableContents<A>(_ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) throws -> A) rethrows -> A {
+    public func withMutableContents<A>(_ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /* reasync */ rethrows -> A {
         self.checkHasCPUAccess(accessType: .readWrite)
         let contents = RenderBackend.bufferContents(for: self, range: self.range)
         var modifiedRange = self.range
         
-        let result = try perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: self.length), &modifiedRange)
+        let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: self.length), &modifiedRange)
         
         RenderBackend.buffer(self, didModifyRange: modifiedRange)
         self.stateFlags.formUnion(.initialised)
@@ -949,12 +949,12 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public func withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) throws -> A) rethrows -> A {
+    public func withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
         self.checkHasCPUAccess(accessType: .readWrite)
         let contents = RenderBackend.bufferContents(for: self, range: range)
         var modifiedRange = range
-       
-        let result = try perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
+        
+        let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
         
         RenderBackend.buffer(self, didModifyRange: modifiedRange)
         self.stateFlags.formUnion(.initialised)
@@ -962,7 +962,7 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public func withContentsAsync(_ perform: @escaping (UnsafeRawBufferPointer) -> Void) async {
+    public func withContentsAsync(_ perform: @escaping (UnsafeRawBufferPointer) /* async */ -> Void) async {
         await self.waitForCPUAccess(accessType: .read)
         if let contents = RenderBackend.bufferContents(for: self, range: self.range) {
             perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: self.length))
@@ -982,7 +982,7 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public func withMutableContentsAsync(_ perform: @escaping (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) -> Void) async {
+    public func withMutableContentsAsync(_ perform: @escaping (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ -> Void) async {
         await self.waitForCPUAccess(accessType: .readWrite)
         if let _ = RenderBackend.bufferContents(for: self, range: self.range) {
             self.withMutableContents(perform)
@@ -1033,15 +1033,17 @@ public struct Buffer : ResourceProtocol {
     }
     
     func applyDeferredSliceActions() {
-        // TODO: Add support for deferred slice actions to persistent resources. 
+        // TODO: Add support for deferred slice actions to persistent resources.
         guard !self.flags.contains(.historyBuffer) else {
             return
         }
         
-        for action in self._deferredSliceActions {
-            action.apply(self)
+        _ = Task {
+            for action in self._deferredSliceActions {
+                action.apply(self)
+            }
+            self._deferredSliceActions.removeAll(keepingCapacity: true)
         }
-        self._deferredSliceActions.removeAll(keepingCapacity: true)
     }
     
     @inlinable
@@ -1139,7 +1141,7 @@ public struct Buffer : ResourceProtocol {
             assert(!self._usesPersistentRegistry)
             
             return TransientBufferRegistry.instances[self.transientRegistryIndex].deferredSliceActions[self.index]
-    
+            
         }
         nonmutating set {
             assert(!self._usesPersistentRegistry)
@@ -1221,7 +1223,7 @@ public struct Buffer : ResourceProtocol {
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentBufferRegistry.Chunk.itemsPerChunk)
         UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: PersistentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
     }
-
+    
     public func dispose() {
         guard self._usesPersistentRegistry, self.isValid else {
             return
@@ -1302,7 +1304,7 @@ public struct Texture : ResourceProtocol {
             if !didAllocate { self.dispose() }
         }
     }
-        
+    
     @inlinable
     public static func _createPersistentTextureWithoutDescriptor(flags: ResourceFlags = [.persistent]) -> Texture {
         precondition(flags.contains(.persistent))
@@ -1354,8 +1356,8 @@ public struct Texture : ResourceProtocol {
             index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
-                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
-             }
+                fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
+            }
             index = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
         
@@ -1384,7 +1386,7 @@ public struct Texture : ResourceProtocol {
     @inlinable
     public init(viewOf base: Buffer, descriptor: Buffer.TextureViewDescriptor, renderGraph: RenderGraph? = nil) {
         let flags : ResourceFlags = .resourceView
-    
+        
         guard let transientRegistryIndex = renderGraph?.transientRegistryIndex ?? RenderGraph.activeRenderGraph?.transientRegistryIndex ?? (!base._usesPersistentRegistry ? base.transientRegistryIndex : nil) else {
             fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
         }

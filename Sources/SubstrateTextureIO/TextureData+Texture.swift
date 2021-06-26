@@ -56,7 +56,6 @@ extension Image {
                 encoder.copy(from: texture, sourceSlice: 0, sourceLevel: mipmapLevel, sourceOrigin: Origin(), sourceSize: descriptor.size, to: cpuVisibleTexture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: Origin())
                 encoder.synchronize(texture: cpuVisibleTexture)
             }
-            await GPUResourceUploader.flush()
             
             await self.init(texture: cpuVisibleTexture, alphaMode: alphaMode)
             cpuVisibleTexture.dispose()

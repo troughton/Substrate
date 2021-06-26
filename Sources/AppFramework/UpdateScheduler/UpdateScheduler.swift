@@ -60,7 +60,7 @@ import MetalKit
 @MainActor
 public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDelegate  {
     private var application : CocoaApplication! = nil
-    var previousTask: Task.Handle<Void, Never>?
+    var previousTask: Task<Void, Never>?
     
     public init(appDelegate: ApplicationDelegate?, windowDelegates: @autoclosure () async -> [WindowDelegate], windowRenderGraph: RenderGraph) async {
         super.init()

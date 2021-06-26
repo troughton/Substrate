@@ -171,10 +171,21 @@ public struct Queue : Equatable {
         }
     }
     
-    public func waitForCommand(_ index: UInt64) async {
+    public func waitForCommandSubmission(_ index: UInt64) async {
+        while self.lastSubmittedCommand < index {
+            await Task.yield()
+        }
+    }
+    
+    public func waitForCommandCompletion(_ index: UInt64) async {
         while self.lastCompletedCommand < index {
             await Task.yield()
         }
+    }
+    
+    @available(*, deprecated, renamed: "waitForCommandCompletion()")
+    public func waitForCommand(_ index: UInt64) async {
+        await self.waitForCommandCompletion(index)
     }
 }
 

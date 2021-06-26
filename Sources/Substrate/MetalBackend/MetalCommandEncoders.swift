@@ -18,7 +18,7 @@ final class FGMTLParallelRenderCommandEncoder {
     let parallelEncoder: MTLParallelRenderCommandEncoder
     let renderPassDescriptor : MTLRenderPassDescriptor
     let isAppleSiliconGPU: Bool
-    var pendingTasks = [Task.Handle<Void, Never>]()
+    var pendingTasks = [Task<Void, Never>]()
     
     var currentEncoder : FGMTLThreadRenderCommandEncoder? = nil
     

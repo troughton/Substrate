@@ -10,8 +10,6 @@ import Foundation
 import SubstrateUtilities
 import Atomics
 
-struct EmptyResult: Sendable {}
-
 /// A render pass is the fundamental unit of work within Substrate. All GPU commands are submitted by enqueuing
 /// render passes on a `RenderGraph` and then executing that `RenderGraph`.
 ///
@@ -496,17 +494,39 @@ final class RenderPassRecord {
     //    case transitive
 }
 
-struct RenderGraphExecutionResult {
-    var gpuTime: Double
+final class RenderGraphExecutionResult: UnsafeSendable {
+    public internal(set) var gpuTime: Double
+
+    public init() {
+        self.gpuTime = 0.0
+    }
+}
+
+public struct RenderGraphSubmissionWaitToken {
+    public let queue: Queue
+    public let submissionIndex: UInt64
+    
+    public func wait() async {
+        await self.queue.waitForCommandSubmission(self.submissionIndex)
+    }
+}
+
+public struct RenderGraphExecutionWaitToken {
+    public let queue: Queue
+    public let executionIndex: UInt64
+    
+    public func wait() async {
+        await self.queue.waitForCommandCompletion(self.executionIndex)
+    }
 }
 
 // _RenderGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
 protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
-    nonisolated var accessSemaphore : AsyncSemaphore { get }
+    nonisolated var accessSemaphore : AsyncSemaphore? { get }
     nonisolated var renderGraphQueue: Queue { get }
     func beginFrameResourceAccess() async // Access is ended when a renderGraph is submitted.
-    func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>) async -> Task.Handle<RenderGraphExecutionResult, Never>
+    func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>) async -> Task<RenderGraphExecutionResult, Never>
 }
 
 @usableFromInline enum RenderGraphTagType : UInt64 {
@@ -566,6 +586,7 @@ public final class RenderGraph {
     /// of a `RenderGraph.execute()` call, the CPU will wait until at least one of those submissions has completed.
     /// Commonly two (for double buffering) or three (for triple buffering).
     /// Note that each in-flight frame incurs a memory cost for any transient buffers that are shared with the CPU.
+    /// `inflightFrameCount` can be zero, in which case transient resources are disallowed for this render graph.
     ///
     /// - Parameter transientTextureCapacity: The maximum number of transient `Texture`s that can be used in a single `RenderGraph` submission.
     ///
@@ -573,11 +594,14 @@ public final class RenderGraph {
     ///
     /// - Parameter transientArgumentBufferArrayCapacity: The maximum number of transient `ArgumentBufferArray`s that can be used in a single `RenderGraph` submission.
     public init(inflightFrameCount: Int, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384, transientArgumentBufferArrayCapacity: Int = 1024) {
-        self.transientRegistryIndex = TransientRegistryManager.allocate()
+        // If inflightFrameCount is 0, no transient resources are allowed.
+        self.transientRegistryIndex = inflightFrameCount > 0 ? TransientRegistryManager.allocate() : -1
         
-        TransientBufferRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientBufferCapacity)
-        TransientTextureRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientTextureCapacity)
-        TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientArgumentBufferArrayCapacity)
+        if self.transientRegistryIndex > 0 {
+            TransientBufferRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientBufferCapacity)
+            TransientTextureRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientTextureCapacity)
+            TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientArgumentBufferArrayCapacity)
+        }
         
         switch RenderBackend._backend.api {
         #if canImport(Metal)
@@ -592,18 +616,18 @@ public final class RenderGraph {
     }
     
     deinit {
-        TransientRegistryManager.free(self.transientRegistryIndex)
+        if self.transientRegistryIndex > 0 {
+            TransientRegistryManager.free(self.transientRegistryIndex)
+        }
         self.renderPassLock.deinit()
     }
     
     /// The logical command queue corresponding to this render graph.
-    @actorIndependent
-    public var queue: Queue {
+    public nonisolated var queue: Queue {
         return self.context.renderGraphQueue
     }
     
-    @actorIndependent
-    public var activeRenderGraphMask: ActiveRenderGraphMask {
+    public nonisolated var activeRenderGraphMask: ActiveRenderGraphMask {
         return 1 << self.queue.index
     }
     
@@ -614,25 +638,6 @@ public final class RenderGraph {
     
     public func lastGraphDurations() async -> (cpuTime: Double, gpuTime: Double) {
         return (self._lastGraphCPUTime, self._lastGraphGPUTime)
-    }
-    
-    /// Enqueue a blit render pass for execution before any other enqueued render passes.
-    /// Useful for creating resources that may be used later in the frame.
-    public func insertEarlyBlitPass(name: String,
-                                    _ execute: @escaping (BlitCommandEncoder) async -> Void) async {
-        self.renderPassLock.withLock {
-            self.renderPasses.insert(RenderPassRecord(pass: CallbackBlitRenderPass(name: name, execute: execute),
-                                                      passIndex: 0), at: 0)
-        }
-    }
-    
-    /// Enqueue a blit render pass for execution before any other enqueued render passes.
-    /// Useful for creating resources that may be used later in the frame.
-    public func insertEarlyBlitPass(_ pass: BlitRenderPass) {
-        self.renderPassLock.withLock {
-            self.renderPasses.insert(RenderPassRecord(pass: pass,
-                                                      passIndex: 0), at: 0)
-        }
     }
     
     /// Enqueue `renderPass` for execution at the next `RenderGraph.execute` call on this render graph.
@@ -969,8 +974,7 @@ public final class RenderGraph {
         TaggedHeap.free(tag: renderPassScratchTag)
     }
     
-    @actorIndependent
-    func fillUsedResourcesFromPass(passRecord: RenderPassRecord, resourceUsageAllocator: TagAllocator) {
+    nonisolated func fillUsedResourcesFromPass(passRecord: RenderPassRecord, resourceUsageAllocator: TagAllocator) {
         passRecord.readResources = .init(allocator: .tag(resourceUsageAllocator))
         passRecord.writtenResources = .init(allocator: .tag(resourceUsageAllocator))
         
@@ -996,9 +1000,9 @@ public final class RenderGraph {
             }
         }
         
-        await withTaskGroup(of: EmptyResult.self) { group async -> Void in
+        await withTaskGroup(of: Void.self) { group async -> Void in
             for passRecord in renderPasses where passRecord.type != .cpu {
-                _ = await group.add { () async -> EmptyResult in
+                _ = await group.add { () async in
                     if passRecord.pass.writtenResources.isEmpty {
                         await self.executePass(passRecord,
                                                executionAllocator: executionAllocator,
@@ -1006,8 +1010,6 @@ public final class RenderGraph {
                     } else {
                         self.fillUsedResourcesFromPass(passRecord: passRecord, resourceUsageAllocator: executionAllocator)
                     }
-                    
-                    return EmptyResult()
                 }
             }
         }
@@ -1203,15 +1205,15 @@ public final class RenderGraph {
     /// Returns true if this RenderGraph already has the maximum number of GPU frames in-flight, and would have to wait
     /// for the ring buffers to become available before executing.
     public var hasMaximumFrameCountInFlight: Bool {
-        if self.context.accessSemaphore.currentValue > 0 {
+        if self.context.accessSemaphore?.currentValue ?? .max > 0 {
             return false
         }
         return true
     }
     
     @RenderGraphSharedActor
-    private func executeOnSharedActor() async -> Task.Handle<RenderGraphExecutionResult, Never> {
-        await self.context.accessSemaphore.wait()
+    private func executeOnSharedActor() async -> Task<RenderGraphExecutionResult, Never> {
+        await self.context.accessSemaphore?.wait()
         await self.context.beginFrameResourceAccess()
         RenderGraph.activeRenderGraph = self // FIXME: we should use task local values instead.
         defer { RenderGraph.activeRenderGraph = nil }
@@ -1246,38 +1248,30 @@ public final class RenderGraph {
     ///
     /// - Parameter onSubmission: an optional closure to execute once the render graph has been submitted to the GPU.
     /// - Parameter onGPUCompletion: an optional closure to execute once the render graph has completed executing on the GPU.
+    @discardableResult
     @RenderGraphSharedActor
-    public func execute(onSubmission: (() async -> Void)? = nil, onGPUCompletion: (() async -> Void)? = nil) async {
-        if GPUResourceUploader.renderGraph !== self {
-            await GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
-        }
-        
+    public func execute() async -> RenderGraphExecutionWaitToken {
         self.renderPassLock.lock()
         let renderPasses = self.renderPasses
         self.renderPassLock.unlock()
         
         guard !renderPasses.isEmpty else {
-            await onSubmission?()
-            await onGPUCompletion?()
-            
             self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
             self.submissionNotifyQueue.removeAll(keepingCapacity: true)
             
             self.completionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
             self.completionNotifyQueue.removeAll(keepingCapacity: true)
             
-            return
+            return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
         }
         
         await Self.activeRenderGraphLock.lock()
         
         let onCompletion = await self.executeOnSharedActor()
-        await onSubmission?()
         
         _ = Task.runDetached {
             let result = await onCompletion.get()
             await self.didCompleteRender(result)
-            await onGPUCompletion?()
         }
         
         // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
@@ -1296,6 +1290,8 @@ public final class RenderGraph {
         
         Self.activeRenderGraphLock.unlock()
         RenderGraph.globalSubmissionIndex.wrappingIncrement(ordering: .relaxed)
+        
+        return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
     }
     
     private func reset() {

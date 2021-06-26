@@ -125,13 +125,10 @@ public class Application {
             await self.delegate?.applicationDidBeginImGuiFrame(self, frame: frame, deltaTime: deltaTime)
         }
         
-        struct Result: Sendable {}
-        
-        await withTaskGroup(of: Result.self) { group in
+        await withTaskGroup(of: Void.self) { group in
             for updateable in self.updateables {
-                group.spawn {
+                group.async {
                     await updateable.update(frame: frame, deltaTime: deltaTime)
-                    return Result()
                 }
             }
         }

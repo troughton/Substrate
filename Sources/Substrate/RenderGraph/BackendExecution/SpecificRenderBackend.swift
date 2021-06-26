@@ -99,7 +99,7 @@ protocol ResourceRegistry: AnyObject {
     func allocateArgumentBufferArrayIfNeeded(_ buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference
 }
 
-protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.TransientResourceRegistry == Self {
+protocol BackendTransientResourceRegistry: ResourceRegistry {
     static func isAliasedHeapResource(resource: Resource) -> Bool
     
     var accessLock: SpinLock { get set }
@@ -132,7 +132,7 @@ extension BackendTransientResourceRegistry {
     var argumentBufferArrayWaitEvents: TransientResourceMap<ArgumentBufferArray, ContextWaitEvent>? { nil }
 }
 
-protocol BackendPersistentResourceRegistry: ResourceRegistry where Backend.PersistentResourceRegistry == Self {
+protocol BackendPersistentResourceRegistry: ResourceRegistry {
     subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference { get }
     
     func allocateBuffer(_ buffer: Buffer) -> Backend.BufferReference?

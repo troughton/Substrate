@@ -25,7 +25,7 @@ extension Heap {
                 let newBuffer = Buffer(descriptor: oldBuffer.descriptor, heap: newHeap, flags: .persistent)!
                 
                 if purgeableState != .discarded, oldBuffer.descriptor.usageHint.contains(.blitSource), newBuffer.descriptor.usageHint.contains(.blitDestination) {
-                    GPUResourceUploader.addCopyPass { bce in
+                    await GPUResourceUploader.addCopyPass { bce in
                         bce.copy(from: oldBuffer, sourceOffset: 0, to: newBuffer, destinationOffset: 0, size: oldBuffer.length)
                     }
                 }
@@ -35,7 +35,7 @@ extension Heap {
                 let newTexture = Texture(descriptor: oldTexture.descriptor, heap: newHeap, flags: .persistent)!
                 
                 if purgeableState != .discarded, oldTexture.descriptor.usageHint.contains(.blitSource), newTexture.descriptor.usageHint.contains(.blitDestination) {
-                    GPUResourceUploader.addCopyPass { bce in
+                    await GPUResourceUploader.addCopyPass { bce in
                         for slice in 0..<oldTexture.descriptor.depth * oldTexture.descriptor.arrayLength {
                             for level in 0..<oldTexture.descriptor.mipmapLevelCount {
                                 bce.copy(from: oldTexture, sourceSlice: slice, sourceLevel: level, sourceOrigin: Origin(), sourceSize: oldTexture.size, to: newTexture, destinationSlice: slice, destinationLevel: level, destinationOrigin: Origin())
@@ -49,8 +49,6 @@ extension Heap {
                 fatalError()
             }
         }
-        
-        await GPUResourceUploader.flush()
         
         newHeap.updatePurgeableState(to: purgeableState)
         
