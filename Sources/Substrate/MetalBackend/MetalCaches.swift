@@ -41,7 +41,7 @@ final class MetalStateCaches {
     private var depthStates = [(DepthStencilDescriptor, MTLDepthStencilState)]()
     
     private var visibleFunctionTables = [ObjectIdentifier : [([FunctionDescriptor?], MTLResource)]]() // [MTLComputePipelineState : [([FunctionDescriptor?], MTLVisibleFunctionTable)]]
-    private var intersectionFunctionTables = [ObjectIdentifier : [(IntersectionFunctionTableDescriptor, MTLResource)]]() // [MTLComputePipelineState : [([FunctionDescriptor?], MTLVisibleFunctionTable)]]
+    private var intersectionFunctionTables = [ObjectIdentifier : [(IntersectionFunctionTableDescriptor, MTLResource)]]() // [MTLComputePipelineState : [([FunctionDescriptor?], MTLIntersectionFunctionTable)]]
     
     public init(device: MTLDevice, libraryPath: String?) {
         self.device = device
@@ -104,6 +104,7 @@ final class MetalStateCaches {
             self.computeStates.removeAll(keepingCapacity: true)
             self.renderStates.removeAll(keepingCapacity: true)
             self.visibleFunctionTables.removeAll(keepingCapacity: true)
+            self.intersectionFunctionTables.removeAll(keepingCapacity: true)
             
             self.loadedLibraryModificationDate = currentModificationDate
         }
@@ -277,7 +278,8 @@ final class MetalStateCaches {
         }
         
         let mtlDescriptor = MTLVisibleFunctionTableDescriptor()
-        mtlDescriptor.functionCount = functionTableDescriptor.drop(while: { $0 == nil }).count
+        let lastIndex = functionTableDescriptor.lastIndex(where: { $0 != nil }) ?? -1
+        mtlDescriptor.functionCount = lastIndex + 1
         
         let functionTable = computePipelineState.makeVisibleFunctionTable(descriptor: mtlDescriptor)!
         for i in 0..<mtlDescriptor.functionCount {
@@ -287,6 +289,55 @@ final class MetalStateCaches {
         
         self.visibleFunctionTables[ObjectIdentifier(computePipelineState), default: []].append((functionTableDescriptor, functionTable))
         return functionTable
+    }
+    
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public subscript(intersectionFunctionTableFor intersectionFunctionTableDescriptor: IntersectionFunctionTableDescriptor, computePipelineState computePipelineState: MTLComputePipelineState, resourceMap: FrameResourceMap<MetalBackend>) -> MTLIntersectionFunctionTable {
+        if let table = self.intersectionFunctionTables[ObjectIdentifier(computePipelineState)]?.first(where: { $0.0 == intersectionFunctionTableDescriptor })?.1 {
+            return (table as! MTLIntersectionFunctionTable)
+        }
+        
+        let mtlDescriptor = MTLIntersectionFunctionTableDescriptor()
+        mtlDescriptor.functionCount = intersectionFunctionTableDescriptor.functions.count
+        
+        let intersectionTable = computePipelineState.makeIntersectionFunctionTable(descriptor: mtlDescriptor)!
+        
+        for (i, function) in intersectionFunctionTableDescriptor.functions.enumerated() {
+            guard let function = function else { continue }
+            
+            switch function {
+            case .defaultOpaqueFunction(let inputAttributes):
+                var intersectionFunctionSignature = MTLIntersectionFunctionSignature()
+                if inputAttributes.contains(.instancing) {
+                    intersectionFunctionSignature.formUnion(.instancing)
+                }
+                if inputAttributes.contains(.triangleData) {
+                    intersectionFunctionSignature.formUnion(.triangleData)
+                }
+                if inputAttributes.contains(.worldSpaceData) {
+                    intersectionFunctionSignature.formUnion(.worldSpaceData)
+                }
+                intersectionTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
+            case .function(let functionDescriptor):
+                guard let mtlFunction = self.function(for: functionDescriptor) else { continue }
+                intersectionTable.setFunction(computePipelineState.functionHandle(function: mtlFunction), index: i)
+            }
+        }
+        
+        for (i, buffer) in intersectionFunctionTableDescriptor.buffers.enumerated() {
+            guard let buffer = buffer else { continue }
+            switch buffer {
+            case .buffer(let buffer, let offset):
+                guard let mtlBufferRef = resourceMap[buffer] else { continue }
+                intersectionTable.setBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: i)
+            case .functionTable(let descriptor):
+                intersectionTable.setVisibleFunctionTable(self[visibleFunctionTableFor: descriptor, computePipelineState: computePipelineState], bufferIndex: i)
+            }
+        }
+        
+        self.intersectionFunctionTables[ObjectIdentifier(computePipelineState), default: []].append((intersectionFunctionTableDescriptor, intersectionTable))
+        return intersectionTable
     }
 }
 
