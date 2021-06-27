@@ -639,11 +639,11 @@ final class MetalBackend : SpecificRenderBackend {
     }
     
     func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<MetalBackend>) {
-        if index >= queue.lastSubmittedCommand {
+        if index >= queue.lastSubmittedCommand, let contextRegistry = context.resourceRegistry {
             context.queue.asyncAfter(deadline: .now() + .seconds(5)) {
                 if index >= queue.lastSubmittedCommand {
                     // If there are no more pending commands on the queue and there haven't been for a number of seconds, we can make all of the transient allocators purgeable.
-                    context.resourceRegistry.makeTransientAllocatorsPurgeable()
+                    contextRegistry.makeTransientAllocatorsPurgeable()
                 }
             }
         }

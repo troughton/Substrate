@@ -40,8 +40,8 @@ struct MTLBufferReference : MTLResourceReference {
 struct MTLTextureReference : MTLResourceReference {
     var _texture : Unmanaged<MTLTexture>!
     
-    var texture : MTLTexture {
-        return _texture.takeUnretainedValue()
+    var texture : MTLTexture! {
+        return _texture?.takeUnretainedValue()
     }
     
     var resource : MTLTexture {
@@ -308,6 +308,15 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         
         return state
     }
+    
+    func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64) {
+        // No-op for Metal
+    }
+    
+    func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64) {
+        // No-op for Metal
+    }
+
 
     func disposeHeap(_ heap: Heap) {
         if let mtlHeap = self.heapReferences.removeValue(forKey: heap) {
@@ -815,16 +824,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         
         return storage
     }
-
-    
-    func prepareMultiframeBuffer(_ buffer: Buffer) {
-        // No-op for Metal
-    }
-    
-    func prepareMultiframeTexture(_ texture: Texture) {
-        // No-op for Metal
-    }
-
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
         self.prepareFrame()

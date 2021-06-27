@@ -251,6 +251,16 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         return vkSampler!
     }
     
+    func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64) {
+        
+    }
+    
+    func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64) {
+        if let image = self.persistentRegistry[texture] {
+            image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: texture.stateFlags.contains(.initialised), frameIndex: frameIndex)
+        }
+    }
+    
     func disposeHeap(_ heap: Heap) {
         self.heapReferences.removeValue(forKey: heap)
     }
@@ -624,17 +634,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
 //        let layout = VkDescriptorSetLayout(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!)
        
         fatalError("Argument buffer arrays are currently unsupported on Vulkan.")
-    }
-    
-    
-    func prepareMultiframeBuffer(_ buffer: Buffer) {
-        
-    }
-    
-    func prepareMultiframeTexture(_ texture: Texture) {
-        if let image = self.persistentRegistry[texture] {
-            image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: texture.stateFlags.contains(.initialised), frameIndex: self.frameIndex)
-        }
     }
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {

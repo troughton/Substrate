@@ -65,37 +65,37 @@ enum PreFrameCommands {
         let queue = context.renderGraphQueue
         let queueIndex = Int(queue.index)
         let resourceMap = context.resourceMap
-        let resourceRegistry = context.resourceRegistry
+        let resourceRegistry = context.resourceRegistry // May be nil iff the render graph does not support transient resources.
         
         switch self {
         case .materialiseBuffer(let buffer):
             // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
-            _ = resourceRegistry.allocateBufferIfNeeded(buffer, forceGPUPrivate: !buffer._usesPersistentRegistry && buffer._deferredSliceActions.isEmpty)
+            _ = resourceRegistry!.allocateBufferIfNeeded(buffer, forceGPUPrivate: !buffer._usesPersistentRegistry && buffer._deferredSliceActions.isEmpty)
             
-            let waitEvent = buffer.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(buffer)] : resourceRegistry.bufferWaitEvents[buffer]
+            let waitEvent = buffer.flags.contains(.historyBuffer) ? resourceRegistry!.historyBufferResourceWaitEvents[Resource(buffer)] : resourceRegistry!.bufferWaitEvents[buffer]
             
             waitEventValues[queueIndex] = max(waitEvent!.waitValue, waitEventValues[queueIndex])
             buffer.applyDeferredSliceActions()
             
         case .materialiseTexture(let texture):
             // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
-            _ = resourceRegistry.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry, frameStoredTextures: storedTextures)
-            if let textureWaitEvent = (texture.flags.contains(.historyBuffer) ? resourceRegistry.historyBufferResourceWaitEvents[Resource(texture)] : resourceRegistry.textureWaitEvents[texture]) {
+            _ = resourceRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry, frameStoredTextures: storedTextures)
+            if let textureWaitEvent = (texture.flags.contains(.historyBuffer) ? resourceRegistry!.historyBufferResourceWaitEvents[Resource(texture)] : resourceRegistry!.textureWaitEvents[texture]) {
                 waitEventValues[queueIndex] = max(textureWaitEvent.waitValue, waitEventValues[queueIndex])
             } else {
                 precondition(texture.flags.contains(.windowHandle))
             }
             
         case .materialiseTextureView(let texture):
-            _ = resourceRegistry.allocateTextureView(texture, resourceMap: resourceMap)
+            _ = resourceRegistry!.allocateTextureView(texture, resourceMap: resourceMap)
             
         case .materialiseArgumentBuffer(let argumentBuffer):
             let argBufferReference : Backend.ArgumentBufferReference
             if argumentBuffer.flags.contains(.persistent) {
                 argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
             } else {
-                argBufferReference = resourceRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
-                waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
+                argBufferReference = resourceRegistry!.allocateArgumentBufferIfNeeded(argumentBuffer)
+                waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
             Backend.fillArgumentBuffer(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
             
@@ -105,19 +105,19 @@ enum PreFrameCommands {
             if argumentBuffer.flags.contains(.persistent) {
                 argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
             } else {
-                argBufferReference = resourceRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
-                waitEventValues[queueIndex] = max(resourceRegistry.argumentBufferArrayWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
+                argBufferReference = resourceRegistry!.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
+                waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferArrayWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
             Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
     
         case .disposeResource(let resource, let afterStages):
             let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)
             if let buffer = resource.buffer {
-                resourceRegistry.disposeBuffer(buffer, waitEvent: disposalWaitEvent)
+                resourceRegistry!.disposeBuffer(buffer, waitEvent: disposalWaitEvent)
             } else if let texture = resource.texture {
-                resourceRegistry.disposeTexture(texture, waitEvent: disposalWaitEvent)
+                resourceRegistry!.disposeTexture(texture, waitEvent: disposalWaitEvent)
             } else if let argumentBuffer = resource.argumentBuffer {
-                resourceRegistry.disposeArgumentBuffer(argumentBuffer, waitEvent: disposalWaitEvent)
+                resourceRegistry!.disposeArgumentBuffer(argumentBuffer, waitEvent: disposalWaitEvent)
             } else {
                 fatalError()
             }
@@ -129,7 +129,7 @@ enum PreFrameCommands {
             resource[waitIndexFor: queue, accessType: accessType] = signalEventValue
             
         case .waitForHeapAliasingFences(let resource, let waitDependency):
-            resourceRegistry.withHeapAliasingFencesIfPresent(for: resource.handle, perform: { fenceDependencies in
+            resourceRegistry!.withHeapAliasingFencesIfPresent(for: resource.handle, perform: { fenceDependencies in
                 for signalDependency in fenceDependencies {
                     let dependency = Dependency(signal: signalDependency, wait: waitDependency)
                     
@@ -297,7 +297,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
-    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry, backend: Backend, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry?, backend: Backend, frameCommandInfo: inout FrameCommandInfo<Backend>) {
         if passes.isEmpty {
             return
         }
@@ -524,9 +524,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             if resource.flags.contains(.persistent) || historyBufferUseFrame {
                 // Prepare the resource for being used this frame. For Vulkan, this means computing the image layouts.
                 if let buffer = resource.buffer {
-                    transientRegistry.prepareMultiframeBuffer(buffer)
+                    backend.resourceRegistry.prepareMultiframeBuffer(buffer, frameIndex: frameCommandInfo.globalFrameIndex)
                 } else if let texture = resource.texture {
-                    transientRegistry.prepareMultiframeTexture(texture)
+                    backend.resourceRegistry.prepareMultiframeTexture(texture, frameIndex: frameCommandInfo.globalFrameIndex)
                 }
                 
                 for queue in QueueRegistry.allQueues {
@@ -574,7 +574,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     storeFences.append(FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: read.renderPassRecord), index: read.commandRange.last!, stages: read.stages))
                 }
                 
-                transientRegistry.setDisposalFences(on: resource, to: storeFences)
+                transientRegistry!.setDisposalFences(on: resource, to: storeFences)
             }
         }
     }

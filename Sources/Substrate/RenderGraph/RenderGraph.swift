@@ -530,7 +530,7 @@ final class RenderPassRecord {
 protocol _RenderGraphContext : AnyObject {
     var queue: DispatchQueue { get }
     var transientRegistryIndex : Int { get }
-    var accessSemaphore : DispatchSemaphore { get }
+    var accessSemaphore : DispatchSemaphore? { get }
     var renderGraphQueue: Queue { get }
     func beginFrameResourceAccess() // Access is ended when a renderGraph is submitted.
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>, completion: @escaping (_ gpuTime: Double) -> Void)
@@ -559,6 +559,15 @@ protocol _RenderGraphContext : AnyObject {
         assert(self != .renderPassExecution)
         let tag = (RenderGraphTagType.renderGraphTag << 32) | (self.rawValue << 16)
         return tag
+    }
+}
+
+public struct RenderGraphExecutionWaitToken {
+    public let queue: Queue
+    public let executionIndex: UInt64
+    
+    public func wait() {
+        self.queue.waitForCommandCompletion(self.executionIndex)
     }
 }
 
@@ -1241,8 +1250,8 @@ public final class RenderGraph {
     /// Returns true if this RenderGraph already has the maximum number of GPU frames in-flight, and would have to wait
     /// for the ring buffers to become available before executing.
     public var hasMaximumFrameCountInFlight: Bool {
-        if self.context.accessSemaphore.wait(timeout: .now()) == .success {
-            self.context.accessSemaphore.signal()
+        if self.context.accessSemaphore?.wait(timeout: .now()) ?? .success == .success {
+            self.context.accessSemaphore?.signal()
             return false
         }
         return true
@@ -1255,25 +1264,18 @@ public final class RenderGraph {
     ///
     /// - Parameter onSubmission: an optional closure to execute once the render graph has been submitted to the GPU.
     /// - Parameter onGPUCompletion: an optional closure to execute once the render graph has completed executing on the GPU.
-    public func execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
-        if GPUResourceUploader.renderGraph !== self {
-            GPUResourceUploader.flush() // Ensure all GPU resources have been uploaded.
-        }
-        
+    public func execute() -> RenderGraphExecutionWaitToken {
         guard !self.renderPasses.isEmpty else {
-            onSubmission?()
-            onGPUCompletion?()
-            
             self.submissionNotifyQueue.forEach { $0() }
             self.submissionNotifyQueue.removeAll(keepingCapacity: true)
             
             self.completionNotifyQueue.forEach { $0() }
             self.completionNotifyQueue.removeAll(keepingCapacity: true)
             
-            return
+            return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
         }
         
-        self.context.accessSemaphore.wait()
+        self.context.accessSemaphore?.wait()
         
         RenderGraph.activeRenderGraphSemaphore.wait()
         RenderGraph.activeRenderGraph = self
@@ -1282,12 +1284,12 @@ public final class RenderGraph {
             RenderGraph.activeRenderGraphSemaphore.signal()
         }
         
-        self.context.queue.sync {
-            self._execute(onSubmission: onSubmission, onGPUCompletion: onGPUCompletion)
+        return self.context.queue.sync {
+            return self._execute()
         }
     }
     
-    private func _execute(onSubmission: (() -> Void)? = nil, onGPUCompletion: (() -> Void)? = nil) {
+    private func _execute() -> RenderGraphExecutionWaitToken {
 
         let jobManager = RenderGraph.jobManager
         
@@ -1315,7 +1317,6 @@ public final class RenderGraph {
             self.lastGraphCPUTime = Double(elapsed) * 1e-6
             //            print("Frame \(currentFrameIndex) completed in \(self.lastGraphCPUTime)ms.")
             
-            onGPUCompletion?()
             completionQueue.forEach { $0() }
         }
         
@@ -1336,8 +1337,6 @@ public final class RenderGraph {
             $0.commands = nil
         }
         
-        onSubmission?()
-        
         self.submissionNotifyQueue.forEach { $0() }
         self.submissionNotifyQueue.removeAll(keepingCapacity: true)
         self.completionNotifyQueue.removeAll(keepingCapacity: true)
@@ -1345,14 +1344,17 @@ public final class RenderGraph {
         self.reset()
         
         RenderGraph.globalSubmissionIndex += 1
+        return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
     }
     
     private func reset() {
-        TransientBufferRegistry.instances[transientRegistryIndex].clear()
-        TransientTextureRegistry.instances[transientRegistryIndex].clear()
-        TransientArgumentBufferRegistry.instances[transientRegistryIndex].clear()
-        TransientArgumentBufferArrayRegistry.instances[transientRegistryIndex].clear()
-        
+        if transientRegistryIndex >= 0 {
+            TransientBufferRegistry.instances[transientRegistryIndex].clear()
+            TransientTextureRegistry.instances[transientRegistryIndex].clear()
+            TransientArgumentBufferRegistry.instances[transientRegistryIndex].clear()
+            TransientArgumentBufferArrayRegistry.instances[transientRegistryIndex].clear()
+        }
+            
         PersistentTextureRegistry.instance.clear(afterRenderGraph: self)
         PersistentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)

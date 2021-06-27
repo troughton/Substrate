@@ -99,7 +99,7 @@ protocol ResourceRegistry: AnyObject {
     func allocateArgumentBufferArrayIfNeeded(_ buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference
 }
 
-protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.TransientResourceRegistry == Self {
+protocol BackendTransientResourceRegistry: ResourceRegistry {
     static func isAliasedHeapResource(resource: Resource) -> Bool
     
     var accessLock: SpinLock { get set }
@@ -108,9 +108,6 @@ protocol BackendTransientResourceRegistry: ResourceRegistry where Backend.Transi
     func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> Backend.TextureReference
     func allocateWindowHandleTexture(_ texture: Texture) throws -> Backend.TextureReference
     func allocateTextureView(_ texture: Texture, resourceMap: FrameResourceMap<Backend>) -> Backend.TextureReference
-
-    func prepareMultiframeBuffer(_ buffer: Buffer)
-    func prepareMultiframeTexture(_ texture: Texture)
     
     func setDisposalFences(on resource: Resource, to fences: [FenceDependency])
     func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent)
@@ -132,7 +129,7 @@ extension BackendTransientResourceRegistry {
     var argumentBufferArrayWaitEvents: TransientResourceMap<ArgumentBufferArray, ContextWaitEvent>? { nil }
 }
 
-protocol BackendPersistentResourceRegistry: ResourceRegistry where Backend.PersistentResourceRegistry == Self {
+protocol BackendPersistentResourceRegistry: ResourceRegistry {
     subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference { get }
     
     @available(macOS 11.0, iOS 14.0, *)
@@ -140,6 +137,9 @@ protocol BackendPersistentResourceRegistry: ResourceRegistry where Backend.Persi
     
     func allocateBuffer(_ buffer: Buffer) -> Backend.BufferReference?
     func allocateTexture(_ texture: Texture) -> Backend.TextureReference?
+    
+    func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64)
+    func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64)
     
     func disposeTexture(_ texture: Texture)
     func disposeBuffer(_ buffer: Buffer)

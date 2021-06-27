@@ -8,7 +8,7 @@
 import SubstrateUtilities
 import Atomics
 import Dispatch
-
+import Foundation
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
 import Darwin
 #elseif os(Linux)
@@ -22,6 +22,10 @@ public final class QueueRegistry {
     
     public static let maxQueues = UInt8.bitWidth
     
+    #if !os(Windows)
+    public let commandCompletedMutexes : UnsafeMutablePointer<pthread_mutex_t>
+    public let commandCompletedCondVars : UnsafeMutablePointer<pthread_cond_t>
+    #endif
     public let lastSubmittedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     public let lastCompletedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     public let lastSubmissionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
@@ -31,6 +35,14 @@ public final class QueueRegistry {
     var lock = SpinLock()
     
     public init() {
+#if !os(Windows)
+        self.commandCompletedMutexes = .allocate(capacity: Self.maxQueues)
+        self.commandCompletedCondVars = .allocate(capacity: Self.maxQueues)
+        for i in 0..<Self.maxQueues {
+            pthread_mutex_init(self.commandCompletedMutexes.advanced(by: i), nil)
+            pthread_cond_init(self.commandCompletedCondVars.advanced(by: i), nil)
+        }
+#endif
         self.lastSubmittedCommands = .allocate(capacity: Self.maxQueues)
         self.lastCompletedCommands = .allocate(capacity: Self.maxQueues)
         self.lastSubmissionTimes = .allocate(capacity: Self.maxQueues)
@@ -38,6 +50,12 @@ public final class QueueRegistry {
     }
     
     deinit {
+        for i in 0..<Self.maxQueues {
+            pthread_cond_destroy(self.commandCompletedCondVars.advanced(by: i))
+            pthread_mutex_destroy(self.commandCompletedMutexes.advanced(by: i))
+        }
+        self.commandCompletedMutexes.deallocate()
+        self.commandCompletedCondVars.deallocate()
         self.lastSubmittedCommands.deallocate()
         self.lastCompletedCommands.deallocate()
         self.lastSubmissionTimes.deallocate()
@@ -155,6 +173,10 @@ public struct Queue : Equatable {
         }
         nonmutating set {
             assert(self.lastCompletedCommand < newValue)
+            #if !os(Windows)
+            // Broadcast that a command has been completed for any waiting threads.
+            pthread_cond_broadcast(QueueRegistry.instance.commandCompletedCondVars.advanced(by: Int(self.index)))
+            #endif
             UInt64.AtomicRepresentation.atomicStore(newValue, at: QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
         }
     }
@@ -171,12 +193,19 @@ public struct Queue : Equatable {
         }
     }
     
+    @available(*, deprecated, renamed: "waitForCommandCompletion")
     public func waitForCommand(_ index: UInt64) {
+        self.waitForCommandCompletion(index)
+    }
+    
+    public func waitForCommandCompletion(_ index: UInt64) {
         while self.lastCompletedCommand < index {
             #if os(Windows)
             _sleep(0)
             #else
-            sched_yield()
+            pthread_mutex_lock(QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
+            pthread_cond_wait(QueueRegistry.instance.commandCompletedCondVars.advanced(by: Int(self.index)), QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
+            pthread_mutex_unlock(QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
             #endif
         }
     }

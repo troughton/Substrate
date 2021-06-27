@@ -234,6 +234,10 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
         self.allocator = allocator
         self.transientRegistryIndex = transientRegistryIndex
         
+        if self.transientRegistryIndex < 0 {
+            return
+        }
+        
         switch R.self {
         case is Buffer.Type:
             self.reserveCapacity(TransientBufferRegistry.instances[self.transientRegistryIndex].capacity)
@@ -255,6 +259,10 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     }
 
     public mutating func prepareFrame() {
+        if self.transientRegistryIndex < 0 {
+            return
+        }
+        
         switch R.self {
         case is Buffer.Type:
             self.count = Int.AtomicRepresentation.atomicLoad(at: TransientBufferRegistry.instances[self.transientRegistryIndex].count, ordering: .relaxed)
