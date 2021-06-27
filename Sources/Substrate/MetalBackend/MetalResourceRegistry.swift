@@ -40,8 +40,8 @@ struct MTLBufferReference : MTLResourceReference {
 struct MTLTextureReference : MTLResourceReference {
     var _texture : Unmanaged<MTLTexture>!
     
-    var texture : MTLTexture {
-        return _texture.takeUnretainedValue()
+    var texture : MTLTexture! {
+        return _texture?.takeUnretainedValue()
     }
     
     var resource : MTLTexture {
@@ -288,6 +288,15 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         
         return state
     }
+    
+    func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64) {
+        // No-op for Metal
+    }
+    
+    func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64) {
+        // No-op for Metal
+    }
+
 
     func disposeHeap(_ heap: Heap) {
         if let mtlHeap = self.heapReferences.removeValue(forKey: heap) {
@@ -575,13 +584,23 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     @discardableResult
     public func allocateTexture(_ texture: Texture, forceGPUPrivate: Bool, storedTextures: [Texture]) -> MTLTextureReference {
-        if texture.flags.contains(.windowHandle) {
-            // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet
-            self.textureReferences[texture] = MTLTextureReference(windowTexture: ())
-            return MTLTextureReference(windowTexture: ())
-        }
-        
         let properties = self.computeTextureUsage(texture, storedTextures: storedTextures)
+        
+        if texture.flags.contains(.windowHandle) {
+            // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet.
+            // We can only do this if the texture is only used as a render target.
+            self.textureReferences[texture] = MTLTextureReference(windowTexture: ())
+            if !properties.usage.isEmpty, properties.usage != .renderTarget {
+                // If we use the texture other than as a render target, we need to eagerly allocate it.
+                do {
+                    try self.allocateWindowHandleTexture(texture)
+                }
+                catch {
+                    print("Error allocating window handle texture: \(error)")
+                }
+            }
+            return self.textureReferences[texture]!
+        }
         
         let descriptor = MTLTextureDescriptor(texture.descriptor, usage: properties.usage, isAppleSiliconGPU: self.device.isAppleSiliconGPU)
         
@@ -777,16 +796,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         
         return storage
     }
-
-    
-    func prepareMultiframeBuffer(_ buffer: Buffer) {
-        // No-op for Metal
-    }
-    
-    func prepareMultiframeTexture(_ texture: Texture) {
-        // No-op for Metal
-    }
-
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
         self.prepareFrame()

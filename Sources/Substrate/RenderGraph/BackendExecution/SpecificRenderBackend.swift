@@ -108,9 +108,6 @@ protocol BackendTransientResourceRegistry: ResourceRegistry {
     func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> Backend.TextureReference
     func allocateWindowHandleTexture(_ texture: Texture) throws -> Backend.TextureReference
     func allocateTextureView(_ texture: Texture, resourceMap: FrameResourceMap<Backend>) -> Backend.TextureReference
-
-    func prepareMultiframeBuffer(_ buffer: Buffer)
-    func prepareMultiframeTexture(_ texture: Texture)
     
     func setDisposalFences(on resource: Resource, to fences: [FenceDependency])
     func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent)
@@ -137,6 +134,9 @@ protocol BackendPersistentResourceRegistry: ResourceRegistry {
     
     func allocateBuffer(_ buffer: Buffer) -> Backend.BufferReference?
     func allocateTexture(_ texture: Texture) -> Backend.TextureReference?
+    
+    func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64)
+    func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64)
     
     func disposeTexture(_ texture: Texture)
     func disposeBuffer(_ buffer: Buffer)

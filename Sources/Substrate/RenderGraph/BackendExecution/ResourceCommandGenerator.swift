@@ -297,7 +297,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
-    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry, backend: Backend, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry?, backend: Backend, frameCommandInfo: inout FrameCommandInfo<Backend>) {
         if passes.isEmpty {
             return
         }
@@ -524,9 +524,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             if resource.flags.contains(.persistent) || historyBufferUseFrame {
                 // Prepare the resource for being used this frame. For Vulkan, this means computing the image layouts.
                 if let buffer = resource.buffer {
-                    transientRegistry.prepareMultiframeBuffer(buffer)
+                    backend.resourceRegistry.prepareMultiframeBuffer(buffer, frameIndex: frameCommandInfo.globalFrameIndex)
                 } else if let texture = resource.texture {
-                    transientRegistry.prepareMultiframeTexture(texture)
+                    backend.resourceRegistry.prepareMultiframeTexture(texture, frameIndex: frameCommandInfo.globalFrameIndex)
                 }
                 
                 for queue in QueueRegistry.allQueues {
@@ -574,7 +574,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     storeFences.append(FenceDependency(encoderIndex: frameCommandInfo.encoderIndex(for: read.renderPassRecord), index: read.commandRange.last!, stages: read.stages))
                 }
                 
-                transientRegistry.setDisposalFences(on: resource, to: storeFences)
+                transientRegistry!.setDisposalFences(on: resource, to: storeFences)
             }
         }
     }

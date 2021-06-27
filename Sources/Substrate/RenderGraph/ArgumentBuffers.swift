@@ -113,6 +113,7 @@ public struct ArgumentBuffer : ResourceProtocol {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
+            precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
             
             index = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
         }
@@ -526,6 +527,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
+            precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
             index = TransientArgumentBufferArrayRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
         }
         

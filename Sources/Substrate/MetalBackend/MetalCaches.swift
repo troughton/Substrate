@@ -28,6 +28,7 @@ final class MetalStateCaches {
         var fragmentFunction : String?
     }
     
+    var functionCacheAccessLock = AsyncReaderWriterLock()
     var renderPipelineAccessLock = AsyncReaderWriterLock()
     var computePipelineAccessLock = AsyncReaderWriterLock()
     
@@ -105,19 +106,24 @@ final class MetalStateCaches {
         }
     }
     
-    func function(named name: String, functionConstants: FunctionConstants?) -> MTLFunction? {
+    func function(named name: String, functionConstants: FunctionConstants?) async -> MTLFunction? {
         let cacheKey = FunctionCacheKey(name: name, constants: functionConstants)
+        await self.functionCacheAccessLock.acquireReadAccess()
         if let function = self.functionCache[cacheKey] {
+            await self.functionCacheAccessLock.releaseReadAccess()
             return function
         }
         
         do {
-            let function = try self.library.makeFunction(name: name, constantValues: functionConstants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
-                       
+            let function = try await self.library.makeFunction(name: name, constantValues: functionConstants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
+            
+            await self.functionCacheAccessLock.transformReadToWriteAccess()
             self.functionCache[cacheKey] = function
+            await self.functionCacheAccessLock.releaseWriteAccess()
             return function
         } catch {
             print("MetalRenderGraph: Error creating function named \(name)\(functionConstants.map { " with constants \($0)" } ?? ""): \(error)")
+            await self.functionCacheAccessLock.releaseReadAccess()
             return nil
         }
     }
@@ -137,7 +143,7 @@ final class MetalStateCaches {
                 }
             }
             
-            guard let mtlDescriptor = MTLRenderPipelineDescriptor(metalDescriptor, stateCaches: self) else {
+            guard let mtlDescriptor = await MTLRenderPipelineDescriptor(metalDescriptor, stateCaches: self) else {
                 return nil
             }
             
@@ -194,7 +200,7 @@ final class MetalStateCaches {
                 }
             }
             
-            guard let function = self.function(named: descriptor.function, functionConstants: descriptor._functionConstants) else {
+            guard let function = await self.function(named: descriptor.function, functionConstants: descriptor._functionConstants) else {
                 return nil
             }
             

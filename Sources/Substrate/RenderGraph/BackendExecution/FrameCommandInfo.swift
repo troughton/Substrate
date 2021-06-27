@@ -24,6 +24,7 @@ struct CommandEncoderInfo<RenderTargetDescriptor: BackendRenderTargetDescriptor>
 }
 
 struct FrameCommandInfo<Backend: SpecificRenderBackend> {
+    let globalFrameIndex: UInt64
     let baseCommandBufferSignalValue: UInt64
     
     let passes: [RenderPassRecord]
@@ -34,6 +35,7 @@ struct FrameCommandInfo<Backend: SpecificRenderBackend> {
     var storedTextures: [Texture]
     
     init(passes: [RenderPassRecord], initialCommandBufferSignalValue: UInt64) {
+        self.globalFrameIndex = RenderGraph.globalSubmissionIndex.load(ordering: .relaxed)
         self.passes = passes
         self.baseCommandBufferSignalValue = initialCommandBufferSignalValue
         

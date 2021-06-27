@@ -19,7 +19,7 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     public let accessSemaphore: AsyncSemaphore?
        
     let backend: Backend
-    let resourceRegistry: Backend.TransientResourceRegistry!
+    let resourceRegistry: Backend.TransientResourceRegistry?
     let commandGenerator: ResourceCommandGenerator<Backend>
     
     // var compactedResourceCommands = [CompactedResourceCommand<MetalCompactedResourceCommandType>]()
@@ -77,7 +77,9 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         defer { commandBuffer = nil }
         guard let commandBuffer = commandBuffer else { return }
         
-        commandBuffer.presentSwapchains(resourceRegistry: resourceMap.transientRegistry)
+        if let transientRegistry = resourceMap.transientRegistry {
+            commandBuffer.presentSwapchains(resourceRegistry: transientRegistry)
+        }
         
         // Make sure that the sync event value is what we expect, so we don't update it past
         // the signal for another buffer before that buffer has completed.
@@ -125,12 +127,12 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>) async -> Task<RenderGraphExecutionResult, Never> {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
-        self.resourceRegistry.prepareFrame()
+        self.resourceRegistry?.prepareFrame()
         
         defer {
             TaggedHeap.free(tag: .renderGraphResourceCommandArrayTag)
             
-            self.resourceRegistry.cycleFrames()
+            self.resourceRegistry?.cycleFrames()
             
             self.commandGenerator.reset()
             self.compactedResourceCommands.removeAll(keepingCapacity: true)

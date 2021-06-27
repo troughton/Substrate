@@ -34,6 +34,10 @@ extension MTLHeapDescriptor {
         }
         self.storageMode = MTLStorageMode(descriptor.storageMode, isAppleSiliconGPU: isAppleSiliconGPU)
         self.cpuCacheMode = MTLCPUCacheMode(descriptor.cacheMode)
+        
+        if #available(OSX 10.15, iOS 13.0, tvOS 13.0, *) {
+            self.hazardTrackingMode = .substrateTrackedHazards
+        }
     }
 }
 
@@ -194,19 +198,19 @@ extension MTLRenderPipelineColorAttachmentDescriptor {
 }
 
 extension MTLRenderPipelineDescriptor {
-    convenience init?(_ descriptor: MetalRenderPipelineDescriptor, stateCaches: MetalStateCaches) {
+    convenience init?(_ descriptor: MetalRenderPipelineDescriptor, stateCaches: MetalStateCaches) async {
         self.init()
         if let label = descriptor.descriptor.label {
             self.label = label
         }
         
-        guard let vertexFunction = stateCaches.function(named: descriptor.descriptor.vertexFunction!, functionConstants: descriptor.descriptor.functionConstants) else {
+        guard let vertexFunction = await stateCaches.function(named: descriptor.descriptor.vertexFunction!, functionConstants: descriptor.descriptor.functionConstants) else {
             return nil
         }
         self.vertexFunction = vertexFunction
         
         if let fragmentFunction = descriptor.descriptor.fragmentFunction {
-            guard let function = stateCaches.function(named: fragmentFunction, functionConstants: descriptor.descriptor.functionConstants) else {
+            guard let function = await stateCaches.function(named: fragmentFunction, functionConstants: descriptor.descriptor.functionConstants) else {
                 return nil
             }
             self.fragmentFunction = function

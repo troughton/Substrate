@@ -163,7 +163,7 @@ extension Image {
             } else {
                 taskGroup.async {
                     await self.withUnsafeBufferPointer { buffer in
-                        await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size)
+                        _ = await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size)
                     }
                     if texture.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
                         if self.channelCount == 4, self.alphaMode != .premultiplied {
@@ -193,16 +193,6 @@ extension Texture {
         
         self = Texture._createPersistentTextureWithoutDescriptor(flags: .persistent)
         try self.fillInternal(imageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, options: options, isPartiallyInitialised: true)
-    }
-    
-    @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:alphaMode:storageMode:usage:)")
-    public init(fileAt url: URL, mipmapped: Bool, colorSpace: ImageColorSpace, premultipliedAlpha: Bool, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
-        try self.init(fileAt: url, colorSpace: colorSpace, sourceAlphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
-    }
-    
-    @available(*, deprecated, renamed: "init(fileAt:mipmapped:colorSpace:alphaMode:storageMode:usage:)")
-    public init(fileAt url: URL, mipmapped: Bool, colourSpace: ImageColorSpace, premultipliedAlpha: Bool, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead) throws {
-        try self.init(fileAt: url, colorSpace: colourSpace, sourceAlphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
     }
     
     public func copyData(from textureData: AnyImage, mipGenerationMode: MipGenerationMode = .gpuDefault) throws {

@@ -1295,11 +1295,13 @@ public final class RenderGraph {
     }
     
     private func reset() {
-        TransientBufferRegistry.instances[transientRegistryIndex].clear()
-        TransientTextureRegistry.instances[transientRegistryIndex].clear()
-        TransientArgumentBufferRegistry.instances[transientRegistryIndex].clear()
-        TransientArgumentBufferArrayRegistry.instances[transientRegistryIndex].clear()
-        
+        if transientRegistryIndex >= 0 {
+            TransientBufferRegistry.instances[transientRegistryIndex].clear()
+            TransientTextureRegistry.instances[transientRegistryIndex].clear()
+            TransientArgumentBufferRegistry.instances[transientRegistryIndex].clear()
+            TransientArgumentBufferArrayRegistry.instances[transientRegistryIndex].clear()
+        }
+            
         PersistentTextureRegistry.instance.clear(afterRenderGraph: self)
         PersistentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)

@@ -83,7 +83,7 @@ public struct ResourceUsage {
     public var inArgumentBuffer : Bool
     @usableFromInline
     unowned(unsafe) var renderPassRecord : RenderPassRecord
-    public var commandRange : Range<Int> // References the range in the pass before and during RenderGraph compilation, and the range in the full commands array aftre.
+    public var commandRange : Range<Int> // References the range in the pass before and during RenderGraph compilation, and the range in the full commands array after.
     public var activeRange: ActiveResourceRange = .fullResource
     
     @inlinable
@@ -132,7 +132,15 @@ public struct ResourceUsage {
                 // We're either using this resource as an input attachment or reading from different mip levels/slices than we're writing to.
                 // If the read spans multiple draw commands, make it an input attachment; otherwise, assume that the render target mip/slice
                 // is not read from.
-                let drawCommandCount = self.renderPassRecord.commands.lazy.filter { $0.isDrawCommand }.count
+                var drawCommandCount = 0
+                for command in self.renderPassRecord.commands[nextUsage.commandRange.offset(by: -self.renderPassRecord.commandRange!.lowerBound)] {
+                    if command.isDrawCommand {
+                        drawCommandCount += 1
+                        if drawCommandCount > 1 {
+                            break
+                        }
+                    }
+                }
                 if drawCommandCount <= 1 {
                     // We can't read from the level we're writing to.
                     if self.type == .read {
