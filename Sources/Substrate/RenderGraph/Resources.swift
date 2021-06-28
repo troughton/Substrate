@@ -638,9 +638,7 @@ public struct Heap : ResourceProtocol {
     public init?(descriptor: HeapDescriptor) {
         let flags : ResourceFlags = .persistent
         
-        let index = HeapRegistry.instance.allocate(descriptor: descriptor, flags: flags)
-        let handle = index
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        self = HeapRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         
         if !RenderBackend.materialiseHeap(self) {
             self.dispose()
@@ -844,19 +842,15 @@ public struct Buffer : ResourceProtocol {
     /// - Parameter flags: The flags with which to create the buffer; for example, `ResourceFlags.persistent` for a persistent buffer.
     @inlinable
     public init(descriptor: BufferDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
-            index = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+            self = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
-            index = TransientBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
+            self = TransientBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
-        
-        let handle = index
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
@@ -912,9 +906,7 @@ public struct Buffer : ResourceProtocol {
         assert(flags.contains(.persistent), "Heap-allocated resources must be persistent.")
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         
-        let index = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
-        let handle = index
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        self = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
         
         if !RenderBackend.materialisePersistentBuffer(self) {
             self.dispose()
@@ -1283,19 +1275,15 @@ public struct Texture : ResourceProtocol {
     public init(descriptor: TextureDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(descriptor.width <= 16384 && descriptor.height <= 16384 && descriptor.depth <= 1024)
         
-        let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
-            index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+            self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
-            index = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
+            self = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
-        
-        let handle = index
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
@@ -1308,9 +1296,7 @@ public struct Texture : ResourceProtocol {
     @inlinable
     public static func _createPersistentTextureWithoutDescriptor(flags: ResourceFlags = [.persistent]) -> Texture {
         precondition(flags.contains(.persistent))
-        let index = PersistentTextureRegistry.instance.allocateHandle(flags: flags)
-        let handle = index
-        return Texture(handle: handle)
+        return PersistentTextureRegistry.instance.allocateHandle(flags: flags)
     }
     
     @inlinable
@@ -1331,9 +1317,7 @@ public struct Texture : ResourceProtocol {
         assert(flags.contains(.persistent), "Heap-allocated resources must be persistent.")
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         
-        let index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
-        let handle = index
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
         
         if !RenderBackend.materialisePersistentTexture(self) {
             self.dispose()
@@ -1351,18 +1335,14 @@ public struct Texture : ResourceProtocol {
     
     @inlinable
     public init(descriptor: TextureDescriptor, externalResource: Any, renderGraph: RenderGraph? = nil, flags: ResourceFlags = [.persistent, .externalOwnership]) {
-        let index : UInt64
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
-            index = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+            self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
-            index = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
+            self = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
-        
-        let handle = index
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
@@ -1379,9 +1359,7 @@ public struct Texture : ResourceProtocol {
         }
         precondition(transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
         
-        let index = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base, flags: flags)
-        let handle = index
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base, flags: flags)
     }
     
     @inlinable
@@ -1393,9 +1371,7 @@ public struct Texture : ResourceProtocol {
         }
         precondition(transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
         
-        let index = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base, flags: flags)
-        let handle = index
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base, flags: flags)
     }
     
     @available(*, deprecated, renamed: "init(descriptor:isMinimised:nativeWindow:renderGraph:)")
