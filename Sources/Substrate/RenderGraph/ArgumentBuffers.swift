@@ -106,20 +106,17 @@ public struct ArgumentBuffer : ResourceProtocol {
     public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
         
-        let index : UInt64
         if flags.contains(.persistent) {
-            index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags)
+            self = PersistentArgumentBufferRegistry.instance.allocate(descriptor: (), heap: nil, flags: flags)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
             
-            index = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
+            self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: (), flags: flags)
         }
         
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         assert(self.encoder == nil)
     }
     
@@ -134,15 +131,12 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     @inlinable
     init(flags: ResourceFlags = [], sourceArray: ArgumentBufferArray) {
-        let index : UInt64
         if flags.contains(.persistent) {
-            index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
+            self = PersistentArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
         } else {
-            index = TransientArgumentBufferRegistry.instances[sourceArray.transientRegistryIndex].allocate(flags: flags, sourceArray: sourceArray)
+            self = TransientArgumentBufferRegistry.instances[sourceArray.transientRegistryIndex].allocate(flags: flags, sourceArray: sourceArray)
         }
         
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         assert(self.encoder == nil)
     }
     
@@ -477,6 +471,11 @@ public struct ArgumentBuffer : ResourceProtocol {
             (key, arrayIndex, .bytes(offset: currentOffset, length: length))
         )
     }
+    
+    @inlinable
+    public static var resourceType: ResourceType {
+        return .argumentBuffer
+    }
 }
 
 extension ArgumentBuffer {
@@ -520,19 +519,15 @@ public struct ArgumentBufferArray : ResourceProtocol {
     public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
         
-        let index : UInt64
         if flags.contains(.persistent) {
-            index = PersistentArgumentBufferArrayRegistry.instance.allocate(flags: flags)
+            self = PersistentArgumentBufferArrayRegistry.instance.allocate(descriptor: (), heap: nil, flags: flags)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
-            index = TransientArgumentBufferArrayRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
+            self = TransientArgumentBufferArrayRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: (),flags: flags)
         }
-        
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBufferArray.rawValue) << Self.typeBitsRange.lowerBound)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     public var isKnownInUse: Bool {
@@ -571,7 +566,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
                 yield PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
             } else {
-                yield TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].bindings[self.index]
+                yield TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].storage.bindings[self.index]
             }
         }
         nonmutating _modify {
@@ -579,7 +574,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
                 yield &PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
             } else {
-                yield &TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].bindings[self.index]
+                yield &TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].storage.bindings[self.index]
             }
         }
     }
@@ -591,7 +586,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
                 let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
                 return PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
             } else {
-                return TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].labels[self.index]
+                return TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].storage.labels[self.index]
             }
         }
         nonmutating set {
@@ -600,7 +595,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
                 PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
                 RenderBackend.updateLabel(on: self)
             } else {
-                TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].labels[self.index] = newValue
+                TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].storage.labels[self.index] = newValue
             }
         }
     }
@@ -628,6 +623,11 @@ public struct ArgumentBufferArray : ResourceProtocol {
         } else {
             return TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].generation == self.generation
         }
+    }
+    
+    @inlinable
+    public static var resourceType: ResourceType {
+        return .argumentBufferArray
     }
 }
 
@@ -769,6 +769,10 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         )
     }
     
+    @inlinable
+    public static var resourceType: ResourceType {
+        return .argumentBuffer
+    }
 }
 
 extension TypedArgumentBuffer {
@@ -877,5 +881,10 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
             self.argumentBufferArray._bindings[index] = buffer
             return TypedArgumentBuffer(handle: buffer.handle)
         }
+    }
+    
+    @inlinable
+    public static var resourceType: ResourceType {
+        return .argumentBufferArray
     }
 }

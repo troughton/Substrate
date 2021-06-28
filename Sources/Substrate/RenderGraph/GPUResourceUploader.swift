@@ -57,13 +57,16 @@ public final actor GPUResourceUploader {
             return self.writeCombinedAllocator
         }
     }
-
-    static var nextCommandIndex: UInt64 {
-        return self.renderGraph.queue.lastSubmittedCommand + 1
-    }
     
     @GPUResourceUploader
+    private static func _flush(cacheMode: CPUCacheMode, buffer: Buffer, allocationRange: (lowerBound: Int, upperBound: Int)) async -> RenderGraphExecutionWaitToken {
+        let waitToken = await self.renderGraph.execute()
+        await self.allocator(cacheMode: cacheMode).didSubmit(buffer: buffer, allocationRange: allocationRange, submissionIndex: waitToken.executionIndex)
+        return waitToken
+    }
+    
     @discardableResult
+    @GPUResourceUploader
     public static func runBlitPass(_ pass: @escaping (_ bce: BlitCommandEncoder) -> Void) async -> RenderGraphExecutionWaitToken {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
@@ -74,11 +77,11 @@ public final actor GPUResourceUploader {
     @GPUResourceUploader
     @discardableResult
     public static func generateMipmaps(for texture: Texture) async -> RenderGraphExecutionWaitToken {
-            self.renderGraph.addPass(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
-                bce.generateMipmaps(for: texture)
-            })
-            
-            return await self.renderGraph.execute()
+        self.renderGraph.addPass(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")") { bce in
+            bce.generateMipmaps(for: texture)
+        })
+        
+        return await self.renderGraph.execute()
     }
     
     @GPUResourceUploader
@@ -89,15 +92,15 @@ public final actor GPUResourceUploader {
         }
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
-            let (stagingBuffer, stagingBufferOffset) = try await self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: length, alignedTo: 256, submissionIndex: self.nextCommandIndex) { contents, writtenRange in
-                try fillBuffer(contents, &writtenRange)
-            }
+        let (stagingBuffer, stagingBufferOffset, allocationRange) = try await self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: length, alignedTo: 256) { contents, writtenRange in
+            try fillBuffer(contents, &writtenRange)
+        }
+        
+        self.renderGraph.addBlitCallbackPass(name: "uploadBytes(length: \(length), cacheMode: \(cacheMode))") { bce in
+            copyFromBuffer(stagingBuffer, stagingBufferOffset, bce)
+        }
             
-            self.renderGraph.addBlitCallbackPass(name: "uploadBytes(length: \(length), cacheMode: \(cacheMode))") { bce in
-                copyFromBuffer(stagingBuffer, stagingBufferOffset, bce)
-            }
-            
-            return await self.renderGraph.execute()
+        return await self._flush(cacheMode: cacheMode, buffer: stagingBuffer, allocationRange: allocationRange)
     }
     
     @GPUResourceUploader
@@ -116,25 +119,25 @@ public final actor GPUResourceUploader {
         
         assert(offset + count <= buffer.length)
         
-            if buffer.storageMode == .shared || buffer.storageMode == .managed {
-                try buffer.withMutableContents(range: offset..<(offset + count)) {
-                    try bytes($0, &$1)
-                }
-                return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
-            } else {
-                assert(buffer.storageMode == .private)
-                
-                let cacheMode = CPUCacheMode.writeCombined
-                
-                let (stagingBuffer, stagingBufferOffset) = try await self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: count, alignedTo: 256, submissionIndex: self.nextCommandIndex) { contents, writtenRange in
-                    try bytes(contents, &writtenRange)
-                }
-                
-                self.renderGraph.addBlitCallbackPass(name: "uploadBytes(count: \(count), to: \(buffer), offset: \(offset))") { bce in
-                    bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, to: buffer, destinationOffset: offset, size: count)
-                }
-                return await self.renderGraph.execute()
+        if buffer.storageMode == .shared || buffer.storageMode == .managed {
+            try buffer.withMutableContents(range: offset..<(offset + count)) {
+                try bytes($0, &$1)
             }
+            return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
+        } else {
+            assert(buffer.storageMode == .private)
+            
+            let cacheMode = CPUCacheMode.writeCombined
+            
+            let (stagingBuffer, stagingBufferOffset, allocationRange) = try await self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: count, alignedTo: 256) { contents, writtenRange in
+                try bytes(contents, &writtenRange)
+            }
+            
+            self.renderGraph.addBlitCallbackPass(name: "uploadBytes(count: \(count), to: \(buffer), offset: \(offset))") { bce in
+                bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, to: buffer, destinationOffset: offset, size: count)
+            }
+            return await self._flush(cacheMode: cacheMode, buffer: stagingBuffer, allocationRange: allocationRange)
+        }
     }
     
     @GPUResourceUploader
@@ -160,22 +163,21 @@ public final actor GPUResourceUploader {
             
             let cacheMode = CPUCacheMode.writeCombined
             
-            let (stagingBuffer, stagingBufferOffset) = await self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: bytesPerImage, alignedTo: 256, submissionIndex: self.nextCommandIndex) { contents, _ in
+            let (stagingBuffer, stagingBufferOffset, allocationRange) = await self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: bytesPerImage, alignedTo: 256) { contents, _ in
                 contents.copyMemory(from: UnsafeRawBufferPointer(start: bytes, count: bytesPerImage))
             }
             
             self.renderGraph.addBlitCallbackPass(name: "replaceTextureRegion(\(region), mipmapLevel: \(mipmapLevel), slice: \(slice), in: \(texture), withBytes: \(bytes), bytesPerRow: \(bytesPerRow), bytesPerImage: \(bytesPerImage))") { bce in
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, sourceBytesPerRow: bytesPerRow, sourceBytesPerImage: bytesPerImage, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: region.origin)
             }
-            return await self.renderGraph.execute()
+            return await self._flush(cacheMode: cacheMode, buffer: stagingBuffer, allocationRange: allocationRange)
         }
     }
 }
 
 extension GPUResourceUploader {
     
-    // NOTE: synchronised by the GPUResourceUploader global actor
-    fileprivate final class StagingBufferSubAllocator {
+    fileprivate final actor StagingBufferSubAllocator {
         private static let blockAlignment = 64
         
         let renderGraphQueue: Queue
@@ -199,9 +201,23 @@ extension GPUResourceUploader {
             self.buffer.dispose()
         }
         
-        @GPUResourceUploader
-        func withBufferContents(byteCount: Int, alignedTo alignment: Int, submissionIndex: UInt64, perform: (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void) async rethrows -> (buffer: Buffer, offset: Int) {
-            
+        func didSubmit(buffer: Buffer, allocationRange: (lowerBound: Int, upperBound: Int), submissionIndex: UInt64) {
+            if buffer == self.buffer {
+                let index = self.pendingCommands.firstIndex(where: { $0.command == .max && $0.allocationRange == allocationRange })!
+                self.pendingCommands[index].command = submissionIndex
+            } else {
+                // This is a buffer that was allocated specifically for this command.
+                let index = self.pendingCommands.firstIndex(where: { $0.command == .max && $0.tempBuffer == buffer })!
+                self.pendingCommands[index].command = submissionIndex
+                
+                _ = Task {
+                    // Make sure the buffer gets disposed even if no more resource uploads are submitted.
+                    await RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: submissionIndex).wait()
+                    await self.processCompletedCommands()
+                }
+            }
+        }
+        func withBufferContents(byteCount: Int, alignedTo alignment: Int, perform: (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void) async rethrows -> (buffer: Buffer, offset: Int, allocationRange: (lowerBound: Int, upperBound: Int)) {
             if byteCount > self.capacity {
                 // Allocate a buffer specifically for this staging command.
                 let buffer = Buffer(length: byteCount, storageMode: .shared, cacheMode: self.buffer.descriptor.cacheMode, usage: .blitSource, flags: .persistent)
@@ -214,14 +230,9 @@ extension GPUResourceUploader {
                     buffer.dispose()
                     throw error
                 }
-                self.pendingCommands.append((submissionIndex, (0, 0), buffer))
+                self.pendingCommands.append((.max, (0, 0), buffer))
                 
-                _ = Task {
-                    await RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: submissionIndex).wait()
-                    await self.processCompletedCommands()
-                }
-                
-                return (buffer, 0)
+                return (buffer, 0, (0, 0))
             }
             
             let alignment = byteCount == 0 ? 1 : alignment // Don't align for empty allocations
@@ -250,18 +261,18 @@ extension GPUResourceUploader {
                     }
                 }
                 
-                self.pendingCommands.append((submissionIndex, (self.inUseRangeEnd, allocationRange.endIndex), nil))
+                let suballocatedRange = (self.inUseRangeEnd, allocationRange.endIndex)
+                self.pendingCommands.append((.max, (self.inUseRangeEnd, allocationRange.endIndex), nil))
                 self.inUseRangeEnd = allocationRange.endIndex
                 
                 var writtenRange = 0..<byteCount
                 try perform(UnsafeMutableRawBufferPointer(start: self.bufferContents.advanced(by: allocationRange.lowerBound), count: byteCount), &writtenRange)
                 RenderBackend.buffer(self.buffer, didModifyRange: (allocationRange.lowerBound + writtenRange.lowerBound)..<(allocationRange.lowerBound + writtenRange.lowerBound + writtenRange.count))
                 
-                return (self.buffer, allocationRange.lowerBound)
+                return (self.buffer, allocationRange.lowerBound, suballocatedRange)
             }
         }
         
-        @GPUResourceUploader
         private func processCompletedCommands() async {
             while self.pendingCommands.first?.command ?? .max <= self.renderGraphQueue.lastCompletedCommand {
                 let (_, range, tempBuffer) = self.pendingCommands.popFirst()!
