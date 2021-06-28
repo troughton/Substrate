@@ -115,10 +115,10 @@ public struct ArgumentBuffer : ResourceProtocol {
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
             
-            index = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
+            index = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: (), flags: flags)
         }
         
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         assert(self.encoder == nil)
     }
@@ -141,7 +141,7 @@ public struct ArgumentBuffer : ResourceProtocol {
             index = TransientArgumentBufferRegistry.instances[sourceArray.transientRegistryIndex].allocate(flags: flags, sourceArray: sourceArray)
         }
         
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         assert(self.encoder == nil)
     }
@@ -474,6 +474,11 @@ public struct ArgumentBuffer : ResourceProtocol {
             (key, arrayIndex, .bytes(offset: currentOffset, length: length))
         )
     }
+    
+    @inlinable
+    public static var resourceType: ResourceType {
+        return .argumentBuffer
+    }
 }
 
 extension ArgumentBuffer {
@@ -528,7 +533,7 @@ public struct ArgumentBufferArray : ResourceProtocol {
             index = TransientArgumentBufferArrayRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
         }
         
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBufferArray.rawValue) << Self.typeBitsRange.lowerBound)
+        let handle = index
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
@@ -625,6 +630,11 @@ public struct ArgumentBufferArray : ResourceProtocol {
         } else {
             return TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].generation == self.generation
         }
+    }
+    
+    @inlinable
+    public static var resourceType: ResourceType {
+        return .argumentBufferArray
     }
 }
 
@@ -766,6 +776,10 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         )
     }
     
+    @inlinable
+    public static var resourceType: ResourceType {
+        return .argumentBuffer
+    }
 }
 
 extension TypedArgumentBuffer {
@@ -874,5 +888,10 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
             self.argumentBufferArray._bindings[index] = buffer
             return TypedArgumentBuffer(handle: buffer.handle)
         }
+    }
+    
+    @inlinable
+    public static var resourceType: ResourceType {
+        return .argumentBufferArray
     }
 }

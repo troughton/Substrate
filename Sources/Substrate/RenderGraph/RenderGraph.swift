@@ -1210,6 +1210,7 @@ public final class RenderGraph {
     ///
     /// - Parameter onSubmission: an optional closure to execute once the render graph has been submitted to the GPU.
     /// - Parameter onGPUCompletion: an optional closure to execute once the render graph has completed executing on the GPU.
+    @discardableResult
     public func execute() -> RenderGraphExecutionWaitToken {
         guard !self.renderPasses.isEmpty else {
             self.submissionNotifyQueue.forEach { $0() }

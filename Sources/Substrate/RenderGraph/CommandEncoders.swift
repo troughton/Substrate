@@ -1457,7 +1457,7 @@ public final class BlitCommandEncoder : CommandEncoder {
         assert(sourceBuffer.length - sourceOffset >= sourceSize.height * sourceBytesPerRow)
         let commandOffset = self.nextCommandOffset
         
-        commandRecorder.addResourceUsage(for: sourceBuffer, bufferRange: sourceOffset..<min(sourceOffset, sourceOffset + sourceBytesPerImage), commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
+        commandRecorder.addResourceUsage(for: sourceBuffer, bufferRange: sourceOffset..<(sourceOffset + sourceSize.height * sourceBytesPerRow), commandIndex: commandOffset, encoder: self, usageType: .blitSource, stages: .blit, inArgumentBuffer: false)
         commandRecorder.addResourceUsage(for: destinationTexture, slice: destinationSlice, level: destinationLevel, commandIndex: commandOffset, encoder: self, usageType: .blitDestination, stages: .blit, inArgumentBuffer: false)
         
         commandRecorder.record(RenderGraphCommand.copyBufferToTexture, (sourceBuffer, UInt32(sourceOffset), UInt32(sourceBytesPerRow), UInt32(sourceBytesPerImage), sourceSize, destinationTexture, UInt32(destinationSlice), UInt32(destinationLevel), destinationOrigin, options))
