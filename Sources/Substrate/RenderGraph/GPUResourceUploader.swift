@@ -95,7 +95,7 @@ public final class GPUResourceUploader {
             try fillBuffer(contents, &writtenRange)
         }
         
-        return try self.queue.sync {
+        return self.queue.sync {
             self.renderGraph.addBlitCallbackPass(name: "uploadBytes(length: \(length), cacheMode: \(cacheMode))") { bce in
                 copyFromBuffer(stagingBuffer, stagingBufferOffset, bce)
             }
