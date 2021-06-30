@@ -235,16 +235,8 @@ protocol PersistentRegistryChunk {
     var generations: UnsafeMutablePointer<UInt8> { get }
     static var itemsPerChunk: Int { get }
     
-    var usages: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { get }
-    var activeRenderGraphs: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { get }
-}
-
-extension PersistentRegistryChunk {
-    @inlinable
-    var usages: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
-    
-    @inlinable
-    var activeRenderGraphs: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { get }
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { get }
 }
 
 @usableFromInline class PersistentRegistry<Resource: ResourceProtocol, Chunk: PersistentRegistryChunk> {
@@ -360,9 +352,9 @@ extension PersistentRegistryChunk {
             let chunkCount = self.chunkCount
             for chunkIndex in 0..<chunkCount {
                 let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % Chunk.itemsPerChunk) : Chunk.itemsPerChunk
-                self.chunks[chunkIndex].usages?.assign(repeating: ChunkArray(), count: chunkItemCount)
+                self.chunks[chunkIndex].usagesOptional?.assign(repeating: ChunkArray(), count: chunkItemCount)
                 
-                if let activeRenderGraphs = self.chunks[chunkIndex].activeRenderGraphs {
+                if let activeRenderGraphs = self.chunks[chunkIndex].activeRenderGraphsOptional {
                     for i in 0..<chunkItemCount {
                         UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: activeRenderGraphs.advanced(by: i), ordering: .relaxed)
                     }
@@ -485,10 +477,10 @@ struct TransientTextureRegistryStorage: TransientFixedSizeRegistryStorage {
 
 @usableFromInline
 struct TransientBufferRegistryStorage: TransientFixedSizeRegistryStorage {
-    @usableFromInline var descriptors : UnsafeMutablePointer<BufferDescriptor>! = nil
-    @usableFromInline var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>! = nil
-    @usableFromInline var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>! = nil
-    @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
+    @usableFromInline var descriptors : UnsafeMutablePointer<BufferDescriptor>
+    @usableFromInline var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>
+    @usableFromInline var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    @usableFromInline var labels : UnsafeMutablePointer<String?>
     
     @usableFromInline
     init(capacity: Int) {
@@ -500,10 +492,10 @@ struct TransientBufferRegistryStorage: TransientFixedSizeRegistryStorage {
     
     @usableFromInline
     func deallocate() {
-        self.descriptors?.deallocate()
-        self.deferredSliceActions?.deallocate()
-        self.usages?.deallocate()
-        self.labels?.deallocate()
+        self.descriptors.deallocate()
+        self.deferredSliceActions.deallocate()
+        self.usages.deallocate()
+        self.labels.deallocate()
     }
     
     @usableFromInline
@@ -593,6 +585,12 @@ struct TransientBufferRegistryStorage: TransientFixedSizeRegistryStorage {
         self.heaps.advanced(by: index).deinitialize(count: 1)
         self.labels.advanced(by: index).deinitialize(count: 1)
     }
+    
+    @usableFromInline
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
+    
+    @usableFromInline
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
 }
 
 @usableFromInline final class PersistentBufferRegistry: PersistentRegistry<Buffer, PersistentBufferRegistryChunk> {
@@ -667,6 +665,12 @@ struct PersistentTextureRegistryChunk: PersistentRegistryChunk {
         self.heaps.advanced(by: index).deinitialize(count: 1)
         self.labels.advanced(by: index).deinitialize(count: 1)
     }
+    
+    @usableFromInline
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
+    
+    @usableFromInline
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
 }
 
 @usableFromInline final class PersistentTextureRegistry: PersistentRegistry<Texture, PersistentTextureRegistryChunk> {
@@ -856,6 +860,12 @@ struct PersistentArgumentBufferRegistryChunk: PersistentRegistryChunk {
         self.heaps.advanced(by: indexInChunk).deinitialize(count: 1)
         self.labels.advanced(by: indexInChunk).deinitialize(count: 1)
     }
+    
+    @usableFromInline
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
+    
+    @usableFromInline
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
 }
 
 @usableFromInline final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer, PersistentArgumentBufferRegistryChunk> {
@@ -943,9 +953,15 @@ struct PersistentArgumentBufferArrayRegistryChunk: PersistentRegistryChunk {
     @usableFromInline
     func deinitialize(index: Int) {
         self.bindings.advanced(by: index).deinitialize(count: 1)
-        self.bindings.advanced(by: index).deinitialize(count: 1)
+        self.heaps.advanced(by: index).deinitialize(count: 1)
         self.labels.advanced(by: index).deinitialize(count: 1)
     }
+    
+    @usableFromInline
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+    
+    @usableFromInline
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
 }
 
 @usableFromInline final class PersistentArgumentBufferArrayRegistry: PersistentRegistry<ArgumentBufferArray, PersistentArgumentBufferArrayRegistryChunk> {
@@ -999,6 +1015,12 @@ struct HeapRegistryChunk: PersistentRegistryChunk {
         self.childResources.advanced(by: index).deinitialize(count: 1)
         self.activeRenderGraphs.deinitialize(count: 1)
     }
+    
+    @usableFromInline
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+    
+    @usableFromInline
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
 }
 
 @usableFromInline final class HeapRegistry: PersistentRegistry<Heap, HeapRegistryChunk> {
