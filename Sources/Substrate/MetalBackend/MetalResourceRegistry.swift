@@ -560,7 +560,12 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
                 textureUsage.formUnion(.shaderWrite)
             case .readWrite:
                 textureUsage.formUnion([.shaderRead, .shaderWrite])
-            case .readWriteRenderTarget, .writeOnlyRenderTarget, .inputAttachmentRenderTarget, .unusedRenderTarget:
+            case  .inputAttachmentRenderTarget:
+                textureUsage.formUnion(.renderTarget)
+                if RenderBackend.requiresEmulatedInputAttachments {
+                    textureUsage.formUnion(.shaderRead)
+                }
+            case .readWriteRenderTarget, .writeOnlyRenderTarget, .unusedRenderTarget:
                 textureUsage.formUnion(.renderTarget)
             default:
                 break
