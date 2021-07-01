@@ -904,8 +904,7 @@ public struct Buffer : ResourceProtocol {
         public var offset : Int
         public var bytesPerRow : Int
         
-        @inlinable
-        public init(descriptor: TextureDescriptor, offset: Int, bytesPerRow: Int) {
+            public init(descriptor: TextureDescriptor, offset: Int, bytesPerRow: Int) {
             self.descriptor = descriptor
             self.offset = offset
             self.bytesPerRow = bytesPerRow
@@ -1277,8 +1276,7 @@ public struct Texture : ResourceProtocol {
         public var levels: Range<Int>
         public var slices: Range<Int>
         
-        @inlinable
-        public init(pixelFormat: PixelFormat, textureType: TextureType, levels: Range<Int> = -1..<0, slices: Range<Int> = -1..<0) {
+            public init(pixelFormat: PixelFormat, textureType: TextureType, levels: Range<Int> = -1..<0, slices: Range<Int> = -1..<0) {
             self.pixelFormat = pixelFormat
             self.textureType = textureType
             self.levels = levels
@@ -1586,23 +1584,20 @@ extension Texture: CustomStringConvertible {
 }
 
 public struct AccelerationStructure : ResourceProtocol {
+
     @usableFromInline let _handle : UnsafeRawPointer
     @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
-    @inlinable
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .accelerationStructure)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    @inlinable
     public init(size: Int) {
         let flags : ResourceFlags = .persistent
         
-        let index = AccelerationStructureRegistry.instance.allocate(size: size)
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.accelerationStructure.rawValue) << Self.typeBitsRange.lowerBound)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        self = AccelerationStructureRegistry.instance.allocate(descriptor: size, heap: nil, flags: flags)
         
         // vkCreateAccelerationStructureKHR
         if !RenderBackend.materialiseAccelerationStructure(self) {
@@ -1611,71 +1606,46 @@ public struct AccelerationStructure : ResourceProtocol {
         }
     }
     
-    @inlinable
     public var size : Int {
         get {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            return AccelerationStructureRegistry.instance.chunks[chunkIndex].sizes[indexInChunk]
+            return self[\.sizes]
         }
     }
     
-    @inlinable
     public var label : String? {
         get {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            return AccelerationStructureRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
+            return self[\.labels]
         }
         nonmutating set {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            AccelerationStructureRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
+            self[\.labels] = newValue
             RenderBackend.updateLabel(on: self)
         }
     }
     
-    @inlinable
     public internal(set) var descriptor : AccelerationStructureDescriptor? {
         get {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            return AccelerationStructureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk]
+            self[\.descriptors]
         }
         nonmutating set {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            AccelerationStructureRegistry.instance.chunks[chunkIndex].descriptors[indexInChunk] = newValue
+            self[\.descriptors] = newValue
         }
     }
-    
-    @inlinable
-    public var usages : ChunkArray<ResourceUsage> {
-        get {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            return AccelerationStructureRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
-        }
-        nonmutating set {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            AccelerationStructureRegistry.instance.chunks[chunkIndex].usages[indexInChunk] = newValue
-        }
-    }
-    
     
     public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
-            guard self._usesPersistentRegistry else { return 0 }
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
             if type == .read {
-                return AccelerationStructureRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)]
+                return self[\.readWaitIndices]?[Int(queue.index)] ?? 0
             } else {
-                return AccelerationStructureRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)]
+                return self[\.writeWaitIndices]?[Int(queue.index)] ?? 0
             }
         }
         nonmutating set {
             guard self._usesPersistentRegistry else { return }
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-            
             if type == .read || type == .readWrite {
-                AccelerationStructureRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)] = newValue
+                self[\.readWaitIndices]![Int(queue.index)] = newValue
             }
             if type == .write || type == .readWrite {
-                AccelerationStructureRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)] = newValue
+                self[\.writeWaitIndices]![Int(queue.index)] = newValue
             }
         }
     }
@@ -1685,10 +1655,9 @@ public struct AccelerationStructure : ResourceProtocol {
     }
     
     /// Returns whether the resource is known to currently be in use by the CPU or GPU.
-    @inlinable
     public var isKnownInUse: Bool {
-        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: AccelerationStructureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else { return true }
+        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs, ordering: .relaxed)
         if activeRenderGraphMask != 0 {
             return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
         }
@@ -1696,8 +1665,8 @@ public struct AccelerationStructure : ResourceProtocol {
     }
     
     public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: AccelerationStructureRegistry.Chunk.itemsPerChunk)
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: AccelerationStructureRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else { return }
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
     }
     
     public func dispose() {
@@ -1707,11 +1676,26 @@ public struct AccelerationStructure : ResourceProtocol {
         AccelerationStructureRegistry.instance.dispose(self)
     }
     
-    @inlinable
     public var isValid : Bool {
-        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: HeapRegistry.Chunk.itemsPerChunk)
-        return AccelerationStructureRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+        return AccelerationStructureRegistry.instance.generationChunks[chunkIndex][indexInChunk] == self.generation
     }
+    
+    public static var resourceType: ResourceType { .accelerationStructure }
+}
+
+extension AccelerationStructure: ResourceProtocolImpl {
+    typealias SharedProperties = AccelerationStructureProperties
+    typealias TransientProperties = EmptyProperties<Int>
+    typealias PersistentProperties = AccelerationStructureProperties.PersistentProperties
+    
+    static func transientRegistry(index: Int) -> TransientChunkRegistry<AccelerationStructure>? {
+        return nil
+    }
+    
+    static var persistentRegistry: PersistentRegistry<Self> { AccelerationStructureRegistry.instance }
+    
+    typealias Descriptor = Int // size
 }
 
 extension AccelerationStructure: CustomStringConvertible {
