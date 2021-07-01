@@ -279,46 +279,12 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
-    public var isKnownInUse: Bool {
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
-            return true
-        }
-        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs, ordering: .relaxed)
-        if activeRenderGraphMask != 0 {
-            return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
-        }
-        for queue in QueueRegistry.allQueues {
-            if self[waitIndexFor: queue, accessType: .readWrite] > queue.lastCompletedCommand {
-                return true
-            }
-        }
-        return false
-    }
-    
-    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
-            return
-        }
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
-    }
-    
     public func dispose() {
         guard self._usesPersistentRegistry, self.isValid else {
             return
         }
         PersistentArgumentBufferRegistry.instance.dispose(self)
     }
-    
-    public var isValid : Bool {
-        if self._usesPersistentRegistry {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return PersistentArgumentBufferRegistry.instance.generationChunks[chunkIndex][indexInChunk] == self.generation
-        } else {
-            return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].generation == self.generation
-        }
-    }
-    
     
     public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey, arrayIndex: Int = 0) {
         guard let buffer = buffer else { return }
@@ -502,15 +468,6 @@ public struct ArgumentBufferArray : ResourceProtocol {
         }
     }
     
-    public var isValid : Bool {
-        if self._usesPersistentRegistry {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return PersistentArgumentBufferArrayRegistry.instance.generationChunks[chunkIndex][indexInChunk] == self.generation
-        } else {
-            return TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].generation == self.generation
-        }
-    }
-    
     public static var resourceType: ResourceType {
         return .argumentBufferArray
     }
@@ -598,6 +555,15 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         }
         nonmutating set {
             self.argumentBuffer.label = newValue
+        }
+    }
+    
+    public var usages: ChunkArray<ResourceUsage> {
+        get {
+            return self.argumentBuffer.usages
+        }
+        nonmutating set {
+            self.argumentBuffer.usages = newValue
         }
     }
     
@@ -725,6 +691,15 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         }
         nonmutating set {
             self.argumentBufferArray.label = newValue
+        }
+    }
+    
+    public var usages: ChunkArray<ResourceUsage> {
+        get {
+            return self.argumentBufferArray.usages
+        }
+        nonmutating set {
+            self.argumentBufferArray.usages = newValue
         }
     }
     

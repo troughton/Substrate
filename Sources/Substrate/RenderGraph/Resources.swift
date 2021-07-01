@@ -117,7 +117,7 @@ public enum ResourcePurgeableState {
 
 public typealias ActiveRenderGraphMask = UInt8
 
-public protocol ResourceProtocol : Hashable {
+public protocol ResourceProtocol {
     init(handle: Handle)
     func dispose()
     
@@ -126,6 +126,9 @@ public protocol ResourceProtocol : Hashable {
     
     var label: String? { get nonmutating set }
     var storageMode: StorageMode { get }
+    var heap: Heap? { get }
+    var baseResource: Resource? { get }
+    var usages: ChunkArray<ResourceUsage> { get nonmutating set }
     
     /// The command buffer index on which to wait on a particular queue `queue` before it is safe to perform an access of type `type`.
     subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 { get nonmutating set }
@@ -147,10 +150,9 @@ public protocol ResourceProtocol : Hashable {
     var purgeableState: ResourcePurgeableState { get nonmutating set }
     func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState
     
-    static var resourceType: ResourceType { get }
 }
 
-protocol ResourceProtocolImpl: ResourceProtocol {
+protocol ResourceProtocolImpl: ResourceProtocol, Hashable {
     associatedtype Descriptor
     associatedtype SharedProperties: SharedResourceProperties where SharedProperties.Descriptor == Descriptor
     associatedtype TransientProperties: ResourceProperties where TransientProperties.Descriptor == Descriptor
@@ -159,12 +161,11 @@ protocol ResourceProtocolImpl: ResourceProtocol {
     associatedtype TransientRegistry: Substrate.TransientRegistry where TransientRegistry.Resource == Self
     typealias PersistentRegistry = Substrate.PersistentRegistry<Self>
     
+    static var resourceType: ResourceType { get }
     static var itemsPerChunk: Int { get }
     
     static func transientRegistry(index: Int) -> TransientRegistry?
     static var persistentRegistry: PersistentRegistry { get }
-    
-    var usages: ChunkArray<ResourceUsage> { get nonmutating set }
 }
 
 extension ResourceProtocolImpl {
@@ -272,6 +273,43 @@ extension ResourceProtocolImpl {
         }
     }
     
+    @_transparent
+    var _activeRenderGraphsPointer: UnsafeMutablePointer<UInt8.AtomicRepresentation>? {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            return Self.persistentRegistry.persistentChunks[chunkIndex].activeRenderGraphsOptional?.advanced(by: indexInChunk)
+        } else {
+            return nil
+        }
+    }
+    
+    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
+    public var isKnownInUse: Bool {
+        guard let activeRenderGraphs = self._activeRenderGraphsPointer else {
+            return true
+        }
+        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs, ordering: .relaxed)
+        if activeRenderGraphMask != 0 {
+            return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
+        }
+        for queue in QueueRegistry.allQueues {
+            if self[waitIndexFor: queue, accessType: .readWrite] > queue.lastCompletedCommand {
+                return true
+            }
+        }
+        return false
+    }
+    
+    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
+        self.baseResource?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
+        self.heap?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
+        
+        guard let activeRenderGraphs = self._activeRenderGraphsPointer else {
+            return
+        }
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
+    }
+    
     public var isValid : Bool {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
@@ -318,6 +356,14 @@ extension ResourceProtocol {
     
     public var backingResource: Any? {
         return RenderBackend.backingResource(self)
+    }
+    
+    public var heap: Heap? {
+        return nil
+    }
+    
+    public var baseResource: Resource? {
+        return nil
     }
 }
 
@@ -379,102 +425,72 @@ public struct Resource : ResourceProtocol, Hashable {
         if self.type == .heap {
             return Heap(handle: self.handle)
         } else {
-            return nil
+            return self[\.heap]
+        }
+    }
+    
+    public var baseResource : Resource? {
+        return self[\.baseResource]
+    }
+    
+    @_transparent
+    func withUnderlyingResource<R>(_ perform: (ResourceProtocol) -> R) -> R {
+        switch self.type {
+        case .buffer:
+            return perform(Buffer(handle: self.handle))
+        case .texture:
+            return perform(Texture(handle: self.handle))
+        case .argumentBuffer:
+            return perform(ArgumentBuffer(handle: self.handle))
+        case .argumentBufferArray:
+            return perform(ArgumentBufferArray(handle: self.handle))
+        case .heap:
+            return perform(Heap(handle: self.handle))
+        case .accelerationStructure:
+            return perform(AccelerationStructure(handle: self.handle))
+        default:
+            fatalError()
+        }
+    }
+    
+     @inline(__always)
+     subscript<T>(_ property: KeyPath<ResourceProtocol, T>) -> T {
+         get {
+             return self.withUnderlyingResource({ $0[keyPath: property] })
+         }
+     }
+    
+    @inline(__always)
+    subscript<T>(_ property: ReferenceWritableKeyPath<ResourceProtocol, T>) -> T {
+        get {
+            return self.withUnderlyingResource({ $0[keyPath: property] })
+        }
+        nonmutating set {
+            self.withUnderlyingResource({ $0[keyPath: property] = newValue })
         }
     }
     
     public var stateFlags: ResourceStateFlags {
         get {
-            switch self.type {
-            case .buffer:
-                return Buffer(handle: self.handle).stateFlags
-            case .texture:
-                return Texture(handle: self.handle).stateFlags
-            case .argumentBuffer:
-                return ArgumentBuffer(handle: self.handle).stateFlags
-            case .argumentBufferArray:
-                return ArgumentBufferArray(handle: self.handle).stateFlags
-            case .heap:
-                return Heap(handle: self.handle).stateFlags
-            case .accelerationStructure:
-                return AccelerationStructure(handle: self.handle).stateFlags
-            default:
-                fatalError()
-            }
+            return self[\.stateFlags]
         }
         nonmutating set {
-            switch self.type {
-            case .buffer:
-                Buffer(handle: self.handle).stateFlags = newValue
-            case .texture:
-                Texture(handle: self.handle).stateFlags = newValue
-            case .argumentBuffer:
-                ArgumentBuffer(handle: self.handle).stateFlags = newValue
-            case .argumentBufferArray:
-                ArgumentBufferArray(handle: self.handle).stateFlags = newValue
-            case .heap:
-                Heap(handle: self.handle).stateFlags = newValue
-            case .accelerationStructure:
-                AccelerationStructure(handle: self.handle).stateFlags = newValue
-            default:
-                fatalError()
-            }
+            self[\.stateFlags] = newValue
         }
     }
     
     public var storageMode: StorageMode {
         get {
-            switch self.type {
-            case .buffer:
-                return Buffer(handle: self.handle).storageMode
-            case .texture:
-                return Texture(handle: self.handle).storageMode
-            case .argumentBuffer:
-                return ArgumentBuffer(handle: self.handle).storageMode
-            case .argumentBufferArray:
-                return ArgumentBufferArray(handle: self.handle).storageMode
-            case .heap:
-                return Heap(handle: self.handle).storageMode
-            case .accelerationStructure:
-                return AccelerationStructure(handle: self.handle).storageMode
-            default:
-                fatalError()
-            }
+            return self[\.storageMode]
         }
     }
     
     public var label: String? {
         get {
-            switch self.type {
-            case .buffer:
-                return Buffer(handle: self.handle).label
-            case .texture:
-                return Texture(handle: self.handle).label
-            case .argumentBuffer:
-                return ArgumentBuffer(handle: self.handle).label
-            case .argumentBufferArray:
-                return ArgumentBufferArray(handle: self.handle).label
-            case .accelerationStructure:
-                return AccelerationStructure(handle: self.handle).label
-            default:
-                fatalError()
-            }
+            return self[\.label]
         }
         nonmutating set {
-            switch self.type {
-            case .buffer:
-                Buffer(handle: self.handle).label = newValue
-            case .texture:
-                Texture(handle: self.handle).label = newValue
-            case .argumentBuffer:
-                ArgumentBuffer(handle: self.handle).label = newValue
-            case .argumentBufferArray:
-                ArgumentBufferArray(handle: self.handle).label = newValue
-            case .accelerationStructure:
-                AccelerationStructure(handle: self.handle).label = newValue
-            default:
-                fatalError()
-            }
+            self[\.label] = newValue
         }
     }
     
@@ -515,124 +531,27 @@ public struct Resource : ResourceProtocol, Hashable {
     
     public var usages: ChunkArray<ResourceUsage> {
         get {
-            switch self.type {
-            case .buffer:
-                return Buffer(handle: self.handle).usages
-            case .texture:
-                return Texture(handle: self.handle).usages
-            case .argumentBuffer:
-                return ArgumentBuffer(handle: self.handle).usages
-            case .accelerationStructure:
-                return AccelerationStructure(handle: self.handle).usages
-            default:
-                return ChunkArray()
-            }
+            self[\.usages]
         }
         nonmutating set {
-            switch self.type {
-            case .buffer:
-                Buffer(handle: self.handle).usages = newValue
-            case .texture:
-                Texture(handle: self.handle).usages = newValue
-            case .argumentBuffer:
-                ArgumentBuffer(handle: self.handle).usages = newValue
-            case .accelerationStructure:
-                AccelerationStructure(handle: self.handle).usages = newValue
-            default:
-                fatalError()
-            }
+            self[\.usages] = newValue
         }
     }
     
     public var isKnownInUse: Bool {
-        switch self.type {
-        case .buffer:
-            return Buffer(handle: self.handle).isKnownInUse
-        case .texture:
-            return Texture(handle: self.handle).isKnownInUse
-        case .argumentBuffer:
-            return ArgumentBuffer(handle: self.handle).isKnownInUse
-        case .argumentBufferArray:
-            return ArgumentBufferArray(handle: self.handle).isKnownInUse
-        case .heap:
-            return Heap(handle: self.handle).isKnownInUse
-        case .accelerationStructure:
-            return AccelerationStructure(handle: self.handle).isKnownInUse
-        default:
-            fatalError()
-        }
+        self[\.isKnownInUse]
     }
     
     public var isValid: Bool {
-        switch self.type {
-        case .buffer:
-            return Buffer(handle: self.handle).isValid
-        case .texture:
-            return Texture(handle: self.handle).isValid
-        case .argumentBuffer:
-            return ArgumentBuffer(handle: self.handle).isValid
-        case .argumentBufferArray:
-            return ArgumentBufferArray(handle: self.handle).isValid
-        case .heap:
-            return Heap(handle: self.handle).isValid
-        case .accelerationStructure:
-            return AccelerationStructure(handle: self.handle).isValid
-        default:
-            fatalError()
-        }
-    }
-    
-    public var baseResource: Resource? {
-        get {
-            switch self.type {
-            case .texture:
-                return Texture(handle: self.handle).baseResource
-            default:
-                return nil
-            }
-        }
+        self[\.isValid]
     }
     
     public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        switch self.type {
-        case .buffer:
-            Buffer(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        case .texture:
-            Texture(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        case .argumentBuffer:
-            ArgumentBuffer(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        case .argumentBufferArray:
-            ArgumentBufferArray(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        case .heap:
-            Heap(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        case .accelerationStructure:
-            AccelerationStructure(handle: self.handle).markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        default:
-            break
-        }
+        self.withUnderlyingResource({ $0.markAsUsed(activeRenderGraphMask: activeRenderGraphMask) })
     }
     
     public func dispose() {
-        switch self.type {
-        case .buffer:
-            Buffer(handle: self.handle).dispose()
-        case .texture:
-            Texture(handle: self.handle).dispose()
-        case .argumentBuffer:
-            ArgumentBuffer(handle: self.handle).dispose()
-        case .argumentBufferArray:
-            ArgumentBufferArray(handle: self.handle).dispose()
-        case .heap:
-            Heap(handle: self.handle).dispose()
-        case .accelerationStructure:
-            AccelerationStructure(handle: self.handle).dispose()
-        default:
-            break
-        }
-    }
-    
-    public static var resourceType: ResourceType {
-        fatalError()
+        self.withUnderlyingResource({ $0.dispose() })
     }
 }
 
@@ -812,23 +731,8 @@ public struct Heap : ResourceProtocol {
         }
     }
     
-    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
-    public var isKnownInUse: Bool {
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
-            return true
-        }
-        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs, ordering: .relaxed)
-        if activeRenderGraphMask != 0 {
-            return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
-        }
-        return false
-    }
-    
-    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
-            return
-        }
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
+    public var heap : Heap? {
+        return self
     }
     
     public var childResources: Set<Resource> {
@@ -1209,32 +1113,6 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
-    public var isKnownInUse: Bool {
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
-            return true // Transient resource
-        }
-        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs, ordering: .relaxed)
-        if activeRenderGraphMask != 0 {
-            return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
-        }
-        for queue in QueueRegistry.allQueues {
-            if self[waitIndexFor: queue, accessType: .readWrite] > queue.lastCompletedCommand {
-                return true
-            }
-        }
-        return false
-    }
-    
-    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        self.heap?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
-            return
-        }
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
-    }
-    
     public func dispose() {
         guard self._usesPersistentRegistry, self.isValid else {
             return
@@ -1521,33 +1399,6 @@ public struct Texture : ResourceProtocol {
         }
     }
     
-    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
-    public var isKnownInUse: Bool {
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
-            return true
-        }
-        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs, ordering: .relaxed)
-        if activeRenderGraphMask != 0 {
-            return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
-        }
-        for queue in QueueRegistry.allQueues {
-            if self[waitIndexFor: queue, accessType: .readWrite] > queue.lastCompletedCommand {
-                return true
-            }
-        }
-        return false
-    }
-    
-    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        self.baseResource?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        self.heap?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
-            return
-        }
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
-    }
-    
     public func dispose() {
         guard self._usesPersistentRegistry, self.isValid else {
             return
@@ -1654,31 +1505,11 @@ public struct AccelerationStructure : ResourceProtocol {
         return .private
     }
     
-    /// Returns whether the resource is known to currently be in use by the CPU or GPU.
-    public var isKnownInUse: Bool {
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else { return true }
-        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs, ordering: .relaxed)
-        if activeRenderGraphMask != 0 {
-            return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
-        }
-        return false
-    }
-    
-    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else { return }
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
-    }
-    
     public func dispose() {
         guard self.isValid else {
             return
         }
         AccelerationStructureRegistry.instance.dispose(self)
-    }
-    
-    public var isValid : Bool {
-        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-        return AccelerationStructureRegistry.instance.generationChunks[chunkIndex][indexInChunk] == self.generation
     }
     
     public static var resourceType: ResourceType { .accelerationStructure }

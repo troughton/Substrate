@@ -8,7 +8,7 @@
 import SubstrateUtilities
 import Atomics
 
-public struct PersistentResourceMap<R : ResourceProtocol, V> {
+public struct PersistentResourceMap<R : ResourceProtocol & Equatable, V> {
     
     public let allocator : AllocatorType
     
@@ -215,7 +215,7 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
 }
 
 
-public struct TransientResourceMap<R : ResourceProtocol, V> {
+public struct TransientResourceMap<R : ResourceProtocol & Equatable, V> {
     
     public let allocator : AllocatorType
     let transientRegistryIndex : Int
@@ -454,7 +454,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
 
 
 /// A resource-specific constant-time access map specifically for RenderGraph resources.
-public struct ResourceMap<R : ResourceProtocol, V> {
+public struct ResourceMap<R : ResourceProtocol & Equatable, V> {
     
     public let allocator : AllocatorType
     
