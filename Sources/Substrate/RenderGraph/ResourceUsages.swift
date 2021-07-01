@@ -129,31 +129,24 @@ public struct ResourceUsage {
         
         if self.type.isRenderTarget || nextUsage.type.isRenderTarget {
             if self.type == .read || nextUsage.type == .read {
-                // We're either using this resource as an input attachment or reading from different mip levels/slices than we're writing to.
-                // If the read spans multiple draw commands, make it an input attachment; otherwise, assume that the render target mip/slice
-                // is not read from.
-                var drawCommandCount = 0
-                for command in self.renderPassRecord.commands[nextUsage.commandRange.offset(by: -self.renderPassRecord.commandRange!.lowerBound)] {
-                    if command.isDrawCommand {
-                        drawCommandCount += 1
-                        if drawCommandCount > 1 {
-                            break
-                        }
-                    }
+                // If we just wrote to a different mip than the one we're using as a
+                
+                var readUsage = self
+                var renderTargetUsage = nextUsage
+                if readUsage.type != .read {
+                    swap(&readUsage, &renderTargetUsage)
                 }
-                if drawCommandCount <= 1 {
-                    // We can't read from the level we're writing to.
-                    if self.type == .read {
-                        self.activeRange.subtract(range: nextUsage.activeRange, resource: resource, allocator: allocator)
-                    } else {
-                        nextUsage.activeRange.subtract(range: self.activeRange, resource: resource, allocator: allocator)
-                    }
+                
+                let isInputAttachment = renderTargetUsage.commandRange.lowerBound < readUsage.commandRange.lowerBound // It's an input attachment if we wrote to it before we started reading from it.
+                
+                if isInputAttachment {
+                    self.type = .inputAttachmentRenderTarget
+                    self.inArgumentBuffer = self.inArgumentBuffer || nextUsage.inArgumentBuffer
+                    self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator) // Since we're merging a read, it's technically possible to read from other levels/slices of the resource while simultaneously using it as an input attachment.
+                } else {
                     return false
                 }
                 
-                self.type = .inputAttachmentRenderTarget
-                self.inArgumentBuffer = self.inArgumentBuffer || nextUsage.inArgumentBuffer
-                self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator) // Since we're merging a read, it's technically possible to read from other levels/slices of the resource while simultaneously using it as an input attachment.
             }
             
             if self.type != .inputAttachmentRenderTarget {

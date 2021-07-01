@@ -14,7 +14,7 @@ import Atomics
 // Fixed-capacity registries (transient buffers, transient textures, and transient argument buffer arrays) have permanently-allocated storage.
 // Chunk-based registries allocate storage in blocks. This avoids excessive memory usage while simultaneously ensuring that the memory for a resource is never reallocated (which would cause issues in multithreaded contexts, requiring locks for all access).
 
-@usableFromInline final class TransientRegistryManager {
+final class TransientRegistryManager {
     public static let maxTransientRegistries = UInt8.bitWidth
     
     static var allocatedRegistries : UInt8 = 0
@@ -42,19 +42,151 @@ import Atomics
     }
 }
 
-@usableFromInline final class TransientBufferRegistry {
+protocol ResourceProperties {
+    associatedtype Descriptor
+    init(capacity: Int)
+    func deallocate()
+    func initialize(index: Int, descriptor: Descriptor, heap: Heap?, flags: ResourceFlags)
+    func deinitialize(from index: Int, count: Int)
+}
 
-    @usableFromInline static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientBufferRegistry(transientRegistryIndex: i) }
+protocol SharedResourceProperties: ResourceProperties {
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { get }
+}
+
+protocol PersistentResourceProperties: ResourceProperties {
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { get }
+}
+
+struct EmptyProperties<Descriptor>: PersistentResourceProperties & SharedResourceProperties {
+    init(capacity: Int) {}
+    func deallocate() {}
+    func initialize(index: Int, descriptor: Descriptor, heap: Heap?, flags: ResourceFlags) {}
+    func deinitialize(from index: Int, count: Int) {}
     
-    @usableFromInline let transientRegistryIndex : Int
-    @usableFromInline var capacity : Int
-    @usableFromInline var count = UnsafeMutablePointer<Int.AtomicRepresentation>.allocate(capacity: 1)
-    @usableFromInline var generation : UInt8 = 0
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
+}
+
+protocol TransientRegistry {
+    associatedtype Resource: ResourceProtocolImpl
+    func allocateHandle(flags: ResourceFlags) -> Resource
+    func initialize(resource: Resource, descriptor: Resource.Descriptor)
+    func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource
+    func clear()
     
-    @usableFromInline var descriptors : UnsafeMutablePointer<BufferDescriptor>! = nil
-    @usableFromInline var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>! = nil
-    @usableFromInline var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>! = nil
-    @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
+    var generation: UInt8 { get }
+    func sharedProperties(index: Int) -> (chunk: Resource.SharedProperties, indexInChunk: Int)
+    func transientProperties(index: Int) -> (chunk: Resource.TransientProperties, indexInChunk: Int)
+}
+
+class TransientChunkRegistry<Resource: ResourceProtocolImpl>: TransientRegistry {
+    class var maxChunks: Int { 2048 }
+    
+    var lock = SpinLock()
+    
+    let transientRegistryIndex : Int
+    var count = 0
+    let sharedPropertyChunks : UnsafeMutablePointer<Resource.SharedProperties>
+    let transientPropertyChunks : UnsafeMutablePointer<Resource.TransientProperties>
+    var allocatedChunkCount = 0
+    var generation : UInt8 = 0
+    
+    init(transientRegistryIndex: Int) {
+        self.transientRegistryIndex = transientRegistryIndex
+        self.sharedPropertyChunks = .allocate(capacity: Self.maxChunks)
+        self.transientPropertyChunks = .allocate(capacity: Self.maxChunks)
+    }
+    
+    deinit {
+        self.clear()
+        for i in 0..<self.chunkCount {
+            self.sharedPropertyChunks[i].deallocate()
+            self.transientPropertyChunks[i].deallocate()
+        }
+        self.sharedPropertyChunks.deallocate()
+        self.transientPropertyChunks.deallocate()
+    }
+    
+    func sharedProperties(index: Int) -> (chunk: Resource.SharedProperties, indexInChunk: Int) {
+        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
+        return (self.sharedPropertyChunks[chunkIndex], indexInChunk)
+    }
+    
+    func transientProperties(index: Int) -> (chunk: Resource.TransientProperties, indexInChunk: Int) {
+        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
+        return (self.transientPropertyChunks[chunkIndex], indexInChunk)
+    }
+    
+    func allocateHandle(flags: ResourceFlags) -> Resource {
+        return self.lock.withLock {
+            
+            let index = self.count
+            if index == self.allocatedChunkCount * Resource.itemsPerChunk {
+                self.allocateChunk(index / Resource.itemsPerChunk)
+            }
+            
+            assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
+            
+            self.count += 1
+            
+            let handle = UInt64(truncatingIfNeeded: index) |
+            (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) |
+            (UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound) |
+            (UInt64(flags.rawValue) << Resource.flagBitsRange.lowerBound) |
+            (UInt64(Resource.resourceType.rawValue) << Resource.typeBitsRange.lowerBound)
+            return Resource(handle: handle)
+        }
+    }
+    
+    func initialize(resource: Resource, descriptor: Resource.Descriptor) {
+        let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
+        self.sharedPropertyChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
+        self.transientPropertyChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
+    }
+    
+    func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource {
+        let resource = self.allocateHandle(flags: flags)
+        self.initialize(resource: resource, descriptor: descriptor)
+        return resource
+    }
+    
+    var chunkCount : Int {
+        if self.count == 0 { return 0 }
+        let lastUsedIndex = self.count - 1
+        return (lastUsedIndex / Resource.itemsPerChunk) + 1
+    }
+    
+    func allocateChunk(_ index: Int) {
+        assert(index < Self.maxChunks)
+        assert(index == self.allocatedChunkCount)
+        self.sharedPropertyChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.transientPropertyChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.allocatedChunkCount += 1
+    }
+    
+    func clear() {
+        self.lock.withLock {
+            for chunkIndex in 0..<self.chunkCount {
+                let countInChunk = min(self.count - chunkIndex * Resource.itemsPerChunk, Resource.itemsPerChunk)
+                self.sharedPropertyChunks[chunkIndex].deinitialize(from: 0, count: countInChunk)
+                self.transientPropertyChunks[chunkIndex].deinitialize(from: 0, count: countInChunk)
+            }
+            self.count = 0
+            
+            self.generation = self.generation &+ 1
+        }
+    }
+}
+
+class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegistry {
+    let transientRegistryIndex : Int
+    var capacity : Int
+    var count = UnsafeMutablePointer<Int.AtomicRepresentation>.allocate(capacity: 1)
+    var generation : UInt8 = 0
+    
+    var sharedStorage : Resource.SharedProperties!
+    var transientStorage : Resource.TransientProperties!
     
     init(transientRegistryIndex: Int) {
         self.transientRegistryIndex = transientRegistryIndex
@@ -67,50 +199,58 @@ import Atomics
         self.capacity = capacity
         
         self.count.initialize(to: Int.AtomicRepresentation(0))
-        self.descriptors = UnsafeMutablePointer.allocate(capacity: self.capacity)
-        self.deferredSliceActions = UnsafeMutablePointer.allocate(capacity: self.capacity)
-        self.usages = UnsafeMutablePointer.allocate(capacity: self.capacity)
-        self.labels = UnsafeMutablePointer.allocate(capacity: self.capacity)
+        self.sharedStorage = .init(capacity: self.capacity)
+        self.transientStorage = .init(capacity: self.capacity)
     }
     
     deinit {
         self.clear()
-        
         self.count.deallocate()
-        self.descriptors?.deallocate()
-        self.deferredSliceActions?.deallocate()
-        self.usages?.deallocate()
-        self.labels?.deallocate()
+        self.sharedStorage.deallocate()
+        self.transientStorage.deallocate()
     }
     
-    @usableFromInline
-    func allocate(descriptor: BufferDescriptor, flags: ResourceFlags) -> UInt64 {
-        
+    func sharedProperties(index: Int) -> (chunk: Resource.SharedProperties, indexInChunk: Int) {
+        return (self.sharedStorage, index)
+    }
+    
+    func transientProperties(index: Int) -> (chunk: Resource.TransientProperties, indexInChunk: Int) {
+        return (self.transientStorage, index)
+    }
+    
+    func allocateHandle(flags: ResourceFlags) -> Resource {
         let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
         self.ensureCapacity(index + 1)
         
-        self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.deferredSliceActions.advanced(by: index).initialize(to: [])
-        self.usages.advanced(by: index).initialize(to: ChunkArray())
-        self.labels.advanced(by: index).initialize(to: nil)
-        
         assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
         
-        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
+        let handle = UInt64(truncatingIfNeeded: index) |
+        (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) |
+        (UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound) |
+        (UInt64(flags.rawValue) << Resource.flagBitsRange.lowerBound) |
+        (UInt64(Resource.resourceType.rawValue) << Resource.typeBitsRange.lowerBound)
+        return Resource(handle: handle)
     }
     
-    @usableFromInline
+    func initialize(resource: Resource, descriptor: Resource.Descriptor) {
+        self.sharedStorage.initialize(index: resource.index, descriptor: descriptor, heap: nil, flags: resource.flags)
+        self.transientStorage.initialize(index: resource.index, descriptor: descriptor, heap: nil, flags: resource.flags)
+    }
+    
+    func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource {
+        let resource = self.allocateHandle(flags: flags)
+        self.initialize(resource: resource, descriptor: descriptor)
+        return resource
+    }
+    
     func ensureCapacity(_ capacity: Int) {
         assert(capacity <= self.capacity)
     }
     
-    @usableFromInline
     func clear() {
         let count = Int.AtomicRepresentation.atomicExchange(0, at: self.count, ordering: .relaxed)
-        self.descriptors.deinitialize(count: count)
-        self.deferredSliceActions.deinitialize(count: count)
-        self.usages.deinitialize(count: count)
-        self.labels.deinitialize(count: count)
+        self.sharedStorage.deinitialize(from: 0, count: count)
+        self.transientStorage.deinitialize(from: 0, count: count)
         
         self.generation = self.generation &+ 1
         
@@ -118,125 +258,97 @@ import Atomics
     }
 }
 
-@usableFromInline final class PersistentBufferRegistry {
+class PersistentRegistry<Resource: ResourceProtocolImpl> {
+    class var maxChunks: Int { 2048 }
     
-    @usableFromInline static let instance = PersistentBufferRegistry()
+    var lock = SpinLock()
     
-    @usableFromInline
-    struct Chunk {
-        @usableFromInline static let itemsPerChunk = 256
-        
-        @usableFromInline let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
-        /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
-        @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
-        @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        /// The RenderGraphs that are currently using this resource.
-        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
-        @usableFromInline let descriptors : UnsafeMutablePointer<BufferDescriptor>
-        @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
-        @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
-        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
-        @usableFromInline let labels : UnsafeMutablePointer<String?>
-        
-        init() {
-            self.stateFlags = .allocate(capacity: Chunk.itemsPerChunk)
-            self.readWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
-            self.writeWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
-            self.activeRenderGraphs = .allocate(capacity: Chunk.itemsPerChunk)
-            self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
-            self.usages = .allocate(capacity: Chunk.itemsPerChunk)
-            self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
-            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
-            self.labels = .allocate(capacity: Chunk.itemsPerChunk)
-            
-            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
-        }
-        
-        func deallocate() {
-            self.stateFlags.deallocate()
-            self.readWaitIndices.deallocate()
-            self.writeWaitIndices.deallocate()
-            self.activeRenderGraphs.deallocate()
-            self.descriptors.deallocate()
-            self.usages.deallocate()
-            self.heaps.deallocate()
-            self.generations.deallocate()
-            self.labels.deallocate()
-        }
-    }
-    
-    @usableFromInline static let maxChunks = 2048
-    
-    @usableFromInline var lock = SpinLock()
-    
-    @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var nextFreeIndex = 0
-    @usableFromInline var enqueuedDisposals = [Buffer]()
-    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
+    var freeIndices = RingBuffer<Int>()
+    var nextFreeIndex = 0
+    var enqueuedDisposals = [Resource]()
+    let sharedChunks : UnsafeMutablePointer<Resource.SharedProperties>
+    let persistentChunks : UnsafeMutablePointer<Resource.PersistentProperties>
+    let generationChunks : UnsafeMutablePointer<UnsafeMutablePointer<UInt8>>
     
     init() {
-        self.chunks = .allocate(capacity: Self.maxChunks)
+        self.sharedChunks = .allocate(capacity: Self.maxChunks)
+        self.persistentChunks = .allocate(capacity: Self.maxChunks)
+        self.generationChunks = .allocate(capacity: Self.maxChunks)
     }
     
-    @usableFromInline
-    func allocate(descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) -> UInt64 {
+    func allocateHandle(flags: ResourceFlags) -> Resource {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
                 index = reusedIndex
             } else {
                 index = self.nextFreeIndex
-                if self.nextFreeIndex % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(self.nextFreeIndex / Chunk.itemsPerChunk)
+                if self.nextFreeIndex % Resource.itemsPerChunk == 0 {
+                    self.allocateChunk(self.nextFreeIndex / Resource.itemsPerChunk)
                 }
                 self.nextFreeIndex += 1
             }
             
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            
-            self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).initialize(to: [])
-            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
-            self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap)
-            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            
-            let generation = self.chunks[chunkIndex].generations[indexInChunk]
-            
-            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
+            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
+            let generation = self.generationChunks[chunkIndex][indexInChunk]
+            let handle =  UInt64(truncatingIfNeeded: index) |
+            (UInt64(generation) << Resource.generationBitsRange.lowerBound) |
+            (UInt64(flags.rawValue) << Resource.flagBitsRange.lowerBound) |
+            (UInt64(Resource.resourceType.rawValue) << Resource.typeBitsRange.lowerBound)
+            return Resource(handle: handle)
         }
     }
     
-    @usableFromInline var chunkCount : Int {
+    func initialize(resource: Resource, descriptor: Resource.Descriptor, heap: Heap?, flags: ResourceFlags) {
+        let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
+        self.sharedChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
+        self.persistentChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
+    }
+    
+    func allocate(descriptor: Resource.Descriptor, heap: Heap?, flags: ResourceFlags) -> Resource {
+        let resource = self.allocateHandle(flags: flags)
+        self.initialize(resource: resource, descriptor: descriptor, heap: heap, flags: flags)
+        return resource
+    }
+    
+    var chunkCount : Int {
         let lastUsedIndex = self.nextFreeIndex - 1
         if lastUsedIndex < 0 { return 0 }
-        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
+        return (lastUsedIndex / Resource.itemsPerChunk) + 1
     }
     
-    @usableFromInline
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
-        self.chunks.advanced(by: index).initialize(to: Chunk())
+        self.sharedChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.persistentChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        
+        let generations = UnsafeMutablePointer<UInt8>.allocate(capacity: Resource.itemsPerChunk)
+        generations.initialize(repeating: 0, count: Resource.itemsPerChunk)
+        self.generationChunks.advanced(by: index).initialize(to: generations)
     }
     
-    private func disposeImmediately(buffer: Buffer) {
-        RenderBackend.dispose(buffer: buffer)
+    private func disposeImmediately(_ resource: Resource) {
+        switch resource.type {
+        case .buffer:
+            RenderBackend.dispose(buffer: Buffer(handle: resource.handle))
+        case .texture:
+            RenderBackend.dispose(texture: Texture(handle: resource.handle))
+        case .argumentBuffer:
+            RenderBackend.dispose(argumentBuffer: ArgumentBuffer(handle: resource.handle))
+        case .argumentBufferArray:
+            RenderBackend.dispose(argumentBufferArray: ArgumentBufferArray(handle: resource.handle))
+        case .heap:
+            RenderBackend.dispose(heap: Heap(handle: resource.handle))
+        default:
+            fatalError()
+        }
         
-        let index = buffer.index
-        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
+        let index = resource.index
+        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
         
-        self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
-        
-        self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
+        self.sharedChunks[chunkIndex].deinitialize(from: indexInChunk, count: 1)
+        self.persistentChunks[chunkIndex].deinitialize(from: indexInChunk, count: 1)
+        self.generationChunks[chunkIndex][indexInChunk] = self.generationChunks[chunkIndex][indexInChunk] &+ 1
         
         self.freeIndices.append(index)
     }
@@ -244,10 +356,10 @@ import Atomics
     func processEnqueuedDisposals() {
         var i = 0
         while i < self.enqueuedDisposals.count {
-            let buffer = self.enqueuedDisposals[i]
+            let resource = self.enqueuedDisposals[i]
             
-            if !buffer.isKnownInUse {
-                self.disposeImmediately(buffer: buffer)
+            if !resource.isKnownInUse {
+                self.disposeImmediately(resource)
                 self.enqueuedDisposals.remove(at: i, preservingOrder: false)
             } else {
                 i += 1
@@ -261,22 +373,26 @@ import Atomics
             
             let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
-            for chunkIndex in 0..<self.chunkCount {
-                self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
+            let chunkCount = self.chunkCount
+            for chunkIndex in 0..<chunkCount {
+                let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % Resource.itemsPerChunk) : Resource.itemsPerChunk
+                self.sharedChunks[chunkIndex].usagesOptional?.assign(repeating: ChunkArray(), count: chunkItemCount)
                 
-                for i in 0..<Chunk.itemsPerChunk {
-                    UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
+                if let activeRenderGraphs = self.persistentChunks[chunkIndex].activeRenderGraphsOptional {
+                    for i in 0..<chunkItemCount {
+                        UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: activeRenderGraphs.advanced(by: i), ordering: .relaxed)
+                    }
                 }
             }
         }
     }
     
-    func dispose(_ buffer: Buffer) {
+    func dispose(_ resource: Resource) {
         self.lock.withLock {
-            if buffer.isKnownInUse {
-                self.enqueuedDisposals.append(buffer)
+            if resource.isKnownInUse {
+                self.enqueuedDisposals.append(resource)
             } else {
-                self.disposeImmediately(buffer: buffer)
+                self.disposeImmediately(resource)
             }
         }
     }
@@ -287,85 +403,116 @@ public enum TextureViewBaseInfo {
     case texture(Texture.TextureViewDescriptor)
 }
 
-@usableFromInline final class TransientTextureRegistry {
-    @usableFromInline static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientTextureRegistry(transientRegistryIndex: i) }
-    
-    @usableFromInline let transientRegistryIndex : Int
-    @usableFromInline var capacity : Int
-    @usableFromInline let count = UnsafeMutablePointer<Int.AtomicRepresentation>.allocate(capacity: 1)
-    @usableFromInline var generation : UInt8 = 0
-    
-    @usableFromInline var descriptors : UnsafeMutablePointer<TextureDescriptor>! = nil
-    @usableFromInline var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>! = nil
-    
-    @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
-    @usableFromInline var baseResources : UnsafeMutablePointer<Resource?>! = nil
-    @usableFromInline var textureViewInfos : UnsafeMutablePointer<TextureViewBaseInfo?>! = nil
-    
-    init(transientRegistryIndex: Int) {
-        self.transientRegistryIndex = transientRegistryIndex
-        self.capacity = 0
-    }
-    
-    func initialise(capacity: Int) {
-        self.capacity = capacity
-        self.count.initialize(to: Int.AtomicRepresentation(0))
-        self.descriptors = UnsafeMutablePointer.allocate(capacity: self.capacity)
-        self.usages = UnsafeMutablePointer.allocate(capacity: self.capacity)
-        self.labels = UnsafeMutablePointer.allocate(capacity: self.capacity)
-        self.baseResources = UnsafeMutablePointer.allocate(capacity: self.capacity)
-        self.textureViewInfos = UnsafeMutablePointer.allocate(capacity: self.capacity)
-    }
-    
-    deinit {
-        self.clear()
+struct TextureProperties: SharedResourceProperties {
+    struct TransientTextureProperties: ResourceProperties {
+        var baseResources : UnsafeMutablePointer<Resource?>
+        var textureViewInfos : UnsafeMutablePointer<TextureViewBaseInfo?>
         
-        self.count.deallocate()
-        self.descriptors?.deallocate()
-        self.usages?.deallocate()
-        self.labels?.deallocate()
-        self.baseResources?.deallocate()
-        self.textureViewInfos?.deallocate()
+        init(capacity: Int) {
+            self.baseResources = UnsafeMutablePointer.allocate(capacity: capacity)
+            self.textureViewInfos = UnsafeMutablePointer.allocate(capacity: capacity)
+        }
+        
+        func deallocate() {
+            self.baseResources.deallocate()
+            self.textureViewInfos.deallocate()
+        }
+        
+        func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
+            self.baseResources.advanced(by: index).initialize(to: nil)
+            self.textureViewInfos.advanced(by: index).initialize(to: nil)
+        }
+        
+        func initialize(index: Int, descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) {
+            self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
+            self.textureViewInfos.advanced(by: index).initialize(to: .buffer(descriptor))
+        }
+        
+        func initialize(index: Int, viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) {
+            self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
+            self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
+        }
+        
+        func deinitialize(from index: Int, count: Int) {
+            self.baseResources.advanced(by: index).deinitialize(count: count)
+            self.textureViewInfos.advanced(by: index).deinitialize(count: count)
+        }
+    }
+    struct PersistentTextureProperties: PersistentResourceProperties {
+        let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
+        /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        /// The RenderGraphs that are currently using this resource.
+        let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
+        let heaps : UnsafeMutablePointer<Heap?>
+        
+        init(capacity: Int) {
+            self.stateFlags = .allocate(capacity: capacity)
+            self.readWaitIndices = .allocate(capacity: capacity)
+            self.writeWaitIndices = .allocate(capacity: capacity)
+            self.activeRenderGraphs = .allocate(capacity: capacity)
+            self.heaps = .allocate(capacity: capacity)
+        }
+        
+        func deallocate() {
+            self.stateFlags.deallocate()
+            self.readWaitIndices.deallocate()
+            self.writeWaitIndices.deallocate()
+            self.activeRenderGraphs.deallocate()
+            self.heaps.deallocate()
+        }
+        
+        func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
+            self.stateFlags.advanced(by: index).initialize(to: [])
+            self.readWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
+            self.writeWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
+            self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
+            self.heaps.advanced(by: index).initialize(to: heap)
+        }
+        
+        func deinitialize(from index: Int, count: Int) {
+            self.stateFlags.advanced(by: index).deinitialize(count: count)
+            self.readWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
+            self.heaps.advanced(by: index).deinitialize(count: count)
+        }
+        
+        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
-    @usableFromInline
-    func allocate(descriptor: TextureDescriptor, flags: ResourceFlags) -> UInt64 {
-        let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
-        self.ensureCapacity(index + 1)
-        assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
-        
+    var descriptors : UnsafeMutablePointer<TextureDescriptor>
+    var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    
+    var labels : UnsafeMutablePointer<String?>
+    
+    init(capacity: Int) {
+        self.descriptors = UnsafeMutablePointer.allocate(capacity: capacity)
+        self.usages = UnsafeMutablePointer.allocate(capacity: capacity)
+        self.labels = UnsafeMutablePointer.allocate(capacity: capacity)
+    }
+    
+    func deallocate() {
+        self.descriptors.deallocate()
+        self.usages.deallocate()
+        self.labels.deallocate()
+    }
+    
+    func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.usages.advanced(by: index).initialize(to: ChunkArray())
         self.labels.advanced(by: index).initialize(to: nil)
-        self.baseResources.advanced(by: index).initialize(to: nil)
-        self.textureViewInfos.advanced(by: index).initialize(to: nil)
-        
-        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
     }
     
-    @usableFromInline
-    func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) -> UInt64 {
-        let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
-        self.ensureCapacity(index + 1)
-        assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
-        
+    func initialize(index: Int, descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) {
         self.descriptors.advanced(by: index).initialize(to: descriptor.descriptor)
         self.usages.advanced(by: index).initialize(to: ChunkArray())
         self.labels.advanced(by: index).initialize(to: nil)
-        self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
-        self.textureViewInfos.advanced(by: index).initialize(to: .buffer(descriptor))
-        
-        baseResource.descriptor.usageHint.formUnion(.textureView)
-        
-        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
     }
     
-    @usableFromInline
-    func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) -> UInt64 {
-        let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
-        self.ensureCapacity(index + 1)
-        assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
-        
+    func initialize(index: Int, viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) {
         var descriptor = baseResource.descriptor
         descriptor.pixelFormat = viewDescriptor.pixelFormat
         descriptor.textureType = viewDescriptor.textureType
@@ -375,923 +522,409 @@ public enum TextureViewBaseInfo {
         if viewDescriptor.levels.lowerBound != -1 {
             descriptor.mipmapLevelCount = viewDescriptor.levels.count
         }
-        
-        baseResource.descriptor.usageHint.formUnion(.pixelFormatView)
-        
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.usages.advanced(by: index).initialize(to:  ChunkArray())
         self.labels.advanced(by: index).initialize(to: nil)
-        self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
-        self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
-        
-        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
     }
     
-    @usableFromInline
-    func ensureCapacity(_ capacity: Int) {
-        assert(capacity <= self.capacity)
+    func deinitialize(from index: Int, count: Int) {
+        self.descriptors.advanced(by: index).deinitialize(count: count)
+        self.usages.advanced(by: index).deinitialize(count: count)
+        self.labels.advanced(by: index).deinitialize(count: count)
     }
     
-    @usableFromInline
-    func clear() {
-        let count = Int.AtomicRepresentation.atomicExchange(0, at: self.count, ordering: .relaxed)
-        self.descriptors.deinitialize(count: count)
-        self.usages.deinitialize(count: count)
-        self.labels.deinitialize(count: count)
-        self.baseResources.deinitialize(count: count)
-        self.textureViewInfos.deinitialize(count: count)
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
+}
+
+final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
+    static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientTextureRegistry(transientRegistryIndex: i) }
+    
+    func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer, flags: ResourceFlags) -> Texture {
+        let resource = self.allocateHandle(flags: flags)
+        self.sharedStorage.initialize(index: resource.index, descriptor: descriptor, baseResource: baseResource)
+        self.transientStorage.initialize(index: resource.index, descriptor: descriptor, baseResource: baseResource)
+        baseResource.descriptor.usageHint.formUnion(.textureView)
         
-        self.generation = self.generation &+ 1
+        return resource
+    }
+    
+    func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture, flags: ResourceFlags) -> Texture {
+        let resource = self.allocateHandle(flags: flags)
+        self.sharedStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)
+        self.transientStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)
+        baseResource.descriptor.usageHint.formUnion(.pixelFormatView)
         
-        assert(Int.AtomicRepresentation.atomicLoad(at: self.count, ordering: .relaxed) == 0)
+        return resource
     }
 }
 
-@usableFromInline final class PersistentTextureRegistry {
-    @usableFromInline static let instance = PersistentTextureRegistry()
+@usableFromInline
+struct BufferProperties: SharedResourceProperties {
     
-    @usableFromInline
-    struct Chunk {
-        @usableFromInline static let itemsPerChunk = 256
+    struct TransientProperties: ResourceProperties {
+        var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>
         
-        @usableFromInline let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
-        /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
-        @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
-        @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
-        /// The RenderGraphs that are currently using this resource.
-        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
-        @usableFromInline let descriptors : UnsafeMutablePointer<TextureDescriptor>
-        @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
-        @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
-        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
-        @usableFromInline let labels : UnsafeMutablePointer<String?>
-        
-        init() {
-            self.stateFlags = .allocate(capacity: Chunk.itemsPerChunk)
-            self.readWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
-            self.writeWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
-            self.activeRenderGraphs = .allocate(capacity: Chunk.itemsPerChunk)
-            self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
-            self.usages = .allocate(capacity: Chunk.itemsPerChunk)
-            self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
-            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
-            self.labels = .allocate(capacity: Chunk.itemsPerChunk)
-            
-            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
+        @usableFromInline
+        init(capacity: Int) {
+            self.deferredSliceActions = UnsafeMutablePointer.allocate(capacity: capacity)
         }
         
+        @usableFromInline
+        func deallocate() {
+            self.deferredSliceActions.deallocate()
+        }
+        
+        @usableFromInline
+        func initialize(index: Int, descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) {
+            self.deferredSliceActions.advanced(by: index).initialize(to: [])
+        }
+        
+        @usableFromInline
+        func deinitialize(from index: Int, count: Int) {
+            self.deferredSliceActions.advanced(by: index).deinitialize(count: count)
+        }
+    }
+    
+    struct PersistentProperties: PersistentResourceProperties {
+        
+        let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
+        /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        /// The RenderGraphs that are currently using this resource.
+        let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
+        let heaps : UnsafeMutablePointer<Heap?>
+        
+        @usableFromInline
+        init(capacity: Int) {
+            self.stateFlags = .allocate(capacity: capacity)
+            self.readWaitIndices = .allocate(capacity: capacity)
+            self.writeWaitIndices = .allocate(capacity: capacity)
+            self.activeRenderGraphs = .allocate(capacity: capacity)
+            self.heaps = .allocate(capacity: capacity)
+        }
+        
+        @usableFromInline
         func deallocate() {
             self.stateFlags.deallocate()
             self.readWaitIndices.deallocate()
             self.writeWaitIndices.deallocate()
             self.activeRenderGraphs.deallocate()
-            self.descriptors.deallocate()
-            self.usages.deallocate()
             self.heaps.deallocate()
-            self.generations.deallocate()
-            self.labels.deallocate()
-        }
-    }
-    
-    @usableFromInline static let maxChunks = 2048
-    
-    @usableFromInline var lock = SpinLock()
-    
-    @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var nextFreeIndex = 0
-    @usableFromInline var enqueuedDisposals = [Texture]()
-    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
-    
-    init() {
-        self.chunks = .allocate(capacity: Self.maxChunks)
-    }
-    
-    /// Reserves a handle, but does not initialise any other variables.
-    @usableFromInline
-    func allocateHandle() -> UInt64 {
-        return self.lock.withLock {
-            let index : Int
-            if let reusedIndex = self.freeIndices.popFirst() {
-                index = reusedIndex
-            } else {
-                index = self.nextFreeIndex
-                if self.nextFreeIndex % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(self.nextFreeIndex / Chunk.itemsPerChunk)
-                }
-                self.nextFreeIndex += 1
-            }
-            
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            let generation = self.chunks[chunkIndex].generations[indexInChunk]
-            
-            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
-        }
-    }
-    
-    /// Initialises an uninitialised handle reserved using allocateHandle.
-    @usableFromInline
-    func initialise(texture: Texture, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
-        precondition(texture.flags.contains(.persistent))
-        return self.lock.withLock {
-            let index = texture.index
-            
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            
-            self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).initialize(to: [])
-            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
-            self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap)
-            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-        }
-    }
-    
-    @usableFromInline
-    func allocate(descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) -> UInt64 {
-        return self.lock.withLock {
-            let index : Int
-            if let reusedIndex = self.freeIndices.popFirst() {
-                index = reusedIndex
-            } else {
-                index = self.nextFreeIndex
-                if self.nextFreeIndex % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(self.nextFreeIndex / Chunk.itemsPerChunk)
-                }
-                self.nextFreeIndex += 1
-            }
-            
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            
-            self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).initialize(to: [])
-            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
-            self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: heap)
-            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            
-            let generation = self.chunks[chunkIndex].generations[indexInChunk]
-            
-            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
-        }
-    }
-    
-    @usableFromInline var chunkCount : Int {
-        let lastUsedIndex = self.nextFreeIndex - 1
-        if lastUsedIndex < 0 { return 0 }
-        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
-    }
-    
-    @usableFromInline
-    func allocateChunk(_ index: Int) {
-        assert(index < Self.maxChunks)
-        self.chunks.advanced(by: index).initialize(to: Chunk())
-    }
-    
-    private func disposeImmediately(texture: Texture) {
-        RenderBackend.dispose(texture: texture)
-        
-        let index = texture.index
-        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-        
-        self.chunks[chunkIndex].stateFlags.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
-
-        self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
-        
-        self.freeIndices.append(index)
-    }
-    
-    
-    func processEnqueuedDisposals() {
-        var i = 0
-        while i < self.enqueuedDisposals.count {
-            let texture = self.enqueuedDisposals[i]
-            
-            if !texture.isKnownInUse {
-                self.disposeImmediately(texture: texture)
-                self.enqueuedDisposals.remove(at: i, preservingOrder: false)
-            } else {
-                i += 1
-            }
-        }
-    }
-    
-    func clear(afterRenderGraph: RenderGraph) {
-        self.lock.withLock {
-            let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
-            
-            for chunkIndex in 0..<self.chunkCount {
-                self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
-                
-                for i in 0..<Chunk.itemsPerChunk {
-                    UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
-                }
-            }
-            
-            self.processEnqueuedDisposals()
         }
         
-    }
-    
-    func dispose(_ texture: Texture) {
-        self.lock.withLock {
-            if texture.isKnownInUse {
-                self.enqueuedDisposals.append(texture)
-            } else {
-                self.disposeImmediately(texture: texture)
-            }
+        @usableFromInline
+        func initialize(index: Int, descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) {
+            self.stateFlags.advanced(by: index).initialize(to: [])
+            self.readWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
+            self.writeWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
+            self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
+            self.heaps.advanced(by: index).initialize(to: heap)
+        }
+        
+        @usableFromInline
+        func deinitialize(from index: Int, count: Int) {
+            self.stateFlags.advanced(by: index).deinitialize(count: count)
+            self.readWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
+            self.heaps.advanced(by: index).deinitialize(count: count)
+        }
+        
+        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? {
+            return self.activeRenderGraphs
         }
     }
+    
+    var descriptors : UnsafeMutablePointer<BufferDescriptor>
+    var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    var labels : UnsafeMutablePointer<String?>
+    
+    init(capacity: Int) {
+        self.descriptors = UnsafeMutablePointer.allocate(capacity: capacity)
+        self.usages = UnsafeMutablePointer.allocate(capacity: capacity)
+        self.labels = UnsafeMutablePointer.allocate(capacity: capacity)
+    }
+    
+    func deallocate() {
+        self.descriptors.deallocate()
+        self.usages.deallocate()
+        self.labels.deallocate()
+    }
+    
+    func initialize(index: Int, descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) {
+        self.descriptors.advanced(by: index).initialize(to: descriptor)
+        self.usages.advanced(by: index).initialize(to: ChunkArray())
+        self.labels.advanced(by: index).initialize(to: nil)
+    }
+    
+    func deinitialize(from index: Int, count: Int) {
+        self.descriptors.advanced(by: index).deinitialize(count: count)
+        self.usages.advanced(by: index).deinitialize(count: count)
+        self.labels.advanced(by: index).deinitialize(count: count)
+    }
+    
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
 }
 
-// Unlike the other transient registries, the transient argument buffer registry is chunk-based.
-// This is because the number of argument buffers used within a frame can @usableFromInline vary dramatically, and so a pre-assigned maximum is more likely to be hit.
-@usableFromInline final class TransientArgumentBufferRegistry {
-    
-    @usableFromInline static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientArgumentBufferRegistry(transientRegistryIndex: i) }
-    
-    @usableFromInline
-    struct Chunk {
-        @usableFromInline static let itemsPerChunk = 256
-        
-        @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
-        @usableFromInline let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
-        @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)>>
-        @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
-        @usableFromInline let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray?>
-        
-        @usableFromInline let labels : UnsafeMutablePointer<String?>
-        
-        init() {
-            self.usages = .allocate(capacity: Chunk.itemsPerChunk)
-            self.encoders = .allocate(capacity: Chunk.itemsPerChunk)
-            self.enqueuedBindings = .allocate(capacity: Chunk.itemsPerChunk)
-            self.bindings = .allocate(capacity: Chunk.itemsPerChunk)
-            self.sourceArrays = .allocate(capacity: Chunk.itemsPerChunk)
-            self.labels = .allocate(capacity: Chunk.itemsPerChunk)
-        }
-        
-        func deallocate() {
-            self.usages.deallocate()
-            self.encoders.deallocate()
-            self.enqueuedBindings.deallocate()
-            self.bindings.deallocate()
-            self.sourceArrays.deallocate()
-            self.labels.deallocate()
-        }
-    }
-    
-    @usableFromInline static let maxChunks = 2048
-    
-    @usableFromInline var lock = SpinLock()
-    
-    @usableFromInline let transientRegistryIndex : Int
-    @usableFromInline let inlineDataAllocator : ExpandingBuffer<UInt8>
-    @usableFromInline var count = 0
-    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
-    @usableFromInline var allocatedChunkCount = 0
-    @usableFromInline var generation : UInt8 = 0
-    
-    init(transientRegistryIndex: Int) {
-        self.transientRegistryIndex = transientRegistryIndex
-        self.inlineDataAllocator = ExpandingBuffer()
-        self.chunks = .allocate(capacity: Self.maxChunks)
-    }
-    
-    deinit {
-        self.clear()
-        for i in 0..<self.chunkCount {
-            self.chunks[i].deallocate()
-        }
-        self.chunks.deallocate()
-    }
-    
-    @usableFromInline
-    func allocate(flags: ResourceFlags) -> UInt64 {
-        return self.lock.withLock {
-            
-            let index = self.count
-            if index == self.allocatedChunkCount * Chunk.itemsPerChunk {
-                self.allocateChunk(index / Chunk.itemsPerChunk)
-            }
-            
-            assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
-            
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
-            self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-            self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-            self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).initialize(to: nil)
-            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            self.count += 1
-            
-            return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
-        }
-    }
-    
-    @usableFromInline
-    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> UInt64 {
-        return self.lock.withLock {
-            let index = self.count
-            if index == self.allocatedChunkCount * Chunk.itemsPerChunk {
-                self.allocateChunk(index / Chunk.itemsPerChunk)
-            }
-            
-            assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
-            
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
-            self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-            self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-            self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
-            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            self.count += 1
-            
-            return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
-        }
-    }
-    
-    @usableFromInline var chunkCount : Int {
-        if self.count == 0 { return 0 }
-        let lastUsedIndex = self.count - 1
-        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
-    }
-    
-    @usableFromInline
-    func allocateChunk(_ index: Int) {
-        assert(index < Self.maxChunks)
-        assert(index == self.allocatedChunkCount)
-        self.chunks.advanced(by: index).initialize(to: Chunk())
-        self.allocatedChunkCount += 1
-    }
-    
-    func clear() {
-        self.lock.withLock {
-            for chunkIndex in 0..<self.chunkCount {
-                let countInChunk = min(self.count - chunkIndex * Chunk.itemsPerChunk, Chunk.itemsPerChunk)
-                self.chunks[chunkIndex].usages.deinitialize(count: countInChunk)
-                self.chunks[chunkIndex].encoders.deinitialize(count: countInChunk)
-                self.chunks[chunkIndex].enqueuedBindings.deinitialize(count: countInChunk)
-                self.chunks[chunkIndex].bindings.deinitialize(count: countInChunk)
-                self.chunks[chunkIndex].sourceArrays.deinitialize(count: countInChunk)
-                self.chunks[chunkIndex].labels.deinitialize(count: countInChunk)
-            }
-            self.count = 0
-            
-            self.generation = self.generation &+ 1
-        }
-    }
+
+final class TransientBufferRegistry: TransientFixedSizeRegistry<Buffer> {
+    static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientBufferRegistry(transientRegistryIndex: i) }
 }
 
-@usableFromInline final class PersistentArgumentBufferRegistry {
-    @usableFromInline static let instance = PersistentArgumentBufferRegistry()
-    
-    @usableFromInline
-    struct Chunk {
-        @usableFromInline static let itemsPerChunk = 2048
-        
-        @usableFromInline let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
-        @usableFromInline let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
-        @usableFromInline let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)>>
-        @usableFromInline let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
-        @usableFromInline let inlineDataStorage : UnsafeMutablePointer<Data>
-        @usableFromInline let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray>
-        @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
+final class PersistentBufferRegistry: PersistentRegistry<Buffer> {
+    static let instance = PersistentBufferRegistry()
+}
+
+final class PersistentTextureRegistry: PersistentRegistry<Texture> {
+    static let instance = PersistentTextureRegistry()
+}
+
+struct ArgumentBufferProperties: SharedResourceProperties {
+    struct PersistentArgumentBufferProperties: PersistentResourceProperties {
+        let inlineDataStorage : UnsafeMutablePointer<Data>
+        let heaps : UnsafeMutablePointer<Heap?>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
-        @usableFromInline let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
-        @usableFromInline let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         /// The RenderGraphs that are currently using this resource.
-        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
-        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
+        let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         
-        @usableFromInline let labels : UnsafeMutablePointer<String?>
-        
-        init() {
-            self.usages = .allocate(capacity: Chunk.itemsPerChunk)
-            self.encoders = .allocate(capacity: Chunk.itemsPerChunk)
-            self.enqueuedBindings = .allocate(capacity: Chunk.itemsPerChunk)
-            self.bindings = .allocate(capacity: Chunk.itemsPerChunk)
-            self.inlineDataStorage = .allocate(capacity: Chunk.itemsPerChunk)
-            self.sourceArrays = .allocate(capacity: Chunk.itemsPerChunk)
-            self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
-            self.readWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
-            self.writeWaitIndices = .allocate(capacity: Chunk.itemsPerChunk)
-            self.activeRenderGraphs = .allocate(capacity: Chunk.itemsPerChunk)
-            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
-            self.labels = .allocate(capacity: Chunk.itemsPerChunk)
-            
-            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
+        init(capacity: Int) {
+            self.inlineDataStorage = .allocate(capacity: capacity)
+            self.heaps = .allocate(capacity: capacity)
+            self.readWaitIndices = .allocate(capacity: capacity)
+            self.writeWaitIndices = .allocate(capacity: capacity)
+            self.activeRenderGraphs = .allocate(capacity: capacity)
         }
         
         func deallocate() {
-            self.usages.deallocate()
-            self.encoders.deallocate()
-            self.enqueuedBindings.deallocate()
-            self.bindings.deallocate()
             self.inlineDataStorage.deallocate()
-            self.sourceArrays.deallocate()
             self.heaps.deallocate()
             self.readWaitIndices.deallocate()
             self.writeWaitIndices.deallocate()
             self.activeRenderGraphs.deallocate()
-            self.generations.deallocate()
-            self.labels.deallocate()
         }
-    }
-    
-    @usableFromInline static let maxChunks = 256
-    
-    @usableFromInline var lock = SpinLock()
-    
-    @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var nextFreeIndex = 0
-    
-    @usableFromInline var enqueuedDisposals = [ArgumentBuffer]()
-    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
-    
-    init() {
-        self.chunks = .allocate(capacity: Self.maxChunks)
-    }
-    
-    @usableFromInline
-    func allocate(flags: ResourceFlags) -> UInt64 {
-        return self.lock.withLock {
-            let index : Int
-            if let reusedIndex = self.freeIndices.popFirst() {
-                index = reusedIndex
-            } else {
-                index = self.nextFreeIndex
-                if index % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(index / Chunk.itemsPerChunk)
-                }
-                self.nextFreeIndex += 1
-            }
-            
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
-            self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-            self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-            self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
-            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: nil)
-            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
-            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            
-            let generation = self.chunks[chunkIndex].generations[indexInChunk]
-            
-            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
-        }
-    }
-    
-    @usableFromInline
-    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> UInt64 {
-        return self.lock.withLock {
-            let index : Int
-            if let reusedIndex = self.freeIndices.popFirst() {
-                index = reusedIndex
-            } else {
-                index = self.nextFreeIndex
-                if index % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(index / Chunk.itemsPerChunk)
-                }
-                self.nextFreeIndex += 1
-            }
-            
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            
-            
-            self.chunks[chunkIndex].usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-            self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
-            self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-            self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-            self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
-            self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
-            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: nil)
-            self.chunks[chunkIndex].readWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
-            self.chunks[chunkIndex].writeWaitIndices.advanced(by: indexInChunk).deinitialize(count: 1)
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).deinitialize(count: 1)
-            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            
-            let generation = self.chunks[chunkIndex].generations[indexInChunk]
-            
-            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
-        }
-    }
-    
-    @usableFromInline var chunkCount : Int {
-        let lastUsedIndex = self.nextFreeIndex - 1
-        if lastUsedIndex < 0 { return 0 }
-        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
-    }
-    
-    @usableFromInline
-    func allocateChunk(_ index: Int) {
-        assert(index < Self.maxChunks)
-        self.chunks.advanced(by: index).initialize(to: Chunk())
-    }
-    
-    private func disposeImmediately(argumentBuffer: ArgumentBuffer) {
-        RenderBackend.dispose(argumentBuffer: argumentBuffer)
         
-        let index = argumentBuffer.index
-        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
+        func initialize(index indexInChunk: Int, descriptor: Void, heap: Heap?, flags: ResourceFlags) {
+            self.inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
+            self.heaps.advanced(by: indexInChunk).initialize(to: nil)
+            self.readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
+        }
         
-        self.chunks[chunkIndex].usages.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].encoders.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].enqueuedBindings.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].inlineDataStorage.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].sourceArrays.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
+        func initialize(index indexInChunk: Int, sourceArray: ArgumentBufferArray) {
+            self.inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
+            self.heaps.advanced(by: indexInChunk).initialize(to: nil)
+            self.readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
+        }
         
-        self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
+        func deinitialize(from indexInChunk: Int, count: Int) {
+            self.inlineDataStorage.advanced(by: indexInChunk).deinitialize(count: count)
+            self.heaps.advanced(by: indexInChunk).deinitialize(count: count)
+        }
         
-        self.freeIndices.append(index)
+        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
+    let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
+    let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)>>
+    let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
+    let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray?>
     
-    func processEnqueuedDisposals() {
-        var i = 0
-        while i < self.enqueuedDisposals.count {
-            let argumentBuffer = self.enqueuedDisposals[i]
-            
-            if !argumentBuffer.isKnownInUse {
-                self.disposeImmediately(argumentBuffer: argumentBuffer)
-                self.enqueuedDisposals.remove(at: i, preservingOrder: false)
-            } else {
-                i += 1
-            }
-        }
+    let labels : UnsafeMutablePointer<String?>
+    
+    typealias Descriptor = Void
+    
+    init(capacity: Int) {
+        self.usages = .allocate(capacity: capacity)
+        self.encoders = .allocate(capacity: capacity)
+        self.enqueuedBindings = .allocate(capacity: capacity)
+        self.bindings = .allocate(capacity: capacity)
+        self.sourceArrays = .allocate(capacity: capacity)
+        self.labels = .allocate(capacity: capacity)
     }
     
-    func clear(afterRenderGraph: RenderGraph) {
-        self.lock.withLock {
-            let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
-            
-            for chunkIndex in 0..<self.chunkCount {
-                self.chunks[chunkIndex].usages.assign(repeating: ChunkArray(), count: Chunk.itemsPerChunk)
-                
-                for i in 0..<Chunk.itemsPerChunk {
-                    UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
-                }
-            }
-            
-            self.processEnqueuedDisposals()
-        }
+    func deallocate() {
+        self.usages.deallocate()
+        self.encoders.deallocate()
+        self.enqueuedBindings.deallocate()
+        self.bindings.deallocate()
+        self.sourceArrays.deallocate()
+        self.labels.deallocate()
     }
     
-    func dispose(_ buffer: ArgumentBuffer) {
-        self.lock.withLock {
-            if buffer.isKnownInUse {
-                self.enqueuedDisposals.append(buffer)
-            } else {
-                self.disposeImmediately(argumentBuffer: buffer)
-            }
-        }
+    func initialize(index indexInChunk: Int, descriptor: Void, heap: Heap?, flags: ResourceFlags) {
+        self.usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
+        self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
+        self.enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
+        self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
+        self.sourceArrays.advanced(by: indexInChunk).initialize(to: nil)
+        self.labels.advanced(by: indexInChunk).initialize(to: nil)
+    }
+    
+    func initialize(index indexInChunk: Int, sourceArray: ArgumentBufferArray) {
+        self.usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
+        self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
+        self.enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
+        self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
+        self.sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
+        self.labels.advanced(by: indexInChunk).initialize(to: nil)
+    }
+    
+    func deinitialize(from index: Int, count: Int) {
+        self.usages.advanced(by: index).deinitialize(count: count)
+        self.encoders.advanced(by: index).deinitialize(count: count)
+        self.enqueuedBindings.advanced(by: index).deinitialize(count: count)
+        self.bindings.advanced(by: index).deinitialize(count: count)
+        self.sourceArrays.advanced(by: index).deinitialize(count: count)
+        self.labels.advanced(by: index).deinitialize(count: count)
+    }
+    
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
+}
+
+// Unlike the other transient registries, the transient argument buffer registry is chunk-based.
+// This is because the number of argument buffers used within a frame can vary dramatically, and so a pre-assigned maximum is more likely to be hit.
+final class TransientArgumentBufferRegistry: TransientChunkRegistry<ArgumentBuffer> {
+    static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientArgumentBufferRegistry(transientRegistryIndex: i) }
+    
+    override class var maxChunks: Int { 2048 }
+    
+    let inlineDataAllocator : ExpandingBuffer<UInt8> = .init()
+    
+    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> ArgumentBuffer {
+        let resource = self.allocateHandle(flags: flags)
+        let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: ArgumentBuffer.itemsPerChunk)
+        self.sharedPropertyChunks[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        return resource
     }
 }
 
-@usableFromInline final class TransientArgumentBufferArrayRegistry {
-    @usableFromInline static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientArgumentBufferArrayRegistry(transientRegistryIndex: i) }
+
+final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer> {
+    static let instance = PersistentArgumentBufferRegistry()
     
-    @usableFromInline let transientRegistryIndex: Int
-    @usableFromInline var capacity : Int
-    @usableFromInline var count = UnsafeMutablePointer<Int.AtomicRepresentation>.allocate(capacity: 1)
-    @usableFromInline var generation : UInt8 = 0
+    override class var maxChunks: Int { 256 }
     
-    @usableFromInline var bindings : UnsafeMutablePointer<[ArgumentBuffer?]>! = nil
-    @usableFromInline var labels : UnsafeMutablePointer<String?>! = nil
-    
-    init(transientRegistryIndex: Int) {
-        self.transientRegistryIndex = transientRegistryIndex
-        self.capacity = 0
+    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> ArgumentBuffer {
+        let handle = self.allocateHandle(flags: flags)
+        let (chunkIndex, indexInChunk) = handle.index.quotientAndRemainder(dividingBy: ArgumentBuffer.itemsPerChunk)
+        self.sharedChunks[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        self.persistentChunks[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        return handle
+    }
+}
+
+struct ArgumentBufferArrayProperties: SharedResourceProperties {
+    struct PersistentArgumentBufferArrayProperties: PersistentResourceProperties {
+        let heaps : UnsafeMutablePointer<Heap?>
+        
+        init(capacity: Int) {
+            self.heaps = .allocate(capacity: capacity)
+        }
+        
+        func deallocate() {
+            self.heaps.deallocate()
+        }
+        
+        func initialize(index: Int, descriptor: Void, heap: Heap?, flags: ResourceFlags) {
+            self.heaps.advanced(by: index).initialize(to: heap)
+        }
+        
+        func deinitialize(from index: Int, count: Int) {
+            self.heaps.advanced(by: index).deinitialize(count: count)
+        }
+        
+        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
     }
     
-    func initialise(capacity: Int) {
-        self.capacity = capacity
-        self.count.initialize(to: Int.AtomicRepresentation(0))
+    var bindings : UnsafeMutablePointer<[ArgumentBuffer?]>
+    var labels : UnsafeMutablePointer<String?>
+    
+    init(capacity: Int) {
         self.bindings = .allocate(capacity: capacity)
         self.labels = .allocate(capacity: capacity)
     }
     
-    deinit {
-        self.clear()
-        self.bindings?.deallocate()
-        self.labels?.deallocate()
+    func deallocate() {
+        self.bindings.deallocate()
+        self.labels.deallocate()
     }
     
-    @usableFromInline
-    func allocate(flags: ResourceFlags) -> UInt64 {
-        let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
-        assert(index < self.capacity)
-        assert(index <= 0x1FFFFFFF, "Too many bits required to encode the resource's index.")
-        
+    func initialize(index: Int, descriptor: Void, heap: Heap?, flags: ResourceFlags) {
         self.bindings.advanced(by: index).initialize(to: [])
         self.labels.advanced(by: index).initialize(to: nil)
-            
-        return UInt64(truncatingIfNeeded: index) | (UInt64(self.generation) << Resource.generationBitsRange.lowerBound) | UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound
     }
     
-    @usableFromInline
-    func clear() {
-        let count = Int.AtomicRepresentation.atomicLoad(at: self.count, ordering: .relaxed)
-        
-        self.bindings.deinitialize(count: count)
-        self.labels.deinitialize(count: count)
-        let oldCount = Int.AtomicRepresentation.atomicExchange(0, at: self.count, ordering: .relaxed)
-        assert(oldCount == count)
-        
-        self.generation = self.generation &+ 1
+    func deinitialize(from index: Int, count: Int) {
+        self.bindings.advanced(by: index).deinitialize(count: count)
+        self.labels.advanced(by: index).deinitialize(count: count)
     }
+    
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+    
 }
 
-@usableFromInline final class PersistentArgumentBufferArrayRegistry {
-    @usableFromInline static let instance = PersistentArgumentBufferArrayRegistry()
-    
-    @usableFromInline
-    struct Chunk {
-        @usableFromInline static let itemsPerChunk = 256
-        
-        @usableFromInline let bindings : UnsafeMutablePointer<[ArgumentBuffer?]>
-        @usableFromInline let heaps : UnsafeMutablePointer<Heap?>
-        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
-        @usableFromInline let labels : UnsafeMutablePointer<String?>
-        
-        init() {
-            self.bindings = .allocate(capacity: Chunk.itemsPerChunk)
-            self.heaps = .allocate(capacity: Chunk.itemsPerChunk)
-            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
-            self.labels = .allocate(capacity: Chunk.itemsPerChunk)
-            
-            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
-        }
-        
-        func deallocate() {
-            self.bindings.deallocate()
-            self.heaps.deallocate()
-            self.generations.deallocate()
-            self.labels.deallocate()
-        }
-    }
-    
-    @usableFromInline static let maxChunks = 2048
-    
-    @usableFromInline var lock = SpinLock()
-    
-    @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var nextFreeIndex = 0
-    
-    @usableFromInline var enqueuedDisposals = [ArgumentBufferArray]()
-    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
-    
-    init() {
-        self.chunks = .allocate(capacity: Self.maxChunks)
-    }
-    
-    func allocate(flags: ResourceFlags) -> UInt64 {
-        return self.lock.withLock {
-            // FIXME: We should figure out how to handle enqueued disposals/resource tracking for argument buffer arrays.
-            
-            let index : Int
-            if let reusedIndex = self.freeIndices.popFirst() {
-                index = reusedIndex
-            } else {
-                index = self.nextFreeIndex
-                if index % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(index / Chunk.itemsPerChunk)
-                }
-                self.nextFreeIndex += 1
-            }
-            
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            
-            self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).initialize(to: [])
-            self.chunks[chunkIndex].heaps.advanced(by: indexInChunk).initialize(to: nil)
-            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            
-            let generation = self.chunks[chunkIndex].generations[indexInChunk]
-            
-            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
-        }
-    }
-    
-    @usableFromInline
-    var chunkCount : Int {
-        let lastUsedIndex = self.nextFreeIndex - 1
-        if lastUsedIndex < 0 { return 0 }
-        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
-    }
-    
-    @usableFromInline
-    func allocateChunk(_ index: Int) {
-        assert(index < Self.maxChunks)
-        self.chunks.advanced(by: index).initialize(to: Chunk())
-    }
-    
-    func disposeImmediately(argumentBufferArray: ArgumentBufferArray) {
-        RenderBackend.dispose(argumentBufferArray: argumentBufferArray)
-        
-        let index = argumentBufferArray.index
-        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-        
-        self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].bindings.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
-        
-        self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
-        
-        self.freeIndices.append(index)
-    }
-    
-    func processEnqueuedDisposals() {
-        var i = 0
-        while i < self.enqueuedDisposals.count {
-            let buffer = self.enqueuedDisposals[i]
-            
-            if !buffer.isKnownInUse {
-                self.disposeImmediately(argumentBufferArray: buffer)
-                self.enqueuedDisposals.remove(at: i, preservingOrder: false)
-            } else {
-                i += 1
-            }
-        }
-    }
-    
-    func clear(afterRenderGraph: RenderGraph) {
-        self.lock.withLock {
-            self.processEnqueuedDisposals()
-        }
-    }
-    
-    func dispose(_ buffer: ArgumentBufferArray) {
-        self.lock.withLock {
-            if buffer.isKnownInUse {
-                self.enqueuedDisposals.append(buffer)
-            } else {
-                self.disposeImmediately(argumentBufferArray: buffer)
-            }
-        }
-    }
+final class TransientArgumentBufferArrayRegistry: TransientFixedSizeRegistry<ArgumentBufferArray> {
+    static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientArgumentBufferArrayRegistry(transientRegistryIndex: i) }
 }
 
 
-@usableFromInline final class HeapRegistry {
+final class PersistentArgumentBufferArrayRegistry: PersistentRegistry<ArgumentBufferArray> {
+    static let instance = PersistentArgumentBufferArrayRegistry()
+}
+
+
+@usableFromInline
+struct HeapProperties: PersistentResourceProperties {
+    let descriptors : UnsafeMutablePointer<HeapDescriptor>
+    let labels : UnsafeMutablePointer<String?>
+    let childResources : UnsafeMutablePointer<Set<Resource>>
+    /// The RenderGraphs that are currently using this resource.
+    let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
     
-    @usableFromInline static let instance = HeapRegistry()
-    
-    @usableFromInline
-    struct Chunk {
-        @usableFromInline static let itemsPerChunk = 256
-        
-        @usableFromInline let descriptors : UnsafeMutablePointer<HeapDescriptor>
-        @usableFromInline let generations : UnsafeMutablePointer<UInt8>
-        @usableFromInline let labels : UnsafeMutablePointer<String?>
-        @usableFromInline let childResources : UnsafeMutablePointer<Set<Resource>>
-        /// The RenderGraphs that are currently using this resource.
-        @usableFromInline let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
-        
-        init() {
-            self.descriptors = .allocate(capacity: Chunk.itemsPerChunk)
-            self.generations = .allocate(capacity: Chunk.itemsPerChunk)
-            self.labels = .allocate(capacity: Chunk.itemsPerChunk)
-            self.childResources = .allocate(capacity: Chunk.itemsPerChunk)
-            self.activeRenderGraphs = .allocate(capacity: Chunk.itemsPerChunk)
-            
-            self.generations.initialize(repeating: 0, count: Chunk.itemsPerChunk)
-        }
-        
-        func deallocate() {
-            self.descriptors.deallocate()
-            self.generations.deallocate()
-            self.labels.deallocate()
-            self.childResources.deallocate()
-            self.activeRenderGraphs.deallocate()
-        }
+    init(capacity: Int) {
+        self.descriptors = .allocate(capacity: capacity)
+        self.labels = .allocate(capacity: capacity)
+        self.childResources = .allocate(capacity: capacity)
+        self.activeRenderGraphs = .allocate(capacity: capacity)
     }
     
-    @usableFromInline static let maxChunks = 2048
-    
-    @usableFromInline var lock = SpinLock()
-    
-    @usableFromInline var freeIndices = RingBuffer<Int>()
-    @usableFromInline var nextFreeIndex = 0
-    @usableFromInline var enqueuedDisposals = [Heap]()
-    @usableFromInline let chunks : UnsafeMutablePointer<Chunk>
-    
-    init() {
-        self.chunks = .allocate(capacity: Self.maxChunks)
+    func deallocate() {
+        self.descriptors.deallocate()
+        self.labels.deallocate()
+        self.childResources.deallocate()
+        self.activeRenderGraphs.deallocate()
     }
     
-    @usableFromInline
-    func allocate(descriptor: HeapDescriptor) -> UInt64 {
-        return self.lock.withLock {
-            let index : Int
-            if let reusedIndex = self.freeIndices.popFirst() {
-                index = reusedIndex
-            } else {
-                index = self.nextFreeIndex
-                if self.nextFreeIndex % Chunk.itemsPerChunk == 0 {
-                    self.allocateChunk(self.nextFreeIndex / Chunk.itemsPerChunk)
-                }
-                self.nextFreeIndex += 1
-            }
-            
-            let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-            self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
-            self.chunks[chunkIndex].labels.advanced(by: indexInChunk).initialize(to: nil)
-            self.chunks[chunkIndex].childResources.advanced(by: indexInChunk).initialize(to: [])
-            self.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
-            
-            let generation = self.chunks[chunkIndex].generations[indexInChunk]
-            
-            return UInt64(truncatingIfNeeded: index) | (UInt64(generation) << Resource.generationBitsRange.lowerBound)
-        }
+    func initialize(index: Int, descriptor: HeapDescriptor, heap: Heap?, flags: ResourceFlags) {
+        self.descriptors.advanced(by: index).initialize(to: descriptor)
+        self.labels.advanced(by: index).initialize(to: nil)
+        self.childResources.advanced(by: index).initialize(to: [])
+        self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
     }
     
-    @usableFromInline var chunkCount : Int {
-        let lastUsedIndex = self.nextFreeIndex - 1
-        if lastUsedIndex < 0 { return 0 }
-        return (lastUsedIndex / Chunk.itemsPerChunk) + 1
+    func deinitialize(from index: Int, count: Int) {
+        self.descriptors.advanced(by: index).deinitialize(count: count)
+        self.labels.advanced(by: index).deinitialize(count: count)
+        self.childResources.advanced(by: index).deinitialize(count: count)
+        self.activeRenderGraphs.deinitialize(count: count)
     }
     
-    @usableFromInline
-    func allocateChunk(_ index: Int) {
-        assert(index < Self.maxChunks)
-        self.chunks.advanced(by: index).initialize(to: Chunk())
-    }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
     
-    private func disposeImmediately(heap: Heap) {
-        RenderBackend.dispose(heap: heap)
-        
-        let index = heap.index
-        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Chunk.itemsPerChunk)
-        
-        self.chunks[chunkIndex].descriptors.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].labels.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].childResources.advanced(by: indexInChunk).deinitialize(count: 1)
-        self.chunks[chunkIndex].activeRenderGraphs.deinitialize(count: 1)
-        
-        self.chunks[chunkIndex].generations[indexInChunk] = self.chunks[chunkIndex].generations[indexInChunk] &+ 1
-        
-        self.freeIndices.append(index)
-    }
-    
-    func processEnqueuedDisposals() {
-        var i = 0
-        while i < self.enqueuedDisposals.count {
-            let heap = self.enqueuedDisposals[i]
-            
-            if !heap.isKnownInUse {
-                self.disposeImmediately(heap: heap)
-                self.enqueuedDisposals.remove(at: i, preservingOrder: false)
-            } else {
-                i += 1
-            }
-        }
-    }
-    
-    func clear(afterRenderGraph: RenderGraph) {
-        self.lock.withLock {
-            let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
-            
-            for chunkIndex in 0..<self.chunkCount {
-                for i in 0..<Chunk.itemsPerChunk {
-                    UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: self.chunks[chunkIndex].activeRenderGraphs.advanced(by: i), ordering: .relaxed)
-                }
-            }
-            
-            self.processEnqueuedDisposals()
-        }
-    }
-    
-    func dispose(_ heap: Heap) {
-        self.lock.withLock {
-            if heap.isKnownInUse {
-                self.enqueuedDisposals.append(heap)
-            } else {
-                self.disposeImmediately(heap: heap)
-            }
-        }
-    }
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
+}
+
+final class HeapRegistry: PersistentRegistry<Heap> {
+    static let instance = HeapRegistry()
 }
 
 

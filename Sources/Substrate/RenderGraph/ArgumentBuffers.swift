@@ -28,19 +28,16 @@ public struct MetalIndexedFunctionArgument : FunctionArgumentKey {
     public var index : Int
     public var stages : RenderStages
     
-    @inlinable
     public init(type: MTLArgumentType, index: Int, stages: RenderStages) {
         self.type = type
         self.index = index
         self.stages = stages
     }
     
-    @inlinable
     public var stringValue : String {
         return "\(type)_arg\(index)"
     }
     
-    @inlinable
     public func bindingPath(arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath? {
         return ResourceBindingPath(stages: MTLRenderStages(self.stages), type: self.type, argumentBufferIndex: nil, index: self.index + arrayIndex)
     }
@@ -49,24 +46,20 @@ public struct MetalIndexedFunctionArgument : FunctionArgumentKey {
 
 extension FunctionArgumentKey {
     
-    @inlinable
     public func bindingPath(arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath? {
         return nil
     }
     
-    @inlinable
     func bindingPath(argumentBufferPath: ResourceBindingPath?, arrayIndex: Int, pipelineReflection: PipelineReflection) -> ResourceBindingPath? {
         return self.bindingPath(arrayIndex: arrayIndex, argumentBufferPath: argumentBufferPath) ?? pipelineReflection.bindingPath(argumentName: self.stringValue, arrayIndex: arrayIndex, argumentBufferPath: argumentBufferPath)
     }
     
-    @inlinable
     func computedBindingPath(pipelineReflection: PipelineReflection) -> ResourceBindingPath? {
         return self.bindingPath(arrayIndex: 0, argumentBufferPath: nil) ?? pipelineReflection.bindingPath(argumentName: self.stringValue, arrayIndex: 0, argumentBufferPath: nil)
     }
 }
 
 extension String : FunctionArgumentKey {
-    @inlinable
     public var stringValue : String {
         return self
     }
@@ -85,9 +78,8 @@ public typealias _ArgumentBuffer = ArgumentBuffer
 public typealias _ArgumentBufferArray = ArgumentBufferArray
 
 public struct ArgumentBuffer : ResourceProtocol {
-    
     @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public enum ArgumentResource {
         case buffer(Buffer, offset: Int)
@@ -103,28 +95,23 @@ public struct ArgumentBuffer : ResourceProtocol {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
-    @inlinable
     public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
         
-        let index : UInt64
         if flags.contains(.persistent) {
-            index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags)
+            self = PersistentArgumentBufferRegistry.instance.allocate(descriptor: (), heap: nil, flags: flags)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
             
-            index = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
+            self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: (), flags: flags)
         }
         
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         assert(self.encoder == nil)
     }
     
-    @inlinable
     public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.init(renderGraph: renderGraph, flags: flags)
         self.label = "Descriptor Set for \(String(reflecting: A.self))"
@@ -133,35 +120,23 @@ public struct ArgumentBuffer : ResourceProtocol {
         arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
     }
     
-    @inlinable
     init(flags: ResourceFlags = [], sourceArray: ArgumentBufferArray) {
-        let index : UInt64
         if flags.contains(.persistent) {
-            index = PersistentArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
+            self = PersistentArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
         } else {
-            index = TransientArgumentBufferRegistry.instances[sourceArray.transientRegistryIndex].allocate(flags: flags, sourceArray: sourceArray)
+            self = TransientArgumentBufferRegistry.instances[sourceArray.transientRegistryIndex].allocate(flags: flags, sourceArray: sourceArray)
         }
         
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBuffer.rawValue) << Self.typeBitsRange.lowerBound)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
         assert(self.encoder == nil)
     }
     
-    @inlinable
     public var sourceArray : ArgumentBufferArray? {
         if self.flags.contains(.resourceView) {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].sourceArrays[indexInChunk]
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].sourceArrays[indexInChunk]
-            }
+            return self[\.sourceArrays]
         }
         return nil
     }
     
-    @inlinable
     public var stateFlags: ResourceStateFlags {
         get {
             return []
@@ -170,43 +145,13 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    @inlinable
-    public var usages : ChunkArray<ResourceUsage> {
-        get {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk]
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].usages[indexInChunk]
-            }
-        }
-        nonmutating set {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].usages[indexInChunk] = newValue
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].usages[indexInChunk] = newValue
-            }
-        }
-    }
-    
-    @inlinable
     public var encoder : UnsafeRawPointer? {
         get {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), ordering: .relaxed)
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), ordering: .relaxed)
-            }
+            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: self.pointer(for: \.encoders), ordering: .relaxed)
         }
     }
     
     /// Updates the encoder to also support encoding to bindingPath.
-    @inlinable
     func updateEncoder(pipelineReflection: PipelineReflection, bindingPath: ResourceBindingPath) {
         var hasSetEncoder = false
         repeat {
@@ -217,89 +162,46 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     /// Allows us to perform a compare-and-swap on the argument buffer encoder.
-    @inlinable
     func replaceEncoder(with newEncoder: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
         if self._usesPersistentRegistry {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].encoders.advanced(by: indexInChunk), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
+            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: self.pointer(for: \.encoders), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
         } else {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].encoders.advanced(by: indexInChunk), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
+            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: self.pointer(for: \.encoders), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
         }
     }
     
-    @inlinable
     public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)> {
         _read {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].enqueuedBindings[indexInChunk]
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].enqueuedBindings[indexInChunk]
-            }
+            yield self.pointer(for: \.enqueuedBindings).pointee
         }
         nonmutating _modify {
             self.waitForCPUAccess(accessType: .write)
             
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield &PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].enqueuedBindings[indexInChunk]
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield &TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].enqueuedBindings[indexInChunk]
-            }
+            yield &self.pointer(for: \.enqueuedBindings).pointee
             
             self.stateFlags.remove(.initialised)
         }
     }
     
-    @inlinable
     public var bindings : ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)> {
         _read {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].bindings[indexInChunk]
-            }
+            yield self.pointer(for: \.bindings).pointee
         }
         nonmutating _modify {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield &PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                yield &TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].bindings[indexInChunk]
-            }
+            yield &self.pointer(for: \.bindings).pointee
         }
     }
     
-    @inlinable
     public var label : String? {
         get {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].labels[indexInChunk]
-            }
+            return self[\.labels]
         }
         nonmutating set {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
-                RenderBackend.updateLabel(on: self)
-            } else {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: TransientArgumentBufferRegistry.Chunk.itemsPerChunk)
-                TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].chunks[chunkIndex].labels[indexInChunk] = newValue
-            }
+            self[\.labels] = newValue
+            RenderBackend.updateLabel(on: self)
         }
     }
     
-    @inlinable
     public var storageMode: StorageMode {
         return .shared
     }
@@ -331,24 +233,21 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    @inlinable
     public func _bytes(offset: Int) -> UnsafeRawPointer {
         if self._usesPersistentRegistry {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-            return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].inlineDataStorage[indexInChunk].withUnsafeBytes { return $0.baseAddress! + offset }
+            return self.pointer(for: \.inlineDataStorage)!.pointee.withUnsafeBytes { return $0.baseAddress! + offset }
         } else {
             return UnsafeRawPointer(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].inlineDataAllocator.buffer!) + offset
         }
     }
     
     /// returns the offset in bytes into the buffer's storage
-    @inlinable
     public func _copyBytes(_ bytes: UnsafeRawPointer, length: Int) -> Int {
         if self._usesPersistentRegistry {
             return PersistentArgumentBufferRegistry.instance.lock.withLock {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-                let offset = PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].inlineDataStorage[indexInChunk].count
-                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].inlineDataStorage[indexInChunk].append(bytes.assumingMemoryBound(to: UInt8.self), count: length)
+                let inlineDataStorage = self.pointer(for: \.inlineDataStorage)!
+                let offset = inlineDataStorage.pointee.count
+                inlineDataStorage.pointee.append(bytes.assumingMemoryBound(to: UInt8.self), count: length)
                 return offset
             }
         } else {
@@ -363,34 +262,29 @@ public struct ArgumentBuffer : ResourceProtocol {
     public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
             guard self._usesPersistentRegistry else { return 0 }
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
             if type == .read {
-                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)]
+                return self.pointer(for: \.readWaitIndices)?.pointee[Int(queue.index)] ?? 0
             } else {
-                return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)]
+                return self.pointer(for: \.writeWaitIndices)?.pointee[Int(queue.index)] ?? 0
             }
         }
         nonmutating set {
             guard self._usesPersistentRegistry else { return }
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-            
             if type == .read || type == .readWrite {
-                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].readWaitIndices[indexInChunk][Int(queue.index)] = newValue
+                self.pointer(for: \.readWaitIndices)!.pointee[Int(queue.index)] = newValue
             }
             if type == .write || type == .readWrite {
-                PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].writeWaitIndices[indexInChunk][Int(queue.index)] = newValue
+                self.pointer(for: \.writeWaitIndices)!.pointee[Int(queue.index)]  = newValue
             }
         }
     }
     
     /// Returns whether the resource is known to currently be in use by the CPU or GPU.
-    @inlinable
     public var isKnownInUse: Bool {
-        guard self._usesPersistentRegistry else {
+        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
             return true
         }
-        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+        let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs, ordering: .relaxed)
         if activeRenderGraphMask != 0 {
             return true // The resource is still being used by a yet-to-be-submitted RenderGraph.
         }
@@ -403,11 +297,10 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        guard self._usesPersistentRegistry else {
+        guard let activeRenderGraphs = self.pointer(for: \.activeRenderGraphs) else {
             return
         }
-        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+        UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
     }
     
     public func dispose() {
@@ -417,18 +310,16 @@ public struct ArgumentBuffer : ResourceProtocol {
         PersistentArgumentBufferRegistry.instance.dispose(self)
     }
     
-    @inlinable
     public var isValid : Bool {
         if self._usesPersistentRegistry {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferRegistry.Chunk.itemsPerChunk)
-            return PersistentArgumentBufferRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            return PersistentArgumentBufferRegistry.instance.generationChunks[chunkIndex][indexInChunk] == self.generation
         } else {
             return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].generation == self.generation
         }
     }
     
     
-    @inlinable
     public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey, arrayIndex: Int = 0) {
         guard let buffer = buffer else { return }
         
@@ -438,7 +329,6 @@ public struct ArgumentBuffer : ResourceProtocol {
         )
     }
     
-    @inlinable
     public func setTexture(_ texture: Texture, key: FunctionArgumentKey, arrayIndex: Int = 0) {
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         self.enqueuedBindings.append(
@@ -447,7 +337,6 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    @inlinable
     public func setAccelerationStructure(_ structure: AccelerationStructure, key: FunctionArgumentKey, arrayIndex: Int = 0) {
         assert(!self.flags.contains(.persistent) || structure.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         self.enqueuedBindings.append(
@@ -462,7 +351,6 @@ public struct ArgumentBuffer : ResourceProtocol {
         )
     }
     
-    @inlinable
     public func setValue<T>(_ value: T, key: FunctionArgumentKey, arrayIndex: Int = 0) {
         assert(_isPOD(T.self), "Only POD types should be used with setValue.")
         
@@ -472,17 +360,19 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    @inlinable
     public func setValue<T : ResourceProtocol>(_ value: T, key: FunctionArgumentKey, arrayIndex: Int = 0) {
         preconditionFailure("setValue should not be used with resources; use setBuffer or setTexture instead.")
     }
     
-    @inlinable
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, for key: FunctionArgumentKey, arrayIndex: Int = 0) {
         let currentOffset = self._copyBytes(bytes, length: length)
         self.enqueuedBindings.append(
             (key, arrayIndex, .bytes(offset: currentOffset, length: length))
         )
+    }
+    
+    public static var resourceType: ResourceType {
+        return .argumentBuffer
     }
 }
 
@@ -507,6 +397,20 @@ extension ArgumentBuffer {
     }
 }
 
+extension ArgumentBuffer: ResourceProtocolImpl {
+    typealias SharedProperties = ArgumentBufferProperties
+    typealias TransientProperties = EmptyProperties<Void>
+    typealias PersistentProperties = ArgumentBufferProperties.PersistentArgumentBufferProperties
+    
+    static func transientRegistry(index: Int) -> TransientArgumentBufferRegistry? {
+        return TransientArgumentBufferRegistry.instances[index]
+    }
+    
+    static var persistentRegistry: PersistentRegistry<Self> { PersistentArgumentBufferRegistry.instance }
+    
+    typealias Descriptor = Void
+}
+
 
 extension ArgumentBuffer: CustomStringConvertible {
     public var description: String {
@@ -515,10 +419,10 @@ extension ArgumentBuffer: CustomStringConvertible {
 }
 
 public struct ArgumentBufferArray : ResourceProtocol {
+
     @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
-    @inlinable
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .argumentBufferArray)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
@@ -527,19 +431,15 @@ public struct ArgumentBufferArray : ResourceProtocol {
     public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
         
-        let index : UInt64
         if flags.contains(.persistent) {
-            index = PersistentArgumentBufferArrayRegistry.instance.allocate(flags: flags)
+            self = PersistentArgumentBufferArrayRegistry.instance.allocate(descriptor: (), heap: nil, flags: flags)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
-            index = TransientArgumentBufferArrayRegistry.instances[renderGraph.transientRegistryIndex].allocate(flags: flags)
+            self = TransientArgumentBufferArrayRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: (),flags: flags)
         }
-        
-        let handle = index | (UInt64(flags.rawValue) << Self.flagBitsRange.lowerBound) | (UInt64(ResourceType.argumentBufferArray.rawValue) << Self.typeBitsRange.lowerBound)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
     public var isKnownInUse: Bool {
@@ -562,7 +462,6 @@ public struct ArgumentBufferArray : ResourceProtocol {
         PersistentArgumentBufferArrayRegistry.instance.dispose(self)
     }
     
-    @inlinable
     public var stateFlags: ResourceStateFlags {
         get {
             return []
@@ -571,48 +470,24 @@ public struct ArgumentBufferArray : ResourceProtocol {
         }
     }
     
-    @inlinable
     public var _bindings : [ArgumentBuffer?] {
         _read {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
-                yield PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
-            } else {
-                yield TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].bindings[self.index]
-            }
+            yield self.pointer(for: \.bindings).pointee
         }
         nonmutating _modify {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
-                yield &PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].bindings[indexInChunk]
-            } else {
-                yield &TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].bindings[self.index]
-            }
+            yield &self.pointer(for: \.bindings).pointee
         }
     }
     
-    @inlinable
     public var label : String? {
         get {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
-                return PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].labels[indexInChunk]
-            } else {
-                return TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].labels[self.index]
-            }
+            return self.pointer(for: \.labels).pointee
         }
         nonmutating set {
-            if self._usesPersistentRegistry {
-                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
-                PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].labels[indexInChunk] = newValue
-                RenderBackend.updateLabel(on: self)
-            } else {
-                TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].labels[self.index] = newValue
-            }
+            self.pointer(for: \.labels).pointee = newValue
         }
     }
     
-    @inlinable
     public var storageMode: StorageMode {
         return .shared
     }
@@ -627,16 +502,34 @@ public struct ArgumentBufferArray : ResourceProtocol {
         }
     }
     
-    @inlinable
     public var isValid : Bool {
         if self._usesPersistentRegistry {
-            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: PersistentArgumentBufferArrayRegistry.Chunk.itemsPerChunk)
-            return PersistentArgumentBufferArrayRegistry.instance.chunks[chunkIndex].generations[indexInChunk] == self.generation
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            return PersistentArgumentBufferArrayRegistry.instance.generationChunks[chunkIndex][indexInChunk] == self.generation
         } else {
             return TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].generation == self.generation
         }
     }
+    
+    public static var resourceType: ResourceType {
+        return .argumentBufferArray
+    }
 }
+
+extension ArgumentBufferArray: ResourceProtocolImpl {
+    typealias SharedProperties = ArgumentBufferArrayProperties
+    typealias TransientProperties = EmptyProperties<Void>
+    typealias PersistentProperties = ArgumentBufferProperties.PersistentArgumentBufferProperties
+    
+    static func transientRegistry(index: Int) -> TransientArgumentBufferArrayRegistry? {
+        return TransientArgumentBufferArrayRegistry.instances[index]
+    }
+    
+    static var persistentRegistry: PersistentRegistry<Self> { PersistentArgumentBufferArrayRegistry.instance }
+    
+    typealias Descriptor = Void
+}
+
 
 extension ArgumentBufferArray: CustomStringConvertible {
     public var description: String {
@@ -648,18 +541,15 @@ extension ArgumentBufferArray: CustomStringConvertible {
 public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     public let argumentBuffer : ArgumentBuffer
     
-    @inlinable
     public init(handle: Handle) {
         self.argumentBuffer = ArgumentBuffer(handle: handle)
     }
     
     @available(*, deprecated, renamed: "init(renderGraph:flags:)")
-    @inlinable
     public init(frameGraph: RenderGraph?, flags: ResourceFlags = []) {
         self.init(renderGraph: frameGraph, flags: flags)
     }
     
-    @inlinable
     public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.argumentBuffer = ArgumentBuffer(renderGraph: renderGraph, flags: flags)
         self.argumentBuffer.label = "Argument Buffer \(K.self)"
@@ -669,12 +559,10 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         self.argumentBuffer.dispose()
     }
     
-    @inlinable
     public var handle: Resource.Handle {
         return self.argumentBuffer.handle
     }
     
-    @inlinable
     public var stateFlags: ResourceStateFlags {
         get {
             return self.argumentBuffer.stateFlags
@@ -684,17 +572,14 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         }
     }
     
-    @inlinable
     public var flags : ResourceFlags {
         return self.argumentBuffer.flags
     }
     
-    @inlinable
     public var sourceArray : TypedArgumentBufferArray<K>? {
         return self.argumentBuffer.sourceArray.map { TypedArgumentBufferArray(handle: $0.handle) }
     }
     
-    @inlinable
     public var isKnownInUse: Bool {
         return self.argumentBuffer.isKnownInUse
     }
@@ -703,12 +588,10 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         self.argumentBuffer.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
     }
     
-    @inlinable
     public var isValid: Bool {
         return self.argumentBuffer.isValid
     }
     
-    @inlinable
     public var label : String? {
         get {
             return self.argumentBuffer.label
@@ -718,12 +601,10 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         }
     }
     
-    @inlinable
     public var storageMode: StorageMode {
         return self.argumentBuffer.storageMode
     }
     
-    @inlinable
     public func setBuffer(_ buffer: Buffer?, offset: Int, key: K, arrayIndex: Int = 0) {
         guard let buffer = buffer else { return }
         
@@ -733,7 +614,6 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         )
     }
     
-    @inlinable
     public func setTexture(_ texture: Texture, key: K, arrayIndex: Int = 0) {
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         self.argumentBuffer.enqueuedBindings.append(
@@ -741,19 +621,16 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         )
     }
     
-    @inlinable
     public func setSampler(_ sampler: SamplerDescriptor, key: K, arrayIndex: Int = 0) {
         self.argumentBuffer.enqueuedBindings.append(
             (key, arrayIndex, .sampler(sampler))
         )
     }
 
-    @inlinable
     public func setValue<T : ResourceProtocol>(_ value: T, key: K, arrayIndex: Int = 0) {
         assertionFailure("Cannot set a resource with setValue; did you mean to use setTexture or setBuffer?")
     }
     
-    @inlinable
     public func setValue<T>(_ value: T, key: K, arrayIndex: Int = 0) {
         assert(_isPOD(T.self), "Only POD types should be used with setValue.")
         
@@ -763,12 +640,10 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         }
     }
     
-    @inlinable
     public func setValue<T : ResourceProtocol>(_ value: T, key: FunctionArgumentKey, arrayIndex: Int = 0) {
         preconditionFailure("setValue should not be used with resources; use setBuffer or setTexture instead.")
     }
     
-    @inlinable
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, for key: K, arrayIndex: Int = 0) {
         let currentOffset = self.argumentBuffer._copyBytes(bytes, length: length)
         self.argumentBuffer.enqueuedBindings.append(
@@ -776,6 +651,9 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         )
     }
     
+    public static var resourceType: ResourceType {
+        return .argumentBuffer
+    }
 }
 
 extension TypedArgumentBuffer {
@@ -802,13 +680,11 @@ extension TypedArgumentBuffer {
 public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
     public let argumentBufferArray : ArgumentBufferArray
     
-    @inlinable
     public init(handle: Handle) {
         self.argumentBufferArray = ArgumentBufferArray(handle: handle)
     }
     
     @available(*, deprecated, renamed: "init(renderGraph:flags:)")
-    @inlinable
     public init(frameGraph: RenderGraph?, flags: ResourceFlags = []) {
         self.init(renderGraph: frameGraph, flags: flags)
     }
@@ -818,7 +694,6 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         self.argumentBufferArray.label = "Argument Buffer Array \(K.self)"
     }
     
-    @inlinable
     public var isKnownInUse: Bool {
         return self.argumentBufferArray.isKnownInUse
     }
@@ -831,12 +706,10 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         self.argumentBufferArray.dispose()
     }
     
-    @inlinable
     public var handle: ArgumentBufferArray.Handle {
         return self.argumentBufferArray.handle
     }
     
-    @inlinable
     public var stateFlags: ResourceStateFlags {
         get {
             return self.argumentBufferArray.stateFlags
@@ -846,7 +719,6 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         }
     }
     
-    @inlinable
     public var label : String? {
         get {
             return self.argumentBufferArray.label
@@ -856,12 +728,10 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         }
     }
     
-    @inlinable
     public var storageMode: StorageMode {
         return self.argumentBufferArray.storageMode
     }
     
-    @inlinable
     public var isValid: Bool {
         return self.argumentBufferArray.isValid
     }
@@ -884,5 +754,9 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
             self.argumentBufferArray._bindings[index] = buffer
             return TypedArgumentBuffer(handle: buffer.handle)
         }
+    }
+    
+    public static var resourceType: ResourceType {
+        return .argumentBufferArray
     }
 }
