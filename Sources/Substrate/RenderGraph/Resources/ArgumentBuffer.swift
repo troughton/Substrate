@@ -269,13 +269,6 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    public func dispose() {
-        guard self._usesPersistentRegistry, self.isValid else {
-            return
-        }
-        PersistentArgumentBufferRegistry.instance.dispose(self)
-    }
-    
     public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey, arrayIndex: Int = 0) {
         guard let buffer = buffer else { return }
         
@@ -373,108 +366,6 @@ extension ArgumentBuffer: CustomStringConvertible {
         return "ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self.bindings), enqueuedBindings: \(self.enqueuedBindings), flags: \(self.flags) }"
     }
 }
-
-public struct ArgumentBufferArray : ResourceProtocol {
-
-    @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
-    
-    public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .argumentBufferArray)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
-    }
-    
-    public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
-        
-        if flags.contains(.persistent) {
-            self = PersistentArgumentBufferArrayRegistry.instance.allocate(descriptor: (), heap: nil, flags: flags)
-        } else {
-            guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
-                fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
-            }
-            precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
-            self = TransientArgumentBufferArrayRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: (),flags: flags)
-        }
-    }
-    
-    public var isKnownInUse: Bool {
-        return self._bindings.contains(where: { $0?.isKnownInUse ?? false })
-    }
-    
-    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        for binding in self._bindings {
-            binding?.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-        }
-    }
-    
-    public func dispose() {
-        guard self._usesPersistentRegistry, self.isValid else {
-            return
-        }
-        for binding in self._bindings {
-            binding?.dispose()
-        }
-        PersistentArgumentBufferArrayRegistry.instance.dispose(self)
-    }
-    
-    public var stateFlags: ResourceStateFlags {
-        get {
-            return []
-        }
-        nonmutating set {
-        }
-    }
-    
-    public var _bindings : [ArgumentBuffer?] {
-        _read {
-            yield self.pointer(for: \.bindings).pointee
-        }
-        nonmutating _modify {
-            yield &self.pointer(for: \.bindings).pointee
-        }
-    }
-    
-    public var storageMode: StorageMode {
-        return .shared
-    }
-    
-    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
-        get {
-            return 0
-        }
-        nonmutating set {
-            // Argument buffer array waits are handled at ArgumentBuffer granularity
-           _ = newValue
-        }
-    }
-    
-    public static var resourceType: ResourceType {
-        return .argumentBufferArray
-    }
-}
-
-extension ArgumentBufferArray: ResourceProtocolImpl {
-    typealias SharedProperties = ArgumentBufferArrayProperties
-    typealias TransientProperties = EmptyProperties<Void>
-    typealias PersistentProperties = ArgumentBufferProperties.PersistentArgumentBufferProperties
-    
-    static func transientRegistry(index: Int) -> TransientArgumentBufferArrayRegistry? {
-        return TransientArgumentBufferArrayRegistry.instances[index]
-    }
-    
-    static var persistentRegistry: PersistentRegistry<Self> { PersistentArgumentBufferArrayRegistry.instance }
-    
-    typealias Descriptor = Void
-}
-
-
-extension ArgumentBufferArray: CustomStringConvertible {
-    public var description: String {
-        return "ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self._bindings), flags: \(self.flags) }"
-    }
-}
-
 
 public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     public let argumentBuffer : ArgumentBuffer
@@ -624,95 +515,87 @@ extension TypedArgumentBuffer {
     }
 }
 
-public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
-    public let argumentBufferArray : ArgumentBufferArray
-    
-    public init(handle: Handle) {
-        self.argumentBufferArray = ArgumentBufferArray(handle: handle)
+extension TypedArgumentBuffer: CustomStringConvertible {
+    public var description: String {
+        return self.argumentBuffer.description
     }
+}
+
+// Unlike the other transient registries, the transient argument buffer registry is chunk-based.
+// This is because the number of argument buffers used within a frame can vary dramatically, and so a pre-assigned maximum is more likely to be hit.
+final class TransientArgumentBufferRegistry: TransientChunkRegistry<ArgumentBuffer> {
+    static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientArgumentBufferRegistry(transientRegistryIndex: i) }
     
-    @available(*, deprecated, renamed: "init(renderGraph:flags:)")
-    public init(frameGraph: RenderGraph?, flags: ResourceFlags = []) {
-        self.init(renderGraph: frameGraph, flags: flags)
+    override class var maxChunks: Int { 2048 }
+    
+    let inlineDataAllocator : ExpandingBuffer<UInt8> = .init()
+    
+    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> ArgumentBuffer {
+        let resource = self.allocateHandle(flags: flags)
+        let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: ArgumentBuffer.itemsPerChunk)
+        self.sharedPropertyChunks?[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
+        return resource
     }
+}
+
+
+final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer> {
+    static let instance = PersistentArgumentBufferRegistry()
     
-    public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        self.argumentBufferArray = ArgumentBufferArray(renderGraph: renderGraph, flags: flags)
-        self.argumentBufferArray.label = "Argument Buffer Array \(K.self)"
+    override class var maxChunks: Int { 256 }
+    
+    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> ArgumentBuffer {
+        let handle = self.allocateHandle(flags: flags)
+        let (chunkIndex, indexInChunk) = handle.index.quotientAndRemainder(dividingBy: ArgumentBuffer.itemsPerChunk)
+        self.sharedChunks?[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        self.persistentChunks?[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
+        return handle
     }
-    
-    public var isKnownInUse: Bool {
-        return self.argumentBufferArray.isKnownInUse
-    }
-    
-    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        self.argumentBufferArray.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-    }
-    
-    public func dispose() {
-        self.argumentBufferArray.dispose()
-    }
-    
-    public var handle: ArgumentBufferArray.Handle {
-        return self.argumentBufferArray.handle
-    }
-    
-    public var stateFlags: ResourceStateFlags {
-        get {
-            return self.argumentBufferArray.stateFlags
+}
+
+struct ArgumentBufferArrayProperties: SharedResourceProperties {
+    struct PersistentArgumentBufferArrayProperties: PersistentResourceProperties {
+        let heaps : UnsafeMutablePointer<Heap?>
+        
+        init(capacity: Int) {
+            self.heaps = .allocate(capacity: capacity)
         }
-        nonmutating set {
-            self.argumentBufferArray.stateFlags = newValue
+        
+        func deallocate() {
+            self.heaps.deallocate()
         }
-    }
-    
-    public var label : String? {
-        get {
-            return self.argumentBufferArray.label
+        
+        func initialize(index: Int, descriptor: Void, heap: Heap?, flags: ResourceFlags) {
+            self.heaps.advanced(by: index).initialize(to: heap)
         }
-        nonmutating set {
-            self.argumentBufferArray.label = newValue
+        
+        func deinitialize(from index: Int, count: Int) {
+            self.heaps.advanced(by: index).deinitialize(count: count)
         }
+        
+        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
     }
     
-    public var usages: ChunkArray<ResourceUsage> {
-        get {
-            return self.argumentBufferArray.usages
-        }
-        nonmutating set {
-            self.argumentBufferArray.usages = newValue
-        }
+    var bindings : UnsafeMutablePointer<[ArgumentBuffer?]>
+    
+    init(capacity: Int) {
+        self.bindings = .allocate(capacity: capacity)
     }
     
-    public var storageMode: StorageMode {
-        return self.argumentBufferArray.storageMode
+    func deallocate() {
+        self.bindings.deallocate()
     }
     
-    public var isValid: Bool {
-        return self.argumentBufferArray.isValid
+    func initialize(index: Int, descriptor: Void, heap: Heap?, flags: ResourceFlags) {
+        self.bindings.advanced(by: index).initialize(to: [])
     }
     
-    public func reserveCapacity(_ capacity: Int) {
-        self.argumentBufferArray._bindings.reserveCapacity(capacity)
+    func deinitialize(from index: Int, count: Int) {
+        self.bindings.advanced(by: index).deinitialize(count: count)
     }
     
-    public subscript(index: Int) -> TypedArgumentBuffer<K> {
-        get {
-            if index >= self.argumentBufferArray._bindings.count {
-                self.argumentBufferArray._bindings.append(contentsOf: repeatElement(nil, count: index - self.argumentBufferArray._bindings.count + 1))
-            }
-            
-            if let buffer = self.argumentBufferArray._bindings[index] {
-                return TypedArgumentBuffer(handle: buffer.handle)
-            }
-            
-            let buffer = ArgumentBuffer(flags: [self.flags, .resourceView], sourceArray: self.argumentBufferArray)
-            self.argumentBufferArray._bindings[index] = buffer
-            return TypedArgumentBuffer(handle: buffer.handle)
-        }
-    }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
     
-    public static var resourceType: ResourceType {
-        return .argumentBufferArray
-    }
 }
