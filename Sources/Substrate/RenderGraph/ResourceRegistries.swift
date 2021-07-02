@@ -78,6 +78,7 @@ protocol TransientRegistry {
     var generation: UInt8 { get }
     func sharedProperties(index: Int) -> (chunk: Resource.SharedProperties, indexInChunk: Int)
     func transientProperties(index: Int) -> (chunk: Resource.TransientProperties, indexInChunk: Int)
+    func labelPointer(index: Int) -> UnsafeMutablePointer<String?>
 }
 
 class TransientChunkRegistry<Resource: ResourceProtocolImpl>: TransientRegistry {
@@ -87,35 +88,59 @@ class TransientChunkRegistry<Resource: ResourceProtocolImpl>: TransientRegistry 
     
     let transientRegistryIndex : Int
     var count = 0
-    let sharedPropertyChunks : UnsafeMutablePointer<Resource.SharedProperties>
-    let transientPropertyChunks : UnsafeMutablePointer<Resource.TransientProperties>
+    let sharedPropertyChunks : UnsafeMutablePointer<Resource.SharedProperties>?
+    let transientPropertyChunks : UnsafeMutablePointer<Resource.TransientProperties>?
+    let labelChunks : UnsafeMutablePointer<UnsafeMutablePointer<String?>>
     var allocatedChunkCount = 0
     var generation : UInt8 = 0
     
     init(transientRegistryIndex: Int) {
         self.transientRegistryIndex = transientRegistryIndex
-        self.sharedPropertyChunks = .allocate(capacity: Self.maxChunks)
-        self.transientPropertyChunks = .allocate(capacity: Self.maxChunks)
+        if MemoryLayout<Resource.SharedProperties>.size > 0 {
+            self.sharedPropertyChunks = .allocate(capacity: Self.maxChunks)
+        } else {
+            self.sharedPropertyChunks = nil
+        }
+        
+        if MemoryLayout<Resource.TransientProperties>.size > 0 {
+            self.transientPropertyChunks = .allocate(capacity: Self.maxChunks)
+        } else {
+            self.transientPropertyChunks = nil
+        }
+        
+        self.labelChunks = .allocate(capacity: Self.maxChunks)
     }
     
     deinit {
         self.clear()
         for i in 0..<self.chunkCount {
-            self.sharedPropertyChunks[i].deallocate()
-            self.transientPropertyChunks[i].deallocate()
+            self.sharedPropertyChunks?[i].deallocate()
+            self.transientPropertyChunks?[i].deallocate()
         }
-        self.sharedPropertyChunks.deallocate()
-        self.transientPropertyChunks.deallocate()
+        self.sharedPropertyChunks?.deallocate()
+        self.transientPropertyChunks?.deallocate()
     }
     
     func sharedProperties(index: Int) -> (chunk: Resource.SharedProperties, indexInChunk: Int) {
+        guard let sharedPropertyChunks = self.sharedPropertyChunks else {
+            return (Resource.SharedProperties(capacity: 0), 0)
+        }
+
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
-        return (self.sharedPropertyChunks[chunkIndex], indexInChunk)
+        return (sharedPropertyChunks[chunkIndex], indexInChunk)
     }
     
     func transientProperties(index: Int) -> (chunk: Resource.TransientProperties, indexInChunk: Int) {
+        guard let transientPropertyChunks = self.transientPropertyChunks else {
+            return (Resource.TransientProperties(capacity: 0), 0)
+        }
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
-        return (self.transientPropertyChunks[chunkIndex], indexInChunk)
+        return (transientPropertyChunks[chunkIndex], indexInChunk)
+    }
+    
+    func labelPointer(index: Int) -> UnsafeMutablePointer<String?> {
+        let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
+        return self.labelChunks[chunkIndex].advanced(by: indexInChunk)
     }
     
     func allocateHandle(flags: ResourceFlags) -> Resource {
@@ -141,8 +166,9 @@ class TransientChunkRegistry<Resource: ResourceProtocolImpl>: TransientRegistry 
     
     func initialize(resource: Resource, descriptor: Resource.Descriptor) {
         let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
-        self.sharedPropertyChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
-        self.transientPropertyChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
+        self.sharedPropertyChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
+        self.transientPropertyChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
+        self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
     }
     
     func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource {
@@ -160,8 +186,9 @@ class TransientChunkRegistry<Resource: ResourceProtocolImpl>: TransientRegistry 
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
         assert(index == self.allocatedChunkCount)
-        self.sharedPropertyChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
-        self.transientPropertyChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.sharedPropertyChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.transientPropertyChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.labelChunks.advanced(by: index).initialize(to: .allocate(capacity: Resource.itemsPerChunk))
         self.allocatedChunkCount += 1
     }
     
@@ -169,8 +196,9 @@ class TransientChunkRegistry<Resource: ResourceProtocolImpl>: TransientRegistry 
         self.lock.withLock {
             for chunkIndex in 0..<self.chunkCount {
                 let countInChunk = min(self.count - chunkIndex * Resource.itemsPerChunk, Resource.itemsPerChunk)
-                self.sharedPropertyChunks[chunkIndex].deinitialize(from: 0, count: countInChunk)
-                self.transientPropertyChunks[chunkIndex].deinitialize(from: 0, count: countInChunk)
+                self.sharedPropertyChunks?[chunkIndex].deinitialize(from: 0, count: countInChunk)
+                self.transientPropertyChunks?[chunkIndex].deinitialize(from: 0, count: countInChunk)
+                self.labelChunks[chunkIndex].deinitialize(count: countInChunk)
             }
             self.count = 0
             
@@ -187,6 +215,7 @@ class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegis
     
     var sharedStorage : Resource.SharedProperties!
     var transientStorage : Resource.TransientProperties!
+    var labels: UnsafeMutablePointer<String?>!
     
     init(transientRegistryIndex: Int) {
         self.transientRegistryIndex = transientRegistryIndex
@@ -201,6 +230,7 @@ class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegis
         self.count.initialize(to: Int.AtomicRepresentation(0))
         self.sharedStorage = .init(capacity: self.capacity)
         self.transientStorage = .init(capacity: self.capacity)
+        self.labels = .allocate(capacity: self.capacity)
     }
     
     deinit {
@@ -208,6 +238,7 @@ class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegis
         self.count.deallocate()
         self.sharedStorage.deallocate()
         self.transientStorage.deallocate()
+        self.labels.deallocate()
     }
     
     func sharedProperties(index: Int) -> (chunk: Resource.SharedProperties, indexInChunk: Int) {
@@ -216,6 +247,10 @@ class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegis
     
     func transientProperties(index: Int) -> (chunk: Resource.TransientProperties, indexInChunk: Int) {
         return (self.transientStorage, index)
+    }
+    
+    func labelPointer(index: Int) -> UnsafeMutablePointer<String?> {
+        return self.labels.advanced(by: index)
     }
     
     func allocateHandle(flags: ResourceFlags) -> Resource {
@@ -235,6 +270,7 @@ class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegis
     func initialize(resource: Resource, descriptor: Resource.Descriptor) {
         self.sharedStorage.initialize(index: resource.index, descriptor: descriptor, heap: nil, flags: resource.flags)
         self.transientStorage.initialize(index: resource.index, descriptor: descriptor, heap: nil, flags: resource.flags)
+        self.labels.advanced(by: resource.index).initialize(to: nil)
     }
     
     func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource {
@@ -251,6 +287,7 @@ class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegis
         let count = Int.AtomicRepresentation.atomicExchange(0, at: self.count, ordering: .relaxed)
         self.sharedStorage.deinitialize(from: 0, count: count)
         self.transientStorage.deinitialize(from: 0, count: count)
+        self.labels.deinitialize(count: count)
         
         self.generation = self.generation &+ 1
         
@@ -266,13 +303,23 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
     var freeIndices = RingBuffer<Int>()
     var nextFreeIndex = 0
     var enqueuedDisposals = [Resource]()
-    let sharedChunks : UnsafeMutablePointer<Resource.SharedProperties>
-    let persistentChunks : UnsafeMutablePointer<Resource.PersistentProperties>
+    let sharedChunks : UnsafeMutablePointer<Resource.SharedProperties>?
+    let persistentChunks : UnsafeMutablePointer<Resource.PersistentProperties>?
+    let labelChunks: UnsafeMutablePointer<UnsafeMutablePointer<String?>>
     let generationChunks : UnsafeMutablePointer<UnsafeMutablePointer<UInt8>>
     
     init() {
-        self.sharedChunks = .allocate(capacity: Self.maxChunks)
-        self.persistentChunks = .allocate(capacity: Self.maxChunks)
+        if MemoryLayout<Resource.SharedProperties>.size > 0 {
+            self.sharedChunks = .allocate(capacity: Self.maxChunks)
+        } else {
+            self.sharedChunks = nil
+        }
+        if MemoryLayout<Resource.SharedProperties>.size > 0 {
+            self.persistentChunks = .allocate(capacity: Self.maxChunks)
+        } else {
+            self.persistentChunks = nil
+        }
+        self.labelChunks = .allocate(capacity: Self.maxChunks)
         self.generationChunks = .allocate(capacity: Self.maxChunks)
     }
     
@@ -301,8 +348,9 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
     
     func initialize(resource: Resource, descriptor: Resource.Descriptor, heap: Heap?, flags: ResourceFlags) {
         let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
-        self.sharedChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
-        self.persistentChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
+        self.sharedChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
+        self.persistentChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
+        self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
     }
     
     func allocate(descriptor: Resource.Descriptor, heap: Heap?, flags: ResourceFlags) -> Resource {
@@ -319,8 +367,9 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
     
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
-        self.sharedChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
-        self.persistentChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.sharedChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.persistentChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.labelChunks.advanced(by: index).initialize(to: .allocate(capacity: Resource.itemsPerChunk))
         
         let generations = UnsafeMutablePointer<UInt8>.allocate(capacity: Resource.itemsPerChunk)
         generations.initialize(repeating: 0, count: Resource.itemsPerChunk)
@@ -346,8 +395,9 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
         let index = resource.index
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
         
-        self.sharedChunks[chunkIndex].deinitialize(from: indexInChunk, count: 1)
-        self.persistentChunks[chunkIndex].deinitialize(from: indexInChunk, count: 1)
+        self.sharedChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
+        self.persistentChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
+        self.labelChunks[chunkIndex].advanced(by: indexInChunk).deinitialize(count: 1)
         self.generationChunks[chunkIndex][indexInChunk] = self.generationChunks[chunkIndex][indexInChunk] &+ 1
         
         self.freeIndices.append(index)
@@ -376,9 +426,9 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
             let chunkCount = self.chunkCount
             for chunkIndex in 0..<chunkCount {
                 let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % Resource.itemsPerChunk) : Resource.itemsPerChunk
-                self.sharedChunks[chunkIndex].usagesOptional?.assign(repeating: ChunkArray(), count: chunkItemCount)
+                self.sharedChunks?[chunkIndex].usagesOptional?.assign(repeating: ChunkArray(), count: chunkItemCount)
                 
-                if let activeRenderGraphs = self.persistentChunks[chunkIndex].activeRenderGraphsOptional {
+                if let activeRenderGraphs = self.persistentChunks?[chunkIndex].activeRenderGraphsOptional {
                     for i in 0..<chunkItemCount {
                         UInt8.AtomicRepresentation.atomicLoadThenBitwiseAnd(with: renderGraphInactiveMask, at: activeRenderGraphs.advanced(by: i), ordering: .relaxed)
                     }
@@ -486,30 +536,24 @@ struct TextureProperties: SharedResourceProperties {
     var descriptors : UnsafeMutablePointer<TextureDescriptor>
     var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
     
-    var labels : UnsafeMutablePointer<String?>
-    
     init(capacity: Int) {
         self.descriptors = UnsafeMutablePointer.allocate(capacity: capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: capacity)
-        self.labels = UnsafeMutablePointer.allocate(capacity: capacity)
     }
     
     func deallocate() {
         self.descriptors.deallocate()
         self.usages.deallocate()
-        self.labels.deallocate()
     }
     
     func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.usages.advanced(by: index).initialize(to: ChunkArray())
-        self.labels.advanced(by: index).initialize(to: nil)
     }
     
     func initialize(index: Int, descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) {
         self.descriptors.advanced(by: index).initialize(to: descriptor.descriptor)
         self.usages.advanced(by: index).initialize(to: ChunkArray())
-        self.labels.advanced(by: index).initialize(to: nil)
     }
     
     func initialize(index: Int, viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) {
@@ -523,14 +567,12 @@ struct TextureProperties: SharedResourceProperties {
             descriptor.mipmapLevelCount = viewDescriptor.levels.count
         }
         self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.usages.advanced(by: index).initialize(to:  ChunkArray())
-        self.labels.advanced(by: index).initialize(to: nil)
+        self.usages.advanced(by: index).initialize(to: ChunkArray())
     }
     
     func deinitialize(from index: Int, count: Int) {
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.usages.advanced(by: index).deinitialize(count: count)
-        self.labels.advanced(by: index).deinitialize(count: count)
     }
     
     var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
@@ -639,30 +681,25 @@ struct BufferProperties: SharedResourceProperties {
     
     var descriptors : UnsafeMutablePointer<BufferDescriptor>
     var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
-    var labels : UnsafeMutablePointer<String?>
     
     init(capacity: Int) {
         self.descriptors = UnsafeMutablePointer.allocate(capacity: capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: capacity)
-        self.labels = UnsafeMutablePointer.allocate(capacity: capacity)
     }
     
     func deallocate() {
         self.descriptors.deallocate()
         self.usages.deallocate()
-        self.labels.deallocate()
     }
     
     func initialize(index: Int, descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.usages.advanced(by: index).initialize(to: ChunkArray())
-        self.labels.advanced(by: index).initialize(to: nil)
     }
     
     func deinitialize(from index: Int, count: Int) {
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.usages.advanced(by: index).deinitialize(count: count)
-        self.labels.advanced(by: index).deinitialize(count: count)
     }
     
     var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
@@ -738,8 +775,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
     let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray?>
     
-    let labels : UnsafeMutablePointer<String?>
-    
     typealias Descriptor = Void
     
     init(capacity: Int) {
@@ -748,7 +783,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.enqueuedBindings = .allocate(capacity: capacity)
         self.bindings = .allocate(capacity: capacity)
         self.sourceArrays = .allocate(capacity: capacity)
-        self.labels = .allocate(capacity: capacity)
     }
     
     func deallocate() {
@@ -757,7 +791,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.enqueuedBindings.deallocate()
         self.bindings.deallocate()
         self.sourceArrays.deallocate()
-        self.labels.deallocate()
     }
     
     func initialize(index indexInChunk: Int, descriptor: Void, heap: Heap?, flags: ResourceFlags) {
@@ -766,7 +799,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.sourceArrays.advanced(by: indexInChunk).initialize(to: nil)
-        self.labels.advanced(by: indexInChunk).initialize(to: nil)
     }
     
     func initialize(index indexInChunk: Int, sourceArray: ArgumentBufferArray) {
@@ -775,7 +807,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
-        self.labels.advanced(by: indexInChunk).initialize(to: nil)
     }
     
     func deinitialize(from index: Int, count: Int) {
@@ -784,7 +815,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.enqueuedBindings.advanced(by: index).deinitialize(count: count)
         self.bindings.advanced(by: index).deinitialize(count: count)
         self.sourceArrays.advanced(by: index).deinitialize(count: count)
-        self.labels.advanced(by: index).deinitialize(count: count)
     }
     
     var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
@@ -802,7 +832,8 @@ final class TransientArgumentBufferRegistry: TransientChunkRegistry<ArgumentBuff
     func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> ArgumentBuffer {
         let resource = self.allocateHandle(flags: flags)
         let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: ArgumentBuffer.itemsPerChunk)
-        self.sharedPropertyChunks[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        self.sharedPropertyChunks?[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
         return resource
     }
 }
@@ -816,8 +847,9 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> ArgumentBuffer {
         let handle = self.allocateHandle(flags: flags)
         let (chunkIndex, indexInChunk) = handle.index.quotientAndRemainder(dividingBy: ArgumentBuffer.itemsPerChunk)
-        self.sharedChunks[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
-        self.persistentChunks[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        self.sharedChunks?[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        self.persistentChunks?[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
+        self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
         return handle
     }
 }
@@ -846,26 +878,21 @@ struct ArgumentBufferArrayProperties: SharedResourceProperties {
     }
     
     var bindings : UnsafeMutablePointer<[ArgumentBuffer?]>
-    var labels : UnsafeMutablePointer<String?>
     
     init(capacity: Int) {
         self.bindings = .allocate(capacity: capacity)
-        self.labels = .allocate(capacity: capacity)
     }
     
     func deallocate() {
         self.bindings.deallocate()
-        self.labels.deallocate()
     }
     
     func initialize(index: Int, descriptor: Void, heap: Heap?, flags: ResourceFlags) {
         self.bindings.advanced(by: index).initialize(to: [])
-        self.labels.advanced(by: index).initialize(to: nil)
     }
     
     func deinitialize(from index: Int, count: Int) {
         self.bindings.advanced(by: index).deinitialize(count: count)
-        self.labels.advanced(by: index).deinitialize(count: count)
     }
     
     var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
@@ -885,35 +912,30 @@ final class PersistentArgumentBufferArrayRegistry: PersistentRegistry<ArgumentBu
 @usableFromInline
 struct HeapProperties: PersistentResourceProperties {
     let descriptors : UnsafeMutablePointer<HeapDescriptor>
-    let labels : UnsafeMutablePointer<String?>
     let childResources : UnsafeMutablePointer<Set<Resource>>
     /// The RenderGraphs that are currently using this resource.
     let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
     
     init(capacity: Int) {
         self.descriptors = .allocate(capacity: capacity)
-        self.labels = .allocate(capacity: capacity)
         self.childResources = .allocate(capacity: capacity)
         self.activeRenderGraphs = .allocate(capacity: capacity)
     }
     
     func deallocate() {
         self.descriptors.deallocate()
-        self.labels.deallocate()
         self.childResources.deallocate()
         self.activeRenderGraphs.deallocate()
     }
     
     func initialize(index: Int, descriptor: HeapDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.labels.advanced(by: index).initialize(to: nil)
         self.childResources.advanced(by: index).initialize(to: [])
         self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
     }
     
     func deinitialize(from index: Int, count: Int) {
         self.descriptors.advanced(by: index).deinitialize(count: count)
-        self.labels.advanced(by: index).deinitialize(count: count)
         self.childResources.advanced(by: index).deinitialize(count: count)
         self.activeRenderGraphs.deinitialize(count: count)
     }

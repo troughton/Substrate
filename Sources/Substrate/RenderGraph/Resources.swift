@@ -175,7 +175,7 @@ extension ResourceProtocolImpl {
     func pointer<T>(for keyPath: KeyPath<SharedProperties, UnsafeMutablePointer<T>>) -> UnsafeMutablePointer<T> {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return Self.persistentRegistry.sharedChunks[chunkIndex][keyPath: keyPath].advanced(by: indexInChunk)
+            return Self.persistentRegistry.sharedChunks![chunkIndex][keyPath: keyPath].advanced(by: indexInChunk)
         } else {
             let (properties, indexInChunk) = Self.transientRegistry(index: self.transientRegistryIndex)!.sharedProperties(index: self.index)
             return properties[keyPath: keyPath].advanced(by: indexInChunk)
@@ -196,7 +196,7 @@ extension ResourceProtocolImpl {
         guard self._usesPersistentRegistry else { return nil }
         
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-        return Self.persistentRegistry.persistentChunks[chunkIndex][keyPath: keyPath].advanced(by: indexInChunk)
+        return Self.persistentRegistry.persistentChunks?[chunkIndex][keyPath: keyPath].advanced(by: indexInChunk)
     }
     
     @inline(__always)
@@ -257,7 +257,7 @@ extension ResourceProtocolImpl {
     var _usagesPointer: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return Self.persistentRegistry.sharedChunks[chunkIndex].usagesOptional?.advanced(by: indexInChunk)
+            return Self.persistentRegistry.sharedChunks?[chunkIndex].usagesOptional?.advanced(by: indexInChunk)
         } else {
             let (properties, indexInChunk) = Self.transientRegistry(index: self.transientRegistryIndex)!.sharedProperties(index: self.index)
             return properties.usagesOptional?.advanced(by: indexInChunk)
@@ -277,7 +277,7 @@ extension ResourceProtocolImpl {
     var _activeRenderGraphsPointer: UnsafeMutablePointer<UInt8.AtomicRepresentation>? {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return Self.persistentRegistry.persistentChunks[chunkIndex].activeRenderGraphsOptional?.advanced(by: indexInChunk)
+            return Self.persistentRegistry.persistentChunks?[chunkIndex].activeRenderGraphsOptional?.advanced(by: indexInChunk)
         } else {
             return nil
         }
@@ -308,6 +308,26 @@ extension ResourceProtocolImpl {
             return
         }
         UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
+    }
+    
+    @_transparent
+    var _labelsPointer : UnsafeMutablePointer<String?> {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            return Self.persistentRegistry.labelChunks[chunkIndex].advanced(by: indexInChunk)
+        } else {
+            return Self.transientRegistry(index: self.transientRegistryIndex)!.labelPointer(index: self.index)
+        }
+    }
+    
+    public var label : String? {
+        get {
+            return self._labelsPointer.pointee
+        }
+        nonmutating set {
+            self._labelsPointer.pointee = newValue
+            RenderBackend.updateLabel(on: self)
+        }
     }
     
     public var isValid : Bool {
@@ -721,16 +741,6 @@ public struct Heap : ResourceProtocol {
         return self.descriptor.cacheMode
     }
     
-    public var label : String? {
-        get {
-            return self[\.labels]
-        }
-        nonmutating set {
-            self[\.labels] = newValue
-            RenderBackend.updateLabel(on: self)
-        }
-    }
-    
     public var heap : Heap? {
         return self
     }
@@ -1073,16 +1083,6 @@ public struct Buffer : ResourceProtocol {
         return self.descriptor.storageMode
     }
     
-    public var label : String? {
-        get {
-            return self[\.labels]
-        }
-        nonmutating set {
-            self[\.labels] = newValue
-            RenderBackend.updateLabel(on: self)
-        }
-    }
-    
     var _deferredSliceActions : [DeferredBufferSlice] {
         get {
             return self[\.deferredSliceActions]!
@@ -1334,15 +1334,6 @@ public struct Texture : ResourceProtocol {
     
     public var heap : Heap? {
         return self[\.heaps]
-    }
-    
-    public var label : String? {
-        get {
-            return self[\.labels]
-        }
-        nonmutating set {
-            self[\.labels] = newValue
-        }
     }
     
     public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {

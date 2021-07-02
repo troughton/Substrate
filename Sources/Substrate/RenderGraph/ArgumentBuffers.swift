@@ -192,16 +192,6 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    public var label : String? {
-        get {
-            return self[\.labels]
-        }
-        nonmutating set {
-            self[\.labels] = newValue
-            RenderBackend.updateLabel(on: self)
-        }
-    }
-    
     public var storageMode: StorageMode {
         return .shared
     }
@@ -442,15 +432,6 @@ public struct ArgumentBufferArray : ResourceProtocol {
         }
         nonmutating _modify {
             yield &self.pointer(for: \.bindings).pointee
-        }
-    }
-    
-    public var label : String? {
-        get {
-            return self.pointer(for: \.labels).pointee
-        }
-        nonmutating set {
-            self.pointer(for: \.labels).pointee = newValue
         }
     }
     
