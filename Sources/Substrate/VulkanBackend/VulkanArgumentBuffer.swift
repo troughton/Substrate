@@ -64,7 +64,7 @@ extension VulkanArgumentBuffer {
 
                 self.images.append(image)
             
-                let usage = texture.usages.first(where: { $0.inArgumentBuffer && $0.commandRange.lowerBound >= commandIndex })!
+                let usage = texture.usages.first(where: { $0.isIndirectlyBound && $0.commandRange.lowerBound >= commandIndex })!
 
                 var imageInfo = VkDescriptorImageInfo()
                 imageInfo.imageLayout = image.layout(commandIndex: usage.commandRange.lowerBound, subresourceRange: .fullResource)

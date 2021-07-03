@@ -33,7 +33,7 @@ public struct IntersectionFunctionTableDescriptor: Hashable, Equatable {
     
     public enum BufferType: Hashable {
         case buffer(Buffer, offset: Int)
-        case functionTable([FunctionDescriptor?])
+        case functionTable(VisibleFunctionTable)
     }
     
     public var functions: [FunctionType?]

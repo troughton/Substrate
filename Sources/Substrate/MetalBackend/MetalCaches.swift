@@ -103,6 +103,9 @@ final class MetalStateCaches {
             self.functionCache.removeAll(keepingCapacity: true)
             self.computeStates.removeAll(keepingCapacity: true)
             self.renderStates.removeAll(keepingCapacity: true)
+            
+            VisibleFunctionTableRegistry.instance.markAllAsUninitialised()
+            IntersectionFunctionTableRegistry.instance.markAllAsUninitialised()
             self.visibleFunctionTables.removeAll(keepingCapacity: true)
             self.intersectionFunctionTables.removeAll(keepingCapacity: true)
             
@@ -331,8 +334,9 @@ final class MetalStateCaches {
             case .buffer(let buffer, let offset):
                 guard let mtlBufferRef = resourceMap[buffer] else { continue }
                 intersectionTable.setBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: i)
-            case .functionTable(let descriptor):
-                intersectionTable.setVisibleFunctionTable(self[visibleFunctionTableFor: descriptor, computePipelineState: computePipelineState], bufferIndex: i)
+            case .functionTable(let functionTable):
+                guard let mtlFunctionTable = resourceMap[functionTable] as! MTLVisibleFunctionTable? else { continue }
+                intersectionTable.setVisibleFunctionTable(mtlFunctionTable, bufferIndex: i)
             }
         }
         

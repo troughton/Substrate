@@ -253,6 +253,17 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.disposeAccelerationStructure(accelerationStructure)
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
+        self.resourceRegistry.disposeIntersectionFunctionTable(intersectionFunctionTable)
+    }
+
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func dispose(visibleFunctionTable: VisibleFunctionTable) {
+        self.resourceRegistry.disposeVisibleFunctionTable(visibleFunctionTable)
+    }
+
+    
     public func supportsPixelFormat(_ pixelFormat: PixelFormat, usage: TextureUsage) -> Bool {
         let usage = usage.subtracting([.blitSource, .blitDestination])
         

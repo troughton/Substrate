@@ -323,7 +323,7 @@ final class RenderGraphCommandRecorder {
         self.record(RenderGraphCommand.insertDebugSignpost, string)
     }
     
-    func boundResourceUsageNode<C : CommandEncoder>(`for` resource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
+    func boundResourceUsageNode<C : CommandEncoder>(`for` resource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
         precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
@@ -379,7 +379,7 @@ final class RenderGraphCommandRecorder {
             self.writtenResources.insert(resource.baseResource ?? resource)
         }
         
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: activeRange, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: activeRange, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
@@ -406,14 +406,14 @@ final class RenderGraphCommandRecorder {
             self.writtenResources.insert(Resource(resource))
         }
         
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .fullResource, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .fullResource, isIndirectlyBound: false, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func resourceUsageNode<C : CommandEncoder>(`for` resource: Buffer, bufferRange: Range<Int>, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
+    func resourceUsageNode<C : CommandEncoder>(`for` resource: Buffer, bufferRange: Range<Int>, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource) used but not declared.")
         
         precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
@@ -452,14 +452,14 @@ final class RenderGraphCommandRecorder {
             self.writtenResources.insert(Resource(resource))
         }
         
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .buffer(bufferRange), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .buffer(bufferRange), isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func resourceUsageNode<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
+    func resourceUsageNode<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource) used but not declared.")
         
         precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
@@ -503,7 +503,7 @@ final class RenderGraphCommandRecorder {
             assert(slice == nil && level == nil)
         }
         
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .texture(subresourceMask), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .texture(subresourceMask), isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
@@ -511,7 +511,7 @@ final class RenderGraphCommandRecorder {
     
     /// NOTE: Must be called _before_ the command that uses the resource.
     @available(macOS 11.0, iOS 14.0, *)
-    func resourceUsageNode<C : CommandEncoder>(`for` resource: AccelerationStructure, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
+    func resourceUsageNode<C : CommandEncoder>(`for` resource: AccelerationStructure, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
         precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
@@ -530,7 +530,7 @@ final class RenderGraphCommandRecorder {
             self.writtenResources.insert(Resource(resource))
         }
         
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .fullResource, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .fullResource, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         return self.resourceUsages.pointerToLastUsage
@@ -542,19 +542,19 @@ final class RenderGraphCommandRecorder {
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func addResourceUsage<C : CommandEncoder>(`for` resource: Buffer, bufferRange: Range<Int>, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
-        let _ = self.resourceUsageNode(for: resource, bufferRange: bufferRange, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
+    func addResourceUsage<C : CommandEncoder>(`for` resource: Buffer, bufferRange: Range<Int>, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool) {
+        let _ = self.resourceUsageNode(for: resource, bufferRange: bufferRange, encoder: encoder, usageType: usageType, stages: stages, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: commandIndex)
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func addResourceUsage<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
-        let _ = self.resourceUsageNode(for: resource, slice: slice, level: level, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
+    func addResourceUsage<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool) {
+        let _ = self.resourceUsageNode(for: resource, slice: slice, level: level, encoder: encoder, usageType: usageType, stages: stages, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: commandIndex)
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
     @available(macOS 11.0, iOS 14.0, *)
-    func addResourceUsage<C : CommandEncoder>(`for` resource: AccelerationStructure, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
-        let _ = self.resourceUsageNode(for: resource, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
+    func addResourceUsage<C : CommandEncoder>(`for` resource: AccelerationStructure, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool) {
+        let _ = self.resourceUsageNode(for: resource, encoder: encoder, usageType: usageType, stages: stages, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: commandIndex)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
@@ -566,24 +566,24 @@ final class RenderGraphCommandRecorder {
                 case .boundingBox(let boundingBoxDescriptor):
                     self.addResourceUsage(for: boundingBoxDescriptor.boundingBoxBuffer,
                                           bufferRange: boundingBoxDescriptor.boundingBoxBufferOffset..<(boundingBoxDescriptor.boundingBoxBufferOffset + boundingBoxDescriptor.boundingBoxCount * boundingBoxDescriptor.boundingBoxStride),
-                                          commandIndex: commandIndex, encoder: encoder, usageType: .read, stages: .compute, inArgumentBuffer: false)
+                                          commandIndex: commandIndex, encoder: encoder, usageType: .read, stages: .compute, isIndirectlyBound: false)
                 case .triangle(let triangleDescriptor):
                     self.addResourceUsage(for: triangleDescriptor.vertexBuffer,
                                           bufferRange: triangleDescriptor.vertexBufferOffset..<min(triangleDescriptor.vertexBufferOffset + 3 * triangleDescriptor.vertexStride * triangleDescriptor.triangleCount, triangleDescriptor.vertexBuffer.length),
-                                          commandIndex: commandIndex, encoder: encoder, usageType: .vertexBuffer, stages: .compute, inArgumentBuffer: false)
+                                          commandIndex: commandIndex, encoder: encoder, usageType: .vertexBuffer, stages: .compute, isIndirectlyBound: false)
                     if let indexBuffer = triangleDescriptor.indexBuffer {
                         let bytesPerIndex = triangleDescriptor.indexType == .uint16 ? MemoryLayout<UInt16>.stride : MemoryLayout<UInt32>.stride
                         self.addResourceUsage(for: indexBuffer,
                                               bufferRange: triangleDescriptor.indexBufferOffset..<(triangleDescriptor.indexBufferOffset + 3 * triangleDescriptor.triangleCount * bytesPerIndex),
-                                              commandIndex: commandIndex, encoder: encoder, usageType: .indexBuffer, stages: .compute, inArgumentBuffer: false)
+                                              commandIndex: commandIndex, encoder: encoder, usageType: .indexBuffer, stages: .compute, isIndirectlyBound: false)
                     }
                 }
             }
         case .topLevelInstance(let instanceDescriptor):
             for structure in instanceDescriptor.primitiveStructures {
-                self.addResourceUsage(for: structure, commandIndex: commandIndex, encoder: encoder, usageType: .read, stages: .compute, inArgumentBuffer: false)
+                self.addResourceUsage(for: structure, commandIndex: commandIndex, encoder: encoder, usageType: .read, stages: .compute, isIndirectlyBound: false)
             }
-            self.addResourceUsage(for: instanceDescriptor.instanceDescriptorBuffer, bufferRange: instanceDescriptor.instanceDescriptorBufferOffset..<(instanceDescriptor.instanceDescriptorBufferOffset + instanceDescriptor.instanceDescriptorStride * instanceDescriptor.instanceCount), commandIndex: commandIndex, encoder: encoder, usageType: .read, stages: .compute, inArgumentBuffer: false)
+            self.addResourceUsage(for: instanceDescriptor.instanceDescriptorBuffer, bufferRange: instanceDescriptor.instanceDescriptorBufferOffset..<(instanceDescriptor.instanceDescriptorBufferOffset + instanceDescriptor.instanceDescriptorStride * instanceDescriptor.instanceCount), commandIndex: commandIndex, encoder: encoder, usageType: .read, stages: .compute, isIndirectlyBound: false)
         }
     }
 }

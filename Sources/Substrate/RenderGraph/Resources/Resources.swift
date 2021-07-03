@@ -449,6 +449,22 @@ public struct Resource : ResourceProtocol, Hashable {
         }
     }
     
+    public var intersectionFunctionTable : IntersectionFunctionTable? {
+        if self.type == .intersectionFunctionTable {
+            return IntersectionFunctionTable(handle: self.handle)
+        } else {
+            return nil
+        }
+    }
+    
+    public var visibleFunctionTable : VisibleFunctionTable? {
+        if self.type == .visibleFunctionTable {
+            return VisibleFunctionTable(handle: self.handle)
+        } else {
+            return nil
+        }
+    }
+    
     public var heap : Heap? {
         if self.type == .heap {
             return Heap(handle: self.handle)
@@ -476,6 +492,10 @@ public struct Resource : ResourceProtocol, Hashable {
             return perform(Heap(handle: self.handle))
         case .accelerationStructure:
             return perform(AccelerationStructure(handle: self.handle))
+        case .intersectionFunctionTable:
+            return perform(IntersectionFunctionTable(handle: self.handle))
+        case .visibleFunctionTable:
+            return perform(VisibleFunctionTable(handle: self.handle))
         default:
             fatalError()
         }
@@ -524,36 +544,10 @@ public struct Resource : ResourceProtocol, Hashable {
     
     public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
-            switch self.type {
-            case .buffer:
-                return Buffer(handle: self.handle)[waitIndexFor: queue, accessType: type]
-            case .texture:
-                return Texture(handle: self.handle)[waitIndexFor: queue, accessType: type]
-            case .argumentBuffer:
-                return ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type]
-            case .argumentBufferArray:
-                return ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type]
-            case .accelerationStructure:
-                return AccelerationStructure(handle: self.handle)[waitIndexFor: queue, accessType: type]
-            default:
-                return 0
-            }
+            return self.withUnderlyingResource({ $0[waitIndexFor: queue, accessType: type] })
         }
         nonmutating set {
-            switch self.type {
-            case .buffer:
-                Buffer(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
-            case .texture:
-                Texture(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
-            case .argumentBuffer:
-                ArgumentBuffer(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
-            case .argumentBufferArray:
-                ArgumentBufferArray(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
-            case .accelerationStructure:
-                AccelerationStructure(handle: self.handle)[waitIndexFor: queue, accessType: type] = newValue
-            default:
-                fatalError()
-            }
+            self.withUnderlyingResource({ $0[waitIndexFor: queue, accessType: type] = newValue })
         }
     }
     
@@ -598,6 +592,10 @@ extension Resource: CustomStringConvertible {
             return Heap(handle: self.handle).description
         case .accelerationStructure:
             return AccelerationStructure(handle: self.handle).description
+        case .intersectionFunctionTable:
+            return IntersectionFunctionTable(handle: self.handle).description
+        case .visibleFunctionTable:
+            return VisibleFunctionTable(handle: self.handle).description
         default:
             return "Resource(type: \(self.type), index: \(self.index), flags: \(self.flags))"
         }

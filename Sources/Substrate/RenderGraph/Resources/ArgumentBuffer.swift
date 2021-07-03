@@ -88,6 +88,28 @@ public struct ArgumentBuffer : ResourceProtocol {
         case sampler(SamplerDescriptor)
         // Where offset is the source offset in the source Data.
         case bytes(offset: Int, length: Int)
+        
+        public var resource: Resource? {
+            switch self {
+            case .buffer(let buffer, _):
+                return Resource(buffer)
+            case .texture(let texture):
+                return Resource(texture)
+            case .accelerationStructure(let structure):
+                return Resource(structure)
+            case .sampler, .bytes:
+                return nil
+            }
+        }
+        
+        public var activeRangeOffsetIntoResource: Int {
+            switch self {
+            case .buffer(_, let offset):
+                return offset
+            default:
+                return 0
+            }
+        }
     }
     
     public init(handle: Handle) {
@@ -163,11 +185,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     /// Allows us to perform a compare-and-swap on the argument buffer encoder.
     func replaceEncoder(with newEncoder: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
-        if self._usesPersistentRegistry {
-            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: self.pointer(for: \.encoders), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
-        } else {
-            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: self.pointer(for: \.encoders), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
-        }
+        return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: self.pointer(for: \.encoders), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
     }
     
     public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)> {
@@ -197,7 +215,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     // Thread-safe
-    public func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
+    func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
         
         func translateBindings() {
             var i = 0

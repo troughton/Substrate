@@ -134,6 +134,10 @@ protocol BackendPersistentResourceRegistry: ResourceRegistry {
     
     @available(macOS 11.0, iOS 14.0, *)
     subscript(accelerationStructure: AccelerationStructure) -> AnyObject? { get }
+    @available(macOS 11.0, iOS 14.0, *)
+    subscript(visibleFunctionTable: VisibleFunctionTable) -> AnyObject? { get }
+    @available(macOS 11.0, iOS 14.0, *)
+    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> AnyObject? { get }
     
     func allocateBuffer(_ buffer: Buffer) -> Backend.BufferReference?
     func allocateTexture(_ texture: Texture) -> Backend.TextureReference?

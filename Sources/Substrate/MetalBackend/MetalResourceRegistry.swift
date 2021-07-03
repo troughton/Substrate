@@ -82,6 +82,8 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     var argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, MTLBufferReference>() 
     var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, MTLBufferReference>()
     var accelerationStructureReferences = PersistentResourceMap<AccelerationStructure, MTLResource>()
+    var visibleFunctionTableReferences = PersistentResourceMap<VisibleFunctionTable, MTLResource>()
+    var intersectionFunctionTableReferences = PersistentResourceMap<IntersectionFunctionTable, MTLResource>()
     
     var windowReferences = [Texture : CAMetalLayer]()
     
@@ -297,6 +299,16 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return self.accelerationStructureReferences[structure]
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    public subscript(table: VisibleFunctionTable) -> AnyObject? {
+        return self.visibleFunctionTableReferences[table]
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public subscript(table: IntersectionFunctionTable) -> AnyObject? {
+        return self.intersectionFunctionTableReferences[table]
+    }
+    
     public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
         if let state = self.samplerReferences[descriptor] {
             return state
@@ -371,6 +383,19 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    func disposeVisibleFunctionTable(_ table: VisibleFunctionTable) {
+        if let mtlTable = self.visibleFunctionTableReferences.removeValue(forKey: table) {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlTable)))
+        }
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    func disposeIntersectionFunctionTable(_ table: IntersectionFunctionTable) {
+        if let mtlTable = self.intersectionFunctionTableReferences.removeValue(forKey: table) {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlTable)))
+        }
+    }
     
     func cycleFrames() {
         // No-op for now.

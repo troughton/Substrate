@@ -51,6 +51,16 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         return persistentRegistry[accelerationStructure]
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    subscript(visibleFunctionTable: VisibleFunctionTable) -> AnyObject? {
+        return persistentRegistry[visibleFunctionTable]
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> AnyObject? {
+        return persistentRegistry[intersectionFunctionTable]
+    }
+    
     func bufferForCPUAccess(_ buffer: Buffer) -> Backend.BufferReference {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!

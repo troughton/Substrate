@@ -80,21 +80,21 @@ public struct ResourceUsage {
     public var type : ResourceUsageType
     public var stages : RenderStages
     public var resource: Resource
-    public var inArgumentBuffer : Bool
+    public var isIndirectlyBound : Bool // e.g. via a Metal argument buffer, Vulkan descriptor set, or an acceleration structure
     @usableFromInline
     unowned(unsafe) var renderPassRecord : RenderPassRecord
     public var commandRange : Range<Int> // References the range in the pass before and during RenderGraph compilation, and the range in the full commands array after.
     public var activeRange: ActiveResourceRange = .fullResource
     
     @inlinable
-    init(resource: Resource, type: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: RenderPassRecord) {
+    init(resource: Resource, type: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, isIndirectlyBound: Bool, firstCommandOffset: Int, renderPass: RenderPassRecord) {
         self.resource = resource
         self.type = type
         self.stages = stages
         self.activeRange = activeRange
         self.renderPassRecord = renderPass
         self.commandRange = Range(firstCommandOffset...firstCommandOffset)
-        self.inArgumentBuffer = inArgumentBuffer
+        self.isIndirectlyBound = isIndirectlyBound
     }
     
     @inlinable
@@ -141,7 +141,7 @@ public struct ResourceUsage {
                 
                 if isInputAttachment {
                     self.type = .inputAttachmentRenderTarget
-                    self.inArgumentBuffer = self.inArgumentBuffer || nextUsage.inArgumentBuffer
+                    self.isIndirectlyBound = self.isIndirectlyBound || nextUsage.isIndirectlyBound
                     self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator) // Since we're merging a read, it's technically possible to read from other levels/slices of the resource while simultaneously using it as an input attachment.
                 } else {
                     return false
@@ -185,7 +185,7 @@ public struct ResourceUsage {
                     return false
 
             }
-            if self.inArgumentBuffer != nextUsage.inArgumentBuffer {
+            if self.isIndirectlyBound != nextUsage.isIndirectlyBound {
                 return false
             }
         }
@@ -203,7 +203,7 @@ public struct ResourceUsage {
 
 extension ResourceUsage : CustomStringConvertible {
     public var description: String {
-        return "ResourceUsage(type: \(self.type), stages: \(self.stages), inArgumentBuffer: \(self.inArgumentBuffer), activeRange: \(self.activeRange), pass: \(self.renderPassRecord.name), commandRange: \(self.commandRange))"
+        return "ResourceUsage(type: \(self.type), stages: \(self.stages), isIndirectlyBound: \(self.isIndirectlyBound), activeRange: \(self.activeRange), pass: \(self.renderPassRecord.name), commandRange: \(self.commandRange))"
     }
 }
 

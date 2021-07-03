@@ -164,3 +164,280 @@ struct AccelerationStructureProperties: SharedResourceProperties {
 final class AccelerationStructureRegistry: PersistentRegistry<AccelerationStructure> {
     static let instance = AccelerationStructureRegistry()
 }
+
+
+// MARK: - VisibleFunctionTable
+
+public struct VisibleFunctionTable : ResourceProtocol {
+
+    @usableFromInline let _handle : UnsafeRawPointer
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    
+    public init(handle: Handle) {
+        assert(Resource(handle: handle).type == .visibleFunctionTable)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public init(functionCount: Int) {
+        let flags : ResourceFlags = .persistent
+        
+        self = VisibleFunctionTableRegistry.instance.allocate(descriptor: functionCount, heap: nil, flags: flags)
+    }
+   
+    public var stateFlags: ResourceStateFlags {
+        get {
+            return self[\.stateFlags] ?? []
+        }
+        nonmutating set {
+            self[\.stateFlags] = newValue
+        }
+    }
+    
+    public var functions: [FunctionDescriptor?] {
+        _read {
+            yield self.pointer(for: \.functions).pointee
+        }
+        _modify {
+            yield &self.pointer(for: \.functions).pointee
+        }
+    }
+    
+    public var pipelineState : UnsafeRawPointer? {
+        get {
+            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: self.pointer(for: \.pipelineStates), ordering: .relaxed)
+        }
+    }
+    
+    /// Allows us to perform a compare-and-swap on the argument buffer encoder.
+    func replacePipelineState(with newPipelineState: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
+        return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newPipelineState, at: self.pointer(for: \.pipelineStates), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
+    }
+    
+    public var storageMode: StorageMode {
+        return .private
+    }
+    
+    public static var resourceType: ResourceType { .visibleFunctionTable }
+}
+
+extension VisibleFunctionTable: ResourceProtocolImpl {
+    typealias SharedProperties = VisibleFunctionTableProperties
+    typealias TransientProperties = EmptyProperties<Int>
+    typealias PersistentProperties = VisibleFunctionTableProperties.PersistentProperties
+    
+    static func transientRegistry(index: Int) -> TransientChunkRegistry<VisibleFunctionTable>? {
+        return nil
+    }
+    
+    static var persistentRegistry: PersistentRegistry<Self> { VisibleFunctionTableRegistry.instance }
+    
+    typealias Descriptor = Int // size
+}
+
+extension VisibleFunctionTable: CustomStringConvertible {
+    public var description: String {
+        return "VisibleFunctionTable(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")functions: \(self.functions) }"
+    }
+}
+
+struct VisibleFunctionTableProperties: SharedResourceProperties {
+    
+    struct PersistentProperties: PersistentResourceProperties {
+        
+        let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
+        
+        @usableFromInline
+        init(capacity: Int) {
+            self.stateFlags = .allocate(capacity: capacity)
+        }
+        
+        @usableFromInline
+        func deallocate() {
+            self.stateFlags.deallocate()
+        }
+        
+        @usableFromInline
+        func initialize(index: Int, descriptor functionCount: Int, heap: Heap?, flags: ResourceFlags) {
+            self.stateFlags.advanced(by: index).initialize(to: [])
+        }
+        
+        @usableFromInline
+        func deinitialize(from index: Int, count: Int) {
+            self.stateFlags.advanced(by: index).deinitialize(count: count)
+        }
+        
+        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
+    }
+    
+    let functions : UnsafeMutablePointer<[FunctionDescriptor?]>
+    let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
+    
+    init(capacity: Int) {
+        self.functions = .allocate(capacity: capacity)
+        self.pipelineStates = .allocate(capacity: capacity)
+    }
+    
+    func deallocate() {
+        self.functions.deallocate()
+        self.pipelineStates.deallocate()
+    }
+    
+    func initialize(index: Int, descriptor functionCount: Int, heap: Heap?, flags: ResourceFlags) {
+        self.functions.advanced(by: index).initialize(to: .init(repeating: nil, count: functionCount))
+        self.pipelineStates.advanced(by: index).initialize(to: .init(nil))
+    }
+    
+    func deinitialize(from index: Int, count: Int) {
+        self.functions.advanced(by: index).deinitialize(count: count)
+        self.pipelineStates.advanced(by: index).deinitialize(count: count)
+    }
+    
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+}
+
+final class VisibleFunctionTableRegistry: PersistentRegistry<VisibleFunctionTable> {
+    static let instance = VisibleFunctionTableRegistry()
+    
+    func markAllAsUninitialised() {
+        for chunkIndex in 0..<chunkCount {
+            let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % VisibleFunctionTable.itemsPerChunk) : VisibleFunctionTable.itemsPerChunk
+            for i in 0..<chunkItemCount {
+                self.persistentChunks![chunkIndex].stateFlags[i].remove(.initialised)
+            }
+        }
+    }
+}
+
+// MARK: - IntersectionFunctionTable
+
+public struct IntersectionFunctionTable : ResourceProtocol {
+
+    @usableFromInline let _handle : UnsafeRawPointer
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    
+    public init(handle: Handle) {
+        assert(Resource(handle: handle).type == .intersectionFunctionTable)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public init(descriptor: IntersectionFunctionTableDescriptor) {
+        let flags : ResourceFlags = .persistent
+        
+        self = IntersectionFunctionTableRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+    }
+    
+    public internal(set) var descriptor : IntersectionFunctionTableDescriptor {
+        get {
+            self[\.descriptors]
+        }
+        nonmutating set {
+            self[\.descriptors] = newValue
+        }
+    }
+    
+    public var pipelineState : UnsafeRawPointer? {
+        get {
+            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: self.pointer(for: \.pipelineStates), ordering: .relaxed)
+        }
+    }
+    
+    /// Allows us to perform a compare-and-swap on the argument buffer encoder.
+    func replacePipelineState(with newPipelineState: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
+        return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newPipelineState, at: self.pointer(for: \.pipelineStates), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
+    }
+    
+    public var storageMode: StorageMode {
+        return .private
+    }
+    
+    public static var resourceType: ResourceType { .intersectionFunctionTable }
+}
+
+extension IntersectionFunctionTable: ResourceProtocolImpl {
+    typealias SharedProperties = IntersectionFunctionTableProperties
+    typealias TransientProperties = EmptyProperties<IntersectionFunctionTableDescriptor>
+    typealias PersistentProperties = IntersectionFunctionTableProperties.PersistentProperties
+    
+    static func transientRegistry(index: Int) -> TransientChunkRegistry<IntersectionFunctionTable>? {
+        return nil
+    }
+    
+    static var persistentRegistry: PersistentRegistry<Self> { IntersectionFunctionTableRegistry.instance }
+    
+    typealias Descriptor = IntersectionFunctionTableDescriptor
+}
+
+extension IntersectionFunctionTable: CustomStringConvertible {
+    public var description: String {
+        return "IntersectionFunctionTable(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")descriptor: \(self.descriptor) }"
+    }
+}
+
+struct IntersectionFunctionTableProperties: SharedResourceProperties {
+    
+    struct PersistentProperties: PersistentResourceProperties {
+        let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
+        
+        @usableFromInline
+        init(capacity: Int) {
+            self.stateFlags = .allocate(capacity: capacity)
+        }
+        
+        @usableFromInline
+        func deallocate() {
+            self.stateFlags.deallocate()
+        }
+        
+        @usableFromInline
+        func initialize(index: Int, descriptor: IntersectionFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
+            self.stateFlags.advanced(by: index).initialize(to: [])
+        }
+        
+        @usableFromInline
+        func deinitialize(from index: Int, count: Int) {
+            self.stateFlags.advanced(by: index).deinitialize(count: count)
+        }
+        
+        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
+    }
+    
+    let descriptors : UnsafeMutablePointer<IntersectionFunctionTableDescriptor>
+    let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation>
+    
+    init(capacity: Int) {
+        self.descriptors = .allocate(capacity: capacity)
+        self.pipelineStates = .allocate(capacity: capacity)
+    }
+    
+    func deallocate() {
+        self.descriptors.deallocate()
+        self.pipelineStates.deallocate()
+    }
+    
+    func initialize(index: Int, descriptor: IntersectionFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
+        self.descriptors.advanced(by: index).initialize(to: descriptor)
+        self.pipelineStates.advanced(by: index).initialize(to: .init(nil))
+    }
+    
+    func deinitialize(from index: Int, count: Int) {
+        self.descriptors.advanced(by: index).deinitialize(count: count)
+        self.pipelineStates.advanced(by: index).deinitialize(count: count)
+    }
+    
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+}
+
+final class IntersectionFunctionTableRegistry: PersistentRegistry<IntersectionFunctionTable> {
+    static let instance = IntersectionFunctionTableRegistry()
+    
+    func markAllAsUninitialised() {
+        for chunkIndex in 0..<chunkCount {
+            let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % IntersectionFunctionTable.itemsPerChunk) : IntersectionFunctionTable.itemsPerChunk
+            for i in 0..<chunkItemCount {
+                self.persistentChunks![chunkIndex].stateFlags[i].remove(.initialised)
+            }
+        }
+    }
+}

@@ -246,7 +246,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             for usage in resource.usages
                 where usage.renderPassRecord.type != .external &&
                     usage.resource == resource // rather than a view of this resource.
-                    //                        && usage.inArgumentBuffer
+                    //                        && usage.isIndirectlyBound
                      {
                         assert(usage.stages != .cpuBeforeRender) // CPU-only usages should have been filtered out by the RenderGraph
                         assert(usage.renderPassRecord.isActive) // Only usages for active render passes should be here.

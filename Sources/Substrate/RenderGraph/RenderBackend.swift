@@ -106,6 +106,10 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     
     @available(macOS 11.0, iOS 14.0, *)
     func dispose(accelerationStructure: AccelerationStructure)
+    @available(macOS 11.0, iOS 14.0, *)
+    func dispose(intersectionFunctionTable: IntersectionFunctionTable)
+    @available(macOS 11.0, iOS 14.0, *)
+    func dispose(visibleFunctionTable: VisibleFunctionTable)
     
     var pushConstantPath : ResourceBindingPath { get }
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
