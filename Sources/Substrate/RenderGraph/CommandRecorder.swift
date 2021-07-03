@@ -83,6 +83,12 @@ enum RenderGraphCommand {
     public typealias SetAccelerationStructureArgs = (bindingPath: ResourceBindingPath, structure: AccelerationStructure)
     case setAccelerationStructure(UnsafePointer<SetAccelerationStructureArgs>)
     
+    public typealias SetVisibleFunctionTableArgs = (bindingPath: ResourceBindingPath, table: VisibleFunctionTable)
+    case setVisibleFunctionTable(UnsafePointer<SetVisibleFunctionTableArgs>)
+    
+    public typealias SetIntersectionFunctionTableArgs = (bindingPath: ResourceBindingPath, table: IntersectionFunctionTable)
+    case setIntersectionFunctionTable(UnsafePointer<SetIntersectionFunctionTableArgs>)
+    
     public typealias SetSamplerStateArgs = (bindingPath: ResourceBindingPath, descriptor: SamplerDescriptor)
     case setSamplerState(UnsafePointer<SetSamplerStateArgs>)
     

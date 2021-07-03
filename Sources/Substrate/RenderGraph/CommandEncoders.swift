@@ -319,6 +319,32 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    public func setVisibleFunctionTable(_ table: VisibleFunctionTable?, key: FunctionArgumentKey) {
+        guard let table = table else { return }
+        
+        let args : RenderGraphCommand.SetVisibleFunctionTableArgs = (.nil, table)
+        
+        self.resourceBindingCommands.append(
+            (key, .setVisibleFunctionTable(commandRecorder.copyData(args)))
+        )
+        
+        self.needsUpdateBindings = true
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, key: FunctionArgumentKey) {
+        guard let table = table else { return }
+        
+        let args : RenderGraphCommand.SetIntersectionFunctionTableArgs = (.nil, table)
+        
+        self.resourceBindingCommands.append(
+            (key, .setIntersectionFunctionTable(commandRecorder.copyData(args)))
+        )
+        
+        self.needsUpdateBindings = true
+    }
+    
     public func setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) {
         if A.self == NilSet.self {
             return
@@ -584,6 +610,28 @@ public class ResourceBindingEncoder : CommandEncoder {
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
                     argsPtr = UnsafeMutableRawPointer(mutating: args)
                     
+                case .setVisibleFunctionTable(let args):
+                    if let previousArgs = currentlyBound?.bindingCommand?.assumingMemoryBound(to: RenderGraphCommand.SetVisibleFunctionTableArgs.self) {
+                        if !self.pipelineStateChanged, previousArgs.pointee.table == args.pointee.table { // Ignore the duplicate binding.
+                            return currentlyBound
+                        }
+                    }
+                    
+                    resource = Resource(args.pointee.table)
+                    UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
+                    argsPtr = UnsafeMutableRawPointer(mutating: args)
+                    
+                case .setIntersectionFunctionTable(let args):
+                    if let previousArgs = currentlyBound?.bindingCommand?.assumingMemoryBound(to: RenderGraphCommand.SetIntersectionFunctionTableArgs.self) {
+                        if !self.pipelineStateChanged, previousArgs.pointee.table == args.pointee.table { // Ignore the duplicate binding.
+                            return currentlyBound
+                        }
+                    }
+                    
+                    resource = Resource(args.pointee.table)
+                    UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
+                    argsPtr = UnsafeMutableRawPointer(mutating: args)
+                    
                 default:
                     preconditionFailure()
                 }
@@ -753,6 +801,10 @@ public class ResourceBindingEncoder : CommandEncoder {
                             self.commandRecorder.record(.setBuffer(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetBufferArgs.self)))
                         case .accelerationStructure:
                             self.commandRecorder.record(.setAccelerationStructure(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetAccelerationStructureArgs.self)))
+                        case .visibleFunctionTable:
+                            self.commandRecorder.record(.setVisibleFunctionTable(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetVisibleFunctionTableArgs.self)))
+                        case .intersectionFunctionTable:
+                            self.commandRecorder.record(.setIntersectionFunctionTable(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetIntersectionFunctionTableArgs.self)))
                         case .argumentBuffer:
                             let argumentBuffer = boundResource.resource.argumentBuffer!
                             

@@ -199,7 +199,11 @@ public struct VisibleFunctionTable : ResourceProtocol {
             yield self.pointer(for: \.functions).pointee
         }
         _modify {
+            let previousHash = self.functions.hashValue
             yield &self.pointer(for: \.functions).pointee
+            if self.functions.hashValue != previousHash {
+                self.stateFlags.remove(.initialised)
+            }
         }
     }
     
@@ -333,6 +337,9 @@ public struct IntersectionFunctionTable : ResourceProtocol {
             self[\.descriptors]
         }
         nonmutating set {
+            if newValue != self.descriptor {
+                self.stateFlags.remove(.initialised)
+            }
             self[\.descriptors] = newValue
         }
     }

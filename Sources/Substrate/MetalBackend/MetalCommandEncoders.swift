@@ -257,6 +257,49 @@ final class FGMTLThreadRenderCommandEncoder {
                 encoder.setFragmentSamplerState(state, index: mtlBindingPath.bindIndex)
             }
             
+            
+        case .setAccelerationStructure(let args):
+            guard #available(macOS 12.0, iOS 15.0, *), let mtlStructure = resourceMap[args.pointee.structure] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            let stages = mtlBindingPath.stages
+            if stages.contains(.vertex) {
+                encoder.setVertexAccelerationStructure((mtlStructure as! MTLAccelerationStructure), bufferIndex: mtlBindingPath.bindIndex)
+            }
+            if stages.contains(.fragment) {
+                encoder.setFragmentAccelerationStructure((mtlStructure as! MTLAccelerationStructure), bufferIndex: mtlBindingPath.bindIndex)
+            }
+            
+        case .setVisibleFunctionTable(let args):
+            guard #available(macOS 12.0, iOS 15.0, *), let mtlTable = resourceMap[args.pointee.table] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            let stages = mtlBindingPath.stages
+            if stages.contains(.vertex) {
+                encoder.setVertexVisibleFunctionTable((mtlTable as! MTLVisibleFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+            }
+            if stages.contains(.fragment) {
+                encoder.setFragmentVisibleFunctionTable((mtlTable as! MTLVisibleFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+            }
+            
+        case .setIntersectionFunctionTable(let args):
+            guard #available(macOS 12.0, iOS 15.0, *), let mtlTable = resourceMap[args.pointee.table] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            let stages = mtlBindingPath.stages
+            if stages.contains(.vertex) {
+                encoder.setVertexIntersectionFunctionTable((mtlTable as! MTLIntersectionFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+            }
+            if stages.contains(.fragment) {
+                encoder.setFragmentIntersectionFunctionTable((mtlTable as! MTLIntersectionFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+            }
+            
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
             self.pipelineDescriptor = descriptor
@@ -454,7 +497,6 @@ final class FGMTLComputeCommandEncoder {
             guard let mtlTexture = resourceMap[args.pointee.texture] else { break }
             encoder.setTexture(mtlTexture.texture, index: mtlBindingPath.bindIndex)
             
-            
         case .setAccelerationStructure(let args):
             guard #available(macOS 11.0, iOS 14.0, *), let mtlStructure = resourceMap[args.pointee.structure] else {
                 break
@@ -463,6 +505,21 @@ final class FGMTLComputeCommandEncoder {
             let mtlBindingPath = args.pointee.bindingPath
             encoder.setAccelerationStructure((mtlStructure as! MTLAccelerationStructure), bufferIndex: mtlBindingPath.bindIndex)
             
+        case .setVisibleFunctionTable(let args):
+            guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[args.pointee.table] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            encoder.setVisibleFunctionTable((mtlTable as! MTLVisibleFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+            
+        case .setIntersectionFunctionTable(let args):
+            guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[args.pointee.table] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            encoder.setIntersectionFunctionTable((mtlTable as! MTLIntersectionFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
             
         case .setSamplerState(let args):
             let mtlBindingPath = args.pointee.bindingPath

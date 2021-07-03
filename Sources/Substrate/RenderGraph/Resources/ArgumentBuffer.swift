@@ -85,6 +85,8 @@ public struct ArgumentBuffer : ResourceProtocol {
         case buffer(Buffer, offset: Int)
         case texture(Texture)
         case accelerationStructure(AccelerationStructure)
+        case visibleFunctionTable(VisibleFunctionTable)
+        case intersectionFunctionTable(IntersectionFunctionTable)
         case sampler(SamplerDescriptor)
         // Where offset is the source offset in the source Data.
         case bytes(offset: Int, length: Int)
@@ -97,6 +99,10 @@ public struct ArgumentBuffer : ResourceProtocol {
                 return Resource(texture)
             case .accelerationStructure(let structure):
                 return Resource(structure)
+            case .visibleFunctionTable(let table):
+                return Resource(table)
+            case .intersectionFunctionTable(let table):
+                return Resource(table)
             case .sampler, .bytes:
                 return nil
             }
@@ -308,6 +314,22 @@ public struct ArgumentBuffer : ResourceProtocol {
         assert(!self.flags.contains(.persistent) || structure.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         self.enqueuedBindings.append(
             (key, arrayIndex, .accelerationStructure(structure))
+        )
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public func setVisibleFunctionTable(_ table: VisibleFunctionTable, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+        assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        self.enqueuedBindings.append(
+            (key, arrayIndex, .visibleFunctionTable(table))
+        )
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+        assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        self.enqueuedBindings.append(
+            (key, arrayIndex, .intersectionFunctionTable(table))
         )
     }
     
