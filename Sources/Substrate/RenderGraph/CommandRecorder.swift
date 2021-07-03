@@ -384,17 +384,24 @@ final class RenderGraphCommandRecorder {
         
         let usagePointer = self.resourceUsages.pointerToLastUsage
         
-        if #available(macOS 11.0, iOS 14.0, *), let accelerationStructureDescriptor = resource.accelerationStructure?.descriptor {
-            let subresourcePointers = self.resourceUsagePointers(for: accelerationStructureDescriptor, commandIndex: firstCommandOffset, encoder: encoder)
-            let subresourceList = resourceUsageAllocator.allocate(type: ResourceUsagePointer.self, capacity: 1 + subresourcePointers.count)
-            subresourceList.initialize(to: usagePointer)
-            for i in 0..<subresourcePointers.count {
-                subresourceList.advanced(by: i + 1).initialize(to: subresourcePointers[i])
+        if #available(macOS 11.0, iOS 14.0, *) {
+            var subresourcePointers: [ResourceUsagePointer] = []
+            if let accelerationStructureDescriptor = resource.accelerationStructure?.descriptor {
+                subresourcePointers = self.resourceUsagePointers(for: accelerationStructureDescriptor, commandIndex: firstCommandOffset, stages: stages, encoder: encoder)
+               
+            } else if let intersectionFunctionTable = resource.intersectionFunctionTable {
+                subresourcePointers = self.resourceUsagePointers(for: intersectionFunctionTable.descriptor, commandIndex: firstCommandOffset, stages: stages, encoder: encoder)
             }
-            return .init(usagePointers: UnsafeMutableBufferPointer<ResourceUsagePointer>(start: subresourceList, count: 1 + subresourcePointers.count))
-        } else {
-            return .init(usagePointer: usagePointer)
+            if !subresourcePointers.isEmpty {
+                let subresourceList = resourceUsageAllocator.allocate(type: ResourceUsagePointer.self, capacity: 1 + subresourcePointers.count)
+                subresourceList.initialize(to: usagePointer)
+                for i in 0..<subresourcePointers.count {
+                    subresourceList.advanced(by: i + 1).initialize(to: subresourcePointers[i])
+                }
+                return .init(usagePointers: UnsafeMutableBufferPointer<ResourceUsagePointer>(start: subresourceList, count: 1 + subresourcePointers.count))
+            }
         }
+        return .init(usagePointer: usagePointer)
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
@@ -448,7 +455,7 @@ final class RenderGraphCommandRecorder {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    fileprivate func resourceUsagePointers<C: CommandEncoder>(for descriptor: AccelerationStructureDescriptor, commandIndex: Int, encoder: C) -> [ResourceUsagePointer] {
+    fileprivate func resourceUsagePointers<C: CommandEncoder>(for descriptor: AccelerationStructureDescriptor, commandIndex: Int, stages: RenderStages, encoder: C) -> [ResourceUsagePointer] {
         var usagePointers = [ResourceUsagePointer]()
         switch descriptor.type {
         case .bottomLevelPrimitive(let primitiveDescriptors):
@@ -458,20 +465,20 @@ final class RenderGraphCommandRecorder {
                     usagePointers.append(
                         self.resourceUsagePointers(for: boundingBoxDescriptor.boundingBoxBuffer,
                                                       bufferRange: boundingBoxDescriptor.boundingBoxBufferOffset..<(boundingBoxDescriptor.boundingBoxBufferOffset + boundingBoxDescriptor.boundingBoxCount * boundingBoxDescriptor.boundingBoxStride),
-                                                      encoder: encoder, usageType: .read, stages: .compute, isIndirectlyBound: false, firstCommandOffset: commandIndex).first!
+                                                      encoder: encoder, usageType: .read, stages: stages, isIndirectlyBound: true, firstCommandOffset: commandIndex).first!
                     )
                 case .triangle(let triangleDescriptor):
                     usagePointers.append(
                     self.resourceUsagePointers(for: triangleDescriptor.vertexBuffer,
                                           bufferRange: triangleDescriptor.vertexBufferOffset..<min(triangleDescriptor.vertexBufferOffset + 3 * triangleDescriptor.vertexStride * triangleDescriptor.triangleCount, triangleDescriptor.vertexBuffer.length),
-                                                  encoder: encoder, usageType: .vertexBuffer, stages: .compute, isIndirectlyBound: false, firstCommandOffset: commandIndex).first!
+                                                  encoder: encoder, usageType: .vertexBuffer, stages: stages, isIndirectlyBound: true, firstCommandOffset: commandIndex).first!
                     )
                     if let indexBuffer = triangleDescriptor.indexBuffer {
                         let bytesPerIndex = triangleDescriptor.indexType == .uint16 ? MemoryLayout<UInt16>.stride : MemoryLayout<UInt32>.stride
                         usagePointers.append(
                             self.resourceUsagePointers(for: indexBuffer,
                                                           bufferRange: triangleDescriptor.indexBufferOffset..<(triangleDescriptor.indexBufferOffset + 3 * triangleDescriptor.triangleCount * bytesPerIndex),
-                                                          encoder: encoder, usageType: .indexBuffer, stages: .compute, isIndirectlyBound: false, firstCommandOffset: commandIndex).first!
+                                                          encoder: encoder, usageType: .indexBuffer, stages: stages, isIndirectlyBound: true, firstCommandOffset: commandIndex).first!
                         )
                     }
                 }
@@ -479,13 +486,30 @@ final class RenderGraphCommandRecorder {
         case .topLevelInstance(let instanceDescriptor):
             for structure in instanceDescriptor.primitiveStructures {
                 usagePointers.append(
-                    self.resourceUsagePointers(for: structure, encoder: encoder, usageType: .read, stages: .compute, isIndirectlyBound: false, firstCommandOffset: commandIndex).first!
+                    self.resourceUsagePointers(for: structure, encoder: encoder, usageType: .read, stages: stages, isIndirectlyBound: true, firstCommandOffset: commandIndex).first!
                     )
             }
             
             usagePointers.append(
-                self.resourceUsagePointers(for: instanceDescriptor.instanceDescriptorBuffer, bufferRange: instanceDescriptor.instanceDescriptorBufferOffset..<(instanceDescriptor.instanceDescriptorBufferOffset + instanceDescriptor.instanceDescriptorStride * instanceDescriptor.instanceCount), encoder: encoder, usageType: .read, stages: .compute, isIndirectlyBound: false, firstCommandOffset: commandIndex).first!
+                self.resourceUsagePointers(for: instanceDescriptor.instanceDescriptorBuffer, bufferRange: instanceDescriptor.instanceDescriptorBufferOffset..<(instanceDescriptor.instanceDescriptorBufferOffset + instanceDescriptor.instanceDescriptorStride * instanceDescriptor.instanceCount), encoder: encoder, usageType: .read, stages: stages, isIndirectlyBound: true, firstCommandOffset: commandIndex).first!
             )
+        }
+        return usagePointers
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    fileprivate func resourceUsagePointers<C: CommandEncoder>(for descriptor: IntersectionFunctionTableDescriptor, commandIndex: Int, stages: RenderStages, encoder: C) -> [ResourceUsagePointer] {
+        var usagePointers = [ResourceUsagePointer]()
+        for bufferBinding in descriptor.buffers {
+            guard let bufferBinding = bufferBinding else { continue }
+            switch bufferBinding {
+            case .buffer(let buffer, let offset):
+                usagePointers.append(
+                    self.resourceUsagePointers(for: buffer, bufferRange: offset..<buffer.length, encoder: encoder, usageType: .read, stages: stages, isIndirectlyBound: true, firstCommandOffset: commandIndex).first!
+                )
+            case .functionTable:
+                break
+            }
         }
         return usagePointers
     }
