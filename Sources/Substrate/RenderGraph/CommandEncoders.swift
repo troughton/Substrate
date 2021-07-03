@@ -87,6 +87,53 @@ extension CommandEncoder {
  A requirement for resource binding is that subsequently bound pipeline states are compatible with the pipeline state bound at the time of the first draw call.
  */
 
+struct ResourceUsagePointerList: Collection, Equatable {
+    let pointer: UnsafeMutableRawPointer?
+    let count: Int
+    
+    public init(usagePointer: ResourceUsagePointer?) {
+        self.pointer = UnsafeMutableRawPointer(usagePointer)
+        self.count = usagePointer == nil ? 0 : 1
+    }
+    
+    public init(usagePointers: UnsafeMutableBufferPointer<ResourceUsagePointer>) {
+        self.pointer = UnsafeMutableRawPointer(usagePointers.baseAddress)
+        self.count = usagePointers.count
+    }
+    
+    public var isEmpty: Bool {
+        return self.count == 0
+    }
+    
+    public var startIndex: Int {
+        return 0
+    }
+    
+    public var endIndex: Int {
+        return self.count
+    }
+    
+    public func index(after i: Int) -> Int {
+        return i + 1
+    }
+    
+    public subscript(index: Int) -> ResourceUsagePointer {
+        assert(index >= 0 && index < self.count)
+        if self.count == 1 {
+            return self.pointer!.assumingMemoryBound(to: ResourceUsage.self)
+        } else {
+            return self.pointer!.assumingMemoryBound(to: ResourceUsagePointer.self)[index]
+        }
+    }
+    
+    public var first: ResourceUsagePointer? {
+        if self.isEmpty {
+            return nil
+        }
+        return self[0]
+    }
+}
+
 /// `ResourceBindingEncoder` is the common superclass `CommandEncoder` for all command encoders that can bind resources.
 /// You never instantiate a `ResourceBindingEncoder` directly; instead, you are provided with one of its concrete subclasses in a render pass' `execute` method.
 public class ResourceBindingEncoder : CommandEncoder {
@@ -95,10 +142,14 @@ public class ResourceBindingEncoder : CommandEncoder {
     struct BoundResource {
         public var resource : Resource
         public var bindingCommand : UnsafeMutableRawPointer?
-        public var usagePointer : ResourceUsagePointer?
-        public var isisIndirectlyBound : Bool
+        public var usagePointers : ResourceUsagePointerList // where the first element is the usage pointer for this resource and subsequent elements, if present, are for its subresources
+        public var isIndirectlyBound : Bool
         /// Whether the resource is assumed to be used in the same way for the entire time it's bound.
         public var consistentUsageAssumed : Bool
+        
+//        public var usagePointer: ResourceUsagePointer? {
+//            self.usagePointers.first
+//        }
     }
     
     @usableFromInline let commandRecorder : RenderGraphCommandRecorder
@@ -398,7 +449,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         let newValue = perform(currentlyBound)
         
         if let newValue = newValue {
-            if resultUntrackedIfUsed, newValue.usagePointer != nil {
+            if resultUntrackedIfUsed, !newValue.usagePointers.isEmpty {
                 if let target = indexInUntrackedBoundResources {
                     self.untrackedBoundResources.insertAtIndex(target, key: bindingPath, value: newValue)
                 } else {
@@ -413,8 +464,8 @@ public class ResourceBindingEncoder : CommandEncoder {
             }
         }
         
-        if let currentBoundUsage = currentlyBound?.usagePointer, newValue?.usagePointer != currentBoundUsage {
-            self.usagePointersToUpdate.append(currentBoundUsage) // The old resource is no longer bound, so we need to end the old usage.
+        if let currentBoundUsages = currentlyBound?.usagePointers, newValue?.usagePointers != currentBoundUsages {
+            self.usagePointersToUpdate.append(contentsOf: currentBoundUsages) // The old resource is no longer bound, so we need to end the old usage.
         }
     }
     
@@ -427,12 +478,12 @@ public class ResourceBindingEncoder : CommandEncoder {
             // has already expired.
             let endIndex = self.lastGPUCommandIndex + 1
             self.boundResources.forEach { (path, value) in
-                if let usagePointer = value.usagePointer {
+                for usagePointer in value.usagePointers {
                     usagePointer.pointee.commandRange = usagePointer.pointee.commandRange.lowerBound..<endIndex
                 }
             }
             self.untrackedBoundResources.forEach { (path, value) in
-                if let usagePointer = value.usagePointer {
+                for usagePointer in value.usagePointers {
                     usagePointer.pointee.commandRange = usagePointer.pointee.commandRange.lowerBound..<endIndex
                 }
             }
@@ -461,7 +512,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                 var bufferOffset = 0
                 
                 let argsPtr : UnsafeMutableRawPointer
-                let identifier : Resource.Handle
+                let resource : Resource
                 switch command {
                 case .setSamplerState(let args):
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
@@ -506,7 +557,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                         }
                     }
                     
-                    identifier = args.pointee.buffer.handle
+                    resource = Resource(args.pointee.buffer)
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
                     argsPtr = UnsafeMutableRawPointer(mutating: args)
                     bufferOffset = Int(args.pointee.offset)
@@ -518,7 +569,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                         }
                     }
                     
-                    identifier = args.pointee.texture.handle
+                    resource = Resource(args.pointee.texture)
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
                     argsPtr = UnsafeMutableRawPointer(mutating: args)
                     
@@ -529,7 +580,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                         }
                     }
                     
-                    identifier = args.pointee.structure.handle
+                    resource = Resource(args.pointee.structure)
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
                     argsPtr = UnsafeMutableRawPointer(mutating: args)
                     
@@ -542,15 +593,15 @@ public class ResourceBindingEncoder : CommandEncoder {
                 if !self.pipelineStateChanged,
                     let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
                     self.commandRecorder.record(command)
-                    let node = self.commandRecorder.boundResourceUsageNode(for: Resource(handle: identifier), encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: bufferOffset), isIndirectlyBound: false, firstCommandOffset: firstCommandOffset)
+                    let usagePointers = self.commandRecorder.resourceUsagePointers(for: resource, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: bufferOffset), isIndirectlyBound: false, firstCommandOffset: firstCommandOffset)
                     if reflection.usageType.isUAVReadWrite {
                         self.boundUAVResources.insert(bindingPath)
                     } else {
                         self.boundUAVResources.remove(bindingPath)
                     }
-                    return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usagePointer: node, isisIndirectlyBound: false, consistentUsageAssumed: false)
+                    return BoundResource(resource: resource, bindingCommand: argsPtr, usagePointers: usagePointers, isIndirectlyBound: false, consistentUsageAssumed: false)
                 } else {
-                    return BoundResource(resource: Resource(handle: identifier), bindingCommand: argsPtr, usagePointer: nil, isisIndirectlyBound: false, consistentUsageAssumed: false)
+                    return BoundResource(resource: resource, bindingCommand: argsPtr, usagePointers: ResourceUsagePointerList(usagePointer: nil), isIndirectlyBound: false, consistentUsageAssumed: false)
                 }
             })
         }
@@ -622,7 +673,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                         assert(argsPtr.assumingMemoryBound(to: RenderGraphCommand.SetArgumentBufferArrayArgs.self).pointee.argumentBuffer == argumentBuffer.sourceArray)
                     }
                     
-                    let node = self.commandRecorder.resourceUsageNode(for: argumentBuffer, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, firstCommandOffset: firstCommandOffset)
+                    let usagePointers = self.commandRecorder.resourceUsagePointers(for: argumentBuffer, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, firstCommandOffset: firstCommandOffset)
                     
                     if reflection.usageType.isUAVReadWrite {
                         self.boundUAVResources.insert(argumentBufferPath)
@@ -630,16 +681,16 @@ public class ResourceBindingEncoder : CommandEncoder {
                         self.boundUAVResources.remove(argumentBufferPath)
                     }
                     
-                    return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usagePointer: node, isisIndirectlyBound: false, consistentUsageAssumed: false)
+                    return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usagePointers: usagePointers, isIndirectlyBound: false, consistentUsageAssumed: false)
                 } else {
-                    return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usagePointer: nil, isisIndirectlyBound: false, consistentUsageAssumed: false)
+                    return BoundResource(resource: Resource(argumentBuffer), bindingCommand: argsPtr, usagePointers: ResourceUsagePointerList(usagePointer: nil), isIndirectlyBound: false, consistentUsageAssumed: false)
                 }
             })
             
             argumentBuffer.translateEnqueuedBindings { (key, arrayIndex, argumentResource) in
                 guard let bindingPath = key.bindingPath(argumentBufferPath: argumentBufferPath, arrayIndex: arrayIndex, pipelineReflection: pipelineReflection) else {
                     if let resource = argumentResource.resource {
-                        let _ = self.commandRecorder.boundResourceUsageNode(for: resource, encoder: self, usageType: .unusedArgumentBuffer, stages: .cpuBeforeRender, activeRange: .inactive, isIndirectlyBound: true, firstCommandOffset: firstCommandOffset)
+                        let _ = self.commandRecorder.resourceUsagePointers(for: resource, encoder: self, usageType: .unusedArgumentBuffer, stages: .cpuBeforeRender, activeRange: .inactive, isIndirectlyBound: true, firstCommandOffset: firstCommandOffset)
                     }
                     
                     return nil
@@ -652,29 +703,29 @@ public class ResourceBindingEncoder : CommandEncoder {
                 let bindingPath = pipelineReflection.bindingPath(pathInOriginalArgumentBuffer: bindingPath, newArgumentBufferPath: argumentBufferPath)
                 
                 guard let resource = argumentResource.resource else {
-                    if let existingUsage = self.boundResources.removeValue(forKey: bindingPath)?.usagePointer {
-                        self.usagePointersToUpdate.append(existingUsage)
+                    if let existingUsage = self.boundResources.removeValue(forKey: bindingPath) {
+                        self.usagePointersToUpdate.append(contentsOf: existingUsage.usagePointers)
                     }
-                    if let existingUsage = self.untrackedBoundResources.removeValue(forKey: bindingPath)?.usagePointer {
-                        self.usagePointersToUpdate.append(existingUsage)
+                    if let existingUsage = self.untrackedBoundResources.removeValue(forKey: bindingPath) {
+                        self.usagePointersToUpdate.append(contentsOf: existingUsage.usagePointers)
                     }
                     continue
                 }
                 
                 replacingBoundResourceNode(at: bindingPath, resultUntrackedIfUsed: assumeConsistentUsage, perform: { currentlyBound in
                     // Optimisation: if the pipeline state hasn't changed, these are the only resources we need to consider, so look up their reflection data immediately.
-                    let usageNode: ResourceUsagePointer?
+                    let usageNodes: ResourceUsagePointerList
                     if !self.pipelineStateChanged, let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
-                        usageNode = self.commandRecorder.boundResourceUsageNode(for: resource, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: argumentResource.activeRangeOffsetIntoResource), isIndirectlyBound: true, firstCommandOffset: firstCommandOffset)
+                        usageNodes = self.commandRecorder.resourceUsagePointers(for: resource, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: argumentResource.activeRangeOffsetIntoResource), isIndirectlyBound: true, firstCommandOffset: firstCommandOffset)
                         if reflection.usageType.isUAVReadWrite {
                             self.boundUAVResources.insert(bindingPath)
                         } else {
                             self.boundUAVResources.remove(bindingPath)
                         }
                     } else {
-                        usageNode = nil
+                        usageNodes = .init(usagePointer: nil)
                     }
-                    return BoundResource(resource: resource, bindingCommand: nil, usagePointer: usageNode, isisIndirectlyBound: true, consistentUsageAssumed: assumeConsistentUsage)
+                    return BoundResource(resource: resource, bindingCommand: nil, usagePointers: usageNodes, isIndirectlyBound: true, consistentUsageAssumed: assumeConsistentUsage)
                 })
             }
         }
@@ -694,7 +745,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                     assert(reflection.type == boundResource.resource.type || (reflection.type == .buffer && boundResource.resource.type == .argumentBuffer))
                         
                     // If the command to bind the resource hasn't yet been inserted into the command stream, insert it now.
-                    if boundResource.usagePointer == nil, let bindingCommandArgs = boundResource.bindingCommand {
+                    if boundResource.usagePointers.isEmpty, let bindingCommandArgs = boundResource.bindingCommand {
                         switch boundResource.resource.type {
                         case .texture:
                             self.commandRecorder.record(.setTexture(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetTextureArgs.self)))
@@ -734,8 +785,8 @@ public class ResourceBindingEncoder : CommandEncoder {
                         bufferOffset = Int(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetBufferArgs.self).pointee.offset)
                     }
                     
-                    let node = self.commandRecorder.boundResourceUsageNode(for: boundResource.resource, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: bufferOffset), isIndirectlyBound: boundResource.isisIndirectlyBound, firstCommandOffset: firstCommandOffset)
-                    boundResource.usagePointer = node
+                    let usagePointers = self.commandRecorder.resourceUsagePointers(for: boundResource.resource, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: bufferOffset), isIndirectlyBound: boundResource.isIndirectlyBound, firstCommandOffset: firstCommandOffset)
+                    boundResource.usagePointers = usagePointers
                     
                     if reflection.usageType.isUAVReadWrite {
                         self.boundUAVResources.insertUnique(bindingPath) // Guaranteed to not be present since we cleared boundUAVResources before this block.
@@ -746,12 +797,12 @@ public class ResourceBindingEncoder : CommandEncoder {
                     
                 } else {
                     // The resource is currently unused; end its usage.
-                    if boundResource.isisIndirectlyBound {
-                        let _ = self.commandRecorder.boundResourceUsageNode(for: boundResource.resource, encoder: self, usageType: .unusedArgumentBuffer, stages: .cpuBeforeRender, activeRange: .inactive, isIndirectlyBound: true, firstCommandOffset: firstCommandOffset)
-                    } else if let currentUsage = boundResource.usagePointer {
+                    if boundResource.isIndirectlyBound {
+                        let _ = self.commandRecorder.resourceUsagePointers(for: boundResource.resource, encoder: self, usageType: .unusedArgumentBuffer, stages: .cpuBeforeRender, activeRange: .inactive, isIndirectlyBound: true, firstCommandOffset: firstCommandOffset)
+                    } else {
                         // The resource is currently unused; end its usage.
-                        self.usagePointersToUpdate.append(currentUsage)
-                        boundResource.usagePointer = nil
+                        self.usagePointersToUpdate.append(contentsOf: boundResource.usagePointers)
+                        boundResource.usagePointers = .init(usagePointer: nil)
                     }
                 }
             }
@@ -759,9 +810,9 @@ public class ResourceBindingEncoder : CommandEncoder {
             self.boundUAVResources.forEach { bindingPath in
                 self.boundResources.withValue(forKey: bindingPath, perform: { boundResourcePtr, _ in
                     let boundResource = boundResourcePtr.pointee
-                    let usage = boundResource.usagePointer!.pointee
-                    let node = self.commandRecorder.boundResourceUsageNode(for: boundResource.resource, encoder: self, usageType: usage.type, stages: usage.stages, activeRange: usage.activeRange, isIndirectlyBound: boundResource.isisIndirectlyBound, firstCommandOffset: firstCommandOffset)
-                    boundResourcePtr.pointee.usagePointer = node
+                    let usage = boundResource.usagePointers.first!.pointee
+                    let usagePointers = self.commandRecorder.resourceUsagePointers(for: boundResource.resource, encoder: self, usageType: usage.type, stages: usage.stages, activeRange: usage.activeRange, isIndirectlyBound: boundResource.isIndirectlyBound, firstCommandOffset: firstCommandOffset)
+                    boundResourcePtr.pointee.usagePointers = usagePointers
                 })
                 
             }
@@ -786,13 +837,13 @@ public class ResourceBindingEncoder : CommandEncoder {
         let endIndex = self.lastGPUCommandIndex + 1
         
         self.boundResources.removeAll(iterating: { (path, value) in
-            if let usagePointer = value.usagePointer {
+            for usagePointer in value.usagePointers {
                 usagePointer.pointee.commandRange = usagePointer.pointee.commandRange.lowerBound..<endIndex
             }
         })
         
         self.untrackedBoundResources.removeAll(iterating: { (path, value) in
-            if let usagePointer = value.usagePointer {
+            for usagePointer in value.usagePointers {
                 usagePointer.pointee.commandRange = usagePointer.pointee.commandRange.lowerBound..<endIndex
             }
         })
@@ -922,19 +973,25 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         for (i, attachment) in renderPass.renderTargetDescriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             needsClearCommand = needsClearCommand || renderPass.colorClearOperation(attachmentIndex: i).isClear
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: renderPass.colorClearOperation(attachmentIndex: i).isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: 0)
+            let usagePointers = self.commandRecorder.resourceUsagePointers(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: renderPass.colorClearOperation(attachmentIndex: i).isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: 0)
+            assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
+            let usagePointer = usagePointers.first!
             self.renderTargetAttachmentUsages[.color(i)] = usagePointer
         }
         
         if let depthAttachment = renderPass.renderTargetDescriptor.depthAttachment {
             needsClearCommand = needsClearCommand || renderPass.depthClearOperation.isClear
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: 0)
+            let usagePointers = self.commandRecorder.resourceUsagePointers(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: 0)
+            assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
+            let usagePointer = usagePointers.first!
             self.renderTargetAttachmentUsages[.depth] = usagePointer
         }
         
         if let stencilAttachment = renderPass.renderTargetDescriptor.stencilAttachment {
             needsClearCommand = needsClearCommand || renderPass.stencilClearOperation.isClear
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: 0)
+            let usagePointers = self.commandRecorder.resourceUsagePointers(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: 0)
+            assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
+            let usagePointer = usagePointers.first!
             self.renderTargetAttachmentUsages[.stencil] = usagePointer
         }
         
@@ -968,8 +1025,8 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             
             defer {
                 if endingEncoding, let resolveTexture = attachment.resolveTexture {
-                    let _ = self.commandRecorder.resourceUsageNode(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
-                    let _ = self.commandRecorder.resourceUsageNode(for: resolveTexture, slice: attachment.resolveSlice, level: attachment.resolveLevel, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
+                    let _ = self.commandRecorder.resourceUsagePointers(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
+                    let _ = self.commandRecorder.resourceUsagePointers(for: resolveTexture, slice: attachment.resolveSlice, level: attachment.resolveLevel, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
                 }
             }
         
@@ -999,7 +1056,9 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 continue
             }
             
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: type, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: gpuCommandsStartIndex)
+            let usagePointers = self.commandRecorder.resourceUsagePointers(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: type, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: gpuCommandsStartIndex)
+            assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
+            let usagePointer = usagePointers.first!
             usagePointer.pointee.commandRange = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
             self.renderTargetAttachmentUsages[.color(i)] = usagePointer
         }
@@ -1046,13 +1105,15 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 break depthCheck
             }
             
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: type, stages: [.vertex, .fragment], isIndirectlyBound: false, firstCommandOffset: gpuCommandsStartIndex)
+            let usagePointers = self.commandRecorder.resourceUsagePointers(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: type, stages: [.vertex, .fragment], isIndirectlyBound: false, firstCommandOffset: gpuCommandsStartIndex)
+            assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
+            let usagePointer = usagePointers.first!
             usagePointer.pointee.commandRange = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
             self.renderTargetAttachmentUsages[.depth] = usagePointer
             
             if endingEncoding, let resolveTexture = depthAttachment.resolveTexture {
-                let _ = self.commandRecorder.resourceUsageNode(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
-                let _ = self.commandRecorder.resourceUsageNode(for: resolveTexture, slice: depthAttachment.resolveSlice, level: depthAttachment.resolveLevel, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
+                let _ = self.commandRecorder.resourceUsagePointers(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
+                let _ = self.commandRecorder.resourceUsagePointers(for: resolveTexture, slice: depthAttachment.resolveSlice, level: depthAttachment.resolveLevel, encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
             }
         }
         
@@ -1088,13 +1149,15 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 break stencilCheck
             }
             
-            let usagePointer = self.commandRecorder.resourceUsageNode(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: type, stages: [.vertex, .fragment], isIndirectlyBound: false, firstCommandOffset: gpuCommandsStartIndex)
+            let usagePointers = self.commandRecorder.resourceUsagePointers(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: type, stages: [.vertex, .fragment], isIndirectlyBound: false, firstCommandOffset: gpuCommandsStartIndex)
+            assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
+            let usagePointer = usagePointers.first!
             usagePointer.pointee.commandRange = Range(gpuCommandsStartIndex...self.lastGPUCommandIndex)
             self.renderTargetAttachmentUsages[.stencil] = usagePointer
             
             if endingEncoding, let resolveTexture = stencilAttachment.resolveTexture {
-                let _ = self.commandRecorder.resourceUsageNode(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
-                let _ = self.commandRecorder.resourceUsageNode(for: resolveTexture, slice: stencilAttachment.resolveSlice, level: stencilAttachment.resolveLevel,  encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
+                let _ = self.commandRecorder.resourceUsagePointers(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: .readWriteRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the attachment as read for the resolve.
+                let _ = self.commandRecorder.resourceUsagePointers(for: resolveTexture, slice: stencilAttachment.resolveSlice, level: stencilAttachment.resolveLevel,  encoder: self, usageType: .writeOnlyRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: self.lastGPUCommandIndex) // Mark the resolve attachment as written to.
             }
         }
     }
@@ -1131,8 +1194,8 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         
         guard let buffer = buffer else { return }
         
-        let newUsageNode = self.commandRecorder.resourceUsageNode(for: buffer, bufferRange: offset..<buffer.length, encoder: self, usageType: .vertexBuffer, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: self.nextCommandOffset)
-        self.boundVertexBuffers[index] = newUsageNode
+        let newUsageNodes = self.commandRecorder.resourceUsagePointers(for: buffer, bufferRange: offset..<buffer.length, encoder: self, usageType: .vertexBuffer, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: self.nextCommandOffset)
+        self.boundVertexBuffers[index] = newUsageNodes.first
         
         commandRecorder.record(RenderGraphCommand.setVertexBuffer, (buffer, UInt32(offset), UInt32(index)))
     }
@@ -1561,7 +1624,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
         self.commandRecorder.unmanagedReferences.append(.fromOpaque(commandBox.toOpaque()))
         
         for (resource, usageType, activeRange) in resources {
-            _ = commandRecorder.boundResourceUsageNode(for: resource, encoder: self, usageType: usageType, stages: .compute, activeRange: activeRange, isIndirectlyBound: false, firstCommandOffset: self.nextCommandOffset)
+            _ = commandRecorder.resourceUsagePointers(for: resource, encoder: self, usageType: usageType, stages: .compute, activeRange: activeRange, isIndirectlyBound: false, firstCommandOffset: self.nextCommandOffset)
         }
         
         commandRecorder.record(RenderGraphCommand.encodeExternalCommand(commandBox))
@@ -1643,13 +1706,10 @@ public final class AccelerationStructureCommandEncoder : CommandEncoder {
     }
     
     public func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int) {
+        accelerationStructure.descriptor = descriptor
         commandRecorder.addResourceUsage(for: accelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, isIndirectlyBound: false)
         commandRecorder.addResourceUsage(for: scratchBuffer, bufferRange: scratchBufferOffset..<scratchBuffer.length, commandIndex: self.nextCommandOffset, encoder: self, usageType: .readWrite, stages: .compute, isIndirectlyBound: false)
-        
-        commandRecorder.addResourceUsages(for: descriptor, commandIndex: self.nextCommandOffset, encoder: self)
-        
         commandRecorder.record(RenderGraphCommand.buildAccelerationStructure, (accelerationStructure, descriptor, scratchBuffer, scratchBufferOffset))
-        accelerationStructure.descriptor = descriptor
     }
     
     
@@ -1660,20 +1720,18 @@ public final class AccelerationStructureCommandEncoder : CommandEncoder {
 
     public func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int) {
         
-        commandRecorder.addResourceUsage(for: sourceAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, isIndirectlyBound: false)
-        commandRecorder.addResourceUsages(for: descriptor, commandIndex: self.nextCommandOffset, encoder: self)
-        if let destinationAccelerationStructure = destinationAccelerationStructure {
-            commandRecorder.addResourceUsage(for: destinationAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, isIndirectlyBound: false)
-        }
-        commandRecorder.addResourceUsage(for: scratchBuffer, bufferRange: scratchBufferOffset..<scratchBuffer.length, commandIndex: self.nextCommandOffset, encoder: self, usageType: .readWrite, stages: .compute, isIndirectlyBound: false)
-        
-        commandRecorder.record(RenderGraphCommand.refitAccelerationStructure, (sourceAccelerationStructure, descriptor, destinationAccelerationStructure, scratchBuffer, scratchBufferOffset))
-        
         if let destinationStructure = destinationAccelerationStructure {
+            sourceAccelerationStructure.descriptor = nil
             destinationStructure.descriptor = descriptor
+            commandRecorder.addResourceUsage(for: destinationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .write, stages: .compute, isIndirectlyBound: false)
         } else {
             sourceAccelerationStructure.descriptor = descriptor
         }
+        
+        commandRecorder.addResourceUsage(for: sourceAccelerationStructure, commandIndex: self.nextCommandOffset, encoder: self, usageType: .read, stages: .compute, isIndirectlyBound: false)
+        commandRecorder.addResourceUsage(for: scratchBuffer, bufferRange: scratchBufferOffset..<scratchBuffer.length, commandIndex: self.nextCommandOffset, encoder: self, usageType: .readWrite, stages: .compute, isIndirectlyBound: false)
+        
+        commandRecorder.record(RenderGraphCommand.refitAccelerationStructure, (sourceAccelerationStructure, descriptor, destinationAccelerationStructure, scratchBuffer, scratchBufferOffset))
     }
     
     
