@@ -110,7 +110,9 @@ final class FGMTLThreadRenderCommandEncoder {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
-            encoder.setDepthStencilState(stateCaches.defaultDepthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
+            let depthState = stateCaches.defaultDepthState
+            encoder.setDepthStencilState(depthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
+            self.boundDepthStencilState = depthState
         }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {

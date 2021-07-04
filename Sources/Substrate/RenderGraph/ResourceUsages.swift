@@ -115,7 +115,7 @@ public struct ResourceUsage {
     /// - returns: Whether the usages could be merged.
     @usableFromInline
     mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, allocator: AllocatorType) -> Bool {
-        if self.renderPassRecord !== nextUsage.renderPassRecord || nextUsage.resource != self.resource {
+        if self.renderPassRecord !== nextUsage.renderPassRecord || self.resource != nextUsage.resource {
             return false
         }
         
@@ -137,8 +137,15 @@ public struct ResourceUsage {
                     swap(&readUsage, &renderTargetUsage)
                 }
                 
-                let isInputAttachment = renderTargetUsage.commandRange.lowerBound < readUsage.commandRange.lowerBound // It's an input attachment if we wrote to it before we started reading from it.
-                
+                // It's an input attachment if we wrote to it before we started reading from it.
+                var isInputAttachment = renderTargetUsage.commandRange.lowerBound < readUsage.commandRange.lowerBound
+                                                                                        
+                if !isInputAttachment, let previousRenderTargetUsage = self.resource.usages.dropLast().last(where: { $0.type.isRenderTarget }) {
+                    if previousRenderTargetUsage.activeRange.isEqual(to: renderTargetUsage.activeRange, resource: self.resource), previousRenderTargetUsage.isWrite {
+                        isInputAttachment = true
+                    }
+                }
+                                                                                        
                 if isInputAttachment {
                     self.type = .inputAttachmentRenderTarget
                     self.isIndirectlyBound = self.isIndirectlyBound || nextUsage.isIndirectlyBound

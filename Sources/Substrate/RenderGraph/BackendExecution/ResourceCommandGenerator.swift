@@ -273,16 +273,20 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         assert(usage.stages != .cpuBeforeRender) // CPU-only usages should have been filtered out by the RenderGraph
                         assert(usage.renderPassRecord.isActive) // Only usages for active render passes should be here.
                         
+                        let isEmulatedInputAttachment = usage.type == .inputAttachmentRenderTarget && RenderBackend.requiresEmulatedInputAttachments
                         if usage.type.isRenderTarget {
                             resourceIsRenderTarget = true
-                            if usage.type != .inputAttachmentRenderTarget || !RenderBackend.requiresEmulatedInputAttachments {
+                            if !isEmulatedInputAttachment {
                                 continue
                             }
                         }
                         
                         let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
                         
-                        if usage.type != previousUsageType || usage.stages != previousUsageStages || usageEncoderIndex != previousEncoderIndex {
+                        if isEmulatedInputAttachment ||
+                            usage.type != previousUsageType ||
+                            usage.stages != previousUsageStages ||
+                            usageEncoderIndex != previousEncoderIndex {
                             self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: usage.type, stages: usage.stages, allowReordering: !resourceIsRenderTarget && usageEncoderIndex != previousEncoderIndex), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
                                 index: usage.commandRange.lowerBound))
                         }

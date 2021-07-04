@@ -54,10 +54,16 @@ public struct ChunkArray<Element>: Collection {
     public subscript(pointerTo index: Int) -> UnsafeMutablePointer<Element> {
         precondition(index >= 0 && index < self.count)
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
+        
         var currentChunk = self.next!
-        for _ in 0..<chunkIndex {
-            currentChunk = currentChunk.pointee.next!
+        if chunkIndex == (self.count - 1) / ChunkArray.elementsPerChunk { // precondition: !self.isEmpty
+            currentChunk = self.tail!
+        } else {
+            for _ in 0..<chunkIndex {
+                currentChunk = currentChunk.pointee.next!
+            }
         }
+            
         return UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: Element.self).advanced(by: indexInChunk)
     }
     
