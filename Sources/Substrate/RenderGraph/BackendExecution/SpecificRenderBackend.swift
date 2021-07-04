@@ -22,6 +22,8 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     associatedtype TextureReference
     associatedtype ArgumentBufferReference
     associatedtype ArgumentBufferArrayReference
+    associatedtype VisibleFunctionTableReference
+    associatedtype IntersectionFunctionTableReference
     associatedtype SamplerReference
     
     associatedtype InterEncoderDependencyType: Dependency
@@ -45,6 +47,9 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     
     static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
     static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: ArgumentBufferArrayReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
+    
+    func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: VisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
+    func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, storage: IntersectionFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
 }
 
 extension SpecificRenderBackend {
@@ -135,12 +140,15 @@ protocol BackendPersistentResourceRegistry: ResourceRegistry {
     @available(macOS 11.0, iOS 14.0, *)
     subscript(accelerationStructure: AccelerationStructure) -> AnyObject? { get }
     @available(macOS 11.0, iOS 14.0, *)
-    subscript(visibleFunctionTable: VisibleFunctionTable) -> AnyObject? { get }
+    subscript(visibleFunctionTable: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference? { get }
     @available(macOS 11.0, iOS 14.0, *)
-    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> AnyObject? { get }
+    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference? { get }
     
     func allocateBuffer(_ buffer: Buffer) -> Backend.BufferReference?
     func allocateTexture(_ texture: Texture) -> Backend.TextureReference?
+    
+    func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference?
+    func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference?
     
     func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64)
     func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64)

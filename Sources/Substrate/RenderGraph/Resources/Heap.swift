@@ -65,7 +65,7 @@ public struct Heap : ResourceProtocol {
     }
     
     public var heap : Heap? {
-        return self
+        return nil
     }
     
     public var childResources: Set<Resource> {

@@ -21,6 +21,15 @@ public enum ResourceType : UInt8 {
     case visibleFunctionTable
     case accelerationStructure
     case intersectionFunctionTable
+    
+    public var isMaterialisedOnFirstUse: Bool {
+        switch self {
+        case .argumentBuffer, .argumentBufferArray, .visibleFunctionTable, .intersectionFunctionTable:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 /*!

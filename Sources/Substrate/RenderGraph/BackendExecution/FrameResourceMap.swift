@@ -52,12 +52,12 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    subscript(visibleFunctionTable: VisibleFunctionTable) -> AnyObject? {
+    subscript(visibleFunctionTable: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference? {
         return persistentRegistry[visibleFunctionTable]
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> AnyObject? {
+    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference? {
         return persistentRegistry[intersectionFunctionTable]
     }
     

@@ -45,6 +45,8 @@ enum PreFrameCommands {
     case materialiseTextureView(Texture)
     case materialiseArgumentBuffer(ArgumentBuffer)
     case materialiseArgumentBufferArray(ArgumentBufferArray)
+    case materialiseVisibleFunctionTable(VisibleFunctionTable)
+    case materialiseIntersectionFunctionTable(IntersectionFunctionTable)
     case disposeResource(Resource, afterStages: RenderStages)
     
     case waitForHeapAliasingFences(resource: Resource, waitDependency: FenceDependency)
@@ -54,7 +56,7 @@ enum PreFrameCommands {
     
     var isMaterialiseNonArgumentBufferResource: Bool {
         switch self {
-        case .materialiseBuffer, .materialiseTexture, .materialiseTextureView:
+        case .materialiseBuffer, .materialiseTexture, .materialiseTextureView, .materialiseVisibleFunctionTable, .materialiseIntersectionFunctionTable:
             return true
         default:
             return false
@@ -93,6 +95,7 @@ enum PreFrameCommands {
             let argBufferReference : Backend.ArgumentBufferReference
             if argumentBuffer.flags.contains(.persistent) {
                 argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
+                argumentBuffer.waitForCPUAccess(accessType: .write)
             } else {
                 argBufferReference = resourceRegistry!.allocateArgumentBufferIfNeeded(argumentBuffer)
                 waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
@@ -104,12 +107,31 @@ enum PreFrameCommands {
             let argBufferReference : Backend.ArgumentBufferArrayReference
             if argumentBuffer.flags.contains(.persistent) {
                 argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
+                argumentBuffer.waitForCPUAccess(accessType: .write)
             } else {
                 argBufferReference = resourceRegistry!.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
                 waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferArrayWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
             Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
     
+        case .materialiseVisibleFunctionTable(let table):
+            precondition(table.flags.contains(.persistent))
+            
+            guard let tableReference = resourceMap.persistentRegistry.allocateVisibleFunctionTableIfNeeded(table) else { break }
+            guard !table.stateFlags.contains(.initialised) else { break }
+            
+            table.waitForCPUAccess(accessType: .write)
+            context.backend.fillVisibleFunctionTable(table, storage: tableReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
+            
+        case .materialiseIntersectionFunctionTable(let table):
+            precondition(table.flags.contains(.persistent))
+            
+            guard let tableReference = resourceMap.persistentRegistry.allocateIntersectionFunctionTableIfNeeded(table) else { break }
+            guard !table.stateFlags.contains(.initialised) else { break }
+            
+            table.waitForCPUAccess(accessType: .write)
+            context.backend.fillIntersectionFunctionTable(table, storage: tableReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
+            
         case .disposeResource(let resource, let afterStages):
             let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)
             if let buffer = resource.buffer {
@@ -477,10 +499,23 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             let disposalIndex = frameCommandInfo.commandEncoders[lastCommandEncoderIndex].commandRange.last!
             
             // Insert commands to materialise and dispose of the resource.
-            if let argumentBuffer = resource.argumentBuffer {
+            if resource.type.isMaterialisedOnFirstUse {
                 // Unlike textures and buffers, we materialise persistent argument buffers at first use rather than immediately.
                 if !historyBufferUseFrame {
-                    self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseArgumentBuffer(argumentBuffer), index: firstUsage.commandRange.lowerBound, order: .before))
+                    let command: PreFrameCommands
+                    switch resource.type {
+                    case .argumentBuffer:
+                        command = .materialiseArgumentBuffer(ArgumentBuffer(handle: resource.handle))
+                    case .argumentBufferArray:
+                        command = .materialiseArgumentBufferArray(ArgumentBufferArray(handle: resource.handle))
+                    case .visibleFunctionTable:
+                        command = .materialiseVisibleFunctionTable(VisibleFunctionTable(handle: resource.handle))
+                    case .intersectionFunctionTable:
+                        command = .materialiseIntersectionFunctionTable(IntersectionFunctionTable(handle: resource.handle))
+                    default:
+                        fatalError()
+                    }
+                    self.preFrameCommands.append(PreFrameResourceCommand(command: command, index: firstUsage.commandRange.lowerBound, order: .before))
                 }
                 
                 if !resource.flags.contains(.persistent), !resource.flags.contains(.historyBuffer) || historyBufferUseFrame {

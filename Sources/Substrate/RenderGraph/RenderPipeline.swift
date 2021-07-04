@@ -45,8 +45,9 @@ public struct FunctionDescriptor : Hashable, ExpressibleByStringLiteral {
         
     }
     
-    public init(functionName: String) {
+    public init(functionName: String, constants: FunctionConstants? = nil) {
         self.name = functionName
+        self.constants = constants
     }
     
     public init(stringLiteral value: String) {
@@ -304,6 +305,12 @@ public struct ComputePipelineDescriptor : Hashable {
     public init(function: String) {
         self.function = .init(functionName: function)
     }
+    
+    @inlinable
+    public init(function: FunctionDescriptor) {
+        self.function = function
+    }
+    
     
     @inlinable
     public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) {

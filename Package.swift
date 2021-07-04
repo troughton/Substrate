@@ -10,7 +10,7 @@ let vulkanDependencies: [Target.Dependency] = [.target(name: "Vulkan")]
 
 let package = Package(
     name: "Substrate",
-    platforms: [.macOS(.v10_14), .iOS(.v12), .tvOS(.v12)],
+    platforms: [.macOS(.v10_14), .iOS(.v13), .tvOS(.v13)],
     products: [
         .library(name: "SwiftFrameGraph", targets: ["Substrate", "SwiftFrameGraph"]),
         .library(name: "FrameGraphTextureIO", targets: ["SubstrateTextureIO", "FrameGraphTextureIO"]),

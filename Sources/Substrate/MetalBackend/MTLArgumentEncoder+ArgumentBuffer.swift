@@ -65,10 +65,10 @@ extension MetalArgumentEncoder {
                 self.encoder.setAccelerationStructure((mtlStructure as! MTLAccelerationStructure), index: bindingIndex)
             case .visibleFunctionTable(let table):
                 guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[table] else { continue }
-                self.encoder.setVisibleFunctionTable((mtlTable as! MTLVisibleFunctionTable), index: bindingIndex)
+                self.encoder.setVisibleFunctionTable(mtlTable.table, index: bindingIndex)
             case .intersectionFunctionTable(let table):
                 guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[table] else { continue }
-                self.encoder.setIntersectionFunctionTable((mtlTable as! MTLIntersectionFunctionTable), index: bindingIndex)
+                self.encoder.setIntersectionFunctionTable(mtlTable.table, index: bindingIndex)
             case .sampler(let descriptor):
                 let samplerState = resourceMap[descriptor]
                 self.encoder.setSamplerState(samplerState, index: bindingIndex)

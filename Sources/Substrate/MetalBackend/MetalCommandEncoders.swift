@@ -280,10 +280,10 @@ final class FGMTLThreadRenderCommandEncoder {
             let mtlBindingPath = args.pointee.bindingPath
             let stages = mtlBindingPath.stages
             if stages.contains(.vertex) {
-                encoder.setVertexVisibleFunctionTable((mtlTable as! MTLVisibleFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+                encoder.setVertexVisibleFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
             }
             if stages.contains(.fragment) {
-                encoder.setFragmentVisibleFunctionTable((mtlTable as! MTLVisibleFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+                encoder.setFragmentVisibleFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
             }
             
         case .setIntersectionFunctionTable(let args):
@@ -294,10 +294,10 @@ final class FGMTLThreadRenderCommandEncoder {
             let mtlBindingPath = args.pointee.bindingPath
             let stages = mtlBindingPath.stages
             if stages.contains(.vertex) {
-                encoder.setVertexIntersectionFunctionTable((mtlTable as! MTLIntersectionFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+                encoder.setVertexIntersectionFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
             }
             if stages.contains(.fragment) {
-                encoder.setFragmentIntersectionFunctionTable((mtlTable as! MTLIntersectionFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+                encoder.setFragmentIntersectionFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
             }
             
         case .setRenderPipelineDescriptor(let descriptorPtr):
@@ -511,7 +511,7 @@ final class FGMTLComputeCommandEncoder {
             }
             
             let mtlBindingPath = args.pointee.bindingPath
-            encoder.setVisibleFunctionTable((mtlTable as! MTLVisibleFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+            encoder.setVisibleFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
             
         case .setIntersectionFunctionTable(let args):
             guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[args.pointee.table] else {
@@ -519,7 +519,7 @@ final class FGMTLComputeCommandEncoder {
             }
             
             let mtlBindingPath = args.pointee.bindingPath
-            encoder.setIntersectionFunctionTable((mtlTable as! MTLIntersectionFunctionTable), bufferIndex: mtlBindingPath.bindIndex)
+            encoder.setIntersectionFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
             
         case .setSamplerState(let args):
             let mtlBindingPath = args.pointee.bindingPath

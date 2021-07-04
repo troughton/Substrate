@@ -75,11 +75,14 @@ public struct ArgumentBufferArray : ResourceProtocol {
     
     public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
         get {
-            return 0
+            guard self._usesPersistentRegistry else { return 0 }
+            return self._bindings.lazy.map { $0?[waitIndexFor: queue, accessType: type] ?? 0 }.max() ?? 0
         }
         nonmutating set {
-            // Argument buffer array waits are handled at ArgumentBuffer granularity
-           _ = newValue
+            guard self._usesPersistentRegistry else { return }
+            for binding in self._bindings {
+                binding?[waitIndexFor: queue, accessType: type] = newValue
+            }
         }
     }
     

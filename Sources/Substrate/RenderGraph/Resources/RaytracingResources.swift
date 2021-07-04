@@ -248,26 +248,37 @@ extension VisibleFunctionTable: CustomStringConvertible {
 struct VisibleFunctionTableProperties: SharedResourceProperties {
     
     struct PersistentProperties: PersistentResourceProperties {
-        
+        /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         
         @usableFromInline
         init(capacity: Int) {
+            self.readWaitIndices = .allocate(capacity: capacity)
+            self.writeWaitIndices = .allocate(capacity: capacity)
             self.stateFlags = .allocate(capacity: capacity)
         }
         
         @usableFromInline
         func deallocate() {
+            self.readWaitIndices.deallocate()
+            self.writeWaitIndices.deallocate()
             self.stateFlags.deallocate()
         }
         
         @usableFromInline
         func initialize(index: Int, descriptor functionCount: Int, heap: Heap?, flags: ResourceFlags) {
+            self.readWaitIndices.advanced(by: index).initialize(to: .zero)
+            self.writeWaitIndices.advanced(by: index).initialize(to: .zero)
             self.stateFlags.advanced(by: index).initialize(to: [])
         }
         
         @usableFromInline
         func deinitialize(from index: Int, count: Int) {
+            self.readWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
             self.stateFlags.advanced(by: index).deinitialize(count: count)
         }
         
@@ -308,6 +319,7 @@ final class VisibleFunctionTableRegistry: PersistentRegistry<VisibleFunctionTabl
             let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % VisibleFunctionTable.itemsPerChunk) : VisibleFunctionTable.itemsPerChunk
             for i in 0..<chunkItemCount {
                 self.persistentChunks![chunkIndex].stateFlags[i].remove(.initialised)
+                UnsafeRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.sharedChunks![chunkIndex].pipelineStates.advanced(by: i), ordering: .relaxed)
             }
         }
     }
@@ -323,6 +335,13 @@ public struct IntersectionFunctionTable : ResourceProtocol {
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .intersectionFunctionTable)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public init() {
+        let flags : ResourceFlags = .persistent
+        
+        self = IntersectionFunctionTableRegistry.instance.allocate(descriptor: .init(functions: [], buffers: []), heap: nil, flags: flags)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
@@ -385,25 +404,37 @@ extension IntersectionFunctionTable: CustomStringConvertible {
 struct IntersectionFunctionTableProperties: SharedResourceProperties {
     
     struct PersistentProperties: PersistentResourceProperties {
+        /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         
         @usableFromInline
         init(capacity: Int) {
+            self.readWaitIndices = .allocate(capacity: capacity)
+            self.writeWaitIndices = .allocate(capacity: capacity)
             self.stateFlags = .allocate(capacity: capacity)
         }
         
         @usableFromInline
         func deallocate() {
+            self.readWaitIndices.deallocate()
+            self.writeWaitIndices.deallocate()
             self.stateFlags.deallocate()
         }
         
         @usableFromInline
         func initialize(index: Int, descriptor: IntersectionFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
+            self.readWaitIndices.advanced(by: index).initialize(to: .zero)
+            self.writeWaitIndices.advanced(by: index).initialize(to: .zero)
             self.stateFlags.advanced(by: index).initialize(to: [])
         }
         
         @usableFromInline
         func deinitialize(from index: Int, count: Int) {
+            self.readWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
             self.stateFlags.advanced(by: index).deinitialize(count: count)
         }
         
@@ -444,6 +475,7 @@ final class IntersectionFunctionTableRegistry: PersistentRegistry<IntersectionFu
             let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % IntersectionFunctionTable.itemsPerChunk) : IntersectionFunctionTable.itemsPerChunk
             for i in 0..<chunkItemCount {
                 self.persistentChunks![chunkIndex].stateFlags[i].remove(.initialised)
+                UnsafeRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.sharedChunks![chunkIndex].pipelineStates.advanced(by: i), ordering: .relaxed)
             }
         }
     }

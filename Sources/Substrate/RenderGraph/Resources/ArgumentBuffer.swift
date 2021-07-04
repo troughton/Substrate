@@ -77,6 +77,28 @@ public typealias _ArgumentBuffer = ArgumentBuffer
 @available(*, deprecated, renamed: "ArgumentBuffer")
 public typealias _ArgumentBufferArray = ArgumentBufferArray
 
+public struct ArgumentBufferDescriptor {
+    public struct ArgumentDescriptor {
+        public enum ArgumentResourceType {
+            case inlineData(DataType)
+            case resource(ResourceType)
+        }
+        
+        public var index: Int // VkDescriptorSetLayoutBinding.binding
+        public var arrayLength: Int // VkDescriptorSetLayoutBinding.descriptorCount
+        public var access: ResourceAccessType // VkDescriptorSetLayoutBinding.descriptorType
+        public var textureType: TextureType? // VkDescriptorSetLayoutBinding.descriptorType
+        public var resource: ArgumentResourceType // VkDescriptorSetLayoutBinding.descriptorType
+        public var constantBlockAlignment: Int
+    }
+    
+    public var arguments: [ArgumentDescriptor]
+    
+    public init(arguments: [ArgumentDescriptor]) {
+        self.arguments = arguments
+    }
+}
+
 public struct ArgumentBuffer : ResourceProtocol {
     @usableFromInline let _handle : UnsafeRawPointer
     public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }

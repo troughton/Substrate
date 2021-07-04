@@ -442,6 +442,10 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.setArgumentBufferArray(argumentBufferArray?.argumentBufferArray, key: key, assumeConsistentUsage: assumeConsistentUsage)
     }
     
+    public func useIndirectResource(_ resource: Resource, usageType: ResourceUsageType, stages: RenderStages) {
+        _ = self.commandRecorder.resourceUsagePointers(for: resource, encoder: self, usageType: usageType, stages: stages, activeRange: .fullResource, isIndirectlyBound: true, firstCommandOffset: self.nextCommandOffset)
+    }
+    
     func updateUsageNodes(lastIndex: Int) {
         for usagePointer in usagePointersToUpdate {
             usagePointer.pointee.commandRange = Range(uncheckedBounds: (usagePointer.pointee.commandRange.lowerBound, lastIndex + 1))
@@ -617,6 +621,8 @@ public class ResourceBindingEncoder : CommandEncoder {
                         }
                     }
                     
+                    _ = args.pointee.table.replacePipelineState(with: self.currentPipelineReflection.pipelineState, expectingCurrentValue: nil)
+                    
                     resource = Resource(args.pointee.table)
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
                     argsPtr = UnsafeMutableRawPointer(mutating: args)
@@ -627,6 +633,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                             return currentlyBound
                         }
                     }
+                    _ = args.pointee.table.replacePipelineState(with: self.currentPipelineReflection.pipelineState, expectingCurrentValue: nil)
                     
                     resource = Resource(args.pointee.table)
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath

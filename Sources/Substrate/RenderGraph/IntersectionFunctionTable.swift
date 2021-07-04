@@ -38,4 +38,9 @@ public struct IntersectionFunctionTableDescriptor: Hashable, Equatable {
     
     public var functions: [FunctionType?]
     public var buffers: [BufferType?]
+    
+    public init(functions: [FunctionType?] = [], buffers: [BufferType] = []) {
+        self.functions = functions
+        self.buffers = buffers
+    }
 }

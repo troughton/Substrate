@@ -314,7 +314,7 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
         } else {
             self.sharedChunks = nil
         }
-        if MemoryLayout<Resource.SharedProperties>.size > 0 {
+        if MemoryLayout<Resource.PersistentProperties>.size > 0 {
             self.persistentChunks = .allocate(capacity: Self.maxChunks)
         } else {
             self.persistentChunks = nil
@@ -388,6 +388,12 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
             RenderBackend.dispose(argumentBufferArray: ArgumentBufferArray(handle: resource.handle))
         case .heap:
             RenderBackend.dispose(heap: Heap(handle: resource.handle))
+        case .accelerationStructure:
+            RenderBackend.dispose(accelerationStructure: AccelerationStructure(handle: resource.handle))
+        case .visibleFunctionTable:
+            RenderBackend.dispose(visibleFunctionTable: VisibleFunctionTable(handle: resource.handle))
+        case .intersectionFunctionTable:
+            RenderBackend.dispose(intersectionFunctionTable: IntersectionFunctionTable(handle: resource.handle))
         default:
             fatalError()
         }

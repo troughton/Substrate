@@ -17,6 +17,8 @@ import Vulkan
 
 @usableFromInline
 protocol PipelineReflection : AnyObject {
+    var pipelineState: UnsafeRawPointer { get }
+    
     func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?
     func bindingPath(argumentName: String, arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath?
     func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath
@@ -104,11 +106,8 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func dispose(argumentBufferArray: ArgumentBufferArray)
     func dispose(heap: Heap)
     
-    @available(macOS 11.0, iOS 14.0, *)
     func dispose(accelerationStructure: AccelerationStructure)
-    @available(macOS 11.0, iOS 14.0, *)
     func dispose(intersectionFunctionTable: IntersectionFunctionTable)
-    @available(macOS 11.0, iOS 14.0, *)
     func dispose(visibleFunctionTable: VisibleFunctionTable)
     
     var pushConstantPath : ResourceBindingPath { get }
@@ -235,10 +234,19 @@ public struct RenderBackend {
         return _backend.dispose(heap: heap)
     }
     
-    @available(macOS 11.0, iOS 14.0, *)
     @inlinable
     public static func dispose(accelerationStructure: AccelerationStructure) {
         return _backend.dispose(accelerationStructure: accelerationStructure)
+    }
+    
+    @inlinable
+    public static func dispose(visibleFunctionTable: VisibleFunctionTable) {
+        return _backend.dispose(visibleFunctionTable: visibleFunctionTable)
+    }
+    
+    @inlinable
+    public static func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
+        return _backend.dispose(intersectionFunctionTable: intersectionFunctionTable)
     }
     
     @inlinable
