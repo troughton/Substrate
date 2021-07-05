@@ -286,29 +286,34 @@ struct VisibleFunctionTableProperties: SharedResourceProperties {
     }
     
     let functions : UnsafeMutablePointer<[FunctionDescriptor?]>
+    let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
     let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
     
     init(capacity: Int) {
         self.functions = .allocate(capacity: capacity)
+        self.usages = .allocate(capacity: capacity)
         self.pipelineStates = .allocate(capacity: capacity)
     }
     
     func deallocate() {
         self.functions.deallocate()
+        self.usages.deallocate()
         self.pipelineStates.deallocate()
     }
     
     func initialize(index: Int, descriptor functionCount: Int, heap: Heap?, flags: ResourceFlags) {
         self.functions.advanced(by: index).initialize(to: .init(repeating: nil, count: functionCount))
+        self.usages.advanced(by: index).initialize(to: ChunkArray<ResourceUsage>())
         self.pipelineStates.advanced(by: index).initialize(to: .init(nil))
     }
     
     func deinitialize(from index: Int, count: Int) {
         self.functions.advanced(by: index).deinitialize(count: count)
+        self.usages.advanced(by: index).deinitialize(count: count)
         self.pipelineStates.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
 }
 
 final class VisibleFunctionTableRegistry: PersistentRegistry<VisibleFunctionTable> {
@@ -442,29 +447,34 @@ struct IntersectionFunctionTableProperties: SharedResourceProperties {
     }
     
     let descriptors : UnsafeMutablePointer<IntersectionFunctionTableDescriptor>
+    let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
     let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation>
     
     init(capacity: Int) {
         self.descriptors = .allocate(capacity: capacity)
+        self.usages = .allocate(capacity: capacity)
         self.pipelineStates = .allocate(capacity: capacity)
     }
     
     func deallocate() {
         self.descriptors.deallocate()
+        self.usages.deallocate()
         self.pipelineStates.deallocate()
     }
     
     func initialize(index: Int, descriptor: IntersectionFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.descriptors.advanced(by: index).initialize(to: descriptor)
+        self.usages.advanced(by: index).initialize(to: ChunkArray<ResourceUsage>())
         self.pipelineStates.advanced(by: index).initialize(to: .init(nil))
     }
     
     func deinitialize(from index: Int, count: Int) {
         self.descriptors.advanced(by: index).deinitialize(count: count)
+        self.usages.advanced(by: index).deinitialize(count: count)
         self.pipelineStates.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { usages }
 }
 
 final class IntersectionFunctionTableRegistry: PersistentRegistry<IntersectionFunctionTable> {

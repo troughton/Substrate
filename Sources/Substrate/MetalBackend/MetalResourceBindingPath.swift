@@ -50,14 +50,12 @@ extension ResourceBindingPath {
         self.value.setBits(in: ResourceBindingPath.argumentBufferIndexRange, to: UInt64(truncatingIfNeeded: argBufferBits), clearMask: ResourceBindingPath.argumentBufferIndexClearMask)
         
         switch type {
-        case .buffer:
-            self.value |= ResourceBindingPath.bufferTypeFlag
         case .texture:
             self.value |= ResourceBindingPath.textureTypeFlag
         case .sampler:
             self.value |= ResourceBindingPath.samplerTypeFlag
         default:
-            fatalError()
+            self.value |= ResourceBindingPath.bufferTypeFlag
         }
     }
     

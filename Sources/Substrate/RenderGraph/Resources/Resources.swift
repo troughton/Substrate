@@ -675,7 +675,7 @@ extension ResourceProtocol {
             return 0
         }
         nonmutating set {
-            fatalError()
+            _ = newValue
         }
     }
     

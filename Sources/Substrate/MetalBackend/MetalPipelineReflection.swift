@@ -116,9 +116,8 @@ final class MetalPipelineReflection : PipelineReflection {
     }
     
     static func fillCaches(function: MTLFunction, argument: MTLArgument, stages: RenderStages, bindingPathCache: inout HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: inout [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MetalArgumentEncoder?>) {
-        guard argument.type == .buffer || argument.type == .texture || argument.type == .sampler else {
-            return
-        }
+        guard argument.type != .threadgroupMemory else { return }
+        
         let mtlStages = MTLRenderStages(stages)
         
         let cacheKey = BindingPathCacheKey(argumentName: argument.name, argumentBufferIndex: nil)

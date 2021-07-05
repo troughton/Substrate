@@ -1364,6 +1364,8 @@ public final class RenderGraph {
         
         if #available(macOS 11.0, iOS 14.0, *) {
             AccelerationStructureRegistry.instance.clear(afterRenderGraph: self)
+            VisibleFunctionTableRegistry.instance.clear(afterRenderGraph: self)
+            IntersectionFunctionTableRegistry.instance.clear(afterRenderGraph: self)
         }
         
         RenderGraph.threadUnmanagedReferences.forEach { unmanagedReferences in

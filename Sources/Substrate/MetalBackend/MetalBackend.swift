@@ -647,8 +647,14 @@ final class MetalBackend : SpecificRenderBackend {
                 return unsafeBitCast(resourceMap[argumentBuffer]._buffer, to: Unmanaged<MTLResource>.self)
             } else if let heap = resource.heap {
                 return Unmanaged.passUnretained(resourceMap.persistentRegistry[heap] as! MTLResource)
-            } else if let accelerationStructure = resource.accelerationStructure, #available(macOS 11.0, iOS 14.0, *) {
-                return Unmanaged.passUnretained(resourceMap.persistentRegistry[accelerationStructure] as! MTLResource)
+            } else if #available(macOS 11.0, iOS 14.0, *) {
+                if let accelerationStructure = resource.accelerationStructure {
+                    return Unmanaged.passUnretained(resourceMap.persistentRegistry[accelerationStructure] as! MTLResource)
+                } else if let visibleFunctionTable = resource.visibleFunctionTable {
+                    return resourceMap[visibleFunctionTable].map { Unmanaged.passUnretained($0.resource) }
+                } else if let intersectionFunctionTable = resource.intersectionFunctionTable {
+                    return resourceMap[intersectionFunctionTable].map { Unmanaged.passUnretained($0.resource) }
+                }
             }
             fatalError()
         }

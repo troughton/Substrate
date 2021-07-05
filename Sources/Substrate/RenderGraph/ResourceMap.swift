@@ -35,8 +35,17 @@ public struct PersistentResourceMap<R : ResourceProtocol & Equatable, V> {
         case is Heap.Type:
             self._reserveCapacity(HeapRegistry.instance.nextFreeIndex)
         default:
-            if #available(macOS 11.0, iOS 14.0, *), R.self is AccelerationStructure.Type {
-                self._reserveCapacity(AccelerationStructureRegistry.instance.nextFreeIndex)
+            if #available(macOS 11.0, iOS 14.0, *) {
+                switch R.self {
+                case is AccelerationStructure.Type:
+                    self._reserveCapacity(AccelerationStructureRegistry.instance.nextFreeIndex)
+                case is VisibleFunctionTable.Type:
+                    self._reserveCapacity(VisibleFunctionTableRegistry.instance.nextFreeIndex)
+                case is IntersectionFunctionTable.Type:
+                    self._reserveCapacity(IntersectionFunctionTableRegistry.instance.nextFreeIndex)
+                default:
+                    fatalError()
+                }
             }
         }
     }
