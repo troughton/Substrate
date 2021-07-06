@@ -303,7 +303,7 @@ extension ResourceProtocolImpl {
     /// Returns whether the resource is known to currently be in use by the CPU or GPU.
     public var isKnownInUse: Bool {
         guard let activeRenderGraphs = self._activeRenderGraphsPointer else {
-            return true
+            return !self._usesPersistentRegistry && self.isValid
         }
         let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs, ordering: .relaxed)
         if activeRenderGraphMask != 0 {
