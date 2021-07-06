@@ -21,6 +21,7 @@ public enum ResourceType : UInt8 {
     case visibleFunctionTable
     case accelerationStructure
     case intersectionFunctionTable
+    case hazardTrackingGroup
     
     public var isMaterialisedOnFirstUse: Bool {
         switch self {
@@ -159,9 +160,14 @@ public protocol ResourceProtocol {
     var purgeableState: ResourcePurgeableState { get nonmutating set }
     func updatePurgeableState(to: ResourcePurgeableState) -> ResourcePurgeableState
     
+    static var resourceType: ResourceType { get }
 }
 
-protocol ResourceProtocolImpl: ResourceProtocol, Hashable {
+public protocol GroupHazardTrackableResource: ResourceProtocol {
+    var hazardTrackingGroup: HazardTrackingGroup<Self>? { get nonmutating set }
+}
+
+protocol ResourceProtocolImpl: GroupHazardTrackableResource, Hashable {
     associatedtype Descriptor
     associatedtype SharedProperties: SharedResourceProperties where SharedProperties.Descriptor == Descriptor
     associatedtype TransientProperties: ResourceProperties where TransientProperties.Descriptor == Descriptor
@@ -170,7 +176,6 @@ protocol ResourceProtocolImpl: ResourceProtocol, Hashable {
     associatedtype TransientRegistry: Substrate.TransientRegistry where TransientRegistry.Resource == Self
     typealias PersistentRegistry = Substrate.PersistentRegistry<Self>
     
-    static var resourceType: ResourceType { get }
     static var itemsPerChunk: Int { get }
     
     static func transientRegistry(index: Int) -> TransientRegistry?
@@ -270,9 +275,35 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @_transparent
+    public var hazardTrackingGroup: HazardTrackingGroup<Self>? {
+        get {
+            guard self.flags.contains(.persistent) else {
+                return nil
+            }
+            
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            return Self.persistentRegistry.hazardTrackingGroupChunks[chunkIndex][indexInChunk]
+        }
+        nonmutating set {
+            guard let newValue = newValue else {
+                precondition(self.hazardTrackingGroup == nil, "Cannot remove a resource from a hazard tracking group after it has been added to it.")
+                return
+            }
+            precondition(self.flags.contains(.persistent), "Hazard tracking groups can only be set on persistent resources.")
+            
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            newValue.resources.insert(self)
+            Self.persistentRegistry.hazardTrackingGroupChunks[chunkIndex][indexInChunk] = newValue
+        }
+    }
+    
+    @inlinable
     var _usagesPointer: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? {
         if self._usesPersistentRegistry {
+            if let hazardTrackingGroup = self.hazardTrackingGroup {
+                return hazardTrackingGroup.group._usagesPointer
+            }
+            
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
             return Self.persistentRegistry.sharedChunks?[chunkIndex].usagesOptional?.advanced(by: indexInChunk)
         } else {
@@ -297,6 +328,48 @@ extension ResourceProtocolImpl {
             return Self.persistentRegistry.persistentChunks?[chunkIndex].activeRenderGraphsOptional?.advanced(by: indexInChunk)
         } else {
             return nil
+        }
+    }
+    
+    
+    @_transparent
+    var _readWaitIndicesPointer: UnsafeMutablePointer<QueueCommandIndices>? {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            return Self.persistentRegistry.persistentChunks?[chunkIndex].readWaitIndicesOptional?.advanced(by: indexInChunk)
+        } else {
+            return nil
+        }
+    }
+    
+    @_transparent
+    var _writeWaitIndicesPointer: UnsafeMutablePointer<QueueCommandIndices>? {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            return Self.persistentRegistry.persistentChunks?[chunkIndex].writeWaitIndicesOptional?.advanced(by: indexInChunk)
+        } else {
+            return nil
+        }
+    }
+    
+    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
+        get {
+            guard self._usesPersistentRegistry else { return 0 }
+            if type == .read {
+                return self._readWaitIndicesPointer?.pointee[Int(queue.index)] ?? 0
+            } else {
+                return self._writeWaitIndicesPointer?.pointee[Int(queue.index)] ?? 0
+            }
+        }
+        nonmutating set {
+            guard self._usesPersistentRegistry else { return }
+            
+            if type == .read || type == .readWrite {
+                self._readWaitIndicesPointer?.pointee[Int(queue.index)] = newValue
+            }
+            if type == .write || type == .readWrite {
+                self._writeWaitIndicesPointer?.pointee[Int(queue.index)] = newValue
+            }
         }
     }
     
@@ -405,6 +478,7 @@ extension ResourceProtocol {
 }
 
 public struct Resource : ResourceProtocol, Hashable {
+    public static var resourceType: ResourceType { fatalError() }
 
     @usableFromInline let _handle : UnsafeRawPointer
     public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }

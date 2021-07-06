@@ -295,26 +295,6 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
-        get {
-            guard self._usesPersistentRegistry else { return 0 }
-            if type == .read {
-                return self.pointer(for: \.readWaitIndices)?.pointee[Int(queue.index)] ?? 0
-            } else {
-                return self.pointer(for: \.writeWaitIndices)?.pointee[Int(queue.index)] ?? 0
-            }
-        }
-        nonmutating set {
-            guard self._usesPersistentRegistry else { return }
-            if type == .read || type == .readWrite {
-                self.pointer(for: \.readWaitIndices)!.pointee[Int(queue.index)] = newValue
-            }
-            if type == .write || type == .readWrite {
-                self.pointer(for: \.writeWaitIndices)!.pointee[Int(queue.index)]  = newValue
-            }
-        }
-    }
-    
     public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey, arrayIndex: Int = 0) {
         guard let buffer = buffer else { return }
         
@@ -637,6 +617,8 @@ struct ArgumentBufferArrayProperties: SharedResourceProperties {
             self.heaps.advanced(by: index).deinitialize(count: count)
         }
         
+        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
+        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
         var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
     }
     

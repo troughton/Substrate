@@ -1361,6 +1361,7 @@ public final class RenderGraph {
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferArrayRegistry.instance.clear(afterRenderGraph: self)
         HeapRegistry.instance.clear(afterRenderGraph: self)
+        HazardTrackingGroupRegistry.instance.clear(afterRenderGraph: self)
         
         if #available(macOS 11.0, iOS 14.0, *) {
             AccelerationStructureRegistry.instance.clear(afterRenderGraph: self)

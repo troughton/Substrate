@@ -145,12 +145,14 @@ struct HeapProperties: PersistentResourceProperties {
     func deinitialize(from index: Int, count: Int) {
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.childResources.advanced(by: index).deinitialize(count: count)
-        self.activeRenderGraphs.deinitialize(count: count)
+        self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
     }
     
     var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
     
-    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
+    var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
+    var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { activeRenderGraphs }
 }
 
 final class HeapRegistry: PersistentRegistry<Heap> {

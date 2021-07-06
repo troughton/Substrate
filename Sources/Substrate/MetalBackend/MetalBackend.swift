@@ -635,7 +635,6 @@ final class MetalBackend : SpecificRenderBackend {
             }
             encoderUseResourceCommandIndex = .max
             encoderUseResources.removeAll(keepingCapacity: true)
-            encoderResidentResources.removeAll(keepingCapacity: true)
         }
         
         let getResource: (Resource) -> Unmanaged<MTLResource>? = { resource in
@@ -679,14 +678,13 @@ final class MetalBackend : SpecificRenderBackend {
             // memoryBarriers should be as late as possible.
             switch command.command {
             case .useResource(let resource, let usage, let stages, let allowReordering):
-                guard let mtlResource = getResource(resource) else { break }
                 
                 var computedUsageType: MTLResourceUsage = []
                 if usage == .inputAttachmentRenderTarget || usage == .inputAttachment {
-                    assert(resource.type == .texture)
+                    assert(resource.type == .texture || resource.type == .hazardTrackingGroup)
                     computedUsageType.formUnion(.read)
                 } else {
-                    if resource.type == .texture, usage == .read {
+                    if resource.type == .texture || HazardTrackingGroup<Texture>(resource) != nil, usage == .read {
                         computedUsageType.formUnion(.sample)
                     }
                     if usage.isRead {
@@ -698,15 +696,51 @@ final class MetalBackend : SpecificRenderBackend {
                 }
                 
                 if !allowReordering {
-                    let memory = allocator.allocate(capacity: 1) as UnsafeMutablePointer<Unmanaged<MTLResource>>
-                    memory.initialize(to: mtlResource)
-                    let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: 1)
+                    let memory: UnsafeMutablePointer<Unmanaged<MTLResource>>
+                    let count: Int
+                    if resource.type == .hazardTrackingGroup {
+                        let group = _HazardTrackingGroup(handle: resource.handle)
+                        let resources = group.resourcesPointer(ofType: Resource.self).pointee
+                        guard !resources.isEmpty else {
+                            break
+                        }
+                        memory = allocator.allocate(capacity: resources.count)
+                        var i = 0
+                        for resource in resources {
+                            guard let mtlResource = getResource(resource) else { continue }
+                            memory.advanced(by: i).initialize(to: mtlResource)
+                            i += 1
+                        }
+                        count = i
+                    } else {
+                        guard let mtlResource = getResource(resource) else { break }
+                        memory = allocator.allocate(capacity: 1)
+                        memory.initialize(to: mtlResource)
+                        count = 1
+                    }
+                    
+                    let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: count)
                     compactedResourceCommands.append(.init(command: .useResources(bufferPointer, usage: computedUsageType, stages: MTLRenderStages(stages)), index: command.index, order: .before))
                 } else {
-                    let key = MetalResidentResource(resource: mtlResource, stages: MTLRenderStages(stages), usage: computedUsageType)
-                    let (inserted, _) = encoderResidentResources.insert(key)
-                    if inserted {
-                        encoderUseResources[UseResourceKey(stages: MTLRenderStages(stages), usage: computedUsageType), default: []].append(mtlResource)
+                    if resource.type == .hazardTrackingGroup {
+                        let group = _HazardTrackingGroup(handle: resource.handle)
+                        let resources = group.resourcesPointer(ofType: Resource.self).pointee
+                        for resource in resources {
+                            guard let mtlResource = getResource(resource) else { continue }
+                            
+                            let key = MetalResidentResource(resource: mtlResource, stages: MTLRenderStages(stages), usage: computedUsageType)
+                            let (inserted, _) = encoderResidentResources.insert(key)
+                            if inserted {
+                                encoderUseResources[UseResourceKey(stages: MTLRenderStages(stages), usage: computedUsageType), default: []].append(mtlResource)
+                            }
+                        }
+                    } else {
+                        guard let mtlResource = getResource(resource) else { continue }
+                        let key = MetalResidentResource(resource: mtlResource, stages: MTLRenderStages(stages), usage: computedUsageType)
+                        let (inserted, _) = encoderResidentResources.insert(key)
+                        if inserted {
+                            encoderUseResources[UseResourceKey(stages: MTLRenderStages(stages), usage: computedUsageType), default: []].append(mtlResource)
+                        }
                     }
                     encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
                 }
@@ -725,16 +759,14 @@ final class MetalBackend : SpecificRenderBackend {
                 #endif
                 
                 if !isRTBarrier {
-                    if resource.type == .texture {
+                    if resource.type == .texture || HazardTrackingGroup<Texture>(resource) != nil {
                         scope.formUnion(.textures)
-                    } else if resource.type == .buffer || resource.type == .argumentBuffer || resource.type == .argumentBufferArray || resource.type == .accelerationStructure {
-                        scope.formUnion(.buffers)
                     } else {
-                        assertionFailure()
+                        scope.formUnion(.buffers)
                     }
                 }
                 
-                if barrierResources.count < 8 {
+                if barrierResources.count < 8, resource.type != .hazardTrackingGroup {
                     if let mtlResource = getResource(resource) {
                         barrierResources.append(mtlResource)
                     }

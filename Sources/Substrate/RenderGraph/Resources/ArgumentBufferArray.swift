@@ -259,6 +259,8 @@ struct ArgumentBufferProperties: SharedResourceProperties {
             self.heaps.advanced(by: indexInChunk).deinitialize(count: count)
         }
         
+        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
         var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     

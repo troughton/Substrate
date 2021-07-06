@@ -47,25 +47,6 @@ public struct AccelerationStructure : ResourceProtocol {
         }
     }
     
-    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
-        get {
-            if type == .read {
-                return self[\.readWaitIndices]?[Int(queue.index)] ?? 0
-            } else {
-                return self[\.writeWaitIndices]?[Int(queue.index)] ?? 0
-            }
-        }
-        nonmutating set {
-            guard self._usesPersistentRegistry else { return }
-            if type == .read || type == .readWrite {
-                self[\.readWaitIndices]![Int(queue.index)] = newValue
-            }
-            if type == .write || type == .readWrite {
-                self[\.writeWaitIndices]![Int(queue.index)] = newValue
-            }
-        }
-    }
-    
     public var storageMode: StorageMode {
         return .private
     }
@@ -127,6 +108,8 @@ struct AccelerationStructureProperties: SharedResourceProperties {
             self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
         }
         
+        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
         var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { activeRenderGraphs }
     }
     
@@ -282,6 +265,8 @@ struct VisibleFunctionTableProperties: SharedResourceProperties {
             self.stateFlags.advanced(by: index).deinitialize(count: count)
         }
         
+        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
         var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
     }
     
@@ -443,6 +428,9 @@ struct IntersectionFunctionTableProperties: SharedResourceProperties {
             self.stateFlags.advanced(by: index).deinitialize(count: count)
         }
         
+        
+        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
         var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
     }
     

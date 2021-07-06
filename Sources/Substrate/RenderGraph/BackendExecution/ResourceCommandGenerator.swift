@@ -566,6 +566,14 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     backend.resourceRegistry.prepareMultiframeBuffer(buffer, frameIndex: frameCommandInfo.globalFrameIndex)
                 } else if let texture = resource.texture {
                     backend.resourceRegistry.prepareMultiframeTexture(texture, frameIndex: frameCommandInfo.globalFrameIndex)
+                } else if let bufferGroup = HazardTrackingGroup<Buffer>(resource) {
+                    for buffer in bufferGroup.resources {
+                        backend.resourceRegistry.prepareMultiframeBuffer(buffer, frameIndex: frameCommandInfo.globalFrameIndex)
+                    }
+                } else if let textureGroup = HazardTrackingGroup<Texture>(resource) {
+                    for texture in textureGroup.resources {
+                        backend.resourceRegistry.prepareMultiframeTexture(texture, frameIndex: frameCommandInfo.globalFrameIndex)
+                    }
                 }
                 
                 for queue in QueueRegistry.allQueues {

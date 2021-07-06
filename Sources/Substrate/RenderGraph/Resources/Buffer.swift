@@ -297,27 +297,6 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
-        get {
-            guard self._usesPersistentRegistry else { return 0 }
-            if type == .read {
-                return self[\.readWaitIndices]![Int(queue.index)]
-            } else {
-                return self[\.writeWaitIndices]![Int(queue.index)]
-            }
-        }
-        nonmutating set {
-            guard self._usesPersistentRegistry else { return }
-            
-            if type == .read || type == .readWrite {
-                self[\.readWaitIndices]![Int(queue.index)] = newValue
-            }
-            if type == .write || type == .readWrite {
-                self[\.writeWaitIndices]![Int(queue.index)] = newValue
-            }
-        }
-    }
-    
     public static var resourceType: ResourceType {
         return .buffer
     }
@@ -417,9 +396,9 @@ struct BufferProperties: SharedResourceProperties {
             self.heaps.advanced(by: index).deinitialize(count: count)
         }
         
-        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? {
-            return self.activeRenderGraphs
-        }
+        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
     var descriptors : UnsafeMutablePointer<BufferDescriptor>

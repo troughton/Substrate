@@ -197,26 +197,6 @@ public struct Texture : ResourceProtocol {
         return self[\.heaps]
     }
     
-    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
-        get {
-            if type == .read {
-                return self[\.readWaitIndices]?[Int(queue.index)] ?? 0
-            } else {
-                return self[\.writeWaitIndices]?[Int(queue.index)] ?? 0
-            }
-        }
-        nonmutating set {
-            guard self._usesPersistentRegistry else { return }
-            
-            if type == .read || type == .readWrite {
-                self[\.readWaitIndices]?[Int(queue.index)] = newValue
-            }
-            if type == .write || type == .readWrite {
-                self[\.writeWaitIndices]?[Int(queue.index)] = newValue
-            }
-        }
-    }
-    
     public var size : Size {
         return Size(width: self.descriptor.width, height: self.descriptor.height, depth: self.descriptor.depth)
     }
@@ -328,6 +308,7 @@ struct TextureProperties: SharedResourceProperties {
         }
     }
     struct PersistentTextureProperties: PersistentResourceProperties {
+        
         let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
         let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
@@ -370,6 +351,8 @@ struct TextureProperties: SharedResourceProperties {
         }
         
         var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
+        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
     }
     
     var descriptors : UnsafeMutablePointer<TextureDescriptor>

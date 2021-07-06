@@ -56,6 +56,8 @@ protocol SharedResourceProperties: ResourceProperties {
 
 protocol PersistentResourceProperties: ResourceProperties {
     var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { get }
+    var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { get }
+    var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { get }
 }
 
 struct EmptyProperties<Descriptor>: PersistentResourceProperties & SharedResourceProperties {
@@ -65,6 +67,8 @@ struct EmptyProperties<Descriptor>: PersistentResourceProperties & SharedResourc
     func deinitialize(from index: Int, count: Int) {}
     
     var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+    var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
+    var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
     var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
 }
 
@@ -306,6 +310,7 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
     let sharedChunks : UnsafeMutablePointer<Resource.SharedProperties>?
     let persistentChunks : UnsafeMutablePointer<Resource.PersistentProperties>?
     let labelChunks: UnsafeMutablePointer<UnsafeMutablePointer<String?>>
+    let hazardTrackingGroupChunks : UnsafeMutablePointer<UnsafeMutablePointer<HazardTrackingGroup<Resource>?>>
     let generationChunks : UnsafeMutablePointer<UnsafeMutablePointer<UInt8>>
     
     init() {
@@ -320,6 +325,7 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
             self.persistentChunks = nil
         }
         self.labelChunks = .allocate(capacity: Self.maxChunks)
+        self.hazardTrackingGroupChunks = .allocate(capacity: Self.maxChunks)
         self.generationChunks = .allocate(capacity: Self.maxChunks)
     }
     
@@ -350,6 +356,7 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
         let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
         self.sharedChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
         self.persistentChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
+        self.hazardTrackingGroupChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
         self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
     }
     
@@ -370,6 +377,7 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
         self.sharedChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
         self.persistentChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
         self.labelChunks.advanced(by: index).initialize(to: .allocate(capacity: Resource.itemsPerChunk))
+        self.hazardTrackingGroupChunks.advanced(by: index).initialize(to: .allocate(capacity: Resource.itemsPerChunk))
         
         let generations = UnsafeMutablePointer<UInt8>.allocate(capacity: Resource.itemsPerChunk)
         generations.initialize(repeating: 0, count: Resource.itemsPerChunk)
@@ -394,6 +402,8 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
             RenderBackend.dispose(visibleFunctionTable: VisibleFunctionTable(handle: resource.handle))
         case .intersectionFunctionTable:
             RenderBackend.dispose(intersectionFunctionTable: IntersectionFunctionTable(handle: resource.handle))
+        case .hazardTrackingGroup:
+            break
         default:
             fatalError()
         }
@@ -404,6 +414,7 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
         self.sharedChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
         self.persistentChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
         self.labelChunks[chunkIndex].advanced(by: indexInChunk).deinitialize(count: 1)
+        self.hazardTrackingGroupChunks[chunkIndex].advanced(by: indexInChunk).deinitialize(count: 1)
         self.generationChunks[chunkIndex][indexInChunk] = self.generationChunks[chunkIndex][indexInChunk] &+ 1
         
         self.freeIndices.append(index)
