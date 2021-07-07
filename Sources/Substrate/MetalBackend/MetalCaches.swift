@@ -135,7 +135,7 @@ final class MetalStateCaches {
             
             let metalDescriptor = MetalRenderPipelineDescriptor(descriptor, renderTargetDescriptor: renderTarget)
             
-            let lookupKey = RenderPipelineFunctionNames(vertexFunction: descriptor.vertexFunction!, fragmentFunction: descriptor.fragmentFunction)
+            let lookupKey = RenderPipelineFunctionNames(vertexFunction: descriptor.vertexFunction.name, fragmentFunction: descriptor.fragmentFunction.name)
             
             if let possibleMatches = self.renderStates[lookupKey] {
                 for (testDescriptor, state, _) in possibleMatches {
@@ -153,7 +153,7 @@ final class MetalStateCaches {
                 let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.argumentInfo, .bufferTypeInfo])
                 
                 // TODO: can we retrieve the thread execution width for render pipelines?
-                let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderReflection: reflection!)
+                let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
                 
                 self.renderStates[lookupKey, default: []].append((metalDescriptor, state, pipelineReflection))
                 
@@ -194,7 +194,7 @@ final class MetalStateCaches {
         get async {
             // Figure out whether the thread group size is always a multiple of the thread execution width and set the optimisation hint appropriately.
             
-            if let possibleMatches = self.computeStates[descriptor.function] {
+            if let possibleMatches = self.computeStates[descriptor.function.name] {
                 for (testDescriptor, testThreadgroupMultiple, state, _) in possibleMatches {
                     if testThreadgroupMultiple == threadgroupSizeIsMultipleOfThreadExecutionWidth && testDescriptor == descriptor {
                         return state
@@ -211,19 +211,23 @@ final class MetalStateCaches {
             mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
             
             if !descriptor.linkedFunctions.isEmpty, #available(iOS 14.0, macOS 11.0, *) {
-                let linkedFunctions = MTLLinkedFunctions()
-                linkedFunctions.functions = descriptor.linkedFunctions.compactMap { // We print an error in function(for:)
-                    self.function(for: $0)
+                var functions = [MTLFunction]()
+                for functionDescriptor in descriptor.linkedFunctions {
+                    if let function = await self.function(for: functionDescriptor) {
+                        functions.append(function)
+                    }
                 }
+                let linkedFunctions = MTLLinkedFunctions()
+                linkedFunctions.functions = functions
                 mtlDescriptor.linkedFunctions = linkedFunctions
             }
             
             do {
                 let (state, reflection) = try await self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.argumentInfo, .bufferTypeInfo])
                 
-                let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeReflection: reflection!)
+                let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeState: state, computeReflection: reflection!)
                 
-                self.computeStates[descriptor.function, default: []].append((descriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth, state, pipelineReflection))
+                self.computeStates[descriptor.function.name, default: []].append((descriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth, state, pipelineReflection))
                 
                 return state
             } catch {
@@ -235,7 +239,7 @@ final class MetalStateCaches {
     
     public func reflection(for pipelineDescriptor: ComputePipelineDescriptor) async -> (MetalPipelineReflection, Int)? {
         await self.computePipelineAccessLock.acquireReadAccess()
-        if let possibleMatches = self.computeStates[pipelineDescriptor.function] {
+        if let possibleMatches = self.computeStates[pipelineDescriptor.function.name] {
             for (testDescriptor, _, state, reflection) in possibleMatches {
                 if testDescriptor == pipelineDescriptor {
                     await self.computePipelineAccessLock.releaseReadAccess()

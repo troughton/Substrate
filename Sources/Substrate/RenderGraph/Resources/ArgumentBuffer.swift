@@ -220,21 +220,11 @@ public struct ArgumentBuffer : ResourceProtocol {
         _read {
             yield self.pointer(for: \.enqueuedBindings).pointee
         }
-        nonmutating _modify {
-            self.waitForCPUAccess(accessType: .write)
-            
-            yield &self.pointer(for: \.enqueuedBindings).pointee
-            
-            self.stateFlags.remove(.initialised)
-        }
     }
     
     public var bindings : ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)> {
         _read {
             yield self.pointer(for: \.bindings).pointee
-        }
-        nonmutating _modify {
-            yield &self.pointer(for: \.bindings).pointee
         }
     }
     

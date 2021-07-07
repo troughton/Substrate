@@ -157,7 +157,7 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         
         var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
         self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
-        self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
+        await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
         backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &self.compactedResourceCommands)
         

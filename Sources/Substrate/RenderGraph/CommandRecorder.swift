@@ -406,7 +406,7 @@ final class RenderGraphCommandRecorder {
                 subresourcePointers = self.resourceUsagePointers(for: intersectionFunctionTable.descriptor, commandIndex: firstCommandOffset, stages: stages, encoder: encoder)
             }
             if !subresourcePointers.isEmpty {
-                let subresourceList = resourceUsageAllocator.allocate(type: ResourceUsagePointer.self, capacity: 1 + subresourcePointers.count)
+                let subresourceList = resourceUsageAllocator.dynamicThreadView.allocate(type: ResourceUsagePointer.self, capacity: 1 + subresourcePointers.count)
                 subresourceList.initialize(to: usagePointer)
                 for i in 0..<subresourcePointers.count {
                     subresourceList.advanced(by: i + 1).initialize(to: subresourcePointers[i])

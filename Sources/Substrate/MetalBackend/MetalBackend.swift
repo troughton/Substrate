@@ -432,7 +432,7 @@ final class MetalBackend : SpecificRenderBackend {
         argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
-    func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: MTLVisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: MTLVisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {
         guard #available(macOS 11.0, iOS 14.0, *) else { preconditionFailure() }
         
         guard let pipelineStateRaw = table.pipelineState, let renderStage = table.usages.first?.stages else {
@@ -447,19 +447,19 @@ final class MetalBackend : SpecificRenderBackend {
                 preconditionFailure()
             }
             for (i, function) in table.functions.enumerated() {
-                guard let function = function, let mtlFunction = stateCaches.function(for: function) else { continue }
+                guard let function = function, let mtlFunction = await stateCaches.function(for: function) else { continue }
                 mtlTable.setFunction(renderPipeline.functionHandle(function: mtlFunction, stage: MTLRenderStages(renderStage)), index: i)
             }
         } else {
             let computePipeline = pipelineState as! MTLComputePipelineState
             for (i, function) in table.functions.enumerated() {
-                guard let function = function, let mtlFunction = stateCaches.function(for: function) else { continue }
+                guard let function = function, let mtlFunction = await stateCaches.function(for: function) else { continue }
                 mtlTable.setFunction(computePipeline.functionHandle(function: mtlFunction), index: i)
             }
         }
     }
 
-    func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, storage: MTLIntersectionFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, storage: MTLIntersectionFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {
         guard #available(macOS 11.0, iOS 14.0, *) else { preconditionFailure() }
         
         guard let pipelineStateRaw = table.pipelineState, let renderStage = table.usages.first?.stages else {
@@ -503,7 +503,7 @@ final class MetalBackend : SpecificRenderBackend {
                     }
                     mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                 case .function(let functionDescriptor):
-                    guard let mtlFunction = stateCaches.function(for: functionDescriptor) else { continue }
+                    guard let mtlFunction = await stateCaches.function(for: functionDescriptor) else { continue }
                     mtlTable.setFunction(renderPipeline.functionHandle(function: mtlFunction, stage: MTLRenderStages(renderStage)), index: i)
                 }
             }
@@ -526,7 +526,7 @@ final class MetalBackend : SpecificRenderBackend {
                     }
                     mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                 case .function(let functionDescriptor):
-                    guard let mtlFunction = stateCaches.function(for: functionDescriptor) else { continue }
+                    guard let mtlFunction = await stateCaches.function(for: functionDescriptor) else { continue }
                     mtlTable.setFunction(computePipeline.functionHandle(function: mtlFunction), index: i)
                 }
             }

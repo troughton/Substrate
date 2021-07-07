@@ -63,7 +63,7 @@ enum PreFrameCommands {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: RenderGraphContextImpl<Backend>, storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+    func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: RenderGraphContextImpl<Backend>, storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) async {
         let queue = context.renderGraphQueue
         let queueIndex = Int(queue.index)
         let resourceMap = context.resourceMap
@@ -95,7 +95,7 @@ enum PreFrameCommands {
             let argBufferReference : Backend.ArgumentBufferReference
             if argumentBuffer.flags.contains(.persistent) {
                 argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
-                argumentBuffer.waitForCPUAccess(accessType: .write)
+                await argumentBuffer.waitForCPUAccess(accessType: .write)
             } else {
                 argBufferReference = resourceRegistry!.allocateArgumentBufferIfNeeded(argumentBuffer)
                 waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
@@ -107,7 +107,7 @@ enum PreFrameCommands {
             let argBufferReference : Backend.ArgumentBufferArrayReference
             if argumentBuffer.flags.contains(.persistent) {
                 argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
-                argumentBuffer.waitForCPUAccess(accessType: .write)
+                await argumentBuffer.waitForCPUAccess(accessType: .write)
             } else {
                 argBufferReference = resourceRegistry!.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
                 waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferArrayWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
@@ -120,8 +120,8 @@ enum PreFrameCommands {
             guard let tableReference = resourceMap.persistentRegistry.allocateVisibleFunctionTableIfNeeded(table) else { break }
             guard !table.stateFlags.contains(.initialised) else { break }
             
-            table.waitForCPUAccess(accessType: .write)
-            context.backend.fillVisibleFunctionTable(table, storage: tableReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
+            await table.waitForCPUAccess(accessType: .write)
+            await context.backend.fillVisibleFunctionTable(table, storage: tableReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
             
         case .materialiseIntersectionFunctionTable(let table):
             precondition(table.flags.contains(.persistent))
@@ -129,8 +129,8 @@ enum PreFrameCommands {
             guard let tableReference = resourceMap.persistentRegistry.allocateIntersectionFunctionTableIfNeeded(table) else { break }
             guard !table.stateFlags.contains(.initialised) else { break }
             
-            table.waitForCPUAccess(accessType: .write)
-            context.backend.fillIntersectionFunctionTable(table, storage: tableReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
+            await table.waitForCPUAccess(accessType: .write)
+            await context.backend.fillIntersectionFunctionTable(table, storage: tableReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
             
         case .disposeResource(let resource, let afterStages):
             let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)
@@ -626,7 +626,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
-    func executePreFrameCommands(context: RenderGraphContextImpl<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func executePreFrameCommands(context: RenderGraphContextImpl<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) async {
         self.preFrameCommands.sort()
         
         var commandEncoderIndex = 0
@@ -635,7 +635,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 commandEncoderIndex += 1
             }
             let commandBufferIndex = frameCommandInfo.commandEncoders[commandEncoderIndex].commandBufferIndex
-            command.command.execute(commandIndex: command.index,
+            await command.command.execute(commandIndex: command.index,
                                     commandGenerator: self,
                                     context: context,
                                     storedTextures: frameCommandInfo.storedTextures,

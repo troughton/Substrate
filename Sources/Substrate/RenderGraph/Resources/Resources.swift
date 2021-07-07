@@ -764,6 +764,16 @@ extension ResourceProtocol {
         }
     }
     
+    
+    public func checkHasCPUAccess(accessType: ResourceAccessType) {
+        guard self.flags.contains(.persistent) else { return }
+        
+        for queue in QueueRegistry.allQueues {
+            let waitIndex = self[waitIndexFor: queue, accessType: accessType]
+            precondition(queue.lastCompletedCommand >= waitIndex, "Resource \(self) is not accessible by the CPU for access type: \(accessType); use withContentsAsync or withMutableContentsAsync instead.")
+        }
+    }
+    
     public func waitForCPUAccess(accessType: ResourceAccessType) async {
         guard self.flags.contains(.persistent) else { return }
         if !self.stateFlags.contains(.initialised) { return }
