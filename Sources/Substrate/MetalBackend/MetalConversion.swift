@@ -148,9 +148,9 @@ extension ResourceType {
         case .visibleFunctionTable:
             self = .visibleFunctionTable
         case .primitiveAccelerationStructure:
-            self = .primitiveAccelerationStructure
+            self = .accelerationStructure
         case .instanceAccelerationStructure:
-            self = .instanceAccelerationStructure
+            self = .accelerationStructure
         case .intersectionFunctionTable:
             self = .intersectionFunctionTable
         @unknown default:

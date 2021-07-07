@@ -8,7 +8,7 @@
 import SubstrateUtilities
 import Atomics
 
-public struct PersistentResourceMap<R : ResourceProtocol, V> {
+public struct PersistentResourceMap<R : ResourceProtocol & Equatable, V> {
     
     public let allocator : AllocatorType
     
@@ -35,7 +35,18 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
         case is Heap.Type:
             self._reserveCapacity(HeapRegistry.instance.nextFreeIndex)
         default:
-            fatalError()
+            if #available(macOS 11.0, iOS 14.0, *) {
+                switch R.self {
+                case is AccelerationStructure.Type:
+                    self._reserveCapacity(AccelerationStructureRegistry.instance.nextFreeIndex)
+                case is VisibleFunctionTable.Type:
+                    self._reserveCapacity(VisibleFunctionTableRegistry.instance.nextFreeIndex)
+                case is IntersectionFunctionTable.Type:
+                    self._reserveCapacity(IntersectionFunctionTableRegistry.instance.nextFreeIndex)
+                default:
+                    fatalError()
+                }
+            }
         }
     }
     
@@ -213,7 +224,7 @@ public struct PersistentResourceMap<R : ResourceProtocol, V> {
 }
 
 
-public struct TransientResourceMap<R : ResourceProtocol, V> {
+public struct TransientResourceMap<R : ResourceProtocol & Equatable, V> {
     
     public let allocator : AllocatorType
     let transientRegistryIndex : Int
@@ -248,7 +259,11 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
         case is Heap.Type:
             break
         default:
-            fatalError()
+            if #available(macOS 11.0, iOS 14.0, *), R.self is AccelerationStructure.Type {
+                break
+            } else {
+                fatalError()
+            }
         }
     }
 
@@ -448,7 +463,7 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
 
 
 /// A resource-specific constant-time access map specifically for RenderGraph resources.
-public struct ResourceMap<R : ResourceProtocol, V> {
+public struct ResourceMap<R : ResourceProtocol & Equatable, V> {
     
     public let allocator : AllocatorType
     

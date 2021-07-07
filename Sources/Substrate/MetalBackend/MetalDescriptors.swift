@@ -15,6 +15,114 @@ enum RenderTargetTextureError : Error {
     case unableToRetrieveDrawable(Texture)
 }
 
+
+@available(iOS 14.0, macOS 11.0, *)
+extension AccelerationStructureDescriptor.TriangleGeometryDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureTriangleGeometryDescriptor {
+        let mtlTriangleDescriptor = MTLAccelerationStructureTriangleGeometryDescriptor()
+        mtlTriangleDescriptor.triangleCount = self.triangleCount
+        
+        let indexBuffer = self.indexBuffer.map { resourceMap[$0]! }
+        mtlTriangleDescriptor.indexBuffer = indexBuffer?.buffer
+        mtlTriangleDescriptor.indexBufferOffset = (indexBuffer?.offset ?? 0) + self.indexBufferOffset
+        mtlTriangleDescriptor.indexType = MTLIndexType(self.indexType)
+        
+        let vertexBuffer = resourceMap[self.vertexBuffer]!
+        mtlTriangleDescriptor.vertexBuffer = vertexBuffer.buffer
+        mtlTriangleDescriptor.vertexBufferOffset = vertexBuffer.offset + self.vertexBufferOffset
+        mtlTriangleDescriptor.vertexStride = self.vertexStride
+        
+        return mtlTriangleDescriptor
+    }
+}
+
+@available(iOS 14.0, macOS 11.0, *)
+extension AccelerationStructureDescriptor.BoundingBoxGeometryDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureBoundingBoxGeometryDescriptor {
+        let mtlBoundingBoxDescriptor = MTLAccelerationStructureBoundingBoxGeometryDescriptor()
+        mtlBoundingBoxDescriptor.boundingBoxCount = self.boundingBoxCount
+        
+        let buffer = resourceMap[self.boundingBoxBuffer]!
+        mtlBoundingBoxDescriptor.boundingBoxBuffer = buffer.buffer
+        mtlBoundingBoxDescriptor.boundingBoxBufferOffset = buffer.offset + self.boundingBoxBufferOffset
+        mtlBoundingBoxDescriptor.boundingBoxStride = self.boundingBoxStride
+        
+        return mtlBoundingBoxDescriptor
+    }
+}
+
+@available(iOS 14.0, macOS 11.0, *)
+extension AccelerationStructureDescriptor.GeometryDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureGeometryDescriptor {
+        let mtlGeometryDescriptor: MTLAccelerationStructureGeometryDescriptor
+        switch self.geometry {
+        case .boundingBox(let boundingBox):
+            mtlGeometryDescriptor = boundingBox.metalDescriptor(resourceMap: resourceMap)
+        case .triangle(let triangle):
+            mtlGeometryDescriptor = triangle.metalDescriptor(resourceMap: resourceMap)
+        }
+        
+        mtlGeometryDescriptor.intersectionFunctionTableOffset = self.intersectionFunctionTableOffset
+        mtlGeometryDescriptor.opaque = self.isOpaque
+        mtlGeometryDescriptor.allowDuplicateIntersectionFunctionInvocation = self.canInvokeIntersectionFunctionsMultipleTimesPerIntersection
+        
+        return mtlGeometryDescriptor
+    }
+}
+
+@available(iOS 14.0, macOS 11.0, *)
+extension Array where Element == AccelerationStructureDescriptor.GeometryDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLPrimitiveAccelerationStructureDescriptor {
+        let mtlPrimitiveDescriptor = MTLPrimitiveAccelerationStructureDescriptor()
+        mtlPrimitiveDescriptor.geometryDescriptors =
+            self.map { $0.metalDescriptor(resourceMap: resourceMap) }
+        
+        return mtlPrimitiveDescriptor
+    }
+}
+
+@available(iOS 14.0, macOS 11.0, *)
+extension AccelerationStructureDescriptor.InstanceStructureDescriptor {
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLInstanceAccelerationStructureDescriptor {
+        let mtlInstanceDescriptor = MTLInstanceAccelerationStructureDescriptor()
+        mtlInstanceDescriptor.instanceCount = self.instanceCount
+        
+        let instanceDescriptorBuffer = resourceMap[self.instanceDescriptorBuffer]!
+        mtlInstanceDescriptor.instanceDescriptorBuffer = instanceDescriptorBuffer.buffer
+        mtlInstanceDescriptor.instanceDescriptorBufferOffset = instanceDescriptorBuffer.offset + self.instanceDescriptorBufferOffset
+        mtlInstanceDescriptor.instanceDescriptorStride = self.instanceDescriptorStride
+        
+        mtlInstanceDescriptor.instancedAccelerationStructures = self.primitiveStructures.map { resourceMap[$0]! as! MTLAccelerationStructure }
+        
+        return mtlInstanceDescriptor
+    }
+}
+
+@available(iOS 14.0, macOS 11.0, *)
+extension AccelerationStructureDescriptor {
+    
+    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureDescriptor {
+        let descriptor: MTLAccelerationStructureDescriptor
+        switch self.type {
+        case .bottomLevelPrimitive(let bottomLevelDescriptor):
+            descriptor = bottomLevelDescriptor.metalDescriptor(resourceMap: resourceMap)
+            
+        case .topLevelInstance(let topLevelDescriptor):
+            descriptor = topLevelDescriptor.metalDescriptor(resourceMap: resourceMap)
+        }
+        
+        if self.flags.contains(.preferFastBuild) {
+            descriptor.usage.formUnion(.preferFastBuild)
+        }
+        
+        if self.flags.contains(.refittable) {
+            descriptor.usage.formUnion(.refit)
+        }
+        
+        return descriptor
+    }
+}
+
 extension MTLHeapDescriptor {
     convenience init(_ descriptor: HeapDescriptor, isAppleSiliconGPU: Bool) {
         self.init()
@@ -204,13 +312,13 @@ extension MTLRenderPipelineDescriptor {
             self.label = label
         }
         
-        guard let vertexFunction = await stateCaches.function(named: descriptor.descriptor.vertexFunction!, functionConstants: descriptor.descriptor.functionConstants) else {
+        guard let vertexFunction = await stateCaches.function(for: descriptor.descriptor.vertexFunction) else {
             return nil
         }
         self.vertexFunction = vertexFunction
         
-        if let fragmentFunction = descriptor.descriptor.fragmentFunction {
-            guard let function = await stateCaches.function(named: fragmentFunction, functionConstants: descriptor.descriptor.functionConstants) else {
+        if !descriptor.descriptor.fragmentFunction.name.isEmpty {
+            guard let function = await stateCaches.function(for: descriptor.descriptor.fragmentFunction) else {
                 return nil
             }
             self.fragmentFunction = function

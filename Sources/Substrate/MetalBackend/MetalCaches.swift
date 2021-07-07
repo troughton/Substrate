@@ -25,14 +25,14 @@ final class MetalStateCaches {
     
     struct RenderPipelineFunctionNames : Hashable {
         var vertexFunction : String
-        var fragmentFunction : String?
+        var fragmentFunction : String
     }
     
     var functionCacheAccessLock = AsyncReaderWriterLock()
     var renderPipelineAccessLock = AsyncReaderWriterLock()
     var computePipelineAccessLock = AsyncReaderWriterLock()
     
-    private var functionCache = [FunctionCacheKey : MTLFunction]()
+    private var functionCache = [FunctionDescriptor : MTLFunction]()
     private var computeStates = [String : [(ComputePipelineDescriptor, Bool, MTLComputePipelineState, MetalPipelineReflection)]]() // Bool meaning threadgroupSizeIsMultipleOfThreadExecutionWidth
     
     private var renderStates = [RenderPipelineFunctionNames : [(MetalRenderPipelineDescriptor, MTLRenderPipelineState, MetalPipelineReflection)]]()
@@ -99,6 +99,9 @@ final class MetalStateCaches {
             self.computeStates.removeAll(keepingCapacity: true)
             self.renderStates.removeAll(keepingCapacity: true)
             
+            VisibleFunctionTableRegistry.instance.markAllAsUninitialised()
+            IntersectionFunctionTableRegistry.instance.markAllAsUninitialised()
+            
             self.loadedLibraryModificationDate = currentModificationDate
             
             await self.renderPipelineAccessLock.releaseWriteAccess()
@@ -106,24 +109,23 @@ final class MetalStateCaches {
         }
     }
     
-    func function(named name: String, functionConstants: FunctionConstants?) async -> MTLFunction? {
-        let cacheKey = FunctionCacheKey(name: name, constants: functionConstants)
+    func function(for functionDescriptor: FunctionDescriptor) async -> MTLFunction? {
         await self.functionCacheAccessLock.acquireReadAccess()
-        if let function = self.functionCache[cacheKey] {
+        if let function = self.functionCache[functionDescriptor] {
             await self.functionCacheAccessLock.releaseReadAccess()
             return function
         }
         
         do {
-            let function = try await self.library.makeFunction(name: name, constantValues: functionConstants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
-            
+            let function = try await self.library.makeFunction(name: functionDescriptor.name, constantValues: functionDescriptor.constants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
+                       
             await self.functionCacheAccessLock.transformReadToWriteAccess()
-            self.functionCache[cacheKey] = function
+            self.functionCache[functionDescriptor] = function
             await self.functionCacheAccessLock.releaseWriteAccess()
             return function
         } catch {
-            print("MetalRenderGraph: Error creating function named \(name)\(functionConstants.map { " with constants \($0)" } ?? ""): \(error)")
             await self.functionCacheAccessLock.releaseReadAccess()
+            print("MetalRenderGraph: Error creating function named \(functionDescriptor.name)\(functionDescriptor.constants.map { " with constants \($0)" } ?? ""): \(error)")
             return nil
         }
     }
@@ -165,7 +167,7 @@ final class MetalStateCaches {
     
     public func reflection(descriptor pipelineDescriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) async -> MetalPipelineReflection? {
         
-        let lookupKey = RenderPipelineFunctionNames(vertexFunction: pipelineDescriptor.vertexFunction!, fragmentFunction: pipelineDescriptor.fragmentFunction)
+        let lookupKey = RenderPipelineFunctionNames(vertexFunction: pipelineDescriptor.vertexFunction.name, fragmentFunction: pipelineDescriptor.fragmentFunction.name)
         
         await self.renderPipelineAccessLock.acquireReadAccess()
         if let possibleMatches = self.renderStates[lookupKey] {
@@ -200,13 +202,21 @@ final class MetalStateCaches {
                 }
             }
             
-            guard let function = await self.function(named: descriptor.function, functionConstants: descriptor._functionConstants) else {
+            guard let function = await self.function(for: descriptor.function) else {
                 return nil
             }
             
             let mtlDescriptor = MTLComputePipelineDescriptor()
             mtlDescriptor.computeFunction = function
             mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
+            
+            if !descriptor.linkedFunctions.isEmpty, #available(iOS 14.0, macOS 11.0, *) {
+                let linkedFunctions = MTLLinkedFunctions()
+                linkedFunctions.functions = descriptor.linkedFunctions.compactMap { // We print an error in function(for:)
+                    self.function(for: $0)
+                }
+                mtlDescriptor.linkedFunctions = linkedFunctions
+            }
             
             do {
                 let (state, reflection) = try await self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.argumentInfo, .bufferTypeInfo])

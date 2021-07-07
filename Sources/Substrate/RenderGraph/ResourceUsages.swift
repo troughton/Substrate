@@ -80,21 +80,21 @@ public struct ResourceUsage {
     public var type : ResourceUsageType
     public var stages : RenderStages
     public var resource: Resource
-    public var inArgumentBuffer : Bool
+    public var isIndirectlyBound : Bool // e.g. via a Metal argument buffer, Vulkan descriptor set, or an acceleration structure
     @usableFromInline
     unowned(unsafe) var renderPassRecord : RenderPassRecord
     public var commandRange : Range<Int> // References the range in the pass before and during RenderGraph compilation, and the range in the full commands array after.
     public var activeRange: ActiveResourceRange = .fullResource
     
     @inlinable
-    init(resource: Resource, type: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int, renderPass: RenderPassRecord) {
+    init(resource: Resource, type: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, isIndirectlyBound: Bool, firstCommandOffset: Int, renderPass: RenderPassRecord) {
         self.resource = resource
         self.type = type
         self.stages = stages
         self.activeRange = activeRange
         self.renderPassRecord = renderPass
         self.commandRange = Range(firstCommandOffset...firstCommandOffset)
-        self.inArgumentBuffer = inArgumentBuffer
+        self.isIndirectlyBound = isIndirectlyBound
     }
     
     @inlinable
@@ -115,7 +115,7 @@ public struct ResourceUsage {
     /// - returns: Whether the usages could be merged.
     @usableFromInline
     mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, allocator: AllocatorType) -> Bool {
-        if self.renderPassRecord !== nextUsage.renderPassRecord || nextUsage.resource != self.resource {
+        if self.renderPassRecord !== nextUsage.renderPassRecord || self.resource != nextUsage.resource {
             return false
         }
         
@@ -129,31 +129,31 @@ public struct ResourceUsage {
         
         if self.type.isRenderTarget || nextUsage.type.isRenderTarget {
             if self.type == .read || nextUsage.type == .read {
-                // We're either using this resource as an input attachment or reading from different mip levels/slices than we're writing to.
-                // If the read spans multiple draw commands, make it an input attachment; otherwise, assume that the render target mip/slice
-                // is not read from.
-                var drawCommandCount = 0
-                for command in self.renderPassRecord.commands[nextUsage.commandRange.offset(by: -self.renderPassRecord.commandRange!.lowerBound)] {
-                    if command.isDrawCommand {
-                        drawCommandCount += 1
-                        if drawCommandCount > 1 {
-                            break
-                        }
+                // If we just wrote to a different mip than the one we're using as a
+                
+                var readUsage = self
+                var renderTargetUsage = nextUsage
+                if readUsage.type != .read {
+                    swap(&readUsage, &renderTargetUsage)
+                }
+                
+                // It's an input attachment if we wrote to it before we started reading from it.
+                var isInputAttachment = renderTargetUsage.commandRange.lowerBound < readUsage.commandRange.lowerBound
+                                                                                        
+                if !isInputAttachment, let previousRenderTargetUsage = self.resource.usages.dropLast().last(where: { $0.type.isRenderTarget }) {
+                    if previousRenderTargetUsage.activeRange.isEqual(to: renderTargetUsage.activeRange, resource: self.resource), previousRenderTargetUsage.isWrite {
+                        isInputAttachment = true
                     }
                 }
-                if drawCommandCount <= 1 {
-                    // We can't read from the level we're writing to.
-                    if self.type == .read {
-                        self.activeRange.subtract(range: nextUsage.activeRange, resource: resource, allocator: allocator)
-                    } else {
-                        nextUsage.activeRange.subtract(range: self.activeRange, resource: resource, allocator: allocator)
-                    }
+                                                                                        
+                if isInputAttachment {
+                    self.type = .inputAttachmentRenderTarget
+                    self.isIndirectlyBound = self.isIndirectlyBound || nextUsage.isIndirectlyBound
+                    self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator) // Since we're merging a read, it's technically possible to read from other levels/slices of the resource while simultaneously using it as an input attachment.
+                } else {
                     return false
                 }
                 
-                self.type = .inputAttachmentRenderTarget
-                self.inArgumentBuffer = self.inArgumentBuffer || nextUsage.inArgumentBuffer
-                self.activeRange.formUnion(with: nextUsage.activeRange, resource: resource, allocator: allocator) // Since we're merging a read, it's technically possible to read from other levels/slices of the resource while simultaneously using it as an input attachment.
             }
             
             if self.type != .inputAttachmentRenderTarget {
@@ -192,7 +192,7 @@ public struct ResourceUsage {
                     return false
 
             }
-            if self.inArgumentBuffer != nextUsage.inArgumentBuffer {
+            if self.isIndirectlyBound != nextUsage.isIndirectlyBound {
                 return false
             }
         }
@@ -210,7 +210,7 @@ public struct ResourceUsage {
 
 extension ResourceUsage : CustomStringConvertible {
     public var description: String {
-        return "ResourceUsage(type: \(self.type), stages: \(self.stages), inArgumentBuffer: \(self.inArgumentBuffer), activeRange: \(self.activeRange), pass: \(self.renderPassRecord.name), commandRange: \(self.commandRange))"
+        return "ResourceUsage(type: \(self.type), stages: \(self.stages), isIndirectlyBound: \(self.isIndirectlyBound), activeRange: \(self.activeRange), pass: \(self.renderPassRecord.name), commandRange: \(self.commandRange))"
     }
 }
 

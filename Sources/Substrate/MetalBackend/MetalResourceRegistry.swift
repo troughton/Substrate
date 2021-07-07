@@ -57,6 +57,53 @@ struct MTLTextureReference : MTLResourceReference {
     }
 }
 
+struct MTLVisibleFunctionTableReference : MTLResourceReference {
+    unowned(unsafe) let _table : AnyObject & MTLResource
+    let functionCapacity: Int
+    let pipelineState: UnsafeRawPointer
+    let stage: RenderStages
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    var table : MTLVisibleFunctionTable {
+        return self._table as! MTLVisibleFunctionTable
+    }
+    
+    var resource : MTLResource {
+        return self._table
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    init(table: MTLVisibleFunctionTable, functionCapacity: Int, pipelineState: UnsafeRawPointer, stage: RenderStages) {
+        self._table = table
+        self.functionCapacity = functionCapacity
+        self.pipelineState = pipelineState
+        self.stage = stage
+    }
+}
+
+struct MTLIntersectionFunctionTableReference : MTLResourceReference {
+    unowned(unsafe) let _table : AnyObject & MTLResource
+    let functionCapacity: Int
+    let pipelineState: UnsafeRawPointer
+    let stage: RenderStages
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    var table : MTLIntersectionFunctionTable {
+        return self._table as! MTLIntersectionFunctionTable
+    }
+    
+    var resource : MTLResource {
+        return self._table
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    init(table: MTLIntersectionFunctionTable, functionCapacity: Int, pipelineState: UnsafeRawPointer, stage: RenderStages) {
+        self._table = table
+        self.functionCapacity = functionCapacity
+        self.pipelineState = pipelineState
+        self.stage = stage
+    }
+}
 
 struct MTLTextureUsageProperties {
     var usage : MTLTextureUsage
@@ -71,13 +118,19 @@ struct MTLTextureUsageProperties {
 final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     typealias Backend = MetalBackend
     
+    @available(macOS 11.0, iOS 14.0, *)
+    typealias AccelerationStructureReference = MTLAccelerationStructure
+    
     var accessLock = ReaderWriterLock()
     
     var heapReferences = PersistentResourceMap<Heap, MTLHeap>()
     var textureReferences = PersistentResourceMap<Texture, MTLTextureReference>()
     var bufferReferences = PersistentResourceMap<Buffer, MTLBufferReference>()
     var argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, MTLBufferReference>() 
-    var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, MTLBufferReference>() 
+    var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, MTLBufferReference>()
+    var accelerationStructureReferences = PersistentResourceMap<AccelerationStructure, MTLResource>()
+    var visibleFunctionTableReferences = PersistentResourceMap<VisibleFunctionTable, MTLVisibleFunctionTableReference>()
+    var intersectionFunctionTableReferences = PersistentResourceMap<IntersectionFunctionTable, MTLIntersectionFunctionTableReference>()
     
     var windowReferences = [Texture : CAMetalLayer]()
     
@@ -248,6 +301,114 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return storage
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @discardableResult
+    public func allocateAccelerationStructure(_ structure: AccelerationStructure) -> MTLAccelerationStructure? {
+        let mtlStructure = self.device.makeAccelerationStructure(size: structure.size)
+        
+        assert(self.accelerationStructureReferences[structure] == nil)
+        self.accelerationStructureReferences[structure] = mtlStructure
+        
+        return mtlStructure
+    }
+    
+    func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) -> MTLVisibleFunctionTableReference? {
+        guard #available(macOS 11.0, iOS 14.0, *) else { return nil }
+        
+        guard let pipelineState = table.pipelineState, let renderStage = table.usages.first?.stages else {
+            print("Table \(table) has not been used with any pipeline.")
+            return nil
+        }
+        
+        if let tableRef = self.visibleFunctionTableReferences[table],
+           pipelineState == tableRef.pipelineState,
+           renderStage == tableRef.stage,
+            tableRef.functionCapacity >= (table.functions.lastIndex(where: { $0 != nil }) ?? 0) + 1 {
+            return tableRef
+        }
+        
+        if let oldTable = self.visibleFunctionTableReferences[table]?.table {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passUnretained(oldTable)))
+        }
+        
+        table.stateFlags.remove(.initialised)
+        table[\.readWaitIndices] = .zero
+        table[\.writeWaitIndices] = .zero
+        
+        let mtlDescriptor = MTLVisibleFunctionTableDescriptor()
+        mtlDescriptor.functionCount = table.functions.count
+        
+        let mtlTable: MTLVisibleFunctionTable?
+        let pipeline = Unmanaged<AnyObject>.fromOpaque(pipelineState).takeUnretainedValue()
+        if let renderPipeline = pipeline as? MTLRenderPipelineState {
+            guard #available(macOS 12.0, iOS 15.0, *) else { return nil }
+            mtlTable = renderPipeline.makeVisibleFunctionTable(descriptor: mtlDescriptor, stage: MTLRenderStages(renderStage))
+        } else {
+            let computePipeline = pipeline as! MTLComputePipelineState
+            mtlTable = computePipeline.makeVisibleFunctionTable(descriptor: mtlDescriptor)
+        }
+        guard let mtlTable = mtlTable else {
+            print("MetalPeristentResourceRegistry: Failed to allocate visible function table \(table)")
+            return nil
+        }
+        
+        _ = Unmanaged.passRetained(mtlTable)
+        
+        let tableRef = MTLVisibleFunctionTableReference(table: mtlTable, functionCapacity: table.functions.count, pipelineState: pipelineState, stage: renderStage)
+        self.visibleFunctionTableReferences[table] = tableRef
+        
+        return tableRef
+    }
+    
+    func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) -> MTLIntersectionFunctionTableReference? {
+        guard #available(macOS 11.0, iOS 14.0, *) else { return nil }
+        
+        guard let pipelineState = table.pipelineState, let renderStage = table.usages.first?.stages else {
+            print("Table \(table) has not been used with any pipeline.")
+            return nil
+        }
+        
+        if let tableRef = self.intersectionFunctionTableReferences[table],
+           pipelineState == tableRef.pipelineState,
+           renderStage == tableRef.stage,
+           tableRef.functionCapacity >= (table.descriptor.functions.lastIndex(where: { $0 != nil }) ?? 0) + 1 {
+            return tableRef
+        }
+        
+        if let oldTable = self.intersectionFunctionTableReferences[table]?.table {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passUnretained(oldTable)))
+        }
+        
+        table.stateFlags.remove(.initialised)
+        table[\.readWaitIndices] = .zero
+        table[\.writeWaitIndices] = .zero
+        
+        let mtlDescriptor = MTLIntersectionFunctionTableDescriptor()
+        mtlDescriptor.functionCount = table.descriptor.functions.count
+        
+        let mtlTable: MTLIntersectionFunctionTable?
+        let pipeline = Unmanaged<AnyObject>.fromOpaque(pipelineState).takeUnretainedValue()
+        if let renderPipeline = pipeline as? MTLRenderPipelineState {
+            guard #available(macOS 12.0, iOS 15.0, *) else { return nil }
+            mtlTable = renderPipeline.makeIntersectionFunctionTable(descriptor: mtlDescriptor, stage: MTLRenderStages(renderStage))
+        } else {
+            let computePipeline = pipeline as! MTLComputePipelineState
+            mtlTable = computePipeline.makeIntersectionFunctionTable(descriptor: mtlDescriptor)
+        }
+        guard let mtlTable = mtlTable else {
+            print("MetalPeristentResourceRegistry: Failed to allocate visible function table \(table)")
+            return nil
+        }
+        
+        _ = Unmanaged.passRetained(mtlTable)
+        
+        let tableRef = MTLIntersectionFunctionTableReference(table: mtlTable, functionCapacity: table.descriptor.functions.count, pipelineState: pipelineState, stage: renderStage)
+        self.intersectionFunctionTableReferences[table] = tableRef
+        
+        return tableRef
+    }
+    
+    
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
         self.prepareFrame()
         if let texture = resource.texture {
@@ -275,6 +436,21 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
 
     public subscript(argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public subscript(structure: AccelerationStructure) -> AnyObject? {
+        return self.accelerationStructureReferences[structure]
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public subscript(table: VisibleFunctionTable) -> MTLVisibleFunctionTableReference? {
+        return self.visibleFunctionTableReferences[table]
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public subscript(table: IntersectionFunctionTable) -> MTLIntersectionFunctionTableReference? {
+        return self.intersectionFunctionTableReferences[table]
     }
     
     public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
@@ -341,6 +517,24 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
             }
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
+        }
+    }
+    
+    func disposeAccelerationStructure(_ structure: AccelerationStructure) {
+        if let mtlStructure = self.accelerationStructureReferences.removeValue(forKey: structure) {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlStructure)))
+        }
+    }
+    
+    func disposeVisibleFunctionTable(_ table: VisibleFunctionTable) {
+        if let mtlTable = self.visibleFunctionTableReferences.removeValue(forKey: table) {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
+        }
+    }
+    
+    func disposeIntersectionFunctionTable(_ table: IntersectionFunctionTable) {
+        if let mtlTable = self.intersectionFunctionTableReferences.removeValue(forKey: table) {
+            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
         }
     }
     
@@ -560,7 +754,12 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
                 textureUsage.formUnion(.shaderWrite)
             case .readWrite:
                 textureUsage.formUnion([.shaderRead, .shaderWrite])
-            case .readWriteRenderTarget, .writeOnlyRenderTarget, .inputAttachmentRenderTarget, .unusedRenderTarget:
+            case  .inputAttachmentRenderTarget:
+                textureUsage.formUnion(.renderTarget)
+                if RenderBackend.requiresEmulatedInputAttachments {
+                    textureUsage.formUnion(.shaderRead)
+                }
+            case .readWriteRenderTarget, .writeOnlyRenderTarget, .unusedRenderTarget:
                 textureUsage.formUnion(.renderTarget)
             default:
                 break

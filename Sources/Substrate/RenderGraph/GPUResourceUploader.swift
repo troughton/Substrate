@@ -175,8 +175,13 @@ public final actor GPUResourceUploader {
     }
 }
 
+extension Range {
+    fileprivate func contains(_ other: Range) -> Bool {
+        return other.lowerBound >= self.lowerBound && other.upperBound <= self.upperBound
+    }
+}
+
 extension GPUResourceUploader {
-    
     fileprivate final actor StagingBufferSubAllocator {
         private static let blockAlignment = 64
         
@@ -200,6 +205,7 @@ extension GPUResourceUploader {
         deinit {
             self.buffer.dispose()
         }
+        
         
         func didSubmit(buffer: Buffer, allocationRange: (lowerBound: Int, upperBound: Int), submissionIndex: UInt64) {
             if buffer == self.buffer {
@@ -235,12 +241,16 @@ extension GPUResourceUploader {
                 return (buffer, 0, (0, 0))
             }
             
-            let alignment = byteCount == 0 ? 1 : alignment // Don't align for empty allocations
+            if byteCount == 0 {
+                var range = 0..<0
+                try perform(UnsafeMutableRawBufferPointer(start: nil, count: 0), &range)
+                return (self.buffer, 0, (lowerBound: 0, upperBound: 0))
+            }
             
             while true {
                 await self.processCompletedCommands()
-                
-                var alignedPosition = ((self.inUseRangeEnd + alignment - 1) & ~(alignment - 1)) % self.capacity
+            
+                var alignedPosition = self.inUseRangeEnd.roundedUpToMultipleOfPowerOfTwo(of: alignment)
                 var allocationRange = alignedPosition..<(alignedPosition + byteCount)
                 
                 if allocationRange.endIndex > self.capacity {
@@ -265,6 +275,13 @@ extension GPUResourceUploader {
                 self.pendingCommands.append((.max, (self.inUseRangeEnd, allocationRange.endIndex), nil))
                 self.inUseRangeEnd = allocationRange.endIndex
                 
+                if self.inUseRangeEnd < self.inUseRangeStart {
+                    precondition((0..<self.inUseRangeEnd).contains(allocationRange))
+                } else {
+                    self.inUseRangeStart = min(self.inUseRangeStart, allocationRange.lowerBound)
+                    precondition((self.inUseRangeStart..<self.inUseRangeEnd).contains(allocationRange))
+                }
+                
                 var writtenRange = 0..<byteCount
                 try perform(UnsafeMutableRawBufferPointer(start: self.bufferContents.advanced(by: allocationRange.lowerBound), count: byteCount), &writtenRange)
                 RenderBackend.buffer(self.buffer, didModifyRange: (allocationRange.lowerBound + writtenRange.lowerBound)..<(allocationRange.lowerBound + writtenRange.lowerBound + writtenRange.count))
@@ -279,7 +296,6 @@ extension GPUResourceUploader {
                 if let tempBuffer = tempBuffer {
                     tempBuffer.dispose()
                 } else {
-                    precondition(range.lowerBound == self.inUseRangeStart)
                     self.inUseRangeStart = range.upperBound
                 }
             }

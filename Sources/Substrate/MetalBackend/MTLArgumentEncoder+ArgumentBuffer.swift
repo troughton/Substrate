@@ -20,7 +20,7 @@ extension ArgumentBuffer {
         for i in 0..<argEncoder.encoder.encodedLength {
             destPointer.advanced(by: i).storeBytes(of: 0 as UInt8, as: UInt8.self)
         }
-
+        
         argEncoder.encoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
         argEncoder.encodeArguments(from: self, resourceMap: resourceMap)
         
@@ -60,6 +60,15 @@ extension MetalArgumentEncoder {
             case .buffer(let buffer, let offset):
                 guard let mtlBuffer = resourceMap[buffer] else { continue }
                 self.encoder.setBuffer(mtlBuffer.buffer, offset: offset + mtlBuffer.offset, index: bindingIndex)
+            case .accelerationStructure(let structure):
+                guard #available(macOS 11.0, iOS 14.0, *), let mtlStructure = resourceMap[structure] else { continue }
+                self.encoder.setAccelerationStructure((mtlStructure as! MTLAccelerationStructure), index: bindingIndex)
+            case .visibleFunctionTable(let table):
+                guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[table] else { continue }
+                self.encoder.setVisibleFunctionTable(mtlTable.table, index: bindingIndex)
+            case .intersectionFunctionTable(let table):
+                guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[table] else { continue }
+                self.encoder.setIntersectionFunctionTable(mtlTable.table, index: bindingIndex)
             case .sampler(let descriptor):
                 let samplerState = resourceMap[descriptor]
                 self.encoder.setSamplerState(samplerState, index: bindingIndex)

@@ -14,7 +14,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
-            return transientRegistry?[buffer] // Optional because the resource may be unused in this frame.
+            return transientRegistry![buffer] // Optional because the resource may be unused in this frame.
         }
     }
     
@@ -22,7 +22,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
-            return transientRegistry?[texture] // Optional because the resource may be unused in this frame.
+            return transientRegistry![texture] // Optional because the resource may be unused in this frame.
         }
     }
     
@@ -44,6 +44,21 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
     
     subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference {
         return persistentRegistry[sampler]
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    subscript(accelerationStructure: AccelerationStructure) -> AnyObject? {
+        return persistentRegistry[accelerationStructure]
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    subscript(visibleFunctionTable: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference? {
+        return persistentRegistry[visibleFunctionTable]
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference? {
+        return persistentRegistry[intersectionFunctionTable]
     }
     
     func bufferForCPUAccess(_ buffer: Buffer) -> Backend.BufferReference {

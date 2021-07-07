@@ -47,11 +47,12 @@ extension MTLDevice {
 }
 
 final class MetalBackend : SpecificRenderBackend {
-
     typealias BufferReference = MTLBufferReference
     typealias TextureReference = MTLTextureReference
     typealias ArgumentBufferReference = MTLBufferReference
     typealias ArgumentBufferArrayReference = MTLBufferReference
+    typealias VisibleFunctionTableReference = MTLVisibleFunctionTableReference
+    typealias IntersectionFunctionTableReference = MTLIntersectionFunctionTableReference
     typealias SamplerReference = MTLSamplerState
     
     typealias TransientResourceRegistry = MetalTransientResourceRegistry
@@ -131,6 +132,11 @@ final class MetalBackend : SpecificRenderBackend {
         return self.resourceRegistry.allocateHeap(heap) != nil
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
+        return self.resourceRegistry.allocateAccelerationStructure(structure) != nil
+    }
+    
     @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
         self.resourceRegistry.accessLock.withWriteLock {
             let oldValue = self.resourceRegistry[buffer]?._buffer.takeUnretainedValue()
@@ -151,6 +157,15 @@ final class MetalBackend : SpecificRenderBackend {
         self.resourceRegistry.accessLock.withWriteLock {
             let oldValue = self.resourceRegistry[heap]
             self.resourceRegistry.heapReferences[heap] = with as! MTLHeap?
+            return oldValue
+        }
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any? {
+        self.resourceRegistry.accessLock.withWriteLock {
+            let oldValue = self.resourceRegistry[structure]
+            self.resourceRegistry.accelerationStructureReferences[structure] = with as! MTLAccelerationStructure?
             return oldValue
         }
     }
@@ -218,6 +233,14 @@ final class MetalBackend : SpecificRenderBackend {
         }
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes {
+        return self.resourceRegistry.accessLock.withReadLock {
+            let sizes = self.device.accelerationStructureSizes(descriptor: descriptor.metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>(persistentRegistry: self.resourceRegistry, transientRegistry: nil)))
+            return AccelerationStructureSizes(accelerationStructureSize: sizes.accelerationStructureSize, buildScratchBufferSize: sizes.buildScratchBufferSize, refitScratchBufferSize: sizes.refitScratchBufferSize)
+        }
+    }
+    
     @usableFromInline func dispose(texture: Texture) {
         self.resourceRegistry.disposeTexture(texture)
     }
@@ -237,6 +260,19 @@ final class MetalBackend : SpecificRenderBackend {
     @usableFromInline func dispose(heap: Heap) {
         self.resourceRegistry.disposeHeap(heap)
     }
+    
+    @usableFromInline func dispose(accelerationStructure: AccelerationStructure) {
+        self.resourceRegistry.disposeAccelerationStructure(accelerationStructure)
+    }
+    
+    @usableFromInline func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
+        self.resourceRegistry.disposeIntersectionFunctionTable(intersectionFunctionTable)
+    }
+
+    @usableFromInline func dispose(visibleFunctionTable: VisibleFunctionTable) {
+        self.resourceRegistry.disposeVisibleFunctionTable(visibleFunctionTable)
+    }
+
     
     public func supportsPixelFormat(_ pixelFormat: PixelFormat, usage: TextureUsage) -> Bool {
         let usage = usage.subtracting([.blitSource, .blitDestination])
@@ -328,6 +364,10 @@ final class MetalBackend : SpecificRenderBackend {
                 return bufferReference?.buffer
             } else if let texture = resource.texture {
                 return resourceRegistry[texture]?.texture
+            } else if let heap = resource.heap {
+                return resourceRegistry[heap]
+            } else if let accelerationStructure = resource.accelerationStructure, #available(macOS 11.0, iOS 14.0, *) {
+                return resourceRegistry[accelerationStructure]
             }
             return nil
         }
@@ -390,6 +430,107 @@ final class MetalBackend : SpecificRenderBackend {
     
     static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
         argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
+    }
+    
+    func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: MTLVisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+        guard #available(macOS 11.0, iOS 14.0, *) else { preconditionFailure() }
+        
+        guard let pipelineStateRaw = table.pipelineState, let renderStage = table.usages.first?.stages else {
+            preconditionFailure()
+        }
+        
+        let pipelineState = Unmanaged<AnyObject>.fromOpaque(pipelineStateRaw).takeUnretainedValue()
+        let mtlTable = storage.table
+        
+        if let renderPipeline = pipelineState as? MTLRenderPipelineState {
+            guard #available(macOS 12.0, iOS 15.0, *) else {
+                preconditionFailure()
+            }
+            for (i, function) in table.functions.enumerated() {
+                guard let function = function, let mtlFunction = stateCaches.function(for: function) else { continue }
+                mtlTable.setFunction(renderPipeline.functionHandle(function: mtlFunction, stage: MTLRenderStages(renderStage)), index: i)
+            }
+        } else {
+            let computePipeline = pipelineState as! MTLComputePipelineState
+            for (i, function) in table.functions.enumerated() {
+                guard let function = function, let mtlFunction = stateCaches.function(for: function) else { continue }
+                mtlTable.setFunction(computePipeline.functionHandle(function: mtlFunction), index: i)
+            }
+        }
+    }
+
+    func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, storage: MTLIntersectionFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+        guard #available(macOS 11.0, iOS 14.0, *) else { preconditionFailure() }
+        
+        guard let pipelineStateRaw = table.pipelineState, let renderStage = table.usages.first?.stages else {
+            preconditionFailure()
+        }
+        
+        let pipelineState = Unmanaged<AnyObject>.fromOpaque(pipelineStateRaw).takeUnretainedValue()
+        let mtlTable = storage.table
+        
+        
+        for (i, buffer) in table.descriptor.buffers.enumerated() {
+            guard let buffer = buffer else { continue }
+            switch buffer {
+            case .buffer(let buffer, let offset):
+                guard let mtlBufferRef = resourceMap[buffer] else { continue }
+                mtlTable.setBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: i)
+            case .functionTable(let functionTable):
+                guard let mtlFunctionTable = resourceMap[functionTable] as! MTLVisibleFunctionTable? else { continue }
+                mtlTable.setVisibleFunctionTable(mtlFunctionTable, bufferIndex: i)
+            }
+        }
+        
+        if let renderPipeline = pipelineState as? MTLRenderPipelineState {
+            guard #available(macOS 12.0, iOS 15.0, *) else {
+                preconditionFailure()
+            }
+            for (i, function) in table.descriptor.functions.enumerated() {
+                guard let function = function else { continue }
+                
+                switch function {
+                case .defaultOpaqueFunction(let inputAttributes):
+                    var intersectionFunctionSignature = MTLIntersectionFunctionSignature()
+                    if inputAttributes.contains(.instancing) {
+                        intersectionFunctionSignature.formUnion(.instancing)
+                    }
+                    if inputAttributes.contains(.triangleData) {
+                        intersectionFunctionSignature.formUnion(.triangleData)
+                    }
+                    if inputAttributes.contains(.worldSpaceData) {
+                        intersectionFunctionSignature.formUnion(.worldSpaceData)
+                    }
+                    mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
+                case .function(let functionDescriptor):
+                    guard let mtlFunction = stateCaches.function(for: functionDescriptor) else { continue }
+                    mtlTable.setFunction(renderPipeline.functionHandle(function: mtlFunction, stage: MTLRenderStages(renderStage)), index: i)
+                }
+            }
+        } else {
+            let computePipeline = pipelineState as! MTLComputePipelineState
+            for (i, function) in table.descriptor.functions.enumerated() {
+                guard let function = function else { continue }
+                
+                switch function {
+                case .defaultOpaqueFunction(let inputAttributes):
+                    var intersectionFunctionSignature = MTLIntersectionFunctionSignature()
+                    if inputAttributes.contains(.instancing) {
+                        intersectionFunctionSignature.formUnion(.instancing)
+                    }
+                    if inputAttributes.contains(.triangleData) {
+                        intersectionFunctionSignature.formUnion(.triangleData)
+                    }
+                    if inputAttributes.contains(.worldSpaceData) {
+                        intersectionFunctionSignature.formUnion(.worldSpaceData)
+                    }
+                    mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
+                case .function(let functionDescriptor):
+                    guard let mtlFunction = stateCaches.function(for: functionDescriptor) else { continue }
+                    mtlTable.setFunction(computePipeline.functionHandle(function: mtlFunction), index: i)
+                }
+            }
+        }
     }
     
     func makeQueue(renderGraphQueue: Queue) -> MetalCommandQueue {
@@ -508,7 +649,6 @@ final class MetalBackend : SpecificRenderBackend {
             }
             encoderUseResourceCommandIndex = .max
             encoderUseResources.removeAll(keepingCapacity: true)
-            encoderResidentResources.removeAll(keepingCapacity: true)
         }
         
         let getResource: (Resource) -> Unmanaged<MTLResource>? = { resource in
@@ -518,6 +658,16 @@ final class MetalBackend : SpecificRenderBackend {
                 return resourceMap[texture].map { unsafeBitCast($0._texture, to: Unmanaged<MTLResource>.self) }
             } else if let argumentBuffer = resource.argumentBuffer {
                 return unsafeBitCast(resourceMap[argumentBuffer]._buffer, to: Unmanaged<MTLResource>.self)
+            } else if let heap = resource.heap {
+                return Unmanaged.passUnretained(resourceMap.persistentRegistry[heap] as! MTLResource)
+            } else if #available(macOS 11.0, iOS 14.0, *) {
+                if let accelerationStructure = resource.accelerationStructure {
+                    return Unmanaged.passUnretained(resourceMap.persistentRegistry[accelerationStructure] as! MTLResource)
+                } else if let visibleFunctionTable = resource.visibleFunctionTable {
+                    return resourceMap[visibleFunctionTable].map { Unmanaged.passUnretained($0.resource) }
+                } else if let intersectionFunctionTable = resource.intersectionFunctionTable {
+                    return resourceMap[intersectionFunctionTable].map { Unmanaged.passUnretained($0.resource) }
+                }
             }
             fatalError()
         }
@@ -542,14 +692,13 @@ final class MetalBackend : SpecificRenderBackend {
             // memoryBarriers should be as late as possible.
             switch command.command {
             case .useResource(let resource, let usage, let stages, let allowReordering):
-                guard let mtlResource = getResource(resource) else { break }
                 
                 var computedUsageType: MTLResourceUsage = []
                 if usage == .inputAttachmentRenderTarget || usage == .inputAttachment {
-                    assert(resource.type == .texture)
+                    assert(resource.type == .texture || resource.type == .hazardTrackingGroup)
                     computedUsageType.formUnion(.read)
                 } else {
-                    if resource.type == .texture, usage == .read {
+                    if resource.type == .texture || HazardTrackingGroup<Texture>(resource) != nil, usage == .read {
                         computedUsageType.formUnion(.sample)
                     }
                     if usage.isRead {
@@ -561,15 +710,51 @@ final class MetalBackend : SpecificRenderBackend {
                 }
                 
                 if !allowReordering {
-                    let memory = allocator.allocate(capacity: 1) as UnsafeMutablePointer<Unmanaged<MTLResource>>
-                    memory.initialize(to: mtlResource)
-                    let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: 1)
+                    let memory: UnsafeMutablePointer<Unmanaged<MTLResource>>
+                    let count: Int
+                    if resource.type == .hazardTrackingGroup {
+                        let group = _HazardTrackingGroup(handle: resource.handle)
+                        let resources = group.resourcesPointer(ofType: Resource.self).pointee
+                        guard !resources.isEmpty else {
+                            break
+                        }
+                        memory = allocator.allocate(capacity: resources.count)
+                        var i = 0
+                        for resource in resources {
+                            guard let mtlResource = getResource(resource) else { continue }
+                            memory.advanced(by: i).initialize(to: mtlResource)
+                            i += 1
+                        }
+                        count = i
+                    } else {
+                        guard let mtlResource = getResource(resource) else { break }
+                        memory = allocator.allocate(capacity: 1)
+                        memory.initialize(to: mtlResource)
+                        count = 1
+                    }
+                    
+                    let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: count)
                     compactedResourceCommands.append(.init(command: .useResources(bufferPointer, usage: computedUsageType, stages: MTLRenderStages(stages)), index: command.index, order: .before))
                 } else {
-                    let key = MetalResidentResource(resource: mtlResource, stages: MTLRenderStages(stages), usage: computedUsageType)
-                    let (inserted, _) = encoderResidentResources.insert(key)
-                    if inserted {
-                        encoderUseResources[UseResourceKey(stages: MTLRenderStages(stages), usage: computedUsageType), default: []].append(mtlResource)
+                    if resource.type == .hazardTrackingGroup {
+                        let group = _HazardTrackingGroup(handle: resource.handle)
+                        let resources = group.resourcesPointer(ofType: Resource.self).pointee
+                        for resource in resources {
+                            guard let mtlResource = getResource(resource) else { continue }
+                            
+                            let key = MetalResidentResource(resource: mtlResource, stages: MTLRenderStages(stages), usage: computedUsageType)
+                            let (inserted, _) = encoderResidentResources.insert(key)
+                            if inserted {
+                                encoderUseResources[UseResourceKey(stages: MTLRenderStages(stages), usage: computedUsageType), default: []].append(mtlResource)
+                            }
+                        }
+                    } else {
+                        guard let mtlResource = getResource(resource) else { continue }
+                        let key = MetalResidentResource(resource: mtlResource, stages: MTLRenderStages(stages), usage: computedUsageType)
+                        let (inserted, _) = encoderResidentResources.insert(key)
+                        if inserted {
+                            encoderUseResources[UseResourceKey(stages: MTLRenderStages(stages), usage: computedUsageType), default: []].append(mtlResource)
+                        }
                     }
                     encoderUseResourceCommandIndex = min(command.index, encoderUseResourceCommandIndex)
                 }
@@ -588,16 +773,14 @@ final class MetalBackend : SpecificRenderBackend {
                 #endif
                 
                 if !isRTBarrier {
-                    if resource.type == .texture {
+                    if resource.type == .texture || HazardTrackingGroup<Texture>(resource) != nil {
                         scope.formUnion(.textures)
-                    } else if resource.type == .buffer || resource.type == .argumentBuffer || resource.type == .argumentBufferArray {
-                        scope.formUnion(.buffers)
                     } else {
-                        assertionFailure()
+                        scope.formUnion(.buffers)
                     }
                 }
                 
-                if barrierResources.count < 8 {
+                if barrierResources.count < 8, resource.type != .hazardTrackingGroup {
                     if let mtlResource = getResource(resource) {
                         barrierResources.append(mtlResource)
                     }

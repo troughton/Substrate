@@ -17,6 +17,8 @@ import Vulkan
 
 @usableFromInline
 protocol PipelineReflection : AnyObject {
+    var pipelineState: UnsafeRawPointer { get }
+    
     func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?
     func bindingPath(argumentName: String, arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath?
     func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath
@@ -62,10 +64,14 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func materialisePersistentTexture(_ texture: Texture) -> Bool
     func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
     func materialiseHeap(_ heap: Heap) -> Bool
+    @available(macOS 11.0, iOS 14.0, *)
+    func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool
     
     func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any?
     func replaceBackingResource(for texture: Texture, with: Any?) -> Any?
     func replaceBackingResource(for heap: Heap, with: Any?) -> Any?
+    @available(macOS 11.0, iOS 14.0, *)
+    func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any?
     
     func registerWindowTexture(texture: Texture, context: Any)
     func registerExternalResource(_ resource: Resource, backingResource: Any)
@@ -86,6 +92,9 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     
     func updatePurgeableState(for resource: Resource, to: ResourcePurgeableState?) -> ResourcePurgeableState
     
+    @available(macOS 11.0, iOS 14.0, *)
+    func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes
+    
     // Note: The pipeline reflection functions may return nil if reflection information could not be created for the pipeline.
     func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) async -> PipelineReflection?
     func computePipelineReflection(descriptor: ComputePipelineDescriptor) async -> PipelineReflection?
@@ -95,6 +104,10 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func dispose(argumentBuffer: ArgumentBuffer)
     func dispose(argumentBufferArray: ArgumentBufferArray)
     func dispose(heap: Heap)
+    
+    func dispose(accelerationStructure: AccelerationStructure)
+    func dispose(intersectionFunctionTable: IntersectionFunctionTable)
+    func dispose(visibleFunctionTable: VisibleFunctionTable)
     
     var pushConstantPath : ResourceBindingPath { get }
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
@@ -162,6 +175,12 @@ public struct RenderBackend {
         return _backend.materialiseHeap(heap)
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @inlinable
+    public static func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
+        return _backend.materialiseAccelerationStructure(structure)
+    }
+    
     static func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
         return _backend.replaceBackingResource(for: buffer, with: with)
     }
@@ -172,6 +191,11 @@ public struct RenderBackend {
     
     static func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
         return _backend.replaceBackingResource(for: heap, with: with)
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    static func replaceBackingResource(for accelerationStructure: AccelerationStructure, with: Any?) -> Any? {
+        return _backend.replaceBackingResource(for: accelerationStructure, with: with)
     }
     
     @inlinable
@@ -207,6 +231,21 @@ public struct RenderBackend {
     @inlinable
     public static func dispose(heap: Heap) {
         return _backend.dispose(heap: heap)
+    }
+    
+    @inlinable
+    public static func dispose(accelerationStructure: AccelerationStructure) {
+        return _backend.dispose(accelerationStructure: accelerationStructure)
+    }
+    
+    @inlinable
+    public static func dispose(visibleFunctionTable: VisibleFunctionTable) {
+        return _backend.dispose(visibleFunctionTable: visibleFunctionTable)
+    }
+    
+    @inlinable
+    public static func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
+        return _backend.dispose(intersectionFunctionTable: intersectionFunctionTable)
     }
     
     @inlinable
@@ -287,6 +326,12 @@ public struct RenderBackend {
     @inlinable
     static func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int {
         return _backend.maxAvailableSize(forAlignment: alignment, in: heap)
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    @inlinable
+    static func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes {
+        return _backend.accelerationStructureSizes(for: descriptor)
     }
     
     @inlinable

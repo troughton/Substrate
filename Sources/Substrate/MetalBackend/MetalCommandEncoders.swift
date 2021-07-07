@@ -113,7 +113,9 @@ final class FGMTLThreadRenderCommandEncoder {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
-            encoder.setDepthStencilState(stateCaches.defaultDepthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
+            let depthState = stateCaches.defaultDepthState
+            encoder.setDepthStencilState(depthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
+            self.boundDepthStencilState = depthState
         }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
@@ -260,6 +262,49 @@ final class FGMTLThreadRenderCommandEncoder {
                 encoder.setFragmentSamplerState(state, index: mtlBindingPath.bindIndex)
             }
             
+            
+        case .setAccelerationStructure(let args):
+            guard #available(macOS 12.0, iOS 15.0, *), let mtlStructure = resourceMap[args.pointee.structure] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            let stages = mtlBindingPath.stages
+            if stages.contains(.vertex) {
+                encoder.setVertexAccelerationStructure((mtlStructure as! MTLAccelerationStructure), bufferIndex: mtlBindingPath.bindIndex)
+            }
+            if stages.contains(.fragment) {
+                encoder.setFragmentAccelerationStructure((mtlStructure as! MTLAccelerationStructure), bufferIndex: mtlBindingPath.bindIndex)
+            }
+            
+        case .setVisibleFunctionTable(let args):
+            guard #available(macOS 12.0, iOS 15.0, *), let mtlTable = resourceMap[args.pointee.table] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            let stages = mtlBindingPath.stages
+            if stages.contains(.vertex) {
+                encoder.setVertexVisibleFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
+            }
+            if stages.contains(.fragment) {
+                encoder.setFragmentVisibleFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
+            }
+            
+        case .setIntersectionFunctionTable(let args):
+            guard #available(macOS 12.0, iOS 15.0, *), let mtlTable = resourceMap[args.pointee.table] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            let stages = mtlBindingPath.stages
+            if stages.contains(.vertex) {
+                encoder.setVertexIntersectionFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
+            }
+            if stages.contains(.fragment) {
+                encoder.setFragmentIntersectionFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
+            }
+            
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
             self.pipelineDescriptor = descriptor
@@ -267,6 +312,15 @@ final class FGMTLThreadRenderCommandEncoder {
             if state !== self.boundPipelineState {
                 encoder.setRenderPipelineState(state)
                 self.boundPipelineState = state
+            }
+            
+        case .setRenderPipelineState(let statePtr):
+            let state = statePtr.takeUnretainedValue()
+            self.pipelineDescriptor = state.descriptor
+            let mtlState = Unmanaged<MTLRenderPipelineState>.fromOpaque(UnsafeRawPointer(state.state)).takeUnretainedValue()
+            if mtlState !== self.boundPipelineState {
+                encoder.setRenderPipelineState(mtlState)
+                self.boundPipelineState = mtlState
             }
             
         case .drawPrimitives(let args):
@@ -448,6 +502,30 @@ final class FGMTLComputeCommandEncoder {
             guard let mtlTexture = resourceMap[args.pointee.texture] else { break }
             encoder.setTexture(mtlTexture.texture, index: mtlBindingPath.bindIndex)
             
+        case .setAccelerationStructure(let args):
+            guard #available(macOS 11.0, iOS 14.0, *), let mtlStructure = resourceMap[args.pointee.structure] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            encoder.setAccelerationStructure((mtlStructure as! MTLAccelerationStructure), bufferIndex: mtlBindingPath.bindIndex)
+            
+        case .setVisibleFunctionTable(let args):
+            guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[args.pointee.table] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            encoder.setVisibleFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
+            
+        case .setIntersectionFunctionTable(let args):
+            guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[args.pointee.table] else {
+                break
+            }
+            
+            let mtlBindingPath = args.pointee.bindingPath
+            encoder.setIntersectionFunctionTable(mtlTable.table, bufferIndex: mtlBindingPath.bindIndex)
+            
         case .setSamplerState(let args):
             let mtlBindingPath = args.pointee.bindingPath
             let state = resourceMap[args.pointee.descriptor]
@@ -470,6 +548,15 @@ final class FGMTLComputeCommandEncoder {
             if state !== self.boundPipelineState {
                 encoder.setComputePipelineState(state)
                 self.boundPipelineState = state
+            }
+            
+        case .setComputePipelineState(let statePtr):
+            let state = statePtr.takeUnretainedValue()
+            self.pipelineDescriptor = state.descriptor
+            let mtlState = Unmanaged<MTLComputePipelineState>.fromOpaque(UnsafeRawPointer(state.state)).takeUnretainedValue()
+            if mtlState !== self.boundPipelineState {
+                encoder.setComputePipelineState(mtlState)
+                self.boundPipelineState = mtlState
             }
             
         case .setStageInRegion(let regionPtr):
@@ -669,6 +756,103 @@ final class FGMTLExternalCommandEncoder {
         }
     }
     
+}
+
+@available(macOS 11.0, iOS 14.0, *)
+final class FGMTLAccelerationStructureCommandEncoder {
+    let encoder: MTLAccelerationStructureCommandEncoder
+    let isAppleSiliconGPU: Bool
+    
+    init(encoder: MTLAccelerationStructureCommandEncoder, isAppleSiliconGPU: Bool) {
+        self.encoder = encoder
+        self.isAppleSiliconGPU = isAppleSiliconGPU
+    }
+    
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+        var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
+        
+        for (i, command) in zip(pass.commandRange!, pass.commands) {
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+            self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+        }
+    }
+    
+    func executeCommand(_ command: RenderGraphCommand, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+        switch command {
+        case .insertDebugSignpost(let cString):
+            encoder.insertDebugSignpost(String(cString: cString))
+            
+        case .setLabel(let label):
+            encoder.label = String(cString: label)
+            
+        case .pushDebugGroup(let groupName):
+            encoder.pushDebugGroup(String(cString: groupName))
+            
+        case .popDebugGroup:
+            encoder.popDebugGroup()
+            
+        case .buildAccelerationStructure(let args):
+            let structure = resourceMap[args.pointee.structure]! as! MTLAccelerationStructure
+            let descriptor = args.pointee.descriptor.metalDescriptor(resourceMap: resourceMap)
+            let scratchBuffer = resourceMap[args.pointee.scratchBuffer]!
+            let scratchBufferOffset = args.pointee.scratchBufferOffset
+            encoder.build(accelerationStructure: structure, descriptor: descriptor, scratchBuffer: scratchBuffer.buffer, scratchBufferOffset: scratchBuffer.offset + scratchBufferOffset)
+            
+        case .refitAccelerationStructure(let args):
+            let source = resourceMap[args.pointee.source]! as! MTLAccelerationStructure
+            let descriptor = args.pointee.descriptor.metalDescriptor(resourceMap: resourceMap)
+            let destination = args.pointee.destination.map { resourceMap[$0]! as! MTLAccelerationStructure }
+            let scratchBuffer = resourceMap[args.pointee.scratchBuffer]!
+            let scratchBufferOffset = args.pointee.scratchBufferOffset
+            
+            encoder.refit(sourceAccelerationStructure: source, descriptor: descriptor, destinationAccelerationStructure: destination, scratchBuffer: scratchBuffer.buffer, scratchBufferOffset: scratchBuffer.offset + scratchBufferOffset)
+            
+        case .copyAccelerationStructure(let args):
+            let source = resourceMap[args.pointee.source]! as! MTLAccelerationStructure
+            let destination = resourceMap[args.pointee.destination]! as! MTLAccelerationStructure
+            encoder.copy(sourceAccelerationStructure: source, destinationAccelerationStructure: destination)
+            
+        case .writeCompactedAccelerationStructureSize(let args):
+            let structure = resourceMap[args.pointee.structure]! as! MTLAccelerationStructure
+            let buffer = resourceMap[args.pointee.toBuffer]!
+            let bufferOffset = args.pointee.bufferOffset
+            encoder.writeCompactedSize(accelerationStructure: structure, buffer: buffer.buffer, offset: buffer.offset + bufferOffset)
+            
+        case .copyAndCompactAccelerationStructure(let args):
+            let source = resourceMap[args.pointee.source]! as! MTLAccelerationStructure
+            let destination = resourceMap[args.pointee.destination]! as! MTLAccelerationStructure
+            encoder.copyAndCompact(sourceAccelerationStructure: source, destinationAccelerationStructure: destination)
+            
+        default:
+            fatalError()
+        }
+    }
+    
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+        while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
+            defer { resourceCommandIndex += 1 }
+            
+            switch resourceCommands[resourceCommandIndex].command {
+            case .resourceMemoryBarrier, .scopedMemoryBarrier:
+                break
+                
+            case .useResources(let resources, let usage, _):
+                encoder.__use(resources.baseAddress!, count: resources.count, usage: usage)
+                
+            case .updateFence(let fence, _):
+                encoder.updateFence(fence.fence)
+                
+            case .waitForFence(let fence, _):
+                encoder.waitForFence(fence.fence)
+            }
+            
+        }
+    }
+    
+    func endEncoding() {
+        self.encoder.endEncoding()
+    }
 }
 
 #endif // canImport(Metal)

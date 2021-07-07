@@ -222,3 +222,141 @@ public struct HeapDescriptor {
         self.cacheMode = cacheMode
     }
 }
+
+public struct AccelerationStructureFlags: OptionSet {
+    public let rawValue: Int
+    
+    @inlinable
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+    
+    public static var refittable: AccelerationStructureFlags { .init(rawValue: 1 << 0) }
+    public static var preferFastBuild: AccelerationStructureFlags { .init(rawValue: 1 << 1) }
+}
+
+public struct AccelerationStructureDescriptor {
+    public struct TriangleGeometryDescriptor {
+        public var triangleCount: Int
+        
+        public var indexBuffer: Buffer?
+        public var indexBufferOffset: Int
+        public var indexType: IndexType
+        
+        public var vertexBuffer: Buffer
+        public var vertexBufferOffset: Int
+        public var vertexStride: Int
+        
+        public init(triangleCount: Int,
+                    vertexBuffer: Buffer, vertexBufferOffset: Int = 0, vertexStride: Int = 12,
+                    indexBuffer: Buffer, indexBufferOffset: Int = 0, indexType: IndexType) {
+            self.triangleCount = triangleCount
+            
+            self.vertexBuffer = vertexBuffer
+            self.vertexBufferOffset = vertexBufferOffset
+            self.vertexStride = vertexStride
+            
+            self.indexBuffer = indexBuffer
+            self.indexBufferOffset = indexBufferOffset
+            self.indexType = indexType
+        }
+        
+        public init(triangleCount: Int,
+                    vertexBuffer: Buffer, vertexBufferOffset: Int = 0, vertexStride: Int = 12) {
+            self.triangleCount = triangleCount
+            
+            self.vertexBuffer = vertexBuffer
+            self.vertexBufferOffset = vertexBufferOffset
+            self.vertexStride = vertexStride
+            
+            self.indexBuffer = nil
+            self.indexBufferOffset = 0
+            self.indexType = .uint16
+        }
+    }
+
+    public struct BoundingBoxGeometryDescriptor {
+        public var boundingBoxCount: Int
+        
+        public var boundingBoxBuffer: Buffer
+        public var boundingBoxBufferOffset: Int
+        public var boundingBoxStride: Int
+        
+        
+        public init(boundingBoxCount: Int,
+                    boundingBoxBuffer: Buffer, boundingBoxBufferOffset: Int = 0, boundingBoxStride: Int = 24) {
+            self.boundingBoxCount = boundingBoxCount
+            
+            self.boundingBoxBuffer = boundingBoxBuffer
+            self.boundingBoxBufferOffset = boundingBoxBufferOffset
+            self.boundingBoxStride = boundingBoxStride
+        }
+    }
+    
+    public enum GeometryType {
+        case triangle(TriangleGeometryDescriptor)
+        case boundingBox(BoundingBoxGeometryDescriptor)
+    }
+    
+    public struct GeometryDescriptor {
+        public var geometry: GeometryType
+        
+        public var intersectionFunctionTableOffset: Int
+        public var isOpaque: Bool
+        public var canInvokeIntersectionFunctionsMultipleTimesPerIntersection: Bool
+        
+        public init(geometry: GeometryType, intersectionFunctionTableOffset: Int = 0, isOpaque: Bool = true, canInvokeIntersectionFunctionsMultipleTimesPerIntersection: Bool = true) {
+            self.geometry = geometry
+            self.intersectionFunctionTableOffset = intersectionFunctionTableOffset
+            self.isOpaque = isOpaque
+            self.canInvokeIntersectionFunctionsMultipleTimesPerIntersection = canInvokeIntersectionFunctionsMultipleTimesPerIntersection
+        }
+    }
+    
+    public struct InstanceStructureDescriptor {
+        public var primitiveStructures: [AccelerationStructure]
+        
+        public var instanceCount: Int
+        public var instanceDescriptorBuffer: Buffer
+        public var instanceDescriptorBufferOffset: Int
+        public var instanceDescriptorStride: Int
+        
+        public init(primitiveStructures: [AccelerationStructure],
+                    instanceCount: Int, instanceDescriptorBuffer: Buffer, instanceDescriptorBufferOffset: Int = 0, instanceDescriptorStride: Int = 64) {
+            self.primitiveStructures = primitiveStructures
+            self.instanceCount = instanceCount
+            self.instanceDescriptorBuffer = instanceDescriptorBuffer
+            self.instanceDescriptorBufferOffset = instanceDescriptorBufferOffset
+            self.instanceDescriptorStride = instanceDescriptorStride
+        }
+    }
+    
+    public enum StructureType {
+        case bottomLevelPrimitive([GeometryDescriptor])
+        case topLevelInstance(InstanceStructureDescriptor)
+    }
+    
+    public var type: StructureType
+    public var flags: AccelerationStructureFlags
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public init(type: StructureType, flags: AccelerationStructureFlags = []) {
+        self.type = type
+        self.flags = flags
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public var sizes: AccelerationStructureSizes {
+        return RenderBackend.accelerationStructureSizes(for: self)
+    }
+}
+
+public struct AccelerationStructureSizes {
+    public var accelerationStructureSize: Int
+    
+    /// The amount of scratch memory, in bytes, needed to build the acceleration structure.
+    public var buildScratchBufferSize: Int
+    
+    /// The amount of scratch memory, in bytes, needed to refit the acceleration structure.
+    public var refitScratchBufferSize: Int
+}

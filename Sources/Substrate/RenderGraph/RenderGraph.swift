@@ -84,7 +84,7 @@ public protocol DrawRenderPass : RenderPass {
     var renderTargetDescriptor : RenderTargetDescriptor { get }
     
     /// `execute` is called by the render graph to allow a `DrawRenderPass` to encode GPU work for the render pass.
-    /// It may be called concurrently with any other (non-CPU) render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass, but will be executed in submission order on the GPU.
     ///
     /// - Parameter renderCommandEncoder: A draw render pass uses the passed-in `RenderCommandEncoder`
     /// to set GPU state and enqueue rendering commands.
@@ -157,7 +157,7 @@ extension DrawRenderPass {
 /// A `ComputeRenderPass` is any pass that uses the GPU's compute pipeline to perform arbitrary work through a series of sized dispatches.
 public protocol ComputeRenderPass : RenderPass {
     /// `execute` is called by the render graph to allow a `ComputeRenderPass` to encode GPU work for the render pass.
-    /// It may be called concurrently with any other (non-CPU) render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass, but will be executed in submission order on the GPU.
     ///
     /// - Parameter computeCommandEncoder: A compute render pass uses the passed-in `ComputeCommandEncoder`
     /// to set GPU state and enqueue dispatches.
@@ -177,7 +177,7 @@ public protocol CPURenderPass : RenderPass {
 /// A `BlitRenderPass` is a pass that uses GPU's blit/copy pipeline to copy data between GPU resources.
 public protocol BlitRenderPass : RenderPass {
     /// `execute` is called by the render graph to allow a `BlitRenderPass` to encode GPU work for the render pass.
-    /// It may be called concurrently with any other (non-CPU) render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass, but will be executed in submission order on the GPU.
     ///
     /// - Parameter blitCommandEncoder: A blit render pass uses the passed-in `BlitCommandEncoder`
     /// to copy data between GPU resources.
@@ -189,13 +189,27 @@ public protocol BlitRenderPass : RenderPass {
 /// An `ExternalRenderPass` is a pass that bypasses Substrate to encode directly to an underlying GPU command buffer.
 public protocol ExternalRenderPass : RenderPass {
     /// `execute` is called by the render graph to allow an `ExternalRenderPass` to encode arbitrary GPU work for the render pass.
-    /// It may be called concurrently with any other (non-CPU) render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass, but will be executed in submission order on the GPU.
     ///
-    /// - Parameter externalCommandEncoder: An external render pass uses the passed-in `ExternalRenderPass`
+    /// - Parameter externalCommandEncoder: An external render pass uses the passed-in `ExternalCommandEncoder`
     /// to encode arbitrary GPU work.
     ///
     /// - SeeAlso: `ExternalCommandEncoder`
     func execute(externalCommandEncoder: ExternalCommandEncoder) async
+}
+
+/// An `AccelerationRenderPass` is a pass that can encode commands to build or modify acceleration structures on hardware that
+/// supports one of the GPU raytracing APIs.
+@available(macOS 11.0, iOS 14.0, *)
+public protocol AccelerationStructureRenderPass : RenderPass {
+    /// `execute` is called by the render graph to allow an `AccelerationStructureRenderPAss` to encode arbitrary acceleration structure commands for the render pass.
+    /// It may be called concurrently with any other (non-CPU) render pass, but will be executed in submission order on the GPU.
+    ///
+    /// - Parameter accelerationStructureCommandEncoder: An external render pass uses the passed-in `AccelerationStructureCommandEncoder`
+    /// to encode GPU work that builds or modifies an acceleration structure.
+    ///
+    /// - SeeAlso: `ExternalCommandEncoder`
+    func execute(accelerationStructureCommandEncoder: AccelerationStructureCommandEncoder)
 }
 
 /// A `ReflectableDrawRenderPass` is a `DrawRenderPass` that has an associated `RenderPassReflection` type.
@@ -403,6 +417,21 @@ final class CallbackExternalRenderPass : ExternalRenderPass {
     }
 }
 
+@available(macOS 11.0, iOS 14.0, *)
+final class CallbackAccelerationStructureRenderPass : AccelerationStructureRenderPass {
+    public let name : String
+    public let executeFunc : (AccelerationStructureCommandEncoder) -> Void
+    
+    public init(name: String, execute: @escaping (AccelerationStructureCommandEncoder) -> Void) {
+        self.name = name
+        self.executeFunc = execute
+    }
+    
+    public func execute(accelerationStructureCommandEncoder: AccelerationStructureCommandEncoder) {
+        self.executeFunc(accelerationStructureCommandEncoder)
+    }
+}
+
 // A draw render pass that caches the properties of an actual DrawRenderPass
 // but that doesn't retain any of the member variables.
 @usableFromInline
@@ -437,6 +466,7 @@ final class ProxyDrawRenderPass: DrawRenderPass {
     case draw
     case compute
     case blit
+    case accelerationStructure
     case external // Using things like Metal Performance Shaders.
     
     init?(pass: RenderPass) {
@@ -452,7 +482,11 @@ final class ProxyDrawRenderPass: DrawRenderPass {
         case is CPURenderPass:
             self = .cpu
         default:
-            return nil
+            if #available(macOS 11.0, iOS 14.0, *), pass is AccelerationStructureRenderPass {
+                self = .accelerationStructure
+            } else {
+                return nil
+            }
         }
     }
 }
@@ -908,6 +942,18 @@ public final class RenderGraph {
         self.addPass(CallbackExternalRenderPass(name: name, execute: execute))
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    public func addAccelerationStructureCallbackPass(file: String = #fileID, line: Int = #line,
+                                        _ execute: @escaping (AccelerationStructureCommandEncoder) -> Void) {
+        self.addPass(CallbackAccelerationStructureRenderPass(name: "Anonymous Acceleration Structure Encoder Pass at \(file):\(line)", execute: execute))
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public func addAccelerationStructureCallbackPass(name: String,
+                                        _ execute: @escaping (AccelerationStructureCommandEncoder) -> Void) {
+        self.addPass(CallbackAccelerationStructureRenderPass(name: name, execute: execute))
+    }
+    
     // When passes are added:
     // Check pass.writtenResources. If not empty, add the pass to the deferred queue and record its resource usages.
     // If it is empty, run the execute method eagerly and infer read/written resources from that.
@@ -953,7 +999,13 @@ public final class RenderGraph {
             cpuPass.execute()
             
         default:
-            fatalError("Unknown pass type for pass \(passRecord)")
+            if #available(macOS 11.0, iOS 14.0, *), let accelerationStructurePass = passRecord.pass as? AccelerationStructureRenderPass {
+                let asce = AccelerationStructureCommandEncoder(commandRecorder: commandRecorder, accelerationStructureRenderPass: accelerationStructurePass, passRecord: passRecord)
+                accelerationStructurePass.execute(accelerationStructureCommandEncoder: asce)
+                asce.endEncoding()
+            } else {
+                fatalError("Unknown pass type for pass \(passRecord)")
+            }
         }
         
         passRecord.commands = commandRecorder.commands
@@ -980,17 +1032,19 @@ public final class RenderGraph {
         
         for resource in passRecord.pass.writtenResources {
             resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
-            passRecord.writtenResources.insert(resource.baseResource ?? resource)
+            passRecord.writtenResources.insert(resource.resourceForUsageTracking)
         }
         for resource in passRecord.pass.readResources {
             resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
-            passRecord.readResources.insert(resource.baseResource ?? resource)
+            passRecord.readResources.insert(resource.resourceForUsageTracking)
         }
     }
     
     @RenderGraphSharedActor
     func evaluateResourceUsages(renderPasses: [RenderPassRecord], executionAllocator: TagAllocator, resourceUsagesAllocator: TagAllocator) async {
-        for passRecord in renderPasses where passRecord.type == .cpu {
+        for passRecord in renderPasses where passRecord.type == .cpu || passRecord.type == .accelerationStructure {
+            // CPU render passes are guaranteed to be executed in order, and we have to execute acceleration structure passes in order since they may modify the AccelerationStructure's descriptor property.
+            // FIXME: This may actually cause issues if we update AccelerationStructures multiple times in a single RenderGraph and use it in between, since all other passes will depend only on the resources declared in the last-updated descriptor.
             if passRecord.pass.writtenResources.isEmpty {
                 await self.executePass(passRecord,
                                        executionAllocator: executionAllocator,
@@ -1001,7 +1055,7 @@ public final class RenderGraph {
         }
         
         await withTaskGroup(of: Void.self) { group async -> Void in
-            for passRecord in renderPasses where passRecord.type != .cpu {
+            for passRecord in renderPasses where passRecord.type != .cpu && passRecord.type != .accelerationStructure {
                 _ = await group.add { () async in
                     if passRecord.pass.writtenResources.isEmpty {
                         await self.executePass(passRecord,
@@ -1307,6 +1361,13 @@ public final class RenderGraph {
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferArrayRegistry.instance.clear(afterRenderGraph: self)
         HeapRegistry.instance.clear(afterRenderGraph: self)
+        HazardTrackingGroupRegistry.instance.clear(afterRenderGraph: self)
+        
+        if #available(macOS 11.0, iOS 14.0, *) {
+            AccelerationStructureRegistry.instance.clear(afterRenderGraph: self)
+            VisibleFunctionTableRegistry.instance.clear(afterRenderGraph: self)
+            IntersectionFunctionTableRegistry.instance.clear(afterRenderGraph: self)
+        }
         
         self.renderPasses.removeAll(keepingCapacity: true)
         self.usedResources.removeAll(keepingCapacity: true)
