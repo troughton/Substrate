@@ -68,6 +68,11 @@ public struct Matrix2x2<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
     }
     
     @inlinable
+    public var determinant: Scalar {
+        return self.columns.x * self.columns.w - self.columns.y * self.columns.z
+    }
+    
+    @inlinable
     public var transpose: Matrix2x2 {
         return Matrix2x2(self.columns[SIMD4(0, 2, 1, 3)])
     }
