@@ -481,6 +481,10 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         }
     }
     
+    public var resourceForUsageTracking: Resource {
+        return self.argumentBuffer.resourceForUsageTracking
+    }
+    
     public var storageMode: StorageMode {
         return self.argumentBuffer.storageMode
     }

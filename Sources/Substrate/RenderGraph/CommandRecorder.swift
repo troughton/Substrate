@@ -329,7 +329,10 @@ final class RenderGraphCommandRecorder {
         self.record(RenderGraphCommand.insertDebugSignpost, string)
     }
     
-    func resourceUsagePointers<C : CommandEncoder>(`for` resource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointerList {
+    func resourceUsagePointers<C : CommandEncoder>(`for` specificResource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointerList {
+        let resource = specificResource.resourceForUsageTracking
+        let activeRange = specificResource == resource ? activeRange : .fullResource
+        
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
         precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
@@ -379,23 +382,23 @@ final class RenderGraphCommandRecorder {
         }
         
         if usageType.isRead {
-            self.readResources.insert(resource.baseResource ?? resource)
+            self.readResources.insert(resource)
         }
         if usageType.isWrite {
-            self.writtenResources.insert(resource.baseResource ?? resource)
+            self.writtenResources.insert(resource)
         }
         
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: activeRange, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
+        let usage = ResourceUsage(resource: resource, type: usageType, stages: stages, activeRange: activeRange, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        self.resourceUsages.append((resource, usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         let usagePointer = self.resourceUsages.pointerToLastUsage
         
         if #available(macOS 11.0, iOS 14.0, *) {
             var subresourcePointers: [ResourceUsagePointer] = []
-            if let accelerationStructureDescriptor = resource.accelerationStructure?.descriptor {
+            if let accelerationStructureDescriptor = specificResource.accelerationStructure?.descriptor {
                 subresourcePointers = self.resourceUsagePointers(for: accelerationStructureDescriptor, commandIndex: firstCommandOffset, stages: stages, encoder: encoder)
                
-            } else if let intersectionFunctionTable = resource.intersectionFunctionTable {
+            } else if let intersectionFunctionTable = specificResource.intersectionFunctionTable {
                 subresourcePointers = self.resourceUsagePointers(for: intersectionFunctionTable.descriptor, commandIndex: firstCommandOffset, stages: stages, encoder: encoder)
             }
             if !subresourcePointers.isEmpty {

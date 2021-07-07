@@ -172,6 +172,10 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         }
     }
     
+    public var resourceForUsageTracking: Resource {
+        return self.argumentBufferArray.resourceForUsageTracking
+    }
+    
     public var storageMode: StorageMode {
         return self.argumentBufferArray.storageMode
     }

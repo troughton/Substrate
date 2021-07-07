@@ -1107,10 +1107,10 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 usagePointer.pointee.commandRange = Range(usagePointer.pointee.commandRange.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
                 
                 if usagePointer.pointee.type.isRead {
-                    self.commandRecorder.readResources.insert(attachment.texture.baseResource ?? Resource(attachment.texture))
+                    self.commandRecorder.readResources.insert(attachment.texture.resourceForUsageTracking)
                 }
                 if usagePointer.pointee.type.isWrite {
-                    self.commandRecorder.writtenResources.insert(attachment.texture.baseResource ?? Resource(attachment.texture))
+                    self.commandRecorder.writtenResources.insert(attachment.texture.resourceForUsageTracking)
                 }
                 continue
             }
@@ -1156,10 +1156,10 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 }
                 usagePointer.pointee.commandRange = Range(usagePointer.pointee.commandRange.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
                 if usagePointer.pointee.type.isRead {
-                    self.commandRecorder.readResources.insert(depthAttachment.texture.baseResource ?? Resource(depthAttachment.texture))
+                    self.commandRecorder.readResources.insert(depthAttachment.texture.resourceForUsageTracking)
                 }
                 if usagePointer.pointee.type.isWrite {
-                    self.commandRecorder.writtenResources.insert(depthAttachment.texture.baseResource ?? Resource(depthAttachment.texture))
+                    self.commandRecorder.writtenResources.insert(depthAttachment.texture.resourceForUsageTracking)
                 }
                 break depthCheck
             }
@@ -1200,10 +1200,10 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
                 }
                 usagePointer.pointee.commandRange = Range(usagePointer.pointee.commandRange.lowerBound...self.lastGPUCommandIndex) // extend the usage's timeline
                 if usagePointer.pointee.type.isRead {
-                    self.commandRecorder.readResources.insert(stencilAttachment.texture.baseResource ?? Resource(stencilAttachment.texture))
+                    self.commandRecorder.readResources.insert(stencilAttachment.texture.resourceForUsageTracking)
                 }
                 if usagePointer.pointee.type.isWrite {
-                    self.commandRecorder.writtenResources.insert(stencilAttachment.texture.baseResource ?? Resource(stencilAttachment.texture))
+                    self.commandRecorder.writtenResources.insert(stencilAttachment.texture.resourceForUsageTracking)
                 }
                 break stencilCheck
             }

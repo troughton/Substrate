@@ -1030,11 +1030,11 @@ public final class RenderGraph {
         
         for resource in passRecord.pass.writtenResources {
             resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
-            passRecord.writtenResources.insert(resource.baseResource ?? resource)
+            passRecord.writtenResources.insert(resource.resourceForUsageTracking)
         }
         for resource in passRecord.pass.readResources {
             resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
-            passRecord.readResources.insert(resource.baseResource ?? resource)
+            passRecord.readResources.insert(resource.resourceForUsageTracking)
         }
     }
     

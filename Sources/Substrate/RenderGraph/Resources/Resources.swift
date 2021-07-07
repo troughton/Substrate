@@ -139,6 +139,7 @@ public protocol ResourceProtocol {
     var heap: Heap? { get }
     var baseResource: Resource? { get }
     var usages: ChunkArray<ResourceUsage> { get nonmutating set }
+    var resourceForUsageTracking: Resource { get }
     
     /// The command buffer index on which to wait on a particular queue `queue` before it is safe to perform an access of type `type`.
     subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 { get nonmutating set }
@@ -420,6 +421,10 @@ extension ResourceProtocolImpl {
         }
     }
     
+    public var resourceForUsageTracking: Resource {
+        return (self.hazardTrackingGroup.map { Resource($0.group) } ?? self.baseResource) ?? Resource(self)
+    }
+    
     public var isValid : Bool {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
@@ -579,6 +584,8 @@ public struct Resource : ResourceProtocol, Hashable {
             return perform(IntersectionFunctionTable(handle: self.handle))
         case .visibleFunctionTable:
             return perform(VisibleFunctionTable(handle: self.handle))
+        case .hazardTrackingGroup:
+            return perform(_HazardTrackingGroup(handle: self.handle))
         default:
             fatalError()
         }
@@ -641,6 +648,10 @@ public struct Resource : ResourceProtocol, Hashable {
         nonmutating set {
             self[\.usages] = newValue
         }
+    }
+    
+    public var resourceForUsageTracking: Resource {
+        return self.withUnderlyingResource({ $0.resourceForUsageTracking })
     }
     
     public var isKnownInUse: Bool {
