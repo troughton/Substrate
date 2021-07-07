@@ -1214,8 +1214,8 @@ public final class RenderGraph {
             for (resource, resourceUsage) in passRecord.resourceUsages where resourceUsage.stages != .cpuBeforeRender {
                 assert(resource.isValid)
                 self.usedResources.insert(resource)
-                if let baseResource = resource.baseResource {
-                    self.usedResources.insert(baseResource)
+                if resourceUsage.resource != resource {
+                    self.usedResources.insert(resourceUsage.resource)
                 }
                 
                 var resourceUsage = resourceUsage
