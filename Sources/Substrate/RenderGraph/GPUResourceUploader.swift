@@ -291,6 +291,7 @@ extension GPUResourceUploader {
                     if self.inUseRangeEnd < self.inUseRangeStart {
                         precondition((0..<self.inUseRangeEnd).contains(allocationRange))
                     } else {
+                        self.inUseRangeStart = min(self.inUseRangeStart, allocationRange.lowerBound)
                         precondition((self.inUseRangeStart..<self.inUseRangeEnd).contains(allocationRange))
                     }
                     
@@ -311,12 +312,7 @@ extension GPUResourceUploader {
                 if let tempBuffer = tempBuffer {
                     tempBuffer.dispose()
                 } else {
-                    precondition(range.lowerBound == self.inUseRangeStart)
                     self.inUseRangeStart = range.upperBound
-                    if self.inUseRangeStart == self.inUseRangeEnd {
-                        self.inUseRangeStart = 0
-                        self.inUseRangeEnd = 0
-                    }
                 }
             }
         }
