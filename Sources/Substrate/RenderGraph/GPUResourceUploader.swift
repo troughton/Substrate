@@ -179,9 +179,14 @@ public final class GPUResourceUploader {
     }
 }
 
+extension Range {
+    fileprivate func contains(_ other: Range) -> Bool {
+        return other.lowerBound >= self.lowerBound && other.upperBound <= self.upperBound
+    }
+}
+
 extension GPUResourceUploader {
     fileprivate final class StagingBufferSubAllocator {
-        
         private static let blockAlignment = 64
         private let queue = DispatchQueue(label: "StagingBufferSubAllocator Queue")
         
@@ -205,6 +210,7 @@ extension GPUResourceUploader {
         deinit {
             self.buffer.dispose()
         }
+        
         
         func didSubmit(buffer: Buffer, allocationRange: (lowerBound: Int, upperBound: Int), submissionIndex: UInt64) {
             self.queue.sync {
@@ -249,18 +255,22 @@ extension GPUResourceUploader {
                 return (buffer, 0, (0, 0))
             }
             
-            let alignment = byteCount == 0 ? 1 : alignment // Don't align for empty allocations
+            if byteCount == 0 {
+                var range = 0..<0
+                try perform(UnsafeMutableRawBufferPointer(start: nil, count: 0), &range)
+                return (self.buffer, 0, (lowerBound: 0, upperBound: 0))
+            }
             
             while true {
                 if let (bufferRange, allocationRange) = self.queue.sync(execute: { () -> (Range<Int>, (lowerBound: Int, upperBound: Int))? in
                     self.processCompletedCommands()
                     
-                    var alignedPosition = ((self.inUseRangeEnd + alignment - 1) & ~(alignment - 1)) % self.capacity
+                    var alignedPosition = self.inUseRangeEnd.roundedUpToMultipleOfPowerOfTwo(of: alignment)
                     var allocationRange = alignedPosition..<(alignedPosition + byteCount)
                     
                     if allocationRange.endIndex > self.capacity {
                         alignedPosition = 0
-                        allocationRange = alignedPosition..<(alignedPosition + byteCount)
+                        allocationRange = alignedPosition..<(alignedPosition + byteCount) // 0..<byteCount
                     }
                     
                     if self.inUseRangeStart > self.inUseRangeEnd {
@@ -277,6 +287,12 @@ extension GPUResourceUploader {
                     let suballocatedRange = (self.inUseRangeEnd, allocationRange.endIndex)
                     self.inUseRangeEnd = allocationRange.endIndex
                     self.pendingCommands.append((.max, suballocatedRange, nil)) // We don't know what command this is associated with yet, but we'll set that in didSubmit.
+                    
+                    if self.inUseRangeEnd < self.inUseRangeStart {
+                        precondition((0..<self.inUseRangeEnd).contains(allocationRange))
+                    } else {
+                        precondition((self.inUseRangeStart..<self.inUseRangeEnd).contains(allocationRange))
+                    }
                     
                     return (allocationRange, suballocatedRange)
                 }) {
@@ -297,6 +313,10 @@ extension GPUResourceUploader {
                 } else {
                     precondition(range.lowerBound == self.inUseRangeStart)
                     self.inUseRangeStart = range.upperBound
+                    if self.inUseRangeStart == self.inUseRangeEnd {
+                        self.inUseRangeStart = 0
+                        self.inUseRangeEnd = 0
+                    }
                 }
             }
         }
