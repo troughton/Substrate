@@ -758,17 +758,59 @@ public struct Sphere<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codabl
 }
 
 @frozen
-public struct Triangle<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
-    public var v0 : SIMD3<Scalar>
-    public var v1 : SIMD3<Scalar>
-    public var v2 : SIMD3<Scalar>
+public struct Triangle<Vertex> {
+    public var v0 : Vertex
+    public var v1 : Vertex
+    public var v2 : Vertex
+    
+    @inlinable
+    public init(_ v0: Vertex, _ v1: Vertex, _ v2: Vertex) {
+        self.v0 = v0
+        self.v1 = v1
+        self.v2 = v2
+    }
+    
+    @inlinable
+    public init(v0: Vertex, v1: Vertex, v2: Vertex) {
+        self.v0 = v0
+        self.v1 = v1
+        self.v2 = v2
+    }
 }
 
-@frozen
-public struct Intersection<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
-    public var position : SIMD3<Scalar>
-    public var normal : SIMD3<Scalar>
-    public var distance : Scalar
+extension Triangle: Equatable where Vertex: Equatable {}
+extension Triangle: Hashable where Vertex: Hashable {}
+extension Triangle: Encodable where Vertex: Encodable {}
+extension Triangle: Decodable where Vertex: Decodable {}
+
+extension AffineMatrix {
+    @inlinable
+    public func transform(positions: Triangle<SIMD3<Scalar>>) -> Triangle<SIMD3<Scalar>> {
+        var result = positions
+        result.v0 = self.transform(point: positions.v0)
+        result.v1 = self.transform(point: positions.v1)
+        result.v2 = self.transform(point: positions.v2)
+        return result
+    }
+    
+    @inlinable
+    public func transform(tangentDirections directions: Triangle<SIMD3<Scalar>>) -> Triangle<SIMD3<Scalar>> {
+        var result = directions
+        result.v0 = self.transform(direction: directions.v0)
+        result.v1 = self.transform(direction: directions.v1)
+        result.v2 = self.transform(direction: directions.v2)
+        return result
+    }
+    
+    @inlinable
+    public func transform(normalDirections directions: Triangle<SIMD3<Scalar>>) -> Triangle<SIMD3<Scalar>> {
+        var result = directions
+        let matrix = Matrix3x3(self).inverse.transpose
+        result.v0 = matrix * directions.v0
+        result.v1 = matrix * directions.v1
+        result.v2 = matrix * directions.v2
+        return result
+    }
 }
 
 public enum Axis {
