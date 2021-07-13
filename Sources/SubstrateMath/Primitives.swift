@@ -413,6 +413,38 @@ public struct AxisAlignedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & 
         return result
     }
     
+    // https://gamedev.stackexchange.com/questions/18436/most-efficient-aabb-vs-ray-collision-algorithms
+    @inlinable
+    public func intersectionT(with ray: Ray<Scalar>, bestIntersectionT: Scalar = .infinity) -> Scalar? {
+        // lb is the corner of AABB with minimal coordinates - left bottom, rt is maximal corner
+        // r.org is origin of ray
+        let invDir = 1.0 / ray.direction
+        
+        let minOffset = (self.minPoint - ray.origin) * invDir
+        let maxOffset = (self.maxPoint - ray.origin) * invDir
+        
+        let tMinVector = pointwiseMin(minOffset, maxOffset)
+        let tMin = max(max(tMinVector.x, tMinVector.y), tMinVector.z)
+        
+        if tMin >= bestIntersectionT {
+            return nil
+        }
+        
+        let tMaxVector = pointwiseMax(minOffset, maxOffset)
+        let tMax = min(min(tMaxVector.x, tMaxVector.y), tMaxVector.z)
+        
+        // if tmax < 0, ray (line) is intersecting AABB, but the whole AABB is behind us
+        if tMax < 0 || tMin > tMax {
+            return nil
+        }
+        
+        return tMin
+    }
+    
+    @inlinable
+    public func intersects(with ray: Ray<Scalar>, bestIntersectionT: Scalar = .infinity) -> Bool {
+        return self.intersectionT(with: ray, bestIntersectionT: bestIntersectionT) != nil
+    }
     
     /**
      * Transforms this bounding box from its local space to the space described by nodeToSpaceTransform.
@@ -625,30 +657,13 @@ public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     @inlinable
     public init(fromScreenSpaceX x: Scalar, y: Scalar, inverseMVP: Matrix4x4<Scalar>) {
         let ray = Ray(origin: SIMD3<Scalar>(x, y, 0), direction: SIMD3<Scalar>(0, 0, 1))
-        let viewRay = inverseMVP * ray
+        let viewRay = ray.projected(by: inverseMVP)
         self = viewRay
     }
     
     @inlinable
     public func at(t: Scalar) -> SIMD3<Scalar> {
         return self.origin + t * self.direction
-    }
-    
-    @inlinable
-    public static func *(lhs: Matrix4x4<Scalar>, rhs: Ray) -> Ray {
-        var ray = Ray()
-        
-        let origin = lhs * SIMD4<Scalar>(rhs.origin, 1)
-        
-        ray.origin = origin.xyz * SIMD3<Scalar>(repeating: 1.0 / origin.w)
-        
-        let direction = SIMD3<Scalar>(
-            lhs[2][0] - (lhs[2][3] * ray.origin.x),
-            lhs[2][1] - (lhs[2][3] * ray.origin.y),
-            lhs[2][2] - (lhs[2][3] * ray.origin.z)
-            )
-        ray.direction = normalize(direction)
-        return ray
     }
     
     @inlinable
@@ -719,6 +734,33 @@ public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
             }
         }
         return (tNear, tFar)
+    }
+    
+    @inlinable
+    public static func *(lhs: AffineMatrix<Scalar>, rhs: Ray<Scalar>) -> Ray<Scalar> {
+        return Ray(origin: lhs.transform(point: rhs.origin), direction: lhs.transform(direction: rhs.direction))
+    }
+    
+    @inlinable
+    public static func *(lhs: Matrix4x4<Scalar>, rhs: Ray<Scalar>) -> Ray<Scalar> {
+        return Ray(origin: lhs.transform(point: rhs.origin).xyz, direction: lhs.transform(direction: rhs.direction).xyz)
+    }
+    
+    @inlinable
+    public func projected(by matrix: Matrix4x4<Scalar>) -> Ray {
+        let rhs = self
+        var ray = Ray()
+        
+        let origin = matrix.transform(point: rhs.origin)
+        ray.origin = origin.xyz * SIMD3<Scalar>(repeating: 1.0 / origin.w)
+        
+        let direction = SIMD3<Scalar>(
+            matrix[2][0] - (matrix[2][3] * ray.origin.x),
+            matrix[2][1] - (matrix[2][3] * ray.origin.y),
+            matrix[2][2] - (matrix[2][3] * ray.origin.z)
+            )
+        ray.direction = normalize(direction)
+        return ray
     }
 }
 
