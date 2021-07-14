@@ -35,7 +35,7 @@ func clamp<T: Comparable>(_ val: T, min minValue: T, max maxValue: T) -> T {
 
 // Reference: https://docs.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
 @inlinable
-public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ c: Float, type: I.Type) -> I {
+public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ c: Float, type: I.Type = I.self) -> I {
     if c != c { // Check for NaN – this check is faster than c.isNaN
         return 0
     }
@@ -62,7 +62,7 @@ public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_
 }
 
 @inlinable
-public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ c: Float, type: I.Type) -> I {
+public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ c: Float, type: I.Type = I.self) -> I {
     if c != c { // Check for NaN – this check is faster than c.isNaN
         return 0
     }
