@@ -94,8 +94,8 @@ public struct ImageFileInfo: Hashable, Codable {
                 }
             }
             
-            self.width = Int(header.data_window.2 - header.data_window.0 + 1)
-            self.height = Int(header.data_window.3 - header.data_window.1 + 1)
+            self.width = Int(header.data_window.max_x - header.data_window.min_x + 1)
+            self.height = Int(header.data_window.max_y - header.data_window.min_y + 1)
             
             let channelCount = Int(header.num_channels)
             self.channelCount = channelCount
