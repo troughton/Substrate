@@ -413,39 +413,6 @@ public struct AxisAlignedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & 
         return result
     }
     
-    // https://gamedev.stackexchange.com/questions/18436/most-efficient-aabb-vs-ray-collision-algorithms
-    @inlinable
-    public func intersectionT(with ray: Ray<Scalar>, bestIntersectionT: Scalar = .infinity) -> Scalar? {
-        // lb is the corner of AABB with minimal coordinates - left bottom, rt is maximal corner
-        // r.org is origin of ray
-        let invDir = 1.0 / ray.direction
-        
-        let minOffset = (self.minPoint - ray.origin) * invDir
-        let maxOffset = (self.maxPoint - ray.origin) * invDir
-        
-        let tMinVector = pointwiseMin(minOffset, maxOffset)
-        let tMin = max(max(tMinVector.x, tMinVector.y), tMinVector.z)
-        
-        if tMin >= bestIntersectionT {
-            return nil
-        }
-        
-        let tMaxVector = pointwiseMax(minOffset, maxOffset)
-        let tMax = min(min(tMaxVector.x, tMaxVector.y), tMaxVector.z)
-        
-        // if tmax < 0, ray (line) is intersecting AABB, but the whole AABB is behind us
-        if tMax < 0 || tMin > tMax {
-            return nil
-        }
-        
-        return tMin
-    }
-    
-    @inlinable
-    public func intersects(with ray: Ray<Scalar>, bestIntersectionT: Scalar = .infinity) -> Bool {
-        return self.intersectionT(with: ray, bestIntersectionT: bestIntersectionT) != nil
-    }
-    
     /**
      * Transforms this bounding box from its local space to the space described by nodeToSpaceTransform.
      * The result is guaranteed to be axis aligned – that is, with no rotation in the destination space.
@@ -638,27 +605,25 @@ public struct Plane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable
 }
 
 @frozen
-public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
-    
+public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
     public var origin : SIMD3<Scalar>
-    public var direction : SIMD3<Scalar>
+    public var direction : SIMD3<Scalar> {
+        didSet {
+            self._inverseDirection = 1.0 / self.direction
+        }
+    }
+    @usableFromInline var _inverseDirection: SIMD3<Scalar>
     
     @inlinable
-    public init(origin: SIMD3<Scalar> = SIMD3<Scalar>(repeating: 0), direction: SIMD3<Scalar> = SIMD3<Scalar>(repeating: 0)) {
+    public var inverseDirection : SIMD3<Scalar> {
+        return self._inverseDirection
+    }
+    
+    @inlinable
+    public init(origin: SIMD3<Scalar> = SIMD3<Scalar>(repeating: 0), direction: SIMD3<Scalar> = SIMD3<Scalar>(0, 0, 1)) {
         self.origin = origin
         self.direction = direction
-    }
-    
-    @inlinable
-    public init(fromScreenSpaceX x: Scalar, y: Scalar, mvp: Matrix4x4<Scalar>) {
-        self = Ray(fromScreenSpaceX: x, y: y, inverseMVP: mvp.inverse)
-    }
-    
-    @inlinable
-    public init(fromScreenSpaceX x: Scalar, y: Scalar, inverseMVP: Matrix4x4<Scalar>) {
-        let ray = Ray(origin: SIMD3<Scalar>(x, y, 0), direction: SIMD3<Scalar>(0, 0, 1))
-        let viewRay = ray.projected(by: inverseMVP)
-        self = viewRay
+        self._inverseDirection = 1.0 / direction
     }
     
     @inlinable
@@ -669,46 +634,16 @@ public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     @inlinable
     public func intersectionAt(y: Scalar) -> SIMD3<Scalar>? {
         guard self.direction.y != 0.0 else { return nil }
-        let t = (y - self.origin.y) / self.direction.y
+        let t = (y - self.origin.y) * self.inverseDirection.y
         return self.at(t: t)
-    }
-    
-    @inlinable
-    public func intersects(with box: AxisAlignedBoundingBox<Scalar>) -> Bool {
-        // r.dir is unit direction vector of ray
-        let dirFrac = SIMD3<Scalar>(repeating: 1.0) / self.direction
-        
-        // lb is the corner of AABB with minimal coordinates - left bottom, rt is maximal corner
-        // r.org is origin of ray
-        let t1 = (box.minX - self.origin.x) * dirFrac.x
-        let t2 = (box.maxX - self.origin.x) * dirFrac.x
-        let t3 = (box.minY - self.origin.y) * dirFrac.y
-        let t4 = (box.maxY - self.origin.y) * dirFrac.y
-        let t5 = (box.minZ - self.origin.z) * dirFrac.z
-        let t6 = (box.maxZ - self.origin.z) * dirFrac.z
-        
-        let tMin = max(max(min(t1, t2), min(t3, t4)), min(t5, t6));
-        let tMax = min(min(max(t1, t2), max(t3, t4)), max(t5, t6));
-        
-        // if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behind us
-        if (tMax < 0) {
-            return false
-        }
-        
-        // if tmin > tmax, ray doesn't intersect AABB
-        if (tMin > tMax) {
-            return false
-        }
-        
-        return true
     }
     
     @inlinable
     public func intersections(with box: AxisAlignedBoundingBox<Scalar>) -> (near: Scalar, far: Scalar)? {
         var t1 = SIMD3<Scalar>()
         var t2 = SIMD3<Scalar>() // vectors to hold the T-values for every direction
-        var tNear = -Scalar.infinity;
-        var tFar = Scalar.infinity;
+        var tNear = -Scalar.infinity
+        var tFar = Scalar.infinity
         
         for i in 0..<3 { //we test slabs in every direction
             if (self.direction[i] == 0) { // ray parallel to planes in this direction
@@ -716,8 +651,8 @@ public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
                     return nil // parallel AND outside box : no intersection possible
                 }
             } else { // ray not parallel to planes in this direction
-                t1[i] = (box.minPoint[i] - self.origin[i]) / self.direction[i];
-                t2[i] = (box.maxPoint[i] - self.origin[i]) / self.direction[i];
+                t1[i] = (box.minPoint[i] - self.origin[i]) * self.inverseDirection[i];
+                t2[i] = (box.maxPoint[i] - self.origin[i]) * self.inverseDirection[i];
                 
                 if(t1[i] > t2[i]) { // we want T_1 to hold values for intersection with near plane
                     swap(&t1, &t2)
@@ -737,6 +672,88 @@ public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     }
     
     @inlinable
+    public func minIntersectionT(with box: AxisAlignedBoundingBox<Scalar>, intersectionTUpperLimit: Scalar = .infinity) -> Scalar? {
+        let minOffset = (box.minPoint - self.origin) * self.inverseDirection
+        let maxOffset = (box.maxPoint - self.origin) * self.inverseDirection
+        
+        let tMinVector = pointwiseMin(minOffset, maxOffset)
+        let tMin = max(max(tMinVector.x, tMinVector.y), tMinVector.z)
+        
+        if tMin >= intersectionTUpperLimit {
+            return nil
+        }
+        
+        let tMaxVector = pointwiseMax(minOffset, maxOffset)
+        let tMax = min(min(tMaxVector.x, tMaxVector.y), tMaxVector.z)
+        
+        // if tmax < 0, ray (line) is intersecting AABB, but the whole AABB is behind us
+        if tMax < 0 || tMin > tMax {
+            return nil
+        }
+        
+        return tMin
+    }
+    
+    @inlinable
+    public func intersects(with box: AxisAlignedBoundingBox<Scalar>, intersectionTUpperLimit: Scalar = .infinity) -> Bool {
+        return self.minIntersectionT(with: box, intersectionTUpperLimit: intersectionTUpperLimit) != nil
+    }
+    
+    @inlinable
+    public func intersections(with sphere: Sphere<Scalar>) -> (near: Scalar, far: Scalar)? {
+        // Wikipedia: https://en.wikipedia.org/wiki/Line–sphere_intersection
+        
+        let rayOffset = self.origin
+        let directionTerm = dot(self.direction, rayOffset)
+        
+        let discriminantSq = directionTerm * directionTerm - dot(rayOffset, rayOffset) + sphere.radius * sphere.radius
+        
+        if discriminantSq < 0 {
+            return nil
+        }
+        
+        let discriminant = discriminantSq.squareRoot()
+        
+        let t2 = -directionTerm - discriminant
+        let t1 = -directionTerm + discriminant
+        return (t2, t1)
+    }
+    
+    @inlinable
+    public func minIntersectionT(with sphere: Sphere<Scalar>, intersectionTUpperLimit: Scalar = .infinity) -> Scalar? {
+        // Wikipedia: https://en.wikipedia.org/wiki/Line–sphere_intersection
+        
+        let rayOffset = self.origin
+        let directionTerm = dot(self.direction, rayOffset)
+        
+        let discriminantSq = directionTerm * directionTerm - dot(rayOffset, rayOffset) + sphere.radius * sphere.radius
+        
+        if discriminantSq < 0 {
+            return nil
+        }
+        
+        let discriminant = discriminantSq.squareRoot()
+        
+        let t2 = -directionTerm - discriminant
+        if t2 < intersectionTUpperLimit {
+            if t2 >= 0 {
+                return t2
+            } else {
+                let t1 = -directionTerm + discriminant
+                if t1 >= 0 && t1 < intersectionTUpperLimit {
+                    return t1
+                }
+            }
+        }
+        return nil
+    }
+    
+    @inlinable
+    public func intersects(with sphere: Sphere<Scalar>, intersectionTUpperLimit: Scalar = .infinity) -> Bool {
+        return self.minIntersectionT(with: sphere, intersectionTUpperLimit: intersectionTUpperLimit) != nil
+    }
+    
+    @inlinable
     public static func *(lhs: AffineMatrix<Scalar>, rhs: Ray<Scalar>) -> Ray<Scalar> {
         return Ray(origin: lhs.transform(point: rhs.origin), direction: lhs.transform(direction: rhs.direction))
     }
@@ -744,23 +761,6 @@ public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     @inlinable
     public static func *(lhs: Matrix4x4<Scalar>, rhs: Ray<Scalar>) -> Ray<Scalar> {
         return Ray(origin: lhs.transform(point: rhs.origin).xyz, direction: lhs.transform(direction: rhs.direction).xyz)
-    }
-    
-    @inlinable
-    public func projected(by matrix: Matrix4x4<Scalar>) -> Ray {
-        let rhs = self
-        var ray = Ray()
-        
-        let origin = matrix.transform(point: rhs.origin)
-        ray.origin = origin.xyz * SIMD3<Scalar>(repeating: 1.0 / origin.w)
-        
-        let direction = SIMD3<Scalar>(
-            matrix[2][0] - (matrix[2][3] * ray.origin.x),
-            matrix[2][1] - (matrix[2][3] * ray.origin.y),
-            matrix[2][2] - (matrix[2][3] * ray.origin.z)
-            )
-        ray.direction = normalize(direction)
-        return ray
     }
 }
 
