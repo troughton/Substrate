@@ -301,17 +301,17 @@ public struct AxisAlignedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & 
     }
     
     @inlinable
-    public var minX : Scalar { return self.minPoint.x }
+    public var minX : Scalar { get { return self.minPoint.x } set { self.minPoint.x = newValue } }
     @inlinable
-    public var minY : Scalar { return self.minPoint.y }
+    public var minY : Scalar { get { return self.minPoint.y } set { self.minPoint.y = newValue } }
     @inlinable
-    public var minZ : Scalar { return self.minPoint.z }
+    public var minZ : Scalar { get { return self.minPoint.z } set { self.minPoint.z = newValue } }
     @inlinable
-    public var maxX : Scalar { return self.maxPoint.x }
+    public var maxX : Scalar { get { return self.maxPoint.x } set { self.maxPoint.x = newValue } }
     @inlinable
-    public var maxY : Scalar { return self.maxPoint.y }
+    public var maxY : Scalar { get { return self.maxPoint.y } set { self.maxPoint.y = newValue } }
     @inlinable
-    public var maxZ : Scalar { return self.maxPoint.z }
+    public var maxZ : Scalar { get { return self.maxPoint.z } set { self.maxPoint.z = newValue } }
     
     @inlinable
     public var centreX : Scalar {

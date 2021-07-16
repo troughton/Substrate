@@ -399,6 +399,11 @@ extension AffineMatrix {
 extension AffineMatrix where Scalar : Real {
     
     @inlinable
+    public init(_ q: Quaternion<Scalar>) {
+        self.init(quaternion: q)
+    }
+    
+    @inlinable
     public init(quaternion q: Quaternion<Scalar>) {
         self.init()
         let sqw : Scalar = q.w*q.w

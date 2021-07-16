@@ -545,6 +545,21 @@ public struct Image<ComponentType> : AnyImage {
         self.ensureUniqueness()
         return try perform(self.storage.data)
     }
+    
+    @inlinable
+    public func map<Other>(_ function: (ComponentType) -> Other) -> Image<Other> {
+        var other = Image<Other>(width: self.width, height: self.height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        
+        other.withUnsafeMutableBufferPointer { dest in
+            self.withUnsafeBufferPointer { source in
+                for (i, sourceVal) in source.enumerated() {
+                    dest[i] = function(sourceVal)
+                }
+            }
+        }
+        
+        return other
+    }
 
     @inlinable
     public func cropped(originX: Int, originY: Int, width: Int, height: Int, clampOutOfBounds: Bool = false) -> Image<T> {
