@@ -14,38 +14,12 @@ public typealias Vector4f = SIMD4<Float>
 
 @inlinable
 public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : FloatingPoint {
-    var total = V.Scalar(0)
-    for i in a.indices {
-        total += a[i] * b[i]
-    }
-    return total
+    return (a * b).sum()
 }
 
 @inlinable
-public func componentSum<V : SIMD>(_ v: V) -> V.Scalar where V.Scalar : FloatingPoint {
-    var total = V.Scalar(0)
-    for i in v.indices {
-        total += v[i]
-    }
-    return total
-}
-
-@inlinable
-public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : BinaryInteger {
-    var total = V.Scalar(0)
-    for i in a.indices {
-        total += a[i] * b[i]
-    }
-    return total
-}
-
-@inlinable
-public func componentSum<V : SIMD>(_ v: V) -> V.Scalar where V.Scalar : BinaryInteger {
-    var total = V.Scalar(0)
-    for i in v.indices {
-        total += v[i]
-    }
-    return total
+public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : FixedWidthInteger {
+    return (a &* b).wrappedSum()
 }
 
 extension SIMD where Scalar : FloatingPoint {
@@ -123,4 +97,81 @@ public func abs<V : SIMD>(_ v: V) -> V where V.Scalar : Comparable & SignedNumer
 @inlinable
 public func clamp<V : SIMD>(_ x: V, min minVec: V, max maxVec: V) -> V where V.Scalar : Comparable {
     return x.clamped(lowerBound: minVec, upperBound: maxVec)
+}
+
+extension SIMD2 {
+    @inlinable
+    public func map<U>(_ applying: (Scalar) -> U) -> SIMD2<U> {
+        var result = SIMD2<U>()
+        for i in 0..<self.scalarCount {
+            result[i] = applying(self[i])
+        }
+        return result
+    }
+}
+
+extension SIMD3 {
+    @inlinable
+    public func map<U>(_ applying: (Scalar) -> U) -> SIMD3<U> {
+        var result = SIMD3<U>()
+        for i in 0..<self.scalarCount {
+            result[i] = applying(self[i])
+        }
+        return result
+    }
+}
+
+extension SIMD4 {
+    @inlinable
+    public func map<U>(_ applying: (Scalar) -> U) -> SIMD4<U> {
+        var result = SIMD4<U>()
+        for i in 0..<self.scalarCount {
+            result[i] = applying(self[i])
+        }
+        return result
+    }
+}
+
+extension SIMD8 {
+    @inlinable
+    public func map<U>(_ applying: (Scalar) -> U) -> SIMD8<U> {
+        var result = SIMD8<U>()
+        for i in 0..<self.scalarCount {
+            result[i] = applying(self[i])
+        }
+        return result
+    }
+}
+
+extension SIMD16 {
+    @inlinable
+    public func map<U>(_ applying: (Scalar) -> U) -> SIMD16<U> {
+        var result = SIMD16<U>()
+        for i in 0..<self.scalarCount {
+            result[i] = applying(self[i])
+        }
+        return result
+    }
+}
+
+extension SIMD32 {
+    @inlinable
+    public func map<U>(_ applying: (Scalar) -> U) -> SIMD32<U> {
+        var result = SIMD32<U>()
+        for i in 0..<self.scalarCount {
+            result[i] = applying(self[i])
+        }
+        return result
+    }
+}
+
+extension SIMD64 {
+    @inlinable
+    public func map<U>(_ applying: (Scalar) -> U) -> SIMD64<U> {
+        var result = SIMD64<U>()
+        for i in 0..<self.scalarCount {
+            result[i] = applying(self[i])
+        }
+        return result
+    }
 }

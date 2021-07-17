@@ -81,7 +81,7 @@ public struct FrustumPlane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, 
         assert(points.count > 2)
         
         let normal = normalize(cross(points[1] - points[0], points[2] - points[0]))
-        let constant = componentSum(-(points[0] * normal))
+        let constant = -dot(points[0], normal)
         
         self.init(normalVector: normal, constant: constant)
         

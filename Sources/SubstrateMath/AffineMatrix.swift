@@ -254,6 +254,27 @@ extension AffineMatrix {
         result.addProduct(SIMD3(lhs.r0.w, lhs.r1.w, lhs.r2.w), SIMD3(repeating: rhs.w))
         return SIMD4(result, rhs.w)
     }
+    
+    @inlinable
+    public func transform(point: SIMD3<Scalar>) -> SIMD3<Scalar> {
+        let lhs = self
+        let rhs = point
+        var result = SIMD3(lhs.r0.w, lhs.r1.w, lhs.r2.w)
+        result.addProduct(SIMD3(lhs.r0.x, lhs.r1.x, lhs.r2.x), SIMD3(repeating: rhs.x))
+        result.addProduct(SIMD3(lhs.r0.y, lhs.r1.y, lhs.r2.y), SIMD3(repeating: rhs.y))
+        result.addProduct(SIMD3(lhs.r0.z, lhs.r1.z, lhs.r2.z), SIMD3(repeating: rhs.z))
+        return result
+    }
+    
+    @inlinable
+    public func transform(direction: SIMD3<Scalar>) -> SIMD3<Scalar> {
+        let lhs = self
+        let rhs = direction
+        var result = SIMD3(lhs.r0.x, lhs.r1.x, lhs.r2.x) * SIMD3(repeating: rhs.x)
+        result.addProduct(SIMD3(lhs.r0.y, lhs.r1.y, lhs.r2.y), SIMD3(repeating: rhs.y))
+        result.addProduct(SIMD3(lhs.r0.z, lhs.r1.z, lhs.r2.z), SIMD3(repeating: rhs.z))
+        return result
+    }
 }
 
 extension Matrix3x3 {
@@ -376,6 +397,11 @@ extension AffineMatrix {
 }
 
 extension AffineMatrix where Scalar : Real {
+    
+    @inlinable
+    public init(_ q: Quaternion<Scalar>) {
+        self.init(quaternion: q)
+    }
     
     @inlinable
     public init(quaternion q: Quaternion<Scalar>) {

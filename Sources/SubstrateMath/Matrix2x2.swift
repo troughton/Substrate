@@ -174,8 +174,27 @@ extension Matrix2x2 where Scalar: Real {
     // Reference: http://www.cs.cornell.edu/courses/cs4620/2014fa/lectures/polarnotes.pdf
     @inlinable
     public var polarDecomposition: (rotation: Angle<Scalar>, scale: Matrix2x2<Scalar>) {
-        let theta = -Scalar.atan2(y: self[1, 0] - self[0, 1], x: self[0, 0] + self[1, 1])
-        let R = Matrix2x2.rotate(Angle(radians: theta))
+        var rotationSourceMatrix = self
+        let det = rotationSourceMatrix.determinant
+        if abs(det) < .ulpOfOne {
+            return (.zero, .identity)
+        }
+        
+        if det < 0.0 {
+            // We have a negative scale along one axis. Arbitrarily flip X.
+            rotationSourceMatrix.columns.xy *= -1
+        }
+        let directionVec = SIMD2(rotationSourceMatrix[0, 0] + rotationSourceMatrix[1, 1], rotationSourceMatrix[1, 0] - rotationSourceMatrix[0, 1]).normalized
+        
+        let sinTheta = directionVec.y
+        let cosTheta = directionVec.x
+        let theta = -Scalar.atan2(y: sinTheta, x: cosTheta)
+        
+        var R = Matrix2x2()
+        R[0,0] = cosTheta
+        R[0,1] = sinTheta
+        R[1,0] = -sinTheta
+        R[1,1] = cosTheta
         
         let S = R.transpose * self
         

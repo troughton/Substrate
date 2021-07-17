@@ -9,6 +9,7 @@
 import RealModule
 
 public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hashable {
+    @inlinable
     public static var identity : Quaternion { return Quaternion(0, 0, 0, 1) }
     
     public var storage : SIMD4<Scalar>

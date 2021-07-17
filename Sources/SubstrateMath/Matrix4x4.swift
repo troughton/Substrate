@@ -187,6 +187,28 @@ extension Matrix4x4 {
     }
     
     @inlinable
+    public func transform(point: SIMD3<Scalar>) -> SIMD4<Scalar> {
+        let lhs = self
+        let rhs = point
+        var result = lhs.c3
+        result.addProduct(lhs.c0, SIMD4<Scalar>(repeating: rhs.x))
+        result.addProduct(lhs.c1, SIMD4<Scalar>(repeating: rhs.y))
+        result.addProduct(lhs.c2, SIMD4<Scalar>(repeating: rhs.z))
+        return result
+    }
+    
+    @inlinable
+    public func transform(direction: SIMD3<Scalar>) -> SIMD4<Scalar> {
+        let lhs = self
+        let rhs = direction
+        var result = lhs.c0 * SIMD4<Scalar>(repeating: rhs.x)
+        result.addProduct(lhs.c0, SIMD4<Scalar>(repeating: rhs.x))
+        result.addProduct(lhs.c1, SIMD4<Scalar>(repeating: rhs.y))
+        result.addProduct(lhs.c2, SIMD4<Scalar>(repeating: rhs.z))
+        return result
+    }
+    
+    @inlinable
     public static func *(lhs: SIMD4<Scalar>, rhs: Matrix4x4) -> SIMD4<Scalar> {
         var result = SIMD4(rhs.c0.x, rhs.c1.x, rhs.c2.x, rhs.c3.x) * SIMD4(repeating: lhs.x)
         result.addProduct(SIMD4(rhs.c0.y, rhs.c1.y, rhs.c2.y, rhs.c3.y), SIMD4(repeating: lhs.y))
