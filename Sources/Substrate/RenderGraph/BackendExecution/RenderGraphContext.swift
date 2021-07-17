@@ -73,14 +73,7 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     }
     
     
-    func processCommandBuffer(_ commandBuffer: inout Backend.CommandBuffer?, committedCommandBufferCount: inout Int, executionResult: RenderGraphExecutionResult, taskCompletionSemaphore: AsyncSemaphore, lastCommandBufferIndex: Int, syncEvent: Backend.Event) async {
-        defer { commandBuffer = nil }
-        guard let commandBuffer = commandBuffer else { return }
-        
-        if let transientRegistry = resourceMap.transientRegistry {
-            commandBuffer.presentSwapchains(resourceRegistry: transientRegistry)
-        }
-        
+    func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, commandBufferIndex: Int, lastCommandBufferIndex: Int, executionResult: RenderGraphExecutionResult, taskCompletionSemaphore: AsyncSemaphore, syncEvent: Backend.Event) async {
         // Make sure that the sync event value is what we expect, so we don't update it past
         // the signal for another buffer before that buffer has completed.
         // We only need to do this if we haven't already waited in this command buffer for it.
@@ -91,7 +84,6 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.queueCommandBufferIndex += 1
         commandBuffer.signalEvent(syncEvent, value: self.queueCommandBufferIndex)
         
-        let cbIndex = committedCommandBufferCount
         let queueCBIndex = self.queueCommandBufferIndex
         
         self.renderGraphQueue.lastSubmittedCommand = queueCBIndex
@@ -106,10 +98,10 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             
             CommandEndActionManager.manager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
             
-            if cbIndex == 0 {
+            if commandBufferIndex == 0 {
                 executionResult.gpuTime = commandBuffer.gpuStartTime
             }
-            if cbIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
+            if commandBufferIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
                 let gpuEndTime = commandBuffer.gpuEndTime
                 
                 executionResult.gpuTime = (gpuEndTime - executionResult.gpuTime) * 1000.0
@@ -121,22 +113,12 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 self.processEmptyFrameCompletionHandlers(afterSubmissionIndex: queueCBIndex)
             }
         })
-        committedCommandBufferCount += 1
     }
     
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>) async -> Task<RenderGraphExecutionResult, Never> {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
         self.resourceRegistry?.prepareFrame()
-        
-        defer {
-            TaggedHeap.free(tag: .renderGraphResourceCommandArrayTag)
-            
-            self.resourceRegistry?.cycleFrames()
-            
-            self.commandGenerator.reset()
-            self.compactedResourceCommands.removeAll(keepingCapacity: true)
-        }
         
         let taskCompletionSemaphore = AsyncSemaphore(value: 0)
         let executionResult = RenderGraphExecutionResult()
@@ -161,26 +143,18 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
         backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &self.compactedResourceCommands)
         
-        let lastCommandBufferIndex = frameCommandInfo.commandBufferCount - 1
-        
-        var commandBuffer : Backend.CommandBuffer? = nil
-        
-        var committedCommandBufferCount = 0
-        
-        let syncEvent = backend.syncEvent(for: self.renderGraphQueue)!
-        
+        var commandBuffers = [Backend.CommandBuffer]()
         var waitedEvents = QueueCommandIndices(repeating: 0)
         
         for (i, encoderInfo) in frameCommandInfo.commandEncoders.enumerated() {
             let commandBufferIndex = encoderInfo.commandBufferIndex
-            if commandBufferIndex != committedCommandBufferCount {
-                await processCommandBuffer(&commandBuffer, committedCommandBufferCount: &committedCommandBufferCount, executionResult: executionResult, taskCompletionSemaphore: taskCompletionSemaphore, lastCommandBufferIndex: lastCommandBufferIndex, syncEvent: syncEvent)
-            }
-            
-            if commandBuffer == nil {
-                commandBuffer = self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
-                                                      resourceMap: resourceMap,
-                                                      compactedResourceCommands: self.compactedResourceCommands)
+            if commandBufferIndex != commandBuffers.endIndex - 1 {
+                if let transientRegistry = resourceMap.transientRegistry {
+                    commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
+                }
+                commandBuffers.append(self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
+                                                                          resourceMap: resourceMap,
+                                                                          compactedResourceCommands: self.compactedResourceCommands))
             }
             
             let waitEventValues = encoderInfo.queueCommandWaitIndices
@@ -188,7 +162,7 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 if waitedEvents[Int(queue.index)] < waitEventValues[Int(queue.index)],
                     waitEventValues[Int(queue.index)] > queue.lastCompletedCommand {
                     if let event = backend.syncEvent(for: queue) {
-                        commandBuffer!.waitForEvent(event, value: waitEventValues[Int(queue.index)])
+                        commandBuffers.last!.waitForEvent(event, value: waitEventValues[Int(queue.index)])
                     } else {
                         // It's not a queue known to this backend, so the best we can do is sleep and wait until the queue is completd.
                         await queue.waitForCommandCompletion(waitEventValues[Int(queue.index)])
@@ -197,13 +171,22 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             }
             waitedEvents = pointwiseMax(waitEventValues, waitedEvents)
             
-            await commandBuffer!.encodeCommands(encoderIndex: i)
+            await commandBuffers.last!.encodeCommands(encoderIndex: i)
         }
-        
-        await processCommandBuffer(&commandBuffer, committedCommandBufferCount: &committedCommandBufferCount, executionResult: executionResult, taskCompletionSemaphore: taskCompletionSemaphore, lastCommandBufferIndex: lastCommandBufferIndex, syncEvent: syncEvent)
         
         for passRecord in passes {
             passRecord.pass = nil // Release references to the RenderPasses.
+        }
+        
+        TaggedHeap.free(tag: .renderGraphResourceCommandArrayTag)
+        
+        self.resourceRegistry?.cycleFrames()
+        self.commandGenerator.reset()
+        self.compactedResourceCommands.removeAll(keepingCapacity: true)
+        
+        let syncEvent = backend.syncEvent(for: self.renderGraphQueue)!
+        for (i, commandBuffer) in commandBuffers.enumerated() {
+            await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, executionResult: executionResult, taskCompletionSemaphore: taskCompletionSemaphore, syncEvent: syncEvent)
         }
         
         await self.backend.setActiveContext(nil)
@@ -215,7 +198,10 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         }
     }
     
-    public func run<R>(_ action: () async throws -> R) reasync rethrows -> R {
-        return try await action()
+    public func run<R>(_ action: () async throws -> R) async rethrows -> R {
+        await self.backend.activeContextLock.lock()
+        let result = try await action()
+        self.backend.activeContextLock.unlock()
+        return result
     }
 }

@@ -37,6 +37,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     func freeSyncEvent(for queue: Queue)
     func syncEvent(for queue: Queue) -> Event?
     
+    var activeContextLock: AsyncSpinLock { get }
     func setActiveContext(_ context: RenderGraphContextImpl<Self>?) async
     
     var resourceRegistry: PersistentResourceRegistry { get }

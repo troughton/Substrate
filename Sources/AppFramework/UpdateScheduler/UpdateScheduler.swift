@@ -15,24 +15,6 @@ public func runAsyncAndBlock(_ asyncFun: @escaping () async -> ())
 public protocol UpdateScheduler {
 }
 
-#if canImport(Darwin)
-
-func asyncAutoreleasepool(invoking body: @escaping () async -> Void) async -> Void {
-    let group = DispatchGroup()
-    group.enter()
-    autoreleasepool {
-        _ = Task.runDetached { () async -> Void in
-            await body()
-            group.leave()
-        }
-    }
-    while group.wait(timeout: .now()) == .timedOut {
-        await Task.yield()
-    }
-}
-
-#endif
-
 #if canImport(CSDL2) && !(os(iOS) || os(tvOS) || (os(macOS) && arch(arm64)))
 
 public final class SDLUpdateScheduler : UpdateScheduler  {
@@ -40,13 +22,7 @@ public final class SDLUpdateScheduler : UpdateScheduler  {
         let application = await SDLApplication(delegate: appDelegate, updateables: windowDelegates(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
     
         while !application.inputManager.shouldQuit {
-            #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-            await asyncAutoreleasepool {
-                await application.update()
-            }
-            #else
             await application.update()
-            #endif
         }
     }
 }
@@ -89,9 +65,7 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
         let previousTask = self.previousTask
         self.previousTask = detach {
             await previousTask?.get()
-            await asyncAutoreleasepool {
-                await self.application.update()
-            }
+            await self.application.update()
         }
     }
 

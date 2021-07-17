@@ -113,7 +113,7 @@ final class FGMTLThreadRenderCommandEncoder {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
-            let depthState = stateCaches.defaultDepthState
+            let depthState = stateCaches.depthStencilCache.defaultDepthState
             encoder.setDepthStencilState(depthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
             self.boundDepthStencilState = depthState
         }
@@ -308,7 +308,7 @@ final class FGMTLThreadRenderCommandEncoder {
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
             self.pipelineDescriptor = descriptor
-            let state = await stateCaches[descriptor, renderTarget: renderTarget]!
+            let state = await stateCaches.renderPipelineCache[descriptor, renderTarget: renderTarget]!
             if state !== self.boundPipelineState {
                 encoder.setRenderPipelineState(state)
                 self.boundPipelineState = state
@@ -344,7 +344,7 @@ final class FGMTLThreadRenderCommandEncoder {
             encoder.setTriangleFillMode(MTLTriangleFillMode(fillMode))
             
         case .setDepthStencilDescriptor(let descriptorPtr):
-            let state = stateCaches[descriptorPtr.takeUnretainedValue().value]
+            let state = await stateCaches.depthStencilCache[descriptorPtr.takeUnretainedValue().value]
             if state !== self.boundDepthStencilState, renderTarget.depthAttachment != nil || renderTarget.stencilAttachment != nil {
                 encoder.setDepthStencilState(state)
                 self.boundDepthStencilState = state
@@ -544,7 +544,7 @@ final class FGMTLComputeCommandEncoder {
         case .setComputePipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue()
             self.pipelineDescriptor = descriptor.pipelineDescriptor
-            let state = await stateCaches[descriptor.pipelineDescriptor, descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth]!
+            let state = await stateCaches.computePipelineCache[descriptor.pipelineDescriptor, descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth]!
             if state !== self.boundPipelineState {
                 encoder.setComputePipelineState(state)
                 self.boundPipelineState = state

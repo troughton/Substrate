@@ -306,19 +306,19 @@ extension MTLRenderPipelineColorAttachmentDescriptor {
 }
 
 extension MTLRenderPipelineDescriptor {
-    convenience init?(_ descriptor: MetalRenderPipelineDescriptor, stateCaches: MetalStateCaches) async {
+    convenience init?(_ descriptor: MetalRenderPipelineDescriptor, functionCache: MetalFunctionCache) async {
         self.init()
         if let label = descriptor.descriptor.label {
             self.label = label
         }
         
-        guard let vertexFunction = await stateCaches.function(for: descriptor.descriptor.vertexFunction) else {
+        guard let vertexFunction = await functionCache.function(for: descriptor.descriptor.vertexFunction) else {
             return nil
         }
         self.vertexFunction = vertexFunction
         
         if !descriptor.descriptor.fragmentFunction.name.isEmpty {
-            guard let function = await stateCaches.function(for: descriptor.descriptor.fragmentFunction) else {
+            guard let function = await functionCache.function(for: descriptor.descriptor.fragmentFunction) else {
                 return nil
             }
             self.fragmentFunction = function

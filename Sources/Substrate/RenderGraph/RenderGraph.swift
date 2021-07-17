@@ -631,7 +631,7 @@ public final class RenderGraph {
         // If inflightFrameCount is 0, no transient resources are allowed.
         self.transientRegistryIndex = inflightFrameCount > 0 ? TransientRegistryManager.allocate() : -1
         
-        if self.transientRegistryIndex > 0 {
+        if self.transientRegistryIndex >= 0 {
             TransientBufferRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientBufferCapacity)
             TransientTextureRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientTextureCapacity)
             TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientArgumentBufferArrayCapacity)

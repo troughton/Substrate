@@ -447,13 +447,13 @@ final class MetalBackend : SpecificRenderBackend {
                 preconditionFailure()
             }
             for (i, function) in table.functions.enumerated() {
-                guard let function = function, let mtlFunction = await stateCaches.function(for: function) else { continue }
+                guard let function = function, let mtlFunction = await stateCaches.functionCache.function(for: function) else { continue }
                 mtlTable.setFunction(renderPipeline.functionHandle(function: mtlFunction, stage: MTLRenderStages(renderStage)), index: i)
             }
         } else {
             let computePipeline = pipelineState as! MTLComputePipelineState
             for (i, function) in table.functions.enumerated() {
-                guard let function = function, let mtlFunction = await stateCaches.function(for: function) else { continue }
+                guard let function = function, let mtlFunction = await stateCaches.functionCache.function(for: function) else { continue }
                 mtlTable.setFunction(computePipeline.functionHandle(function: mtlFunction), index: i)
             }
         }
@@ -503,7 +503,7 @@ final class MetalBackend : SpecificRenderBackend {
                     }
                     mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                 case .function(let functionDescriptor):
-                    guard let mtlFunction = await stateCaches.function(for: functionDescriptor) else { continue }
+                    guard let mtlFunction = await stateCaches.functionCache.function(for: functionDescriptor) else { continue }
                     mtlTable.setFunction(renderPipeline.functionHandle(function: mtlFunction, stage: MTLRenderStages(renderStage)), index: i)
                 }
             }
@@ -526,7 +526,7 @@ final class MetalBackend : SpecificRenderBackend {
                     }
                     mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                 case .function(let functionDescriptor):
-                    guard let mtlFunction = await stateCaches.function(for: functionDescriptor) else { continue }
+                    guard let mtlFunction = await stateCaches.functionCache.function(for: functionDescriptor) else { continue }
                     mtlTable.setFunction(computePipeline.functionHandle(function: mtlFunction), index: i)
                 }
             }
