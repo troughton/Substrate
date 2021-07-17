@@ -34,6 +34,11 @@ public struct Angle<Scalar: BinaryFloatingPoint & Real> : Hashable {
         self.init(radians: val / 180.0 * .pi)
     }
     
+    @inlinable
+    public init<Other>(_ angle: Angle<Other>) {
+        self.init(radians: Scalar(angle.radians))
+    }
+    
     // MARK: Constants
     @inlinable public static var zero  : Angle { return  Angle(radians: 0) }
     @inlinable public static var pi_6  : Angle { return  Angle(degrees: 30) }

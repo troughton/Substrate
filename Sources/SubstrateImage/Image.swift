@@ -35,7 +35,7 @@ func clamp<T: Comparable>(_ val: T, min minValue: T, max maxValue: T) -> T {
 
 // Reference: https://docs.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
 @inlinable
-public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ c: Float, type: I.Type) -> I {
+public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ c: Float, type: I.Type = I.self) -> I {
     if c != c { // Check for NaN – this check is faster than c.isNaN
         return 0
     }
@@ -62,7 +62,7 @@ public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_
 }
 
 @inlinable
-public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ c: Float, type: I.Type) -> I {
+public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ c: Float, type: I.Type = I.self) -> I {
     if c != c { // Check for NaN – this check is faster than c.isNaN
         return 0
     }
@@ -545,6 +545,21 @@ public struct Image<ComponentType> : AnyImage {
         self.ensureUniqueness()
         return try perform(self.storage.data)
     }
+    
+    @inlinable
+    public func map<Other>(_ function: (ComponentType) -> Other) -> Image<Other> {
+        var other = Image<Other>(width: self.width, height: self.height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        
+        other.withUnsafeMutableBufferPointer { dest in
+            self.withUnsafeBufferPointer { source in
+                for (i, sourceVal) in source.enumerated() {
+                    dest[i] = function(sourceVal)
+                }
+            }
+        }
+        
+        return other
+    }
 
     @inlinable
     public func cropped(originX: Int, originY: Int, width: Int, height: Int, clampOutOfBounds: Bool = false) -> Image<T> {
@@ -664,7 +679,7 @@ extension Image: Hashable {
     }
 }
 
-extension Image where T: Comparable {
+extension Image where ComponentType: Comparable {
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         precondition(width >= 1 && height >= 1 && channels >= 1)
         
@@ -701,7 +716,7 @@ extension Image where T: Comparable {
     }
 }
 
-extension Image where T: SIMDScalar {
+extension Image where ComponentType: SIMDScalar {
     @inlinable
     public subscript(x: Int, y: Int) -> SIMD4<T> {
         get {
@@ -799,7 +814,7 @@ extension Image where ComponentType == UInt8 {
     }
 }
 
-extension Image where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
+extension Image where ComponentType: BinaryInteger & FixedWidthInteger & UnsignedInteger {
     @inlinable
     public init(_ data: Image<Float>) {
         self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
@@ -905,6 +920,113 @@ extension Image where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
     }
 }
 
+public protocol _ImageNormalizedComponent {
+    init(_imageNormalizingFloat: Float)
+    func _imageNormalizedComponentToFloat() -> Float
+}
+
+extension UInt8: _ImageNormalizedComponent {
+    @inlinable
+    public init(_imageNormalizingFloat float: Float) {
+        self = floatToUnorm(float, type: UInt8.self)
+    }
+    
+    @inlinable
+    public func _imageNormalizedComponentToFloat() -> Float {
+        return unormToFloat(self)
+    }
+}
+
+extension UInt16: _ImageNormalizedComponent {
+    @inlinable
+    public init(_imageNormalizingFloat float: Float) {
+        self = floatToUnorm(float, type: UInt16.self)
+    }
+    
+    @inlinable
+    public func _imageNormalizedComponentToFloat() -> Float {
+        return unormToFloat(self)
+    }
+}
+
+extension Float: _ImageNormalizedComponent {
+    @inlinable
+    public init(_imageNormalizingFloat float: Float) {
+        self = float
+    }
+    
+    @inlinable
+    public func _imageNormalizedComponentToFloat() -> Float {
+        return self
+    }
+}
+
+extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
+    
+    @inlinable
+    public subscript(floatVectorAt x: Int, _ y: Int) -> SIMD4<Float> {
+        get {
+            let value = self[x, y]
+            return SIMD4(value.x._imageNormalizedComponentToFloat(),
+                         value.y._imageNormalizedComponentToFloat(),
+                         value.z._imageNormalizedComponentToFloat(),
+                         value.w._imageNormalizedComponentToFloat())
+        }
+        set {
+            self[x, y] = SIMD4(ComponentType(_imageNormalizingFloat: newValue.x),
+                               ComponentType(_imageNormalizingFloat: newValue.y),
+                               ComponentType(_imageNormalizingFloat: newValue.z),
+                               ComponentType(_imageNormalizingFloat: newValue.w))
+        }
+    }
+    
+    @inlinable
+    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<Float> {
+        var floorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
+        var ceilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
+        let lerpX = Float(pixelCoordinate.x.remainder(dividingBy: 1.0))
+        let lerpY = Float(pixelCoordinate.y.remainder(dividingBy: 1.0))
+        
+        let size = SIMD2(self.width, self.height)
+        let maxCoord = size &- 1
+        
+        switch wrapMode {
+        case .zero:
+            break
+        case .wrap:
+            floorCoord = floorCoord % size
+            ceilCoord = ceilCoord % size
+        case .reflect:
+            floorCoord = floorCoord % (2 &* size)
+            ceilCoord = ceilCoord % (2 &* size)
+            floorCoord.replace(with: 2 &* size &- floorCoord, where: floorCoord .> maxCoord)
+            ceilCoord.replace(with: 2 &* size &- ceilCoord, where: ceilCoord .> maxCoord)
+        case .clamp:
+            floorCoord = pointwiseMax(pointwiseMin(floorCoord, maxCoord), .zero)
+            ceilCoord = pointwiseMax(pointwiseMin(ceilCoord, maxCoord), .zero)
+        }
+        
+        func readPixel(_ coord: SIMD2<Int>) -> SIMD4<Float> {
+            if wrapMode == .zero, any(coord .< .zero .| coord .> maxCoord) { return .zero }
+            return self[floatVectorAt: coord.x, coord.y]
+        }
+        
+        let a = readPixel(floorCoord)
+        let b = readPixel(SIMD2(ceilCoord.x, floorCoord.y))
+        let c = readPixel(SIMD2(floorCoord.x, ceilCoord.y))
+        let d = readPixel(ceilCoord)
+        
+        let top = (1.0 - lerpX) * a + lerpX * b
+        let bottom = (1.0 - lerpX) * c + lerpX * d
+        return (1.0 - lerpY) * top + lerpY * bottom
+    }
+    
+    @inlinable
+    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<Float> {
+        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), wrapMode: wrapMode)
+    }
+}
+
 extension Image {
     @available(*, deprecated, renamed: "withImageReinterpreted(as:perform:)")
     @inlinable
@@ -949,7 +1071,7 @@ extension Image {
     }
 }
 
-extension Image where T: BinaryInteger & FixedWidthInteger & SignedInteger {
+extension Image where ComponentType: BinaryInteger & FixedWidthInteger & SignedInteger {
     @inlinable
     public init(_ data: Image<Float>) {
         self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
@@ -1071,7 +1193,7 @@ extension Image where ComponentType == Float {
 }
 
 
-extension Image where T: BinaryFloatingPoint {
+extension Image where ComponentType: BinaryFloatingPoint {
     @inlinable
     public init<Other: BinaryFloatingPoint>(_ data: Image<Other>) {
         self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
