@@ -94,7 +94,7 @@ enum PreFrameCommands {
         case .materialiseArgumentBuffer(let argumentBuffer):
             let argBufferReference : Backend.ArgumentBufferReference
             if argumentBuffer.flags.contains(.persistent) {
-                argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
+                argBufferReference = await resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
                 await argumentBuffer.waitForCPUAccess(accessType: .write)
             } else {
                 argBufferReference = resourceRegistry!.allocateArgumentBufferIfNeeded(argumentBuffer)
@@ -106,7 +106,7 @@ enum PreFrameCommands {
         case .materialiseArgumentBufferArray(let argumentBuffer):
             let argBufferReference : Backend.ArgumentBufferArrayReference
             if argumentBuffer.flags.contains(.persistent) {
-                argBufferReference = resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
+                argBufferReference = await resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
                 await argumentBuffer.waitForCPUAccess(accessType: .write)
             } else {
                 argBufferReference = resourceRegistry!.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
@@ -117,7 +117,7 @@ enum PreFrameCommands {
         case .materialiseVisibleFunctionTable(let table):
             precondition(table.flags.contains(.persistent))
             
-            guard let tableReference = resourceMap.persistentRegistry.allocateVisibleFunctionTableIfNeeded(table) else { break }
+            guard let tableReference = await resourceMap.persistentRegistry.allocateVisibleFunctionTableIfNeeded(table) else { break }
             guard !table.stateFlags.contains(.initialised) else { break }
             
             await table.waitForCPUAccess(accessType: .write)
@@ -126,7 +126,7 @@ enum PreFrameCommands {
         case .materialiseIntersectionFunctionTable(let table):
             precondition(table.flags.contains(.persistent))
             
-            guard let tableReference = resourceMap.persistentRegistry.allocateIntersectionFunctionTableIfNeeded(table) else { break }
+            guard let tableReference = await  resourceMap.persistentRegistry.allocateIntersectionFunctionTableIfNeeded(table) else { break }
             guard !table.stateFlags.contains(.initialised) else { break }
             
             await table.waitForCPUAccess(accessType: .write)

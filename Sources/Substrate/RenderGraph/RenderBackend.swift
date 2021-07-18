@@ -61,17 +61,17 @@ public protocol RenderBackendProtocol : AnyObject {
 
 @usableFromInline
 protocol _RenderBackendProtocol : RenderBackendProtocol {
-    func materialisePersistentTexture(_ texture: Texture) -> Bool
-    func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
-    func materialiseHeap(_ heap: Heap) -> Bool
+    func materialisePersistentTexture(_ texture: Texture) async -> Bool
+    func materialisePersistentBuffer(_ buffer: Buffer) async -> Bool
+    func materialiseHeap(_ heap: Heap) async -> Bool
     @available(macOS 11.0, iOS 14.0, *)
-    func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool
+    func materialiseAccelerationStructure(_ structure: AccelerationStructure) async -> Bool
     
-    func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any?
-    func replaceBackingResource(for texture: Texture, with: Any?) -> Any?
-    func replaceBackingResource(for heap: Heap, with: Any?) -> Any?
+    func replaceBackingResource(for buffer: Buffer, with: Any?) async -> Any?
+    func replaceBackingResource(for texture: Texture, with: Any?) async -> Any?
+    func replaceBackingResource(for heap: Heap, with: Any?) async -> Any?
     @available(macOS 11.0, iOS 14.0, *)
-    func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any?
+    func replaceBackingResource(for structure: AccelerationStructure, with: Any?) async -> Any?
     
     func registerWindowTexture(texture: Texture, context: Any)
     func registerExternalResource(_ resource: Resource, backingResource: Any)
@@ -79,7 +79,7 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func updateLabel(on resource: Resource)
     var requiresEmulatedInputAttachments : Bool { get }
     
-    func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer?
+    func bufferContents(for buffer: Buffer, range: Range<Int>) async -> UnsafeMutableRawPointer?
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
     
     func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int)

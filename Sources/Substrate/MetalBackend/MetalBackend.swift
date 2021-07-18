@@ -46,7 +46,16 @@ extension MTLDevice {
     }
 }
 
+fileprivate func ??<T>(lhs: T?, rhs: () async -> T) async -> T {
+    if let result = lhs {
+        return result
+    }
+    return await rhs()
+}
+
 final class MetalBackend : SpecificRenderBackend {
+    @TaskLocal static var activeContext: RenderGraphContextImpl<MetalBackend>? = nil
+    
     typealias BufferReference = MTLBufferReference
     typealias TextureReference = MTLTextureReference
     typealias ArgumentBufferReference = MTLBufferReference
@@ -71,9 +80,6 @@ final class MetalBackend : SpecificRenderBackend {
     let stateCaches : MetalStateCaches
     let enableValidation : Bool
     let enableShaderHotReloading : Bool
-    let activeContextLock = AsyncSpinLock()
-    
-    var activeContext : RenderGraphContextImpl<MetalBackend>? = nil
     
     var queueSyncEvents = [MTLEvent?](repeating: nil, count: QueueRegistry.maxQueues)
     
@@ -85,10 +91,6 @@ final class MetalBackend : SpecificRenderBackend {
         self.enableShaderHotReloading = enableShaderHotReloading
     }
     
-    deinit {
-        self.activeContextLock.deinit()
-    }
-    
     public var api : RenderAPI {
         return .metal
     }
@@ -97,109 +99,82 @@ final class MetalBackend : SpecificRenderBackend {
         return self.device
     }
     
-    func setActiveContext(_ context: RenderGraphContextImpl<MetalBackend>?) async {
-        if context != nil {
-            await self.activeContextLock.lock()
-            assert(self.activeContext == nil)
-            if self.enableShaderHotReloading {
-                await self.stateCaches.checkForLibraryReload()
-            }
-            self.activeContext = context
-        } else {
-            assert(self.activeContext != nil)
-            self.activeContext = nil
-            self.activeContextLock.unlock()
+    func reloadShaderLibraryIfNeeded() async {
+        if self.enableShaderHotReloading {
+            await self.stateCaches.checkForLibraryReload()
         }
     }
     
-    @usableFromInline func materialisePersistentTexture(_ texture: Texture) -> Bool {
-        return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateTexture(texture) != nil
-        }
+    @usableFromInline func materialisePersistentTexture(_ texture: Texture) async -> Bool {
+        return await self.resourceRegistry.allocateTexture(texture) != nil
     }
     
-    @usableFromInline func registerWindowTexture(texture: Texture, context: Any) {
-        self.resourceRegistry.registerWindowTexture(texture: texture, context: context)
+    @usableFromInline func registerWindowTexture(texture: Texture, context: Any) async {
+        await self.resourceRegistry.registerWindowTexture(texture: texture, context: context)
     }
     
-    @usableFromInline func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
-        return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateBuffer(buffer) != nil
-        }
+    @usableFromInline func materialisePersistentBuffer(_ buffer: Buffer) async -> Bool {
+        return await self.resourceRegistry.allocateBuffer(buffer) != nil
     }
     
-    @usableFromInline func materialiseHeap(_ heap: Heap) -> Bool {
-        return self.resourceRegistry.allocateHeap(heap) != nil
+    @usableFromInline func materialiseHeap(_ heap: Heap) async -> Bool {
+        return await self.resourceRegistry.allocateHeap(heap) != nil
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    @usableFromInline func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
-        return self.resourceRegistry.allocateAccelerationStructure(structure) != nil
+    @usableFromInline func materialiseAccelerationStructure(_ structure: AccelerationStructure) async -> Bool {
+        return await self.resourceRegistry.allocateAccelerationStructure(structure) != nil
     }
     
-    @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
-        self.resourceRegistry.accessLock.withWriteLock {
-            let oldValue = self.resourceRegistry[buffer]?._buffer.takeUnretainedValue()
-            self.resourceRegistry.bufferReferences[buffer] = (with as! MTLBuffer?).map { MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained($0), offset: 0) }
-            return oldValue
-        }
+    @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) async -> Any? {
+        return await self.resourceRegistry.bufferReferences.replaceValue(forKey: buffer,
+                                                                         with: (with as! MTLBuffer?).map { MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained($0), offset: 0) }
+        )?._buffer.takeUnretainedValue()
     }
     
-    @usableFromInline func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
-        self.resourceRegistry.accessLock.withWriteLock {
-            let oldValue = self.resourceRegistry[texture]?._texture.takeUnretainedValue()
-            self.resourceRegistry.textureReferences[texture] = (with as! MTLTexture?).map { MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained($0)) }
-            return oldValue
-        }
+    @usableFromInline func replaceBackingResource(for texture: Texture, with: Any?) async -> Any? {
+        return await self.resourceRegistry.textureReferences.replaceValue(forKey: texture,
+                                                                          with: (with as! MTLTexture?).map { MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained($0)) }
+        )?._texture.takeUnretainedValue()
     }
     
-    @usableFromInline func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
-        self.resourceRegistry.accessLock.withWriteLock {
-            let oldValue = self.resourceRegistry[heap]
-            self.resourceRegistry.heapReferences[heap] = with as! MTLHeap?
-            return oldValue
-        }
+    @usableFromInline func replaceBackingResource(for heap: Heap, with: Any?) async -> Any? {
+        return await self.resourceRegistry.heapReferences.replaceValue(forKey: heap, with: with as! MTLHeap?)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    @usableFromInline func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any? {
-        self.resourceRegistry.accessLock.withWriteLock {
-            let oldValue = self.resourceRegistry[structure]
-            self.resourceRegistry.accelerationStructureReferences[structure] = with as! MTLAccelerationStructure?
-            return oldValue
-        }
+    @usableFromInline func replaceBackingResource(for structure: AccelerationStructure, with: Any?) async -> Any? {
+        return await self.resourceRegistry.accelerationStructureReferences.replaceValue(forKey: structure, with: with as! MTLAccelerationStructure?)
     }
 
     @usableFromInline func updateLabel(on resource: Resource) {
-        self.resourceRegistry.accessLock.withReadLock {
+        _ = Task {
             if let buffer = resource.buffer {
-                self.resourceRegistry[buffer]?.buffer.label = buffer.label
+                await self.resourceRegistry[buffer]?.buffer.label = buffer.label
             } else if let texture = resource.texture {
-                self.resourceRegistry[texture]?.texture.label = texture.label
+                await self.resourceRegistry[texture]?.texture.label = texture.label
             } else if let heap = resource.heap {
-                self.resourceRegistry[heap]?.label = heap.label
+                await self.resourceRegistry[heap]?.label = heap.label
             }
         }
     }
     
-    @usableFromInline func updatePurgeableState(for resource: Resource, to newState: ResourcePurgeableState?) -> ResourcePurgeableState {
-        self.resourceRegistry.accessLock.withReadLock {
-            let mtlState = MTLPurgeableState(newState)
-            if let buffer = resource.buffer, let mtlBuffer = self.resourceRegistry[buffer]?.buffer {
-                return ResourcePurgeableState(
-                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlBuffer, to: mtlState)
-                )!
-            } else if let texture = resource.texture, let mtlTexture = self.resourceRegistry[texture]?.texture {
-                return ResourcePurgeableState(
-                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlTexture, to: mtlState)
-                )!
-            } else if let heap = resource.heap, let mtlHeap = self.resourceRegistry[heap] {
-                return ResourcePurgeableState(
-                    MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlHeap, to: mtlState)
-                )!
-            }
-            return .nonDiscardable
+    @usableFromInline func updatePurgeableState(for resource: Resource, to newState: ResourcePurgeableState?) async -> ResourcePurgeableState {
+        let mtlState = MTLPurgeableState(newState)
+        if let buffer = resource.buffer, let mtlBuffer = await self.resourceRegistry[buffer]?.buffer {
+            return ResourcePurgeableState(
+                MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlBuffer, to: mtlState)
+            )!
+        } else if let texture = resource.texture, let mtlTexture = await self.resourceRegistry[texture]?.texture {
+            return ResourcePurgeableState(
+                MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlTexture, to: mtlState)
+            )!
+        } else if let heap = resource.heap, let mtlHeap = await self.resourceRegistry[heap] {
+            return ResourcePurgeableState(
+                MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlHeap, to: mtlState)
+            )!
         }
+        return .nonDiscardable
     }
     
     @usableFromInline func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
@@ -212,65 +187,57 @@ final class MetalBackend : SpecificRenderBackend {
         return (sizeAndAlign.size, sizeAndAlign.align)
     }
     
-    @usableFromInline func usedSize(for heap: Heap) -> Int {
-        return self.resourceRegistry.accessLock.withReadLock {
-            let mtlHeap = self.resourceRegistry[heap]
-            return mtlHeap?.usedSize ?? heap.size
-        }
+    @usableFromInline func usedSize(for heap: Heap) async -> Int {
+        let mtlHeap = await self.resourceRegistry[heap]
+        return mtlHeap?.usedSize ?? heap.size
     }
     
-    @usableFromInline func currentAllocatedSize(for heap: Heap) -> Int {
-        return self.resourceRegistry.accessLock.withReadLock {
-            let mtlHeap = self.resourceRegistry[heap]
-            return mtlHeap?.currentAllocatedSize ?? heap.size
-        }
+    @usableFromInline func currentAllocatedSize(for heap: Heap) async -> Int {
+        let mtlHeap = await self.resourceRegistry[heap]
+        return mtlHeap?.currentAllocatedSize ?? heap.size
     }
     
-    @usableFromInline func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) -> Int {
-        return self.resourceRegistry.accessLock.withReadLock {
-            let mtlHeap = self.resourceRegistry[heap]
-            return mtlHeap?.maxAvailableSize(alignment: alignment) ?? 0
-        }
+    @usableFromInline func maxAvailableSize(forAlignment alignment: Int, in heap: Heap) async -> Int {
+        let mtlHeap = await self.resourceRegistry[heap]
+        return mtlHeap?.maxAvailableSize(alignment: alignment) ?? 0
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     @usableFromInline func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes {
-        return self.resourceRegistry.accessLock.withReadLock {
-            let sizes = self.device.accelerationStructureSizes(descriptor: descriptor.metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>(persistentRegistry: self.resourceRegistry, transientRegistry: nil)))
-            return AccelerationStructureSizes(accelerationStructureSize: sizes.accelerationStructureSize, buildScratchBufferSize: sizes.buildScratchBufferSize, refitScratchBufferSize: sizes.refitScratchBufferSize)
-        }
+        let sizes = self.device.accelerationStructureSizes(descriptor: descriptor.metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>(persistentRegistry: self.resourceRegistry, transientRegistry: nil)))
+        return AccelerationStructureSizes(accelerationStructureSize: sizes.accelerationStructureSize, buildScratchBufferSize: sizes.buildScratchBufferSize, refitScratchBufferSize: sizes.refitScratchBufferSize)
     }
     
     @usableFromInline func dispose(texture: Texture) {
-        self.resourceRegistry.disposeTexture(texture)
+        _ = Task { await self.resourceRegistry.disposeTexture(texture) }
     }
     
     @usableFromInline func dispose(buffer: Buffer) {
-        self.resourceRegistry.disposeBuffer(buffer)
+        _ = Task { await self.resourceRegistry.disposeBuffer(buffer) }
     }
     
     @usableFromInline func dispose(argumentBuffer: ArgumentBuffer) {
-        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer)
+        _ = Task { await self.resourceRegistry.disposeArgumentBuffer(argumentBuffer) }
     }
     
     @usableFromInline func dispose(argumentBufferArray: ArgumentBufferArray) {
-        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray)
+        _ = Task { await self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray) }
     }
     
     @usableFromInline func dispose(heap: Heap) {
-        self.resourceRegistry.disposeHeap(heap)
+        _ = Task { await self.resourceRegistry.disposeHeap(heap) }
     }
     
     @usableFromInline func dispose(accelerationStructure: AccelerationStructure) {
-        self.resourceRegistry.disposeAccelerationStructure(accelerationStructure)
+        _ = Task { await self.resourceRegistry.disposeAccelerationStructure(accelerationStructure) }
     }
     
     @usableFromInline func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
-        self.resourceRegistry.disposeIntersectionFunctionTable(intersectionFunctionTable)
+        _ = Task { await self.resourceRegistry.disposeIntersectionFunctionTable(intersectionFunctionTable) }
     }
 
     @usableFromInline func dispose(visibleFunctionTable: VisibleFunctionTable) {
-        self.resourceRegistry.disposeVisibleFunctionTable(visibleFunctionTable)
+        _ = Task { await self.resourceRegistry.disposeVisibleFunctionTable(visibleFunctionTable) }
     }
 
     
@@ -330,18 +297,18 @@ final class MetalBackend : SpecificRenderBackend {
         return self.isAppleSiliconGPU
     }
     
-    @usableFromInline func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer? {
-        guard let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock({ resourceRegistry[buffer] }) else {
+    @usableFromInline func bufferContents(for buffer: Buffer, range: Range<Int>) async -> UnsafeMutableRawPointer? {
+        guard let bufferReference = await Self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry[buffer] else {
             return nil
         }
         return bufferReference.buffer.contents() + bufferReference.offset + range.lowerBound
     }
     
-    @usableFromInline func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
+    @usableFromInline func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) async {
         #if os(macOS) || targetEnvironment(macCatalyst)
         if range.isEmpty || self.isAppleSiliconGPU { return }
         if buffer.descriptor.storageMode == .managed {
-            let mtlBuffer = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+            let mtlBuffer = Self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? await resourceRegistry[buffer]!
             let offsetRange = (range.lowerBound + mtlBuffer.offset)..<(range.upperBound + mtlBuffer.offset)
             #if targetEnvironment(macCatalyst)
             unsafeBitCast(mtlBuffer.buffer, to: MTLBufferShim.self).didModifyRange(NSMakeRange(offsetRange.lowerBound, offsetRange.count))
@@ -352,45 +319,43 @@ final class MetalBackend : SpecificRenderBackend {
         #endif
     }
 
-    @usableFromInline func registerExternalResource(_ resource: Resource, backingResource: Any) {
-        self.resourceRegistry.importExternalResource(resource, backingResource: backingResource)
+    @usableFromInline func registerExternalResource(_ resource: Resource, backingResource: Any) async {
+        await self.resourceRegistry.importExternalResource(resource, backingResource: backingResource)
     }
     
-    public func backingResource(_ resource: Resource) -> Any? {
-        return resourceRegistry.accessLock.withReadLock {
-            if let buffer = resource.buffer {
-                let bufferReference = resourceRegistry[buffer]
-                assert(bufferReference == nil || bufferReference?.offset == 0)
-                return bufferReference?.buffer
-            } else if let texture = resource.texture {
-                return resourceRegistry[texture]?.texture
-            } else if let heap = resource.heap {
-                return resourceRegistry[heap]
-            } else if let accelerationStructure = resource.accelerationStructure, #available(macOS 11.0, iOS 14.0, *) {
-                return resourceRegistry[accelerationStructure]
-            }
-            return nil
+    public func backingResource(_ resource: Resource) async -> Any? {
+        if let buffer = resource.buffer {
+            let bufferReference = await resourceRegistry[buffer]
+            assert(bufferReference == nil || bufferReference?.offset == 0)
+            return bufferReference?.buffer
+        } else if let texture = resource.texture {
+            return await resourceRegistry[texture]?.texture
+        } else if let heap = resource.heap {
+            return await resourceRegistry[heap]
+        } else if let accelerationStructure = resource.accelerationStructure, #available(macOS 11.0, iOS 14.0, *) {
+            return await resourceRegistry[accelerationStructure]
         }
+        return nil
     }
     
-    @usableFromInline func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
-        assert(texture.flags.contains(.persistent) || self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
+    @usableFromInline func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) async {
+        assert(texture.flags.contains(.persistent) || Self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
         
-        let mtlTexture = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
+        let mtlTexture = Self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? await resourceRegistry[texture]!
         mtlTexture.texture.getBytes(bytes, bytesPerRow: bytesPerRow, from: MTLRegion(region), mipmapLevel: mipmapLevel)
     }
     
-    @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        assert(texture.flags.contains(.persistent) || self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
+    @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) async {
+        assert(texture.flags.contains(.persistent) || Self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
         
-        let mtlTexture = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
+        let mtlTexture = Self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? await resourceRegistry[texture]!
         mtlTexture.texture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
     }
     
-    @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
-        assert(texture.flags.contains(.persistent) || self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
+    @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) async {
+        assert(texture.flags.contains(.persistent) || Self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
                
-        let mtlTexture = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
+        let mtlTexture = await Self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry[texture]!
         mtlTexture.texture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
     }
     

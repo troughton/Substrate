@@ -597,7 +597,7 @@ actor RenderGraphSharedActor {
 /// Each RenderGraph executes on its own GPU queue, although executions are synchronised by submission order.
 public final class RenderGraph {
     static let activeRenderGraphLock = AsyncSpinLock()
-    public private(set) static var activeRenderGraph : RenderGraph? = nil
+    @TaskLocal public static var activeRenderGraph : RenderGraph? = nil
     
     private var renderPasses : [RenderPassRecord] = []
     private var renderPassLock = SpinLock()
@@ -1265,23 +1265,6 @@ public final class RenderGraph {
         return true
     }
     
-    @RenderGraphSharedActor
-    private func executeOnSharedActor() async -> Task<RenderGraphExecutionResult, Never> {
-        await self.context.accessSemaphore?.wait()
-        await self.context.beginFrameResourceAccess()
-        RenderGraph.activeRenderGraph = self // FIXME: we should use task local values instead.
-        defer { RenderGraph.activeRenderGraph = nil }
-        
-        let (passes, dependencyTable, usedResources) = await self.compile()
-        
-        #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-        //        return autoreleasepool {
-        return await self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
-        //        }
-        #else
-        return await self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
-        #endif
-    }
     
     private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
         self._lastGraphGPUTime = result.gpuTime
@@ -1319,33 +1302,43 @@ public final class RenderGraph {
             return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
         }
         
-        await Self.activeRenderGraphLock.lock()
-        
-        let onCompletion = await self.executeOnSharedActor()
-        
-        _ = Task.runDetached {
-            let result = await onCompletion.get()
-            await self.didCompleteRender(result)
-        }
-        
-        // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
-        renderPasses.forEach {
-            $0.commands = nil
-            $0.unmanagedReferences?.forEach {
-                $0.release()
+        return await Self.$activeRenderGraph.withValue(self) { @RenderGraphSharedActor in
+            await self.context.accessSemaphore?.wait()
+            await self.context.beginFrameResourceAccess()
+            
+            let (passes, dependencyTable, usedResources) = await self.compile()
+            
+            #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+            //        return autoreleasepool {
+            let onCompletion = await self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
+            //        }
+            #else
+            let onCompletion = await self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
+            #endif
+            
+            _ = Task.runDetached {
+                let result = await onCompletion.get()
+                await self.didCompleteRender(result)
             }
+            
+            // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
+            renderPasses.forEach {
+                $0.commands = nil
+                $0.unmanagedReferences?.forEach {
+                    $0.release()
+                }
+            }
+            
+            self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
+            self.submissionNotifyQueue.removeAll(keepingCapacity: true)
+            self.completionNotifyQueue.removeAll(keepingCapacity: true)
+            
+            self.reset()
+            
+            RenderGraph.globalSubmissionIndex.wrappingIncrement(ordering: .relaxed)
+            
+            return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
         }
-        
-        self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
-        self.submissionNotifyQueue.removeAll(keepingCapacity: true)
-        self.completionNotifyQueue.removeAll(keepingCapacity: true)
-        
-        self.reset()
-        
-        Self.activeRenderGraphLock.unlock()
-        RenderGraph.globalSubmissionIndex.wrappingIncrement(ordering: .relaxed)
-        
-        return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
     }
     
     private func reset() {

@@ -28,6 +28,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     
     associatedtype InterEncoderDependencyType: Dependency
     
+    static var activeContext: TaskLocal<RenderGraphContextImpl<Self>> { get }
     static var requiresResourceResidencyTracking: Bool { get }
     
     var supportsMemorylessAttachments: Bool { get }
@@ -37,8 +38,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     func freeSyncEvent(for queue: Queue)
     func syncEvent(for queue: Queue) -> Event?
     
-    var activeContextLock: AsyncSpinLock { get }
-    func setActiveContext(_ context: RenderGraphContextImpl<Self>?) async
+    func reloadShaderLibraryIfNeeded() async
     
     var resourceRegistry: PersistentResourceRegistry { get }
     func makeTransientRegistry(index: Int, inflightFrameCount: Int, queue: Queue) -> TransientResourceRegistry
@@ -91,7 +91,12 @@ protocol BackendCommandBuffer: AnyObject {
     var error: Error? { get }
 }
 
-protocol ResourceRegistry: AnyObject {
+protocol BackendTransientResourceRegistry {
+    static func isAliasedHeapResource(resource: Resource) -> Bool
+    
+    var accessLock: SpinLock { get set }
+    
+    // ResourceRegistry requirements:
     associatedtype Backend: SpecificRenderBackend
     
     subscript(buffer: Buffer) -> Backend.BufferReference? { get }
@@ -103,12 +108,8 @@ protocol ResourceRegistry: AnyObject {
     func cycleFrames()
     func allocateArgumentBufferIfNeeded(_ buffer: ArgumentBuffer) -> Backend.ArgumentBufferReference
     func allocateArgumentBufferArrayIfNeeded(_ buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference
-}
-
-protocol BackendTransientResourceRegistry: ResourceRegistry {
-    static func isAliasedHeapResource(resource: Resource) -> Bool
     
-    var accessLock: SpinLock { get set }
+    // TransientResourceRegistry requirements:
     
     func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> Backend.BufferReference
     func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> Backend.TextureReference
@@ -135,21 +136,37 @@ extension BackendTransientResourceRegistry {
     var argumentBufferArrayWaitEvents: TransientResourceMap<ArgumentBufferArray, ContextWaitEvent>? { nil }
 }
 
-protocol BackendPersistentResourceRegistry: ResourceRegistry {
-    subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference { get }
+protocol BackendPersistentResourceRegistry: Actor {
+    
+    // ResourceRegistry requirements:
+    associatedtype Backend: SpecificRenderBackend
+    
+    subscript(buffer: Buffer) -> Backend.BufferReference? { get async }
+    subscript(texture: Texture) -> Backend.TextureReference? { get async }
+    subscript(argumentBuffer: ArgumentBuffer) -> Backend.ArgumentBufferReference? { get async }
+    subscript(argumentBufferArray: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get async }
+    
+    func prepareFrame()
+    func cycleFrames()
+    func allocateArgumentBufferIfNeeded(_ buffer: ArgumentBuffer) -> Backend.ArgumentBufferReference
+    func allocateArgumentBufferArrayIfNeeded(_ buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference
+    
+    // PersistentResourceRegistry requirements:
+    
+    subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference { get async }
     
     @available(macOS 11.0, iOS 14.0, *)
-    subscript(accelerationStructure: AccelerationStructure) -> AnyObject? { get }
+    subscript(accelerationStructure: AccelerationStructure) -> AnyObject? { get async }
     @available(macOS 11.0, iOS 14.0, *)
-    subscript(visibleFunctionTable: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference? { get }
+    subscript(visibleFunctionTable: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference? { get async }
     @available(macOS 11.0, iOS 14.0, *)
-    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference? { get }
+    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference? { get async }
     
-    func allocateBuffer(_ buffer: Buffer) -> Backend.BufferReference?
-    func allocateTexture(_ texture: Texture) -> Backend.TextureReference?
+    func allocateBuffer(_ buffer: Buffer) async -> Backend.BufferReference?
+    func allocateTexture(_ texture: Texture) async -> Backend.TextureReference?
     
-    func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference?
-    func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference?
+    func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) async -> Backend.VisibleFunctionTableReference?
+    func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) async -> Backend.IntersectionFunctionTableReference?
     
     func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64)
     func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64)

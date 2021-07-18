@@ -115,13 +115,11 @@ struct MTLTextureUsageProperties {
     }
 }
 
-final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
+final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     typealias Backend = MetalBackend
     
     @available(macOS 11.0, iOS 14.0, *)
     typealias AccelerationStructureReference = MTLAccelerationStructure
-    
-    var accessLock = ReaderWriterLock()
     
     var heapReferences = PersistentResourceMap<Heap, MTLHeap>()
     var textureReferences = PersistentResourceMap<Texture, MTLTextureReference>()
