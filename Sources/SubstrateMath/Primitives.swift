@@ -118,6 +118,13 @@ extension Rect where Scalar: BinaryFloatingPoint {
     }
     
     @inlinable
+    public var centre: SIMD2<Scalar> {
+        get {
+            return self.origin + self.size * 0.5
+        }
+    }
+    
+    @inlinable
     public func contains(point: SIMD2<Scalar>) -> Bool {
         let maxPoint = self.origin + self.size
         return all(point .>= self.origin) && all(point .<= maxPoint)
