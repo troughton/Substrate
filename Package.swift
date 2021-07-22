@@ -111,6 +111,7 @@ let package = Package(
                 .unsafeFlags([
                     "-Xfrontend", "-enable-experimental-concurrency",
                     "-Xfrontend", "-disable-availability-checking",
+                    "-Xfrontend", "-validate-tbd-against-ir=none",
                 ])
             ]),
     ],
