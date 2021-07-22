@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import RealModule
 import stb_image_resize
 
 //@available(*, deprecated, renamed: "ImageColorSpace")
@@ -153,7 +154,7 @@ public enum ImageColorSpace: Hashable {
         case .undefined:
             return color
         case .sRGB:
-            return color <= 0.04045 ? (color / 12.92) : pow((color + 0.055) / 1.055, 2.4)
+            return color <= 0.04045 ? (color / 12.92) : Float.pow((color + 0.055) / 1.055, 2.4)
         case .linearSRGB:
             return color
         case .gammaSRGB(let gamma):
