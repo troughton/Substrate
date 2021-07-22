@@ -60,7 +60,7 @@ extension Image: TextureCopyable {
             case 2:
                 if !RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB) { return .rg8Unorm }
                 return colorSpace == .sRGB ? .rg8Unorm_sRGB : .rg8Unorm
-            case 4:
+            case 3, 4:
                 return colorSpace == .sRGB ? .rgba8Unorm_sRGB : .rgba8Unorm
             default:
                 return .invalid
@@ -71,7 +71,7 @@ extension Image: TextureCopyable {
                 return .r8Snorm
             case 2:
                 return .rg8Snorm
-            case 4:
+            case 3, 4:
                 return .rgba8Snorm
             default:
                 return .invalid
@@ -82,8 +82,41 @@ extension Image: TextureCopyable {
                 return .r16Unorm
             case 2:
                 return .rg16Unorm
-            case 4:
+            case 3, 4:
                 return .rgba16Unorm
+            default:
+                return .invalid
+            }
+        case is Int16.Type:
+            switch self.channelCount {
+            case 1:
+                return .r16Snorm
+            case 2:
+                return .rg16Snorm
+            case 3, 4:
+                return .rgba16Snorm
+            default:
+                return .invalid
+            }
+        case is UInt32.Type:
+            switch self.channelCount {
+            case 1:
+                return .r32Uint
+            case 2:
+                return .rg32Uint
+            case 3, 4:
+                return .rgba32Uint
+            default:
+                return .invalid
+            }
+        case is Int32.Type:
+            switch self.channelCount {
+            case 1:
+                return .r32Sint
+            case 2:
+                return .rg32Sint
+            case 3, 4:
+                return .rgba32Sint
             default:
                 return .invalid
             }
@@ -93,7 +126,7 @@ extension Image: TextureCopyable {
                 return .r32Float
             case 2:
                 return .rg32Float
-            case 4:
+            case 3, 4:
                 return .rgba32Float
             default:
                 return .invalid
