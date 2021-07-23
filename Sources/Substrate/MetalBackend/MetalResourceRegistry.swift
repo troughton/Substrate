@@ -40,6 +40,10 @@ struct MTLBufferReference : MTLResourceReference {
 struct MTLTextureReference : MTLResourceReference {
     var _texture : Unmanaged<MTLTexture>!
     
+    // For window handle textures only.
+    var disposeWaitValue: UInt64 = 0
+    var disposeWaitQueue: Queue? = nil
+    
     var texture : MTLTexture! {
         return _texture?.takeUnretainedValue()
     }
@@ -686,7 +690,10 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             let drawableTexture = mtlDrawable.texture
             if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
                 self.frameDrawables.append(mtlDrawable)
-                self.textureReferences[texture]!._texture = Unmanaged.passUnretained(drawableTexture) // since it's owned by the MTLDrawable
+                self.textureReferences[texture]!._texture = Unmanaged.passRetained(drawableTexture)
+                if let queue = self.textureReferences[texture]!.disposeWaitQueue {
+                    CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(self.textureReferences[texture]!._texture.toOpaque())), after: self.textureReferences[texture]!.disposeWaitValue, on: queue)
+                }
             } else {
                 // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
                 // throw an error.
@@ -851,11 +858,13 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         
         if let mtlTexture = textureRef {
-            if texture.flags.contains(.windowHandle) {
-                return
-            }
-            if texture.isTextureView {
-                CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(mtlTexture._texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
+            if texture.flags.contains(.windowHandle) || texture.isTextureView {
+                if let texture = mtlTexture._texture {
+                    CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(mtlTexture._texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
+                } else {
+                    self.textureReferences[texture]?.disposeWaitValue = waitEvent.waitValue
+                    self.textureReferences[texture]?.disposeWaitQueue = self.queue
+                }
                 return
             }
             
