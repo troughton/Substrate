@@ -334,38 +334,6 @@ extension Image where ComponentType == UInt8 {
         }
     }
     
-    public func pngData(compressionSettings: PNGCompressionSettings = .default) throws -> Data {
-        var texture = self
-        texture.convertToPostmultipliedAlpha()
-        
-        var lodePNGState = LodePNGState()
-        lodepng_state_init(&lodePNGState)
-        defer { lodepng_state_cleanup(&lodePNGState) }
-        
-        lodePNGState.info_raw.colortype = try LodePNGColorType(channelCount: texture.channelCount)
-        lodePNGState.info_raw.bitdepth = UInt32(MemoryLayout<T>.size * 8)
-        lodePNGState.info_png.color.colortype = lodePNGState.info_raw.colortype
-        lodePNGState.info_png.color.bitdepth = lodePNGState.info_raw.bitdepth
-        lodePNGState.info_png.setColorSpace(texture.colorSpace)
-        lodePNGState.encoder.fill(from: compressionSettings)
-        
-        var outBuffer: UnsafeMutablePointer<UInt8>! = nil
-        var outSize: Int = 0
-        
-        let errorCode = texture.withUnsafeBufferPointer { lodepng_encode(&outBuffer, &outSize, $0.baseAddress, UInt32(texture.width), UInt32(texture.height), &lodePNGState) }
-        
-        if errorCode != 0 {
-            let error = lodepng_error_text(errorCode)
-            throw TextureSaveError.errorWritingFile(error.map { String(cString: $0) } ?? "(no error message)")
-        }
-        
-        return Data(bytesNoCopy: UnsafeMutableRawPointer(outBuffer), count: outSize, deallocator: .free)
-    }
-    
-    public func writePNG(to url: URL, compressionSettings: PNGCompressionSettings = .default) throws {
-        try self.pngData(compressionSettings: compressionSettings).write(to: url)
-    }
-    
     public func writeTGA(to url: URL) throws {
         let result = stbi_write_tga(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress)
         if result == 0 {
@@ -374,7 +342,7 @@ extension Image where ComponentType == UInt8 {
     }
 }
 
-extension Image where ComponentType == UInt16 {
+extension Image where ComponentType: UnsignedInteger & BinaryInteger & FixedWidthInteger {
     public func pngData(compressionSettings: PNGCompressionSettings = .default) throws -> Data {
         var texture = self
         texture.convertToPostmultipliedAlpha()
@@ -419,7 +387,6 @@ extension Image where ComponentType == UInt16 {
         try self.pngData(compressionSettings: compressionSettings).write(to: url)
     }
 }
-
 
 public enum EXRPixelType {
     case half
