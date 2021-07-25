@@ -83,7 +83,7 @@ protocol BackendCommandBuffer: AnyObject {
     func waitForEvent(_ event: Backend.Event, value: UInt64)
     func signalEvent(_ event: Backend.Event, value: UInt64)
     func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry)
-    func commit(onCompletion: @escaping (Self) async -> Void) async
+    func commit(onCompletion: @escaping (Self) -> Void) async
     
     var gpuStartTime: Double { get }
     var gpuEndTime: Double { get }

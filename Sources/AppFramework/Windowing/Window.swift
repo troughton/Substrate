@@ -29,6 +29,11 @@ public struct WindowSize : Equatable {
         self.height = height
     }
     
+    public init(width: Float, height: Float) {
+        self.width = width
+        self.height = height
+    }
+    
     public var aspect : Float {
         return self.width / self.height
     }

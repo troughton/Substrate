@@ -72,13 +72,14 @@ public struct SpinLock {
     }
 }
 
+
 public struct AsyncSpinLock {
-    @usableFromInline let value : UnsafeMutablePointer<UInt32.AtomicRepresentation>
+    @usableFromInline let value : UnsafeMutablePointer<UnsafeMutableRawPointer.AtomicOptionalRepresentation>
 
     @inlinable
     public init() {
-        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<UInt32.AtomicRepresentation>.size, alignment: 64).assumingMemoryBound(to: UInt32.AtomicRepresentation.self)
-        UInt32.AtomicRepresentation.atomicStore(LockState.free.rawValue, at: self.value, ordering: .relaxed)
+        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<UnsafeMutableRawPointer.AtomicOptionalRepresentation>.size, alignment: 64).assumingMemoryBound(to: UnsafeMutableRawPointer.AtomicOptionalRepresentation.self)
+        UnsafeMutableRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.value, ordering: .relaxed)
     }
     
     @inlinable
@@ -89,28 +90,28 @@ public struct AsyncSpinLock {
     @inlinable
     public var isLocked : Bool {
         get {
-            return UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue
-        }
-    }
-    
-    @inlinable
-    public func lockSync() {
-        while UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue ||
-                UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: self.value, ordering: .acquiring) == LockState.taken.rawValue {
+            return UnsafeMutableRawPointer.AtomicOptionalRepresentation.atomicLoad(at: self.value, ordering: .relaxed) != nil
         }
     }
     
     @inlinable
     public func lock() async {
-        while UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue ||
-                UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: self.value, ordering: .acquiring) == LockState.taken.rawValue {
-            await Task.yield()
-        }
+        guard let currentTask = withUnsafeCurrentTask(body: { $0 }) else { preconditionFailure() }
+        let currentTaskUnmanaged = unsafeBitCast(currentTask, to: UnsafeMutableRawPointer.self)
+        
+        repeat {
+            let swapResult = UnsafeMutableRawPointer.AtomicOptionalRepresentation.atomicCompareExchange(expected: nil, desired: currentTaskUnmanaged, at: self.value, successOrdering: .acquiring, failureOrdering: .relaxed)
+            if swapResult.exchanged { return }
+            
+            let waitingOnTask = unsafeBitCast(swapResult.original!, to: Task<Void, Never>.self)
+            await waitingOnTask.get()
+            
+        } while true
     }
     
     @inlinable
     public func unlock() {
-        _ = UInt32.AtomicRepresentation.atomicExchange(LockState.free.rawValue, at: self.value, ordering: .releasing)
+        UnsafeMutableRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.value, ordering: .releasing)
     }
     
     @inlinable

@@ -165,11 +165,9 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         }
     }
     
-    func commit(onCompletion: @escaping (MetalCommandBuffer) async -> Void) async {
+    func commit(onCompletion: @escaping (MetalCommandBuffer) -> Void) async {
         self.commandBuffer.addCompletedHandler { _ in
-            detach {
-                await onCompletion(self)
-            }
+            onCompletion(self)
         }
         
         self.commandBuffer.commit()

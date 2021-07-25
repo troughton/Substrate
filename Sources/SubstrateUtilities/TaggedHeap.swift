@@ -116,6 +116,14 @@ public enum TaggedHeap {
         let block = self.spinLock.withLock { () -> UnsafeMutableRawPointer in
             while !self.filledBlocks.testBitsAreClear(in: blockIndex..<(blockIndex + count)) {
                 blockIndex = self.findContiguousBlock(count: count)
+                
+                if blockIndex == .max {
+                    print("TaggedHeap error: no free blocks available! Switching to per-block allocations; all previous allocations will be leaked.")
+                    self.initialise(strategy: .allocatePerBlock())
+                    let pointer = UnsafeMutableRawBufferPointer.allocate(byteCount: TaggedHeap.blockSize * count, alignment: TaggedHeap.blockSize)
+                    self.allocationsByTag[tag, default: []].append(pointer)
+                    return pointer.baseAddress!
+                }
             }
             
             let tagBitset = self.taggedBlockList(tag: tag)
