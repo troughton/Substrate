@@ -119,9 +119,9 @@ final class FGMTLThreadRenderCommandEncoder {
         }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
             await self.executeCommand(command, encoder: encoder, renderTarget: renderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
         }
     }
     
@@ -251,7 +251,7 @@ final class FGMTLThreadRenderCommandEncoder {
             }
             
         case .setSamplerState(let args):
-            let state = resourceMap[args.pointee.descriptor]
+            let state = await resourceMap[args.pointee.descriptor]
             
             let mtlBindingPath = args.pointee.bindingPath
             let stages = mtlBindingPath.stages
@@ -370,7 +370,7 @@ final class FGMTLThreadRenderCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -395,10 +395,10 @@ final class FGMTLThreadRenderCommandEncoder {
                 #endif
                 
             case .updateFence(let fence, let afterStages):
-                self.updateFence(fence.fence, afterStages: afterStages)
+                await self.updateFence(fence.fence, afterStages: afterStages)
                 
             case .waitForFence(let fence, let beforeStages):
-                self.waitForFence(fence.fence, beforeStages: beforeStages)
+                await self.waitForFence(fence.fence, beforeStages: beforeStages)
                 
             case .useResources(let resources, let usage, let stages):
                 if #available(iOS 13.0, macOS 10.15, *) {
@@ -443,9 +443,9 @@ final class FGMTLComputeCommandEncoder {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
             await self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
         }
     }
     
@@ -528,7 +528,7 @@ final class FGMTLComputeCommandEncoder {
             
         case .setSamplerState(let args):
             let mtlBindingPath = args.pointee.bindingPath
-            let state = resourceMap[args.pointee.descriptor]
+            let state = await resourceMap[args.pointee.descriptor]
             encoder.setSamplerState(state, index: mtlBindingPath.bindIndex)
             
         case .dispatchThreads(let args):
@@ -570,7 +570,7 @@ final class FGMTLComputeCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -583,10 +583,10 @@ final class FGMTLComputeCommandEncoder {
                 encoder.memoryBarrier(scope: scope)
                 
             case .updateFence(let fence, _):
-                encoder.updateFence(fence.fence)
+                await encoder.updateFence(fence.fence)
                 
             case .waitForFence(let fence, _):
-                encoder.waitForFence(fence.fence)
+                await encoder.waitForFence(fence.fence)
                 
             case .useResources(let resources, let usage, _):
                 encoder.__use(resources.baseAddress!, count: resources.count, usage: usage)
@@ -609,13 +609,13 @@ final class FGMTLBlitCommandEncoder {
         self.isAppleSiliconGPU = isAppleSiliconGPU
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
             self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
         }
     }
     
@@ -690,7 +690,7 @@ final class FGMTLBlitCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -699,10 +699,10 @@ final class FGMTLBlitCommandEncoder {
                 break
                 
             case .updateFence(let fence, _):
-                encoder.updateFence(fence.fence)
+                await encoder.updateFence(fence.fence)
                 
             case .waitForFence(let fence, _):
-                encoder.waitForFence(fence.fence)
+                await encoder.waitForFence(fence.fence)
             }
             
         }
@@ -768,13 +768,13 @@ final class FGMTLAccelerationStructureCommandEncoder {
         self.isAppleSiliconGPU = isAppleSiliconGPU
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
         var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
         for (i, command) in zip(pass.commandRange!, pass.commands) {
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
             self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
-            self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
         }
     }
     
@@ -829,7 +829,7 @@ final class FGMTLAccelerationStructureCommandEncoder {
         }
     }
     
-    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) {
+    func checkResourceCommands(_ resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceCommandIndex: inout Int, phase: PerformOrder, commandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {
         while resourceCommandIndex < resourceCommands.count, commandIndex == resourceCommands[resourceCommandIndex].index, phase == resourceCommands[resourceCommandIndex].order {
             defer { resourceCommandIndex += 1 }
             
@@ -841,10 +841,10 @@ final class FGMTLAccelerationStructureCommandEncoder {
                 encoder.__use(resources.baseAddress!, count: resources.count, usage: usage)
                 
             case .updateFence(let fence, _):
-                encoder.updateFence(fence.fence)
+                await encoder.updateFence(fence.fence)
                 
             case .waitForFence(let fence, _):
-                encoder.waitForFence(fence.fence)
+                await encoder.waitForFence(fence.fence)
             }
             
         }

@@ -37,7 +37,7 @@ struct PersistentResourceMap<R : ResourceProtocolImpl & Equatable, V> {
     
     let allocator: AllocatorType
     let chunks: UnsafeMutablePointer<Chunk>
-    @usableFromInline var allocatedChunkCount: UnsafeMutablePointer<Int.AtomicRepresentation>
+    @usableFromInline let allocatedChunkCount: UnsafeMutablePointer<Int.AtomicRepresentation>
     
     public init(allocator: AllocatorType = .system) {
         self.allocator = allocator
@@ -96,7 +96,7 @@ struct PersistentResourceMap<R : ResourceProtocolImpl & Equatable, V> {
         _read {
             yield self.keyAndValue(for: resource)?.value.pointee
         }
-        set {
+        nonmutating set {
             assert(resource._usesPersistentRegistry)
             
             let (keyPtr, valuePtr) = self.allocateKeyAndValue(for: resource)
@@ -124,14 +124,14 @@ struct PersistentResourceMap<R : ResourceProtocolImpl & Equatable, V> {
         get {
             return self[resource] ?? `default`()
         }
-        set {
+        nonmutating set {
             self[resource] = newValue
         }
     }
     
     @inlinable
     @discardableResult
-    public mutating func removeValue(forKey resource: R) -> V? {
+    public func removeValue(forKey resource: R) -> V? {
         if resource._usesPersistentRegistry {
             guard let (keyPtr, valuePtr) = self.keyAndValue(for: resource) else {
                 return nil
@@ -144,7 +144,7 @@ struct PersistentResourceMap<R : ResourceProtocolImpl & Equatable, V> {
     }
     
     @inlinable
-    public mutating func removeAll() {
+    public func removeAll() {
         for chunkIndex in 0..<Int.AtomicRepresentation.atomicLoad(at: self.allocatedChunkCount, ordering: .relaxed) {
             let chunk = self.chunks[chunkIndex]
             for i in 0..<R.itemsPerChunk {
@@ -157,7 +157,7 @@ struct PersistentResourceMap<R : ResourceProtocolImpl & Equatable, V> {
     }
     
     @inlinable
-    public mutating func removeAll(iterating iterator: (R, V, _ isPersistent: Bool) -> Void) {
+    public func removeAll(iterating iterator: (R, V, _ isPersistent: Bool) -> Void) {
         for chunkIndex in 0..<Int.AtomicRepresentation.atomicLoad(at: self.allocatedChunkCount, ordering: .relaxed) {
             let chunk = self.chunks[chunkIndex]
             for i in 0..<R.itemsPerChunk {
@@ -182,7 +182,7 @@ struct PersistentResourceMap<R : ResourceProtocolImpl & Equatable, V> {
     }
     
     @inlinable
-    public mutating func forEachMutating(_ body: (R, inout V, _ deleteEntry: inout Bool) throws -> Void) rethrows {
+    public func forEachMutating(_ body: (R, inout V, _ deleteEntry: inout Bool) throws -> Void) rethrows {
         for chunkIndex in 0..<Int.AtomicRepresentation.atomicLoad(at: self.allocatedChunkCount, ordering: .relaxed) {
             let chunk = self.chunks[chunkIndex]
             for i in 0..<R.itemsPerChunk {
@@ -200,7 +200,7 @@ struct PersistentResourceMap<R : ResourceProtocolImpl & Equatable, V> {
     /// Passes back a pointer to the address where the value should go for a given key.
     /// The bool argument indicates whether the pointer is currently initialised.
     @inlinable
-    public mutating func withValue<T>(forKey resource: R, perform: (UnsafeMutablePointer<V>, Bool) -> T) -> T {
+    public func withValue<T>(forKey resource: R, perform: (UnsafeMutablePointer<V>, Bool) -> T) -> T {
         assert(resource._usesPersistentRegistry)
         let (keyPtr, valuePtr) = self.allocateKeyAndValue(for: resource)
         if let key = keyPtr.pointee, key != resource {
@@ -453,18 +453,14 @@ public struct TransientResourceMap<R : ResourceProtocol & Equatable, V> {
 
 
 /// A resource-specific constant-time access map specifically for RenderGraph resources.
-<<<<<<< HEAD
-public struct ResourceMap<R : ResourceProtocol & Equatable, V> {
-=======
 struct ResourceMap<R : ResourceProtocolImpl & Equatable, V> {
->>>>>>> main
     
     public let allocator : AllocatorType
     
     public typealias Index = Int
     
     public var transientMap : TransientResourceMap<R, V>
-    public var persistentMap : PersistentResourceMap<R, V>
+    public let persistentMap : PersistentResourceMap<R, V>
     
     public init(allocator: AllocatorType = .system, transientRegistryIndex: Int) {
         self.allocator = allocator

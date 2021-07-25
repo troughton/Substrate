@@ -10,7 +10,7 @@
 import Metal
 
 extension ArgumentBuffer {
-    func setArguments(storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
+    func setArguments(storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) async {
         if self.stateFlags.contains(.initialised) { return }
         
         let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(self.encoder!).takeUnretainedValue()
@@ -22,14 +22,14 @@ extension ArgumentBuffer {
         }
         
         argEncoder.encoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
-        argEncoder.encodeArguments(from: self, resourceMap: resourceMap)
+        await argEncoder.encodeArguments(from: self, resourceMap: resourceMap)
         
         self.markAsInitialised()
     }
 }
 
 extension ArgumentBufferArray {
-    func setArguments(storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
+    func setArguments(storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) async {
         var argEncoder : MetalArgumentEncoder? = nil
         
         for (i, argumentBuffer) in self._bindings.enumerated() {
@@ -41,13 +41,13 @@ extension ArgumentBufferArray {
             }
             
             argEncoder!.encoder.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: i)
-            argEncoder!.encodeArguments(from: argumentBuffer, resourceMap: resourceMap)
+            await argEncoder!.encodeArguments(from: argumentBuffer, resourceMap: resourceMap)
         }
     }
 }
 
 extension MetalArgumentEncoder {
-    func encodeArguments(from argBuffer: ArgumentBuffer, resourceMap: FrameResourceMap<MetalBackend>) {
+    func encodeArguments(from argBuffer: ArgumentBuffer, resourceMap: FrameResourceMap<MetalBackend>) async {
         for (bindingPath, binding) in argBuffer.bindings {
             
             let bindingIndex = bindingPath.bindIndex
@@ -70,7 +70,7 @@ extension MetalArgumentEncoder {
                 guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[table] else { continue }
                 self.encoder.setIntersectionFunctionTable(mtlTable.table, index: bindingIndex)
             case .sampler(let descriptor):
-                let samplerState = resourceMap[descriptor]
+                let samplerState = await resourceMap[descriptor]
                 self.encoder.setSamplerState(samplerState, index: bindingIndex)
             case .bytes(let offset, let length):
                 let bytes = argBuffer._bytes(offset: offset)

@@ -17,9 +17,9 @@ struct MetalFenceHandle : Equatable {
         self.index = index
     }
     
-    init(label: String, queue: Queue, commandBufferIndex: UInt64) {
-        self = MetalFenceRegistry.instance.allocate(queue: queue, commandBufferIndex: commandBufferIndex)
-        self.fence.label = label
+    init(label: String, queue: Queue, commandBufferIndex: UInt64) async {
+        self = await MetalFenceRegistry.instance.allocate(queue: queue, commandBufferIndex: commandBufferIndex)
+        await self.fence.label = label
     }
     
     var isValid : Bool {
@@ -27,33 +27,38 @@ struct MetalFenceHandle : Equatable {
     }
     
     var fence : MTLFence {
-        assert(self.isValid)
-        return MetalFenceRegistry.instance.fences[Int(self.index)].takeUnretainedValue()
+        get async {
+            assert(self.isValid)
+            return await MetalFenceRegistry.instance.fence(index: Int(self.index))
+        }
     }
     
     var commandBufferIndex : UInt64 {
-        assert(self.isValid)
-        return MetalFenceRegistry.instance.commandBufferIndices[Int(self.index)].1
+        get async {
+            assert(self.isValid)
+            return await MetalFenceRegistry.instance.commandBufferIndex(index: Int(self.index))
+        }
     }
     
     public static let invalid = MetalFenceHandle(index: .max)
 }
 
 
-final class MetalFenceRegistry {
-    public static let instance = MetalFenceRegistry()
+final actor MetalFenceRegistry {
+    public static var instance: MetalFenceRegistry! = nil
     
     public let allocator : ResizingAllocator
     public var activeIndices = [UInt32]()
     public var freeIndices = RingBuffer<UInt32>()
     public var maxIndex : UInt32 = 0
     
-    public var device : MTLDevice! = nil
+    public var device : MTLDevice
     
     public var fences : UnsafeMutablePointer<Unmanaged<MTLFence>>
     public var commandBufferIndices : UnsafeMutablePointer<(Queue, UInt64)> // On the queue
     
-    public init() {
+    public init(device: MTLDevice) {
+        self.device = device
         self.allocator = ResizingAllocator(allocator: .system)
         (self.fences, self.commandBufferIndices) = allocator.reallocate(capacity: 256, initializedCount: 0)
     }
@@ -78,6 +83,16 @@ final class MetalFenceRegistry {
         self.activeIndices.append(index)
         
         return MetalFenceHandle(index: index)
+    }
+    
+    // Work around Swift 5.5 compiler crash by providing a dedicated getter.
+    func fence(index: Int) async -> MTLFence {
+        return self.fences[index].takeUnretainedValue()
+    }
+    
+    // Work around Swift 5.5 compiler crash by providing a dedicated getter.
+    func commandBufferIndex(index: Int) async -> UInt64 {
+        return self.commandBufferIndices[index].1
     }
     
     func delete(at index: UInt32) {

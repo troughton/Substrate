@@ -21,9 +21,8 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     let backend: Backend
     let resourceRegistry: Backend.TransientResourceRegistry?
     let commandGenerator: ResourceCommandGenerator<Backend>
+    let activeContextLock = AsyncSpinLock()
     
-    // var compactedResourceCommands = [CompactedResourceCommand<MetalCompactedResourceCommandType>]()
-       
     var queueCommandBufferIndex: UInt64 = 0 // The last command buffer submitted
     let syncEvent: Backend.Event
        
@@ -54,8 +53,13 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.accessSemaphore?.deinit()
     }
     
-    public func beginFrameResourceAccess() async {
-        await self.backend.setActiveContext(self)
+    func registerWindowTexture(for texture: Texture, swapchain: Any) async {
+        guard let resourceRegistry = self.resourceRegistry else {
+            print("Error: cannot associate a window texture with a no-transient-resources RenderGraph")
+            return
+        }
+
+        await resourceRegistry.registerWindowTexture(for: texture, swapchain: swapchain)
     }
     
     nonisolated var resourceMap : FrameResourceMap<Backend> {
@@ -115,9 +119,12 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         })
     }
     
-    func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>)) async -> Task<RenderGraphExecutionResult, Never> {
-        return await Backend.activeContext.withValue(self) {
-            let (passes, usedResources, dependencyTable) = await executeFunc()
+    func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>)) async -> Task<RenderGraphExecutionResult, Never> {
+        await self.accessSemaphore?.wait()
+        await self.backend.reloadShaderLibraryIfNeeded()
+        
+        return await Backend.activeContextTaskLocal.withValue(self) {
+            let (passes, usedResources) = await executeFunc()
             
             // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
             self.resourceRegistry?.prepareFrame()
@@ -143,7 +150,11 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
             await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
             self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
-            backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &self.compactedResourceCommands)
+            
+            var compactedResourceCommands = self.compactedResourceCommands // Re-use its storage
+            self.compactedResourceCommands = []
+            await backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &compactedResourceCommands)
+            self.compactedResourceCommands = compactedResourceCommands
             
             var commandBuffers = [Backend.CommandBuffer]()
             var waitedEvents = QueueCommandIndices(repeating: 0)
@@ -197,12 +208,5 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 return executionResult
             }
         }
-    }
-    
-    public func run<R>(_ action: () async throws -> R) async rethrows -> R {
-        await self.backend.activeContextLock.lock()
-        let result = try await action()
-        self.backend.activeContextLock.unlock()
-        return result
     }
 }

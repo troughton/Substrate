@@ -91,10 +91,10 @@ open class SDLWindow : Window {
         SDL_GL_GetDrawableSize(self.sdlWindowPointer, &drawableWidth, &drawableHeight)
         self.drawableSize = WindowSize(Float(drawableWidth), Float(drawableHeight))
         
-        self._texture = Cached()
+        self._texture = CachedAsync()
         
         self._texture.constructor = { [unowned(unsafe) self] in
-            return Texture(windowId: self.id, descriptor: self.textureDescriptor, isMinimised: self.minimized, nativeWindow: self.swapChain!, renderGraph: renderGraph)
+            return await Texture(descriptor: self.textureDescriptor, isMinimised: self.minimized, nativeWindow: self.swapChain!, renderGraph: renderGraph)
         }
     }
     
@@ -104,10 +104,10 @@ open class SDLWindow : Window {
     
     public var swapChain : SwapChain! = nil
     
-    var _texture : Cached<Texture>
+    var _texture : CachedAsync<Texture>
     
     public func texture() async -> Texture {
-        return self._texture.wrappedValue
+        return await self._texture.getValue()
     }
     
     public var textureDescriptor : TextureDescriptor {

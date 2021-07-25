@@ -59,10 +59,6 @@ final class VulkanBackend : SpecificRenderBackend {
         RenderBackend._backend = self
     }
     
-    public func registerWindowTexture(texture: Texture, context: Any) {
-        self.resourceRegistry.registerWindowTexture(texture: texture, context: context)
-    }
-    
     func setActiveContext(_ context: RenderGraphContextImpl<VulkanBackend>?) {
         if context != nil {
             self.activeContextLock.lock()
@@ -325,6 +321,10 @@ final class VulkanBackend : SpecificRenderBackend {
         assert(self.queueSyncSemaphores[Int(queue.index)] != nil)
         vkDestroySemaphore(self.device.vkDevice, self.queueSyncSemaphores[Int(queue.index)], nil)
         self.queueSyncSemaphores[Int(queue.index)] = nil
+    }
+    
+    func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<Self>) {
+        VulkanEventRegistry.instance.clearCompletedEvents()
     }
 }
 

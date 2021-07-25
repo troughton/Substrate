@@ -100,7 +100,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             blitEncoder.encoder.label = encoderInfo.name
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                blitEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                await blitEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             }
             blitEncoder.endEncoding()
             
@@ -117,7 +117,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
                 accelerationStructureEncoder.encoder.label = encoderInfo.name
                 
                 for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                    accelerationStructureEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                    await accelerationStructureEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
                 }
                 accelerationStructureEncoder.endEncoding()
             } else {

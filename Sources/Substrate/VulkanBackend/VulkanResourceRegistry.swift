@@ -70,8 +70,6 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     
     var samplers = [SamplerDescriptor: VkSampler]()
     
-    var windowReferences = [Texture : VulkanSwapChain]()
-    
     public init(instance: VulkanInstance, device: VulkanDevice) {
         self.device = device
         
@@ -95,14 +93,6 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         self.bufferReferences.deinit()
         self.argumentBufferReferences.deinit()
         self.argumentBufferArrayReferences.deinit()
-    }
-    
-    public func prepareFrame() {
-        VulkanEventRegistry.instance.clearCompletedEvents()
-    }
-    
-    public func registerWindowTexture(texture: Texture, context: Any) {
-        self.windowReferences[texture] = (context as! VulkanSwapChain)
     }
     
     @discardableResult
@@ -336,6 +326,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     private var descriptorPoolIndex: Int = 0
     private var frameIndex: UInt64 = 0
     
+    var windowReferences = [Texture : VulkanSwapChain]()
     public private(set) var frameSwapChains : [VulkanSwapChain] = []
     
     public init(device: VulkanDevice, inflightFrameCount: Int, transientRegistryIndex: Int, persistentRegistry: VulkanPersistentResourceRegistry) {
@@ -389,6 +380,11 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         
         self.descriptorPools[self.descriptorPoolIndex].resetDescriptorPool()
     }
+    
+    public func registerWindowTexture(for texture: Texture, swapchain: Any) {
+        self.windowReferences[texture] = (swapchain as! VulkanSwapChain)
+    }
+    
 
     func allocatorForBuffer(storageMode: StorageMode, cacheMode: CPUCacheMode, flags: ResourceFlags) -> VulkanBufferAllocator {
         assert(!flags.contains(.persistent))
@@ -518,7 +514,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
                 return
             }
             
-            let swapChain = self.persistentRegistry.windowReferences.removeValue(forKey: texture)!
+            let swapChain = self.windowReferences.removeValue(forKey: texture)!
             self.frameSwapChains.append(swapChain)
             let image = swapChain.nextImage(descriptor: texture.descriptor)
             image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false, frameIndex: self.frameIndex)

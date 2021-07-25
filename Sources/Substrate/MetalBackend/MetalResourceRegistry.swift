@@ -125,16 +125,14 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     @available(macOS 11.0, iOS 14.0, *)
     typealias AccelerationStructureReference = MTLAccelerationStructure
     
-    var heapReferences = PersistentResourceMap<Heap, MTLHeap>()
-    var textureReferences = PersistentResourceMap<Texture, MTLTextureReference>()
-    var bufferReferences = PersistentResourceMap<Buffer, MTLBufferReference>()
-    var argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, MTLBufferReference>() 
-    var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, MTLBufferReference>()
-    var accelerationStructureReferences = PersistentResourceMap<AccelerationStructure, MTLResource>()
-    var visibleFunctionTableReferences = PersistentResourceMap<VisibleFunctionTable, MTLVisibleFunctionTableReference>()
-    var intersectionFunctionTableReferences = PersistentResourceMap<IntersectionFunctionTable, MTLIntersectionFunctionTableReference>()
-    
-    var windowReferences = [Texture : CAMetalLayer]()
+    let heapReferences = PersistentResourceMap<Heap, MTLHeap>()
+    let textureReferences = PersistentResourceMap<Texture, MTLTextureReference>()
+    let bufferReferences = PersistentResourceMap<Buffer, MTLBufferReference>()
+    let argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, MTLBufferReference>()
+    let argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, MTLBufferReference>()
+    let accelerationStructureReferences = PersistentResourceMap<AccelerationStructure, MTLResource>()
+    let visibleFunctionTableReferences = PersistentResourceMap<VisibleFunctionTable, MTLVisibleFunctionTableReference>()
+    let intersectionFunctionTableReferences = PersistentResourceMap<IntersectionFunctionTable, MTLIntersectionFunctionTableReference>()
     
     var samplerReferences = [SamplerDescriptor : MTLSamplerState]()
     
@@ -143,8 +141,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     public init(device: MTLDevice) {
         self.device = device
         
-        self.prepareFrame()
-        MetalFenceRegistry.instance.device = self.device
+        MetalFenceRegistry.instance = .init(device: self.device)
     }
     
     deinit {
@@ -155,16 +152,8 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         self.argumentBufferArrayReferences.deinit()
     }
     
-    public func prepareFrame() {
-        MetalFenceRegistry.instance.clearCompletedFences()
-    }
-    
-    public func registerWindowTexture(texture: Texture, context: Any) {
-        self.windowReferences[texture] = (context as! CAMetalLayer)
-    }
-    
     @discardableResult
-    public func allocateHeap(_ heap: Heap) -> MTLHeap? {
+    public nonisolated func allocateHeap(_ heap: Heap) -> MTLHeap? {
         precondition(heap._usesPersistentRegistry)
         
         let descriptor = MTLHeapDescriptor(heap.descriptor, isAppleSiliconGPU: device.isAppleSiliconGPU)
@@ -178,7 +167,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture) -> MTLTextureReference? {
+    public nonisolated func allocateTexture(_ texture: Texture) -> MTLTextureReference? {
         precondition(texture._usesPersistentRegistry)
         
         if texture.flags.contains(.windowHandle) {
@@ -219,7 +208,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
     
     @discardableResult
-    public func allocateBuffer(_ buffer: Buffer) -> MTLBufferReference? {
+    public nonisolated func allocateBuffer(_ buffer: Buffer) -> MTLBufferReference? {
         precondition(buffer._usesPersistentRegistry)
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
@@ -265,9 +254,9 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> MTLBufferReference {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) async -> MTLBufferReference {
         if let baseArray = argumentBuffer.sourceArray {
-            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
+            _ = await self.allocateArgumentBufferArrayIfNeeded(baseArray)
             return self.argumentBufferReferences[argumentBuffer]!
         }
         if let mtlArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
@@ -283,7 +272,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
     
     @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference {
+    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) async -> MTLBufferReference {
         if let mtlArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
             return mtlArgumentBuffer
         }
@@ -305,7 +294,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     
     @available(macOS 11.0, iOS 14.0, *)
     @discardableResult
-    public func allocateAccelerationStructure(_ structure: AccelerationStructure) -> MTLAccelerationStructure? {
+    public nonisolated func allocateAccelerationStructure(_ structure: AccelerationStructure) -> MTLAccelerationStructure? {
         let mtlStructure = self.device.makeAccelerationStructure(size: structure.size)
         
         assert(self.accelerationStructureReferences[structure] == nil)
@@ -314,7 +303,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return mtlStructure
     }
     
-    func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) -> MTLVisibleFunctionTableReference? {
+    func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) async -> MTLVisibleFunctionTableReference? {
         guard #available(macOS 11.0, iOS 14.0, *) else { return nil }
         
         guard let pipelineState = table.pipelineState, let renderStage = table.usages.first?.stages else {
@@ -362,7 +351,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return tableRef
     }
     
-    func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) -> MTLIntersectionFunctionTableReference? {
+    func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) async -> MTLIntersectionFunctionTableReference? {
         guard #available(macOS 11.0, iOS 14.0, *) else { return nil }
         
         guard let pipelineState = table.pipelineState, let renderStage = table.usages.first?.stages else {
@@ -411,8 +400,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
     
     
-    public func importExternalResource(_ resource: Resource, backingResource: Any) {
-        self.prepareFrame()
+    public nonisolated func importExternalResource(_ resource: Resource, backingResource: Any) {
         if let texture = resource.texture {
             self.textureReferences[texture] = MTLTextureReference(texture: Unmanaged.passRetained(backingResource as! MTLTexture))
         } else if let buffer = resource.buffer {
@@ -420,69 +408,71 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
     }
     
-    public subscript(texture: Texture) -> MTLTextureReference? {
+    public nonisolated subscript(texture: Texture) -> MTLTextureReference? {
         return self.textureReferences[texture]
     }
 
-    public subscript(buffer: Buffer) -> MTLBufferReference? {
+    public nonisolated subscript(buffer: Buffer) -> MTLBufferReference? {
         return self.bufferReferences[buffer]
     }
 
-    public subscript(heap: Heap) -> MTLHeap? {
+    public nonisolated subscript(heap: Heap) -> MTLHeap? {
         return self.heapReferences[heap]
     }
 
-    public subscript(argumentBuffer: ArgumentBuffer) -> MTLBufferReference? {
+    public nonisolated subscript(argumentBuffer: ArgumentBuffer) -> MTLBufferReference? {
         return self.argumentBufferReferences[argumentBuffer]
     }
 
-    public subscript(argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
+    public nonisolated subscript(argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public subscript(structure: AccelerationStructure) -> AnyObject? {
+    public nonisolated subscript(structure: AccelerationStructure) -> AnyObject? {
         return self.accelerationStructureReferences[structure]
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public subscript(table: VisibleFunctionTable) -> MTLVisibleFunctionTableReference? {
+    public nonisolated subscript(table: VisibleFunctionTable) -> MTLVisibleFunctionTableReference? {
         return self.visibleFunctionTableReferences[table]
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public subscript(table: IntersectionFunctionTable) -> MTLIntersectionFunctionTableReference? {
+    public nonisolated subscript(table: IntersectionFunctionTable) -> MTLIntersectionFunctionTableReference? {
         return self.intersectionFunctionTableReferences[table]
     }
     
     public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
-        if let state = self.samplerReferences[descriptor] {
+        get async {
+            if let state = self.samplerReferences[descriptor] {
+                return state
+            }
+            
+            let mtlDescriptor = MTLSamplerDescriptor(descriptor, isAppleSiliconGPU: device.isAppleSiliconGPU)
+            let state = self.device.makeSamplerState(descriptor: mtlDescriptor)!
+            self.samplerReferences[descriptor] = state
+            
             return state
         }
-        
-        let mtlDescriptor = MTLSamplerDescriptor(descriptor, isAppleSiliconGPU: device.isAppleSiliconGPU)
-        let state = self.device.makeSamplerState(descriptor: mtlDescriptor)!
-        self.samplerReferences[descriptor] = state
-        
-        return state
     }
     
-    func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64) {
+    nonisolated func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64) {
         // No-op for Metal
     }
     
-    func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64) {
+    nonisolated func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64) {
         // No-op for Metal
     }
 
 
-    func disposeHeap(_ heap: Heap) {
+    nonisolated func disposeHeap(_ heap: Heap) {
         if let mtlHeap = self.heapReferences.removeValue(forKey: heap) {
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlHeap)))
         }
     }
     
-    func disposeTexture(_ texture: Texture) {
+    nonisolated func disposeTexture(_ texture: Texture) {
         if let mtlTexture = self.textureReferences.removeValue(forKey: texture) {
             if texture.flags.contains(.windowHandle) {
                 return
@@ -494,7 +484,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
     }
     
-    func disposeBuffer(_ buffer: Buffer) {
+    nonisolated func disposeBuffer(_ buffer: Buffer) {
         if let mtlBuffer = self.bufferReferences.removeValue(forKey: buffer) {
             if mtlBuffer.buffer.heap != nil {
                 mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
@@ -503,7 +493,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
     }
     
-    func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
+    nonisolated func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
         if let mtlBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
             assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal RenderGraph backend.")
             if mtlBuffer.buffer.heap != nil {
@@ -513,7 +503,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
     }
     
-    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
+    nonisolated func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
         if let mtlBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
             if mtlBuffer.buffer.heap != nil {
                 mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
@@ -522,25 +512,25 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
     }
     
-    func disposeAccelerationStructure(_ structure: AccelerationStructure) {
+    nonisolated func disposeAccelerationStructure(_ structure: AccelerationStructure) {
         if let mtlStructure = self.accelerationStructureReferences.removeValue(forKey: structure) {
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlStructure)))
         }
     }
     
-    func disposeVisibleFunctionTable(_ table: VisibleFunctionTable) {
+    nonisolated func disposeVisibleFunctionTable(_ table: VisibleFunctionTable) {
         if let mtlTable = self.visibleFunctionTableReferences.removeValue(forKey: table) {
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
         }
     }
     
-    func disposeIntersectionFunctionTable(_ table: IntersectionFunctionTable) {
+    nonisolated func disposeIntersectionFunctionTable(_ table: IntersectionFunctionTable) {
         if let mtlTable = self.intersectionFunctionTableReferences.removeValue(forKey: table) {
             CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
         }
     }
     
-    func cycleFrames() {
+    nonisolated func cycleFrames() {
         // No-op for now.
         // Once we have unretained references we need to dispose any enqueued disposals here.
     }
@@ -591,7 +581,10 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     private let colorRenderTargetAllocator : MetalHeapResourceAllocator
     private let depthRenderTargetAllocator : MetalHeapResourceAllocator
     
+    var windowReferences = [Texture : CAMetalLayer]()
     public private(set) var frameDrawables : [CAMetalDrawable] = []
+    
+    var isExecutingFrame: Bool = false
     
     public init(device: MTLDevice, inflightFrameCount: Int, queue: Queue, transientRegistryIndex: Int, persistentRegistry: MetalPersistentResourceRegistry) {
         self.device = device
@@ -652,8 +645,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     public func prepareFrame() {
-        MetalFenceRegistry.instance.clearCompletedFences()
-
+        self.isExecutingFrame = true
+        
         self.textureReferences.prepareFrame()
         self.bufferReferences.prepareFrame()
         self.argumentBufferReferences.prepareFrame()
@@ -663,6 +656,10 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.bufferWaitEvents.prepareFrame()
         self.argumentBufferWaitEvents.prepareFrame()
         self.argumentBufferArrayWaitEvents.prepareFrame()
+    }
+    
+    public func registerWindowTexture(for texture: Texture, swapchain: Any) {
+        self.windowReferences[texture] = (swapchain as! CAMetalLayer)
     }
     
     func allocatorForTexture(storageMode: MTLStorageMode, flags: ResourceFlags, textureParams: (PixelFormat, MTLTextureUsage)) -> MetalTextureAllocator {
@@ -874,7 +871,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         
         // The texture reference should always be present but the texture itself might not be.
         if self.textureReferences[texture]!._texture == nil {
-            guard let windowReference = self.persistentRegistry.windowReferences.removeValue(forKey: texture),
+            guard let windowReference = self.windowReferences.removeValue(forKey: texture),
                   let mtlDrawable = windowReference.nextDrawable() else {
                 throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
             }
@@ -1052,7 +1049,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         if let mtlTexture = textureRef {
             if texture.flags.contains(.windowHandle) || texture.isTextureView {
                 if let texture = mtlTexture._texture {
-                    CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(mtlTexture._texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
+                    CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
                 } else {
                     self.textureReferences[texture]?.disposeWaitValue = waitEvent.waitValue
                     self.textureReferences[texture]?.disposeWaitQueue = self.queue
@@ -1112,6 +1109,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     func makeTransientAllocatorsPurgeable() {
+        if self.isExecutingFrame { return }
+        
         self.stagingTextureAllocator.makePurgeable()
         self.privateAllocator.makePurgeable()
         self.historyBufferAllocator.makePurgeable()
@@ -1158,6 +1157,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.memorylessTextureAllocator?.cycleFrames()
         
         self.frameArgumentBufferAllocator.cycleFrames()
+        
+        self.isExecutingFrame = false
     }
 }
 

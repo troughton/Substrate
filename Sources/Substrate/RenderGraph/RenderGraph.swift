@@ -559,8 +559,8 @@ protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var accessSemaphore : AsyncSemaphore? { get }
     nonisolated var renderGraphQueue: Queue { get }
-    func beginFrameResourceAccess() async // Access is ended when a renderGraph is submitted.
-    func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<DependencyType>) async -> Task<RenderGraphExecutionResult, Never>
+    func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>)) async -> Task<RenderGraphExecutionResult, Never>
+    func registerWindowTexture(for texture: Texture, swapchain: Any) async
 }
 
 @usableFromInline enum RenderGraphTagType : UInt64 {
@@ -589,11 +589,6 @@ protocol _RenderGraphContext : Actor {
     }
 }
 
-@globalActor
-actor RenderGraphSharedActor {
-    static let shared = RenderGraphSharedActor()
-}
-
 /// Each RenderGraph executes on its own GPU queue, although executions are synchronised by submission order.
 public final class RenderGraph {
     static let activeRenderGraphLock = AsyncSpinLock()
@@ -613,6 +608,8 @@ public final class RenderGraph {
     let context : _RenderGraphContext
     
     public let transientRegistryIndex : Int
+    
+    let executionLock = AsyncSpinLock()
     
     /// Creates a new RenderGraph instance. There may only be up to eight RenderGraph's at any given time.
     ///
@@ -1040,7 +1037,6 @@ public final class RenderGraph {
         }
     }
     
-    @RenderGraphSharedActor
     func evaluateResourceUsages(renderPasses: [RenderPassRecord], executionAllocator: TagAllocator, resourceUsagesAllocator: TagAllocator) async {
         for passRecord in renderPasses where passRecord.type == .cpu || passRecord.type == .accelerationStructure {
             // CPU render passes are guaranteed to be executed in order, and we have to execute acceleration structure passes in order since they may modify the AccelerationStructure's descriptor property.
@@ -1118,7 +1114,6 @@ public final class RenderGraph {
         }
     }
     
-    @RenderGraphSharedActor
     func compile() async -> ([RenderPassRecord], DependencyTable<DependencyType>, Set<Resource>) {
         let renderPasses = self.renderPasses
         
@@ -1265,7 +1260,6 @@ public final class RenderGraph {
         return true
     }
     
-    
     private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
         self._lastGraphGPUTime = result.gpuTime
         
@@ -1286,35 +1280,28 @@ public final class RenderGraph {
     /// - Parameter onSubmission: an optional closure to execute once the render graph has been submitted to the GPU.
     /// - Parameter onGPUCompletion: an optional closure to execute once the render graph has completed executing on the GPU.
     @discardableResult
-    @RenderGraphSharedActor
     public func execute() async -> RenderGraphExecutionWaitToken {
-        self.renderPassLock.lock()
-        let renderPasses = self.renderPasses
-        self.renderPassLock.unlock()
+        return await self.executionLock.withLock {
+            self.renderPassLock.lock()
+            let renderPasses = self.renderPasses
+            self.renderPassLock.unlock()
+            
+            guard !renderPasses.isEmpty else {
+                self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
+                self.submissionNotifyQueue.removeAll(keepingCapacity: true)
+                
+                self.completionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
+                self.completionNotifyQueue.removeAll(keepingCapacity: true)
+                
+                return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
+            }
         
-        guard !renderPasses.isEmpty else {
-            self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
-            self.submissionNotifyQueue.removeAll(keepingCapacity: true)
-            
-            self.completionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
-            self.completionNotifyQueue.removeAll(keepingCapacity: true)
-            
-            return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
-        }
-        
-        return await Self.$activeRenderGraph.withValue(self) { @RenderGraphSharedActor in
-            await self.context.accessSemaphore?.wait()
-            await self.context.beginFrameResourceAccess()
-            
-            let (passes, dependencyTable, usedResources) = await self.compile()
-            
-            #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-            //        return autoreleasepool {
-            let onCompletion = await self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
-            //        }
-            #else
-            let onCompletion = await self.context.executeRenderGraph(passes: passes, usedResources: usedResources, dependencyTable: dependencyTable)
-            #endif
+            let onCompletion = await Self.$activeRenderGraph.withValue(self) {
+                return await self.context.executeRenderGraph {
+                    let (passes, _, usedResources) = await self.compile()
+                    return (passes, usedResources)
+                }
+            }
             
             _ = Task.runDetached {
                 let result = await onCompletion.get()

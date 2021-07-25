@@ -131,21 +131,11 @@ public struct Texture : ResourceProtocol {
         self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base, flags: flags)
     }
     
-    @available(*, deprecated, renamed: "init(descriptor:isMinimised:nativeWindow:renderGraph:)")
-    public init(windowId: Int, descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, frameGraph: RenderGraph) {
-        self.init(descriptor: descriptor, isMinimised: isMinimised, nativeWindow: nativeWindow, renderGraph: frameGraph)
-    }
-    
-    @available(*, deprecated, renamed: "init(descriptor:isMinimised:nativeWindow:renderGraph:)")
-    public init(windowId: Int, descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, renderGraph: RenderGraph) {
-        self.init(descriptor: descriptor, isMinimised: isMinimised, nativeWindow: nativeWindow, renderGraph: renderGraph)
-    }
-    
-    public init(descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, renderGraph: RenderGraph) {
+    public init(descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, renderGraph: RenderGraph) async {
         self.init(descriptor: descriptor, renderGraph: renderGraph, flags: isMinimised ? [] : .windowHandle)
         
         if !isMinimised {
-            RenderBackend.registerWindowTexture(texture: self, context: nativeWindow)
+            await renderGraph.context.registerWindowTexture(for: self, swapchain: nativeWindow)
         }
     }
     

@@ -43,7 +43,9 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
     }
     
     subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference {
-        return persistentRegistry[sampler]
+        get async {
+            return await persistentRegistry[sampler]
+        }
     }
     
     @available(macOS 11.0, iOS 14.0, *)
@@ -61,19 +63,33 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         return persistentRegistry[intersectionFunctionTable]
     }
     
-    func bufferForCPUAccess(_ buffer: Buffer) -> Backend.BufferReference {
+    func bufferForCPUAccess(_ buffer: Buffer, needsLock: Bool) -> Backend.BufferReference {
         if buffer._usesPersistentRegistry {
             return persistentRegistry[buffer]!
         } else {
-            return transientRegistry!.accessLock.withLock { transientRegistry!.allocateBufferIfNeeded(buffer, forceGPUPrivate: false) }
+            if needsLock {
+                transientRegistry!.accessLock.lock()
+            }
+            let result = transientRegistry!.allocateBufferIfNeeded(buffer, forceGPUPrivate: false)
+            if needsLock {
+                transientRegistry!.accessLock.unlock()
+            }
+            return result
         }
     }
     
-    func textureForCPUAccess(_ texture: Texture) -> Backend.TextureReference {
+    func textureForCPUAccess(_ texture: Texture, needsLock: Bool) -> Backend.TextureReference {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
-            return transientRegistry!.accessLock.withLock { transientRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: false, frameStoredTextures: [texture]) } // Conservatively mark the texture as stored this frame.
+            if needsLock {
+                transientRegistry!.accessLock.lock()
+            }
+            let result = transientRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: false, frameStoredTextures: [texture]) // Conservatively mark the texture as stored this frame.
+            if needsLock {
+                transientRegistry!.accessLock.unlock()
+            }
+            return result
         }
     }
     
