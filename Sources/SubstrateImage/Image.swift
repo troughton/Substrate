@@ -432,6 +432,16 @@ public struct Image<ComponentType> : AnyImage {
         }
     }
     
+    @inlinable
+    public var alphaChannelIndex: Int? {
+        switch self.alphaMode {
+        case .none:
+            return nil
+        default:
+            return self.channelCount - 1
+        }
+    }
+    
     public var fileInfo: ImageFileInfo {
         let isFloatingPoint: Bool
         let isSigned: Bool
@@ -724,8 +734,15 @@ extension Image where ComponentType: SIMDScalar {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
             
             var result = SIMD4<T>()
-            for i in 0..<min(self.channelCount, 4) {
-                result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+            if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
+                for i in 0..<min(alphaChannelIndex, 3) {
+                    result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+                }
+                result[3] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + alphaChannelIndex]
+            } else {
+                for i in 0..<min(self.channelCount, 4) {
+                    result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+                }
             }
             return result
         }
@@ -733,8 +750,15 @@ extension Image where ComponentType: SIMDScalar {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
             self.ensureUniqueness()
             
-            for i in 0..<min(self.channelCount, 4) {
-                self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+            if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
+                for i in 0..<min(alphaChannelIndex, 3) {
+                    self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+                }
+                self.storage.data[y * self.width * self.channelCount + x * self.channelCount + alphaChannelIndex] = newValue.w
+            } else {
+                for i in 0..<min(self.channelCount, 4) {
+                    self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+                }
             }
         }
     }
