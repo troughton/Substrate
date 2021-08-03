@@ -171,7 +171,7 @@ public enum TextureLoadingError : Error {
 
 extension Image {
     public func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode = .gpuDefault) throws {
-        if self.colorSpace == .sRGB, !texture.descriptor.pixelFormat.isSRGB {
+        if _isDebugAssertConfiguration(), self.colorSpace == .sRGB, !texture.descriptor.pixelFormat.isSRGB {
             print("Warning: the source texture data is in the sRGB color space but the texture's pixel format is linear RGB.")
         }
         
@@ -195,10 +195,8 @@ extension Image {
                 _ = GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size)
             }
             if texture.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
-                if self.channelCount == 4, self.alphaMode != .premultiplied {
-                    if _isDebugAssertConfiguration() {
-                        print("Warning: generating mipmaps using the GPU's default mipmap generation for texture \(texture.label ?? "Texture(handle: \(texture.handle))") which expects premultiplied alpha, but the texture has an alpha mode of \(self.alphaMode). Fringing may be visible")
-                    }
+                if _isDebugAssertConfiguration(), self.channelCount == 4, self.alphaMode != .premultiplied {
+                    print("Warning: generating mipmaps using the GPU's default mipmap generation for texture \(texture.label ?? "Texture(handle: \(texture.handle))") which expects premultiplied alpha, but the texture has an alpha mode of \(self.alphaMode). Fringing may be visible")
                 }
                 GPUResourceUploader.generateMipmaps(for: texture)
             }

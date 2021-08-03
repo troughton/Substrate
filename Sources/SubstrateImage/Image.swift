@@ -1032,7 +1032,7 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
         }
         
         func readPixel(_ coord: SIMD2<Int>) -> SIMD4<Float> {
-            if wrapMode == .zero, any(coord .< .zero .| coord .> maxCoord) { return .zero }
+            if wrapMode == .zero, any(coord .< SIMD2<Int>.zero .| coord .> maxCoord) { return .zero }
             return self[floatVectorAt: coord.x, coord.y]
         }
         
