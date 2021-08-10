@@ -240,6 +240,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.pushDebugGroup(passRecord.name)
     }
     
+    /// Bind `bytes` with `length` to the current command encoder at the binding corresponding to key `key`.
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, key: FunctionArgumentKey) {
         let args : RenderGraphCommand.SetBytesArgs = (.nil, commandRecorder.copyBytes(bytes, length: length), UInt32(length))
         
@@ -252,6 +253,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Bind `bytes` with `length` to the current command encoder at the binding path `path`.
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, path: ResourceBindingPath) {
         let args : RenderGraphCommand.SetBytesArgs = (path, commandRecorder.copyBytes(bytes, length: length), UInt32(length))
         
@@ -260,6 +262,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         commandRecorder.record(.setBytes(argData))
     }
     
+    /// Bind `buffer` with byte offset `offset` to the current command encoder at the binding corresponding to `key`.
     public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey) {
         guard let buffer = buffer else { return }
         
@@ -272,6 +275,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Set the byte offset for the buffer currently bound at the binding path corresponding to `key`  to `offset`.
     public func setBufferOffset(_ offset: Int, key: FunctionArgumentKey) {
         let args : RenderGraphCommand.SetBufferOffsetArgs = (.nil, nil, UInt32(offset))
         
@@ -282,6 +286,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Binds a sampler with the descriptor `descriptor` to the current command encoder at the binding corresponding to `key`.
     public func setSampler(_ descriptor: SamplerDescriptor?, key: FunctionArgumentKey) {
         guard let descriptor = descriptor else { return }
         
@@ -294,6 +299,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Bind `texture` to the current command encoder at the binding corresponding to `key`.
     public func setTexture(_ texture: Texture?, key: FunctionArgumentKey) {
         guard let texture = texture else { return }
         
@@ -306,6 +312,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Bind the acceleration structure `structure` to the current command encoder at the binding corresponding to `key`.
     @available(macOS 11.0, iOS 14.0, *)
     public func setAccelerationStructure(_ structure: AccelerationStructure?, key: FunctionArgumentKey) {
         guard let structure = structure else { return }
@@ -319,6 +326,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Bind the visible function table `table` to the current command encoder at the binding corresponding to `key`.
     @available(macOS 11.0, iOS 14.0, *)
     public func setVisibleFunctionTable(_ table: VisibleFunctionTable?, key: FunctionArgumentKey) {
         guard let table = table else { return }
@@ -332,6 +340,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Bind the intersection function table `table` to the current command encoder at the binding corresponding to `key`.
     @available(macOS 11.0, iOS 14.0, *)
     public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, key: FunctionArgumentKey) {
         guard let table = table else { return }
@@ -345,6 +354,9 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Construct an `ArgumentBuffer` specified by the `ArgumentBufferEncodable` value `arguments`
+    /// and bind it to the binding index `setIndex`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
+    /// descriptor set at `setIndex` for Vulkan.
     public func setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) {
         if A.self == NilSet.self {
             return
@@ -373,7 +385,9 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.pendingArgumentBuffers.append((bindingPath, argumentBuffer, type: .standalone, assumeConsistentUsage: false))
         self.needsUpdateBindings = true
     }
-
+    
+    /// Bind `argumentBuffer` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
+    /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
     public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
         guard let argumentBuffer = argumentBuffer else { return }
         let bindingPath = RenderBackend.argumentBufferPath(at: index, stages: stages)
@@ -382,11 +396,15 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Bind `argumentBuffer` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
+    /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
     public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
         guard let argumentBuffer = argumentBuffer?.argumentBuffer else { return }
         self.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
     }
-   
+    
+    /// Bind `argumentBufferArray` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
+    /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
     public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
         guard let argumentBufferArray = argumentBufferArray else { return }
         let bindingPath = RenderBackend.argumentBufferPath(at: index, stages: stages)
@@ -403,11 +421,13 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    /// Bind `argumentBufferArray` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
+    /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
     public func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
         guard let argumentBufferArray = argumentBufferArray?.argumentBufferArray else { return }
         self.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
     }
-   
+    
     public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, key: FunctionArgumentKey) {
         guard let argumentBuffer = argumentBuffer else { return }
         

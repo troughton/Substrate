@@ -6,6 +6,7 @@
 //  Copyright © 2017 Team Llama. All rights reserved.
 //
 
+/// `OffsetView` represents a byte offset into a resource.
 @propertyWrapper
 public struct OffsetView<T> {
     public var wrappedValue : T
@@ -34,6 +35,7 @@ public struct OffsetView<T> {
     }
 }
 
+/// `BufferBacked` is a property wrapper that materialises a `shared` `Buffer` from a provided value.
 @propertyWrapper
 public struct BufferBacked<T> {
     public var wrappedValue : T? {
@@ -55,6 +57,7 @@ public struct BufferBacked<T> {
     }
     
     public init(wrappedValue: T?) {
+        precondition(_isPOD(T.self))
         self.wrappedValue = wrappedValue
         self._buffer = nil
         self.isDirty = wrappedValue != nil

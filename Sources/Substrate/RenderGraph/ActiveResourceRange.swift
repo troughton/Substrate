@@ -7,6 +7,11 @@
 
 import SubstrateUtilities
 
+/// `ActiveResourceRange` represents a conservative range of subresources within a buffer or texture.
+/// For buffers, it represents a byte range that may be used within a particular resource access;
+/// for textures, it represents individual slices of the texture.
+/// Since `SubresourceMask` is semantically a move-only type, so is `ActiveResourceRange`; it requires a deep copy
+/// to be safely copied.
 public enum ActiveResourceRange {
     case inactive
     case fullResource
