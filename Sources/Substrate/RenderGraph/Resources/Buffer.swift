@@ -307,6 +307,7 @@ public struct Buffer : ResourceProtocol {
         return self.descriptor.storageMode
     }
     
+    @usableFromInline
     var _deferredSliceActions : [DeferredBufferSlice] {
         get {
             return self[\.deferredSliceActions]!
@@ -460,6 +461,7 @@ final class PersistentBufferRegistry: PersistentRegistry<Buffer> {
 final class DeferredBufferSlice {
     let closure : (Buffer) -> Void
     
+    @inlinable
     init(closure: @escaping (Buffer) -> Void) {
         self.closure = closure
     }
