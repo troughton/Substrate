@@ -601,26 +601,32 @@ extension ResourceProtocol {
     
     public static var indexBitsRange : Range<Int> { return 0..<28 }
     
+    @inlinable
     public var type : ResourceType {
         return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.typeBitsRange)))!
     }
     
+    @inlinable
     public var flags : ResourceFlags {
         return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.flagBitsRange)))
     }
     
+    @inlinable
     public var generation : UInt8 {
         return UInt8(truncatingIfNeeded: self.handle.bits(in: Self.generationBitsRange))
     }
     
+    @inlinable
     public var transientRegistryIndex : Int {
         return Int(self.handle.bits(in: Self.transientRegistryIndexBitsRange))
     }
     
+    @inlinable
     public var index : Int {
         return Int(truncatingIfNeeded: self.handle.bits(in: Self.indexBitsRange))
     }
     
+    @inlinable
     public var _usesPersistentRegistry : Bool {
         if self.flags.contains(.persistent) || self.flags.contains(.historyBuffer) {
             return true
