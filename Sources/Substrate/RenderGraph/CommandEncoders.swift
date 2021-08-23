@@ -708,7 +708,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                         case .buffer:
                             self.commandRecorder.record(.setBuffer(bindingCommandArgs.assumingMemoryBound(to: RenderGraphCommand.SetBufferArgs.self)))
                         case .argumentBuffer:
-                            let argumentBuffer = boundResource.resource.argumentBuffer!
+                            let argumentBuffer = ArgumentBuffer(boundResource.resource)!
                             
                             // The command might be either a setArgumentBuffer or setArgumentBufferArray command.
                             // Check to see whether the resource is an ArgumentBuffer or ArgumentBufferArray to distinguish.
@@ -732,7 +732,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                     }
                     
                     // If the pipeline state has changed, check for an updated encoder for any argument buffers.
-                    boundResource.resource.argumentBuffer?.updateEncoder(pipelineReflection: pipelineReflection, bindingPath: bindingPath)
+                    ArgumentBuffer(boundResource.resource)?.updateEncoder(pipelineReflection: pipelineReflection, bindingPath: bindingPath)
                     
                     var bufferOffset = 0
                     if case .buffer = boundResource.resource.type, let bindingCommandArgs = boundResource.bindingCommand {

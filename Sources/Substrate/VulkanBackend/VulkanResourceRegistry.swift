@@ -213,9 +213,9 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
         self.prepareFrame()
-        if let texture = resource.texture {
+        if let texture = Texture(resource) {
             self.textureReferences[texture] = VkImageReference(image: Unmanaged.passRetained(backingResource as! VulkanImage))
-        } else if let buffer = resource.buffer {
+        } else if let buffer = Buffer(resource) {
             self.bufferReferences[buffer] = VkBufferReference(buffer: Unmanaged.passRetained(backingResource as! VulkanBuffer), offset: 0)
         }
     }
@@ -638,9 +638,9 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
         self.prepareFrame()
-        if let texture = resource.texture {
+        if let texture = Texture(resource) {
             self.textureReferences[texture] = VkImageReference(image: Unmanaged.passRetained(backingResource as! VulkanImage))
-        } else if let buffer = resource.buffer {
+        } else if let buffer = Buffer(resource) {
             self.bufferReferences[buffer] = VkBufferReference(buffer: Unmanaged.passRetained(backingResource as! VulkanBuffer), offset: 0)
         }
     }

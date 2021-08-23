@@ -112,11 +112,11 @@ enum PreFrameCommands {
     
         case .disposeResource(let resource, let afterStages):
             let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)
-            if let buffer = resource.buffer {
+            if let buffer = Buffer(resource) {
                 resourceRegistry!.disposeBuffer(buffer, waitEvent: disposalWaitEvent)
-            } else if let texture = resource.texture {
+            } else if let texture = Texture(resource) {
                 resourceRegistry!.disposeTexture(texture, waitEvent: disposalWaitEvent)
-            } else if let argumentBuffer = resource.argumentBuffer {
+            } else if let argumentBuffer = ArgumentBuffer(resource) {
                 resourceRegistry!.disposeArgumentBuffer(argumentBuffer, waitEvent: disposalWaitEvent)
             } else {
                 fatalError()
@@ -481,7 +481,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             let disposalIndex = frameCommandInfo.commandEncoders[lastCommandEncoderIndex].commandRange.last!
             
             // Insert commands to materialise and dispose of the resource.
-            if let argumentBuffer = resource.argumentBuffer {
+            if let argumentBuffer = ArgumentBuffer(resource) {
                 // Unlike textures and buffers, we materialise persistent argument buffers at first use rather than immediately.
                 if !historyBufferUseFrame {
                     self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseArgumentBuffer(argumentBuffer), index: firstUsage.commandRange.lowerBound, order: .before))
@@ -492,7 +492,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
                 
             } else if !resource.flags.contains(.persistent) || resource.flags.contains(.windowHandle) {
-                if let buffer = resource.buffer {
+                if let buffer = Buffer(resource) {
                     
                     if !historyBufferUseFrame {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .materialiseBuffer(buffer), index: firstUsage.commandRange.lowerBound, order: .before))
@@ -502,7 +502,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         self.preFrameCommands.append(PreFrameResourceCommand(command: .disposeResource(resource, afterStages: lastUsage.stages), index: disposalIndex, order: .after))
                     }
                     
-                } else if let texture = resource.texture {
+                } else if let texture = Texture(resource) {
                     canBeMemoryless = backend.supportsMemorylessAttachments &&
                         (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget))
                         && usagesArray.allSatisfy({ $0.type.isRenderTarget })
@@ -527,9 +527,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
             if resource.flags.contains(.persistent) || historyBufferUseFrame {
                 // Prepare the resource for being used this frame. For Vulkan, this means computing the image layouts.
-                if let buffer = resource.buffer {
+                if let buffer = Buffer(resource) {
                     backend.resourceRegistry.prepareMultiframeBuffer(buffer, frameIndex: frameCommandInfo.globalFrameIndex)
-                } else if let texture = resource.texture {
+                } else if let texture = Texture(resource) {
                     backend.resourceRegistry.prepareMultiframeTexture(texture, frameIndex: frameCommandInfo.globalFrameIndex)
                 }
                 

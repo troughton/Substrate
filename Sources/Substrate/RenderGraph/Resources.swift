@@ -171,6 +171,12 @@ protocol ResourceProtocolImpl: ResourceProtocol {
 extension ResourceProtocolImpl {
     static var itemsPerChunk: Int { 256 }
     
+    @inlinable
+    public init?(_ resource: Resource) {
+        guard Self.resourceType == resource.type else { return nil }
+        self.init(handle: resource.handle)
+    }
+    
     @_transparent
     func pointer<T>(for keyPath: KeyPath<SharedProperties, UnsafeMutablePointer<T>>) -> UnsafeMutablePointer<T> {
         if self._usesPersistentRegistry {
@@ -334,46 +340,6 @@ public struct Resource : ResourceProtocol, Hashable {
     public init(handle: Handle) {
         assert(ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: handle.bits(in: Self.typeBitsRange))) != nil)
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
-    }
-    
-    public var buffer : Buffer? {
-        if self.type == .buffer {
-            return Buffer(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var texture : Texture? {
-        if self.type == .texture {
-            return Texture(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var argumentBuffer : ArgumentBuffer? {
-        if self.type == .argumentBuffer {
-            return ArgumentBuffer(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var argumentBufferArray : ArgumentBufferArray? {
-        if self.type == .argumentBufferArray {
-            return ArgumentBufferArray(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var heap : Heap? {
-        if self.type == .heap {
-            return Heap(handle: self.handle)
-        } else {
-            return nil
-        }
     }
     
     public var stateFlags: ResourceStateFlags {

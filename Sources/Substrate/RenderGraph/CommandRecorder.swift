@@ -310,7 +310,7 @@ final class RenderGraphCommandRecorder {
         
         if resource._usesPersistentRegistry {
             resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
-            if let textureUsage = resource.texture?.descriptor.usageHint {
+            if let textureUsage = Texture(resource)?.descriptor.usageHint {
                 if usageType == .read {
                     assert(textureUsage.contains(.shaderRead))
                 }
@@ -326,7 +326,7 @@ final class RenderGraphCommandRecorder {
                 if usageType == .blitDestination {
                     assert(textureUsage.contains(.blitDestination))
                 }
-            } else if let bufferUsage = resource.buffer?.descriptor.usageHint {
+            } else if let bufferUsage = Buffer(resource)?.descriptor.usageHint {
                 if usageType == .read {
                     assert(bufferUsage.contains(.shaderRead))
                 }
