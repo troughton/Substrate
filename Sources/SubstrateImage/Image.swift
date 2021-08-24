@@ -135,6 +135,16 @@ public enum ImageColorSpace: Hashable {
     case gammaSRGB(Float)
 
     @inlinable
+    public var asLinear: ImageColorSpace {
+        switch self {
+        case .undefined:
+            return self
+        case .sRGB, .gammaSRGB, .linearSRGB:
+            return .linearSRGB
+        }
+    }
+    
+    @inlinable
     public func fromLinearSRGB(_ color: Float) -> Float {
         switch self {
         case .undefined:
@@ -602,46 +612,73 @@ public struct Image<ComponentType> : AnyImage {
             return self
         }
         
-        let result = Image<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
-        
         var flags : Int32 = 0
         if self.alphaMode == .premultiplied {
             flags |= STBIR_FLAG_ALPHA_PREMULTIPLIED
         }
         
-        let colorSpace : stbir_colorspace
+        let stbColorSpace : stbir_colorspace
+        let processingColorSpace: ImageColorSpace
+        
         switch self.colorSpace {
-        case .linearSRGB, .gammaSRGB(1.0):
-            colorSpace = STBIR_COLORSPACE_LINEAR
+        case .sRGB:
+            stbColorSpace = STBIR_COLORSPACE_SRGB
+            processingColorSpace = .sRGB
         default:
-            colorSpace = STBIR_COLORSPACE_SRGB
+            stbColorSpace = STBIR_COLORSPACE_LINEAR
+            processingColorSpace = self.colorSpace.asLinear
         }
         
+        var sourceImage: Image<T>
+        
         let dataType : stbir_datatype
-        switch T.self {
-        case is Float.Type:
+        switch self {
+        case let image as Image<Float>:
             dataType = STBIR_TYPE_FLOAT
-        case is UInt8.Type:
+            sourceImage = image.converted(toColorSpace: processingColorSpace) as! Image<T>
+        case let image as Image<UInt8>:
             dataType = STBIR_TYPE_UINT8
-        case is UInt16.Type:
+            sourceImage = image.converted(toColorSpace: processingColorSpace) as! Image<T>
+        case let image as Image<UInt16>:
             dataType = STBIR_TYPE_UINT16
-        case is UInt32.Type:
+            sourceImage = image.converted(toColorSpace: processingColorSpace) as! Image<T>
+        case let image as Image<UInt32>:
             dataType = STBIR_TYPE_UINT32
+            sourceImage = image.converted(toColorSpace: processingColorSpace) as! Image<T>
         default:
             fatalError("Unsupported Image type \(T.self) for mip chain generation.")
         }
         
-        stbir_resize(self.storage.data.baseAddress, Int32(self.width), Int32(self.height), 0,
-                     result.storage.data.baseAddress, Int32(width), Int32(height), 0,
-                     dataType,
-                     Int32(self.channelCount),
-                     self.channelCount == 4 ? 3 : -1,
-                     flags,
-                     wrapMode.stbirMode, wrapMode.stbirMode,
-                     filter.stbirFilter, filter.stbirFilter,
-                     colorSpace, nil)
+        var result = Image<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
-        return result
+        let sourceWidth = self.width
+        let sourceHeight = self.height
+        sourceImage.withUnsafeBufferPointer { storage in
+            result.withUnsafeMutableBufferPointer { result in
+                _ = stbir_resize(storage.baseAddress, Int32(sourceWidth), Int32(sourceHeight), 0,
+                                 result.baseAddress, Int32(width), Int32(height), 0,
+                                 dataType,
+                                 Int32(self.channelCount),
+                                 self.channelCount == 4 ? 3 : -1,
+                                 flags,
+                                 wrapMode.stbirMode, wrapMode.stbirMode,
+                                 filter.stbirFilter, filter.stbirFilter,
+                                 stbColorSpace, nil)
+            }
+        }
+        
+        switch result {
+        case let image as Image<Float>:
+            return image.converted(toColorSpace: self.colorSpace) as! Image<T>
+        case let image as Image<UInt8>:
+            return image.converted(toColorSpace: self.colorSpace) as! Image<T>
+        case let image as Image<UInt16>:
+            return image.converted(toColorSpace: self.colorSpace) as! Image<T>
+        case let image as Image<UInt32>:
+            return image.converted(toColorSpace: self.colorSpace) as! Image<T>
+        default:
+            fatalError()
+        }
     }
     
     public func generateMipChain(wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default, compressedBlockSize: Int, mipmapCount: Int? = nil) -> [Image<T>] {
@@ -851,6 +888,12 @@ extension Image where ComponentType: BinaryInteger & FixedWidthInteger & Unsigne
                 }
             }
         }
+    }
+    
+    public func converted(toColorSpace: ImageColorSpace) -> Self {
+        var result = self
+        result.convert(toColorSpace: toColorSpace)
+        return result
     }
     
     @_specialize(kind: full, where ComponentType == UInt8)
@@ -1137,6 +1180,12 @@ extension Image where ComponentType == Float {
                 }
             }
         }
+    }
+    
+    public func converted(toColorSpace: ImageColorSpace) -> Self {
+        var result = self
+        result.convert(toColorSpace: toColorSpace)
+        return result
     }
     
     public mutating func convert(toColorSpace: ImageColorSpace) {
