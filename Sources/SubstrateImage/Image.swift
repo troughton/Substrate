@@ -307,9 +307,11 @@ final class ImageStorage<T> {
     @usableFromInline let deallocateFunc : ((UnsafeMutablePointer<T>) -> Void)?
     
     @inlinable
-    init(elementCount: Int) {
+    init(elementCount: Int, zeroed: Bool) {
         let memory = UnsafeMutableRawBufferPointer.allocate(byteCount: elementCount * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment)
-        memory.initializeMemory(as: UInt8.self, repeating: 0)
+        if zeroed {
+            memory.initializeMemory(as: UInt8.self, repeating: 0)
+        }
         self.data = memory.bindMemory(to: T.self)
         self.deallocateFunc = nil
     }
@@ -378,10 +380,10 @@ public struct Image<ComponentType> : AnyImage {
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
         
-        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
+        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaModeAllowInferred: alphaMode, zeroStorage: true)
     }
     
-    init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace, alphaModeAllowInferred alphaMode: ImageAlphaMode) {
+    init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace, alphaModeAllowInferred alphaMode: ImageAlphaMode, zeroStorage: Bool) {
         precondition(_isPOD(T.self))
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
@@ -390,7 +392,7 @@ public struct Image<ComponentType> : AnyImage {
         self.height = height
         self.channelCount = channels
         
-        self.storage = .init(elementCount: width * height * channelCount)
+        self.storage = .init(elementCount: width * height * channelCount, zeroed: zeroStorage)
         
         self.colorSpace = colorSpace
         self.alphaMode = alphaMode
