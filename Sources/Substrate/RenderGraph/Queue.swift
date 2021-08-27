@@ -173,11 +173,15 @@ public struct Queue : Equatable {
         }
         nonmutating set {
             assert(self.lastCompletedCommand < newValue)
+#if !os(Windows)
+            pthread_mutex_lock(QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
             UInt64.AtomicRepresentation.atomicStore(newValue, at: QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
-            #if !os(Windows)
             // Broadcast that a command has been completed for any waiting threads.
             pthread_cond_broadcast(QueueRegistry.instance.commandCompletedCondVars.advanced(by: Int(self.index)))
-            #endif
+            pthread_mutex_unlock(QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
+#else
+            UInt64.AtomicRepresentation.atomicStore(newValue, at: QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
+#endif
         }
     }
     
