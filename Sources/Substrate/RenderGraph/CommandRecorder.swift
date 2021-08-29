@@ -347,7 +347,7 @@ final class RenderGraphCommandRecorder {
         
         if resource._usesPersistentRegistry {
             resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
-            if let textureUsage = resource.texture?.descriptor.usageHint {
+            if let textureUsage = Texture(resource)?.descriptor.usageHint {
                 if usageType == .read {
                     assert(textureUsage.contains(.shaderRead))
                 }
@@ -363,7 +363,7 @@ final class RenderGraphCommandRecorder {
                 if usageType == .blitDestination {
                     assert(textureUsage.contains(.blitDestination))
                 }
-            } else if let bufferUsage = resource.buffer?.descriptor.usageHint {
+            } else if let bufferUsage = Buffer(resource)?.descriptor.usageHint {
                 if usageType == .read {
                     assert(bufferUsage.contains(.shaderRead))
                 }
@@ -399,10 +399,10 @@ final class RenderGraphCommandRecorder {
         
         if #available(macOS 11.0, iOS 14.0, *) {
             var subresourcePointers: [ResourceUsagePointer] = []
-            if let accelerationStructureDescriptor = specificResource.accelerationStructure?.descriptor {
+            if let accelerationStructureDescriptor = AccelerationStructure(specificResource)?.descriptor {
                 subresourcePointers = self.resourceUsagePointers(for: accelerationStructureDescriptor, commandIndex: firstCommandOffset, stages: stages, encoder: encoder)
                
-            } else if let intersectionFunctionTable = specificResource.intersectionFunctionTable {
+            } else if let intersectionFunctionTable = IntersectionFunctionTable(specificResource) {
                 subresourcePointers = self.resourceUsagePointers(for: intersectionFunctionTable.descriptor, commandIndex: firstCommandOffset, stages: stages, encoder: encoder)
             }
             if !subresourcePointers.isEmpty {

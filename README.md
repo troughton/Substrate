@@ -1,5 +1,7 @@
 # Substrate
 
+_Note to the reader: This readme is in major need of an update. The principles are the same in the current implementation but the code examples are in need of an update. Interested readers may find the [ImGuiDemo demo app](https://github.com/PeskyPixel/ImGuiDemo) a useful starting point for the current API._
+
 ## What is this?
 
 In short: this is a way to code against a higher-level, Swift-native, reduced-friction version of the Metal rendering API and have your rendering code run in a fairly efficient manner, cross-platform on both Metal and Vulkan.

@@ -119,10 +119,10 @@ final class VulkanBackend : SpecificRenderBackend {
 
     public func backingResource(_ resource: Resource) -> Any? {
         return resourceRegistry.accessLock.withReadLock {
-            if let buffer = resource.buffer {
+            if let buffer = Buffer(resource) {
                 let bufferReference = resourceRegistry[buffer]
                 return bufferReference?.buffer.vkBuffer
-            } else if let texture = resource.texture {
+            } else if let texture = Texture(resource) {
                 return resourceRegistry[texture]?.image.vkImage
             }
             return nil

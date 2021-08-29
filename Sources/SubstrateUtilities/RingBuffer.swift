@@ -40,6 +40,23 @@ public final class RingBuffer<Element> : RandomAccessCollection, RangeReplaceabl
     }
     
     @inlinable
+    public func replaceSubrange<C>(_ subrange: Range<Int>, with newElements: C) where C : Collection, Element == C.Element {
+        if newElements.withContiguousStorageIfAvailable({ newElements -> Bool in
+            let bufferEndCount = (subrange.lowerBound..<self.capacity).count
+            let bufferStartCount = subrange.count - bufferEndCount
+            self.buffer.advanced(by: subrange.lowerBound).assign(from: newElements.baseAddress!, count: bufferEndCount)
+            if bufferStartCount > 0 {
+                self.buffer.assign(from: newElements.baseAddress!.advanced(by: bufferEndCount), count: bufferStartCount)
+            }
+            return true
+        }) == nil {
+            for (i, elem) in zip(subrange, newElements) {
+                self[i] = elem
+            }
+        }
+    }
+    
+    @inlinable
     public var count : Int {
         return self.endIndex - self.startIndex
     }

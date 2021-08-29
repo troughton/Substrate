@@ -21,7 +21,7 @@ extension Heap {
         
         var newChildResources = [Resource: Resource]()
         for resource in self.childResources {
-            if let oldBuffer = resource.buffer {
+            if let oldBuffer = Buffer(resource) {
                 let newBuffer = Buffer(descriptor: oldBuffer.descriptor, heap: newHeap, flags: .persistent)!
                 
                 if purgeableState != .discarded, oldBuffer.descriptor.usageHint.contains(.blitSource), newBuffer.descriptor.usageHint.contains(.blitDestination) {
@@ -31,7 +31,7 @@ extension Heap {
                 }
                 
                 newChildResources[resource] = Resource(newBuffer)
-            } else if let oldTexture = resource.texture {
+            } else if let oldTexture = Texture(resource) {
                 let newTexture = Texture(descriptor: oldTexture.descriptor, heap: newHeap, flags: .persistent)!
                 
                 if purgeableState != .discarded, oldTexture.descriptor.usageHint.contains(.blitSource), newTexture.descriptor.usageHint.contains(.blitDestination) {
@@ -59,10 +59,10 @@ extension Heap {
         self.descriptor = newDescriptor
         
         for (resource, tempResource) in newChildResources {
-            if let buffer = resource.buffer, let tempBuffer = tempResource.buffer {
+            if let buffer = Buffer(resource), let tempBuffer = Buffer(tempResource) {
                 let newBackingResource = RenderBackend.replaceBackingResource(for: tempBuffer, with: nil)
                 _ = RenderBackend.replaceBackingResource(for: buffer, with: newBackingResource)
-            } else if let texture = resource.texture, let tempTexture = tempResource.texture {
+            } else if let texture = Texture(resource), let tempTexture = Texture(tempResource) {
                 let newBackingResource = RenderBackend.replaceBackingResource(for: tempTexture, with: nil)
                 _ = RenderBackend.replaceBackingResource(for: texture, with: newBackingResource)
             }

@@ -343,6 +343,8 @@ extension Image where ComponentType == UInt8 {
 }
 
 extension Image where ComponentType: UnsignedInteger & BinaryInteger & FixedWidthInteger {
+    @_specialize(kind: full, where ComponentType == UInt8)
+    @_specialize(kind: full, where ComponentType == UInt16)
     public func pngData(compressionSettings: PNGCompressionSettings = .default) throws -> Data {
         var texture = self
         texture.convertToPostmultipliedAlpha()

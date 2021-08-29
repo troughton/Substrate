@@ -262,10 +262,25 @@ public struct AxisAlignedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & 
         self.maxPoint = max
     }
     
+    
+    @inlinable
+    public init<S: Sequence>(bounding sequence: S) where S.Element == SIMD3<Scalar> {
+        self = .baseBox
+        for element in sequence {
+            self.expandToInclude(point: element)
+        }
+    }
+    
     @inlinable
     public mutating func expand(by factor: Scalar) {
         self.minPoint -= SIMD3<Scalar>(repeating: factor)
         self.maxPoint += SIMD3<Scalar>(repeating: factor)
+    }
+    
+    @inlinable
+    public mutating func expandToInclude(point: SIMD3<Scalar>) {
+        self.minPoint = pointwiseMin(point, self.minPoint)
+        self.maxPoint = pointwiseMax(point, self.maxPoint)
     }
     
     public static var baseBox : AxisAlignedBoundingBox { return AxisAlignedBoundingBox(min: SIMD3<Scalar>(repeating: Scalar.infinity), max: SIMD3<Scalar>(repeating: -Scalar.infinity)) }
@@ -582,32 +597,83 @@ public struct ProjectedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & Re
 }
 
 @frozen
-public struct Plane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
-    @usableFromInline
-    var storage : SIMD4<Scalar>
+public struct Plane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
+    public var equation : SIMD4<Scalar>
 
     @inlinable
     public var normal : SIMD3<Scalar> {
         get {
-            return self.storage[SIMD3(0, 1, 2)]
+            return self.equation[SIMD3(0, 1, 2)]
         }
         set {
-            self.storage = SIMD4(newValue, self.storage.w)
+            self.equation = SIMD4(newValue, self.equation.w)
         }
     }
     
     @inlinable
     public var constant : Scalar {
         get {
-            return self.storage.w
+            return self.equation.w
         }
         set {
-            self.storage.w = newValue
+            self.equation.w = newValue
         }
     }
     
+    @inlinable
+    public init(equation: SIMD4<Scalar>) {
+        self.equation = equation
+    }
+    
+    @inlinable
     public init(normal: SIMD3<Scalar>, constant: Scalar) {
-        self.storage = SIMD4<Scalar>(normal, constant)
+        self.equation = SIMD4<Scalar>(normal, constant)
+    }
+    
+    @inlinable
+    public init(point: SIMD3<Scalar>, normal: SIMD3<Scalar>) {
+        self.equation = SIMD4<Scalar>(normal, -dot(normal, point))
+    }
+    
+    @inlinable
+    public func project(point: SIMD3<Scalar>) -> SIMD3<Scalar> {
+        return point - self.vector(to: point)
+    }
+    
+    @inlinable
+    public func vector(to point: SIMD3<Scalar>) -> SIMD3<Scalar> {
+        return dot(self.equation, SIMD4(point, 1)) * self.normal
+    }
+    
+    @inlinable
+    public func distance(to point: SIMD3<Scalar>) -> Scalar {
+        return abs(dot(self.equation, SIMD4(point, 1))) / self.normal.length
+    }
+    
+    // Plane transformed by matrix: https://stackoverflow.com/a/48408289
+    @inlinable
+    public static func *(matrix: AffineMatrix<Scalar>, plane: Plane<Scalar>) -> Plane<Scalar> {
+        return Plane(equation: Matrix4x4(matrix.inverse).transpose * plane.equation)
+    }
+    
+    // Plane transformed by matrix: https://stackoverflow.com/a/48408289
+    @inlinable
+    public static func *(matrix: Matrix4x4<Scalar>, plane: Plane<Scalar>) -> Plane<Scalar> {
+        return Plane(equation: matrix.inverse.transpose * plane.equation)
+    }
+}
+
+extension Plane: Codable {
+    @inlinable
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self.equation = try container.decode(SIMD4<Scalar>.self)
+    }
+    
+    @inlinable
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.equation)
     }
 }
 
@@ -758,6 +824,11 @@ public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
     @inlinable
     public func intersects(with sphere: Sphere<Scalar>, intersectionTUpperLimit: Scalar = .infinity) -> Bool {
         return self.minIntersectionT(with: sphere, intersectionTUpperLimit: intersectionTUpperLimit) != nil
+    }
+    
+    @inlinable
+    public func intersectionT(with plane: Plane<Scalar>) -> Scalar {
+        return -dot(plane.equation, SIMD4(self.origin, 1)) / dot(plane.equation.xyz, self.direction)
     }
     
     @inlinable

@@ -338,7 +338,7 @@ extension Image where ComponentType == Float {
             let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, Int32(channels))!
             defer { stbi_image_free(data) }
             
-            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)))
+            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)), zeroStorage: false)
             
             for i in 0..<dataCount {
                 self.storage.data[i] = unormToFloat(data[i])
@@ -350,7 +350,7 @@ extension Image where ComponentType == Float {
             let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels))!
             defer { stbi_image_free(data) }
             
-            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)))
+            self.init(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)), zeroStorage: false)
             
             for i in 0..<dataCount {
                 self.storage.data[i] = unormToFloat(data[i])
@@ -390,7 +390,7 @@ extension Image where ComponentType == Float {
                 let data = stbi_load_16_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels))!
                 defer { stbi_image_free(data) }
                 
-                var result = Image(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
+                var result = Image(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode, zeroStorage: false)
                 
                 for i in 0..<dataCount {
                     result.storage.data[i] = unormToFloat(data[i])
@@ -403,7 +403,7 @@ extension Image where ComponentType == Float {
                 let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels))!
                 defer { stbi_image_free(data) }
                 
-                var result = Image(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
+                var result = Image(width: Int(width), height: Int(height), channels: Int(channels), colorSpace: colorSpace, alphaModeAllowInferred: alphaMode, zeroStorage: false)
                 
                 for i in 0..<dataCount {
                     result.storage.data[i] = unormToFloat(data[i])
@@ -464,9 +464,7 @@ extension Image where ComponentType == Float {
             }
         }
         
-        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colorSpace: .linearSRGB, alphaModeAllowInferred: .premultiplied)
-        self.storage.data.initialize(repeating: 0.0)
-        
+        self.init(width: Int(image.width), height: Int(image.height), channels: image.num_channels == 3 ? 4 : Int(image.num_channels), colorSpace: .linearSRGB, alphaModeAllowInferred: .premultiplied, zeroStorage: true)
         
         for c in 0..<Int(image.num_channels) {
             let channelIndex : Int

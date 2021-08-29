@@ -186,6 +186,53 @@ public enum PixelFormat : UInt, Hashable, Codable, CaseIterable {
     case bc7_rgbaUnorm = 152
     case bc7_rgbaUnorm_sRGB = 153
     
+//    /* ASTC sRGB */
+//    case astc_4x4_sRGB = 186
+//    case astc_5x4_sRGB = 187
+//    case astc_5x5_sRGB = 188
+//    case astc_6x5_sRGB = 189
+//    case astc_6x6_sRGB = 190
+//    case astc_8x5_sRGB = 192
+//    case astc_8x6_sRGB = 193
+//    case astc_8x8_sRGB = 194
+//    case astc_10x5_sRGB = 195
+//    case astc_10x6_sRGB = 196
+//    case astc_10x8_sRGB = 197
+//    case astc_10x10_sRGB = 198
+//    case astc_12x10_sRGB = 199
+//    case astc_12x12_sRGB = 200
+//
+//    /* ASTC LDR */
+//    case astc_4x4_ldr = 204
+//    case astc_5x4_ldr = 205
+//    case astc_5x5_ldr = 206
+//    case astc_6x5_ldr = 207
+//    case astc_6x6_ldr = 208
+//    case astc_8x5_ldr = 210
+//    case astc_8x6_ldr = 211
+//    case astc_8x8_ldr = 212
+//    case astc_10x5_ldr = 213
+//    case astc_10x6_ldr = 214
+//    case astc_10x8_ldr = 215
+//    case astc_10x10_ldr = 216
+//    case astc_12x10_ldr = 217
+//    case astc_12x12_ldr = 218
+//
+//    /* ASTC HDR (High Dynamic Range) Formats */
+//    case astc_4x4_hdr = 222
+//    case astc_5x4_hdr = 223
+//    case astc_5x5_hdr = 224
+//    case astc_6x5_hdr = 225
+//    case astc_6x6_hdr = 226
+//    case astc_8x5_hdr = 228
+//    case astc_8x6_hdr = 229
+//    case astc_8x8_hdr = 230
+//    case astc_10x5_hdr = 231
+//    case astc_10x6_hdr = 232
+//    case astc_10x8_hdr = 233
+//    case astc_10x10_hdr = 234
+//    case astc_12x10_hdr = 235
+//    case astc_12x12_hdr = 236
 
     case gbgr422 = 240
     
@@ -415,6 +462,47 @@ extension PixelFormat {
         case .r8Sint, .rg8Sint, .rgba8Sint,
              .r16Sint, .rg16Sint, .rgba16Sint,
              .r32Sint, .rg32Sint, .rgba32Sint:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    public var isUnsignedNormalised: Bool {
+        switch self {
+        case .r8Unorm, .r8Unorm_sRGB,
+                .rg8Unorm, .rg8Unorm_sRGB,
+                .rgba8Unorm, .rgba8Unorm_sRGB,
+                .r16Unorm,
+                .rg16Unorm,
+                .rgba16Unorm,
+                .a8Unorm,
+                .bgra8Unorm, .bgra8Unorm_sRGB,
+                .b5g6r5Unorm, .bgr5a1Unorm, .bgr10a2Unorm,
+                .abgr4Unorm, .a1bgr5Unorm,
+                .rgb10a2Unorm,
+                .depth16Unorm, .depth24Unorm_stencil8,
+            
+                .bc1_rgba, .bc1_rgba_sRGB,
+                .bc2_rgba, .bc2_rgba_sRGB,
+                .bc3_rgba, .bc3_rgba_sRGB,
+                .bc4_rUnorm, .bc5_rgUnorm,
+                .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    public var isSignedNormalised: Bool {
+        switch self {
+        case .r8Snorm,
+                .rg8Snorm,
+                .rgba8Snorm,
+                .r16Snorm,
+                .rg16Snorm,
+                .rgba16Snorm,
+                .bc4_rSnorm, .bc5_rgSnorm:
             return true
         default:
             return false

@@ -151,11 +151,11 @@ final class MetalBackend : SpecificRenderBackend {
 
     @usableFromInline func updateLabel(on resource: Resource) {
         _ = Task {
-            if let buffer = resource.buffer {
+            if let buffer = Buffer(resource) {
                 self.resourceRegistry[buffer]?.buffer.label = buffer.label
-            } else if let texture = resource.texture {
+            } else if let texture = Texture(resource) {
                 self.resourceRegistry[texture]?.texture.label = texture.label
-            } else if let heap = resource.heap {
+            } else if let heap = Heap(resource) {
                 self.resourceRegistry[heap]?.label = heap.label
             }
         }
@@ -163,15 +163,15 @@ final class MetalBackend : SpecificRenderBackend {
     
     @usableFromInline func updatePurgeableState(for resource: Resource, to newState: ResourcePurgeableState?) -> ResourcePurgeableState {
         let mtlState = MTLPurgeableState(newState)
-        if let buffer = resource.buffer, let mtlBuffer = self.resourceRegistry[buffer]?.buffer {
+        if let buffer = Buffer(resource), let mtlBuffer = self.resourceRegistry[buffer]?.buffer {
             return ResourcePurgeableState(
                 MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlBuffer, to: mtlState)
             )!
-        } else if let texture = resource.texture, let mtlTexture = self.resourceRegistry[texture]?.texture {
+        } else if let texture = Texture(resource), let mtlTexture = self.resourceRegistry[texture]?.texture {
             return ResourcePurgeableState(
                 MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlTexture, to: mtlState)
             )!
-        } else if let heap = resource.heap, let mtlHeap = self.resourceRegistry[heap] {
+        } else if let heap = Heap(resource), let mtlHeap = self.resourceRegistry[heap] {
             return ResourcePurgeableState(
                 MetalResourcePurgeabilityManager.instance.setPurgeableState(on: mtlHeap, to: mtlState)
             )!
@@ -326,15 +326,15 @@ final class MetalBackend : SpecificRenderBackend {
     }
     
     public func backingResource(_ resource: Resource) -> Any? {
-        if let buffer = resource.buffer {
+        if let buffer = Buffer(resource) {
             let bufferReference = resourceRegistry[buffer]
             assert(bufferReference == nil || bufferReference?.offset == 0)
             return bufferReference?.buffer
-        } else if let texture = resource.texture {
+        } else if let texture = Texture(resource) {
             return resourceRegistry[texture]?.texture
-        } else if let heap = resource.heap {
+        } else if let heap = Heap(resource) {
             return resourceRegistry[heap]
-        } else if let accelerationStructure = resource.accelerationStructure, #available(macOS 11.0, iOS 14.0, *) {
+        } else if let accelerationStructure = AccelerationStructure(resource), #available(macOS 11.0, iOS 14.0, *) {
             return resourceRegistry[accelerationStructure]
         }
         return nil
@@ -619,20 +619,20 @@ final class MetalBackend : SpecificRenderBackend {
         }
         
         let getResource: (Resource) -> Unmanaged<MTLResource>? = { resource in
-            if let buffer = resource.buffer {
+            if let buffer = Buffer(resource) {
                 return resourceMap[buffer].map { unsafeBitCast($0._buffer, to: Unmanaged<MTLResource>.self) }
-            } else if let texture = resource.texture {
+            } else if let texture = Texture(resource) {
                 return resourceMap[texture].map { unsafeBitCast($0._texture, to: Unmanaged<MTLResource>.self) }
-            } else if let argumentBuffer = resource.argumentBuffer {
+            } else if let argumentBuffer = ArgumentBuffer(resource) {
                 return unsafeBitCast(resourceMap[argumentBuffer]._buffer, to: Unmanaged<MTLResource>.self)
             } else if let heap = resource.heap {
                 return Unmanaged.passUnretained(resourceMap.persistentRegistry[heap] as! MTLResource)
             } else if #available(macOS 11.0, iOS 14.0, *) {
-                if let accelerationStructure = resource.accelerationStructure {
+                if let accelerationStructure = AccelerationStructure(resource) {
                     return Unmanaged.passUnretained(resourceMap.persistentRegistry[accelerationStructure] as! MTLResource)
-                } else if let visibleFunctionTable = resource.visibleFunctionTable {
+                } else if let visibleFunctionTable = VisibleFunctionTable(resource) {
                     return resourceMap[visibleFunctionTable].map { Unmanaged.passUnretained($0.resource) }
-                } else if let intersectionFunctionTable = resource.intersectionFunctionTable {
+                } else if let intersectionFunctionTable = IntersectionFunctionTable(resource) {
                     return resourceMap[intersectionFunctionTable].map { Unmanaged.passUnretained($0.resource) }
                 }
             }

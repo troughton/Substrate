@@ -186,6 +186,12 @@ protocol ResourceProtocolImpl: GroupHazardTrackableResource, Hashable {
 extension ResourceProtocolImpl {
     static var itemsPerChunk: Int { 256 }
     
+    @inlinable
+    public init?(_ resource: Resource) {
+        guard Self.resourceType == resource.type else { return nil }
+        self.init(handle: resource.handle)
+    }
+    
     public func dispose() {
         guard self._usesPersistentRegistry, self.isValid else {
             return
@@ -497,61 +503,6 @@ public struct Resource : ResourceProtocol, Hashable {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
-    public var buffer : Buffer? {
-        if self.type == .buffer {
-            return Buffer(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var texture : Texture? {
-        if self.type == .texture {
-            return Texture(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var argumentBuffer : ArgumentBuffer? {
-        if self.type == .argumentBuffer {
-            return ArgumentBuffer(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var argumentBufferArray : ArgumentBufferArray? {
-        if self.type == .argumentBufferArray {
-            return ArgumentBufferArray(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var accelerationStructure : AccelerationStructure? {
-        if self.type == .accelerationStructure {
-            return AccelerationStructure(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var intersectionFunctionTable : IntersectionFunctionTable? {
-        if self.type == .intersectionFunctionTable {
-            return IntersectionFunctionTable(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
-    
-    public var visibleFunctionTable : VisibleFunctionTable? {
-        if self.type == .visibleFunctionTable {
-            return VisibleFunctionTable(handle: self.handle)
-        } else {
-            return nil
-        }
-    }
     
     public var heap : Heap? {
         if self.type == .heap {
@@ -715,26 +666,32 @@ extension ResourceProtocol {
     
     public static var indexBitsRange : Range<Int> { return 0..<28 }
     
+    @inlinable
     public var type : ResourceType {
         return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.typeBitsRange)))!
     }
     
+    @inlinable
     public var flags : ResourceFlags {
         return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.flagBitsRange)))
     }
     
+    @inlinable
     public var generation : UInt8 {
         return UInt8(truncatingIfNeeded: self.handle.bits(in: Self.generationBitsRange))
     }
     
+    @inlinable
     public var transientRegistryIndex : Int {
         return Int(self.handle.bits(in: Self.transientRegistryIndexBitsRange))
     }
     
+    @inlinable
     public var index : Int {
         return Int(truncatingIfNeeded: self.handle.bits(in: Self.indexBitsRange))
     }
     
+    @inlinable
     public var _usesPersistentRegistry : Bool {
         if self.flags.contains(.persistent) || self.flags.contains(.historyBuffer) {
             return true

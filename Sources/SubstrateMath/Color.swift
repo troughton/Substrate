@@ -79,7 +79,19 @@ public struct RGBColor : Equatable, Hashable {
     
     @inlinable
     public var luminance: Float {
-        return 0.212671 * self.r + 0.715160 * self.g + 0.072169 * self.b
+        get {
+            return 0.212671 * self.r + 0.715160 * self.g + 0.072169 * self.b
+        }
+        set {
+            let currentLuminance = self.luminance
+            if currentLuminance == 0.0 {
+                self = RGBColor(newValue)
+                return
+            }
+            
+            let ratio = max(newValue, .ulpOfOne) / currentLuminance
+            self *= ratio
+        }
     }
     
     public var tuple : (Float, Float, Float) {

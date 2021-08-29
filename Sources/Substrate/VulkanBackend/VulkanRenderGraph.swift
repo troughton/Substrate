@@ -83,7 +83,7 @@ extension VulkanBackend {
                 let dependency = dependencies.dependency(from: dependentIndex, on: sourceIndex)!
                 
                 for (resource, producingUsage, _) in dependency.resources {
-                    let pixelFormat = resource.texture?.descriptor.pixelFormat ?? .invalid
+                    let pixelFormat = Texture(resource)?.descriptor.pixelFormat ?? .invalid
                     let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                     signalStages.formUnion(producingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: producingUsage.stages))
                 }
@@ -105,7 +105,7 @@ extension VulkanBackend {
                 for (resource, producingUsage, consumingUsage) in dependency.resources {
                     var isDepthOrStencil = false
                     
-                    if let buffer = resource.buffer {
+                    if let buffer = Buffer(resource) {
                         var barrier = VkBufferMemoryBarrier()
                         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER
                         barrier.buffer = resourceMap[buffer].buffer.vkBuffer
@@ -121,7 +121,7 @@ extension VulkanBackend {
                         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         bufferBarriers.append(barrier)
-                    } else if let texture = resource.texture {
+                    } else if let texture = Texture(resource) {
                         let textureDescriptor = texture.descriptor
                         let pixelFormat = textureDescriptor.pixelFormat
                         isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
@@ -308,12 +308,12 @@ extension VulkanBackend {
             var remainingRange = ActiveResourceRange.inactive // The subresource range not processed by this barrier.
             var activeRange = activeRange
             
-            let pixelFormat =  resource.texture?.descriptor.pixelFormat ?? .invalid
+            let pixelFormat =  Texture(resource)?.descriptor.pixelFormat ?? .invalid
             let isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
 
             let sourceLayout: VkImageLayout
             let destinationLayout: VkImageLayout
-            if let image = resource.texture.map({ resourceMap[$0].image }) {
+            if let image = Texture(resource).map({ resourceMap[$0].image }) {
                 if afterUsageType == .frameStartLayoutTransitionCheck {
                     if !resource._usesPersistentRegistry {
                         sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED
@@ -406,7 +406,7 @@ extension VulkanBackend {
                 }
             }
             
-            if let buffer = resource.buffer {
+            if let buffer = Buffer(resource) {
                 var barrier = VkBufferMemoryBarrier()
                 barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER
                 barrier.buffer = resourceMap[buffer].buffer.vkBuffer
@@ -421,7 +421,7 @@ extension VulkanBackend {
                 barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                 barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                 bufferBarriers.append(barrier)
-            } else if let texture = resource.texture {
+            } else if let texture = Texture(resource) {
                 var barrier = VkImageMemoryBarrier()
                 barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
                 barrier.image = resourceMap[texture].image.vkImage

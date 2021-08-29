@@ -171,7 +171,7 @@ public enum TextureLoadingError : Error {
 
 extension Image {
     public func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws {
-        if self.colorSpace == .sRGB, !texture.descriptor.pixelFormat.isSRGB {
+        if _isDebugAssertConfiguration(), self.colorSpace == .sRGB, !texture.descriptor.pixelFormat.isSRGB {
             print("Warning: the source texture data is in the sRGB color space but the texture's pixel format is linear RGB.")
         }
         

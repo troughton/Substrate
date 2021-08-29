@@ -135,6 +135,16 @@ public enum ImageColorSpace: Hashable {
     case gammaSRGB(Float)
 
     @inlinable
+    public var asLinear: ImageColorSpace {
+        switch self {
+        case .undefined:
+            return self
+        case .sRGB, .gammaSRGB, .linearSRGB:
+            return .linearSRGB
+        }
+    }
+    
+    @inlinable
     public func fromLinearSRGB(_ color: Float) -> Float {
         switch self {
         case .undefined:
@@ -297,9 +307,11 @@ final class ImageStorage<T> {
     @usableFromInline let deallocateFunc : ((UnsafeMutablePointer<T>) -> Void)?
     
     @inlinable
-    init(elementCount: Int) {
+    init(elementCount: Int, zeroed: Bool) {
         let memory = UnsafeMutableRawBufferPointer.allocate(byteCount: elementCount * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment)
-        memory.initializeMemory(as: UInt8.self, repeating: 0)
+        if zeroed {
+            memory.initializeMemory(as: UInt8.self, repeating: 0)
+        }
         self.data = memory.bindMemory(to: T.self)
         self.deallocateFunc = nil
     }
@@ -368,10 +380,10 @@ public struct Image<ComponentType> : AnyImage {
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
         
-        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaModeAllowInferred: alphaMode)
+        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaModeAllowInferred: alphaMode, zeroStorage: true)
     }
     
-    init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace, alphaModeAllowInferred alphaMode: ImageAlphaMode) {
+    init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace, alphaModeAllowInferred alphaMode: ImageAlphaMode, zeroStorage: Bool) {
         precondition(_isPOD(T.self))
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
@@ -380,7 +392,7 @@ public struct Image<ComponentType> : AnyImage {
         self.height = height
         self.channelCount = channels
         
-        self.storage = .init(elementCount: width * height * channelCount)
+        self.storage = .init(elementCount: width * height * channelCount, zeroed: zeroStorage)
         
         self.colorSpace = colorSpace
         self.alphaMode = alphaMode
@@ -429,6 +441,16 @@ public struct Image<ComponentType> : AnyImage {
     mutating func ensureUniqueness() {
         if !isKnownUniquelyReferenced(&self.storage) {
             self.storage = .init(copying: self.storage.data)
+        }
+    }
+    
+    @inlinable
+    public var alphaChannelIndex: Int? {
+        switch self.alphaMode {
+        case .none:
+            return nil
+        default:
+            return self.channelCount - 1
         }
     }
     
@@ -603,46 +625,73 @@ public struct Image<ComponentType> : AnyImage {
             return self
         }
         
-        let result = Image<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
-        
         var flags : Int32 = 0
         if self.alphaMode == .premultiplied {
             flags |= STBIR_FLAG_ALPHA_PREMULTIPLIED
         }
         
-        let colorSpace : stbir_colorspace
+        let stbColorSpace : stbir_colorspace
+        let processingColorSpace: ImageColorSpace
+        
         switch self.colorSpace {
-        case .linearSRGB, .gammaSRGB(1.0):
-            colorSpace = STBIR_COLORSPACE_LINEAR
+        case .sRGB:
+            stbColorSpace = STBIR_COLORSPACE_SRGB
+            processingColorSpace = .sRGB
         default:
-            colorSpace = STBIR_COLORSPACE_SRGB
+            stbColorSpace = STBIR_COLORSPACE_LINEAR
+            processingColorSpace = self.colorSpace.asLinear
         }
         
+        var sourceImage: Image<T>
+        
         let dataType : stbir_datatype
-        switch T.self {
-        case is Float.Type:
+        switch self {
+        case let image as Image<Float>:
             dataType = STBIR_TYPE_FLOAT
-        case is UInt8.Type:
+            sourceImage = image.converted(toColorSpace: processingColorSpace) as! Image<T>
+        case let image as Image<UInt8>:
             dataType = STBIR_TYPE_UINT8
-        case is UInt16.Type:
+            sourceImage = image.converted(toColorSpace: processingColorSpace) as! Image<T>
+        case let image as Image<UInt16>:
             dataType = STBIR_TYPE_UINT16
-        case is UInt32.Type:
+            sourceImage = image.converted(toColorSpace: processingColorSpace) as! Image<T>
+        case let image as Image<UInt32>:
             dataType = STBIR_TYPE_UINT32
+            sourceImage = image.converted(toColorSpace: processingColorSpace) as! Image<T>
         default:
             fatalError("Unsupported Image type \(T.self) for mip chain generation.")
         }
         
-        stbir_resize(self.storage.data.baseAddress, Int32(self.width), Int32(self.height), 0,
-                     result.storage.data.baseAddress, Int32(width), Int32(height), 0,
-                     dataType,
-                     Int32(self.channelCount),
-                     self.channelCount == 4 ? 3 : -1,
-                     flags,
-                     wrapMode.stbirMode, wrapMode.stbirMode,
-                     filter.stbirFilter, filter.stbirFilter,
-                     colorSpace, nil)
+        var result = Image<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
-        return result
+        let sourceWidth = self.width
+        let sourceHeight = self.height
+        sourceImage.withUnsafeBufferPointer { storage in
+            result.withUnsafeMutableBufferPointer { result in
+                _ = stbir_resize(storage.baseAddress, Int32(sourceWidth), Int32(sourceHeight), 0,
+                                 result.baseAddress, Int32(width), Int32(height), 0,
+                                 dataType,
+                                 Int32(self.channelCount),
+                                 self.channelCount == 4 ? 3 : -1,
+                                 flags,
+                                 wrapMode.stbirMode, wrapMode.stbirMode,
+                                 filter.stbirFilter, filter.stbirFilter,
+                                 stbColorSpace, nil)
+            }
+        }
+        
+        switch result {
+        case let image as Image<Float>:
+            return image.converted(toColorSpace: self.colorSpace) as! Image<T>
+        case let image as Image<UInt8>:
+            return image.converted(toColorSpace: self.colorSpace) as! Image<T>
+        case let image as Image<UInt16>:
+            return image.converted(toColorSpace: self.colorSpace) as! Image<T>
+        case let image as Image<UInt32>:
+            return image.converted(toColorSpace: self.colorSpace) as! Image<T>
+        default:
+            fatalError()
+        }
     }
     
     public func generateMipChain(wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default, compressedBlockSize: Int, mipmapCount: Int? = nil) -> [Image<T>] {
@@ -735,8 +784,15 @@ extension Image where ComponentType: SIMDScalar {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
             
             var result = SIMD4<T>()
-            for i in 0..<min(self.channelCount, 4) {
-                result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+            if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
+                for i in 0..<min(alphaChannelIndex, 3) {
+                    result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+                }
+                result[3] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + alphaChannelIndex]
+            } else {
+                for i in 0..<min(self.channelCount, 4) {
+                    result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+                }
             }
             return result
         }
@@ -744,8 +800,15 @@ extension Image where ComponentType: SIMDScalar {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
             self.ensureUniqueness()
             
-            for i in 0..<min(self.channelCount, 4) {
-                self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+            if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
+                for i in 0..<min(alphaChannelIndex, 3) {
+                    self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+                }
+                self.storage.data[y * self.width * self.channelCount + x * self.channelCount + alphaChannelIndex] = newValue.w
+            } else {
+                for i in 0..<min(self.channelCount, 4) {
+                    self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+                }
             }
         }
     }
@@ -838,6 +901,12 @@ extension Image where ComponentType: BinaryInteger & FixedWidthInteger & Unsigne
                 }
             }
         }
+    }
+    
+    public func converted(toColorSpace: ImageColorSpace) -> Self {
+        var result = self
+        result.convert(toColorSpace: toColorSpace)
+        return result
     }
     
     @_specialize(kind: full, where ComponentType == UInt8)
@@ -1019,7 +1088,7 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
         }
         
         func readPixel(_ coord: SIMD2<Int>) -> SIMD4<Float> {
-            if wrapMode == .zero, any(coord .< .zero .| coord .> maxCoord) { return .zero }
+            if wrapMode == .zero, any(coord .< SIMD2<Int>.zero .| coord .> maxCoord) { return .zero }
             return self[floatVectorAt: coord.x, coord.y]
         }
         
@@ -1124,6 +1193,12 @@ extension Image where ComponentType == Float {
                 }
             }
         }
+    }
+    
+    public func converted(toColorSpace: ImageColorSpace) -> Self {
+        var result = self
+        result.convert(toColorSpace: toColorSpace)
+        return result
     }
     
     public mutating func convert(toColorSpace: ImageColorSpace) {
