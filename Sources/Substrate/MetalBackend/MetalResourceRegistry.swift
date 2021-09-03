@@ -253,7 +253,6 @@ final class MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
-        self.prepareFrame()
         if let texture = Texture(resource) {
             self.textureReferences[texture] = MTLTextureReference(texture: Unmanaged.passRetained(backingResource as! MTLTexture))
         } else if let buffer = Buffer(resource) {
