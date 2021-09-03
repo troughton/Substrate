@@ -399,7 +399,6 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return tableRef
     }
     
-    
     public nonisolated func importExternalResource(_ resource: Resource, backingResource: Any) {
         if let texture = Texture(resource) {
             self.textureReferences[texture] = MTLTextureReference(texture: Unmanaged.passRetained(backingResource as! MTLTexture))
