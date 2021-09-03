@@ -136,6 +136,11 @@ extension Rect where Scalar: BinaryFloatingPoint {
     }
     
     @inlinable
+    public func union(with otherRect: Rect) -> Rect {
+        return Rect(minPoint: pointwiseMin(self.minPoint, otherRect.minPoint), maxPoint: pointwiseMin(self.maxPoint, otherRect.maxPoint))
+    }
+    
+    @inlinable
     public func clipped(to otherRect: Rect<Scalar>) -> Rect {
         let currentMax = self.origin + self.size
         let minPoint = pointwiseMin(pointwiseMax(otherRect.origin, self.origin), currentMax)
@@ -242,6 +247,11 @@ extension Rect where Scalar: FixedWidthInteger {
     @inlinable
     public func intersects(with otherRect: Rect) -> Bool {
         return all((self.origin &+ self.size .>= otherRect.origin) .& (otherRect.origin &+ otherRect.size .>= self.origin))
+    }
+    
+    @inlinable
+    public func union(with otherRect: Rect) -> Rect {
+        return Rect(minPoint: pointwiseMin(self.minPoint, otherRect.minPoint), maxPoint: pointwiseMin(self.maxPoint, otherRect.maxPoint))
     }
 }
 
