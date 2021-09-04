@@ -46,7 +46,7 @@ extension RenderTargetAttachmentDescriptor {
     }
 }
 
-public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
+public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable, Sendable {
 
     public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
                 resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
@@ -85,7 +85,7 @@ public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hash
     
 }
 
-public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
+public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable, Sendable {
     
     public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
                 resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
@@ -123,7 +123,7 @@ public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hash
     public var resolveDepthPlane : Int = 0
 }
 
-public struct StencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable {
+public struct StencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable, Sendable {
     
     public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
                 resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
@@ -167,7 +167,7 @@ protocol ClearOperation {
     var isDiscard: Bool { get }
 }
 
-public enum ColorClearOperation: ClearOperation {
+public enum ColorClearOperation: ClearOperation, Sendable {
     case discard
     case keep
     case clear(ClearColor)
@@ -194,7 +194,7 @@ public enum ColorClearOperation: ClearOperation {
     }
 }
 
-public enum DepthClearOperation: ClearOperation {
+public enum DepthClearOperation: ClearOperation, Sendable {
     case discard
     case keep
     case clear(Double)
@@ -221,7 +221,7 @@ public enum DepthClearOperation: ClearOperation {
     }
 }
 
-public enum StencilClearOperation: ClearOperation {
+public enum StencilClearOperation: ClearOperation, Sendable {
     case discard
     case keep
     case clear(UInt32)
@@ -253,7 +253,7 @@ public typealias RenderTargetColorAttachmentDescriptor = ColorAttachmentDescript
 public typealias RenderTargetDepthAttachmentDescriptor = DepthAttachmentDescriptor
 public typealias RenderTargetStencilAttachmentDescriptor = StencilAttachmentDescriptor
 
-public struct RenderTargetDescriptor : Hashable {
+public struct RenderTargetDescriptor : Hashable, Sendable {
     
     @inlinable
     public init(attachmentCount: Int) {

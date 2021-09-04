@@ -124,7 +124,7 @@ public enum ImageLoadingError : Error {
     case invalidImageDataFormat(URL, Any.Type)
 }
 
-public enum ImageColorSpace: Hashable {
+public enum ImageColorSpace: Hashable, Sendable {
     /// The texture values use no defined color space.
     case undefined
     /// The IEC 61966-2-1:1999 color space.
@@ -217,7 +217,7 @@ extension ImageColorSpace: Codable {
 
 public typealias ImageColourSpace = ImageColorSpace
 
-public enum ImageAlphaMode: String, Codable {
+public enum ImageAlphaMode: String, Codable, Hashable, Sendable {
     case none
     case premultiplied
     case postmultiplied
@@ -247,7 +247,7 @@ public enum ImageAlphaMode: String, Codable {
     }
 }
 
-public enum ImageEdgeWrapMode {
+public enum ImageEdgeWrapMode: Hashable, Sendable {
     case zero
     case wrap
     case reflect
@@ -268,7 +268,7 @@ public enum ImageEdgeWrapMode {
     }
 }
 
-public enum ImageResizeFilter {
+public enum ImageResizeFilter: Sendable {
     /// Mitchell for downscaling, and Catmull-Rom for upscaling
     case `default`
     /// A trapezoid with 1-pixel wide ramps, producing the same result as a box box for integer scale ratios

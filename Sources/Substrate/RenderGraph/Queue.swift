@@ -112,7 +112,7 @@ public final class QueueRegistry {
     }
 }
 
-public struct Queue : Equatable {
+public struct Queue : Equatable, Sendable {
     public let index : UInt8
     
     fileprivate init(index: UInt8) {

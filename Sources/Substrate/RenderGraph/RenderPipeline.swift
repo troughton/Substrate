@@ -8,7 +8,7 @@
 
 import SubstrateUtilities
 
-public struct BlendDescriptor : Hashable {
+public struct BlendDescriptor : Hashable, Sendable {
     public var sourceRGBBlendFactor: BlendFactor = .one
 
     public var destinationRGBBlendFactor: BlendFactor = .zero
@@ -36,7 +36,7 @@ public struct StateBacked<T, State: AnyObject> {
     }
 }
 
-public struct FunctionDescriptor : Hashable, ExpressibleByStringLiteral {
+public struct FunctionDescriptor : Hashable, ExpressibleByStringLiteral, Sendable {
     public var name : String = ""
     public var constants : FunctionConstants? = nil
     
@@ -273,7 +273,7 @@ public struct TypedComputePipelineDescriptor<R : RenderPassReflection> {
     }
 }
 
-public struct ComputePipelineDescriptor : Hashable {
+public struct ComputePipelineDescriptor : Hashable, Sendable {
     public var function = FunctionDescriptor()
     
     public var functionName : String {

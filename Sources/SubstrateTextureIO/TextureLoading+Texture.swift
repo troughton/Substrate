@@ -10,7 +10,7 @@ import Substrate
 import stb_image
 import SubstrateImage
 
-public enum MipGenerationMode {
+public enum MipGenerationMode: Hashable, Sendable {
     /// Generate mipmaps on the CPU using the specified wrap mode and filter
     case cpu(wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter)
     /// Generate mipmaps using the default GPU mipmap generation method

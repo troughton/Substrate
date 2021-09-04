@@ -127,7 +127,7 @@ public enum ResourcePurgeableState {
 
 public typealias ActiveRenderGraphMask = UInt8
 
-public protocol ResourceProtocol {
+public protocol ResourceProtocol: Sendable {
     init(handle: Handle)
     func dispose()
     

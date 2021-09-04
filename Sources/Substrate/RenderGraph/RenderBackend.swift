@@ -352,7 +352,7 @@ public enum FunctionType : UInt {
     case kernel
 }
 
-public enum FunctionConstantValue : Hashable {
+public enum FunctionConstantValue : Hashable, Sendable {
     case int8(Int8)
     case int16(Int16)
     case int32(Int32)
@@ -371,8 +371,8 @@ public protocol FunctionConstantEncodable : NoArgConstructable, Equatable {
     func encode(into constants: inout FunctionConstants)
 }
 
-public struct FunctionConstants : Hashable {
-    public struct IndexedConstant : Hashable {
+public struct FunctionConstants : Hashable, Sendable {
+    public struct IndexedConstant : Hashable, Sendable {
         public var index : Int
         public var value : FunctionConstantValue
         

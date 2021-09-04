@@ -8,7 +8,7 @@
 
 import Swift
 
-public enum BlendFactor : UInt, Hashable, Codable {
+public enum BlendFactor : UInt, Hashable, Codable, Sendable {
     
     case zero
     
@@ -49,7 +49,7 @@ public enum BlendFactor : UInt, Hashable, Codable {
     case oneMinusSource1Alpha
 }
 
-public enum BlendOperation : UInt, Hashable, Codable {
+public enum BlendOperation : UInt, Hashable, Codable, Sendable {
     
     case add
     
@@ -83,7 +83,7 @@ public struct ColorWriteMask : OptionSet, Hashable, Codable {
 }
 
 
-public enum PixelFormat : UInt, Hashable, Codable, CaseIterable {
+public enum PixelFormat : UInt, Hashable, Codable, CaseIterable, Sendable {
     
     case invalid = 0
     
@@ -529,7 +529,7 @@ extension PixelFormat {
 }
 
 @available(OSX 10.11, *)
-public enum CPUCacheMode : UInt, Hashable, Codable {
+public enum CPUCacheMode : UInt, Hashable, Codable, Sendable {
     
     
     case defaultCache
@@ -537,7 +537,7 @@ public enum CPUCacheMode : UInt, Hashable, Codable {
     case writeCombined
 }
 
-public enum StorageMode : UInt, Hashable, Codable {
+public enum StorageMode : UInt, Hashable, Codable, Sendable {
     case shared
     case managed
     case `private`
@@ -555,7 +555,7 @@ public struct BlitOption : OptionSet, Hashable, Codable {
     }
 }
 
-public enum PrimitiveType : UInt, Hashable, Codable {
+public enum PrimitiveType : UInt, Hashable, Codable, Sendable {
     
     case point
     
@@ -568,7 +568,7 @@ public enum PrimitiveType : UInt, Hashable, Codable {
     case triangleStrip
 }
 
-public enum DataType : UInt, Hashable, Codable {
+public enum DataType : UInt, Hashable, Codable, Sendable {
     
     case none
     
@@ -645,7 +645,7 @@ public enum DataType : UInt, Hashable, Codable {
     case bool4
 }
 
-public enum VertexFormat : UInt, Hashable, Codable {
+public enum VertexFormat : UInt, Hashable, Codable, Sendable {
     
     
     case invalid
@@ -746,12 +746,12 @@ public enum VertexFormat : UInt, Hashable, Codable {
     case uint1010102Normalized
 }
 
-public enum IndexType : UInt, Hashable, Codable {
+public enum IndexType : UInt, Hashable, Codable, Sendable {
     case uint16
     case uint32
 }
 
-public enum CullMode : UInt, Hashable, Codable {
+public enum CullMode : UInt, Hashable, Codable, Sendable {
     
     
     case none
@@ -761,7 +761,7 @@ public enum CullMode : UInt, Hashable, Codable {
     case back
 }
 
-public enum Winding : UInt, Hashable, Codable {
+public enum Winding : UInt, Hashable, Codable, Sendable {
     
     
     case clockwise
@@ -769,7 +769,7 @@ public enum Winding : UInt, Hashable, Codable {
     case counterClockwise
 }
 
-public enum DepthClipMode : UInt, Hashable, Codable {
+public enum DepthClipMode : UInt, Hashable, Codable, Sendable {
     
     
     case clip
@@ -777,7 +777,7 @@ public enum DepthClipMode : UInt, Hashable, Codable {
     case clamp
 }
 
-public enum TriangleFillMode : UInt, Hashable, Codable {
+public enum TriangleFillMode : UInt, Hashable, Codable, Sendable {
     
     
     case fill
@@ -785,7 +785,7 @@ public enum TriangleFillMode : UInt, Hashable, Codable {
     case lines
 }
 
-public enum CompareFunction : UInt, Hashable, Codable {
+public enum CompareFunction : UInt, Hashable, Codable, Sendable {
     
     
     case never
@@ -805,7 +805,7 @@ public enum CompareFunction : UInt, Hashable, Codable {
     case always
 }
 
-public enum StencilOperation : UInt, Hashable, Codable {
+public enum StencilOperation : UInt, Hashable, Codable, Sendable {
     
     
     case keep
@@ -850,7 +850,7 @@ public struct Viewport : Hashable, Codable {
 }
 
 
-public struct ClearColor : Hashable, Codable {
+public struct ClearColor : Hashable, Codable, Sendable {
     
     public var red: Double
     
@@ -875,7 +875,7 @@ public struct ClearColor : Hashable, Codable {
     }
 }
 
-public struct Origin : Hashable, Codable {
+public struct Origin : Hashable, Codable, Sendable {
     
     public var x: Int
     
@@ -896,7 +896,7 @@ public struct Origin : Hashable, Codable {
     }
 }
 
-public struct Size : Hashable, Codable {
+public struct Size : Hashable, Codable, Sendable {
     
     public var width: Int
     
@@ -924,7 +924,7 @@ public struct Size : Hashable, Codable {
     }
 }
 
-public struct Region : Hashable, Codable {
+public struct Region : Hashable, Codable, Sendable {
     
     public var origin: Origin
     

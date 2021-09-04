@@ -492,7 +492,7 @@ final class ProxyDrawRenderPass: DrawRenderPass {
 }
 
 @usableFromInline
-final class RenderPassRecord {
+final class RenderPassRecord: UnsafeSendable {
     @usableFromInline let name: String
     @usableFromInline let type: RenderPassType
     @usableFromInline var pass : RenderPass!
