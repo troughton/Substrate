@@ -52,7 +52,7 @@ public enum TaggedHeap {
     public static let defaultHeapCapacity = 256 * 1024 * 1024
     #endif
     
-    public static func initialise(capacity: Int = TaggedHeap.defaultHeapCapacity) {
+    public static func initialise(capacity: Int) {
         self.initialise(strategy: .suballocate(capacity: capacity))
     }
     
