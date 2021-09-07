@@ -32,6 +32,7 @@ extension Texture {
         try self.init(image: image, pixelFormat: image.preferredPixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
     }
     
+    @available(*, deprecated, renamed: "init(image:mipmapped:mipGenerationMode:storageMode:usage:flags:)")
     @inlinable
     public init(data textureData: AnyImage, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
         try self.init(image: textureData, pixelFormat: textureData.preferredPixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
