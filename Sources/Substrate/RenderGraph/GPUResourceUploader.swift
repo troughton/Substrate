@@ -67,7 +67,7 @@ public final actor GPUResourceUploader {
     
     @discardableResult
     @GPUResourceUploader
-    public static func runBlitPass(_ pass: @escaping (_ bce: BlitCommandEncoder) -> Void) async -> RenderGraphExecutionWaitToken {
+    public static func runBlitPass(_ pass: @escaping @Sendable (_ bce: BlitCommandEncoder) -> Void) async -> RenderGraphExecutionWaitToken {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
         self.renderGraph.addPass(CallbackBlitRenderPass(name: "GPUResourceUploader Copy Pass", execute: pass))
@@ -86,7 +86,7 @@ public final actor GPUResourceUploader {
     
     @GPUResourceUploader
     @discardableResult
-    public static func withUploadBuffer(length: Int, cacheMode: CPUCacheMode = .writeCombined, fillBuffer: (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void, copyFromBuffer: @escaping (_ buffer: Buffer, _ offset: Int, _ blitEncoder: BlitCommandEncoder) -> Void) async rethrows -> RenderGraphExecutionWaitToken {
+    public static func withUploadBuffer(length: Int, cacheMode: CPUCacheMode = .writeCombined, fillBuffer:  @Sendable (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void, copyFromBuffer: @escaping @Sendable (_ buffer: Buffer, _ offset: Int, _ blitEncoder: BlitCommandEncoder) -> Void) async rethrows -> RenderGraphExecutionWaitToken {
         if GPUResourceUploader.skipUpload {
             return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
         }

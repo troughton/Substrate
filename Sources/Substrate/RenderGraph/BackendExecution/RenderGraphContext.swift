@@ -122,6 +122,10 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>)) async -> Task<RenderGraphExecutionResult, Never> {
         await self.accessSemaphore?.wait()
         await self.backend.reloadShaderLibraryIfNeeded()
+        await self.activeContextLock.lock()
+        defer {
+            self.activeContextLock.unlock()
+        }
         
         return await Backend.activeContextTaskLocal.withValue(self) {
             let (passes, usedResources) = await executeFunc()

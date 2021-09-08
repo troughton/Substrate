@@ -1,6 +1,6 @@
 import Foundation
 
-public enum TextureType : UInt {
+public enum TextureType : UInt, Sendable {
     
     case type1D
     
@@ -23,7 +23,7 @@ public enum TextureType : UInt {
     case typeTextureBuffer
 }
 
-public struct TextureUsage : OptionSet, Hashable {
+public struct TextureUsage : OptionSet, Hashable, Sendable {
     public let rawValue : UInt
     
     @inlinable
@@ -47,7 +47,7 @@ public struct TextureUsage : OptionSet, Hashable {
     public static let blitDestination: TextureUsage = TextureUsage(rawValue: 64)
 }
 
-public struct BufferUsage : OptionSet, Hashable {
+public struct BufferUsage : OptionSet, Hashable, Sendable {
     public let rawValue : UInt
     
     @inlinable
@@ -74,7 +74,7 @@ public struct BufferUsage : OptionSet, Hashable {
     public static let textureView = BufferUsage(rawValue: 128)
 }
 
-public struct TextureDescriptor: Hashable {
+public struct TextureDescriptor: Hashable, Sendable {
     
     public init() {
         
@@ -179,7 +179,7 @@ extension TextureDescriptor {
     }
 }
 
-public struct BufferDescriptor: Hashable {
+public struct BufferDescriptor: Hashable, Sendable {
     /// The minimum length, in bytes, of the buffer's allocation.
     public var length : Int
     /// The storage mode for the buffer, representing the pool of memory from which the buffer should be allocated.
@@ -204,12 +204,12 @@ public struct BufferDescriptor: Hashable {
     }
 }
 
-public enum HeapType {
+public enum HeapType: Sendable {
     case automaticPlacement
     case sparseTexture
 }
 
-public struct HeapDescriptor {
+public struct HeapDescriptor: Sendable {
     public var size : Int
     public var type : HeapType
     public var storageMode : StorageMode
@@ -223,7 +223,7 @@ public struct HeapDescriptor {
     }
 }
 
-public struct AccelerationStructureFlags: OptionSet {
+public struct AccelerationStructureFlags: OptionSet, Sendable {
     public let rawValue: Int
     
     @inlinable
@@ -235,8 +235,8 @@ public struct AccelerationStructureFlags: OptionSet {
     public static var preferFastBuild: AccelerationStructureFlags { .init(rawValue: 1 << 1) }
 }
 
-public struct AccelerationStructureDescriptor {
-    public struct TriangleGeometryDescriptor {
+public struct AccelerationStructureDescriptor: Equatable, Sendable {
+    public struct TriangleGeometryDescriptor: Equatable, Sendable {
         public var triangleCount: Int
         
         public var indexBuffer: Buffer?
@@ -275,7 +275,7 @@ public struct AccelerationStructureDescriptor {
         }
     }
 
-    public struct BoundingBoxGeometryDescriptor {
+    public struct BoundingBoxGeometryDescriptor: Equatable, Sendable {
         public var boundingBoxCount: Int
         
         public var boundingBoxBuffer: Buffer
@@ -293,12 +293,12 @@ public struct AccelerationStructureDescriptor {
         }
     }
     
-    public enum GeometryType {
+    public enum GeometryType: Equatable, Sendable {
         case triangle(TriangleGeometryDescriptor)
         case boundingBox(BoundingBoxGeometryDescriptor)
     }
     
-    public struct GeometryDescriptor {
+    public struct GeometryDescriptor: Equatable, Sendable {
         public var geometry: GeometryType
         
         public var intersectionFunctionTableOffset: Int
@@ -313,7 +313,7 @@ public struct AccelerationStructureDescriptor {
         }
     }
     
-    public struct InstanceStructureDescriptor {
+    public struct InstanceStructureDescriptor: Equatable, Sendable {
         public var primitiveStructures: [AccelerationStructure]
         
         public var instanceCount: Int
@@ -331,7 +331,7 @@ public struct AccelerationStructureDescriptor {
         }
     }
     
-    public enum StructureType {
+    public enum StructureType: Equatable, Sendable {
         case bottomLevelPrimitive([GeometryDescriptor])
         case topLevelInstance(InstanceStructureDescriptor)
     }
@@ -351,7 +351,7 @@ public struct AccelerationStructureDescriptor {
     }
 }
 
-public struct AccelerationStructureSizes {
+public struct AccelerationStructureSizes: Equatable, Sendable {
     public var accelerationStructureSize: Int
     
     /// The amount of scratch memory, in bytes, needed to build the acceleration structure.

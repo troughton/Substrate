@@ -10,32 +10,31 @@ import Substrate
 extension Texture {
     @available(*, deprecated, renamed: "init(image:pixelFormat:mipmapped:mipGenerationMode:storageMode:usage:flags:)")
     @inlinable
-    public init(data: AnyImage, pixelFormat: PixelFormat, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
-        try self.init(image: data, pixelFormat: pixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
+    public init(data: AnyImage, pixelFormat: PixelFormat, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) async throws {
+        try await self.init(image: data, pixelFormat: pixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
+    }
+    
+    @available(*, deprecated, renamed: "init(image:mipmapped:mipGenerationMode:storageMode:usage:flags:)")
+    @inlinable
+    public init(data textureData: AnyImage, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) async throws {
+        try await self.init(image: textureData, pixelFormat: textureData.preferredPixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
     }
     
     /// Uploads a Image to a GPU texture using the GPUResourceUploader.
     @inlinable
-    public init(image: AnyImage, pixelFormat: PixelFormat, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
+    public init(image: AnyImage, pixelFormat: PixelFormat, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) async throws {
         precondition(image.preferredPixelFormat.bytesPerPixel == pixelFormat.bytesPerPixel)
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: image.width, height: image.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
         self = Texture(descriptor: descriptor, flags: flags)
         
-        try image.copyData(to: self, mipGenerationMode: mipGenerationMode)
+        try await image.copyData(to: self, mipGenerationMode: mipGenerationMode)
     }
     
     /// Uploads a Image to a GPU texture using the GPUResourceUploader.
-    @available(*, deprecated, renamed: "init(image:mipmapped:mipGenerationMode:storageMode:usage:flags:)")
     @inlinable
-    public init(image: AnyImage, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
-        try self.init(image: image, pixelFormat: image.preferredPixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
-    }
-    
-    @available(*, deprecated, renamed: "init(image:mipmapped:mipGenerationMode:storageMode:usage:flags:)")
-    @inlinable
-    public init(data textureData: AnyImage, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) throws {
-        try self.init(image: textureData, pixelFormat: textureData.preferredPixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
+    public init(image: AnyImage, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) async throws {
+        try await self.init(image: image, pixelFormat: image.preferredPixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
     }
 }
 
@@ -53,7 +52,7 @@ extension Image {
             descriptor.mipmapLevelCount = 1
             
             let cpuVisibleTexture = Texture(descriptor: descriptor, flags: .persistent)
-            await GPUResourceUploader.runBlitPass { encoder in
+            await GPUResourceUploader.runBlitPass { [descriptor] encoder in
                 encoder.copy(from: texture, sourceSlice: 0, sourceLevel: mipmapLevel, sourceOrigin: Origin(), sourceSize: descriptor.size, to: cpuVisibleTexture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: Origin())
                 encoder.synchronize(texture: cpuVisibleTexture)
             }

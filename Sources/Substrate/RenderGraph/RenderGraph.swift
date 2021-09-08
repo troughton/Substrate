@@ -293,7 +293,7 @@ final class CallbackDrawRenderPass : DrawRenderPass {
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
-                execute: @escaping (RenderCommandEncoder) async -> Void) {
+                execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
         self.name = name
         self.renderTargetDescriptor = renderTarget
         self.colorClearOperations = colorClearOperations
@@ -326,7 +326,7 @@ final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : Reflec
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
-                reflection: R.Type, execute: @escaping (TypedRenderCommandEncoder<R>) async -> Void) {
+                reflection: R.Type, execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
         self.name = name
         self.renderTargetDescriptor = renderTarget
         self.colorClearOperations = colorClearOperations
@@ -351,7 +351,7 @@ final class CallbackComputeRenderPass : ComputeRenderPass {
     public let name : String
     public let executeFunc : (ComputeCommandEncoder) async -> Void
     
-    public init(name: String, execute: @escaping (ComputeCommandEncoder) async -> Void) {
+    public init(name: String, execute: @escaping @Sendable (ComputeCommandEncoder) async -> Void) {
         self.name = name
         self.executeFunc = execute
     }
@@ -365,7 +365,7 @@ final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : Ref
     public let name : String
     public let executeFunc : (TypedComputeCommandEncoder<R>) async -> Void
     
-    public init(name: String, reflection: R.Type, execute: @escaping (TypedComputeCommandEncoder<R>) async -> Void) {
+    public init(name: String, reflection: R.Type, execute: @escaping @Sendable (TypedComputeCommandEncoder<R>) async -> Void) {
         self.name = name
         self.executeFunc = execute
     }
@@ -379,7 +379,7 @@ final class CallbackCPURenderPass : CPURenderPass {
     public let name : String
     public let executeFunc : () -> Void
     
-    public init(name: String, execute: @escaping () -> Void) {
+    public init(name: String, execute: @escaping @Sendable () -> Void) {
         self.name = name
         self.executeFunc = execute
     }
@@ -393,7 +393,7 @@ final class CallbackBlitRenderPass : BlitRenderPass {
     public let name : String
     public let executeFunc : (BlitCommandEncoder) async -> Void
     
-    public init(name: String, execute: @escaping (BlitCommandEncoder) async -> Void) {
+    public init(name: String, execute: @escaping @Sendable (BlitCommandEncoder) async -> Void) {
         self.name = name
         self.executeFunc = execute
     }
@@ -407,7 +407,7 @@ final class CallbackExternalRenderPass : ExternalRenderPass {
     public let name : String
     public let executeFunc : (ExternalCommandEncoder) async -> Void
     
-    public init(name: String, execute: @escaping (ExternalCommandEncoder) async -> Void) {
+    public init(name: String, execute: @escaping @Sendable (ExternalCommandEncoder) async -> Void) {
         self.name = name
         self.executeFunc = execute
     }
@@ -422,7 +422,7 @@ final class CallbackAccelerationStructureRenderPass : AccelerationStructureRende
     public let name : String
     public let executeFunc : (AccelerationStructureCommandEncoder) -> Void
     
-    public init(name: String, execute: @escaping (AccelerationStructureCommandEncoder) -> Void) {
+    public init(name: String, execute: @escaping @Sendable (AccelerationStructureCommandEncoder) -> Void) {
         self.name = name
         self.executeFunc = execute
     }
@@ -591,7 +591,6 @@ protocol _RenderGraphContext : Actor {
 
 /// Each RenderGraph executes on its own GPU queue, although executions are synchronised by submission order.
 public final class RenderGraph {
-    static let activeRenderGraphLock = AsyncSpinLock()
     @TaskLocal public static var activeRenderGraph : RenderGraph? = nil
     
     private var renderPasses : [RenderPassRecord] = []
@@ -609,7 +608,7 @@ public final class RenderGraph {
     
     public let transientRegistryIndex : Int
     
-    let executionLock = AsyncSpinLock()
+    static let executionLock = AsyncSpinLock()
     
     /// Creates a new RenderGraph instance. There may only be up to eight RenderGraph's at any given time.
     ///
@@ -688,7 +687,7 @@ public final class RenderGraph {
     /// - Parameter execute: A closure to execute that will be passed a blit command encoder, where the caller can use the command
     /// encoder to encode GPU blit commands.
     public func addBlitCallbackPass(file: String = #fileID, line: Int = #line,
-                                    _ execute: @escaping (BlitCommandEncoder) async -> Void) {
+                                    _ execute: @escaping @Sendable (BlitCommandEncoder) async -> Void) {
         self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
     }
     
@@ -699,7 +698,7 @@ public final class RenderGraph {
     /// - Parameter execute: A closure to execute that will be passed a blit command encoder, where the caller can use the command
     /// encoder to encode GPU blit commands.
     public func addBlitCallbackPass(name: String,
-                                    _ execute: @escaping (BlitCommandEncoder) async -> Void) {
+                                    _ execute: @escaping @Sendable (BlitCommandEncoder) async -> Void) {
         self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
     }
     
@@ -734,7 +733,7 @@ public final class RenderGraph {
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
-                                    _ execute: @escaping (RenderCommandEncoder) async -> Void) {
+                                    _ execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
         self.addPass(CallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", renderTarget: renderTarget,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                             execute: execute))
@@ -746,7 +745,7 @@ public final class RenderGraph {
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
-                                    _ execute: @escaping (RenderCommandEncoder) async -> Void) {
+                                    _ execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
         self.addDrawCallbackPass(file: file, line: line, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, execute)
     }
     
@@ -766,7 +765,7 @@ public final class RenderGraph {
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
-                                    _ execute: @escaping (RenderCommandEncoder) async -> Void) {
+                                    _ execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
         self.addPass(CallbackDrawRenderPass(name: name, renderTarget: renderTarget,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                             execute: execute))
@@ -778,7 +777,7 @@ public final class RenderGraph {
                                     colorClearOperations: [ColorClearOperation] = [],
                                     depthClearOperation: DepthClearOperation = .keep,
                                     stencilClearOperation: StencilClearOperation = .keep,
-                                    _ execute: @escaping (RenderCommandEncoder) async -> Void) {
+                                    _ execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
         self.addDrawCallbackPass(name: name, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, execute)
     }
     
@@ -797,7 +796,7 @@ public final class RenderGraph {
                                        depthClearOperation: DepthClearOperation = .keep,
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
-                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) async -> Void) {
+                                       _ execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", renderTarget: renderTarget,
                                                        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                                        reflection: reflection, execute: execute))
@@ -810,7 +809,7 @@ public final class RenderGraph {
                                        depthClearOperation: DepthClearOperation = .keep,
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
-                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) async -> Void) {
+                                       _ execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
         self.addDrawCallbackPass(file: file, line: line, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, reflection: reflection, execute)
     }
     
@@ -832,7 +831,7 @@ public final class RenderGraph {
                                        depthClearOperation: DepthClearOperation = .keep,
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
-                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) async -> Void) {
+                                       _ execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackDrawRenderPass(name: name, renderTarget: renderTarget,
                                                        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                                        reflection: reflection, execute: execute))
@@ -845,7 +844,7 @@ public final class RenderGraph {
                                        depthClearOperation: DepthClearOperation = .keep,
                                        stencilClearOperation: StencilClearOperation = .keep,
                                        reflection: R.Type,
-                                       _ execute: @escaping (TypedRenderCommandEncoder<R>) async -> Void) {
+                                       _ execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
         self.addDrawCallbackPass(name: name, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, reflection: reflection, execute)
     }
 
@@ -856,7 +855,7 @@ public final class RenderGraph {
     ///
     /// - SeeAlso: `addComputeCallbackPass(reflection:_:)`
     public func addComputeCallbackPass(file: String = #fileID, line: Int = #line,
-                                       _ execute: @escaping (ComputeCommandEncoder) async -> Void) {
+                                       _ execute: @escaping @Sendable (ComputeCommandEncoder) async -> Void) {
         self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
     }
     
@@ -868,7 +867,7 @@ public final class RenderGraph {
     ///
     /// - SeeAlso: `addComputeCallbackPass(name:reflection:_:)`
     public func addComputeCallbackPass(name: String,
-                                       _ execute: @escaping (ComputeCommandEncoder) async -> Void) {
+                                       _ execute: @escaping @Sendable (ComputeCommandEncoder) async -> Void) {
         self.addPass(CallbackComputeRenderPass(name: name, execute: execute))
     }
 
@@ -881,7 +880,7 @@ public final class RenderGraph {
     /// - SeeAlso: `ReflectableComputeRenderPass`
     public func addComputeCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                           reflection: R.Type,
-                                          _ execute: @escaping (TypedComputeCommandEncoder<R>) async -> Void) {
+                                          _ execute: @escaping @Sendable (TypedComputeCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", reflection: reflection, execute: execute))
     }
     
@@ -895,7 +894,7 @@ public final class RenderGraph {
     /// - SeeAlso: `ReflectableComputeRenderPass`
     public func addComputeCallbackPass<R>(name: String,
                                           reflection: R.Type,
-                                          _ execute: @escaping (TypedComputeCommandEncoder<R>) async -> Void) {
+                                          _ execute: @escaping @Sendable (TypedComputeCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackComputeRenderPass(name: name, reflection: reflection, execute: execute))
     }
     
@@ -904,7 +903,7 @@ public final class RenderGraph {
     ///
     /// - Parameter execute: A closure to execute during render graph execution.
     public func addCPUCallbackPass(file: String = #fileID, line: Int = #line,
-                                   _ execute: @escaping () -> Void) {
+                                   _ execute: @escaping @Sendable () -> Void) {
         self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
     }
     
@@ -914,7 +913,7 @@ public final class RenderGraph {
     /// - Parameter name: The name of the pass.
     /// - Parameter execute: A closure to execute during render graph execution.
     public func addCPUCallbackPass(name: String,
-                                   _ execute: @escaping () -> Void) {
+                                   _ execute: @escaping @Sendable () -> Void) {
         self.addPass(CallbackCPURenderPass(name: name, execute: execute))
     }
     
@@ -924,7 +923,7 @@ public final class RenderGraph {
     /// - Parameter execute: A closure to execute that will be passed a external command encoder, where the caller can use the command
     /// encoder to encode commands directly to an underlying GPU command buffer.
     public func addExternalCallbackPass(file: String = #fileID, line: Int = #line,
-                                        _ execute: @escaping (ExternalCommandEncoder) async -> Void) {
+                                        _ execute: @escaping @Sendable (ExternalCommandEncoder) async -> Void) {
         self.addPass(CallbackExternalRenderPass(name: "Anonymous External Encoder Pass at \(file):\(line)", execute: execute))
     }
     
@@ -935,19 +934,19 @@ public final class RenderGraph {
     /// - Parameter execute: A closure to execute that will be passed a external command encoder, where the caller can use the command
     /// encoder to encode commands directly to an underlying GPU command buffer.
     public func addExternalCallbackPass(name: String,
-                                        _ execute: @escaping (ExternalCommandEncoder) async -> Void) {
+                                        _ execute: @escaping @Sendable (ExternalCommandEncoder) async -> Void) {
         self.addPass(CallbackExternalRenderPass(name: name, execute: execute))
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func addAccelerationStructureCallbackPass(file: String = #fileID, line: Int = #line,
-                                        _ execute: @escaping (AccelerationStructureCommandEncoder) -> Void) {
+                                        _ execute: @escaping @Sendable (AccelerationStructureCommandEncoder) -> Void) {
         self.addPass(CallbackAccelerationStructureRenderPass(name: "Anonymous Acceleration Structure Encoder Pass at \(file):\(line)", execute: execute))
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func addAccelerationStructureCallbackPass(name: String,
-                                        _ execute: @escaping (AccelerationStructureCommandEncoder) -> Void) {
+                                        _ execute: @escaping @Sendable (AccelerationStructureCommandEncoder) -> Void) {
         self.addPass(CallbackAccelerationStructureRenderPass(name: name, execute: execute))
     }
     
@@ -1281,7 +1280,7 @@ public final class RenderGraph {
     /// - Parameter onGPUCompletion: an optional closure to execute once the render graph has completed executing on the GPU.
     @discardableResult
     public func execute() async -> RenderGraphExecutionWaitToken {
-        return await self.executionLock.withLock {
+        return await Self.executionLock.withLock { // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
             self.renderPassLock.lock()
             let renderPasses = self.renderPasses
             self.renderPassLock.unlock()

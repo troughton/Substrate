@@ -170,7 +170,7 @@ extension ReflectionPrinter {
                     print("public typealias PushConstants = \(pass.pushConstants.first!.type.name)")
                 }
             } else {
-                print("public struct PushConstants : NoArgConstructable {")
+                print("public struct PushConstants : NoArgConstructable, Sendable {")
                 
                 for constant in pass.pushConstants {
                     print("public var \(constant.name): \(constant.type.name) = \(constant.type.defaultInitialiser)")

@@ -771,9 +771,11 @@ final class MetalBackend : SpecificRenderBackend {
         if index >= queue.lastSubmittedCommand, let contextRegistry = context.resourceRegistry {
             Task {
                 await Task.sleep(5_000_000_000) // wait for five seconds.
-                if index >= queue.lastSubmittedCommand {
-                    // If there are no more pending commands on the queue and there haven't been for a number of seconds, we can make all of the transient allocators purgeable.
-                    contextRegistry.makeTransientAllocatorsPurgeable()
+                await context.activeContextLock.withLock {
+                    if index >= queue.lastSubmittedCommand {
+                        // If there are no more pending commands on the queue and there haven't been for a number of seconds, we can make all of the transient allocators purgeable.
+                        contextRegistry.makeTransientAllocatorsPurgeable()
+                    }
                 }
             }
         }
