@@ -442,7 +442,8 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
             
             let chunkCount = self.chunkCount
             for chunkIndex in 0..<chunkCount {
-                let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % Resource.itemsPerChunk) : Resource.itemsPerChunk
+                let baseItem = chunkIndex * Resource.itemsPerChunk
+                let chunkItemCount = min(self.nextFreeIndex - baseItem, Resource.itemsPerChunk)
                 self.sharedChunks?[chunkIndex].usagesOptional?.assign(repeating: ChunkArray(), count: chunkItemCount)
                 
                 if let activeRenderGraphs = self.persistentChunks?[chunkIndex].activeRenderGraphsOptional {

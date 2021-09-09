@@ -306,7 +306,8 @@ final class VisibleFunctionTableRegistry: PersistentRegistry<VisibleFunctionTabl
     
     func markAllAsUninitialised() {
         for chunkIndex in 0..<chunkCount {
-            let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % VisibleFunctionTable.itemsPerChunk) : VisibleFunctionTable.itemsPerChunk
+            let baseItem = chunkIndex * VisibleFunctionTable.itemsPerChunk
+            let chunkItemCount = min(self.nextFreeIndex - baseItem, VisibleFunctionTable.itemsPerChunk)
             for i in 0..<chunkItemCount {
                 self.persistentChunks![chunkIndex].stateFlags[i].remove(.initialised)
                 UnsafeRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.sharedChunks![chunkIndex].pipelineStates.advanced(by: i), ordering: .relaxed)
@@ -470,7 +471,8 @@ final class IntersectionFunctionTableRegistry: PersistentRegistry<IntersectionFu
     
     func markAllAsUninitialised() {
         for chunkIndex in 0..<chunkCount {
-            let chunkItemCount = chunkIndex + 1 == chunkCount ? (self.nextFreeIndex % IntersectionFunctionTable.itemsPerChunk) : IntersectionFunctionTable.itemsPerChunk
+            let baseItem = chunkIndex * IntersectionFunctionTable.itemsPerChunk
+            let chunkItemCount = min(self.nextFreeIndex - baseItem, IntersectionFunctionTable.itemsPerChunk)
             for i in 0..<chunkItemCount {
                 self.persistentChunks![chunkIndex].stateFlags[i].remove(.initialised)
                 UnsafeRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.sharedChunks![chunkIndex].pipelineStates.advanced(by: i), ordering: .relaxed)
