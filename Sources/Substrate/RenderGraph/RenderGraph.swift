@@ -1280,6 +1280,7 @@ public final class RenderGraph {
     /// - Parameter onGPUCompletion: an optional closure to execute once the render graph has completed executing on the GPU.
     @discardableResult
     public func execute() async -> RenderGraphExecutionWaitToken {
+        precondition(Self.activeRenderGraph == nil, "Cannot call RenderGraph.execute() from within a render pass.")
         return await Self.executionLock.withLock { // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
             self.renderPassLock.lock()
             let renderPasses = self.renderPasses
