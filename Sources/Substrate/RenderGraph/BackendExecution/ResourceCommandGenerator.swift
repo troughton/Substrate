@@ -54,12 +54,17 @@ enum PreFrameCommands {
     case waitForCommandBuffer(index: UInt64, queue: Queue)
     case updateCommandBufferWaitIndex(Resource, accessType: ResourceAccessType)
     
-    var isMaterialiseNonArgumentBufferResource: Bool {
+    var sortOrder: Int {
+        // Note: must be in 0..<4 (2 bits)
         switch self {
-        case .materialiseBuffer, .materialiseTexture, .materialiseTextureView, .materialiseVisibleFunctionTable, .materialiseIntersectionFunctionTable:
-            return true
-        default:
-            return false
+        case .materialiseBuffer, .materialiseTexture, .materialiseVisibleFunctionTable, .materialiseIntersectionFunctionTable:
+            return 0
+        case .materialiseTextureView:
+            return 1
+        case .materialiseArgumentBuffer, .materialiseArgumentBufferArray:
+            return 2
+        case .disposeResource, .waitForHeapAliasingFences, .waitForCommandBuffer, .updateCommandBufferWaitIndex:
+            return 3
         }
     }
     
@@ -184,18 +189,16 @@ struct PreFrameResourceCommand : Comparable {
     public init(command: PreFrameCommands, index: Int, order: PerformOrder) {
         self.command = command
         
-        var sortIndex = index << 2
+        var sortIndex = index << 3
         if order == .after {
-            sortIndex |= 0b10
+            sortIndex |= 0b100
         }
-        if !command.isMaterialiseNonArgumentBufferResource {
-            sortIndex |= 0b01  // Materialising argument buffers always needs to happen last, after materialising all resources within it.
-        }
+        sortIndex |= command.sortOrder & 0b011  // Materialising argument buffers always needs to happen last, after materialising all resources within it.
         self.sortIndex = sortIndex
     }
     
     public var index: Int {
-        return self.sortIndex >> 2
+        return self.sortIndex >> 3
     }
     
     public static func ==(lhs: PreFrameResourceCommand, rhs: PreFrameResourceCommand) -> Bool {
