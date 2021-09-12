@@ -202,7 +202,7 @@ final class MetalDriver {
                          "-Wno-unused-variable", // Ignore warnings for unused variables
             ]
         if debug {
-            arguments.append(contentsOf: ["-gline-tables-only", "-MO"])
+            arguments.append(contentsOf: ["-frecord-sources", "-gline-tables-only", "-MO"])
         } else {
             arguments.append("-O")
         }
