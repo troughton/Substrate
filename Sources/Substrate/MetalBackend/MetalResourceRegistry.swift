@@ -627,8 +627,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.privateAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
         self.depthRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
         self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
-        
-        self.prepareFrame()
     }
     
     deinit {
