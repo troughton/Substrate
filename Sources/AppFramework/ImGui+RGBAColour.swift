@@ -15,16 +15,16 @@ extension ImGui {
         return self.colorButton(descriptionId: descriptionId, color: SIMD4(color), flags: flags, size: size)
     }
     
-    public static func colorEdit3(label: String, color: inout RGBColor, flags: ColorEditFlags) -> Bool {
+    public static func colorEdit(label: String, color: inout RGBColor, flags: ColorEditFlags) -> Bool {
         var imColor = SIMD3(color)
         defer { color = RGBColor(imColor.x, imColor.y, imColor.z) }
-        return self.colorEdit3(label: label, color: &imColor, flags: flags)
+        return self.colorEdit(label: label, color: &imColor, flags: flags)
     }
     
-    public static func colorEdit4(label: String, color: inout RGBAColor, flags: ColorEditFlags) -> Bool {
+    public static func colorEdit(label: String, color: inout RGBAColor, flags: ColorEditFlags) -> Bool {
         var imColor = SIMD4(color)
         defer { color = RGBAColor(imColor.x, imColor.y, imColor.z, imColor.w) }
-        return self.colorEdit4(label: label, color: &imColor, flags: flags)
+        return self.colorEdit(label: label, color: &imColor, flags: flags)
     }
     
 }

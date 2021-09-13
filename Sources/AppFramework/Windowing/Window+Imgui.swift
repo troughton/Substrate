@@ -51,15 +51,15 @@ extension ImGui {
     @MainActor
     public static func initialisePlatformInterface() async {
         
-        let (pixels, width, height, bytesPerPixel) = ImGui.getFontTexDataAsAlpha8()
+        let (pixels, width, height, bytesPerPixel) = ImGui.io.pointee.Fonts.pointee.texDataAsAlpha8
         
         var textureDescriptor = TextureDescriptor(type: .type2D, format: .r8Unorm, width: width, height: height, mipmapped: false)
         textureDescriptor.storageMode = .private
         textureDescriptor.usageHint = [.shaderRead, .blitDestination]
         let fontTexture = Texture(descriptor: textureDescriptor, flags: .persistent)
-        _ = await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, in: fontTexture, withBytes: pixels, bytesPerRow: width * bytesPerPixel)
+        _ = await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, in: fontTexture, withBytes: pixels!, bytesPerRow: width * bytesPerPixel)
         
-        ImGui.setFontTexID(UnsafeMutableRawPointer(bitPattern: UInt(exactly: fontTexture.handle)!))
+        ImGui.io.pointee.Fonts.pointee.setTexID(UnsafeMutableRawPointer(bitPattern: UInt(exactly: fontTexture.handle)!)!)
         
         #if os(macOS)
         ImGui.io.pointee.ConfigMacOSXBehaviors = true
@@ -153,7 +153,7 @@ extension ImGui {
     public static func beginFrame(windows: [Window], inputLayer: ImGuiInputLayer, deltaTime: Double) {
         _ = self.updateScreens()
 
-        let io = ImGui.io
+        let io = ImGui.io!
         let oldMousePosition = ImGui.io.pointee.MousePos
         
         let mainWindow = windows[0]

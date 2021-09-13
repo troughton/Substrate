@@ -46,29 +46,29 @@ public final class TextureLookup {
 extension ImGui {
     public static func image(label: String, size: Vector2f, uv0: Vector2f = Vector2f(repeating: 0), uv1: Vector2f = Vector2f(repeating: 1), tintColor: Vector4f = Vector4f(repeating: 1), borderColor: Vector4f = Vector4f(repeating: 0))  {
         let identifier = TextureLookup.transientTextureReference(label: label)
-        self.image(UnsafeMutableRawPointer(bitPattern: UInt(identifier)), size: size, uv0: uv0, uv1: uv1, tintColor: tintColor, borderColor: borderColor)
+        self.image(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(identifier))!, size: size, uv0: uv0, uv1: uv1, tintColor: tintColor, borderColor: borderColor)
     }
     
     public static func image<S : RawRepresentable>(label: S, size: Vector2f, uv0: Vector2f = Vector2f(repeating: 0), uv1: Vector2f = Vector2f(repeating: 1), tintColor: Vector4f = Vector4f(repeating: 1), borderColor: Vector4f = Vector4f(repeating: 0)) where S.RawValue == String {
         let identifier = TextureLookup.transientTextureReference(label: label)
-        self.image(UnsafeMutableRawPointer(bitPattern: UInt(identifier))!, size: size, uv0: uv0, uv1: uv1, tintColor: tintColor, borderColor: borderColor)
+        self.image(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(identifier))!, size: size, uv0: uv0, uv1: uv1, tintColor: tintColor, borderColor: borderColor)
     }
     
     public static func imageButton(label: String, size: Vector2f, uv0: Vector2f, uv1: Vector2f, framePadding: Int, backgroundColor: Vector4f, tintColor: Vector4f) -> Bool {
         let identifier = TextureLookup.transientTextureReference(label: label)
-        return self.imageButton(UnsafeMutableRawPointer(bitPattern: UInt(identifier)), size: size, uv0: uv0, uv1: uv1, framePadding: framePadding, backgroundColor: backgroundColor, tintColor: tintColor)
+        return self.imageButton(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(identifier))!, size: size, uv0: uv0, uv1: uv1, framePadding: framePadding, backgroundColor: backgroundColor, tintColor: tintColor)
     }
     
     public static func imageButton<S : RawRepresentable>(label: S, size: Vector2f, uv0: Vector2f, uv1: Vector2f, framePadding: Int, backgroundColor: Vector4f, tintColor: Vector4f) -> Bool where S.RawValue == String {
         let identifier = TextureLookup.transientTextureReference(label: label)
-        return self.imageButton(UnsafeMutableRawPointer(bitPattern: UInt(identifier)), size: size, uv0: uv0, uv1: uv1, framePadding: framePadding, backgroundColor: backgroundColor, tintColor: tintColor)
+        return self.imageButton(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(identifier))!, size: size, uv0: uv0, uv1: uv1, framePadding: framePadding, backgroundColor: backgroundColor, tintColor: tintColor)
     }
     
     public static func image(_ texture: Texture, size: Vector2f, uv0: Vector2f = Vector2f(repeating: 0), uv1: Vector2f = Vector2f(repeating: 1), tintColor: Vector4f = Vector4f(repeating: 1), borderColor: Vector4f = Vector4f(repeating: 0))  {
-        self.image(UnsafeMutableRawPointer(bitPattern: UInt(exactly: texture.handle)!), size: size, uv0: uv0, uv1: uv1, tintColor: tintColor, borderColor: borderColor)
+        self.image(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(exactly: texture.handle)!)!, size: size, uv0: uv0, uv1: uv1, tintColor: tintColor, borderColor: borderColor)
     }
     
     public static func imageButton(_ texture: Texture, size: Vector2f, uv0: Vector2f = Vector2f(repeating: 0), uv1: Vector2f = Vector2f(repeating: 1), framePadding: Int, backgroundColor: Vector4f, tintColor: Vector4f) -> Bool {
-        return self.imageButton(UnsafeMutableRawPointer(bitPattern: UInt(exactly: texture.handle)!), size: size, uv0: uv0, uv1: uv1, framePadding: framePadding, backgroundColor: backgroundColor, tintColor: tintColor)
+        return self.imageButton(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(exactly: texture.handle)!)!, size: size, uv0: uv0, uv1: uv1, framePadding: framePadding, backgroundColor: backgroundColor, tintColor: tintColor)
     }
 }
