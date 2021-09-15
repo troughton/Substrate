@@ -11,8 +11,8 @@ import SubstrateMath
 
 extension ImGui {
     @discardableResult
-    public static func colorButton(descriptionId: String, color: RGBAColor, flags: ColorEditFlags = [], size: SIMD2<Float> = .zero) -> Bool {
-        return self.colorButton(descriptionId: descriptionId, color: SIMD4(color), flags: flags, size: size)
+    public static func colorButton(descriptionId: String, color: RGBAColor, size: SIMD2<Float> = .zero, flags: ColorEditFlags = []) -> Bool {
+        return self.colorButton(descriptionId: descriptionId, color: SIMD4(color), size: size, flags: flags)
     }
     
     public static func colorEdit(label: String, color: inout RGBColor, flags: ColorEditFlags) -> Bool {

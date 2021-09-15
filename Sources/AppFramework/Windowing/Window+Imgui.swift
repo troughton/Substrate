@@ -66,15 +66,15 @@ extension ImGui {
         #endif
         
         #if os(iOS)
-        let configFlags : ImGuiConfigFlags_ = [ImGuiConfigFlags_DockingEnable]
-        let backendFlags : ImGuiBackendFlags_ = []
+        let configFlags : ImGui.ConfigFlags = [.navEnableGamepad, .isTouchScreen, .dockingEnable]
+        let backendFlags : ImGui.BackendFlags = []
         #else
-        let configFlags : ImGuiConfigFlags_ = [ImGuiConfigFlags_NavEnableKeyboard, ImGuiConfigFlags_NavEnableGamepad, ImGuiConfigFlags_DockingEnable, ImGuiConfigFlags_ViewportsEnable]
-        let backendFlags : ImGuiBackendFlags_ = [ImGuiBackendFlags_HasMouseCursors, ImGuiBackendFlags_HasGamepad, ImGuiBackendFlags_PlatformHasViewports, ImGuiBackendFlags_RendererHasViewports, ImGuiBackendFlags_HasMouseHoveredViewport]
+        let configFlags : ImGui.ConfigFlags = [.navEnableKeyboard, .navEnableGamepad, .dockingEnable, .viewportsEnable]
+        let backendFlags : ImGui.BackendFlags = [.hasMouseCursors, .hasGamepad, .platformHasViewports, .rendererHasViewports, .hasMouseHoveredViewport]
         #endif
         
-        ImGui.io.pointee.ConfigFlags |= ImGuiConfigFlags(configFlags.rawValue)
-        ImGui.io.pointee.BackendFlags |= ImGuiBackendFlags(backendFlags.rawValue)
+        ImGui.io.pointee.ConfigFlags |= configFlags.rawValue
+        ImGui.io.pointee.BackendFlags |= backendFlags.rawValue
         
         #if !(os(iOS) || os(tvOS) || os(watchOS))
         let platformIO = igGetPlatformIO()!
@@ -164,6 +164,8 @@ extension ImGui {
         #endif
         
         io.pointee.DisplaySize = ImVec2(x: Float(mainWindow.dimensions.width), y: Float(mainWindow.dimensions.height))
+        let framebufferScale = mainWindow.framebufferScale
+        io.pointee.DisplayFramebufferScale = ImVec2(x: Float(framebufferScale), y: Float(framebufferScale))
         io.pointee.DeltaTime = Float(deltaTime)
         
         io.pointee.MousePos = ImVec2(x: -Float.greatestFiniteMagnitude, y: -Float.greatestFiniteMagnitude)
