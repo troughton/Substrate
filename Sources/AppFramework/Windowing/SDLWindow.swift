@@ -106,8 +106,10 @@ open class SDLWindow : Window {
     
     var _texture : CachedAsync<Texture>
     
-    public func texture() async -> Texture {
-        return await self._texture.getValue()
+    public var texture: Texture {
+        get async {
+            return await self._texture.getValue()
+        }
     }
     
     public var textureDescriptor : TextureDescriptor {

@@ -20,6 +20,7 @@ extension ImGuiNavInput_ {
 
 extension ImGui {
     
+    @MainActor
     fileprivate static func updateScreens() -> [Screen] {
         let platformIO = igGetPlatformIO()!
         
@@ -150,6 +151,7 @@ extension ImGui {
         #endif // !(os(iOS) || os(tvOS) || os(watchOS))
     }
     
+    @MainActor
     public static func beginFrame(windows: [Window], inputLayer: ImGuiInputLayer, deltaTime: Double) {
         _ = self.updateScreens()
 

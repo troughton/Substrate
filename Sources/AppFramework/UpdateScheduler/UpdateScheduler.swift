@@ -12,6 +12,7 @@ import Substrate
 @_silgen_name("swift_task_runAndBlockThread")
 public func runAsyncAndBlock(_ asyncFun: @escaping () async -> ())
 
+@MainActor
 public protocol UpdateScheduler {
 }
 

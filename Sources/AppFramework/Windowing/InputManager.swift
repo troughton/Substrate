@@ -54,6 +54,7 @@ public struct RawInputState : InputSourceState {
     }
 }
 
+@MainActor
 public protocol InputManager {
     var shouldQuit : Bool { get set }
     

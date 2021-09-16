@@ -11,6 +11,7 @@
 import Foundation
 import CSDL2
 
+@MainActor
 public final class SDLGamepadManager {
     
     private weak var inputManager: InputManagerInternal!

@@ -70,6 +70,7 @@ public struct WindowCreationFlags : OptionSet {
     public static let resizable = WindowCreationFlags(rawValue: 1 << 2)
 }
 
+@MainActor
 public protocol Window : AnyObject {
     var id : Int { get }
     var title : String { get set }
@@ -82,7 +83,7 @@ public protocol Window : AnyObject {
     
     var delegate : WindowDelegate? { get set }
     
-    func texture() async -> Texture // since async gets don't work properly in protocol requirements yet.
+    var texture: Texture { get async }
     
     var drawableSize : WindowSize { get }
 
@@ -105,10 +106,12 @@ extension Window {
     }
 }
 
+@MainActor
 public protocol FrameUpdateable : AnyObject {
     func update(frame: UInt64, deltaTime: Double) async
 }
 
+@MainActor
 public protocol WindowDelegate : FrameUpdateable {
     
     var title : String { get }

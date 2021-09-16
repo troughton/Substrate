@@ -30,6 +30,7 @@ extension ApplicationDelegate {
     public func applicationWillExit(_ application: Application) {}
 }
 
+@MainActor
 public class Application {
     public static var sharedApplication : Application! = nil
     
@@ -50,7 +51,7 @@ public class Application {
     
     @MainActor
     init(delegate: ApplicationDelegate?, updateables: [FrameUpdateable], inputManager: @autoclosure () -> InputManager, updateScheduler: UpdateScheduler, windowRenderGraph: RenderGraph) async {
-        ImGui.createContext()
+        _ = ImGui.createContext()
         
         self.inputManager = inputManager()
         self.windows = []
@@ -96,7 +97,6 @@ public class Application {
     }
     
     deinit {
-        Application.sharedApplication = nil
         self.delegate?.applicationWillExit(self)
         ImGui.destroyContext()
     }
