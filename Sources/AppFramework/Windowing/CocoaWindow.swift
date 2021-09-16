@@ -123,8 +123,8 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
             return _dimensions
         }
         set {
-            _dimensions = newValue
             let position = self.position
+            _dimensions = newValue
             self.window.setContentSize(NSSize(width: Int(_dimensions.width), height: Int(_dimensions.height)))
             self.position = position // Resizing happens from the bottom left, whereas we want to maintain the position from the top left.
         }
