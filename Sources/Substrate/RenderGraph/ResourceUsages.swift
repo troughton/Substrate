@@ -33,10 +33,10 @@ extension ChunkArray where Element == ResourceUsage {
     }
     
     @inlinable
-    mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.ThreadView) {
+    mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.TaskView) {
         var usage = usage
-        if self.isEmpty || !self.last.mergeWithUsage(&usage, allocator: .tagThreadView(allocator)) {
-            self.append(usage, allocator: .tagThreadView(allocator))
+        if self.isEmpty || !self.last.mergeWithUsage(&usage, allocator: .tagTaskView(allocator)) {
+            self.append(usage, allocator: .tagTaskView(allocator))
         }
     }
 }

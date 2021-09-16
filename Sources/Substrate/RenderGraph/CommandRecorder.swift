@@ -276,7 +276,7 @@ final class RenderGraphCommandRecorder {
     
     @inlinable
     public func copyData<T>(_ data: T) -> UnsafePointer<T> {
-        let result = self.dataAllocator.dynamicThreadView.allocate(capacity: 1) as UnsafeMutablePointer<T>
+        let result = self.dataAllocator.dynamicTaskView.allocate(capacity: 1) as UnsafeMutablePointer<T>
         result.initialize(to: data)
         return UnsafePointer(result)
     }
@@ -296,7 +296,7 @@ final class RenderGraphCommandRecorder {
     public func record(_ commandGenerator: (UnsafePointer<CChar>) -> RenderGraphCommand, _ string: String) {
         let cStringAddress = string.withCString { label -> UnsafePointer<CChar> in
             let numChars = strlen(label)
-            let destination : UnsafeMutablePointer<CChar> = self.dataAllocator.dynamicThreadView.allocate(capacity: numChars + 1)
+            let destination : UnsafeMutablePointer<CChar> = self.dataAllocator.dynamicTaskView.allocate(capacity: numChars + 1)
             destination.initialize(from: label, count: numChars)
             destination[numChars] = 0
             return UnsafePointer(destination)
@@ -309,7 +309,7 @@ final class RenderGraphCommandRecorder {
     @discardableResult
     @inlinable
     public func copyBytes(_ bytes: UnsafeRawPointer, length: Int) -> UnsafeRawPointer {
-        let newBytes = self.dataAllocator.dynamicThreadView.allocate(bytes: length, alignment: 16)
+        let newBytes = self.dataAllocator.dynamicTaskView.allocate(bytes: length, alignment: 16)
         newBytes.copyMemory(from: bytes, byteCount: length)
         return UnsafeRawPointer(newBytes)
     }
@@ -406,7 +406,7 @@ final class RenderGraphCommandRecorder {
                 subresourcePointers = self.resourceUsagePointers(for: intersectionFunctionTable.descriptor, commandIndex: firstCommandOffset, stages: stages, encoder: encoder)
             }
             if !subresourcePointers.isEmpty {
-                let subresourceList = resourceUsageAllocator.dynamicThreadView.allocate(type: ResourceUsagePointer.self, capacity: 1 + subresourcePointers.count)
+                let subresourceList = resourceUsageAllocator.dynamicTaskView.allocate(type: ResourceUsagePointer.self, capacity: 1 + subresourcePointers.count)
                 subresourceList.initialize(to: usagePointer)
                 for i in 0..<subresourcePointers.count {
                     subresourceList.advanced(by: i + 1).initialize(to: subresourcePointers[i])

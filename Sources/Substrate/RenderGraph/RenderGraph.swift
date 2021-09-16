@@ -1200,7 +1200,7 @@ public final class RenderGraph {
             }
         }
         
-        let allocator = TagAllocator.ThreadView(allocator: resourceUsagesAllocator, threadIndex: 0)
+        let allocator = resourceUsagesAllocator.staticTaskView 
         
         // Index the commands for each pass in a sequential manner for the entire frame.
         var commandCount = 0

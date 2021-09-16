@@ -30,6 +30,8 @@ public enum TaggedHeap {
         case allocatePerBlock(blockSize: Int = 64 * 1024)
     }
     
+    static let maxTasksPerAllocator = 512
+    
     public typealias Tag = UInt64
     public static var blockSize = 64 * 1024
     
@@ -57,7 +59,6 @@ public enum TaggedHeap {
     }
     
     public static func initialise(strategy: Strategy = .suballocate(capacity: TaggedHeap.defaultHeapCapacity)) {
-        Threading.initialise()
         self.strategy = strategy
         switch strategy {
         case .allocatePerBlock(let blockSize):
@@ -301,9 +302,8 @@ public struct TagAllocator {
     
     @usableFromInline
     struct AllocationBlock {
-        public var memory : UnsafeMutableRawPointer? = nil
-        public var size : Int = 0
-        public var offset = 0
+        public var memoryStart : UnsafeMutableRawPointer? = nil
+        public var memoryEnd : UnsafeMutableRawPointer? = nil
         
         @inlinable
         init() {
@@ -317,8 +317,18 @@ public struct TagAllocator {
         return self.memory.assumingMemoryBound(to: Header.self)
     }
     
+    
     @usableFromInline var blocks : UnsafeMutablePointer<AllocationBlock> {
         return self.memory.advanced(by: MemoryLayout<Header>.stride).assumingMemoryBound(to: AllocationBlock.self)
+    }
+    
+    @usableFromInline var executorMap: ExecutorAtomicLinearProbingMap {
+        let threadCount = self.header.pointee.threadCount
+        let bucketsPointer = self.memory.advanced(by: MemoryLayout<Header>.stride + threadCount * MemoryLayout<AllocationBlock>.stride)
+            .assumingMemoryBound(to: UnsafeRawPointer.AtomicOptionalRepresentation.self)
+        return ExecutorAtomicLinearProbingMap(buckets:
+                                                UnsafeMutableBufferPointer(start: bucketsPointer, count: threadCount)
+                                              )
     }
     
     public var tag: TaggedHeap.Tag {
@@ -326,16 +336,24 @@ public struct TagAllocator {
     }
     
     @inlinable
-    public init(tag: TaggedHeap.Tag, threadCount: Int = Threading.threadCount) {
+    public init(tag: TaggedHeap.Tag, threadCount: Int = TaggedHeap.maxTasksPerAllocator) {
         let firstBlock = TaggedHeap.allocateBlocks(tag: tag, count: 1)
         self.memory = firstBlock
         
         let header = Header(tag: tag, threadCount: threadCount)
         firstBlock.bindMemory(to: Header.self, capacity: 1).initialize(to: header)
-        firstBlock.advanced(by: MemoryLayout<Header>.stride).bindMemory(to: AllocationBlock.self, capacity: threadCount)
-        self.blocks.initialize(repeating: AllocationBlock(), count: threadCount)
-        self.blocks[0].memory = firstBlock
-        self.blocks[0].offset = MemoryLayout<Header>.stride + MemoryLayout<AllocationBlock>.stride * threadCount
+        
+        let allocationBlockOffset = firstBlock.advanced(by: MemoryLayout<Header>.stride)
+        allocationBlockOffset.bindMemory(to: AllocationBlock.self, capacity: threadCount).initialize(repeating: AllocationBlock(), count: threadCount)
+        
+        let executorMapOffset = allocationBlockOffset.advanced(by: MemoryLayout<AllocationBlock>.stride * threadCount)
+        executorMapOffset.bindMemory(to: UnsafeRawPointer.AtomicOptionalRepresentation.self, capacity: threadCount).initialize(repeating: .init(nil), count: threadCount)
+        
+        let memoryStart = executorMapOffset.advanced(by: MemoryLayout<UnsafeRawPointer.AtomicOptionalRepresentation>.stride * threadCount)
+        
+        self.blocks[0].memoryStart = memoryStart
+        self.blocks[0].memoryEnd = firstBlock + TaggedHeap.blockSize
+        assert(self.blocks[0].memoryEnd! >= memoryStart, "ThreadCount \(threadCount) overflowed the TaggedHeap block size.")
     }
     
     @inlinable
@@ -355,17 +373,15 @@ public struct TagAllocator {
         assert((0..<self.header.pointee.threadCount).contains(threadIndex), "Thread index \(threadIndex) is not in the range \(0..<self.header.pointee.threadCount)")
         
         let blockPtr = self.blocks.advanced(by: threadIndex)
-        let alignedOffset = (blockPtr.pointee.offset + alignment - 1) & ~(alignment - 1)
-        if let memory = blockPtr.pointee.memory, alignedOffset + bytes <= blockPtr.pointee.size {
-            defer { blockPtr.pointee.offset = alignedOffset + bytes }
-            return memory.advanced(by: alignedOffset)
+        if let memory = blockPtr.pointee.memoryStart?.alignedUpwards(withAlignment: alignment), memory + bytes <= blockPtr.pointee.memoryEnd! {
+            blockPtr.pointee.memoryStart = memory + bytes
+            return memory
         }
         
         let requiredBlocks = (bytes + TaggedHeap.blockSize - 1) / TaggedHeap.blockSize
         let memory = TaggedHeap.allocateBlocks(tag: self.header.pointee.tag, count: requiredBlocks)
-        blockPtr.pointee.memory = memory
-        blockPtr.pointee.size = requiredBlocks * TaggedHeap.blockSize
-        blockPtr.pointee.offset = bytes
+        blockPtr.pointee.memoryStart = memory + bytes
+        blockPtr.pointee.memoryEnd = memory + requiredBlocks * TaggedHeap.blockSize
         
         return memory
     }
@@ -386,7 +402,7 @@ public struct TagAllocator {
     }
     
     /// Calls a statically-set function to determine the current thread.
-    public struct DynamicThreadView {
+    public struct DynamicTaskView {
         @usableFromInline var allocator : TagAllocator
         
         @inlinable
@@ -396,12 +412,12 @@ public struct TagAllocator {
         
         @inlinable
         public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
-            return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: Threading.threadIndex)
+            return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: self.allocator.executorMap.bucketIndexForCurrentTask)
         }
         
         @inlinable
         public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
-            return self.allocator.allocate(capacity: capacity, threadIndex: Threading.threadIndex)
+            return self.allocator.allocate(capacity: capacity, threadIndex: self.allocator.executorMap.bucketIndexForCurrentTask)
         }
 
         @inlinable
@@ -416,12 +432,12 @@ public struct TagAllocator {
     }
     
     @inlinable
-    public var dynamicThreadView : DynamicThreadView {
-        return DynamicThreadView(allocator: self)
+    public var dynamicTaskView : DynamicTaskView {
+        return DynamicTaskView(allocator: self)
     }
     
-    /// Locked to a single thread determined when the thread view was created.
-    public struct ThreadView {
+    /// Locked to a single executor determined when the executor view was created.
+    public struct TaskView {
         @usableFromInline var allocator : TagAllocator
         public var threadIndex : Int
         
@@ -433,11 +449,13 @@ public struct TagAllocator {
         
         @inlinable
         public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
+            assert(self.threadIndex == self.allocator.executorMap.bucketIndexForCurrentTask)
             return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: self.threadIndex)
         }
         
         @inlinable
         public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
+            assert(self.threadIndex == self.allocator.executorMap.bucketIndexForCurrentTask)
             return self.allocator.allocate(capacity: capacity, threadIndex: self.threadIndex)
         }
 
@@ -452,9 +470,10 @@ public struct TagAllocator {
         }
     }
     
+    /// NOTE: staticTaskView can only be used within the current task.
     @inlinable
-    public var threadView : ThreadView {
-        return ThreadView(allocator: self, threadIndex: Threading.threadIndex)
+    public var staticTaskView: TaskView {
+        return TaskView(allocator: self, threadIndex: self.executorMap.bucketIndexForCurrentTask)
     }
 }
 
@@ -487,3 +506,84 @@ public struct ThreadLocalTagAllocator {
         self.allocator.deallocate(pointer)
     }
 }
+
+extension UnsafeMutableRawPointer {
+    // https://stackoverflow.com/questions/4840410/how-to-align-a-pointer-in-c
+    @inlinable
+    func alignedUpwards(withAlignment align: Int) -> UnsafeMutableRawPointer {
+        assert(align > 0 && (align & (align - 1)) == 0); /* Power of 2 */
+        
+        var addr = Int(bitPattern: self)
+        addr = (addr &+ (align &- 1)) & -align   // Round up to align-byte boundary
+        assert(addr >= UInt(bitPattern: self))
+        return UnsafeMutableRawPointer(bitPattern: addr).unsafelyUnwrapped
+    }
+}
+
+extension UnsignedInteger {
+    @inlinable
+    var isPowerOfTwo: Bool {
+        return (self != 0) && (self & (self - 1)) == 0
+    }
+}
+
+import Darwin
+
+@usableFromInline
+struct ExecutorAtomicLinearProbingMap {
+    public let buckets: UnsafeMutableBufferPointer<UnsafeRawPointer.AtomicOptionalRepresentation>
+    @usableFromInline let bucketMask: Int
+    
+    @inlinable
+    public init(buckets: UnsafeMutableBufferPointer<UnsafeRawPointer.AtomicOptionalRepresentation>) {
+        precondition(buckets.count.magnitude.isPowerOfTwo)
+        self.buckets = buckets
+        self.bucketMask = buckets.count &- 1
+    }
+    
+    @inlinable
+    public func bucketIndex(for address: UnsafeRawPointer) -> Int {
+        let startBucket = (Int(bitPattern: address) / (MemoryLayout<Int>.stride)) & self.bucketMask
+        
+        var testIndex = startBucket
+        repeat {
+            let bucketPointer = buckets.baseAddress!.advanced(by: testIndex)
+            let bucketVal = UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: bucketPointer, ordering: .relaxed)
+            if bucketVal == address {
+                return testIndex
+            } else if bucketVal == nil, UnsafeRawPointer.AtomicOptionalRepresentation.atomicCompareExchange(expected: nil, desired: address, at: bucketPointer, ordering: .relaxed).exchanged {
+                return testIndex
+            }
+            testIndex = (testIndex &+ 1) & self.bucketMask
+        } while testIndex != startBucket
+        preconditionFailure("Map is full! Not enough capacity to insert \(address)")
+    }
+    
+    @inlinable
+    public func clearBucket(for address: UnsafeRawPointer) {
+        let startBucket = (Int(bitPattern: address) / (MemoryLayout<Int>.stride)) & self.bucketMask
+        
+        var testIndex = startBucket
+        repeat {
+            let bucketPointer = buckets.baseAddress!.advanced(by: testIndex)
+            let bucketVal = UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: bucketPointer, ordering: .relaxed)
+            if bucketVal == address {
+                UnsafeRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: bucketPointer, ordering: .relaxed)
+            }
+            testIndex = (testIndex &+ 1) & self.bucketMask
+        } while testIndex != startBucket
+        preconditionFailure("Address \(address) is not in map!")
+    }
+    
+    @inlinable
+    public var bucketIndexForCurrentTask: Int {
+        guard let task = _getCurrentAsyncTask() else {
+            preconditionFailure("Must be executed from a task thread.")
+        }
+        
+        return self.bucketIndex(for: task)
+    }
+}
+
+@_silgen_name("swift_task_getCurrent")
+@usableFromInline func _getCurrentAsyncTask() -> UnsafeRawPointer?
