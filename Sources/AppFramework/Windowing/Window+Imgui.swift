@@ -258,3 +258,9 @@ extension ImGuiViewport {
         }
     }
 }
+
+extension ImGui {
+    public static func findViewport(for window: Window) -> UnsafeMutablePointer<ImGuiViewport>? {
+        return self.findViewportByPlatformHandle(Unmanaged<AnyObject>.passUnretained(window).toOpaque())
+    }
+}
