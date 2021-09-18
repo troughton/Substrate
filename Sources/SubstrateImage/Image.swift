@@ -466,7 +466,7 @@ public struct Image<ComponentType> : AnyImage {
         case is Float.Type, is Double.Type:
             isFloatingPoint = true
             isSigned = true
-        #if arch(x86_64)
+        #if arch(x86_64) && !os(Windows)
         case is Float80.Type:
             isFloatingPoint = true
             isSigned = true

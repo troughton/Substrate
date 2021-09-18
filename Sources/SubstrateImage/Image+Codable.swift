@@ -75,7 +75,7 @@ public struct AnyCodableImage: Codable {
         case (16, true, true):
             return decodeImage(header: header, data: data, type: Float16.self)
         #endif
-        #if arch(x86_64)
+        #if arch(x86_64) && !os(Windows)
         case (80, true, true):
             return decodeImage(header: header, data: data, type: Float80.self)
         #endif
