@@ -13,7 +13,7 @@ public enum AllocatorType {
     case tag(TagAllocator)
     case threadLocalTag(ThreadLocalTagAllocator)
     case lockingTag(LockingTagAllocator)
-    case tagTaskView(TagAllocator.TaskView)
+    case tagTaskView(TagAllocator.StaticTaskView)
     case custom(Unmanaged<MemoryArena>)
     
     @inlinable
@@ -32,7 +32,7 @@ public enum AllocatorType {
     }
     
     @inlinable
-    public init(_ tagTaskView: TagAllocator.TaskView) {
+    public init(_ tagTaskView: TagAllocator.StaticTaskView) {
         self = .tagTaskView(tagTaskView)
     }
     

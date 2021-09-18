@@ -437,7 +437,7 @@ public struct TagAllocator {
     }
     
     /// Locked to a single executor determined when the executor view was created.
-    public struct TaskView {
+    public struct StaticTaskView {
         @usableFromInline var allocator : TagAllocator
         public var threadIndex : Int
         
@@ -472,8 +472,8 @@ public struct TagAllocator {
     
     /// NOTE: staticTaskView can only be used within the current task.
     @inlinable
-    public var staticTaskView: TaskView {
-        return TaskView(allocator: self, threadIndex: self.executorMap.bucketIndexForCurrentTask)
+    public var staticTaskView: StaticTaskView {
+        return StaticTaskView(allocator: self, threadIndex: self.executorMap.bucketIndexForCurrentTask)
     }
 }
 
@@ -526,8 +526,6 @@ extension UnsignedInteger {
         return (self != 0) && (self & (self - 1)) == 0
     }
 }
-
-import Darwin
 
 @usableFromInline
 struct ExecutorAtomicLinearProbingMap {
