@@ -195,7 +195,14 @@ final class ShaderCompiler {
             try FileManager.default.createDirectoryIfNeeded(at: spirvDirectory)
         }
         
-        let directoryContents = try FileManager.default.contentsOfDirectory(at: sourceDirectory, includingPropertiesForKeys: [.contentModificationDateKey, .nameKey], options: [])
+        var directoryContents: [URL] = []
+        if let directoryEnumerator = FileManager.default.enumerator(at: sourceDirectory, includingPropertiesForKeys: [.contentModificationDateKey, .nameKey]) {
+            for case let fileURL as URL in directoryEnumerator {
+                if fileURL.pathExtension.lowercased() == "hlsl" {
+                    directoryContents.append(fileURL)
+                }
+            }
+        }
         
         let modificationTimes = computeSourceFileModificationTimes(directoryContents)
         
