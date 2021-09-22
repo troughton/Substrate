@@ -346,7 +346,7 @@ public struct RGBAColor : Equatable, Hashable {
     }
     
     @inlinable
-    public init(_ r: Float, _ g: Float, _ b: Float, _ a: Float = 1.0) {
+    public init(_ r: Float, _ g: Float, _ b: Float, _ a: Float) {
         self.r = r
         self.g = g
         self.b = b
@@ -354,7 +354,15 @@ public struct RGBAColor : Equatable, Hashable {
     }
     
     @inlinable
-    public init(_ value: Float, a: Float = 1.0) {
+    public init(_ value: Float) {
+        self.r = value
+        self.g = value
+        self.b = value
+        self.a = value
+    }
+    
+    @inlinable
+    public init(value: Float, a: Float) {
         self.r = value
         self.g = value
         self.b = value
