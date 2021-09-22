@@ -78,14 +78,16 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
 
 import MetalKit
 
+@MainActor
 public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDelegate  {
     private var vsyncUpdate : Bool = false
     private var application : CocoaApplication! = nil
+    var previousTask: Task<Void, Never>?
 
-    public init(appDelegate: ApplicationDelegate?, viewController: UIViewController, windowDelegate: @escaping @autoclosure () -> WindowDelegate, windowRenderGraph: RenderGraph) {
+    public init(appDelegate: ApplicationDelegate?, viewController: UIViewController, windowDelegate: @escaping @autoclosure () async -> WindowDelegate, windowRenderGraph: RenderGraph) async {
         super.init()
 
-        self.application = CocoaApplication(delegate: appDelegate, viewController: viewController, windowDelegate: windowDelegate(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
+        self.application = await CocoaApplication(delegate: appDelegate, viewController: viewController, windowDelegate: await windowDelegate(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
         
         let mainWindow = application.windows.first! as! MTKWindow
         
@@ -107,8 +109,10 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
             (window as! MTKWindow).mtkView.draw()
         }
         
-        autoreleasepool {
-            application.update()
+        let previousTask = self.previousTask
+        self.previousTask = detach {
+            await previousTask?.get()
+            await self.application.update()
         }
     }
 

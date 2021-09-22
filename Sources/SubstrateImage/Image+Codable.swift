@@ -73,7 +73,12 @@ public struct AnyCodableImage: Codable {
             return decodeImage(header: header, data: data, type: Double.self)
         #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
         case (16, true, true):
-            return decodeImage(header: header, data: data, type: Float16.self)
+            if #available(iOS 14.0, tvOS 14.0, watchOS 14.0, *) {
+                return decodeImage(header: header, data: data, type: Float16.self)
+            } else {
+                // Fallback on earlier versions
+                throw ImageDecodingError.noValidFormat(header)
+            }
         #endif
         #if arch(x86_64) && !os(Windows)
         case (80, true, true):

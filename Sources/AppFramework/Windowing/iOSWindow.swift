@@ -50,11 +50,11 @@ final class MTKEventView : MTKView, UIKeyInput {
     }
     
     override var canBecomeFirstResponder: Bool {
-        return ImGui.wantsCaptureKeyboard
+        return ImGui.io.pointee.WantCaptureKeyboard
     }
     
     var hasText : Bool {
-        return ImGui.wantsCaptureKeyboard
+        return ImGui.io.pointee.WantCaptureKeyboard
     }
 }
 
@@ -66,7 +66,13 @@ public class CocoaWindow : Window, MTKWindow {
     
     public var delegate: WindowDelegate?
     
-    @Cached public var texture : Texture
+    var _texture = CachedAsync<Texture>()
+    
+    public var texture: Texture {
+        get async {
+            return await _texture.getValue()
+        }
+    }
     
     public var title: String = "Main Window"
     
@@ -88,9 +94,8 @@ public class CocoaWindow : Window, MTKWindow {
         
         mtkView.inputDelegate = inputManager
 
-        self._texture = Cached()
         self._texture.constructor = { [unowned(unsafe) self] in
-            let texture = Texture(descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView.layer, renderGraph: renderGraph)
+            let texture = await Texture(descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView.layer, renderGraph: renderGraph)
             return texture
         }
     }

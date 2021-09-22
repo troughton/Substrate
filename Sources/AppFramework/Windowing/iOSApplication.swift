@@ -67,7 +67,7 @@ final class CocoaInputManager : InputManagerInternal {
     
     
     func insertText(_ text: String) {
-        ImGui.io.pointee.addUTF8InputCharacters(text.utf8CString)
+        ImGui.io.pointee.addInputCharactersUTF8(str: text)
     }
     
     func deleteBackward() {
@@ -83,24 +83,24 @@ final class CocoaInputManager : InputManagerInternal {
 public class CocoaApplication : Application {
     
     let contentScaleFactor : Float
+    let viewController: UIViewController
     
-    public init(delegate: ApplicationDelegate?, viewController: UIViewController, windowDelegate: @autoclosure () -> WindowDelegate, updateScheduler: MetalUpdateScheduler, windowRenderGraph: RenderGraph) {
+    public init(delegate: ApplicationDelegate?, viewController: UIViewController, windowDelegate: @autoclosure () async -> WindowDelegate, updateScheduler: MetalUpdateScheduler, windowRenderGraph: RenderGraph) async {
         delegate?.applicationWillInitialise()
         
+        self.viewController = viewController
+        self.contentScaleFactor = Float(viewController.view.contentScaleFactor)
         let inputManager = CocoaInputManager()
         
-        let windowDelegate = windowDelegate()
+        let windowDelegate = await windowDelegate()
+        await super.init(delegate: delegate, updateables: [windowDelegate], inputManager: inputManager, updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
         
-        let window = CocoaWindow(viewController: viewController, inputManager: inputManager, renderGraph: windowRenderGraph)
-        window.delegate = windowDelegate
-        
-        self.contentScaleFactor = Float(viewController.view.contentScaleFactor)
-        
-        super.init(delegate: delegate, updateables: [windowDelegate], inputManager: inputManager, updateScheduler: updateScheduler, windowRenderGraph: windowRenderGraph)
     }
     
     public override func createWindow(title: String, dimensions: WindowSize, flags: WindowCreationFlags, renderGraph: RenderGraph) -> Window {
-        fatalError("Can't create windows on iOS")
+        let window = CocoaWindow(viewController: self.viewController, inputManager: self.inputManager as! CocoaInputManager, renderGraph: renderGraph)
+        self.windows.append(window)
+        return window
     }
     
     public override func setCursorPosition(to position: SIMD2<Float>) {

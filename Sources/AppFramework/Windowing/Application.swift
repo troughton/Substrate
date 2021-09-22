@@ -137,9 +137,9 @@ public class Application {
             ImGui.render()
             
             #if os(iOS)
-            let imguiData = ImGui.renderData(drawData: ImGui.drawData!, clipScale: screens[0].backingScaleFactor)
+            let imguiData = ImGui.renderData(drawData: ImGui.drawData!.pointee, clipScale: screens[0].backingScaleFactor)
             let window = windows[0]
-            self.delegate?.applicationRenderedImGui(self, frame: frame, renderData: imguiData, window: window, scissorRect: window.drawableSize.scissorRect)
+            await self.delegate?.applicationRenderedImGui(self, frame: frame, renderData: imguiData, window: window, scissorRect: window.drawableSize.scissorRect)
             #else
             ImGui.updatePlatformWindows()
             
