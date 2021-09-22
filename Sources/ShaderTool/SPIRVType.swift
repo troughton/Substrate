@@ -291,7 +291,7 @@ extension SPIRVType : CustomStringConvertible {
             
             var structDef = """
             @frozen
-            public struct \(self.name) : Hashable, NoArgConstructable, Sendable {
+            public struct \(self.name) : Hashable, NoArgConstructable, @unchecked Sendable {
                 \(memberDeclarations.joined(separator: "\n    "))
             
                 @inlinable
