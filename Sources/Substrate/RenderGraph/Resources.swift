@@ -885,6 +885,8 @@ public struct Buffer : ResourceProtocol {
     /// - Parameter renderGraph: The render graph that this buffer will be used with, if this is a transient buffer. Only necessary for transient buffers created outside of `RenderGraph` execution (e.g. in a render pass' `init` method).
     /// - Parameter flags: The flags with which to create the buffer; for example, `ResourceFlags.persistent` for a persistent buffer.
     public init(descriptor: BufferDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+        precondition(descriptor.length >= 1, "Length \(descriptor.length) must be at least 1.")
+        
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             self = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
@@ -942,6 +944,7 @@ public struct Buffer : ResourceProtocol {
     /// - Parameter flags: The flags with which to create the buffer. Must include `ResourceFlags.persistent`.
     /// - Returns: nil if the buffer could not be created (e.g. there is not enough unfragmented available space on the heap).
     public init?(descriptor: BufferDescriptor, bytes: UnsafeRawPointer? = nil, heap: Heap, flags: ResourceFlags = [.persistent]) {
+        precondition(descriptor.length >= 1, "Length \(descriptor.length) must be at least 1.")
         assert(flags.contains(.persistent), "Heap-allocated resources must be persistent.")
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         
@@ -953,7 +956,6 @@ public struct Buffer : ResourceProtocol {
         }
         
         heap.childResources.insert(Resource(self))
-        
         
         if let bytes = bytes {
             assert(self.descriptor.storageMode != .private)
@@ -1231,7 +1233,7 @@ public struct Texture : ResourceProtocol {
     }
     
     public init(descriptor: TextureDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        precondition(descriptor.width <= 16384 && descriptor.height <= 16384 && descriptor.depth <= 1024)
+        precondition((1...16384).contains(descriptor.width) && (1...16384).contains(descriptor.height) && (1...16384).contains(descriptor.depth), "Invalid size for descriptor \(descriptor); all dimensions must be in the range 1...16384")
         
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
