@@ -319,7 +319,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
         
         if let oldTable = self.visibleFunctionTableReferences[table]?.table {
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passUnretained(oldTable)))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.passUnretained(oldTable)))
         }
         
         table.stateFlags.remove(.initialised)
@@ -367,7 +367,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
         
         if let oldTable = self.intersectionFunctionTableReferences[table]?.table {
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passUnretained(oldTable)))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.passUnretained(oldTable)))
         }
         
         table.stateFlags.remove(.initialised)
@@ -467,7 +467,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
 
     nonisolated func disposeHeap(_ heap: Heap) {
         if let mtlHeap = self.heapReferences.removeValue(forKey: heap) {
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlHeap)))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlHeap)))
         }
     }
     
@@ -479,7 +479,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             if mtlTexture.texture.heap != nil {
                 mtlTexture.texture.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
             }
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlTexture._texture.toOpaque())))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlTexture._texture.toOpaque())))
         }
     }
     
@@ -488,7 +488,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             if mtlBuffer.buffer.heap != nil {
                 mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
             }
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
@@ -498,7 +498,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             if mtlBuffer.buffer.heap != nil {
                 mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
             }
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
@@ -507,25 +507,25 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             if mtlBuffer.buffer.heap != nil {
                 mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
             }
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
         }
     }
     
     nonisolated func disposeAccelerationStructure(_ structure: AccelerationStructure) {
         if let mtlStructure = self.accelerationStructureReferences.removeValue(forKey: structure) {
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlStructure)))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlStructure)))
         }
     }
     
     nonisolated func disposeVisibleFunctionTable(_ table: VisibleFunctionTable) {
         if let mtlTable = self.visibleFunctionTableReferences.removeValue(forKey: table) {
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
         }
     }
     
     nonisolated func disposeIntersectionFunctionTable(_ table: IntersectionFunctionTable) {
         if let mtlTable = self.intersectionFunctionTableReferences.removeValue(forKey: table) {
-            CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
+            CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
         }
     }
     
@@ -878,7 +878,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
                 self.frameDrawables.append(mtlDrawable)
                 self.textureReferences[texture]!._texture = Unmanaged.passRetained(drawableTexture)
                 if let queue = self.textureReferences[texture]!.disposeWaitQueue {
-                    CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(self.textureReferences[texture]!._texture.toOpaque())), after: self.textureReferences[texture]!.disposeWaitValue, on: queue)
+                    CommandEndActionManager.enqueue(action: .release(.fromOpaque(self.textureReferences[texture]!._texture.toOpaque())), after: self.textureReferences[texture]!.disposeWaitValue, on: queue)
                 }
             } else {
                 // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
@@ -1046,7 +1046,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         if let mtlTexture = textureRef {
             if texture.flags.contains(.windowHandle) || texture.isTextureView {
                 if let texture = mtlTexture._texture {
-                    CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
+                    CommandEndActionManager.enqueue(action: .release(.fromOpaque(texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
                 } else {
                     self.textureReferences[texture]?.disposeWaitValue = waitEvent.waitValue
                     self.textureReferences[texture]?.disposeWaitQueue = self.queue

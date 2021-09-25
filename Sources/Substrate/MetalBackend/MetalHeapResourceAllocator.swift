@@ -62,7 +62,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     func reserveCapacity(_ capacity: Int) {
         if (self.heap?.currentAllocatedSize ?? 0) < capacity {
             if let heap = self.heap {
-                CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(heap)), after: self.waitEvent.waitValue + 1, on: self.queue)
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(heap)), after: self.waitEvent.waitValue + 1, on: self.queue)
             }
             
             let descriptor = MTLHeapDescriptor()
@@ -89,7 +89,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
             let memoryHighWaterMark = self.frameMemoryUsages.max()!
             
             if memoryHighWaterMark > 0, (self.heap?.size ?? 0) > 2 * memoryHighWaterMark {
-                CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(self.heap!)), after: self.waitEvent.waitValue, on: self.queue)
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(self.heap!)), after: self.waitEvent.waitValue, on: self.queue)
                 self.heap = nil
                 self.reserveCapacity(memoryHighWaterMark)
             }
@@ -121,7 +121,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     }
     
     private func depositResource(_ resource: MTLResource, fences: [FenceDependency], waitEvent: ContextWaitEvent) {
-        CommandEndActionManager.manager.enqueue(action: .release(Unmanaged.passRetained(resource)), after: waitEvent.waitValue, on: self.queue)
+        CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(resource)), after: waitEvent.waitValue, on: self.queue)
         
         let aliasingIndex = self.resourceAliasingIndices.removeValue(forKey: ObjectIdentifier(resource))!
 

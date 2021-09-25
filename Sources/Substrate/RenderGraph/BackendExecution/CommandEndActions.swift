@@ -29,53 +29,64 @@ struct QueueEndAction {
     let after: UInt64
 }
 
-final class CommandEndActionManager {
+final actor CommandEndActionManager {
     static let manager = CommandEndActionManager()
-    let queue = DispatchQueue(label: "CommandEndActionManager Queue")
     
     var deviceCommandEndActions = RingBuffer<CommandEndAction>()
     var queueCommandEndActions = (0..<QueueRegistry.maxQueues).map { _ in RingBuffer<QueueEndAction>() }
     
     func enqueue(action: CommandEndActionType, after commandIndices: QueueCommandIndices = QueueRegistry.lastSubmittedCommands) {
-        self.queue.sync {
-            self.deviceCommandEndActions.append(CommandEndAction(type: action, after: commandIndices))
-        }
+        self.deviceCommandEndActions.append(CommandEndAction(type: action, after: commandIndices))
     }
     
     func enqueue(action: CommandEndActionType, after commandIndex: UInt64, on queue: Queue) {
-        self.queue.sync {
-            self.queueCommandEndActions[Int(queue.index)].append(QueueEndAction(type: action, after: commandIndex))
-        }
+        self.queueCommandEndActions[Int(queue.index)].append(QueueEndAction(type: action, after: commandIndex))
     }
     
     func didCompleteCommand(_ command: UInt64, on queue: Queue) {
-        self.queue.async {
-            do {
-                var processedCount = 0
-                for action in self.deviceCommandEndActions {
-                    let requirement = action.after
-                    let isComplete = QueueRegistry.allQueues.enumerated()
-                        .allSatisfy { i, queue in queue.lastCompletedCommand >= requirement[i] }
-                    if !isComplete {
-                        break
-                    }
-                    action.type.execute()
-                    processedCount += 1
+        do {
+            var processedCount = 0
+            for action in self.deviceCommandEndActions {
+                let requirement = action.after
+                let isComplete = QueueRegistry.allQueues.enumerated()
+                    .allSatisfy { i, queue in queue.lastCompletedCommand >= requirement[i] }
+                if !isComplete {
+                    break
                 }
-                self.deviceCommandEndActions.removeFirst(processedCount)
+                action.type.execute()
+                processedCount += 1
             }
-            
-            do {
-                var processedCount = 0
-                for action in self.queueCommandEndActions[Int(queue.index)] {
-                    guard action.after <= command else {
-                        break
-                    }
-                    action.type.execute()
-                    processedCount += 1
+            self.deviceCommandEndActions.removeFirst(processedCount)
+        }
+        
+        do {
+            var processedCount = 0
+            for action in self.queueCommandEndActions[Int(queue.index)] {
+                guard action.after <= command else {
+                    break
                 }
-                self.queueCommandEndActions[Int(queue.index)].removeFirst(processedCount)
+                action.type.execute()
+                processedCount += 1
             }
+            self.queueCommandEndActions[Int(queue.index)].removeFirst(processedCount)
+        }
+    }
+    
+    static func enqueue(action: CommandEndActionType, after commandIndices: QueueCommandIndices = QueueRegistry.lastSubmittedCommands) {
+        _ = Task {
+            await manager.enqueue(action: action, after: commandIndices)
+        }
+    }
+    
+    static func enqueue(action: CommandEndActionType, after commandIndex: UInt64, on queue: Queue) {
+        _ = Task {
+            await manager.enqueue(action: action, after: commandIndex, on: queue)
+        }
+    }
+    
+    static func didCompleteCommand(_ command: UInt64, on queue: Queue) {
+        _ = Task {
+            await manager.didCompleteCommand(command, on: queue)
         }
     }
 }

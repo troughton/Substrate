@@ -1,6 +1,6 @@
 //
 //  Queue.swift
-//  
+//
 //
 //  Created by Thomas Roughton on 26/10/19.
 //
@@ -8,7 +8,7 @@
 import SubstrateUtilities
 import Atomics
 import Dispatch
-
+import Foundation
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
 import Darwin
 #elseif os(Linux)
@@ -17,8 +17,19 @@ import Glibc
 import CRT
 #endif
 
+final class CommandWaitTask {
+    var command: UInt64
+    var task: Task<Void, Never>
+    var next: CommandWaitTask?
+    
+    init(command: UInt64, task: Task<Void, Never>) {
+        self.command = command
+        self.task = task
+    }
+}
+
 public final class QueueRegistry {
-    public static let instance = QueueRegistry()
+    public static let shared = QueueRegistry()
     
     public static let maxQueues = UInt8.bitWidth
     
@@ -26,15 +37,19 @@ public final class QueueRegistry {
     public let lastCompletedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     public let lastSubmissionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     public let lastCompletionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
+    let commandWaitTasks : UnsafeMutablePointer<CommandWaitTask?>
     
     var allocatedQueues : UInt8 = 0
     var lock = SpinLock()
     
     public init() {
         self.lastSubmittedCommands = .allocate(capacity: Self.maxQueues)
+        self.lastSubmittedCommands.initialize(repeating: .init(0), count: Self.maxQueues)
         self.lastCompletedCommands = .allocate(capacity: Self.maxQueues)
+        self.lastCompletedCommands.initialize(repeating: .init(0), count: Self.maxQueues)
         self.lastSubmissionTimes = .allocate(capacity: Self.maxQueues)
         self.lastCompletionTimes = .allocate(capacity: Self.maxQueues)
+        self.commandWaitTasks = .allocate(capacity: Self.maxQueues)
     }
     
     deinit {
@@ -42,14 +57,17 @@ public final class QueueRegistry {
         self.lastCompletedCommands.deallocate()
         self.lastSubmissionTimes.deallocate()
         self.lastCompletionTimes.deallocate()
+        self.commandWaitTasks.deallocate()
     }
     
     public static var allQueues : IteratorSequence<QueueIterator> {
-        return IteratorSequence(QueueIterator())
+        get {
+            return IteratorSequence(QueueIterator())
+        }
     }
     
     public func allocate() -> UInt8 {
-        return self.lock.withLock {
+        return Self.shared.lock.withLock {
             for i in 0..<self.allocatedQueues.bitWidth {
                 if self.allocatedQueues & (1 << i) == 0 {
                     self.allocatedQueues |= (1 << i)
@@ -59,6 +77,7 @@ public final class QueueRegistry {
                     
                     UInt64.AtomicRepresentation.atomicStore(0, at: self.lastSubmissionTimes.advanced(by: i), ordering: .relaxed)
                     UInt64.AtomicRepresentation.atomicStore(0, at: self.lastCompletionTimes.advanced(by: i), ordering: .relaxed)
+                    self.commandWaitTasks.advanced(by: i).initialize(to: nil)
                     
                     return UInt8(i)
                 }
@@ -69,18 +88,20 @@ public final class QueueRegistry {
     }
     
     public func dispose(_ queue: Queue) {
-        self.lock.withLock {
+        Self.shared.lock.withLock {
             assert(self.allocatedQueues & (1 << Int(queue.index)) != 0, "Queue being disposed is not allocated.")
             self.allocatedQueues &= ~(1 << Int(queue.index))
         }
     }
     
     public struct QueueIterator : IteratorProtocol {
+        let allocatedQueues: UInt8
         var nextIndex = 0
         
         init() {
+            self.allocatedQueues = QueueRegistry.shared.lock.withLock { QueueRegistry.shared.allocatedQueues }
             self.nextIndex = (0..<QueueRegistry.maxQueues)
-                .first(where: { QueueRegistry.instance.allocatedQueues & (1 << $0) != 0 }) ?? QueueRegistry.maxQueues
+                .first(where: { allocatedQueues & (1 << $0) != 0 }) ?? QueueRegistry.maxQueues
         }
         
         public mutating func next() -> Queue? {
@@ -88,7 +109,7 @@ public final class QueueRegistry {
                 let queue = Queue(index: UInt8(self.nextIndex))
                 self.nextIndex = (0..<QueueRegistry.maxQueues)
                     .dropFirst(self.nextIndex + 1)
-                    .first(where: { QueueRegistry.instance.allocatedQueues & (1 << $0) != 0 }) ?? QueueRegistry.maxQueues
+                    .first(where: { allocatedQueues & (1 << $0) != 0 }) ?? QueueRegistry.maxQueues
                 return queue
             }
             return nil
@@ -97,16 +118,16 @@ public final class QueueRegistry {
     
     public static var lastSubmittedCommands: QueueCommandIndices {
         var commands = QueueCommandIndices(repeating: 0)
-        for (i, queue) in self.allQueues.enumerated() {
-            commands[i] = queue.lastSubmittedCommand
+        for i in 0..<Self.maxQueues {
+            commands[i] = UInt64.AtomicRepresentation.atomicLoad(at: self.shared.lastSubmittedCommands, ordering: .relaxed)
         }
         return commands
     }
     
     public static var lastCompletedCommands: QueueCommandIndices {
         var commands = QueueCommandIndices(repeating: 0)
-        for (i, queue) in self.allQueues.enumerated() {
-            commands[i] = queue.lastCompletedCommand
+        for i in 0..<Self.maxQueues {
+            commands[i] = UInt64.AtomicRepresentation.atomicLoad(at: self.shared.lastCompletedCommands, ordering: .relaxed)
         }
         return commands
     }
@@ -120,55 +141,84 @@ public struct Queue : Equatable, Sendable {
     }
     
     init() {
-        self.index = QueueRegistry.instance.allocate()
+        self.index = QueueRegistry.shared.allocate()
     }
     
     func dispose() {
-        QueueRegistry.instance.dispose(self)
+        QueueRegistry.shared.dispose(self)
     }
     
-    public internal(set) var lastSubmittedCommand : UInt64 {
-        get {
-            return UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.instance.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
+    func submitCommand(completionTask: Task<Void, Never>) async -> UInt64 {
+        let commandIndex = UInt64.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: QueueRegistry.shared.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed) + 1
+        UInt64.AtomicRepresentation.atomicStore(DispatchTime.now().uptimeNanoseconds, at: QueueRegistry.shared.lastSubmissionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
+        
+        let wrapperCompletionTask = Task.detached {
+            await completionTask.get()
+            
+            UInt64.AtomicRepresentation.atomicStore(commandIndex, at: QueueRegistry.shared.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
+            UInt64.AtomicRepresentation.atomicStore(DispatchTime.now().uptimeNanoseconds, at: QueueRegistry.shared.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
+            
+            repeat {
+                let nextTask = QueueRegistry.shared.lock.withLock { QueueRegistry.shared.commandWaitTasks[Int(self.index)]! }
+                if nextTask.command < commandIndex {
+                    await nextTask.task.get()
+                    continue
+                }
+                QueueRegistry.shared.lock.withLock {
+                    QueueRegistry.shared.commandWaitTasks[Int(self.index)] = nextTask.next
+                }
+                break
+            } while true
         }
-        nonmutating set {
-            assert(self.lastSubmittedCommand < newValue)
-            UInt64.AtomicRepresentation.atomicStore(newValue, at: QueueRegistry.instance.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
+        
+        QueueRegistry.shared.lock.withLock {
+            var commandWaitTask = QueueRegistry.shared.commandWaitTasks[Int(self.index)]
+            while let next = commandWaitTask?.next {
+                commandWaitTask = next
+            }
+            
+            let newTask = CommandWaitTask(command: commandIndex, task: wrapperCompletionTask)
+            if let commandWaitTask = commandWaitTask {
+                commandWaitTask.next = newTask
+            } else {
+                QueueRegistry.shared.commandWaitTasks[Int(self.index)] = newTask
+            }
+        }
+        
+        return commandIndex
+    }
+    
+    public var lastSubmittedCommand : UInt64 {
+        get {
+            return UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
         }
     }
     
     /// The time at which the last command was submitted.
-    public internal(set) var lastSubmissionTime : DispatchTime {
-        get {
-            let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.instance.lastSubmissionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
-            return DispatchTime(uptimeNanoseconds: time)
-        }
-        nonmutating set {
-            assert(self.lastSubmissionTime < newValue)
-            UInt64.AtomicRepresentation.atomicStore(newValue.uptimeNanoseconds, at: QueueRegistry.instance.lastSubmissionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
-        }
+    public var lastSubmissionTime : DispatchTime {
+        let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.lastSubmissionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
+        return DispatchTime(uptimeNanoseconds: time)
     }
     
-    public internal(set) var lastCompletedCommand : UInt64 {
-        get {
-            return UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
-        }
-        nonmutating set {
-            assert(self.lastCompletedCommand < newValue)
-            UInt64.AtomicRepresentation.atomicStore(newValue, at: QueueRegistry.instance.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
-        }
+    public var lastCompletedCommand : UInt64 {
+        return UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
     }
     
     /// The time at which the last command was completed.
     public internal(set) var lastCompletionTime : DispatchTime {
         get {
-            let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.instance.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
+            let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
             return DispatchTime(uptimeNanoseconds: time)
         }
         nonmutating set {
             assert(self.lastCompletionTime < newValue)
-            UInt64.AtomicRepresentation.atomicStore(newValue.uptimeNanoseconds, at: QueueRegistry.instance.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
+            UInt64.AtomicRepresentation.atomicStore(newValue.uptimeNanoseconds, at: QueueRegistry.shared.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
         }
+    }
+    
+    @available(*, deprecated, renamed: "waitForCommandCompletion")
+    public func waitForCommand(_ index: UInt64) async {
+        await self.waitForCommandCompletion(index)
     }
     
     public func waitForCommandSubmission(_ index: UInt64) async {
@@ -179,13 +229,12 @@ public struct Queue : Equatable, Sendable {
     
     public func waitForCommandCompletion(_ index: UInt64) async {
         while self.lastCompletedCommand < index {
-            await Task.yield()
+            if let commandWaitTask = QueueRegistry.shared.lock.withLock({ QueueRegistry.shared.commandWaitTasks[Int(self.index)] })?.task {
+                await commandWaitTask.get()
+            } else {
+                await Task.yield()
+            }
         }
-    }
-    
-    @available(*, deprecated, renamed: "waitForCommandCompletion()")
-    public func waitForCommand(_ index: UInt64) async {
-        await self.waitForCommandCompletion(index)
     }
 }
 
