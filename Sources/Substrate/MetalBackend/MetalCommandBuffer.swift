@@ -108,7 +108,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             let commandEncoder = FGMTLExternalCommandEncoder(commandBuffer: self.commandBuffer)
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                await commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             }
             
         case .accelerationStructure:

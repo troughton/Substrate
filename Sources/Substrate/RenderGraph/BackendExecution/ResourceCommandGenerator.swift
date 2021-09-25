@@ -327,6 +327,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     }
     
     func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry?, backend: Backend, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+        let signpostState = RenderGraph.signposter.beginInterval("Generate Resource Commands")
+        defer { RenderGraph.signposter.endInterval("Generate Resource Commands", signpostState) }
+        
         if passes.isEmpty {
             return
         }
@@ -630,6 +633,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     }
     
     func executePreFrameCommands(context: RenderGraphContextImpl<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) async {
+        let signpostState = RenderGraph.signposter.beginInterval("Execute Pre-Frame Resource Commands")
+        defer { RenderGraph.signposter.endInterval("Execute Pre-Frame Resource Commands", signpostState) }
+        
         self.preFrameCommands.sort()
         
         var commandEncoderIndex = 0

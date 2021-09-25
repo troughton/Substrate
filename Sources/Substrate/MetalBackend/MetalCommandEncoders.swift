@@ -110,18 +110,21 @@ final class FGMTLThreadRenderCommandEncoder {
     }
     
     func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], renderTarget: RenderTargetDescriptor, passRenderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
-        var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
-        if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
-            let depthState = stateCaches.depthStencilCache.defaultDepthState
-            encoder.setDepthStencilState(depthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
-            self.boundDepthStencilState = depthState
-        }
-        
-        for (i, command) in zip(pass.commandRange!, pass.commands) {
-            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
-            await self.executeCommand(command, encoder: encoder, renderTarget: renderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
-            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+        await RenderGraph.signposter.withIntervalSignpost("Encode Render Pass Commands", "Encode pass commands for pass \(pass.name)") {
+            var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
+            
+            if passRenderTarget.depthAttachment == nil && passRenderTarget.stencilAttachment == nil, (self.renderPassDescriptor.depthAttachment.texture != nil || self.renderPassDescriptor.stencilAttachment.texture != nil) {
+                let depthState = stateCaches.depthStencilCache.defaultDepthState
+                encoder.setDepthStencilState(depthState) // The render pass unexpectedly has a depth/stencil attachment, so make sure the depth stencil state is set to the default.
+                self.boundDepthStencilState = depthState
+            }
+            
+            for (i, command) in zip(pass.commandRange!, pass.commands) {
+                await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+                await self.executeCommand(command, encoder: encoder, renderTarget: renderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
+                await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+            }
         }
     }
     
@@ -440,12 +443,15 @@ final class FGMTLComputeCommandEncoder {
     }
     
     func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
-        var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
-        
-        for (i, command) in zip(pass.commandRange!, pass.commands) {
-            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
-            await self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
-            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+        await RenderGraph.signposter.withIntervalSignpost("Encode Compute Pass Commands", "Encode pass commands for pass \(pass.name)") {
+            
+            var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
+            
+            for (i, command) in zip(pass.commandRange!, pass.commands) {
+                await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+                await self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+                await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+            }
         }
     }
     
@@ -610,12 +616,15 @@ final class FGMTLBlitCommandEncoder {
     }
     
     func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
-        var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
         
-        for (i, command) in zip(pass.commandRange!, pass.commands) {
-            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
-            self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
-            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+        await RenderGraph.signposter.withIntervalSignpost("Encode Blit Pass Commands", "Encode pass commands for pass \(pass.name)") {
+            var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
+            
+            for (i, command) in zip(pass.commandRange!, pass.commands) {
+                await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+                self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+                await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+            }
         }
     }
     
@@ -722,9 +731,12 @@ final class FGMTLExternalCommandEncoder {
         self.commandBuffer = commandBuffer
     }
     
-    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) {
-        for (_, command) in zip(pass.commandRange!, pass.commands) {
-            self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+    func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
+        
+        await RenderGraph.signposter.withIntervalSignpost("Encode Exteranl Pass Commands", "Encode pass commands for pass \(pass.name)") {
+            for (_, command) in zip(pass.commandRange!, pass.commands) {
+                self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+            }
         }
     }
     
@@ -769,12 +781,14 @@ final class FGMTLAccelerationStructureCommandEncoder {
     }
     
     func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
-        var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
-        
-        for (i, command) in zip(pass.commandRange!, pass.commands) {
-            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
-            self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
-            await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+        await RenderGraph.signposter.withIntervalSignpost("Encode Acceleration Structure Pass Commands", "Encode pass commands for pass \(pass.name)") {
+            var resourceCommandIndex = resourceCommands.binarySearch { $0.index < pass.commandRange!.lowerBound }
+            
+            for (i, command) in zip(pass.commandRange!, pass.commands) {
+                await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .before, commandIndex: i, resourceMap: resourceMap)
+                self.executeCommand(command, resourceMap: resourceMap, stateCaches: stateCaches)
+                await self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: i, resourceMap: resourceMap)
+            }
         }
     }
     

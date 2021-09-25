@@ -153,12 +153,15 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
             self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
             await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
-            self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
             
-            var compactedResourceCommands = self.compactedResourceCommands // Re-use its storage
-            self.compactedResourceCommands = []
-            await backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &compactedResourceCommands)
-            self.compactedResourceCommands = compactedResourceCommands
+            await RenderGraph.signposter.withIntervalSignpost("Sort and Compact Resource Commands") {
+                self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
+                
+                var compactedResourceCommands = self.compactedResourceCommands // Re-use its storage
+                self.compactedResourceCommands = []
+                await backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &compactedResourceCommands)
+                self.compactedResourceCommands = compactedResourceCommands
+            }
             
             var commandBuffers = [Backend.CommandBuffer]()
             var waitedEvents = QueueCommandIndices(repeating: 0)
@@ -188,7 +191,9 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 }
                 waitedEvents = pointwiseMax(waitEventValues, waitedEvents)
                 
-                await commandBuffers.last!.encodeCommands(encoderIndex: i)
+                await RenderGraph.signposter.withIntervalSignpost("Encode to Command Buffer", "Encode commands for command encoder \(i)") {
+                    await commandBuffers.last!.encodeCommands(encoderIndex: i)
+                }
             }
             
             for passRecord in passes {

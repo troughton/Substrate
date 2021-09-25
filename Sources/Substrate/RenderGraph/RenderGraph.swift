@@ -607,6 +607,8 @@ public final class RenderGraph {
     let context : _RenderGraphContext
     
     public let transientRegistryIndex : Int
+    static let signposter: Signposter = Signposter(subsystem: "com.substrate.rendergraph", category: "RenderGraph")
+    private(set) var signpostID: SignpostID
     
     static let executionLock = AsyncSpinLock()
     
@@ -643,6 +645,9 @@ public final class RenderGraph {
             self.context = RenderGraphContextImpl<VulkanBackend>(backend: RenderBackend._backend as! VulkanBackend, inflightFrameCount: inflightFrameCount, transientRegistryIndex: transientRegistryIndex)
         #endif
         }
+        
+        self.signpostID = .invalid
+        self.signpostID = Self.signposter.makeSignpostID(from: self)
     }
     
     deinit {
@@ -960,6 +965,10 @@ public final class RenderGraph {
     // Then, it will execute the command list.
     
     func executePass(_ passRecord: RenderPassRecord, executionAllocator: TagAllocator, resourceUsageAllocator: TagAllocator) async {
+        let signpostID = Self.signposter.makeSignpostID(from: passRecord)
+        let signpostState = Self.signposter.beginInterval("Execute RenderGraph Pass", id: signpostID, "Executing \(passRecord.name)")
+        defer { Self.signposter.endInterval("Execute RenderGraph Pass", signpostState, "Finished executing \(passRecord.name)")}
+        
         let renderPassScratchTag = RenderGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
         
         let commandRecorder = RenderGraphCommandRecorder(renderGraphTransientRegistryIndex: self.transientRegistryIndex,
@@ -1037,6 +1046,9 @@ public final class RenderGraph {
     }
     
     func evaluateResourceUsages(renderPasses: [RenderPassRecord], executionAllocator: TagAllocator, resourceUsagesAllocator: TagAllocator) async {
+        let signpostState = Self.signposter.beginInterval("Evaluate Resource Usages")
+        defer { Self.signposter.endInterval("Evaluate Resource Usages", signpostState) }
+        
         for passRecord in renderPasses where passRecord.type == .cpu || passRecord.type == .accelerationStructure {
             // CPU render passes are guaranteed to be executed in order, and we have to execute acceleration structure passes in order since they may modify the AccelerationStructure's descriptor property.
             // FIXME: This may actually cause issues if we update AccelerationStructures multiple times in a single RenderGraph and use it in between, since all other passes will depend only on the resources declared in the last-updated descriptor.
@@ -1075,6 +1087,8 @@ public final class RenderGraph {
     }
     
     func computeDependencyOrdering(passIndex i: Int, dependencyTable: DependencyTable<DependencyType>, renderPasses: [RenderPassRecord], addedToList: inout [Bool], activePasses: inout [RenderPassRecord]) {
+        let signpostState = Self.signposter.beginInterval("Compute Dependency Ordering")
+        defer { Self.signposter.endInterval("Compute Dependency Ordering", signpostState) }
         
         // Ideally, we should reorder the passes into an optimal order according to some heuristics.
         // For example:
@@ -1114,6 +1128,9 @@ public final class RenderGraph {
     }
     
     func compile() async -> ([RenderPassRecord], DependencyTable<DependencyType>, Set<Resource>) {
+        let signpostState = Self.signposter.beginInterval("Compile RenderGraph")
+        defer { Self.signposter.endInterval("Compile RenderGraph", signpostState) }
+        
         let renderPasses = self.renderPasses
         
         let resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag)
@@ -1281,6 +1298,10 @@ public final class RenderGraph {
     @discardableResult
     public func execute() async -> RenderGraphExecutionWaitToken {
         precondition(Self.activeRenderGraph == nil, "Cannot call RenderGraph.execute() from within a render pass.")
+        
+        let signpostState = Self.signposter.beginInterval("Execute RenderGraph", id: self.signpostID)
+        defer { Self.signposter.endInterval("Execute RenderGraph", signpostState) }
+        
         return await Self.executionLock.withLock { // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
             self.renderPassLock.lock()
             let renderPasses = self.renderPasses
@@ -1295,13 +1316,15 @@ public final class RenderGraph {
                 
                 return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
             }
-        
+            
+            let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
             let onCompletion = await Self.$activeRenderGraph.withValue(self) {
                 return await self.context.executeRenderGraph {
                     let (passes, _, usedResources) = await self.compile()
                     return (passes, usedResources)
                 }
             }
+            Self.signposter.endInterval("Execute RenderGraph on Context", signpostState)
             
             _ = Task.runDetached {
                 let result = await onCompletion.get()
