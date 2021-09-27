@@ -148,7 +148,7 @@ public struct Queue : Equatable, Sendable {
         QueueRegistry.shared.dispose(self)
     }
     
-    func submitCommand(completionTask: Task<Void, Never>) async -> UInt64 {
+    func submitCommand(completionTask: Task<Void, Never>, onCompletion: @escaping () async -> Void) async -> UInt64 {
         let commandIndex = UInt64.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: QueueRegistry.shared.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed) + 1
         UInt64.AtomicRepresentation.atomicStore(DispatchTime.now().uptimeNanoseconds, at: QueueRegistry.shared.lastSubmissionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
         
@@ -169,6 +169,8 @@ public struct Queue : Equatable, Sendable {
                 }
                 break
             } while true
+            
+            await onCompletion()
         }
         
         QueueRegistry.shared.lock.withLock {

@@ -97,8 +97,6 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                         print("Error executing command buffer \(queueCBIndex): \(error)")
                     }
                     
-                    CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
-                    
                     if commandBufferIndex == 0 {
                         executionResult.gpuTime = commandBuffer.gpuStartTime
                     }
@@ -107,16 +105,16 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                         
                         executionResult.gpuTime = (gpuEndTime - executionResult.gpuTime) * 1000.0
                         taskCompletionSemaphore.signal()
-                        self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
-                        
-                        self.accessSemaphore?.signal()
-                        
-                        self.processEmptyFrameCompletionHandlers(afterSubmissionIndex: queueCBIndex)
                     }
                     
                     continuation.resume()
                 })
             })
+        }, onCompletion: {
+            CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
+            self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
+            self.accessSemaphore?.signal()
+            self.processEmptyFrameCompletionHandlers(afterSubmissionIndex: queueCBIndex)
         })
         
         assert(queueCBIndex == returnedCommandBufferIndex)
