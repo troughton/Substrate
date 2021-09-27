@@ -58,6 +58,10 @@ final class MTKEventView : MTKView, UIKeyInput {
     }
 }
 
+@objc protocol ExtendedDynamicRangeContent {
+    func setWantsExtendedDynamicRangeContent(_ wantsEDR: Bool)
+}
+
 // Our iOS specific view controller
 public class CocoaWindow : Window, MTKWindow {
 
@@ -89,8 +93,14 @@ public class CocoaWindow : Window, MTKWindow {
         mtkView.colorPixelFormat = .bgr10_xr_srgb
         mtkView.depthStencilPixelFormat = .invalid
         mtkView.framebufferOnly = true
+        mtkView.preferredFramesPerSecond = 120
         
         mtkView.isUserInteractionEnabled = true
+        
+//        let metalLayer = (mtkView.layer as! CAMetalLayer)
+//        unsafeBitCast(metalLayer, to: ExtendedDynamicRangeContent.self).setWantsExtendedDynamicRangeContent(true)
+//        metalLayer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
+//        mtkView.colorPixelFormat = .rgba16Float
         
         mtkView.inputDelegate = inputManager
 

@@ -144,15 +144,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
                 continue
             }
             
-            #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
-            self.commandBuffer.present(drawable, afterMinimumDuration: 1.0 / 60.0)
-            #else
-            if #available(macOS 10.15.4, macCatalyst 13.4, *), backend.isAppleSiliconGPU {
-                self.commandBuffer.present(drawable, afterMinimumDuration: 1.0 / 60.0)
-            } else {
-                self.commandBuffer.present(drawable)
-            }
-            #endif
+            self.commandBuffer.present(drawable)
         }
         // because we reset the list after each command buffer submission.
         resourceRegistry.clearDrawables()
