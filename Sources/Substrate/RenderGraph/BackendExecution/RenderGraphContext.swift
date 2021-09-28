@@ -89,35 +89,42 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         commandBuffer.signalEvent(syncEvent, value: self.queueCommandBufferIndex)
         
         let queueCBIndex = self.queueCommandBufferIndex
+        self.processEmptyFrameCompletionHandlers(afterSubmissionIndex: queueCBIndex)
         
-        let returnedCommandBufferIndex = await self.renderGraphQueue.submitCommand(completionTask: Task {
-            await withUnsafeContinuation({ continuation in
+        let isFirst = commandBufferIndex == 0
+        let isLast = commandBufferIndex == lastCommandBufferIndex
+    
+        let completionTask = Task.detached(priority: .high) {
+            let commandBuffer = await withUnsafeContinuation { (continuation: UnsafeContinuation<Backend.CommandBuffer, Never>) in
                 commandBuffer.commit(onCompletion: { (commandBuffer) in
-                    if let error = commandBuffer.error {
-                        print("Error executing command buffer \(queueCBIndex): \(error)")
-                    }
-                    
-                    if commandBufferIndex == 0 {
-                        executionResult.gpuTime = commandBuffer.gpuStartTime
-                    }
-                    if commandBufferIndex == lastCommandBufferIndex { // Only call completion for the last command buffer.
-                        let gpuEndTime = commandBuffer.gpuEndTime
-                        
-                        executionResult.gpuTime = (gpuEndTime - executionResult.gpuTime) * 1000.0
-                        taskCompletionSemaphore.signal()
-                    }
-                    
-                    continuation.resume()
+                    continuation.resume(returning: commandBuffer)
                 })
-            })
-        }, onCompletion: {
-            CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
-            self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
-            self.accessSemaphore?.signal()
-            self.processEmptyFrameCompletionHandlers(afterSubmissionIndex: queueCBIndex)
-        })
+            }
+            
+            if let error = commandBuffer.error {
+                print("Error executing command buffer \(queueCBIndex): \(error)")
+            }
+            
+            if isFirst {
+                executionResult.gpuTime = commandBuffer.gpuStartTime
+            }
+            if isLast { // Only call completion for the last command buffer.
+                let gpuEndTime = commandBuffer.gpuEndTime
+                
+                executionResult.gpuTime = (gpuEndTime - executionResult.gpuTime) * 1000.0
+                taskCompletionSemaphore.signal()
+            }
+                         
+            await self.renderGraphQueue.didCompleteCommand(queueCBIndex)
+            
+            if isLast {
+                CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
+                self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
+                self.accessSemaphore?.signal()
+            }
+        }
         
-        assert(queueCBIndex == returnedCommandBufferIndex)
+        self.renderGraphQueue.submitCommand(commandIndex: queueCBIndex, completionTask: completionTask)
     }
     
     func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>)) async -> Task<RenderGraphExecutionResult, Never> {

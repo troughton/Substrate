@@ -148,30 +148,9 @@ public struct Queue : Equatable, Sendable {
         QueueRegistry.shared.dispose(self)
     }
     
-    func submitCommand(completionTask: Task<Void, Never>, onCompletion: @escaping () async -> Void) async -> UInt64 {
-        let commandIndex = UInt64.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: QueueRegistry.shared.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed) + 1
+    func submitCommand(commandIndex: UInt64, completionTask: Task<Void, Never>) {
+        UInt64.AtomicRepresentation.atomicStore(commandIndex, at: QueueRegistry.shared.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
         UInt64.AtomicRepresentation.atomicStore(DispatchTime.now().uptimeNanoseconds, at: QueueRegistry.shared.lastSubmissionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
-        
-        let wrapperCompletionTask = Task.detached {
-            await completionTask.get()
-            
-            UInt64.AtomicRepresentation.atomicStore(commandIndex, at: QueueRegistry.shared.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
-            UInt64.AtomicRepresentation.atomicStore(DispatchTime.now().uptimeNanoseconds, at: QueueRegistry.shared.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
-            
-            repeat {
-                let nextTask = QueueRegistry.shared.lock.withLock { QueueRegistry.shared.commandWaitTasks[Int(self.index)]! }
-                if nextTask.command < commandIndex {
-                    await nextTask.task.get()
-                    continue
-                }
-                QueueRegistry.shared.lock.withLock {
-                    QueueRegistry.shared.commandWaitTasks[Int(self.index)] = nextTask.next
-                }
-                break
-            } while true
-            
-            await onCompletion()
-        }
         
         QueueRegistry.shared.lock.withLock {
             var commandWaitTask = QueueRegistry.shared.commandWaitTasks[Int(self.index)]
@@ -179,15 +158,35 @@ public struct Queue : Equatable, Sendable {
                 commandWaitTask = next
             }
             
-            let newTask = CommandWaitTask(command: commandIndex, task: wrapperCompletionTask)
+            let newTask = CommandWaitTask(command: commandIndex, task: completionTask)
             if let commandWaitTask = commandWaitTask {
                 commandWaitTask.next = newTask
             } else {
                 QueueRegistry.shared.commandWaitTasks[Int(self.index)] = newTask
             }
         }
+    }
+    
+    func didCompleteCommand(_ commandIndex: UInt64) async {
+        UInt64.AtomicRepresentation.atomicStore(commandIndex, at: QueueRegistry.shared.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
+        UInt64.AtomicRepresentation.atomicStore(DispatchTime.now().uptimeNanoseconds, at: QueueRegistry.shared.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
         
-        return commandIndex
+        repeat {
+            guard let nextTask = QueueRegistry.shared.lock.withLock({ QueueRegistry.shared.commandWaitTasks[Int(self.index)] }) else {
+                // We got to didCompleteCommand before we managed to call submitCommand.
+                // Give ourselves a change to call submitCommand.
+                await Task.yield()
+                continue
+            }
+            if nextTask.command < commandIndex {
+                await nextTask.task.get()
+                continue
+            }
+            QueueRegistry.shared.lock.withLock {
+                QueueRegistry.shared.commandWaitTasks[Int(self.index)] = nextTask.next
+            }
+            break
+        } while true
     }
     
     public var lastSubmittedCommand : UInt64 {
