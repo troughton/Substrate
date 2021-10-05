@@ -39,21 +39,21 @@ extension Texture {
 }
 
 extension Image {
-    public init(texture: Texture, mipmapLevel: Int = 0, alphaMode: ImageAlphaMode = .premultiplied) async {
+    public init(texture: Texture, slice: Int = 0, mipmapLevel: Int = 0, alphaMode: ImageAlphaMode = .premultiplied) async {
         let pixelFormat = texture.descriptor.pixelFormat
         precondition(pixelFormat.bytesPerPixel == Double(MemoryLayout<T>.stride * pixelFormat.channelCount))
-        precondition(texture.descriptor.textureType == .type2D)
         
         if texture.descriptor.storageMode == .private {
             var descriptor = texture.descriptor
             descriptor.storageMode = .managed
+            descriptor.textureType = .type2D
             descriptor.width = max(descriptor.width >> mipmapLevel, 1)
             descriptor.height = max(descriptor.height >> mipmapLevel, 1)
             descriptor.mipmapLevelCount = 1
             
             let cpuVisibleTexture = Texture(descriptor: descriptor, flags: .persistent)
             await GPUResourceUploader.runBlitPass { [descriptor] encoder in
-                encoder.copy(from: texture, sourceSlice: 0, sourceLevel: mipmapLevel, sourceOrigin: Origin(), sourceSize: descriptor.size, to: cpuVisibleTexture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: Origin())
+                encoder.copy(from: texture, sourceSlice: slice, sourceLevel: mipmapLevel, sourceOrigin: Origin(), sourceSize: descriptor.size, to: cpuVisibleTexture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: Origin())
                 encoder.synchronize(texture: cpuVisibleTexture)
             }
             
@@ -71,9 +71,11 @@ extension Image {
         let bytesPerRow = self.width * self.channelCount * MemoryLayout<T>.stride
         let width = self.width
         let height = self.height
+        var region = Region(x: 0, y: 0, width: width, height: height)
+        region.origin.z = slice
         await self.withUnsafeMutableBufferPointer { storage in
             await texture.copyBytes(to: storage.baseAddress!, bytesPerRow: bytesPerRow,
-                                    region: Region(x: 0, y: 0, width: width, height: height),
+                                    region: region,
                                     mipmapLevel: mipmapLevel)
             
             if pixelFormat == .bgra8Unorm_sRGB {

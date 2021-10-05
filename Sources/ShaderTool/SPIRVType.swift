@@ -150,14 +150,14 @@ indirect enum SPIRVType : Hashable {
     
     var alignment: Int {
         switch self {
-        case .packedVector(let element, 3):
+        case .packedVector(let element, _):
             return element.alignment
         case .vector(let element, 3):
             return SPIRVType.vector(element: element, length: 4).alignment
         case .vector(let element, let length):
             return length * element.stride
         case .array(let element, _):
-            return element.stride
+            return element.alignment
         case .matrix(let element, let rows, _):
             return SPIRVType.vector(element: element, length: rows).alignment
         case .struct(_, let members, _):
@@ -260,19 +260,22 @@ extension SPIRVType : CustomStringConvertible {
             for member in members {
                 precondition(member.offset >= currentOffset)
                 let alignment = member.type.alignment
-                if member.offset > currentOffset.roundedUpToMultiple(of: alignment) {
+                var alignedOffset = currentOffset.roundedUpToMultiple(of: alignment)
+                if member.offset > alignedOffset {
                     let paddingBytes = member.offset - currentOffset
                     let paddingType = SPIRVType.array(element: .uint8, length: paddingBytes)
                     memberDeclarations.append("private var _pad\(memberDeclarations.count): \(paddingType.name) = \(paddingType.defaultInitialiser)")
                     needsManualHashableEquatable = true
-                    currentOffset = member.offset
+                    alignedOffset = member.offset
+                } else {
+                    assert(member.offset == alignedOffset)
                 }
                 
                 memberDeclarations.append("public var \(member.name): \(member.type.name) = \(member.type.defaultInitialiser)")
-                currentOffset += member.type.size
+                currentOffset = alignedOffset + member.type.size
                 maxAlignment = max(maxAlignment, alignment)
             }
-            if currentOffset.roundedUpToMultiple(of: alignment) < size {
+            if currentOffset.roundedUpToMultiple(of: maxAlignment) < size {
                 let paddingBytes = size - currentOffset
                 let paddingType = SPIRVType.array(element: .uint8, length: paddingBytes)
                 memberDeclarations.append("private var _pad\(memberDeclarations.count): \(paddingType.name) = \(paddingType.defaultInitialiser)")
