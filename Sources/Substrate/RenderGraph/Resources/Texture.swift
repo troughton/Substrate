@@ -37,7 +37,7 @@ public struct Texture : ResourceProtocol {
     }
     
     public init(descriptor: TextureDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        precondition(descriptor.width <= 16384 && descriptor.height <= 16384 && descriptor.depth <= 1024)
+        precondition((1...16384).contains(descriptor.width) && (1...16384).contains(descriptor.height) && (1...16384).contains(descriptor.depth), "Invalid size for descriptor \(descriptor); all dimensions must be in the range 1...16384")
         
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
@@ -73,7 +73,7 @@ public struct Texture : ResourceProtocol {
     }
     
     public init?(descriptor: TextureDescriptor, heap: Heap, flags: ResourceFlags = [.persistent]) {
-        precondition(descriptor.width <= 16384 && descriptor.height <= 16384 && descriptor.depth <= 1024)
+        precondition((1...16384).contains(descriptor.width) && (1...16384).contains(descriptor.height) && (1...16384).contains(descriptor.depth), "Invalid size for descriptor \(descriptor); all dimensions must be in the range 1...16384")
         
         assert(flags.contains(.persistent), "Heap-allocated resources must be persistent.")
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
