@@ -656,14 +656,19 @@ extension Resource : CustomHashable {
 extension ResourceProtocol {
     public typealias Handle = UInt64
     
+    @inlinable
     public static var typeBitsRange : Range<Int> { return 56..<64 }
     
+    @inlinable
     public static var flagBitsRange : Range<Int> { return 40..<56 }
     
+    @inlinable
     public static var generationBitsRange : Range<Int> { return 32..<40 }
     
+    @inlinable
     public static var transientRegistryIndexBitsRange : Range<Int> { return 28..<32 }
     
+    @inlinable
     public static var indexBitsRange : Range<Int> { return 0..<28 }
     
     @inlinable
