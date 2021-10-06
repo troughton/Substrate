@@ -139,6 +139,14 @@ public struct PNGCompressionSettings {
     public enum FilterType {
         /// Every filter at zero.
         case zero
+        /// The Sub filter transmits the difference between each byte and the value of the corresponding byte of the prior pixel.
+        case sub
+        /// The Up filter transmits the difference between each byte and the value of the corresponding byte of the above pixel.
+        case up
+        /// The Average filter uses the average of the two neighboring pixels (left and above) to predict the value of a pixel.
+        case average
+        /// The Paeth filter computes a simple linear function of the three neighboring pixels (left, above, upper left), then chooses as predictor the neighboring pixel closest to the computed value.
+        case paeth
         /// Use the filter that gives the minimum sum, as described in the official PNG filter heuristic.
         case minimumSum
         /// Use the filter type that gives smallest Shannon entropy for this scanline. Depending on the image, this is better or worse than minimumSum.
@@ -233,6 +241,14 @@ fileprivate extension LodePNGEncoderSettings {
         switch settings.filterType {
         case .zero:
             self.filter_strategy = LFS_ZERO
+        case .sub:
+            self.filter_strategy = LFS_ONE
+        case .up:
+            self.filter_strategy = LFS_TWO
+        case .average:
+            self.filter_strategy = LFS_THREE
+        case .paeth:
+            self.filter_strategy = LFS_FOUR
         case .minimumSum:
             self.filter_strategy = LFS_MINSUM
         case .entropy:
