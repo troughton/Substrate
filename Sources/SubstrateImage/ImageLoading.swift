@@ -312,7 +312,7 @@ struct WuffsImageDecodeCallbacks: DecodeImageCallbacks {
 extension ImageFileInfo {
     fileprivate var decodableByWuffs: Bool {
         guard self.format == .png else { return false } // We only use Wuffs for PNG decoding for now.
-        return !(self.channelCount == 2 && self.bitDepth > 8)
+        return self.channelCount != 2 // Wuffs doesn't handle greyscale-alpha yet.
     }
 }
 
