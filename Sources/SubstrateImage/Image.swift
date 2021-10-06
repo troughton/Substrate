@@ -121,6 +121,7 @@ public enum ImageLoadingError : Error {
     case unsupportedMultipartEXR(URL)
     case unsupportedMultipartEXRData
     case privateImageRequiresRenderGraph
+    case incorrectBitDepth(found: Int, expected: Int)
     case invalidImageDataFormat(URL, Any.Type)
 }
 

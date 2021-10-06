@@ -13,6 +13,8 @@ public typealias TextureFileFormat = ImageFileFormat
 public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
     case png
     case bmp
+    case gif
+    case psd
     case tga
     case hdr
     case jpg
@@ -24,6 +26,10 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
             self = .png
         case "bmp":
             self = .bmp
+        case "gif":
+            self = .gif
+        case "psd":
+            self = .psd
         case "tga":
             self = .tga
         case "hdr":
@@ -43,6 +49,10 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
             self = .png
         case "com.microsoft.bmp":
             self = .bmp
+        case "com.compuserve.gif":
+            self = .gif
+        case "com.adobe.photoshopimage.psd":
+            self = .psd
         case "com.truevision.tga-image":
             self = .tga
         case "public.radiance":
@@ -71,6 +81,10 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
             return "public.png"
         case .bmp:
             return "com.microsoft.bmp"
+        case .gif:
+            return "com.compuserve.gif"
+        case .psd:
+            return "com.adobe.photoshopimage.psd"
         case .tga:
             return "com.truevision.tga-image"
         case .hdr:
@@ -89,6 +103,7 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
 
 public enum TextureSaveError: Error {
     case unknownFormat(String)
+    case unsupportedFormatForSaving(ImageFileFormat)
     case errorWritingFile(String)
     case invalidChannelCount(Int)
     case unexpectedDataFormat(found: Any.Type, required: [Any.Type])
@@ -315,6 +330,8 @@ extension Image {
             } else {
                 throw TextureSaveError.unexpectedDataFormat(found: T.self, required: [Float.self])
             }
+        default:
+            throw TextureSaveError.unsupportedFormatForSaving(saveFormat)
         }
     }
 }
