@@ -9,6 +9,9 @@ import Foundation
 import Substrate
 import stb_image
 import SubstrateImage
+#if canImport(Metal)
+import Metal
+#endif
 
 public enum MipGenerationMode: Hashable, Sendable {
     /// Generate mipmaps on the CPU using the specified wrap mode and filter
@@ -170,7 +173,45 @@ public enum TextureLoadingError : Error {
 }
 
 extension Image {
-    public func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws {
+    private func copyData(to texture: Texture, region: Region, mipmapLevel: Int, slice: Int = 0) async {
+#if canImport(Metal)
+        if case .vm_allocate = self.allocator {
+            // On Metal, we can make vm_allocate'd buffers directly accessible to the GPU.
+            let success = await self.withUnsafeBufferPointer { bytes -> Bool in
+                guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: bytes.count, options: .storageModeShared, deallocator: nil) else { return false }
+                let substrateBuffer = Buffer(descriptor: BufferDescriptor(length: bytes.count, storageMode: .shared, cacheMode: .defaultCache, usage: .blitSource), externalResource: mtlBuffer)
+                await GPUResourceUploader.runBlitPass { bce in
+                    bce.copy(from: substrateBuffer, sourceOffset: 0, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
+                }
+                substrateBuffer.dispose()
+                return true
+            }
+            if success {
+                return
+            }
+        }
+#endif
+        if case .custom(let context, _) = self.allocator,
+           let uploadBufferToken = context as? GPUResourceUploader.UploadBufferToken {
+            let buffer = uploadBufferToken.stagingBuffer!
+            let sourceOffset = self.withUnsafeBufferPointer { bytes in
+                buffer.withContents { return UnsafeRawPointer(bytes.baseAddress!) - $0.baseAddress! }
+            }
+            uploadBufferToken.didModifyBuffer()
+            
+            await GPUResourceUploader.runBlitPass { bce in
+                bce.copy(from: buffer, sourceOffset: sourceOffset, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
+            }
+            _ = uploadBufferToken.flush()
+            return
+        }
+        
+        await self.withUnsafeBufferPointer { bytes in
+            _ = await GPUResourceUploader.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: slice, in: texture, withBytes: bytes.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride)
+        }
+    }
+    
+    public func copyData(to texture: Texture, slice: Int = 0, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws {
         if _isDebugAssertConfiguration(), self.colorSpace == .sRGB, !texture.descriptor.pixelFormat.isSRGB {
             print("Warning: the source texture data is in the sRGB color space but the texture's pixel format is linear RGB.")
         }
@@ -188,16 +229,11 @@ extension Image {
                                
                 for (i, data) in mips.enumerated().prefix(texture.descriptor.mipmapLevelCount) {
                     taskGroup.async {
-                        await data.withUnsafeBufferPointer { buffer in
-                            _ = await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: data.width * data.channelCount * MemoryLayout<T>.size)
-                        }
-                    }
+                        await data.copyData(to: texture, region: Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, slice: slice)
                 }
             } else {
                 taskGroup.async {
-                    await self.withUnsafeBufferPointer { buffer in
-                        _ = await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, in: texture, withBytes: buffer.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.size)
-                    }
+                    await self.copyData(to: texture, region: Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, slice: slice)
                     if texture.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
                         if self.channelCount == 4, self.alphaMode != .premultiplied {
                             if _isDebugAssertConfiguration() {
@@ -210,6 +246,36 @@ extension Image {
             }
         }
         
+    }
+}
+
+public struct DirectToTextureImageLoadingDelegate: ImageLoadingDelegate {
+    let options: TextureLoadingOptions
+    
+    public init(options: TextureLoadingOptions = .default) {
+        self.options = options
+    }
+    
+    public func channelCount(for imageInfo: ImageFileInfo) -> Int {
+        if (options.contains(.autoExpandSRGBToRGBA) && imageInfo.colorSpace == .sRGB && imageInfo.channelCount < 4) || imageInfo.channelCount == 3 {
+            var needsChannelExpansion = true
+            if (imageInfo.channelCount == 1 && RenderBackend.supportsPixelFormat(.r8Unorm_sRGB)) ||
+                (imageInfo.channelCount == 2 && RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB)) {
+                needsChannelExpansion = false
+            }
+            return needsChannelExpansion ? 4 : imageInfo.channelCount
+        }
+        return imageInfo.channelCount
+    }
+    
+    public func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator) {
+        let uploadBufferToken = GPUResourceUploader.extendedLifetimeUploadBuffer(length: byteCount, alignment: alignment, cacheMode: .defaultCache)
+        if zeroed {
+            _ = uploadBufferToken.contents.initializeMemory(as: UInt8.self, repeating: 0)
+        }
+        return (uploadBufferToken.contents, .custom(context: uploadBufferToken, deallocateFunc: { _, context in
+            (context as! GPUResourceUploader.UploadBufferToken).flush()
+        }))
     }
 }
 
@@ -231,10 +297,8 @@ extension Texture {
     public func copyData(from textureData: AnyImage, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws {
         return try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
     }
-    
-    private static func loadSourceImage(_ image: Image<UInt8>, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> Image<UInt8> {
-        var textureData = image
-        
+
+    private static func processSourceImage(_ textureData: inout Image<UInt8>, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
         if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
             textureData.reinterpretColor(as: .sRGB)
         }
@@ -255,38 +319,6 @@ extension Texture {
             }
         }
         
-        if (options.contains(.autoExpandSRGBToRGBA) && textureData.colorSpace == .sRGB && textureData.channelCount < 4) || textureData.channelCount == 3 {
-            var needsChannelExpansion = true
-            if (textureData.channelCount == 1 && RenderBackend.supportsPixelFormat(.r8Unorm_sRGB)) ||
-                (textureData.channelCount == 2 && RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB)) {
-                needsChannelExpansion = false
-            }
-            if needsChannelExpansion {
-                let sourceData = textureData
-                textureData = Image<UInt8>(width: sourceData.width, height: sourceData.height, channels: 4, colorSpace: sourceData.colorSpace, alphaMode: sourceData.alphaMode)
-                
-                if sourceData.channelCount == 1 {
-                    sourceData.forEachPixel { (x, y, channel, val) in
-                        textureData[x, y] = SIMD4(val, val, val, .max)
-                    }
-                } else if sourceData.channelCount == 2 {
-                    sourceData.forEachPixel { (x, y, channel, val) in
-                        if channel == 0 {
-                            textureData[x, y] = SIMD4(val, val, val, .max)
-                        } else {
-                            textureData[x, y, channel: 3] = val
-                        }
-                    }
-                } else {
-                    precondition(sourceData.channelCount == 3)
-                    sourceData.forEachPixel { (x, y, channel, val) in
-                        textureData[x, y, channel: channel] = val
-                        textureData[x, y, channel: 3] = .max
-                    }
-                }
-            }
-        }
-        
         let pixelFormat = textureData.preferredPixelFormat
         guard pixelFormat != .invalid else {
             throw TextureLoadingError.noSupportedPixelFormat
@@ -299,12 +331,9 @@ extension Texture {
                 textureData.convert(toColorSpace: .linearSRGB)
             }
         }
-        
-        return textureData
     }
     
-    private static func loadSourceImage(_ image: Image<UInt16>, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> Image<UInt16> {
-        var textureData = image
+    private static func processSourceImage(_ textureData: inout Image<UInt16>, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
         if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
             textureData.reinterpretColor(as: .sRGB)
         }
@@ -332,12 +361,9 @@ extension Texture {
                 textureData.convert(toColorSpace: .linearSRGB)
             }
         }
-        
-        return textureData
     }
     
-    private static func loadSourceImage(_ image: Image<Float>, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> Image<Float> {
-        var textureData = image
+    private static func processSourceImage(_ textureData: inout Image<Float>, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
         if colorSpace != .undefined {
             textureData.reinterpretColor(as: colorSpace)
         } else if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
@@ -367,14 +393,13 @@ extension Texture {
                 break
             }
         }
-        
-        return textureData
     }
     
-    public static func loadSourceImage(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> AnyImage {
+    public static func loadSourceImage(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions, loadingDelegate: ImageLoadingDelegate? = nil) throws -> AnyImage {
         if url.pathExtension.lowercased() == "exr" {
-            let textureData = try Image<Float>(exrAt: url)
-            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            var textureData = try Image<Float>(exrAt: url)
+            try self.processSourceImage(&textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            return textureData
         }
         
         let fileInfo = try ImageFileInfo(url: url)
@@ -383,48 +408,55 @@ extension Texture {
         let isHDR = fileInfo.isFloatingPoint
         
         if isHDR {
-            let textureData = try Image<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
-            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            var textureData = try Image<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
+            try self.processSourceImage(&textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            return textureData
             
         } else if is16Bit {
-            let textureData = try Image<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
-            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            var textureData = try Image<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
+            try self.processSourceImage(&textureData, gpuAlphaMode: gpuAlphaMode, options: options)
+            return textureData
             
         } else {
-            let textureData = try Image<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
-            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            var textureData = try Image<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
+            try self.processSourceImage(&textureData, gpuAlphaMode: gpuAlphaMode, options: options)
+            return textureData
         }
     }
     
-    public static func loadSourceImage(decodingImageData imageData: Data, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws -> AnyImage {
-        if let _ = try? ImageFileInfo(format: .exr, data: imageData) {
-            let textureData = try Image<Float>(exrData: imageData)
-            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
-        }
+    public static func loadSourceImage(decodingImageData imageData: Data, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions, loadingDelegate: ImageLoadingDelegate? = nil) throws -> AnyImage {
         
         let fileInfo = try ImageFileInfo(data: imageData)
+        if fileInfo.format == .exr {
+            var textureData = try Image<Float>(exrData: imageData, loadingDelegate: loadingDelegate)
+            try self.processSourceImage(&textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            return textureData
+        }
         
         let is16Bit = fileInfo.bitDepth == 16
         let isHDR = fileInfo.isFloatingPoint
         
         if isHDR {
-            let textureData = try Image<Float>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
-            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            var textureData = try Image<Float>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
+            try self.processSourceImage(&textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            return textureData
             
         } else if is16Bit {
-            let textureData = try Image<UInt16>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
-            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            var textureData = try Image<UInt16>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
+            try self.processSourceImage(&textureData, gpuAlphaMode: gpuAlphaMode, options: options)
+            return textureData
             
         } else {
-            let textureData = try Image<UInt8>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode)
-            return try self.loadSourceImage(textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            var textureData = try Image<UInt8>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
+            try self.processSourceImage(&textureData, gpuAlphaMode: gpuAlphaMode, options: options)
+            return textureData
         }
     }
 
     private func fillInternal(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
-        let textureData = try Texture.loadSourceImage(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options)
+        let textureData = try Texture.loadSourceImage(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(options: options))
         
         if isPartiallyInitialised {
             let descriptor = TextureDescriptor(type: .type2D, format: textureData.preferredPixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
@@ -441,7 +473,7 @@ extension Texture {
     private func fillInternal(imageData: Data, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
-        let textureData = try Texture.loadSourceImage(decodingImageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options)
+        let textureData = try Texture.loadSourceImage(decodingImageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(options: options))
         
         if isPartiallyInitialised {
             let descriptor = TextureDescriptor(type: .type2D, format: textureData.preferredPixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)

@@ -121,6 +121,7 @@ public enum ImageLoadingError : Error {
     case unsupportedMultipartEXR(URL)
     case unsupportedMultipartEXRData
     case privateImageRequiresRenderGraph
+    case incorrectBitDepth(found: Int, expected: Int)
     case invalidImageDataFormat(URL, Any.Type)
 }
 
@@ -301,40 +302,82 @@ public enum ImageResizeFilter: Sendable {
     }
 }
 
-@usableFromInline
-final class ImageStorage<T> {
-    public let data : UnsafeMutableBufferPointer<T>
-    @usableFromInline let deallocateFunc : ((UnsafeMutablePointer<T>) -> Void)?
+public enum ImageAllocator {
+    case system
+    case malloc
+    case temporaryBuffer
+#if canImport(Darwin)
+    case vm_allocate
+#endif
+    case custom(context: AnyObject? = nil, deallocateFunc: (_ allocation: UnsafeMutableRawPointer, _ context: AnyObject?) -> Void)
     
     @inlinable
-    init(elementCount: Int, zeroed: Bool) {
-        let memory = UnsafeMutableRawBufferPointer.allocate(byteCount: elementCount * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment)
+    static func allocateMemoryDefault(byteCount: Int, alignment: Int, zeroed: Bool) -> (UnsafeMutableRawBufferPointer, ImageAllocator) {
+#if canImport(Darwin)
+        let pageSize = Int(getpagesize())
+        if byteCount >= pageSize {
+            // Use vm_allocate; this also enables direct uploads into GPU memory where applicable.
+            let byteCount = (byteCount + pageSize - 1) & ~(pageSize - 1) // Round up to a multiple of pageSize
+            var data = vm_address_t()
+            let error = Darwin.vm_allocate(mach_task_self_, &data, vm_size_t(byteCount), VM_FLAGS_ANYWHERE)
+            if error == KERN_SUCCESS {
+                return (UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(bitPattern: data), count: byteCount), .vm_allocate)
+            }
+        }
+#endif
+        let memory = UnsafeMutableRawBufferPointer.allocate(byteCount: byteCount, alignment: alignment)
         if zeroed {
             memory.initializeMemory(as: UInt8.self, repeating: 0)
         }
+        return (memory, .system)
+    }
+    
+    func deallocate(data: UnsafeMutableRawBufferPointer) {
+        switch self {
+        case .system:
+            data.deallocate()
+        case .malloc:
+            free(data.baseAddress)
+        case .temporaryBuffer:
+            break
+        #if canImport(Darwin)
+        case .vm_allocate:
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: data.baseAddress), vm_size_t(data.count))
+        #endif
+        case .custom(let context, let deallocateFunc):
+            deallocateFunc(data.baseAddress!, context)
+        }
+    }
+}
+
+@usableFromInline
+final class ImageStorage<T> {
+    public let data : UnsafeMutableBufferPointer<T>
+    @usableFromInline let allocator: ImageAllocator
+    
+    @inlinable
+    init(elementCount: Int, zeroed: Bool) {
+        let (memory, allocator) = ImageAllocator.allocateMemoryDefault(byteCount: elementCount * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment, zeroed: zeroed)
         self.data = memory.bindMemory(to: T.self)
-        self.deallocateFunc = nil
+        self.allocator = allocator
     }
     
     @inlinable
-    init(data: UnsafeMutableBufferPointer<T>, deallocateFunc: ((UnsafeMutablePointer<T>) -> Void)?) {
+    init(data: UnsafeMutableBufferPointer<T>, allocator: ImageAllocator) {
         self.data = data
-        self.deallocateFunc = deallocateFunc
+        self.allocator = allocator
     }
     
     @inlinable
     init(copying: UnsafeMutableBufferPointer<T>) {
-        self.data = .allocate(capacity: copying.count)
+        let (memory, allocator) = ImageAllocator.allocateMemoryDefault(byteCount: copying.count, alignment: MemoryLayout<T>.alignment, zeroed: false)
+        self.data = memory.bindMemory(to: T.self)
         _ = self.data.initialize(from: copying)
-        self.deallocateFunc = nil
+        self.allocator = allocator
     }
     
     deinit {
-        if let deallocateFunc = self.deallocateFunc {
-            deallocateFunc(self.data.baseAddress!)
-        } else {
-            self.data.deallocate()
-        }
+        self.allocator.deallocate(data: UnsafeMutableRawBufferPointer(self.data))
     }
 }
 
@@ -408,7 +451,7 @@ public struct Image<ComponentType> : AnyImage {
         self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
-    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, data: UnsafeMutablePointer<T>, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, data: UnsafeMutablePointer<T>, allocator: ImageAllocator) {
         precondition(width >= 1 && height >= 1 && channels >= 1)
         precondition(alphaMode != .inferred, "Cannot infer the alpha mode when T is not Comparable.")
         
@@ -416,7 +459,7 @@ public struct Image<ComponentType> : AnyImage {
         self.height = height
         self.channelCount = channels
         
-        self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), deallocateFunc: deallocateFunc)
+        self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), allocator: allocator)
         
         self.colorSpace = colorSpace
         self.alphaMode = alphaMode
@@ -424,17 +467,23 @@ public struct Image<ComponentType> : AnyImage {
     
     @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:deallocateFunc:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
-        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: data, deallocateFunc: deallocateFunc)
+        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
+            deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
+        }))
     }
         
     @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:deallocateFunc:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace, premultipliedAlpha: Bool, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
-        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, data: data, deallocateFunc: deallocateFunc)
+        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
+            deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
+        }))
     }
     
     @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:deallocateFunc:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colourSpace: ImageColorSpace, premultipliedAlpha: Bool = false, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
-        self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, data: data, deallocateFunc: deallocateFunc)
+        self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
+            deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
+        }))
     }
     
     @inlinable
@@ -442,6 +491,11 @@ public struct Image<ComponentType> : AnyImage {
         if !isKnownUniquelyReferenced(&self.storage) {
             self.storage = .init(copying: self.storage.data)
         }
+    }
+    
+    @inlinable
+    public var allocator: ImageAllocator {
+        return self.storage.allocator
     }
     
     @inlinable
@@ -741,14 +795,14 @@ extension Image: Hashable {
 }
 
 extension Image where ComponentType: Comparable {
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, allocator: ImageAllocator) {
         precondition(width >= 1 && height >= 1 && channels >= 1)
         
         self.width = width
         self.height = height
         self.channelCount = channels
         
-        self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), deallocateFunc: deallocateFunc)
+        self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), allocator: allocator)
         
         self.colorSpace = colorSpace
         self.alphaMode = alphaMode
@@ -1119,9 +1173,10 @@ extension Image {
     public func withImageReinterpreted<U, Result>(as: U.Type, perform: (Image<U>) throws -> Result) rethrows -> Result {
         precondition(MemoryLayout<U>.stride == MemoryLayout<T>.stride, "\(U.self) is not layout compatible with \(T.self)")
         let storage = self.storage
+        let allocator: ImageAllocator = .custom(context: storage, deallocateFunc: { _, _ in })
         return try self.withUnsafeBufferPointer { buffer in
             return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
-                let data = Image<U>(width: self.width, height: self.height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode, data: UnsafeMutablePointer(mutating: reboundBuffer.baseAddress!), deallocateFunc: { [storage] _ in _ = storage })
+                let data = Image<U>(width: self.width, height: self.height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode, data: UnsafeMutablePointer(mutating: reboundBuffer.baseAddress!), allocator: allocator)
                 return try perform(data)
             }
         }
@@ -1143,9 +1198,10 @@ extension Image {
         let colorSpace = self.colorSpace
         let alphaMode = self.alphaMode
         let storage = self.storage
+        let allocator: ImageAllocator = .custom(context: storage, deallocateFunc: { _, _ in })
         return try self.withUnsafeMutableBufferPointer { buffer in
             return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
-                var data = Image<U>(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: reboundBuffer.baseAddress!, deallocateFunc: { [storage] _ in _ = storage })
+                var data = Image<U>(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: reboundBuffer.baseAddress!, allocator: allocator)
                 return try perform(&data)
             }
         }

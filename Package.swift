@@ -30,6 +30,7 @@ let package = Package(
         .package(url: "https://github.com/sharplet/Regex", from: "2.1.0"),
         .package(url: "https://github.com/troughton/Cstb", from: "1.0.4"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "0.3.1"),
+        .package(name: "Wuffs", url: "https://github.com/troughton/Wuffs-SPM", from: "0.3.01"),
         .package(name: "LodePNG", url: "https://github.com/troughton/LodePNG-SPM", from: "0.0.1"),
         .package(url: "https://github.com/troughton/SwiftImGui", .branch("docking")),
         .package(url: "https://github.com/apple/swift-numerics", from: "0.1.0"),
@@ -52,13 +53,9 @@ let package = Package(
                     .product(name: "stb_image_write", package: "Cstb"),
                     .product(name: "tinyexr", package: "Cstb"),
                     .product(name: "LodePNG", package: "LodePNG"),
-                    .product(name: "RealModule", package: "swift-numerics")],
-                swiftSettings: [
-                    .unsafeFlags([
-                        "-Xfrontend", "-enable-experimental-concurrency",
-                        "-Xfrontend", "-disable-availability-checking",
-                    ])
-                ]),
+                    .product(name: "WuffsAux", package: "Wuffs"),
+                    .product(name: "CWuffs", package: "Wuffs"),
+                    .product(name: "RealModule", package: "swift-numerics")]),
         .testTarget(name: "SubstrateImageTests", dependencies: ["SubstrateImage"]),
         
         .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage"],

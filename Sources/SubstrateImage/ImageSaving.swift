@@ -13,6 +13,8 @@ public typealias TextureFileFormat = ImageFileFormat
 public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
     case png
     case bmp
+    case gif
+    case psd
     case tga
     case hdr
     case jpg
@@ -24,6 +26,10 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
             self = .png
         case "bmp":
             self = .bmp
+        case "gif":
+            self = .gif
+        case "psd":
+            self = .psd
         case "tga":
             self = .tga
         case "hdr":
@@ -43,6 +49,10 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
             self = .png
         case "com.microsoft.bmp":
             self = .bmp
+        case "com.compuserve.gif":
+            self = .gif
+        case "com.adobe.photoshopimage.psd":
+            self = .psd
         case "com.truevision.tga-image":
             self = .tga
         case "public.radiance":
@@ -71,6 +81,10 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
             return "public.png"
         case .bmp:
             return "com.microsoft.bmp"
+        case .gif:
+            return "com.compuserve.gif"
+        case .psd:
+            return "com.adobe.photoshopimage.psd"
         case .tga:
             return "com.truevision.tga-image"
         case .hdr:
@@ -89,6 +103,7 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
 
 public enum TextureSaveError: Error {
     case unknownFormat(String)
+    case unsupportedFormatForSaving(ImageFileFormat)
     case errorWritingFile(String)
     case invalidChannelCount(Int)
     case unexpectedDataFormat(found: Any.Type, required: [Any.Type])
@@ -124,6 +139,14 @@ public struct PNGCompressionSettings {
     public enum FilterType {
         /// Every filter at zero.
         case zero
+        /// The Sub filter transmits the difference between each byte and the value of the corresponding byte of the prior pixel.
+        case sub
+        /// The Up filter transmits the difference between each byte and the value of the corresponding byte of the above pixel.
+        case up
+        /// The Average filter uses the average of the two neighboring pixels (left and above) to predict the value of a pixel.
+        case average
+        /// The Paeth filter computes a simple linear function of the three neighboring pixels (left, above, upper left), then chooses as predictor the neighboring pixel closest to the computed value.
+        case paeth
         /// Use the filter that gives the minimum sum, as described in the official PNG filter heuristic.
         case minimumSum
         /// Use the filter type that gives smallest Shannon entropy for this scanline. Depending on the image, this is better or worse than minimumSum.
@@ -134,6 +157,9 @@ public struct PNGCompressionSettings {
     }
     
     public var filterType: FilterType = .minimumSum
+    
+    /// Whether to automatically detect and convert to the most compact color type that can represent the image.
+    public var autoConvertColorType = true
     
     public var useLZ77 = true
     /// The LZ block type to use for compression.
@@ -215,9 +241,18 @@ fileprivate extension LodePNGColorType {
 
 fileprivate extension LodePNGEncoderSettings {
     mutating func fill(from settings: PNGCompressionSettings) {
+        self.auto_convert = settings.autoConvertColorType ? 1 : 0
         switch settings.filterType {
         case .zero:
             self.filter_strategy = LFS_ZERO
+        case .sub:
+            self.filter_strategy = LFS_ONE
+        case .up:
+            self.filter_strategy = LFS_TWO
+        case .average:
+            self.filter_strategy = LFS_THREE
+        case .paeth:
+            self.filter_strategy = LFS_FOUR
         case .minimumSum:
             self.filter_strategy = LFS_MINSUM
         case .entropy:
@@ -315,6 +350,8 @@ extension Image {
             } else {
                 throw TextureSaveError.unexpectedDataFormat(found: T.self, required: [Float.self])
             }
+        default:
+            throw TextureSaveError.unsupportedFormatForSaving(saveFormat)
         }
     }
 }

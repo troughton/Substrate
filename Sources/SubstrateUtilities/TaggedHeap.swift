@@ -47,6 +47,7 @@ public enum TaggedHeap {
     static var freeBitsets : [BitSet]! = nil
     
     static var allocationsByTag : [Tag : [UnsafeMutableRawBufferPointer]] = [:]
+    static var freeBlocks : [Int : [UnsafeMutableRawPointer]] = [:]
     
     #if os(macOS) || targetEnvironment(macCatalyst)
     public static let defaultHeapCapacity = 512 * 1024 * 1024 // 2 * 1024 * 1024 * 1024
@@ -98,11 +99,40 @@ public enum TaggedHeap {
     
     public static func allocateBlocks(tag: Tag, count: Int) -> UnsafeMutableRawPointer {
         if case .allocatePerBlock = self.strategy {
-            let pointer = UnsafeMutableRawBufferPointer.allocate(byteCount: TaggedHeap.blockSize * count, alignment: TaggedHeap.blockSize)
-            self.spinLock.withLock {
+            return self.spinLock.withLock { () -> UnsafeMutableRawPointer in
+                if let pointer = self.freeBlocks[count]?.popLast() {
+                    if self.freeBlocks[count]!.isEmpty {
+                        self.freeBlocks.removeValue(forKey: count)
+                    }
+                    self.allocationsByTag[tag, default: []].append(.init(start: pointer, count: TaggedHeap.blockSize * count))
+                    return pointer
+                }
+                
+                // Try to allocate blocks off the end of our largest allocation.
+                let targetBlockCount = self.freeBlocks.keys.reduce(count, { currentBest, blockSize in
+                    if blockSize > currentBest {
+                        return blockSize
+                    } else {
+                        return currentBest
+                    }
+                })
+                
+                if targetBlockCount > count {
+                    let blocks = self.freeBlocks[targetBlockCount]!.removeLast()
+                    if self.freeBlocks[targetBlockCount]!.isEmpty {
+                        self.freeBlocks.removeValue(forKey: targetBlockCount)
+                    }
+                    
+                    let pointer = blocks + TaggedHeap.blockSize * count
+                    self.freeBlocks[targetBlockCount - count, default: []].append(blocks)
+                    self.allocationsByTag[tag, default: []].append(.init(start: pointer, count: TaggedHeap.blockSize * count))
+                    return pointer
+                }
+                
+                let pointer = UnsafeMutableRawBufferPointer.allocate(byteCount: TaggedHeap.blockSize * count, alignment: TaggedHeap.blockSize)
                 self.allocationsByTag[tag, default: []].append(pointer)
+                return pointer.baseAddress!
             }
-            return pointer.baseAddress!
         }
         
         var blockIndex = self.findContiguousBlock(count: count)
@@ -184,7 +214,9 @@ public enum TaggedHeap {
         if case .allocatePerBlock = self.strategy {
             self.spinLock.withLock {
                 guard let allocations = self.allocationsByTag.removeValue(forKey: tag) else { return }
-                allocations.forEach { $0.deallocate() }
+                for allocation in allocations {
+                    self.freeBlocks[allocation.count / TaggedHeap.blockSize, default: []].append(allocation.baseAddress!)
+                }
             }
             return
         }
