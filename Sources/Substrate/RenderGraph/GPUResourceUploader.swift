@@ -83,6 +83,70 @@ public final class GPUResourceUploader {
         }
     }
     
+    public final class UploadBufferToken {
+        public private(set) var stagingBuffer: Buffer!
+        public let stagingBufferRange: Range<Int>
+        public private(set) var contents: UnsafeMutableRawBufferPointer
+        let cacheMode: CPUCacheMode
+        let allocationRange: (lowerBound: Int, upperBound: Int)
+        
+        private var flushExecutionToken: RenderGraphExecutionWaitToken? = nil
+        
+        init(cacheMode: CPUCacheMode, stagingBuffer: Buffer, stagingBufferRange: Range<Int>, allocationRange: (lowerBound: Int, upperBound: Int)) {
+            self.cacheMode = cacheMode
+            self.stagingBuffer = stagingBuffer
+            self.stagingBufferRange = stagingBufferRange
+            self.allocationRange = allocationRange
+            
+            self.contents = stagingBuffer.withMutableContents(range: self.stagingBufferRange, { contents, writtenRange in
+                writtenRange = writtenRange.lowerBound..<writtenRange.lowerBound
+                return contents
+            })
+        }
+        
+        deinit {
+            _ = self.flush()
+        }
+        
+        public func didModifyBuffer() {
+            precondition(self.flushExecutionToken == nil)
+            
+            if !self.stagingBufferRange.isEmpty {
+                RenderBackend.buffer(self.stagingBuffer, didModifyRange: self.stagingBufferRange)
+            }
+        }
+        
+        @discardableResult
+        public func flush() -> RenderGraphExecutionWaitToken {
+            if let flushExecutionToken = self.flushExecutionToken {
+                return flushExecutionToken
+            }
+            
+            let executionToken = GPUResourceUploader.queue.sync {
+                return GPUResourceUploader._flush(cacheMode: self.cacheMode, buffer: self.stagingBuffer, allocationRange: self.allocationRange)
+            }
+            
+            self.flushExecutionToken = executionToken
+            
+            self.stagingBuffer = nil
+            self.contents = .init(start: nil, count: 0) // Invalidate this token to avoid use-after-free issues
+            
+            return executionToken
+        }
+    }
+    
+    @discardableResult
+    public static func extendedLifetimeUploadBuffer(length: Int, alignment: Int, cacheMode: CPUCacheMode = .defaultCache) -> UploadBufferToken {
+        precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
+        
+        // NOTE: this happens outside of the queue so we don't block concurrent execution of uploads.
+        let (stagingBuffer, stagingBufferOffset, allocationRange) = self.queue.sync { self.allocator(cacheMode: cacheMode) }.withBufferContents(byteCount: length, alignedTo: alignment) { contents, writtenRange in
+            writtenRange = 0..<0 // Prevent an unnecessary flush.
+        }
+        
+        return UploadBufferToken(cacheMode: cacheMode, stagingBuffer: stagingBuffer, stagingBufferRange: stagingBufferOffset..<(stagingBufferOffset + length), allocationRange: allocationRange)
+    }
+    
     @discardableResult
     public static func withUploadBuffer(length: Int, cacheMode: CPUCacheMode = .writeCombined, fillBuffer: (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void, copyFromBuffer: @escaping (_ buffer: Buffer, _ offset: Int, _ blitEncoder: BlitCommandEncoder) -> Void) rethrows -> RenderGraphExecutionWaitToken {
         if GPUResourceUploader.skipUpload {
@@ -299,7 +363,9 @@ extension GPUResourceUploader {
                 }) {
                     var writtenRange = 0..<byteCount
                     try perform(UnsafeMutableRawBufferPointer(start: self.bufferContents.advanced(by: bufferRange.lowerBound), count: byteCount), &writtenRange)
-                    RenderBackend.buffer(self.buffer, didModifyRange: (bufferRange.lowerBound + writtenRange.lowerBound)..<(bufferRange.lowerBound + writtenRange.lowerBound + writtenRange.count))
+                    if !writtenRange.isEmpty {
+                        RenderBackend.buffer(self.buffer, didModifyRange: (bufferRange.lowerBound + writtenRange.lowerBound)..<(bufferRange.lowerBound + writtenRange.lowerBound + writtenRange.count))
+                    }
                     
                     return (self.buffer, bufferRange.lowerBound, allocationRange)
                 }

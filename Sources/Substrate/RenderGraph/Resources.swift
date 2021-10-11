@@ -1003,7 +1003,9 @@ public struct Buffer : ResourceProtocol {
         
         let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: self.length), &modifiedRange)
         
-        RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        if !modifiedRange.isEmpty {
+            RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        }
         self.stateFlags.formUnion(.initialised)
         return result
     }
@@ -1015,7 +1017,9 @@ public struct Buffer : ResourceProtocol {
         
         let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
         
-        RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        if !modifiedRange.isEmpty {
+            RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        }
         self.stateFlags.formUnion(.initialised)
         return result
     }

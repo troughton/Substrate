@@ -188,22 +188,8 @@ public struct ImageFileInfo: Hashable, Codable {
             self.format = .png
             self.width = Int(width)
             self.height = Int(height)
-            switch state.info_png.color.colortype {
-            case LCT_GREY:
-                self.channelCount = 1
-                self.alphaMode = .none
-            case LCT_GREY_ALPHA:
-                self.channelCount = 2
-                self.alphaMode = .postmultiplied
-            case LCT_RGB:
-                self.channelCount = 3
-                self.alphaMode = .none
-            case LCT_RGBA, LCT_PALETTE:
-                self.channelCount = 4
-                self.alphaMode = .postmultiplied
-            default:
-                throw ImageLoadingError.invalidData
-            }
+            self.channelCount = withUnsafePointer(to: state.info_png.color) { Int(lodepng_get_channels($0)) }
+            self.alphaMode = withUnsafePointer(to: state.info_png.color, { lodepng_can_have_alpha($0) != 0 }) ? .postmultiplied : .none
             self.bitDepth = Int(state.info_png.color.bitdepth)
             self.isSigned = false
             self.isFloatingPoint = false
@@ -258,11 +244,29 @@ public struct ImageFileInfo: Hashable, Codable {
             self.colorSpace = isHDR ? .linearSRGB : .undefined
             self.alphaMode = componentsPerPixel == 2 || componentsPerPixel == 4 ? .inferred : .none
         }
-        
     }
 }
 
+public protocol ImageLoadingDelegate {
+    func channelCount(for fileInfo: ImageFileInfo) -> Int
+    func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator)
+}
+
+extension ImageLoadingDelegate {
+    public func channelCount(for fileInfo: ImageFileInfo) -> Int {
+        return fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
+    }
+    
+    public func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator) {
+        return ImageAllocator.allocateMemoryDefault(byteCount: byteCount, alignment: alignment, zeroed: zeroed)
+    }
+}
+
+@usableFromInline
+struct DefaultImageLoadingDelegate: ImageLoadingDelegate {}
+
 struct WuffsImageDecodeCallbacks: DecodeImageCallbacks {
+    let loadingDelegate: ImageLoadingDelegate
     var bitDepth: Int
     var channelCount: Int
     
@@ -307,36 +311,69 @@ struct WuffsImageDecodeCallbacks: DecodeImageCallbacks {
         
         return wuffs_base__make_pixel_format(result)
     }
+    
+    final class AllocationContext {
+        let buffer: UnsafeMutableRawBufferPointer
+        let allocator: ImageAllocator
+        
+        init(buffer: UnsafeMutableRawBufferPointer, allocator: ImageAllocator) {
+            self.buffer = buffer
+            self.allocator = allocator
+        }
+    }
+    
+    func allocatePixelBuffer(imageConfig image_config: wuffs_base__image_config, allowUninitializedMemory: Bool) throws -> PixelBuffer {
+        return try PixelBuffer(imageConfig: image_config,
+                               allocatingWith: { byteCount in
+            let (memory, allocator) = try self.loadingDelegate.allocateMemory(byteCount: byteCount, alignment: 16, zeroed: !allowUninitializedMemory)
+            return (memory.baseAddress!, AllocationContext(buffer: memory, allocator: allocator))
+        }, deallocatingWith: { allocation, userInfo in
+            let context = userInfo as! AllocationContext
+            precondition(context.buffer.baseAddress == allocation)
+            return context.allocator.deallocate(data: context.buffer)
+        })
+    }
 }
 
 extension ImageFileInfo {
     fileprivate var decodableByWuffs: Bool {
         guard self.format == .png else { return false } // We only use Wuffs for PNG decoding for now.
-        return self.channelCount != 2 // Wuffs doesn't handle greyscale-alpha yet.
+        if self.channelCount == 2 { return false } // Wuffs doesn't handle greyscale-alpha yet.
+        if self.channelCount < 3 && self.bitDepth < 8 { return false } // Wuffs doesn't support greyscale palette images.
+        return true
     }
 }
 
 extension Image where ComponentType: BinaryInteger {
-    init(wuffsFileAt url: URL, fileInfo: ImageFileInfo, colorSpace: ImageColorSpace, alphaMode: ImageAlphaMode, expandRGBToRGBA: Bool) throws {
+    init(wuffsFileAt url: URL, fileInfo: ImageFileInfo, colorSpace: ImageColorSpace, alphaMode: ImageAlphaMode, loadingDelegate: ImageLoadingDelegate) throws {
+        let channelCount = loadingDelegate.channelCount(for: fileInfo)
+        
         // Use Wuffs for PNG decoding.
         guard let file = fopen(url.path, "rb") else {
             throw ImageLoadingError.invalidFile(url)
         }
         defer { fclose(file) }
-        let channelCount = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
-        let pixelBuffer = try WuffsAux.decodeImage(callbacks: WuffsImageDecodeCallbacks(bitDepth: MemoryLayout<ComponentType>.stride * 8, channelCount: channelCount), input: FileInput(file: file))
+        let pixelBuffer = try WuffsAux.decodeImage(callbacks: WuffsImageDecodeCallbacks(loadingDelegate: loadingDelegate, bitDepth: MemoryLayout<ComponentType>.stride * 8, channelCount: channelCount), input: FileInput(file: file))
         let width = Int(pixelBuffer.buffer.pixcfg.width)
         let height = Int(pixelBuffer.buffer.pixcfg.height)
-        let data = pixelBuffer.moveAllocation()!
+        let (data, userContext) = pixelBuffer.moveAllocation()
         let deallocateFunc = pixelBuffer.deallocateFunc
+        
+        let allocator: ImageAllocator
+        if let context = userContext as? WuffsImageDecodeCallbacks.AllocationContext {
+            allocator = context.allocator
+        } else {
+            allocator = .custom(context: userContext,
+                                deallocateFunc: deallocateFunc)
+        }
         
         self.init(width: Int(pixelBuffer.buffer.pixcfg.width),
                   height: Int(pixelBuffer.buffer.pixcfg.height),
                   channels: Int(channelCount),
-                  data: data.bindMemory(to: ComponentType.self, capacity: width * height * channelCount),
+                  data: data!.bindMemory(to: ComponentType.self, capacity: width * height * channelCount),
                   colorSpace: colorSpace,
                   alphaMode: alphaMode,
-                  allocator: .custom(deallocateFunc: { memory, _ in deallocateFunc(memory) }))
+                  allocator: allocator)
         
         if pixelBuffer.buffer.pixcfg.pixelFormat.repr & 0xF0000000 == 0x80000000 {
             // It's BGRA when we want RGBA
@@ -344,24 +381,32 @@ extension Image where ComponentType: BinaryInteger {
         }
     }
     
-    init(wuffsData data: Data, fileInfo: ImageFileInfo, colorSpace: ImageColorSpace, alphaMode: ImageAlphaMode, expandRGBToRGBA: Bool) throws {
-        let channelCount = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
+    init(wuffsData data: Data, fileInfo: ImageFileInfo, colorSpace: ImageColorSpace, alphaMode: ImageAlphaMode, loadingDelegate: ImageLoadingDelegate) throws {
+        let channelCount = loadingDelegate.channelCount(for: fileInfo)
         let pixelBuffer = try data.withUnsafeBytes { buffer -> PixelBuffer in
             let memoryInput = MemoryInput(buffer: buffer)
-            return try WuffsAux.decodeImage(callbacks: WuffsImageDecodeCallbacks(bitDepth: MemoryLayout<ComponentType>.stride * 8, channelCount: channelCount), input: memoryInput)
+            return try WuffsAux.decodeImage(callbacks: WuffsImageDecodeCallbacks(loadingDelegate: loadingDelegate, bitDepth: MemoryLayout<ComponentType>.stride * 8, channelCount: channelCount), input: memoryInput)
         }
         let width = Int(pixelBuffer.buffer.pixcfg.width)
         let height = Int(pixelBuffer.buffer.pixcfg.height)
-        let data = pixelBuffer.moveAllocation()!
+        let (data, userContext) = pixelBuffer.moveAllocation()
         let deallocateFunc = pixelBuffer.deallocateFunc
+        
+        let allocator: ImageAllocator
+        if let context = userContext as? WuffsImageDecodeCallbacks.AllocationContext {
+            allocator = context.allocator
+        } else {
+            allocator = .custom(context: userContext,
+                                deallocateFunc: deallocateFunc)
+        }
         
         self.init(width: Int(pixelBuffer.buffer.pixcfg.width),
                   height: Int(pixelBuffer.buffer.pixcfg.height),
                   channels: Int(channelCount),
-                  data: data.bindMemory(to: ComponentType.self, capacity: width * height * channelCount),
+                  data: data!.bindMemory(to: ComponentType.self, capacity: width * height * channelCount),
                   colorSpace: colorSpace,
                   alphaMode: alphaMode,
-                  allocator: .custom(deallocateFunc: { memory, _ in deallocateFunc(memory) }))
+                  allocator: allocator)
         
         if pixelBuffer.buffer.pixcfg.pixelFormat.repr & 0xF0000000 == 0x80000000 {
             // It's BGRA when we want RGBA
@@ -381,20 +426,24 @@ extension Image where ComponentType: BinaryInteger {
 }
 
 extension Image where ComponentType == UInt8 {
-    public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, expandRGBToRGBA: Bool = true) throws {
+    public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         let fileInfo = try ImageFileInfo(url: url)
-        let channels = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
-        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
-        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: channels)
+        let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
         
         if fileInfo.decodableByWuffs {
             do {
-                try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, expandRGBToRGBA: expandRGBToRGBA)
+                try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
                 return
             } catch {
                 assertionFailure("Wuffs decoding failed: \(error)")
             }
         }
+        
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        
+        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
+        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: channels)
+        
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
@@ -409,21 +458,24 @@ extension Image where ComponentType == UInt8 {
                   allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
     }
     
-    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, expandRGBToRGBA: Bool = true) throws {
+    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         let fileInfo = try ImageFileInfo(format: nil, data: data)
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode
         
-        let channels = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
-        
+        let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
+
         if fileInfo.decodableByWuffs {
             do {
-                try self.init(wuffsData: data, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, expandRGBToRGBA: expandRGBToRGBA)
+                try self.init(wuffsData: data, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
                 return
             } catch {
                 assertionFailure("Wuffs decoding failed: \(error)")
             }
         }
+        
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        
         self = try data.withUnsafeBytes { data in
             var width : Int32 = 0
             var height : Int32 = 0
@@ -444,18 +496,21 @@ extension Image where ComponentType == UInt8 {
 }
 
 extension Image where ComponentType == Int8 {
-    public init(fileAt url: URL, expandRGBToRGBA: Bool = true) throws {
+    public init(fileAt url: URL, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         let fileInfo = try ImageFileInfo(url: url)
-        let channels = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
+        let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
         
         if fileInfo.decodableByWuffs {
             do {
-                try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: .undefined, alphaMode: .none, expandRGBToRGBA: expandRGBToRGBA)
+                try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: .undefined, alphaMode: .none, loadingDelegate: loadingDelegate)
                 return
             } catch {
                 assertionFailure("Wuffs decoding failed: \(error)")
             }
         }
+        
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
@@ -466,18 +521,21 @@ extension Image where ComponentType == Int8 {
         self.init(width: Int(width), height: Int(height), channels: channels, data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: .undefined, alphaMode: .none, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
     }
     
-    public init(data: Data, expandRGBToRGBA: Bool = true) throws {
+    public init(data: Data, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         let fileInfo = try ImageFileInfo(format: nil, data: data)
-        let channels = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
+        let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
         
         if fileInfo.decodableByWuffs {
             do {
-                try self.init(wuffsData: data, fileInfo: fileInfo, colorSpace: .undefined, alphaMode: .none, expandRGBToRGBA: expandRGBToRGBA)
+                try self.init(wuffsData: data, fileInfo: fileInfo, colorSpace: .undefined, alphaMode: .none, loadingDelegate: loadingDelegate)
                 return
             } catch {
                 assertionFailure("Wuffs decoding failed: \(error)")
             }
         }
+        
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        
         self = try data.withUnsafeBytes { data in
             var width : Int32 = 0
             var height : Int32 = 0
@@ -492,20 +550,24 @@ extension Image where ComponentType == Int8 {
 }
 
 extension Image where ComponentType == UInt16 {
-    public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, expandRGBToRGBA: Bool = true) throws {
+    public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         let fileInfo = try ImageFileInfo(url: url)
-        let channels = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
-        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
-        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: channels)
+        let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
+        
         
         if fileInfo.decodableByWuffs {
             do {
-                try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, expandRGBToRGBA: expandRGBToRGBA)
+                try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
                 return
             } catch {
                 assertionFailure("Wuffs decoding failed: \(error)")
             }
         }
+        
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
+        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: channels)
+        
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
@@ -517,20 +579,23 @@ extension Image where ComponentType == UInt16 {
         self.init(width: Int(width), height: Int(height), channels: channels, data: data, colorSpace: colorSpace, alphaMode: alphaMode, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
     }
     
-    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, expandRGBToRGBA: Bool = true) throws {
+    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         let fileInfo = try ImageFileInfo(data: data)
-        let channels = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
+        let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode
         
         if fileInfo.decodableByWuffs {
             do {
-                try self.init(wuffsData: data, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, expandRGBToRGBA: expandRGBToRGBA)
+                try self.init(wuffsData: data, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
                 return
             } catch {
                 assertionFailure("Wuffs decoding failed: \(error)")
             }
         }
+        
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        
         self = try data.withUnsafeBytes { data in
             var width : Int32 = 0
             var height : Int32 = 0
@@ -557,23 +622,25 @@ extension Image where ComponentType == UInt16 {
 
 extension Image where ComponentType == Float {
     
-    public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, expandRGBToRGBA: Bool = true) throws {
+    public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         if url.pathExtension.lowercased() == "exr" {
             try self.init(exrAt: url)
             return
         }
         
         let fileInfo = try ImageFileInfo(url: url)
-        let channels = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
-        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
-        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: channels)
-        
-        var width : Int32 = 0
-        var height : Int32 = 0
-        var componentsPerPixel : Int32 = 0
         
         if fileInfo.isFloatingPoint {
-            guard let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, Int32(fileInfo.channelCount)) else {
+            let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
+            let channels = loadingDelegate.channelCount(for: fileInfo)
+            let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
+            let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: channels)
+            
+            var width : Int32 = 0
+            var height : Int32 = 0
+            var componentsPerPixel : Int32 = 0
+            
+            guard let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
                 throw ImageLoadingError.invalidData
             }
             self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)), allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
@@ -587,7 +654,7 @@ extension Image where ComponentType == Float {
         }
     }
     
-    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, expandRGBToRGBA: Bool = true) throws {
+    public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         if let exrImage = try? Image<Float>(exrData: data) {
             self = exrImage
             return
@@ -595,7 +662,6 @@ extension Image where ComponentType == Float {
         
         let fileInfo = try ImageFileInfo(data: data)
         
-        let channels = (fileInfo.channelCount == 3 && expandRGBToRGBA) ? 4 : fileInfo.channelCount
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode
         
@@ -603,6 +669,9 @@ extension Image where ComponentType == Float {
         let is16Bit = fileInfo.bitDepth == 16
         
         if isHDR {
+            let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
+            let channels = loadingDelegate.channelCount(for: fileInfo)
+            
             self = try data.withUnsafeBytes { data in
                 var width : Int32 = 0
                 var height : Int32 = 0
@@ -615,7 +684,7 @@ extension Image where ComponentType == Float {
             }
             
         } else if is16Bit {
-            let image = try Image<UInt16>(data: data, colorSpace: colorSpace, alphaMode: alphaMode)
+            let image = try Image<UInt16>(data: data, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
             self.init(image)
             
         } else {
@@ -634,7 +703,7 @@ extension Image where ComponentType == Float {
         try self.init(fileAt: url, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
-    public init(exrData: Data, expandRGBToRGBA: Bool = true) throws {
+    public init(exrData: Data, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         var header = EXRHeader()
         InitEXRHeader(&header)
         var image = EXRImage()
@@ -673,9 +742,14 @@ extension Image where ComponentType == Float {
             }
         }
         
-        let channels = (image.num_channels == 3 && expandRGBToRGBA) ? 4 : image.num_channels
+        let fileInfo = try ImageFileInfo(format: .exr, data: exrData)
         
-        self.init(width: Int(image.width), height: Int(image.height), channels: Int(channels), colorSpace: .linearSRGB, alphaModeAllowInferred: .premultiplied, zeroStorage: false)
+        let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        
+        let (data, allocator) = try loadingDelegate.allocateMemory(byteCount: Int(image.width) * Int(image.height) * Int(channels) * MemoryLayout<Float>.stride, alignment: MemoryLayout<SIMD4<Float>>.stride, zeroed: false)
+        
+        self.init(width: Int(image.width), height: Int(image.height), channels: Int(channels), colorSpace: .linearSRGB, alphaMode: (channels == 2 || channels == 4) ? .premultiplied : .none, data: data.bindMemory(to: Float.self).baseAddress!, allocator: allocator)
         
         if channels == 4 && image.num_channels == 3 {
             for y in 0..<self.height {
@@ -734,8 +808,8 @@ extension Image where ComponentType == Float {
         }
     }
     
-    public init(exrAt url: URL) throws {
+    public init(exrAt url: URL, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
-        try self.init(exrData: data)
+        try self.init(exrData: data, loadingDelegate: loadingDelegate)
     }
 }

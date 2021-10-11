@@ -309,23 +309,17 @@ public enum ImageAllocator {
 #if canImport(Darwin)
     case vm_allocate
 #endif
-    case custom(context: UnsafeRawPointer? = nil, deallocateFunc: (_ allocation: UnsafeMutableRawPointer, _ context: UnsafeRawPointer?) -> Void)
-    
-}
-
-@usableFromInline
-final class ImageStorage<T> {
-    public let data : UnsafeMutableBufferPointer<T>
-    @usableFromInline let allocator: ImageAllocator
+    case custom(context: AnyObject? = nil, deallocateFunc: (_ allocation: UnsafeMutableRawPointer, _ context: AnyObject?) -> Void)
     
     @inlinable
-    static func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) -> (UnsafeMutableRawBufferPointer, ImageAllocator) {
+    static func allocateMemoryDefault(byteCount: Int, alignment: Int, zeroed: Bool) -> (UnsafeMutableRawBufferPointer, ImageAllocator) {
 #if canImport(Darwin)
-        if byteCount >= 4096 {
+        let pageSize = Int(getpagesize())
+        if byteCount >= pageSize {
             // Use vm_allocate; this also enables direct uploads into GPU memory where applicable.
-            let byteCount = (byteCount + 4095) & ~4095 // Round up to a multiple of 4096
+            let byteCount = (byteCount + pageSize - 1) & ~(pageSize - 1) // Round up to a multiple of pageSize
             var data = vm_address_t()
-            let error = vm_allocate(mach_task_self_, &data, vm_size_t(byteCount), VM_FLAGS_ANYWHERE)
+            let error = Darwin.vm_allocate(mach_task_self_, &data, vm_size_t(byteCount), VM_FLAGS_ANYWHERE)
             if error == KERN_SUCCESS {
                 return (UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(bitPattern: data), count: byteCount), .vm_allocate)
             }
@@ -338,9 +332,32 @@ final class ImageStorage<T> {
         return (memory, .system)
     }
     
+    func deallocate(data: UnsafeMutableRawBufferPointer) {
+        switch self {
+        case .system:
+            data.deallocate()
+        case .malloc:
+            free(data.baseAddress)
+        case .temporaryBuffer:
+            break
+        #if canImport(Darwin)
+        case .vm_allocate:
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: data.baseAddress), vm_size_t(data.count))
+        #endif
+        case .custom(let context, let deallocateFunc):
+            deallocateFunc(data.baseAddress!, context)
+        }
+    }
+}
+
+@usableFromInline
+final class ImageStorage<T> {
+    public let data : UnsafeMutableBufferPointer<T>
+    @usableFromInline let allocator: ImageAllocator
+    
     @inlinable
     init(elementCount: Int, zeroed: Bool) {
-        let (memory, allocator) = ImageStorage.allocateMemory(byteCount: elementCount * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment, zeroed: zeroed)
+        let (memory, allocator) = ImageAllocator.allocateMemoryDefault(byteCount: elementCount * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment, zeroed: zeroed)
         self.data = memory.bindMemory(to: T.self)
         self.allocator = allocator
     }
@@ -353,27 +370,14 @@ final class ImageStorage<T> {
     
     @inlinable
     init(copying: UnsafeMutableBufferPointer<T>) {
-        let (memory, allocator) = ImageStorage.allocateMemory(byteCount: copying.count, alignment: MemoryLayout<T>.alignment, zeroed: false)
+        let (memory, allocator) = ImageAllocator.allocateMemoryDefault(byteCount: copying.count, alignment: MemoryLayout<T>.alignment, zeroed: false)
         self.data = memory.bindMemory(to: T.self)
         _ = self.data.initialize(from: copying)
         self.allocator = allocator
     }
     
     deinit {
-        switch self.allocator {
-        case .system:
-            self.data.deallocate()
-        case .malloc:
-            free(self.data.baseAddress)
-        case .temporaryBuffer:
-            break
-        #if canImport(Darwin)
-        case .vm_allocate:
-            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: self.data.baseAddress), vm_size_t(self.data.count))
-        #endif
-        case .custom(let context, let deallocateFunc):
-            deallocateFunc(self.data.baseAddress!, context)
-        }
+        self.allocator.deallocate(data: UnsafeMutableRawBufferPointer(self.data))
     }
 }
 
@@ -1158,7 +1162,7 @@ extension Image {
     public func withImageReinterpreted<U, Result>(as: U.Type, perform: (Image<U>) throws -> Result) rethrows -> Result {
         precondition(MemoryLayout<U>.stride == MemoryLayout<T>.stride, "\(U.self) is not layout compatible with \(T.self)")
         let storage = self.storage
-        let allocator: ImageAllocator = .custom(context: Unmanaged.passRetained(storage).toOpaque(), deallocateFunc: { _, storage in Unmanaged<ImageStorage<T>>.fromOpaque(storage!).release() })
+        let allocator: ImageAllocator = .custom(context: storage, deallocateFunc: { _, _ in })
         return try self.withUnsafeBufferPointer { buffer in
             return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
                 let data = Image<U>(width: self.width, height: self.height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode, data: UnsafeMutablePointer(mutating: reboundBuffer.baseAddress!), allocator: allocator)
@@ -1183,7 +1187,7 @@ extension Image {
         let colorSpace = self.colorSpace
         let alphaMode = self.alphaMode
         let storage = self.storage
-        let allocator: ImageAllocator = .custom(context: Unmanaged.passRetained(storage).toOpaque(), deallocateFunc: { _, storage in Unmanaged<ImageStorage<T>>.fromOpaque(storage!).release() })
+        let allocator: ImageAllocator = .custom(context: storage, deallocateFunc: { _, _ in })
         return try self.withUnsafeMutableBufferPointer { buffer in
             return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
                 var data = Image<U>(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: reboundBuffer.baseAddress!, allocator: allocator)

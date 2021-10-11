@@ -158,6 +158,9 @@ public struct PNGCompressionSettings {
     
     public var filterType: FilterType = .minimumSum
     
+    /// Whether to automatically detect and convert to the most compact color type that can represent the image.
+    public var autoConvertColorType = true
+    
     public var useLZ77 = true
     /// The LZ block type to use for compression.
     public var blockType: LZBlockType = .type2
@@ -238,6 +241,7 @@ fileprivate extension LodePNGColorType {
 
 fileprivate extension LodePNGEncoderSettings {
     mutating func fill(from settings: PNGCompressionSettings) {
+        self.auto_convert = settings.autoConvertColorType ? 1 : 0
         switch settings.filterType {
         case .zero:
             self.filter_strategy = LFS_ZERO
