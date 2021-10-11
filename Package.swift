@@ -55,7 +55,14 @@ let package = Package(
                     .product(name: "LodePNG", package: "LodePNG"),
                     .product(name: "WuffsAux", package: "Wuffs"),
                     .product(name: "CWuffs", package: "Wuffs"),
-                    .product(name: "RealModule", package: "swift-numerics")]),
+                    .product(name: "RealModule", package: "swift-numerics")],
+                swiftSettings: [
+                    .unsafeFlags([
+                        "-Xfrontend", "-enable-experimental-concurrency",
+                        "-Xfrontend", "-disable-availability-checking",
+                    ])
+                ]),
+        
         .testTarget(name: "SubstrateImageTests", dependencies: ["SubstrateImage"]),
         
         .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage"],

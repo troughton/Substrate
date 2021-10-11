@@ -202,12 +202,13 @@ extension Image {
             await GPUResourceUploader.runBlitPass { bce in
                 bce.copy(from: buffer, sourceOffset: sourceOffset, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
             }
-            _ = uploadBufferToken.flush()
+            _ = await uploadBufferToken.flush()
             return
         }
         
         await self.withUnsafeBufferPointer { bytes in
-            _ = await GPUResourceUploader.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: slice, in: texture, withBytes: bytes.baseAddress!, bytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride)
+            let bytesPerRow = self.width * self.channelCount * MemoryLayout<T>.stride
+            _ = await GPUResourceUploader.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: slice, in: texture, withBytes: bytes.baseAddress!, bytesPerRow: bytesPerRow, bytesPerImage: self.height)
         }
     }
     
@@ -230,6 +231,7 @@ extension Image {
                 for (i, data) in mips.enumerated().prefix(texture.descriptor.mipmapLevelCount) {
                     taskGroup.async {
                         await data.copyData(to: texture, region: Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, slice: slice)
+                    }
                 }
             } else {
                 taskGroup.async {
@@ -268,13 +270,16 @@ public struct DirectToTextureImageLoadingDelegate: ImageLoadingDelegate {
         return imageInfo.channelCount
     }
     
-    public func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator) {
-        let uploadBufferToken = GPUResourceUploader.extendedLifetimeUploadBuffer(length: byteCount, alignment: alignment, cacheMode: .defaultCache)
+    public func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) async throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator) {
+        let uploadBufferToken = await GPUResourceUploader.extendedLifetimeUploadBuffer(length: byteCount, alignment: alignment, cacheMode: .defaultCache)
         if zeroed {
             _ = uploadBufferToken.contents.initializeMemory(as: UInt8.self, repeating: 0)
         }
         return (uploadBufferToken.contents, .custom(context: uploadBufferToken, deallocateFunc: { _, context in
-            (context as! GPUResourceUploader.UploadBufferToken).flush()
+            Task.detached {
+                await (context as!
+                       GPUResourceUploader.UploadBufferToken).flush()
+            }
         }))
     }
 }

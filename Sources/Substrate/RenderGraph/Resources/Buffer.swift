@@ -151,6 +151,23 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
+    public init(descriptor: BufferDescriptor, externalResource: Any, renderGraph: RenderGraph? = nil, flags: ResourceFlags = [.persistent, .externalOwnership]) {
+        if flags.contains(.persistent) || flags.contains(.historyBuffer) {
+            self = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+        } else {
+            guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
+                fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
+            }
+            self = TransientBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
+        }
+        
+        if self.flags.contains(.persistent) {
+            assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+        }
+        RenderBackend.registerExternalResource(Resource(self), backingResource: externalResource)
+    }
+    
+    
     public func withContents<A>(_ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
         self.checkHasCPUAccess(accessType: .read)
         let contents = RenderBackend.bufferContents(for: self, range: self.range)
@@ -170,7 +187,9 @@ public struct Buffer : ResourceProtocol {
         
         let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: self.length), &modifiedRange)
         
-        RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        if !modifiedRange.isEmpty {
+            RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        }
         self.stateFlags.formUnion(.initialised)
         return result
     }
@@ -182,7 +201,9 @@ public struct Buffer : ResourceProtocol {
         
         let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
         
-        RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        if !modifiedRange.isEmpty {
+            RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        }
         self.stateFlags.formUnion(.initialised)
         return result
     }

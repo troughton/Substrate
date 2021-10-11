@@ -106,7 +106,11 @@ public final actor GPUResourceUploader {
         }
         
         deinit {
-            _ = self.flush()
+            if self.flushExecutionToken == nil {
+                _ = Task.detached { [cacheMode, stagingBuffer, allocationRange] in
+                    await GPUResourceUploader._flush(cacheMode: cacheMode, buffer: stagingBuffer!, allocationRange: allocationRange)
+                }
+            }
         }
         
         public func didModifyBuffer() {
@@ -136,11 +140,11 @@ public final actor GPUResourceUploader {
     }
     
     @discardableResult
-    public static func extendedLifetimeUploadBuffer(length: Int, alignment: Int, cacheMode: CPUCacheMode = .defaultCache) -> UploadBufferToken {
+    public static func extendedLifetimeUploadBuffer(length: Int, alignment: Int, cacheMode: CPUCacheMode = .defaultCache) async -> UploadBufferToken {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
         // NOTE: this happens outside of the queue so we don't block concurrent execution of uploads.
-        let (stagingBuffer, stagingBufferOffset, allocationRange) = try await self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: length, alignedTo: alignment) { contents, writtenRange in
+        let (stagingBuffer, stagingBufferOffset, allocationRange) = await self.allocator(cacheMode: cacheMode).withBufferContents(byteCount: length, alignedTo: alignment) { contents, writtenRange in
             writtenRange = 0..<0 // Prevent an unnecessary flush.
         }
         

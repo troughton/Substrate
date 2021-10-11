@@ -249,7 +249,7 @@ public struct ImageFileInfo: Hashable, Codable {
 
 public protocol ImageLoadingDelegate {
     func channelCount(for fileInfo: ImageFileInfo) -> Int
-    func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator)
+    func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) async throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator)
 }
 
 extension ImageLoadingDelegate {
