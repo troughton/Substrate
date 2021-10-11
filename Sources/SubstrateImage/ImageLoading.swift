@@ -336,7 +336,7 @@ extension Image where ComponentType: BinaryInteger {
                   data: data.bindMemory(to: ComponentType.self, capacity: width * height * channelCount),
                   colorSpace: colorSpace,
                   alphaMode: alphaMode,
-                  deallocateFunc: { deallocateFunc(UnsafeMutableRawPointer($0)) })
+                  allocator: .custom(deallocateFunc: { memory, _ in deallocateFunc(memory) }))
         
         if pixelBuffer.buffer.pixcfg.pixelFormat.repr & 0xF0000000 == 0x80000000 {
             // It's BGRA when we want RGBA
@@ -361,7 +361,7 @@ extension Image where ComponentType: BinaryInteger {
                   data: data.bindMemory(to: ComponentType.self, capacity: width * height * channelCount),
                   colorSpace: colorSpace,
                   alphaMode: alphaMode,
-                  deallocateFunc: { deallocateFunc(UnsafeMutableRawPointer($0)) })
+                  allocator: .custom(deallocateFunc: { memory, _ in deallocateFunc(memory) }))
         
         if pixelBuffer.buffer.pixcfg.pixelFormat.repr & 0xF0000000 == 0x80000000 {
             // It's BGRA when we want RGBA
@@ -406,7 +406,7 @@ extension Image where ComponentType == UInt8 {
                   data: data,
                   colorSpace: colorSpace,
                   alphaMode: alphaMode,
-                  deallocateFunc: { stbi_image_free($0) })
+                  allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
     }
     
     public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, expandRGBToRGBA: Bool = true) throws {
@@ -438,7 +438,7 @@ extension Image where ComponentType == UInt8 {
                          data: data,
                          colorSpace: colorSpace,
                          alphaMode: alphaMode,
-                         deallocateFunc: { stbi_image_free($0) })
+                         allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
         }
     }
 }
@@ -463,7 +463,7 @@ extension Image where ComponentType == Int8 {
             throw ImageLoadingError.invalidImageDataFormat(url, T.self)
         }
         
-        self.init(width: Int(width), height: Int(height), channels: channels, data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: .undefined, alphaMode: .none, deallocateFunc: { stbi_image_free($0) })
+        self.init(width: Int(width), height: Int(height), channels: channels, data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: .undefined, alphaMode: .none, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
     }
     
     public init(data: Data, expandRGBToRGBA: Bool = true) throws {
@@ -486,7 +486,7 @@ extension Image where ComponentType == Int8 {
                 throw ImageLoadingError.invalidData
             }
             
-            return Image(width: Int(width), height: Int(height), channels: Int(channels), data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: .undefined, alphaMode: .none, deallocateFunc: { stbi_image_free($0) })
+            return Image(width: Int(width), height: Int(height), channels: Int(channels), data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: .undefined, alphaMode: .none, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
         }
     }
 }
@@ -514,7 +514,7 @@ extension Image where ComponentType == UInt16 {
             throw ImageLoadingError.invalidImageDataFormat(url, T.self)
         }
         
-        self.init(width: Int(width), height: Int(height), channels: channels, data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
+        self.init(width: Int(width), height: Int(height), channels: channels, data: data, colorSpace: colorSpace, alphaMode: alphaMode, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
     }
     
     public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, expandRGBToRGBA: Bool = true) throws {
@@ -539,7 +539,7 @@ extension Image where ComponentType == UInt16 {
                 throw ImageLoadingError.invalidData
             }
             
-            return Image(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
+            return Image(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
         }
     }
     
@@ -576,7 +576,7 @@ extension Image where ComponentType == Float {
             guard let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, Int32(fileInfo.channelCount)) else {
                 throw ImageLoadingError.invalidData
             }
-            self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)), deallocateFunc: { stbi_image_free($0) })
+            self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)), allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
             
         } else if fileInfo.bitDepth == 16 {
             let image = try Image<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
@@ -611,7 +611,7 @@ extension Image where ComponentType == Float {
                 guard let data = stbi_loadf_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels)) else {
                     throw ImageLoadingError.invalidData
                 }
-                return Image(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, deallocateFunc: { stbi_image_free($0) })
+                return Image(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
             }
             
         } else if is16Bit {
