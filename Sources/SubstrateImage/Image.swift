@@ -466,20 +466,27 @@ public struct Image<ComponentType> : AnyImage {
     }
     
     @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:deallocateFunc:)")
+    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, data: UnsafeMutablePointer<T>, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
+            deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
+        }))
+    }
+    
+    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:allocator:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
             deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
         }))
     }
         
-    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:deallocateFunc:)")
+    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:allocator:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace, premultipliedAlpha: Bool, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
             deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
         }))
     }
     
-    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:deallocateFunc:)")
+    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:allocator:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colourSpace: ImageColorSpace, premultipliedAlpha: Bool = false, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
             deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
