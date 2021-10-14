@@ -232,7 +232,7 @@ extension Image {
         } else {
             self.copyData(to: texture, region: Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0)
             if texture.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
-                if _isDebugAssertConfiguration(), self.channelCount == 4, self.alphaMode != .premultiplied {
+                if _isDebugAssertConfiguration(), self.channelCount == 4, self.alphaMode == .postmultiplied {
                     print("Warning: generating mipmaps using the GPU's default mipmap generation for texture \(texture.label ?? "Texture(handle: \(texture.handle))") which expects premultiplied alpha, but the texture has an alpha mode of \(self.alphaMode). Fringing may be visible")
                 }
                 GPUResourceUploader.generateMipmaps(for: texture)
