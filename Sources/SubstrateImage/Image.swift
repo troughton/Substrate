@@ -832,32 +832,39 @@ extension Image where ComponentType: SIMDScalar {
     public subscript(x: Int, y: Int) -> SIMD4<T> {
         get {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
+            precondition(self.width * self.height * self.channelCount < Int.max)
+            
+            let storage = self.storage.data.baseAddress.unsafelyUnwrapped
             
             var result = SIMD4<T>()
             if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
                 for i in 0..<min(alphaChannelIndex, 3) {
-                    result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+                    result[i] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i]
                 }
-                result[3] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + alphaChannelIndex]
+                result[3] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ alphaChannelIndex]
             } else {
                 for i in 0..<min(self.channelCount, 4) {
-                    result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+                    result[i] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i]
                 }
             }
             return result
         }
         set {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
+            precondition(self.width * self.height * self.channelCount < Int.max)
+            
             self.ensureUniqueness()
+            
+            let storage = self.storage.data.baseAddress.unsafelyUnwrapped
             
             if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
                 for i in 0..<min(alphaChannelIndex, 3) {
-                    self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+                    storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i] = newValue[i]
                 }
-                self.storage.data[y * self.width * self.channelCount + x * self.channelCount + alphaChannelIndex] = newValue.w
+                storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ alphaChannelIndex] = newValue.w
             } else {
                 for i in 0..<min(self.channelCount, 4) {
-                    self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+                    storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i] = newValue[i]
                 }
             }
         }
@@ -1158,6 +1165,20 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     }
 }
 
+extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
+    @inlinable
+    public var averageValue: SIMD4<Float> {
+        let scale = 1.0 / Float(self.width * self.height)
+        var average = SIMD4<Float>(repeating: 0)
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                average += self[floatVectorAt: x, y] * scale
+            }
+        }
+        return average
+    }
+}
+
 extension Image {
     @available(*, deprecated, renamed: "withImageReinterpreted(as:perform:)")
     @inlinable
@@ -1311,26 +1332,8 @@ extension Image where ComponentType == Float {
         }
         
         self.convert(toColorSpace: sourceColorSpace)
-        
-    }
-    
-    public var averageValue : SIMD4<Float> {
-        let scale = 1.0 / Float(self.width * self.height)
-        var average = SIMD4<Float>(repeating: 0)
-        for y in 0..<self.height {
-            let yBase = y * self.width * self.channelCount
-            for x in 0..<self.width {
-                let baseIndex = yBase + x * self.channelCount
-                for c in 0..<self.channelCount {
-                    //                    assert(self.data[baseIndex + c].isFinite, "Pixel \(x), \(y), channel \(c) is not finite: value is \(self.data[baseIndex + c])")
-                    average[c] += self.storage.data[baseIndex + c] * scale
-                }
-            }
-        }
-        return average
     }
 }
-
 
 extension Image where ComponentType: BinaryFloatingPoint {
     @inlinable
