@@ -119,6 +119,12 @@ public struct RGBColor : Equatable, Hashable {
     }
 }
 
+extension RGBColor: CustomStringConvertible {
+    public var description: String {
+        return "RGBColor(r: \(self.r), g: \(self.g), b: \(self.b))"
+    }
+}
+
 public typealias RGBColour = RGBColor
 
 public struct XYZColor : Equatable, Hashable {
