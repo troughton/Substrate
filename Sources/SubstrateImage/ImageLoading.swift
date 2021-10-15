@@ -452,8 +452,8 @@ final class STBLoadingDelegate {
     }
     
     func deallocate(allocation: UnsafeMutableRawPointer?) {
-        guard let allocation = allocation,
-        let allocationIndex = self.allocations.firstIndex(where: { $0.allocation.baseAddress == allocation }) else {
+        guard let theAllocation = allocation,
+        let allocationIndex = self.allocations.firstIndex(where: { $0.allocation.baseAddress == theAllocation }) else {
             allocation?.deallocate()
             return
         }
