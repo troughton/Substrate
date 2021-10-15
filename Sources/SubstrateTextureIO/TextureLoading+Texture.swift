@@ -177,8 +177,9 @@ extension Image {
 #if canImport(Metal)
         if case .vm_allocate = self.allocator {
             // On Metal, we can make vm_allocate'd buffers directly accessible to the GPU.
+            let allocatedSize = self.allocatedSize
             let success = self.withUnsafeBufferPointer { bytes -> Bool in
-                guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: bytes.count, options: .storageModeShared, deallocator: nil) else { return false }
+                guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: allocatedSize, options: .storageModeShared, deallocator: nil) else { return false }
                 let substrateBuffer = Buffer(descriptor: BufferDescriptor(length: bytes.count, storageMode: .shared, cacheMode: .defaultCache, usage: .blitSource), externalResource: mtlBuffer)
                 GPUResourceUploader.runBlitPass { bce in
                     bce.copy(from: substrateBuffer, sourceOffset: 0, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
