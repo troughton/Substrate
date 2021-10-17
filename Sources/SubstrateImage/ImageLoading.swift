@@ -436,9 +436,13 @@ final class STBLoadingDelegate {
         guard size > 0 else { return nil }
         guard size == self.expectedSize || size &- 1 == self.expectedSize, // STB requests a one-byte overallocation.
               let (buffer, allocator) = try? self.loadingDelegate.allocateMemory(byteCount: size, alignment: 16, zeroed: false) else {
-            return UnsafeMutableRawPointer.allocate(byteCount: size, alignment: 16)
+                  let allocation = UnsafeMutableRawBufferPointer.allocate(byteCount: size, alignment: 16)
+                  self.allocations.append((allocation, .system))
+                  return allocation.baseAddress
         }
-        self.expectedSize = .max // Only allow one allocation of the expected size per image. We do this because multiple allocations for the same image backed by GPUResourceUploader allocations might fail/deadlock since the GPUResourceUploader has exhausted all of its available upload buffer memory.
+        if case .custom = allocator {
+            self.expectedSize = .max // Only allow one allocation of the expected size per image. We do this because multiple allocations for the same image backed by GPUResourceUploader allocations might fail/deadlock since the GPUResourceUploader has exhausted all of its available upload buffer memory.
+        }
         self.allocations.append((buffer, allocator))
         return buffer.baseAddress
     }
