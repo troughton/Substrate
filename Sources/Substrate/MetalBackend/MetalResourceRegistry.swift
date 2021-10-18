@@ -859,7 +859,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         if let mtlTexture = textureRef {
             if texture.flags.contains(.windowHandle) || texture.isTextureView {
                 if let texture = mtlTexture._texture {
-                    CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(mtlTexture._texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
+                    CommandEndActionManager.manager.enqueue(action: .release(.fromOpaque(texture.toOpaque())), after: waitEvent.waitValue, on: self.queue)
                 } else {
                     self.textureReferences[texture]?.disposeWaitValue = waitEvent.waitValue
                     self.textureReferences[texture]?.disposeWaitQueue = self.queue
