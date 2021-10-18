@@ -369,32 +369,20 @@ final class ImageStorage<T> {
         let (memory, allocator) = ImageAllocator.allocateMemoryDefault(byteCount: elementCount * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment, zeroed: zeroed)
         self.data = memory.bindMemory(to: T.self)
         self.allocator = allocator
-        if case .vm_allocate = allocator {
-            precondition(Int(bitPattern: memory.baseAddress) % 4096 == 0)
-            precondition(UnsafeMutableRawBufferPointer(memory).count % 4096 == 0)
-        }
     }
     
     @inlinable
     init(data: UnsafeMutableBufferPointer<T>, allocator: ImageAllocator) {
         self.data = data
         self.allocator = allocator
-        if case .vm_allocate = allocator {
-            precondition(Int(bitPattern: data.baseAddress) % 4096 == 0)
-            precondition(UnsafeMutableRawBufferPointer(data).count % 4096 == 0)
-        }
     }
     
     @inlinable
     init(copying: UnsafeMutableBufferPointer<T>) {
-        let (memory, allocator) = ImageAllocator.allocateMemoryDefault(byteCount: copying.count, alignment: MemoryLayout<T>.alignment, zeroed: false)
+        let (memory, allocator) = ImageAllocator.allocateMemoryDefault(byteCount: copying.count * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment, zeroed: false)
         self.data = memory.bindMemory(to: T.self)
         _ = self.data.initialize(from: copying)
         self.allocator = allocator
-        if case .vm_allocate = allocator {
-            precondition(Int(bitPattern: memory.baseAddress) % 4096 == 0)
-            precondition(UnsafeMutableRawBufferPointer(memory).count % 4096 == 0)
-        }
     }
     
     deinit {
