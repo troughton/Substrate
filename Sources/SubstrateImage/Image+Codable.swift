@@ -26,7 +26,7 @@ public struct AnyCodableImage: Codable {
     }
     
     static func decodeImage<T>(header: ImageFileInfo, data: Data, type: T.Type) -> Image<T> {
-        var image = Image<T>(width: header.width, height: header.height, channels: header.channelCount,
+        var image = Image<T>(width: header.width, height: header.height, channelCount: header.channelCount,
                         colorSpace: header.colorSpace, alphaMode: header.alphaMode)
         image.withUnsafeMutableBufferPointer { destination in
             data.withUnsafeBytes { source in

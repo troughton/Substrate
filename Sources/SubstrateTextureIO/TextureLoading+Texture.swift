@@ -177,9 +177,10 @@ extension Image {
 #if canImport(Metal)
         if case .vm_allocate = self.allocator {
             // On Metal, we can make vm_allocate'd buffers directly accessible to the GPU.
+            let allocatedSize = self.allocatedSize
             let success = await self.withUnsafeBufferPointer { bytes -> Bool in
-                guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: bytes.count, options: .storageModeShared, deallocator: nil) else { return false }
-                let substrateBuffer = Buffer(descriptor: BufferDescriptor(length: bytes.count, storageMode: .shared, cacheMode: .defaultCache, usage: .blitSource), externalResource: mtlBuffer)
+                guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: allocatedSize, options: .storageModeShared, deallocator: nil) else { return false }
+                let substrateBuffer = Buffer(descriptor: BufferDescriptor(length: allocatedSize, storageMode: .shared, cacheMode: .defaultCache, usage: .blitSource), externalResource: mtlBuffer)
                 await GPUResourceUploader.runBlitPass { bce in
                     bce.copy(from: substrateBuffer, sourceOffset: 0, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
                 }
@@ -237,7 +238,7 @@ extension Image {
                 taskGroup.async {
                     await self.copyData(to: texture, region: Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, slice: slice)
                     if texture.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
-                        if self.channelCount == 4, self.alphaMode != .premultiplied {
+                        if self.channelCount == 4, self.alphaMode == .postmultiplied {
                             if _isDebugAssertConfiguration() {
                                 print("Warning: generating mipmaps using the GPU's default mipmap generation for texture \(texture.label ?? "Texture(handle: \(texture.handle))") which expects premultiplied alpha, but the texture has an alpha mode of \(self.alphaMode). Fringing may be visible")
                             }

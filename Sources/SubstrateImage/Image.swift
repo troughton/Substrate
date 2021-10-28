@@ -309,7 +309,16 @@ public enum ImageAllocator {
 #if canImport(Darwin)
     case vm_allocate
 #endif
-    case custom(context: AnyObject? = nil, deallocateFunc: (_ allocation: UnsafeMutableRawPointer, _ context: AnyObject?) -> Void)
+    case custom(context: AnyObject? = nil, deallocateFunc: (_ allocation: UnsafeMutableRawBufferPointer, _ context: AnyObject?) -> Void)
+    
+    @_disfavoredOverload
+    @inlinable
+    public static func custom(context: AnyObject? = nil, deallocateFunc: @escaping (_ allocation: UnsafeMutableRawPointer, _ context: AnyObject?) -> Void) -> ImageAllocator {
+        return .custom(context: context) { allocation, context in
+            guard let baseAddress = allocation.baseAddress else { return }
+            deallocateFunc(baseAddress, context)
+        }
+    }
     
     @inlinable
     static func allocateMemoryDefault(byteCount: Int, alignment: Int, zeroed: Bool) -> (UnsafeMutableRawBufferPointer, ImageAllocator) {
@@ -345,7 +354,7 @@ public enum ImageAllocator {
             vm_deallocate(mach_task_self_, vm_address_t(bitPattern: data.baseAddress), vm_size_t(data.count))
         #endif
         case .custom(let context, let deallocateFunc):
-            deallocateFunc(data.baseAddress!, context)
+            deallocateFunc(data, context)
         }
     }
 }
@@ -370,7 +379,7 @@ final class ImageStorage<T> {
     
     @inlinable
     init(copying: UnsafeMutableBufferPointer<T>) {
-        let (memory, allocator) = ImageAllocator.allocateMemoryDefault(byteCount: copying.count, alignment: MemoryLayout<T>.alignment, zeroed: false)
+        let (memory, allocator) = ImageAllocator.allocateMemoryDefault(byteCount: copying.count * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment, zeroed: false)
         self.data = memory.bindMemory(to: T.self)
         _ = self.data.initialize(from: copying)
         self.allocator = allocator
@@ -418,22 +427,27 @@ public struct Image<ComponentType> : AnyImage {
         }
     }
     
-    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none) {
+    public init(width: Int, height: Int, channelCount: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none) {
         precondition(_isPOD(T.self))
-        precondition(width >= 1 && height >= 1 && channels >= 1)
+        precondition(width >= 1 && height >= 1 && channelCount >= 1)
         precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
         
-        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaModeAllowInferred: alphaMode, zeroStorage: true)
+        self.init(width: width, height: height, channelCount: channelCount, colorSpace: colorSpace, alphaModeAllowInferred: alphaMode, zeroStorage: true)
     }
     
-    init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace, alphaModeAllowInferred alphaMode: ImageAlphaMode, zeroStorage: Bool) {
+    @available(*, deprecated, renamed: "init(width:height:channelCount:colorSpace:alphaMode:)")
+    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none) {
+        self.init(width: width, height: height, channelCount: channels, colorSpace: colorSpace, alphaMode: alphaMode)
+    }
+    
+    init(width: Int, height: Int, channelCount: Int, colorSpace: ImageColorSpace, alphaModeAllowInferred alphaMode: ImageAlphaMode, zeroStorage: Bool) {
         precondition(_isPOD(T.self))
-        precondition(width >= 1 && height >= 1 && channels >= 1)
+        precondition(width >= 1 && height >= 1 && channelCount >= 1)
         precondition(alphaMode != .inferred, "Inferred alpha modes are only valid given existing data.")
         
         self.width = width
         self.height = height
-        self.channelCount = channels
+        self.channelCount = channelCount
         
         self.storage = .init(elementCount: width * height * channelCount, zeroed: zeroStorage)
         
@@ -441,45 +455,58 @@ public struct Image<ComponentType> : AnyImage {
         self.alphaMode = alphaMode
     }
     
-    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:)")
+    @available(*, deprecated, renamed: "init(width:height:channelCount:colorSpace:alphaMode:)")
     public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace, premultipliedAlpha: Bool) {
         self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
     
-    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:)")
+    @available(*, deprecated, renamed: "init(width:height:channelCount:colorSpace:alphaMode:)")
     public init(width: Int, height: Int, channels: Int, colourSpace: ImageColorSpace, premultipliedAlpha: Bool = false) {
         self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied)
     }
-    
-    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, data: UnsafeMutablePointer<T>, allocator: ImageAllocator) {
-        precondition(width >= 1 && height >= 1 && channels >= 1)
+
+    public init(width: Int, height: Int, channelCount: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, data: UnsafeMutableBufferPointer<T>, allocator: ImageAllocator) {
+        precondition(width >= 1 && height >= 1 && channelCount >= 1)
         precondition(alphaMode != .inferred, "Cannot infer the alpha mode when T is not Comparable.")
+        precondition(data.count >= width * height * channelCount)
         
         self.width = width
         self.height = height
-        self.channelCount = channels
+        self.channelCount = channelCount
         
-        self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), allocator: allocator)
+        self.storage = .init(data: data, allocator: allocator)
         
         self.colorSpace = colorSpace
         self.alphaMode = alphaMode
     }
     
-    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:deallocateFunc:)")
+    @available(*, deprecated, renamed: "init(width:height:channelCount:colorSpace:alphaMode:data:allocator:)")
+    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, data: UnsafeMutablePointer<T>, allocator: ImageAllocator) {
+        self.init(width: width, height: height, channelCount: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: UnsafeMutableBufferPointer<T>(start: data, count: width * height * channels), allocator: allocator)
+    }
+    
+    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:allocator:)")
+    public init(width: Int, height: Int, channels: Int, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, data: UnsafeMutablePointer<T>, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
+        self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
+            deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
+        }))
+    }
+    
+    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:allocator:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
             deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
         }))
     }
         
-    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:deallocateFunc:)")
+    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:allocator:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace, premultipliedAlpha: Bool, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         self.init(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
             deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
         }))
     }
     
-    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:deallocateFunc:)")
+    @available(*, deprecated, renamed: "init(width:height:channels:colorSpace:alphaMode:data:allocator:)")
     public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colourSpace: ImageColorSpace, premultipliedAlpha: Bool = false, deallocateFunc: @escaping (UnsafeMutablePointer<T>) -> Void) {
         self.init(width: width, height: height, channels: channels, colorSpace: colourSpace, alphaMode: premultipliedAlpha ? .premultiplied : .postmultiplied, data: data, allocator: .custom(deallocateFunc: { rawPointer, _ in
             deallocateFunc(rawPointer.assumingMemoryBound(to: T.self))
@@ -489,13 +516,29 @@ public struct Image<ComponentType> : AnyImage {
     @inlinable
     mutating func ensureUniqueness() {
         if !isKnownUniquelyReferenced(&self.storage) {
-            self.storage = .init(copying: self.storage.data)
+            self.storage = .init(copying: self.truncatedStorageData)
         }
     }
     
     @inlinable
     public var allocator: ImageAllocator {
         return self.storage.allocator
+    }
+    
+    @inlinable
+    public var allocatedSize: Int {
+        return self.storage.data.count * MemoryLayout<ComponentType>.stride
+    }
+    
+    @inlinable
+    public var elementCount: Int {
+        return self.width * self.height * self.channelCount
+    }
+    
+    @usableFromInline
+    var truncatedStorageData: UnsafeMutableBufferPointer<ComponentType> {
+        // ImageStorage may be over-allocated, so this returns only the portion that contains valid pixels.
+        return .init(rebasing: self.storage.data.prefix(self.elementCount))
     }
     
     @inlinable
@@ -538,7 +581,7 @@ public struct Image<ComponentType> : AnyImage {
     }
     
     public var data: Data {
-        return Data(buffer: self.storage.data)
+        return Data(buffer: self.truncatedStorageData)
     }
     
     @available(*, deprecated, renamed: "alphaMode")
@@ -614,13 +657,13 @@ public struct Image<ComponentType> : AnyImage {
     
     @inlinable
     public func withUnsafeBufferPointer<R>(_ perform: (UnsafeBufferPointer<T>) throws -> R) rethrows -> R {
-        return try perform(UnsafeBufferPointer(self.storage.data))
+        return try perform(UnsafeBufferPointer(self.truncatedStorageData))
     }
     
     @inlinable
     public mutating func withUnsafeMutableBufferPointer<R>(_ perform: (UnsafeMutableBufferPointer<T>) throws -> R) rethrows -> R {
         self.ensureUniqueness()
-        return try perform(self.storage.data)
+        return try perform(self.truncatedStorageData)
     }
     
     @inlinable
@@ -636,7 +679,7 @@ public struct Image<ComponentType> : AnyImage {
     
     @inlinable
     public func map<Other>(_ function: (ComponentType) -> Other) -> Image<Other> {
-        var other = Image<Other>(width: self.width, height: self.height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        var other = Image<Other>(width: self.width, height: self.height, channelCount: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
         other.withUnsafeMutableBufferPointer { dest in
             self.withUnsafeBufferPointer { source in
@@ -658,7 +701,7 @@ public struct Image<ComponentType> : AnyImage {
             return self
         }
         
-        let result = Image<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        let result = Image<T>(width: width, height: height, channelCount: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
         for y in 0..<height {
             let clampedY = clampOutOfBounds ? clamp(y + originY, min: 0, max: self.height - 1) : (y + originY)
@@ -716,7 +759,7 @@ public struct Image<ComponentType> : AnyImage {
             fatalError("Unsupported Image type \(T.self) for mip chain generation.")
         }
         
-        var result = Image<T>(width: width, height: height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        var result = Image<T>(width: width, height: height, channelCount: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
         
         let sourceWidth = self.width
         let sourceHeight = self.height
@@ -795,19 +838,25 @@ extension Image: Hashable {
 }
 
 extension Image where ComponentType: Comparable {
-    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, allocator: ImageAllocator) {
-        precondition(width >= 1 && height >= 1 && channels >= 1)
+    public init(width: Int, height: Int, channelCount: Int, data: UnsafeMutableBufferPointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, allocator: ImageAllocator) {
+        precondition(width >= 1 && height >= 1 && channelCount >= 1)
+        precondition(data.count >= width * height * channelCount)
         
         self.width = width
         self.height = height
-        self.channelCount = channels
+        self.channelCount = channelCount
         
-        self.storage = .init(data: UnsafeMutableBufferPointer<T>(start: data, count: self.width * self.height * self.channelCount), allocator: allocator)
+        self.storage = .init(data: data, allocator: allocator)
         
         self.colorSpace = colorSpace
         self.alphaMode = alphaMode
         
         self.inferAlphaMode()
+    }
+    
+    @available(*, deprecated, renamed: "init(width:height:channelCount:data:colorSpace:alphaMode:allocator:)")
+    public init(width: Int, height: Int, channels: Int, data: UnsafeMutablePointer<T>, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .none, allocator: ImageAllocator) {
+        self.init(width: width, height: height, channelCount: channels, data: UnsafeMutableBufferPointer<T>(start: data, count: width * height * channels), colorSpace: colorSpace, alphaMode: alphaMode, allocator: allocator)
     }
 
     mutating func inferAlphaMode() {
@@ -815,7 +864,7 @@ extension Image where ComponentType: Comparable {
         
         if self.channelCount == 2 || self.channelCount == 4 {
             let alphaChannel = self.channelCount - 1
-            for baseIndex in stride(from: 0, to: self.storage.data.count, by: self.channelCount) {
+            for baseIndex in stride(from: 0, to: self.elementCount, by: self.channelCount) {
                 let alphaVal = self.storage.data[baseIndex + alphaChannel]
                 for c in 0..<alphaChannel {
                     if self.storage.data[baseIndex + c] > alphaVal {
@@ -836,32 +885,39 @@ extension Image where ComponentType: SIMDScalar {
     public subscript(x: Int, y: Int) -> SIMD4<T> {
         get {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
+            precondition(self.width * self.height * self.channelCount < Int.max)
+            
+            let storage = self.storage.data.baseAddress.unsafelyUnwrapped
             
             var result = SIMD4<T>()
             if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
                 for i in 0..<min(alphaChannelIndex, 3) {
-                    result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+                    result[i] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i]
                 }
-                result[3] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + alphaChannelIndex]
+                result[3] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ alphaChannelIndex]
             } else {
                 for i in 0..<min(self.channelCount, 4) {
-                    result[i] = self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i]
+                    result[i] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i]
                 }
             }
             return result
         }
         set {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
+            precondition(self.width * self.height * self.channelCount < Int.max)
+            
             self.ensureUniqueness()
+            
+            let storage = self.storage.data.baseAddress.unsafelyUnwrapped
             
             if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
                 for i in 0..<min(alphaChannelIndex, 3) {
-                    self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+                    storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i] = newValue[i]
                 }
-                self.storage.data[y * self.width * self.channelCount + x * self.channelCount + alphaChannelIndex] = newValue.w
+                storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ alphaChannelIndex] = newValue.w
             } else {
                 for i in 0..<min(self.channelCount, 4) {
-                    self.storage.data[y * self.width * self.channelCount + x * self.channelCount + i] = newValue[i]
+                    storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i] = newValue[i]
                 }
             }
         }
@@ -890,7 +946,7 @@ extension Image where ComponentType == UInt8 {
     }
     
     private func _convertWithAlpha(using lut: UnsafeBufferPointer<UInt8>) {
-        let buffer = self.storage.data
+        let buffer = UnsafeMutableBufferPointer(rebasing: self.storage.data.prefix(self.elementCount))
         if self.channelCount == 4 {
             let simdBuffer = UnsafeMutableRawBufferPointer(buffer).bindMemory(to: SIMD4<UInt8>.self)
             for i in 0..<simdBuffer.count {
@@ -946,7 +1002,7 @@ extension Image where ComponentType == UInt8 {
 extension Image where ComponentType: BinaryInteger & FixedWidthInteger & UnsignedInteger {
     @inlinable
     public init(_ data: Image<Float>) {
-        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
+        self.init(width: data.width, height: data.height, channelCount: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
@@ -1162,6 +1218,20 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     }
 }
 
+extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
+    @inlinable
+    public var averageValue: SIMD4<Float> {
+        let scale = 1.0 / Float(self.width * self.height)
+        var average = SIMD4<Float>(repeating: 0)
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                average += self[floatVectorAt: x, y] * scale
+            }
+        }
+        return average
+    }
+}
+
 extension Image {
     @available(*, deprecated, renamed: "withImageReinterpreted(as:perform:)")
     @inlinable
@@ -1176,7 +1246,7 @@ extension Image {
         let allocator: ImageAllocator = .custom(context: storage, deallocateFunc: { _, _ in })
         return try self.withUnsafeBufferPointer { buffer in
             return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
-                let data = Image<U>(width: self.width, height: self.height, channels: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode, data: UnsafeMutablePointer(mutating: reboundBuffer.baseAddress!), allocator: allocator)
+                let data = Image<U>(width: self.width, height: self.height, channelCount: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode, data: UnsafeMutableBufferPointer(mutating: reboundBuffer), allocator: allocator)
                 return try perform(data)
             }
         }
@@ -1201,7 +1271,7 @@ extension Image {
         let allocator: ImageAllocator = .custom(context: storage, deallocateFunc: { _, _ in })
         return try self.withUnsafeMutableBufferPointer { buffer in
             return try buffer.withMemoryRebound(to: U.self) { reboundBuffer in
-                var data = Image<U>(width: width, height: height, channels: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: reboundBuffer.baseAddress!, allocator: allocator)
+                var data = Image<U>(width: width, height: height, channelCount: channels, colorSpace: colorSpace, alphaMode: alphaMode, data: reboundBuffer, allocator: allocator)
                 return try perform(&data)
             }
         }
@@ -1211,7 +1281,7 @@ extension Image {
 extension Image where ComponentType: BinaryInteger & FixedWidthInteger & SignedInteger {
     @inlinable
     public init(_ data: Image<Float>) {
-        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
+        self.init(width: data.width, height: data.height, channelCount: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
@@ -1227,7 +1297,7 @@ extension Image where ComponentType == Float {
     
     @inlinable
     public init<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ data: Image<I>) {
-        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
+        self.init(width: data.width, height: data.height, channelCount: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
@@ -1240,7 +1310,7 @@ extension Image where ComponentType == Float {
     
     @inlinable
     public init<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ data: Image<I>) {
-        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
+        self.init(width: data.width, height: data.height, channelCount: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
@@ -1315,31 +1385,13 @@ extension Image where ComponentType == Float {
         }
         
         self.convert(toColorSpace: sourceColorSpace)
-        
-    }
-    
-    public var averageValue : SIMD4<Float> {
-        let scale = 1.0 / Float(self.width * self.height)
-        var average = SIMD4<Float>(repeating: 0)
-        for y in 0..<self.height {
-            let yBase = y * self.width * self.channelCount
-            for x in 0..<self.width {
-                let baseIndex = yBase + x * self.channelCount
-                for c in 0..<self.channelCount {
-                    //                    assert(self.data[baseIndex + c].isFinite, "Pixel \(x), \(y), channel \(c) is not finite: value is \(self.data[baseIndex + c])")
-                    average[c] += self.storage.data[baseIndex + c] * scale
-                }
-            }
-        }
-        return average
     }
 }
-
 
 extension Image where ComponentType: BinaryFloatingPoint {
     @inlinable
     public init<Other: BinaryFloatingPoint>(_ data: Image<Other>) {
-        self.init(width: data.width, height: data.height, channels: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
+        self.init(width: data.width, height: data.height, channelCount: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in

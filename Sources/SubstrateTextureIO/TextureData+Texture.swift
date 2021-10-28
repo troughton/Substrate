@@ -66,7 +66,7 @@ extension Image {
         assert(texture.storageMode != .private)
         
         self.init(width: max(texture.width >> mipmapLevel, 1), height: max(texture.height >> mipmapLevel, 1),
-                  channels: pixelFormat.channelCount, colorSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, alphaMode: alphaMode)
+                  channelCount: pixelFormat.channelCount, colorSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, alphaMode: alphaMode)
         
         let bytesPerRow = self.width * self.channelCount * MemoryLayout<T>.stride
         let width = self.width

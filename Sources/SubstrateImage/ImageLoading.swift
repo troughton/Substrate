@@ -326,10 +326,10 @@ struct WuffsImageDecodeCallbacks: DecodeImageCallbacks {
         return try PixelBuffer(imageConfig: image_config,
                                allocatingWith: { byteCount in
             let (memory, allocator) = try self.loadingDelegate.allocateMemory(byteCount: byteCount, alignment: 16, zeroed: !allowUninitializedMemory)
-            return (memory.baseAddress!, AllocationContext(buffer: memory, allocator: allocator))
+            return (memory, AllocationContext(buffer: memory, allocator: allocator))
         }, deallocatingWith: { allocation, userInfo in
             let context = userInfo as! AllocationContext
-            precondition(context.buffer.baseAddress == allocation)
+            precondition(context.buffer.baseAddress == allocation.baseAddress)
             return context.allocator.deallocate(data: context.buffer)
         })
     }
@@ -354,8 +354,6 @@ extension Image where ComponentType: BinaryInteger {
         }
         defer { fclose(file) }
         let pixelBuffer = try WuffsAux.decodeImage(callbacks: WuffsImageDecodeCallbacks(loadingDelegate: loadingDelegate, bitDepth: MemoryLayout<ComponentType>.stride * 8, channelCount: channelCount), input: FileInput(file: file))
-        let width = Int(pixelBuffer.buffer.pixcfg.width)
-        let height = Int(pixelBuffer.buffer.pixcfg.height)
         let (data, userContext) = pixelBuffer.moveAllocation()
         let deallocateFunc = pixelBuffer.deallocateFunc
         
@@ -369,8 +367,8 @@ extension Image where ComponentType: BinaryInteger {
         
         self.init(width: Int(pixelBuffer.buffer.pixcfg.width),
                   height: Int(pixelBuffer.buffer.pixcfg.height),
-                  channels: Int(channelCount),
-                  data: data!.bindMemory(to: ComponentType.self, capacity: width * height * channelCount),
+                  channelCount: Int(channelCount),
+                  data: data!.bindMemory(to: ComponentType.self),
                   colorSpace: colorSpace,
                   alphaMode: alphaMode,
                   allocator: allocator)
@@ -387,8 +385,6 @@ extension Image where ComponentType: BinaryInteger {
             let memoryInput = MemoryInput(buffer: buffer)
             return try WuffsAux.decodeImage(callbacks: WuffsImageDecodeCallbacks(loadingDelegate: loadingDelegate, bitDepth: MemoryLayout<ComponentType>.stride * 8, channelCount: channelCount), input: memoryInput)
         }
-        let width = Int(pixelBuffer.buffer.pixcfg.width)
-        let height = Int(pixelBuffer.buffer.pixcfg.height)
         let (data, userContext) = pixelBuffer.moveAllocation()
         let deallocateFunc = pixelBuffer.deallocateFunc
         
@@ -402,8 +398,8 @@ extension Image where ComponentType: BinaryInteger {
         
         self.init(width: Int(pixelBuffer.buffer.pixcfg.width),
                   height: Int(pixelBuffer.buffer.pixcfg.height),
-                  channels: Int(channelCount),
-                  data: data!.bindMemory(to: ComponentType.self, capacity: width * height * channelCount),
+                  channelCount: Int(channelCount),
+                  data: data!.bindMemory(to: ComponentType.self),
                   colorSpace: colorSpace,
                   alphaMode: alphaMode,
                   allocator: allocator)
@@ -425,6 +421,78 @@ extension Image where ComponentType: BinaryInteger {
     }
 }
 
+final class STBLoadingDelegate {
+    let loadingDelegate: ImageLoadingDelegate
+    var overrides: stbi_allocator_overrides = .init()
+    var expectedSize: Int = .max
+    var allocations: [(allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator)] = []
+    
+    init(loadingDelegate: ImageLoadingDelegate, expectedSize: Int) {
+        self.loadingDelegate = loadingDelegate
+        self.expectedSize = expectedSize
+    }
+    
+    func allocate(size: Int) -> UnsafeMutableRawPointer? {
+        guard size > 0 else { return nil }
+        guard size == self.expectedSize || size &- 1 == self.expectedSize, // STB requests a one-byte overallocation.
+              let (buffer, allocator) = try? self.loadingDelegate.allocateMemory(byteCount: size, alignment: 16, zeroed: false) else {
+                  let allocation = UnsafeMutableRawBufferPointer.allocate(byteCount: size, alignment: 16)
+                  self.allocations.append((allocation, .system))
+                  return allocation.baseAddress
+        }
+        if case .custom = allocator {
+            self.expectedSize = .max // Only allow one allocation of the expected size per image. We do this because multiple allocations for the same image backed by GPUResourceUploader allocations might fail/deadlock since the GPUResourceUploader has exhausted all of its available upload buffer memory.
+        }
+        self.allocations.append((buffer, allocator))
+        return buffer.baseAddress
+    }
+    
+    func allocator(for allocation: UnsafeMutableRawPointer) -> ImageAllocator {
+        return self.allocations.first(where: { $0.allocation.baseAddress == allocation })?.allocator ?? .system
+    }
+    
+    func allocatedSize(for allocation: UnsafeMutableRawPointer) -> Int {
+        return self.allocations.first(where: { $0.allocation.baseAddress == allocation })?.allocation.count ?? 0
+    }
+    
+    func deallocate(allocation: UnsafeMutableRawPointer?) {
+        guard let theAllocation = allocation,
+        let allocationIndex = self.allocations.firstIndex(where: { $0.allocation.baseAddress == theAllocation }) else {
+            allocation?.deallocate()
+            return
+        }
+        let (buffer, allocator) = self.allocations.remove(at: allocationIndex)
+        allocator.deallocate(data: buffer)
+    }
+    
+    func reallocate(allocation: UnsafeMutableRawPointer?, size: Int) -> UnsafeMutableRawPointer? {
+        if let allocationIndex = self.allocations.firstIndex(where: { $0.allocation.baseAddress == allocation }), self.allocations[allocationIndex].allocation.count >= size {
+            return allocation
+        }
+        self.deallocate(allocation: allocation)
+        return self.allocate(size: size)
+    }
+}
+
+fileprivate func setupStbImageAllocatorContext(_ wrapper: STBLoadingDelegate) {
+    let existingOverrides = stbi_set_allocator_overrides(stbi_allocator_overrides(stbi_alloc_override: { size in
+        let context = Unmanaged<STBLoadingDelegate>.fromOpaque(stbi_get_allocator_context()!).takeUnretainedValue()
+        return context.allocate(size: size)
+    }, stbi_realloc_override: { currentAddress, oldLength, newLength in
+        let context = Unmanaged<STBLoadingDelegate>.fromOpaque(stbi_get_allocator_context()!).takeUnretainedValue()
+        return context.reallocate(allocation: currentAddress, size: newLength)
+    }, stbi_free_override: { memory in
+        let context = Unmanaged<STBLoadingDelegate>.fromOpaque(stbi_get_allocator_context()!).takeUnretainedValue()
+        context.deallocate(allocation: memory)
+    }, allocator_context: Unmanaged.passRetained(wrapper).toOpaque()))
+    wrapper.overrides = existingOverrides
+}
+
+fileprivate func tearDownStbImageAllocatorContext(overrides: stbi_allocator_overrides) {
+    let setOverrides = stbi_set_allocator_overrides(overrides)
+    Unmanaged<STBLoadingDelegate>.fromOpaque(setOverrides.allocator_context!).release()
+}
+
 extension Image where ComponentType == UInt8 {
     public init(fileAt url: URL, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         let fileInfo = try ImageFileInfo(url: url)
@@ -444,6 +512,10 @@ extension Image where ComponentType == UInt8 {
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: channels)
         
+        let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
+        setupStbImageAllocatorContext(delegateWrapper)
+        defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
+        
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
@@ -451,11 +523,11 @@ extension Image where ComponentType == UInt8 {
             throw ImageLoadingError.invalidImageDataFormat(url, T.self)
         }
         
-        self.init(width: Int(width), height: Int(height), channels: Int(channels),
-                  data: data,
+        self.init(width: Int(width), height: Int(height), channelCount: Int(channels),
+                  data: .init(start: data, count: delegateWrapper.allocatedSize(for: data)),
                   colorSpace: colorSpace,
                   alphaMode: alphaMode,
-                  allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
+                  allocator: delegateWrapper.allocator(for: data))
     }
     
     public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws {
@@ -476,6 +548,10 @@ extension Image where ComponentType == UInt8 {
         
         let channels = loadingDelegate.channelCount(for: fileInfo)
         
+        let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
+        setupStbImageAllocatorContext(delegateWrapper)
+        defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
+        
         self = try data.withUnsafeBytes { data in
             var width : Int32 = 0
             var height : Int32 = 0
@@ -486,11 +562,11 @@ extension Image where ComponentType == UInt8 {
             
             return Image(width: Int(width),
                          height: Int(height),
-                         channels: Int(channels),
-                         data: data,
+                         channelCount: Int(channels),
+                         data: .init(start: data, count: delegateWrapper.allocatedSize(for: data)),
                          colorSpace: colorSpace,
                          alphaMode: alphaMode,
-                         allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
+                         allocator: delegateWrapper.allocator(for: data))
         }
     }
 }
@@ -510,6 +586,9 @@ extension Image where ComponentType == Int8 {
         }
         
         let channels = loadingDelegate.channelCount(for: fileInfo)
+        let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
+        setupStbImageAllocatorContext(delegateWrapper)
+        defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
         
         var width : Int32 = 0
         var height : Int32 = 0
@@ -518,7 +597,13 @@ extension Image where ComponentType == Int8 {
             throw ImageLoadingError.invalidImageDataFormat(url, T.self)
         }
         
-        self.init(width: Int(width), height: Int(height), channels: channels, data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: .undefined, alphaMode: .none, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
+        self.init(width: Int(width),
+                  height: Int(height),
+                  channelCount: channels,
+                  data: UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(data), count: delegateWrapper.allocatedSize(for: data)).bindMemory(to: Int8.self),
+                  colorSpace: .undefined,
+                  alphaMode: .none,
+                  allocator: delegateWrapper.allocator(for: data))
     }
     
     public init(data: Data, loadingDelegate: ImageLoadingDelegate? = nil) throws {
@@ -535,6 +620,9 @@ extension Image where ComponentType == Int8 {
         }
         
         let channels = loadingDelegate.channelCount(for: fileInfo)
+        let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
+        setupStbImageAllocatorContext(delegateWrapper)
+        defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
         
         self = try data.withUnsafeBytes { data in
             var width : Int32 = 0
@@ -544,7 +632,13 @@ extension Image where ComponentType == Int8 {
                 throw ImageLoadingError.invalidData
             }
             
-            return Image(width: Int(width), height: Int(height), channels: Int(channels), data: UnsafeMutableRawPointer(data).bindMemory(to: Int8.self, capacity: Int(width) * Int(height) * Int(channels)), colorSpace: .undefined, alphaMode: .none, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
+            return Image(width: Int(width),
+                         height: Int(height),
+                         channelCount: Int(channels),
+                         data: UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(data), count: delegateWrapper.allocatedSize(for: data)).bindMemory(to: Int8.self),
+                         colorSpace: .undefined,
+                         alphaMode: .none,
+                         allocator: delegateWrapper.allocator(for: data))
         }
     }
 }
@@ -568,6 +662,10 @@ extension Image where ComponentType == UInt16 {
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: channels)
         
+        let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
+        setupStbImageAllocatorContext(delegateWrapper)
+        defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
+        
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
@@ -576,7 +674,13 @@ extension Image where ComponentType == UInt16 {
             throw ImageLoadingError.invalidImageDataFormat(url, T.self)
         }
         
-        self.init(width: Int(width), height: Int(height), channels: channels, data: data, colorSpace: colorSpace, alphaMode: alphaMode, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
+        self.init(width: Int(width),
+                  height: Int(height),
+                  channelCount: channels,
+                  data: .init(start: data, count: delegateWrapper.allocatedSize(for: data) / MemoryLayout<UInt16>.stride),
+                  colorSpace: colorSpace,
+                  alphaMode: alphaMode,
+                  allocator: delegateWrapper.allocator(for: data))
     }
     
     public init(data: Data, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws {
@@ -595,6 +699,9 @@ extension Image where ComponentType == UInt16 {
         }
         
         let channels = loadingDelegate.channelCount(for: fileInfo)
+        let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
+        setupStbImageAllocatorContext(delegateWrapper)
+        defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
         
         self = try data.withUnsafeBytes { data in
             var width : Int32 = 0
@@ -604,7 +711,13 @@ extension Image where ComponentType == UInt16 {
                 throw ImageLoadingError.invalidData
             }
             
-            return Image(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
+            return Image(width: Int(width),
+                         height: Int(height),
+                         channelCount: Int(channels),
+                         data: .init(start: data, count: delegateWrapper.allocatedSize(for: data) / MemoryLayout<UInt16>.stride),
+                         colorSpace: colorSpace,
+                         alphaMode: alphaMode,
+                         allocator: delegateWrapper.allocator(for: data))
         }
     }
     
@@ -640,10 +753,20 @@ extension Image where ComponentType == Float {
             var height : Int32 = 0
             var componentsPerPixel : Int32 = 0
             
+            let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
+            setupStbImageAllocatorContext(delegateWrapper)
+            defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
+            
             guard let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
                 throw ImageLoadingError.invalidData
             }
-            self.init(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)), allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
+            self.init(width: Int(width),
+                      height: Int(height),
+                      channelCount: Int(channels),
+                      data: .init(start: data, count: delegateWrapper.allocatedSize(for: data) / MemoryLayout<Float>.stride),
+                      colorSpace: colorSpace,
+                      alphaMode: alphaMode.inferFromFileFormat(fileExtension: url.pathExtension, channelCount: Int(channels)),
+                      allocator: delegateWrapper.allocator(for: data))
             
         } else if fileInfo.bitDepth == 16 {
             let image = try Image<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: alphaMode)
@@ -677,10 +800,20 @@ extension Image where ComponentType == Float {
                 var height : Int32 = 0
                 var componentsPerPixel : Int32 = 0
                 
+                let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
+                setupStbImageAllocatorContext(delegateWrapper)
+                defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
+                
                 guard let data = stbi_loadf_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels)) else {
                     throw ImageLoadingError.invalidData
                 }
-                return Image(width: Int(width), height: Int(height), channels: Int(channels), data: data, colorSpace: colorSpace, alphaMode: alphaMode, allocator: .custom(deallocateFunc: { stbi_image_free($0); _ = $1 }))
+                return Image(width: Int(width),
+                             height: Int(height),
+                             channelCount: Int(channels),
+                             data: .init(start: data, count: delegateWrapper.allocatedSize(for: data) / MemoryLayout<UInt16>.stride),
+                             colorSpace: colorSpace,
+                             alphaMode: alphaMode,
+                             allocator: delegateWrapper.allocator(for: data))
             }
             
         } else if is16Bit {
@@ -749,7 +882,7 @@ extension Image where ComponentType == Float {
         
         let (data, allocator) = try loadingDelegate.allocateMemory(byteCount: Int(image.width) * Int(image.height) * Int(channels) * MemoryLayout<Float>.stride, alignment: MemoryLayout<SIMD4<Float>>.stride, zeroed: false)
         
-        self.init(width: Int(image.width), height: Int(image.height), channels: Int(channels), colorSpace: .linearSRGB, alphaMode: (channels == 2 || channels == 4) ? .premultiplied : .none, data: data.bindMemory(to: Float.self).baseAddress!, allocator: allocator)
+        self.init(width: Int(image.width), height: Int(image.height), channelCount: Int(channels), colorSpace: .linearSRGB, alphaMode: (channels == 2 || channels == 4) ? .premultiplied : .none, data: data.bindMemory(to: Float.self), allocator: allocator)
         
         if channels == 4 && image.num_channels == 3 {
             for y in 0..<self.height {
