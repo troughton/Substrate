@@ -492,7 +492,7 @@ final class ProxyDrawRenderPass: DrawRenderPass {
 }
 
 @usableFromInline
-final class RenderPassRecord: UnsafeSendable {
+final class RenderPassRecord: @unchecked Sendable {
     @usableFromInline let name: String
     @usableFromInline let type: RenderPassType
     @usableFromInline var pass : RenderPass!
@@ -528,7 +528,7 @@ final class RenderPassRecord: UnsafeSendable {
     //    case transitive
 }
 
-final class RenderGraphExecutionResult: UnsafeSendable {
+final class RenderGraphExecutionResult: @unchecked Sendable {
     public internal(set) var gpuTime: Double
 
     public init() {
