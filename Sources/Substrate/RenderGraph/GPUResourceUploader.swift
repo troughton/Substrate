@@ -187,7 +187,7 @@ public final actor GPUResourceUploader {
         assert(offset + count <= buffer.length)
         
         if buffer.storageMode == .shared || buffer.storageMode == .managed {
-            try buffer.withMutableContents(range: offset..<(offset + count)) {
+            try await buffer.withMutableContents(range: offset..<(offset + count)) {
                 try bytes($0, &$1)
             }
             return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
@@ -296,7 +296,7 @@ extension GPUResourceUploader {
                 let buffer = Buffer(length: byteCount, storageMode: .shared, cacheMode: self.buffer.descriptor.cacheMode, usage: .blitSource, flags: .persistent)
                 
                 do {
-                    try buffer.withMutableContents { buffer, range in
+                    try await buffer.withMutableContents { buffer, range in
                         try perform(buffer, &range)
                     }
                 } catch {

@@ -129,6 +129,7 @@ public typealias ActiveRenderGraphMask = UInt8
 
 public protocol ResourceProtocol: Sendable {
     init(handle: Handle)
+    init?(_ resource: Resource)
     func dispose()
     
     var handle: Handle { get }

@@ -115,6 +115,11 @@ extension ArgumentBufferArray: ResourceProtocolImpl {
 public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
     public let argumentBufferArray : ArgumentBufferArray
     
+    public init?(_ resource: Resource) {
+        guard let argBufferArray = ArgumentBufferArray(resource) else { return nil }
+        self.argumentBufferArray = argBufferArray
+    }
+    
     public init(handle: Handle) {
         self.argumentBufferArray = ArgumentBufferArray(handle: handle)
     }

@@ -402,6 +402,11 @@ extension ArgumentBuffer: CustomStringConvertible {
 public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     public let argumentBuffer : ArgumentBuffer
     
+    public init?(_ resource: Resource) {
+        guard let argumentBuffer = ArgumentBuffer(resource) else { return nil }
+        self.argumentBuffer = argumentBuffer
+    }
+    
     public init(handle: Handle) {
         self.argumentBuffer = ArgumentBuffer(handle: handle)
     }

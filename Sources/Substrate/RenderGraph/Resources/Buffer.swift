@@ -167,11 +167,8 @@ public struct Buffer : ResourceProtocol {
         RenderBackend.registerExternalResource(Resource(self), backingResource: externalResource)
     }
     
-    
     public func withContents<A>(_ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
-        self.checkHasCPUAccess(accessType: .read)
-        let contents = RenderBackend.bufferContents(for: self, range: self.range)
-        return try /* await */perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: self.length))
+        return try self.withContents(range: self.range, perform)
     }
     
     public func withContents<A>(range: Range<Int>, _ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
@@ -180,21 +177,8 @@ public struct Buffer : ResourceProtocol {
         return try /* await */perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
     }
     
-    public func withMutableContents<A>(_ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /* reasync */ rethrows -> A {
-        self.checkHasCPUAccess(accessType: .readWrite)
-        let contents = RenderBackend.bufferContents(for: self, range: self.range)
-        var modifiedRange = self.range
-        
-        let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: self.length), &modifiedRange)
-        
-        if !modifiedRange.isEmpty {
-            RenderBackend.buffer(self, didModifyRange: modifiedRange)
-        }
-        self.stateFlags.formUnion(.initialised)
-        return result
-    }
     
-    public func withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
+    func _withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
         self.checkHasCPUAccess(accessType: .readWrite)
         let contents = RenderBackend.bufferContents(for: self, range: range)
         var modifiedRange = range
@@ -208,44 +192,41 @@ public struct Buffer : ResourceProtocol {
         return result
     }
     
+    public func withMutableContents<A>(_ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /* reasync */ rethrows -> A {
+        return try self.withMutableContents(range: self.range, perform)
+    }
     
-    @inlinable
-    public func withContentsAsync(_ perform: @escaping (UnsafeRawBufferPointer) /* async */ -> Void) async {
-        await self.waitForCPUAccess(accessType: .read)
-        if let contents = RenderBackend.bufferContents(for: self, range: self.range) {
-            perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: self.length))
-        } else {
-            self._deferredSliceActions.append(DeferredBufferSlice(closure: { $0.withContents(perform) }))
-        }
+    public func withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
+        return try self._withMutableContents(range: range, perform)
     }
     
     @inlinable
-    public func withContentsAsync(range: Range<Int>, _ perform: @escaping (UnsafeRawBufferPointer) -> Void) async {
+    public func withContents<A>(_ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) async rethrows -> A {
+        return try await self.withContents(range: self.range, perform)
+    }
+    
+    @inlinable
+    public func withContents<A>(range: Range<Int>, _ perform: (UnsafeRawBufferPointer) throws -> A) async rethrows -> A {
         await self.waitForCPUAccess(accessType: .read)
         if let contents = RenderBackend.bufferContents(for: self, range: range) {
-            perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
+            return try perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
         } else {
-            self._deferredSliceActions.append(DeferredBufferSlice(closure: { $0.withContents(range: range, perform) }))
+            preconditionFailure("Buffer \(self) has not been materialised at the time of the withContents call.")
         }
     }
     
     @inlinable
-    public func withMutableContentsAsync(_ perform: @escaping (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ -> Void) async {
-        await self.waitForCPUAccess(accessType: .readWrite)
-        if let _ = RenderBackend.bufferContents(for: self, range: self.range) {
-            self.withMutableContents(perform)
-        } else {
-            self._deferredSliceActions.append(DeferredBufferSlice(closure: { $0.withMutableContents(range: range, perform) }))
-        }
+    public func withMutableContents<A>(_ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) async rethrows -> A {
+        return try await self.withMutableContents(range: self.range, perform)
     }
     
     @inlinable
-    public func withMutableContentsAsync(range: Range<Int>, _ perform: @escaping (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) -> Void) async {
+    public func withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) throws -> A) async rethrows -> A {
         await self.waitForCPUAccess(accessType: .readWrite)
         if let _ = RenderBackend.bufferContents(for: self, range: range) {
-            self.withMutableContents(range: range, perform)
+            return try self._withMutableContents(range: range, perform)
         } else {
-            self._deferredSliceActions.append(DeferredBufferSlice(closure: { $0.withMutableContents(range: range, perform) }))
+            preconditionFailure("Buffer \(self) has not been materialised at the time of the withMutableContents call.")
         }
     }
     
@@ -278,6 +259,13 @@ public struct Buffer : ResourceProtocol {
                 })
             }))
         }
+    }
+    
+    /// Makes the contents of the byte range `range` visible to the GPU.
+    /// This call is usually unnecessary; the withMutableContents functions will call this for you.
+    @inlinable
+    public func flushRange(_ range: Range<Int>) {
+        RenderBackend.buffer(self, didModifyRange: range)
     }
     
     func applyDeferredSliceActions() {
