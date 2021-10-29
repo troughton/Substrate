@@ -314,6 +314,8 @@ final class MetalBackend : SpecificRenderBackend {
                 return bufferReference?.buffer
             } else if let texture = Texture(resource) {
                 return resourceRegistry[texture]?.texture
+            } else if let heap = Heap(resource) {
+                return resourceRegistry[heap]
             }
             return nil
         }
