@@ -87,7 +87,7 @@ let package = Package(
         .target(name: "CNativeFileDialog", exclude: ["CMakeLists.txt"]),
         .target(
             name: "AppFramework",
-            dependencies: ["SubstrateUtilities", "Substrate", "SubstrateMath", .product(name: "ImGui", package: "SwiftImGui"), "CNativeFileDialog", "CSDL2"] + vulkanDependencies,
+            dependencies: ["SubstrateUtilities", "Substrate", "SubstrateMath", .product(name: "ImGui", package: "SwiftImGui"), "CNativeFileDialog"] + vulkanDependencies,
             exclude: ["CMakeLists.txt", "Input/CMakeLists.txt", "UpdateScheduler/CMakeLists.txt", "Windowing/CMakeLists.txt"]),
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14
