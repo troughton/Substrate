@@ -205,7 +205,7 @@ extension ResourceProtocolImpl {
         return Self.persistentRegistry.persistentChunks[chunkIndex][keyPath: keyPath].advanced(by: indexInChunk)
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<SharedProperties, UnsafeMutablePointer<T>>) -> T {
         get {
             return self.pointer(for: keyPath).pointee
@@ -215,7 +215,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<TransientProperties, UnsafeMutablePointer<T>>) -> T? {
         get {
             return self.pointer(for: keyPath)?.pointee
@@ -226,7 +226,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<TransientProperties, UnsafeMutablePointer<T?>>) -> T? {
         get {
             return self.pointer(for: keyPath)?.pointee
@@ -237,7 +237,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<PersistentProperties, UnsafeMutablePointer<T>>) -> T? {
         get {
             return self.pointer(for: keyPath)?.pointee
@@ -248,7 +248,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<PersistentProperties, UnsafeMutablePointer<T?>>) -> T? {
         get {
             return self.pointer(for: keyPath)?.pointee
