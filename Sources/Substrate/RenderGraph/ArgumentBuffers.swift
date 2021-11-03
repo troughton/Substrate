@@ -113,7 +113,9 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.init(renderGraph: renderGraph, flags: flags)
-        self.label = "Descriptor Set for \(String(reflecting: A.self))"
+        if _isDebugAssertConfiguration() {
+            self.label = "Descriptor Set for \(String(reflecting: A.self))"
+        }
         
         var arguments = arguments
         arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
