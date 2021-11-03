@@ -1065,12 +1065,15 @@ public final class RenderGraph {
     
     func compile(renderPasses: [RenderPassRecord]) -> ([RenderPassRecord], DependencyTable<DependencyType>) {
         
-        renderPasses.enumerated().forEach { $1.passIndex = $0 } // We may have inserted early blit passes, so we need to set the pass indices now.
+        for i in renderPasses.indices {
+            renderPasses[i].passIndex = i  // We may have inserted early blit passes, so we need to set the pass indices now.
+        }
         
         self.evaluateResourceUsages(renderPasses: renderPasses)
         
         var dependencyTable = DependencyTable<DependencyType>(capacity: renderPasses.count, defaultValue: .none)
-        var passHasSideEffects = [Bool](repeating: false, count: renderPasses.count)
+        let passHasSideEffects = BitSet(capacity: renderPasses.count)
+        defer { passHasSideEffects.dispose() }
         
         for (i, pass) in renderPasses.enumerated() {
             for resource in pass.writtenResources {
