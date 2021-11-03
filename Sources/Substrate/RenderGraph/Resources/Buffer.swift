@@ -177,7 +177,7 @@ public struct Buffer : ResourceProtocol {
         return try /* await */perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
     }
     
-    
+    @inlinable
     func _withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
         self.checkHasCPUAccess(accessType: .readWrite)
         let contents = RenderBackend.bufferContents(for: self, range: range)
@@ -192,10 +192,12 @@ public struct Buffer : ResourceProtocol {
         return result
     }
     
+    @inlinable
     public func withMutableContents<A>(_ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /* reasync */ rethrows -> A {
         return try self.withMutableContents(range: self.range, perform)
     }
     
+    @inlinable
     public func withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
         return try self._withMutableContents(range: range, perform)
     }
