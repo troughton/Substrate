@@ -164,7 +164,9 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.init(renderGraph: renderGraph, flags: flags)
-        self.label = "Descriptor Set for \(String(reflecting: A.self))"
+        if _isDebugAssertConfiguration() {
+            self.label = "Descriptor Set for \(String(reflecting: A.self))"
+        }
         
         var arguments = arguments
         arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
@@ -565,7 +567,7 @@ extension TypedArgumentBuffer: CustomStringConvertible {
 // Unlike the other transient registries, the transient argument buffer registry is chunk-based.
 // This is because the number of argument buffers used within a frame can vary dramatically, and so a pre-assigned maximum is more likely to be hit.
 final class TransientArgumentBufferRegistry: TransientChunkRegistry<ArgumentBuffer> {
-    static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientArgumentBufferRegistry(transientRegistryIndex: i) }
+    static let instances = TransientRegistryArray<TransientArgumentBufferRegistry>()
     
     override class var maxChunks: Int { 2048 }
     

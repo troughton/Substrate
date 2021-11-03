@@ -228,17 +228,17 @@ extension ChunkArray.RandomAccessView where Element == ResourceUsage {
     func indexOfPreviousWrite(before index: Int, resource: Resource) -> Int? {
         let usageActiveRange = index >= self.endIndex ? .fullResource : self[index].activeRange
         for i in (0..<index).reversed() {
-            if self[i].affectsGPUBarriers, self[i].isWrite, self[i].activeRange.intersects(with: usageActiveRange, resource: resource) {
+            if self[i].isWrite, self[i].affectsGPUBarriers, self[i].activeRange.intersects(with: usageActiveRange, resource: resource) {
                 return i
             }
         }
         return nil
     }
-
+    
     func indexOfPreviousRead(before index: Int, resource: Resource) -> Int? {
         let usageActiveRange = index >= self.endIndex ? .fullResource : self[index].activeRange
         for i in (0..<index).reversed() {
-            if self[i].affectsGPUBarriers, self[i].isRead, self[i].activeRange.intersects(with: usageActiveRange, resource: resource) {
+            if self[i].isRead, self[i].affectsGPUBarriers, self[i].activeRange.intersects(with: usageActiveRange, resource: resource) {
                 return i
             }
         }

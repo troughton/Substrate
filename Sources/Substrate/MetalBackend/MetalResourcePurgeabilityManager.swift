@@ -27,22 +27,26 @@ final class MetalResourcePurgeabilityManager {
     
     @discardableResult
     func setPurgeableState(on resource: MTLResource, to state: MTLPurgeableState) -> MTLPurgeableState {
-        self.lock.withSemaphore {
-            switch state {
-            case .volatile, .empty:
-                let pendingCommands = QueueRegistry.lastSubmittedCommands
-                if !all(QueueRegistry.lastCompletedCommands .>= pendingCommands) {
-                    self.pendingPurgabilityChanges.updateValue(MTLPendingPurgeabilityChange(resource: resource, state: state, after: pendingCommands), forKey: ObjectIdentifier(resource))
-                    return resource.setPurgeableState(.keepCurrent)
-                } else {
-                    fallthrough
-                }
-            default:
-                let pendingValue = self.pendingPurgabilityChanges.removeValue(forKey: ObjectIdentifier(resource))
-                let trueValue = resource.setPurgeableState(state)
-                return pendingValue?.state == .empty ? .empty : trueValue
-            }
-        }
+        // Possibly due to bugs in the MTLPurgeableStates returned by Metal, scheduling purgeability changes for after a resource has finished being used seems to cause more issues than it prevents.
+        // Just forward the calls directly to Metal instead.
+        return resource.setPurgeableState(state)
+        
+//        self.lock.withSemaphore {
+//             switch state {
+//             case .volatile, .empty:
+//                 let pendingCommands = QueueRegistry.lastSubmittedCommands
+//                 if !all(QueueRegistry.lastCompletedCommands .>= pendingCommands) {
+//                     self.pendingPurgabilityChanges.updateValue(MTLPendingPurgeabilityChange(resource: resource, state: state, after: pendingCommands), forKey: ObjectIdentifier(resource))
+//                     return resource.setPurgeableState(.keepCurrent)
+//                 } else {
+//                     fallthrough
+//                 }
+//             default:
+//                 let pendingValue = self.pendingPurgabilityChanges.removeValue(forKey: ObjectIdentifier(resource))
+//                 let trueValue = resource.setPurgeableState(state)
+//                 return pendingValue?.state == .empty ? .empty : trueValue
+//             }
+//         }
     }
     
     @discardableResult
@@ -51,6 +55,10 @@ final class MetalResourcePurgeabilityManager {
     }
     
     func processPurgeabilityChanges() {
+        // Possibly due to bugs in the MTLPurgeableStates returned by Metal, scheduling purgeability changes for after a resource has finished being used seems to cause more issues than it prevents.
+        // Since we just forward the calls directly to Metal instead, this can be a no-op.
+        return;
+        
         guard self.lock.wait(timeout: .now()) == .success else { return }
         var processedCount = 0
         let lastCompletedCommands = QueueRegistry.lastCompletedCommands

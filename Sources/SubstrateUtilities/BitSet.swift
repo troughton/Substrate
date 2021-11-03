@@ -45,6 +45,12 @@ public struct BitSet {
         self.storageCount = storageCount
     }
     
+    
+    @inlinable
+    public init(capacity: Int) {
+        self.init(storageCount: (capacity + BitSet.bitsPerElement - 1) / BitSet.bitsPerElement)
+    }
+    
     @inlinable
     public init(storage: UnsafeMutableBufferPointer<UInt>) {
         self.storage = storage.baseAddress!

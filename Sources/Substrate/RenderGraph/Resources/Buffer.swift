@@ -461,7 +461,7 @@ struct BufferProperties: SharedResourceProperties {
 
 
 final class TransientBufferRegistry: TransientFixedSizeRegistry<Buffer> {
-    static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientBufferRegistry(transientRegistryIndex: i) }
+    static let instances = TransientRegistryArray<TransientBufferRegistry>()
 }
 
 final class PersistentBufferRegistry: PersistentRegistry<Buffer> {

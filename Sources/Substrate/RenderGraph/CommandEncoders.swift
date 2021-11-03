@@ -367,9 +367,10 @@ public class ResourceBindingEncoder : CommandEncoder {
         let argumentBuffer = ArgumentBuffer()
         assert(argumentBuffer.bindings.isEmpty)
         arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
-        argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
      
         if _isDebugAssertConfiguration() {
+            argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
+            
             for binding in argumentBuffer.bindings {
                 switch binding.1 {
                 case .buffer(let buffer, _):

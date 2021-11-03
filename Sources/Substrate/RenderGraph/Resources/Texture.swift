@@ -391,7 +391,7 @@ struct TextureProperties: SharedResourceProperties {
 }
 
 final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
-    static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientTextureRegistry(transientRegistryIndex: i) }
+    static let instances = TransientRegistryArray<TransientTextureRegistry>()
     
     func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer, flags: ResourceFlags) -> Texture {
         let resource = self.allocateHandle(flags: flags)

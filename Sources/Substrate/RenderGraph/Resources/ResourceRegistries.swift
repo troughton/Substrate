@@ -14,6 +14,36 @@ import Atomics
 // Fixed-capacity registries (transient buffers, transient textures, and transient argument buffer arrays) have permanently-allocated storage.
 // Chunk-based registries allocate storage in blocks. This avoids excessive memory usage while simultaneously ensuring that the memory for a resource is never reallocated (which would cause issues in multithreaded contexts, requiring locks for all access).
 
+// We use TransientRegistryArray rather than a regular array so that the compiler can optimise away retains/releases by knowing that the registries are immortal.
+struct TransientRegistryArray<T: TransientRegistry> {
+    let registry0: T
+    let registry1: T
+    let registry2: T
+    let registry3: T
+    let registry4: T
+    let registry5: T
+    let registry6: T
+    let registry7: T
+    
+    init() {
+        self.registry0 = .init(transientRegistryIndex: 0)
+        self.registry1 = .init(transientRegistryIndex: 1)
+        self.registry2 = .init(transientRegistryIndex: 2)
+        self.registry3 = .init(transientRegistryIndex: 3)
+        self.registry4 = .init(transientRegistryIndex: 4)
+        self.registry5 = .init(transientRegistryIndex: 5)
+        self.registry6 = .init(transientRegistryIndex: 6)
+        self.registry7 = .init(transientRegistryIndex: 7)
+    }
+    
+    subscript(index: Int) -> T {
+        precondition((0..<8).contains(index))
+        return withUnsafeBytes(of: self) { buffer in
+            return buffer.baseAddress!.assumingMemoryBound(to: T.self)[index]
+        }
+    }
+}
+
 final class TransientRegistryManager {
     public static let maxTransientRegistries = UInt8.bitWidth
     
@@ -74,6 +104,7 @@ struct EmptyProperties<Descriptor>: PersistentResourceProperties & SharedResourc
 
 protocol TransientRegistry {
     associatedtype Resource: ResourceProtocolImpl
+    init(transientRegistryIndex: Int)
     func allocateHandle(flags: ResourceFlags) -> Resource
     func initialize(resource: Resource, descriptor: Resource.Descriptor)
     func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource
@@ -98,7 +129,7 @@ class TransientChunkRegistry<Resource: ResourceProtocolImpl>: TransientRegistry 
     var allocatedChunkCount = 0
     var generation : UInt8 = 0
     
-    init(transientRegistryIndex: Int) {
+    required init(transientRegistryIndex: Int) {
         self.transientRegistryIndex = transientRegistryIndex
         if MemoryLayout<Resource.SharedProperties>.size > 0 {
             self.sharedPropertyChunks = .allocate(capacity: Self.maxChunks)
@@ -221,7 +252,7 @@ class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegis
     var transientStorage : Resource.TransientProperties!
     var labels: UnsafeMutablePointer<String?>!
     
-    init(transientRegistryIndex: Int) {
+    required init(transientRegistryIndex: Int) {
         self.transientRegistryIndex = transientRegistryIndex
         self.capacity = 0
     }

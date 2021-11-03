@@ -326,7 +326,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
 
 
 final class TransientArgumentBufferArrayRegistry: TransientFixedSizeRegistry<ArgumentBufferArray> {
-    static let instances = (0..<TransientRegistryManager.maxTransientRegistries).map { i in TransientArgumentBufferArrayRegistry(transientRegistryIndex: i) }
+    static let instances = TransientRegistryArray<TransientArgumentBufferArrayRegistry>()
 }
 
 final class PersistentArgumentBufferArrayRegistry: PersistentRegistry<ArgumentBufferArray> {

@@ -1136,12 +1136,15 @@ public final class RenderGraph {
         let resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag)
         let executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag)
         
-        renderPasses.enumerated().forEach { $1.passIndex = $0 } // We may have inserted early blit passes, so we need to set the pass indices now.
+        for i in renderPasses.indices {
+            renderPasses[i].passIndex = i  // We may have inserted early blit passes, so we need to set the pass indices now.
+        }
         
         await self.evaluateResourceUsages(renderPasses: renderPasses, executionAllocator: executionAllocator, resourceUsagesAllocator: resourceUsagesAllocator)
         
         var dependencyTable = DependencyTable<DependencyType>(capacity: renderPasses.count, defaultValue: .none)
-        var passHasSideEffects = [Bool](repeating: false, count: renderPasses.count)
+        let passHasSideEffects = BitSet(capacity: renderPasses.count)
+        defer { passHasSideEffects.dispose() }
         
         
         for (i, pass) in renderPasses.enumerated() {
