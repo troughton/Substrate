@@ -552,7 +552,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         return storageMode == .private
     }
     
-    func computeTextureUsage(_ texture: Texture, storedTextures: [Texture]) -> MTLTextureUsageProperties {
+    func computeTextureUsage(_ texture: Texture, isStoredThisFrame: Bool) -> MTLTextureUsageProperties {
         var textureUsage : MTLTextureUsage = []
         
         for usage in texture.usages {
@@ -582,7 +582,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         let canBeMemoryless = self.device.isAppleSiliconGPU &&
             (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget)) &&
             textureUsage == .renderTarget &&
-            !storedTextures.contains(texture)
+            !isStoredThisFrame
         let properties = MTLTextureUsageProperties(usage: textureUsage, canBeMemoryless: canBeMemoryless)
         
         assert(properties.usage != .unknown)
@@ -591,8 +591,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, forceGPUPrivate: Bool, storedTextures: [Texture]) -> MTLTextureReference {
-        let properties = self.computeTextureUsage(texture, storedTextures: storedTextures)
+    public func allocateTexture(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) -> MTLTextureReference {
+        let properties = self.computeTextureUsage(texture, isStoredThisFrame: isStoredThisFrame)
         
         if texture.flags.contains(.windowHandle) {
             // Reserve a slot in texture references so we can later insert the texture reference in a thread-safe way, but don't actually allocate anything yet.
@@ -647,7 +647,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         assert(texture.flags.intersection([.persistent, .windowHandle, .externalOwnership]) == [])
         
         let mtlTexture : MTLTexture
-        let properties = self.computeTextureUsage(texture, storedTextures: [texture]) // We don't allow texture views to be memoryless.
+        let properties = self.computeTextureUsage(texture, isStoredThisFrame: true) // We don't allow texture views to be memoryless.
         
         let baseResource = texture.baseResource!
         switch texture.textureViewBaseInfo! {
@@ -745,12 +745,12 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> MTLTextureReference {
+    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) -> MTLTextureReference {
         if let mtlTexture = self.textureReferences[texture] {
             assert(mtlTexture.texture.pixelFormat == MTLPixelFormat(texture.descriptor.pixelFormat))
             return mtlTexture
         }
-        return self.allocateTexture(texture, forceGPUPrivate: forceGPUPrivate, storedTextures: frameStoredTextures)
+        return self.allocateTexture(texture, forceGPUPrivate: forceGPUPrivate, isStoredThisFrame: isStoredThisFrame)
     }
     
     func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {

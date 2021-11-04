@@ -61,7 +61,7 @@ enum PreFrameCommands {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: RenderGraphContextImpl<Backend>,  storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+    func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, context: RenderGraphContextImpl<Backend>, textureIsStored: (Texture) -> Bool, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
         let queue = context.renderGraphQueue
         let queueIndex = Int(queue.index)
         let resourceMap = context.resourceMap
@@ -79,7 +79,7 @@ enum PreFrameCommands {
             
         case .materialiseTexture(let texture):
             // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
-            _ = resourceRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry, frameStoredTextures: storedTextures)
+            _ = resourceRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry, isStoredThisFrame: textureIsStored(texture))
             if let textureWaitEvent = (texture.flags.contains(.historyBuffer) ? resourceRegistry!.historyBufferResourceWaitEvents[Resource(texture)] : resourceRegistry!.textureWaitEvents[texture]) {
                 waitEventValues[queueIndex] = max(textureWaitEvent.waitValue, waitEventValues[queueIndex])
             } else {
@@ -587,18 +587,23 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         self.preFrameCommands.sort()
         
         var commandEncoderIndex = 0
+        var queueCommandWaitIndices = QueueCommandIndices()
         for command in self.preFrameCommands {
             while command.index >= frameCommandInfo.commandEncoders[commandEncoderIndex].commandRange.upperBound {
+                frameCommandInfo.commandEncoders[commandEncoderIndex].queueCommandWaitIndices = queueCommandWaitIndices
                 commandEncoderIndex += 1
+                queueCommandWaitIndices = QueueCommandIndices()
             }
             let commandBufferIndex = frameCommandInfo.commandEncoders[commandEncoderIndex].commandBufferIndex
             command.command.execute(commandIndex: command.index,
-                                    commandGenerator: self,
                                     context: context,
-                                    storedTextures: frameCommandInfo.storedTextures,
+                                    textureIsStored: { frameCommandInfo.storedTextures.contains($0) },
                                     encoderDependencies: &self.commandEncoderDependencies,
-                                    waitEventValues: &frameCommandInfo.commandEncoders[commandEncoderIndex].queueCommandWaitIndices, signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
+                                    waitEventValues: &queueCommandWaitIndices,
+                                    signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
         }
+        
+        frameCommandInfo.commandEncoders[commandEncoderIndex].queueCommandWaitIndices = queueCommandWaitIndices
         
         self.preFrameCommands.removeAll(keepingCapacity: true)
     }

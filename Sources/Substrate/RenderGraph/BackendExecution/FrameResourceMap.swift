@@ -58,7 +58,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
-            return transientRegistry!.accessLock.withLock { transientRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: false, frameStoredTextures: [texture]) } // Conservatively mark the texture as stored this frame.
+            return transientRegistry!.accessLock.withLock { transientRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: false, isStoredThisFrame: true) } // Conservatively mark the texture as stored this frame.
         }
     }
     

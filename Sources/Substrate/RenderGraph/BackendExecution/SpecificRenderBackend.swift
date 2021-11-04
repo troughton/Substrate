@@ -105,7 +105,7 @@ protocol BackendTransientResourceRegistry: ResourceRegistry {
     var accessLock: SpinLock { get }
     
     func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> Backend.BufferReference
-    func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> Backend.TextureReference
+    func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) -> Backend.TextureReference
     func allocateWindowHandleTexture(_ texture: Texture) throws -> Backend.TextureReference
     func allocateTextureView(_ texture: Texture, resourceMap: FrameResourceMap<Backend>) -> Backend.TextureReference
     
