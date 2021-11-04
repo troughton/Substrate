@@ -373,4 +373,9 @@ extension HashSet : Sequence {
     public func makeIterator() -> HashSet<K>.Iterator {
         return Iterator(hashSet: self)
     }
+    
+    @inlinable
+    public func contains(_ element: Element) -> Bool {
+        return self.contains(key: element)
+    }
 }
