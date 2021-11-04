@@ -118,7 +118,7 @@ public enum ResourcePurgeableState {
 
 public typealias ActiveRenderGraphMask = UInt8
 
-public protocol ResourceProtocol : Hashable {
+public protocol ResourceProtocol: Hashable {
     init(handle: Handle)
     func dispose()
     
@@ -151,7 +151,7 @@ public protocol ResourceProtocol : Hashable {
     static var resourceType: ResourceType { get }
 }
 
-protocol ResourceProtocolImpl: ResourceProtocol {
+protocol ResourceProtocolImpl: ResourceProtocol, CustomHashable {
     associatedtype Descriptor
     associatedtype SharedProperties: SharedResourceProperties where SharedProperties.Descriptor == Descriptor
     associatedtype TransientProperties: ResourceProperties where TransientProperties.Descriptor == Descriptor
@@ -175,6 +175,11 @@ extension ResourceProtocolImpl {
     public init?(_ resource: Resource) {
         guard Self.resourceType == resource.type else { return nil }
         self.init(handle: resource.handle)
+    }
+    
+    @inlinable
+    public var customHashValue : Int {
+        return Int(truncatingIfNeeded: self.handle)
     }
     
     @_transparent
@@ -584,7 +589,7 @@ extension Resource: CustomStringConvertible {
 
 extension Resource : CustomHashable {
     public var customHashValue : Int {
-        return self.hashValue
+        return Int(bitPattern: self._handle)
     }
 }
 
