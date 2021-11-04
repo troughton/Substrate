@@ -35,13 +35,10 @@ final class DefaultRenderGraphJobManager : RenderGraphJobManager {
     }
     
     public func dispatchPassJob(_ function: @escaping () -> Void) {
-        taskGroup.enter()
+        self.taskGroup.enter()
         
         self.taskQueueLock.lock()
-        self.taskQueue.append {
-            function()
-            self.taskGroup.leave()
-        }
+        self.taskQueue.append(function)
         self.taskQueueLock.unlock()
         self.taskAvailableSemaphore.signal()
     }
@@ -72,6 +69,7 @@ final class DefaultRenderGraphJobManager : RenderGraphJobManager {
                     let task = self.taskQueue.removeLast()
                     self.taskQueueLock.unlock()
                     task()
+                    self.taskGroup.leave()
                 }
             }
             
