@@ -8,7 +8,6 @@
 import Foundation
 
 struct CommandEncoderInfo {
-    var name: String
     var type: RenderPassType
     
     var commandBufferIndex: Int
@@ -20,6 +19,10 @@ struct CommandEncoderInfo {
     var queueCommandWaitIndices: QueueCommandIndices
     
     var usesWindowTexture: Bool
+    
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+    var name: String? = nil
+#endif
 }
 
 struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
@@ -51,12 +54,6 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
             var commandBufferIndex = 0
             
             let addEncoder = { (passRange: Range<Int>, usesWindowTexture: Bool) -> Void in
-                let name: String
-                if passRange.count <= 3 {
-                    name = passes[passRange].lazy.map { $0.name }.joined(separator: ", ")
-                } else {
-                    name = "[\(passes[passRange.first!].name)...\(passes[passRange.last!].name)] (\(passRange.count) passes)"
-                }
                 
                 let queueFamilyIndex = 0 // TODO: correctly compute this for Vulkan.
                 
@@ -65,14 +62,25 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
                     commandBufferIndex += 1
                 }
                 
-                commandEncoders.append(CommandEncoderInfo(name: name,
-                                                          type: passes[passRange.first!].type,
-                                                          commandBufferIndex: commandBufferIndex,
-                                                          queueFamilyIndex: queueFamilyIndex,
-                                                          passRange: passRange,
-                                                          commandRange: passes[passRange.first!].commandRange!.lowerBound..<passes[passRange.last!].commandRange!.upperBound,
-                                                          queueCommandWaitIndices: QueueCommandIndices(repeating: 0),
-                                                          usesWindowTexture: usesWindowTexture))
+                var encoderInfo = CommandEncoderInfo(type: passes[passRange.first!].type,
+                                                     commandBufferIndex: commandBufferIndex,
+                                                     queueFamilyIndex: queueFamilyIndex,
+                                                     passRange: passRange,
+                                                     commandRange: passes[passRange.first!].commandRange!.lowerBound..<passes[passRange.last!].commandRange!.upperBound,
+                                                     queueCommandWaitIndices: QueueCommandIndices(repeating: 0),
+                                                     usesWindowTexture: usesWindowTexture)
+                
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+                let name: String
+                if passRange.count <= 3 {
+                    name = passes[passRange].lazy.map { $0.name }.joined(separator: ", ")
+                } else {
+                    name = "[\(passes[passRange.first!].name)...\(passes[passRange.last!].name)] (\(passRange.count) passes)"
+                }
+                encoderInfo.name = name
+#endif
+                
+                commandEncoders.append(encoderInfo)
                 commandEncoderRenderTargets.append(renderTargetDescriptors[passRange.lowerBound])
             }
             

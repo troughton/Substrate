@@ -19,7 +19,11 @@ struct MetalFenceHandle : Equatable {
     
     init(label: String, queue: Queue, commandBufferIndex: UInt64) {
         self = MetalFenceRegistry.instance.allocate(queue: queue, commandBufferIndex: commandBufferIndex)
+#if SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+        _ = label
+#else
         self.fence.label = label
+#endif
     }
     
     var isValid : Bool {

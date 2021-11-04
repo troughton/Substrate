@@ -465,7 +465,9 @@ final class ProxyDrawRenderPass: DrawRenderPass {
 
 @usableFromInline
 final class RenderPassRecord {
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
     @usableFromInline let name: String
+#endif
     @usableFromInline let type: RenderPassType
     @usableFromInline var pass : RenderPass!
     @usableFromInline var commands : ChunkArray<RenderGraphCommand>! = nil
@@ -479,7 +481,9 @@ final class RenderPassRecord {
     @usableFromInline /* internal(set) */ var hasSideEffects : Bool = false
     
     init(pass: RenderPass, passIndex: Int) {
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.name = pass.name
+#endif
         self.type = RenderPassType(pass: pass)!
         self.pass = pass
         self.passIndex = passIndex

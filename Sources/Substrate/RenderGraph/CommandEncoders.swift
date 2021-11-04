@@ -186,7 +186,9 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.resourceBindingCommands = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         self.usagePointersToUpdate = ExpandingBuffer(allocator: AllocatorType(commandRecorder.renderPassScratchAllocator))
         
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.pushDebugGroup(passRecord.name)
+#endif
     }
     
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, key: FunctionArgumentKey) {
@@ -266,8 +268,11 @@ public class ResourceBindingEncoder : CommandEncoder {
         assert(argumentBuffer.bindings.isEmpty)
         arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
      
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+        argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
+#endif
+        
         if _isDebugAssertConfiguration() {
-            argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
             
             for binding in argumentBuffer.bindings {
                 switch binding.1 {
@@ -806,7 +811,9 @@ public class ResourceBindingEncoder : CommandEncoder {
     
     @usableFromInline func endEncoding() {
         self.updateResourceUsages(endingEncoding: true)
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.popDebugGroup() // Pass Name
+#endif
     }
 }
 
@@ -1441,11 +1448,15 @@ public final class BlitCommandEncoder : CommandEncoder {
         
         assert(passRecord.pass === renderPass)
         
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.pushDebugGroup(passRecord.name)
+#endif
     }
     
     @usableFromInline func endEncoding() {
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.popDebugGroup() // Pass Name
+#endif
     }
     
     public var label : String = "" {
@@ -1549,11 +1560,15 @@ public final class ExternalCommandEncoder : CommandEncoder {
         
         assert(passRecord.pass === renderPass)
         
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.pushDebugGroup(passRecord.name)
+#endif
     }
     
     @usableFromInline func endEncoding() {
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.popDebugGroup() // Pass Name
+#endif
     }
     
     public var label : String = "" {

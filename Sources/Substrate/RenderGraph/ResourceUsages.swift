@@ -216,7 +216,12 @@ public struct ResourceUsage {
 
 extension ResourceUsage : CustomStringConvertible {
     public var description: String {
+        
+#if SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+        return "ResourceUsage(type: \(self.type), stages: \(self.stages), inArgumentBuffer: \(self.inArgumentBuffer), activeRange: \(self.activeRange), passIndex: \(self.renderPassRecord.passIndex), commandRange: \(self.commandRange))"
+#else
         return "ResourceUsage(type: \(self.type), stages: \(self.stages), inArgumentBuffer: \(self.inArgumentBuffer), activeRange: \(self.activeRange), pass: \(self.renderPassRecord.name), commandRange: \(self.commandRange))"
+#endif
     }
 }
 
