@@ -334,16 +334,16 @@ public struct TransientResourceMap<R : ResourceProtocol, V> {
     
     @inlinable
     public subscript(resource: R) -> V? {
-        _read {
+        get {
             if resource._usesPersistentRegistry {
-                yield nil
+                return nil
             } else {
                 assert(resource.index < self.capacity)
                 
                 if self.keys[resource.index] == resource {
-                    yield self.values[resource.index]
+                    return self.values[resource.index]
                 } else {
-                    yield nil
+                    return nil
                 }
             }
         }
