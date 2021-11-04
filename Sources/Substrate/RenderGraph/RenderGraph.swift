@@ -464,11 +464,10 @@ final class ProxyDrawRenderPass: DrawRenderPass {
 }
 
 @usableFromInline
-final class RenderPassRecord {
+struct RenderPassRecordImpl {
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
     @usableFromInline let name: String
 #endif
-    @usableFromInline let type: RenderPassType
     @usableFromInline var pass : RenderPass!
     @usableFromInline var commands : ChunkArray<RenderGraphCommand>! = nil
     @usableFromInline var readResources : HashSet<Resource>! = nil
@@ -479,16 +478,132 @@ final class RenderPassRecord {
     @usableFromInline /* internal(set) */ var isActive : Bool
     @usableFromInline /* internal(set) */ var usesWindowTexture : Bool = false
     @usableFromInline /* internal(set) */ var hasSideEffects : Bool = false
+}
+
+@usableFromInline
+struct RenderPassRecord: Equatable {
+    @usableFromInline let type: RenderPassType
+    @usableFromInline let storage: UnsafeMutablePointer<RenderPassRecordImpl>
     
     init(pass: RenderPass, passIndex: Int) {
-#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
-        self.name = pass.name
-#endif
         self.type = RenderPassType(pass: pass)!
-        self.pass = pass
-        self.passIndex = passIndex
-        self.commandRange = nil
-        self.isActive = false
+        
+        self.storage = .allocate(capacity: 1)
+        
+#if SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+        self.storage.initialize(to: .init(pass: pass, passIndex: passIndex, isActive: false))
+#else
+        self.storage.initialize(to: .init(name: pass.name, pass: pass, passIndex: passIndex, isActive: false))
+#endif
+    }
+    
+    @usableFromInline
+    static func ==(lhs: RenderPassRecord, rhs: RenderPassRecord) -> Bool {
+        return lhs.storage == rhs.storage
+    }
+    
+    func dispose() {
+        self.commands = nil
+        self.storage.deinitialize(count: 1)
+        self.storage.deallocate()
+    }
+    
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+    @usableFromInline var name : String {
+        get {
+            return self.storage.pointee.name
+        }
+    }
+#endif
+    
+    @usableFromInline var pass : RenderPass! {
+        get {
+            return self.storage.pointee.pass
+        }
+        nonmutating set {
+            self.storage.pointee.pass = newValue
+        }
+    }
+    
+    @usableFromInline var commands : ChunkArray<RenderGraphCommand>! {
+        get {
+            return self.storage.pointee.commands
+        }
+        nonmutating set {
+            self.storage.pointee.commands = newValue
+        }
+    }
+    
+    @usableFromInline var readResources : HashSet<Resource>! {
+        get {
+            return self.storage.pointee.readResources
+        }
+        nonmutating set {
+            self.storage.pointee.readResources = newValue
+        }
+    }
+    
+    @usableFromInline var writtenResources : HashSet<Resource>! {
+        get {
+            return self.storage.pointee.writtenResources
+        }
+        nonmutating set {
+            self.storage.pointee.writtenResources = newValue
+        }
+    }
+    
+    @usableFromInline var resourceUsages : ChunkArray<(Resource, ResourceUsage)>! {
+        get {
+            return self.storage.pointee.resourceUsages
+        }
+        nonmutating set {
+            self.storage.pointee.resourceUsages = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var commandRange : Range<Int>? {
+        get {
+            return self.storage.pointee.commandRange
+        }
+        nonmutating set {
+            self.storage.pointee.commandRange = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var passIndex : Int {
+        get {
+            return self.storage.pointee.passIndex
+        }
+        nonmutating set {
+            self.storage.pointee.passIndex = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var isActive : Bool {
+        get {
+            return self.storage.pointee.isActive
+        }
+        nonmutating set {
+            self.storage.pointee.isActive = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var usesWindowTexture : Bool {
+        get {
+            return self.storage.pointee.usesWindowTexture
+        }
+        nonmutating set {
+            self.storage.pointee.usesWindowTexture = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var hasSideEffects : Bool {
+        get {
+            return self.storage.pointee.hasSideEffects
+        }
+        nonmutating set {
+            self.storage.pointee.hasSideEffects = newValue
+        }
     }
 }
 
@@ -1084,6 +1199,7 @@ public final class RenderGraph {
         }
     }
     
+    @_semantics("optremark")
     func compile(renderPasses: [RenderPassRecord]) -> ([RenderPassRecord], DependencyTable<DependencyType>) {
         
         for i in renderPasses.indices {
@@ -1096,8 +1212,7 @@ public final class RenderGraph {
         let passHasSideEffects = BitSet(capacity: renderPasses.count)
         defer { passHasSideEffects.dispose() }
         
-        for pass in renderPasses {
-            let i = pass.passIndex
+        for (i, pass) in renderPasses.enumerated() {
             for resource in pass.writtenResources {
                 assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another RenderGraph is being used in this RenderGraph.")
                 assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
@@ -1110,8 +1225,7 @@ public final class RenderGraph {
                     pass.usesWindowTexture = true
                 }
                 
-                for otherPass in renderPasses.dropFirst(i + 1) {
-                    let j = otherPass.passIndex
+                for (j, otherPass) in renderPasses.enumerated().dropFirst(i + 1) {
                     if otherPass.readResources.contains(resource) {
                         dependencyTable.setDependency(from: j, on: i, to: .execution)
                     }
@@ -1279,7 +1393,8 @@ public final class RenderGraph {
         
         self.context.beginFrameResourceAccess()
         
-        let (passes, dependencyTable) = self.compile(renderPasses: self.renderPasses)
+        let sourcePasses = self.renderPasses
+        let (passes, dependencyTable) = self.compile(renderPasses: sourcePasses)
         
         let completionQueue = self.completionNotifyQueue
         let completion: (Double) -> Void = { gpuTime in
@@ -1304,12 +1419,8 @@ public final class RenderGraph {
         #endif
         
         // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
-        passes.forEach {
-            $0.commands = nil
-        }
-        
-        self.renderPasses.forEach {
-            $0.commands = nil
+        sourcePasses.forEach {
+            $0.dispose()
         }
         
         self.submissionNotifyQueue.forEach { $0() }
