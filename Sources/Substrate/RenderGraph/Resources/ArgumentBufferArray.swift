@@ -11,7 +11,7 @@ import Foundation
 public struct ArgumentBufferArray : ResourceProtocol {
 
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .argumentBufferArray)
@@ -146,6 +146,7 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         self.argumentBufferArray.dispose()
     }
     
+    @inlinable
     public var handle: ArgumentBufferArray.Handle {
         return self.argumentBufferArray.handle
     }

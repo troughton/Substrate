@@ -11,10 +11,13 @@ import SubstrateUtilities
 public protocol RenderTargetAttachmentDescriptor {
     var texture: Texture { get set }
     
+    /// The mipmap level of the texture to be used for rendering.
     var level: Int { get set }
     
+    /// The slice of the texture to be used for rendering.
     var slice: Int { get set }
     
+    /// The depth plane of the texture to be used for rendering.
     var depthPlane: Int { get set }
     
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
@@ -28,6 +31,86 @@ public protocol RenderTargetAttachmentDescriptor {
     
     /// The depth plane of the resolve texture to resolve to.
     var resolveDepthPlane : Int { get set }
+}
+
+// Since none of the level/slice/depth plane values are allowed to exceed UInt16.max, we can reduce the storage requirements.
+protocol _RenderTargetAttachmentDescriptor: RenderTargetAttachmentDescriptor {
+    var _level: UInt16 { get set }
+    
+    var _slice: UInt16 { get set }
+    
+    var _depthPlane: UInt16 { get set }
+    
+    /// _The mipmap level of the resolve texture to resolve to.
+    var _resolveLevel : UInt16 { get set }
+    
+    /// _The slice of the resolve texture to resolve to.
+    var _resolveSlice : UInt16 { get set }
+    
+    /// _The depth plane of the resolve texture to resolve to.
+    var _resolveDepthPlane : UInt16 { get set }
+}
+
+extension _RenderTargetAttachmentDescriptor {
+    @inlinable
+    public var level: Int {
+        get {
+            return Int(self._level)
+        }
+        set {
+            self._level = UInt16(newValue)
+        }
+    }
+    
+    @inlinable
+    public var slice: Int {
+        get {
+            return Int(self._slice)
+        }
+        set {
+            self._slice = UInt16(newValue)
+        }
+    }
+    
+    @inlinable
+    public var depthPlane: Int {
+        get {
+            return Int(self._depthPlane)
+        }
+        set {
+            self._depthPlane = UInt16(newValue)
+        }
+    }
+    
+    @inlinable
+    public var resolveLevel: Int {
+        get {
+            return Int(self._resolveLevel)
+        }
+        set {
+            self._resolveLevel = UInt16(newValue)
+        }
+    }
+    
+    @inlinable
+    public var resolveSlice: Int {
+        get {
+            return Int(self._resolveSlice)
+        }
+        set {
+            self._resolveSlice = UInt16(newValue)
+        }
+    }
+    
+    @inlinable
+    public var resolveDepthPlane: Int {
+        get {
+            return Int(self._resolveDepthPlane)
+        }
+        set {
+            self._resolveDepthPlane = UInt16(newValue)
+        }
+    }
 }
 
 extension RenderTargetAttachmentDescriptor {
@@ -46,119 +129,85 @@ extension RenderTargetAttachmentDescriptor {
     }
 }
 
-public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable, Sendable {
-
-    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
-                resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
-        self.texture = texture
-        self.level = level
-        self.slice = slice
-        self.depthPlane = depthPlane
-        self.resolveTexture = resolveTexture
-        self.resolveLevel = resolveLevel
-        self.resolveSlice = resolveSlice
-        self.resolveDepthPlane = resolveDepthPlane
-    }
-    
+public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, _RenderTargetAttachmentDescriptor, Hashable, Sendable {
     public var texture: Texture
-    
-    /// The mipmap level of the texture to be used for rendering.
-    public var level: Int = 0
-    
-    /// The slice of the texture to be used for rendering. 
-    public var slice: Int = 0
-    
-    /// The depth plane of the texture to be used for rendering.
-    public var depthPlane: Int = 0
     
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     public var resolveTexture : Texture? = nil
     
-    /// The mipmap level of the resolve texture to resolve to.
-    public var resolveLevel : Int = 0
+    @usableFromInline var _level: UInt16
+    @usableFromInline var _slice: UInt16
+    @usableFromInline var _depthPlane: UInt16
+    @usableFromInline var _resolveLevel : UInt16
+    @usableFromInline var _resolveSlice : UInt16
+    @usableFromInline var _resolveDepthPlane : UInt16
     
-    /// The slice of the resolve texture to resolve to.
-    public var resolveSlice : Int = 0
-    
-    /// The depth plane of the resolve texture to resolve to.
-    public var resolveDepthPlane : Int = 0
-    
+    @inlinable
+    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
+                resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
+        self.texture = texture
+        self.resolveTexture = resolveTexture
+        self._level = UInt16(level)
+        self._slice = UInt16(slice)
+        self._depthPlane = UInt16(depthPlane)
+        self._resolveLevel = UInt16(resolveLevel)
+        self._resolveSlice = UInt16(resolveSlice)
+        self._resolveDepthPlane = UInt16(resolveDepthPlane)
+    }
 }
 
-public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable, Sendable {
-    
-    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
-                resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
-        self.texture = texture
-        self.level = level
-        self.slice = slice
-        self.depthPlane = depthPlane
-        self.resolveTexture = resolveTexture
-        self.resolveLevel = resolveLevel
-        self.resolveSlice = resolveSlice
-        self.resolveDepthPlane = resolveDepthPlane
-    }
-    
+public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, _RenderTargetAttachmentDescriptor, Hashable, Sendable {
     public var texture: Texture
-    
-    /// The mipmap level of the texture to be used for rendering.
-    public var level: Int = 0
-
-    /// The slice of the texture to be used for rendering. 
-    public var slice: Int = 0
-
-    /// The depth plane of the texture to be used for rendering.
-    public var depthPlane: Int = 0
     
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     public var resolveTexture : Texture? = nil
     
-    /// The mipmap level of the resolve texture to resolve to.
-    public var resolveLevel : Int = 0
+    @usableFromInline var _level: UInt16
+    @usableFromInline var _slice: UInt16
+    @usableFromInline var _depthPlane: UInt16
+    @usableFromInline var _resolveLevel : UInt16
+    @usableFromInline var _resolveSlice : UInt16
+    @usableFromInline var _resolveDepthPlane : UInt16
     
-    /// The slice of the resolve texture to resolve to.
-    public var resolveSlice : Int = 0
-    
-    /// The depth plane of the resolve texture to resolve to.
-    public var resolveDepthPlane : Int = 0
+    @inlinable
+    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
+                resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
+        self.texture = texture
+        self.resolveTexture = resolveTexture
+        self._level = UInt16(level)
+        self._slice = UInt16(slice)
+        self._depthPlane = UInt16(depthPlane)
+        self._resolveLevel = UInt16(resolveLevel)
+        self._resolveSlice = UInt16(resolveSlice)
+        self._resolveDepthPlane = UInt16(resolveDepthPlane)
+    }
 }
 
-public struct StencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, Hashable, Sendable {
-    
-    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
-                resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
-        self.texture = texture
-        self.level = level
-        self.slice = slice
-        self.depthPlane = depthPlane
-        self.resolveTexture = resolveTexture
-        self.resolveLevel = resolveLevel
-        self.resolveSlice = resolveSlice
-        self.resolveDepthPlane = resolveDepthPlane
-    }
-    
+public struct StencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, _RenderTargetAttachmentDescriptor, Hashable, Sendable {
     public var texture: Texture
-    
-    /// The mipmap level of the texture to be used for rendering.
-    public var level: Int = 0
-    
-    /// The slice of the texture to be used for rendering. 
-    public var slice: Int = 0
-    
-    /// The depth plane of the texture to be used for rendering.
-    public var depthPlane: Int = 0
     
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     public var resolveTexture : Texture? = nil
     
-    /// The mipmap level of the resolve texture to resolve to.
-    public var resolveLevel : Int = 0
+    @usableFromInline var _level: UInt16
+    @usableFromInline var _slice: UInt16
+    @usableFromInline var _depthPlane: UInt16
+    @usableFromInline var _resolveLevel : UInt16
+    @usableFromInline var _resolveSlice : UInt16
+    @usableFromInline var _resolveDepthPlane : UInt16
     
-    /// The slice of the resolve texture to resolve to.
-    public var resolveSlice : Int = 0
-    
-    /// The depth plane of the resolve texture to resolve to.
-    public var resolveDepthPlane : Int = 0
+    @inlinable
+    public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
+                resolveTexture: Texture? = nil, resolveLevel: Int = 0, resolveSlice: Int = 0, resolveDepthPlane: Int = 0) {
+        self.texture = texture
+        self.resolveTexture = resolveTexture
+        self._level = UInt16(level)
+        self._slice = UInt16(slice)
+        self._depthPlane = UInt16(depthPlane)
+        self._resolveLevel = UInt16(resolveLevel)
+        self._resolveSlice = UInt16(resolveSlice)
+        self._resolveDepthPlane = UInt16(resolveDepthPlane)
+    }
 }
 
 protocol ClearOperation {
@@ -253,21 +302,10 @@ public typealias RenderTargetColorAttachmentDescriptor = ColorAttachmentDescript
 public typealias RenderTargetDepthAttachmentDescriptor = DepthAttachmentDescriptor
 public typealias RenderTargetStencilAttachmentDescriptor = StencilAttachmentDescriptor
 
+public typealias ColorAttachmentArray<T> = Array8<T>
+
 public struct RenderTargetDescriptor : Hashable, Sendable {
-    
-    @inlinable
-    public init(attachmentCount: Int) {
-        self.colorAttachments = .init(repeating: nil, count: attachmentCount)
-    }
-    
-    @inlinable
-    public init(colorAttachments: [ColorAttachmentDescriptor?] = [], depthAttachment: DepthAttachmentDescriptor? = nil, stencilAttachment: StencilAttachmentDescriptor? = nil) {
-        self.colorAttachments = colorAttachments
-        self.depthAttachment = depthAttachment
-        self.stencilAttachment = stencilAttachment
-    }
-    
-    public var colorAttachments : [ColorAttachmentDescriptor?]
+    public var colorAttachments: ColorAttachmentArray<ColorAttachmentDescriptor?>
     
     public var depthAttachment : DepthAttachmentDescriptor? = nil
     
@@ -276,6 +314,28 @@ public struct RenderTargetDescriptor : Hashable, Sendable {
     public var visibilityResultBuffer: Buffer? = nil
     
     public var renderTargetArrayLength: Int = 0
+    
+    @available(*, deprecated, renamed: "init()")
+    @inlinable
+    public init(attachmentCount: Int) {
+        precondition(attachmentCount <= 8, "Up to eight color attachments are supported for a single RenderTargetDescriptor.")
+        self.colorAttachments = .init(repeating: nil)
+    }
+    
+    @inlinable
+    public init() {
+        self.colorAttachments = .init(repeating: nil)
+    }
+    
+    @inlinable
+    public init(colorAttachments: [ColorAttachmentDescriptor?] = [], depthAttachment: DepthAttachmentDescriptor? = nil, stencilAttachment: StencilAttachmentDescriptor? = nil) {
+        precondition(colorAttachments.count <= 8, "Up to eight color attachments are supported for a single RenderTargetDescriptor.")
+        self.colorAttachments = .init({ i in
+            i < colorAttachments.count ? colorAttachments[i] : nil
+        })
+        self.depthAttachment = depthAttachment
+        self.stencilAttachment = stencilAttachment
+    }
     
     public var size : Size {
         var width = Int.max
@@ -302,15 +362,49 @@ public struct RenderTargetDescriptor : Hashable, Sendable {
         return self.size.height
     }
     
-    static func descriptorsAreMergeable(passA: DrawRenderPass, passB: DrawRenderPass) -> Bool {
+    static func descriptorsAreMergeable(passA: ProxyDrawRenderPass, passB: ProxyDrawRenderPass) -> Bool {
         let descriptorA = passA.renderTargetDescriptor
         let descriptorB = passB.renderTargetDescriptor
         
-        if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment, depthA.texture != depthB.texture || passB.depthClearOperation.isClear  {
+        var anyMatch = false
+        var sizeA = SIMD2<Int>(repeating: .max)
+        var sizeB = SIMD2<Int>(repeating: .max)
+        
+        func areCompatible<T: _RenderTargetAttachmentDescriptor>(_ a: T, _ b: T) -> Bool {
+            if a.texture != b.texture ||
+                a._level != b._level ||
+                a._slice != b._slice ||
+                a._depthPlane != b._depthPlane {
+                return false
+            }
+            
+            if let aResolveTexture = a.resolveTexture, let bResolveTexture = b.resolveTexture {
+                if aResolveTexture != bResolveTexture ||
+                    a._resolveLevel != b._resolveLevel ||
+                    a._resolveSlice != b._resolveSlice ||
+                    a._resolveDepthPlane != b._resolveDepthPlane {
+                    return false
+                }
+            }
+            
+            let textureASize = SIMD2(a.texture.width >> a.level, a.texture.height >> a.level)
+            let textureBSize = SIMD2(b.texture.width >> b.level, b.texture.height >> b.level)
+            
+            sizeA = pointwiseMin(textureASize, sizeA)
+            sizeB = pointwiseMin(textureBSize, sizeB)
+            
+            anyMatch = true
+            
+            return true
+        }
+        
+        if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment,
+            !areCompatible(depthA, depthB) || passB.depthClearOperation.isClear  {
             return false
         }
         
-        if let stencilA = descriptorA.stencilAttachment, let stencilB = descriptorB.stencilAttachment, stencilA.texture != stencilB.texture || passB.stencilClearOperation.isClear {
+        if let stencilA = descriptorA.stencilAttachment, let stencilB = descriptorB.stencilAttachment,
+           !areCompatible(stencilA, stencilB) || passB.stencilClearOperation.isClear {
             return false
         }
         
@@ -319,11 +413,12 @@ public struct RenderTargetDescriptor : Hashable, Sendable {
         }
         
         for i in 0..<min(descriptorA.colorAttachments.count, descriptorB.colorAttachments.count) {
-            if let colorA = descriptorA.colorAttachments[i], let colorB = descriptorB.colorAttachments[i], colorA.texture != colorB.texture || passB.colorClearOperation(attachmentIndex: i).isClear {
+            if let colorA = descriptorA.colorAttachments[i], let colorB = descriptorB.colorAttachments[i],
+                !areCompatible(colorA, colorB) || passB.colorClearOperation(attachmentIndex: i).isClear {
                 return false
             }
         }
         
-        return descriptorA.size == descriptorB.size
+        return anyMatch && sizeA == sizeB
     }
 }

@@ -524,7 +524,7 @@ final class MetalBackend : SpecificRenderBackend {
         return MetalTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, queue: queue, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
     }
 
-    func generateFenceCommands(queue: Queue, frameCommandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>, compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) async {
+    func generateFenceCommands(queue: Queue, frameCommandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>, commandGenerator: ResourceCommandGenerator<MetalBackend>, compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) async {
         // MARK: - Generate the fences
         
         let dependencies = commandGenerator.commandEncoderDependencies
@@ -545,9 +545,9 @@ final class MetalBackend : SpecificRenderBackend {
             
             if signalIndex < 0 { continue }
             
-            let label = "Encoder \(sourceIndex) Fence"
             let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[sourceIndex].commandBufferIndex)
-            let fence = await MetalFenceHandle(label: label, queue: queue, commandBufferIndex: commandBufferSignalValue)
+            
+            let fence = await MetalFenceHandle(encoderIndex: sourceIndex, queue: queue, commandBufferIndex: commandBufferSignalValue)
             
             compactedResourceCommands.append(CompactedResourceCommand<MetalCompactedResourceCommandType>(command: .updateFence(fence, afterStages: signalStages), index: signalIndex, order: .after))
             
@@ -558,7 +558,7 @@ final class MetalBackend : SpecificRenderBackend {
         }
     }
 
-    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<MetalBackend>, commandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>, into compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) async {
+    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<MetalBackend>, commandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>, commandGenerator: ResourceCommandGenerator<MetalBackend>, into compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) async {
         guard !commandGenerator.commands.isEmpty else { return }
         assert(compactedResourceCommands.isEmpty)
         
@@ -786,5 +786,10 @@ final class MetalBackend : SpecificRenderBackend {
     }
 
 }
+
+#else
+
+@available(*, unavailable)
+public typealias MetalBackend = UnavailableBackend
 
 #endif // canImport(Metal)

@@ -109,7 +109,8 @@ enum RenderGraphCommand {
     
     case setRenderPipelineDescriptor(Unmanaged<ReferenceBox<RenderPipelineDescriptor>>)
     
-    case setRenderPipelineState(Unmanaged<RenderPipelineState>)
+    public typealias SetRenderPipelineStateArgs = (state: UnsafeRawPointer, hasFragmentFunction: Bool)
+    case setRenderPipelineState(UnsafePointer<SetRenderPipelineStateArgs>)
     
     public typealias DrawPrimitivesArgs = (primitiveType: PrimitiveType, vertexStart: UInt32, vertexCount: UInt32, instanceCount: UInt32, baseInstance: UInt32)
     case drawPrimitives(UnsafePointer<DrawPrimitivesArgs>)

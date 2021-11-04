@@ -281,6 +281,7 @@ extension ReflectableComputeRenderPass {
     }
 }
 
+@usableFromInline
 final class CallbackDrawRenderPass : DrawRenderPass {
     public let name : String
     public let renderTargetDescriptor: RenderTargetDescriptor
@@ -314,6 +315,7 @@ final class CallbackDrawRenderPass : DrawRenderPass {
     }
 }
 
+@usableFromInline
 final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : ReflectableDrawRenderPass {
     public let name : String
     public let renderTargetDescriptor: RenderTargetDescriptor
@@ -347,6 +349,7 @@ final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : Reflec
     }
 }
 
+@usableFromInline
 final class CallbackComputeRenderPass : ComputeRenderPass {
     public let name : String
     public let executeFunc : (ComputeCommandEncoder) async -> Void
@@ -361,6 +364,7 @@ final class CallbackComputeRenderPass : ComputeRenderPass {
     }
 }
 
+@usableFromInline
 final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : ReflectableComputeRenderPass {
     public let name : String
     public let executeFunc : (TypedComputeCommandEncoder<R>) async -> Void
@@ -375,6 +379,7 @@ final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : Ref
     }
 }
 
+@usableFromInline
 final class CallbackCPURenderPass : CPURenderPass {
     public let name : String
     public let executeFunc : () -> Void
@@ -389,6 +394,7 @@ final class CallbackCPURenderPass : CPURenderPass {
     }
 }
 
+@usableFromInline
 final class CallbackBlitRenderPass : BlitRenderPass {
     public let name : String
     public let executeFunc : (BlitCommandEncoder) async -> Void
@@ -403,6 +409,7 @@ final class CallbackBlitRenderPass : BlitRenderPass {
     }
 }
 
+@usableFromInline
 final class CallbackExternalRenderPass : ExternalRenderPass {
     public let name : String
     public let executeFunc : (ExternalCommandEncoder) async -> Void
@@ -438,7 +445,7 @@ final class CallbackAccelerationStructureRenderPass : AccelerationStructureRende
 final class ProxyDrawRenderPass: DrawRenderPass {
     @usableFromInline let name: String
     @usableFromInline let renderTargetDescriptor: RenderTargetDescriptor
-    @usableFromInline let colorClearOperations: [ColorClearOperation]
+    @usableFromInline let colorClearOperations: ColorAttachmentArray<ColorClearOperation>
     @usableFromInline let depthClearOperation: DepthClearOperation
     @usableFromInline let stencilClearOperation: StencilClearOperation
     
@@ -447,8 +454,8 @@ final class ProxyDrawRenderPass: DrawRenderPass {
         self.renderTargetDescriptor = renderPass.renderTargetDescriptor
         self.depthClearOperation = renderPass.depthClearOperation
         self.stencilClearOperation = renderPass.stencilClearOperation
-        self.colorClearOperations = (0..<renderTargetDescriptor.colorAttachments.count).map {
-            renderPass.colorClearOperation(attachmentIndex: $0)
+        self.colorClearOperations = ColorAttachmentArray { i in
+            renderPass.colorClearOperation(attachmentIndex: i)
         }
     }
     
@@ -492,9 +499,10 @@ final class ProxyDrawRenderPass: DrawRenderPass {
 }
 
 @usableFromInline
-final class RenderPassRecord: @unchecked Sendable {
+struct RenderPassRecordImpl {
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
     @usableFromInline let name: String
-    @usableFromInline let type: RenderPassType
+#endif
     @usableFromInline var pass : RenderPass!
     @usableFromInline var commands : ChunkArray<RenderGraphCommand>! = nil
     @usableFromInline var readResources : HashSet<Resource>! = nil
@@ -506,14 +514,144 @@ final class RenderPassRecord: @unchecked Sendable {
     @usableFromInline /* internal(set) */ var isActive : Bool
     @usableFromInline /* internal(set) */ var usesWindowTexture : Bool = false
     @usableFromInline /* internal(set) */ var hasSideEffects : Bool = false
+}
+
+@usableFromInline
+struct RenderPassRecord: Equatable, @unchecked Sendable {
+    @usableFromInline let type: RenderPassType
+    @usableFromInline let storage: UnsafeMutablePointer<RenderPassRecordImpl>
     
     init(pass: RenderPass, passIndex: Int) {
-        self.name = pass.name
         self.type = RenderPassType(pass: pass)!
-        self.pass = pass
-        self.passIndex = passIndex
-        self.commandRange = nil
-        self.isActive = false
+        
+        self.storage = .allocate(capacity: 1)
+        
+#if SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+        self.storage.initialize(to: .init(pass: pass, passIndex: passIndex, isActive: false))
+#else
+        self.storage.initialize(to: .init(name: pass.name, pass: pass, passIndex: passIndex, isActive: false))
+#endif
+    }
+    
+    @usableFromInline
+    static func ==(lhs: RenderPassRecord, rhs: RenderPassRecord) -> Bool {
+        return lhs.storage == rhs.storage
+    }
+    
+    func dispose() {
+        self.commands = nil
+        self.unmanagedReferences?.forEach {
+            $0.release()
+        }
+        self.storage.deinitialize(count: 1)
+        self.storage.deallocate()
+    }
+    
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+    @usableFromInline var name : String {
+        get {
+            return self.storage.pointee.name
+        }
+    }
+#endif
+    
+    @usableFromInline var pass : RenderPass! {
+        get {
+            return self.storage.pointee.pass
+        }
+        nonmutating set {
+            self.storage.pointee.pass = newValue
+        }
+    }
+    
+    @usableFromInline var commands : ChunkArray<RenderGraphCommand>! {
+        get {
+            return self.storage.pointee.commands
+        }
+        nonmutating set {
+            self.storage.pointee.commands = newValue
+        }
+    }
+    
+    @usableFromInline var readResources : HashSet<Resource>! {
+        get {
+            return self.storage.pointee.readResources
+        }
+        nonmutating set {
+            self.storage.pointee.readResources = newValue
+        }
+    }
+    
+    @usableFromInline var writtenResources : HashSet<Resource>! {
+        get {
+            return self.storage.pointee.writtenResources
+        }
+        nonmutating set {
+            self.storage.pointee.writtenResources = newValue
+        }
+    }
+    
+    @usableFromInline var resourceUsages : ChunkArray<(Resource, ResourceUsage)>! {
+        get {
+            return self.storage.pointee.resourceUsages
+        }
+        nonmutating set {
+            self.storage.pointee.resourceUsages = newValue
+        }
+    }
+    
+    @usableFromInline var unmanagedReferences : ChunkArray<Unmanaged<AnyObject>>! {
+        get {
+            return self.storage.pointee.unmanagedReferences
+        }
+        nonmutating set {
+            self.storage.pointee.unmanagedReferences = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var commandRange : Range<Int>? {
+        get {
+            return self.storage.pointee.commandRange
+        }
+        nonmutating set {
+            self.storage.pointee.commandRange = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var passIndex : Int {
+        get {
+            return self.storage.pointee.passIndex
+        }
+        nonmutating set {
+            self.storage.pointee.passIndex = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var isActive : Bool {
+        get {
+            return self.storage.pointee.isActive
+        }
+        nonmutating set {
+            self.storage.pointee.isActive = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var usesWindowTexture : Bool {
+        get {
+            return self.storage.pointee.usesWindowTexture
+        }
+        nonmutating set {
+            self.storage.pointee.usesWindowTexture = newValue
+        }
+    }
+    
+    @usableFromInline /* internal(set) */ var hasSideEffects : Bool {
+        get {
+            return self.storage.pointee.hasSideEffects
+        }
+        nonmutating set {
+            self.storage.pointee.hasSideEffects = newValue
+        }
     }
 }
 
@@ -691,6 +829,7 @@ public final class RenderGraph {
     ///
     /// - Parameter execute: A closure to execute that will be passed a blit command encoder, where the caller can use the command
     /// encoder to encode GPU blit commands.
+    @inlinable
     public func addBlitCallbackPass(file: String = #fileID, line: Int = #line,
                                     _ execute: @escaping @Sendable (BlitCommandEncoder) async -> Void) {
         self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
@@ -713,6 +852,7 @@ public final class RenderGraph {
     /// - Parameter colorClearOperation: An array of color clear operations corresponding to the elements in `renderTarget`'s `colorAttachments` array.
     /// - Parameter depthClearOperation: The operation to perform on the render target's depth attachment, if present.
     /// - Parameter stencilClearOperation: The operation to perform on the render target's stencil attachment, if present.
+    @inlinable
     public func addClearPass(file: String = #fileID, line: Int = #line,
                              renderTarget: RenderTargetDescriptor,
                              colorClearOperations: [ColorClearOperation] = [],
@@ -733,6 +873,7 @@ public final class RenderGraph {
     /// encoder to encode GPU rendering commands.
     ///
     /// - SeeAlso: `addDrawCallbackPass(file:line:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:reflection:execute:)`
+    @inlinable
     public func addDrawCallbackPass(file: String = #fileID, line: Int = #line,
                                     renderTarget: RenderTargetDescriptor,
                                     colorClearOperations: [ColorClearOperation] = [],
@@ -795,6 +936,7 @@ public final class RenderGraph {
     /// - Parameter stencilClearOperation: The operation to perform on the render target's stencil attachment, if present.
     /// - Parameter execute: A closure to execute that will be passed a render command encoder, where the caller can use the command
     /// encoder to encode GPU rendering commands.
+    @inlinable
     public func addDrawCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                        renderTarget: RenderTargetDescriptor,
                                        colorClearOperations: [ColorClearOperation] = [],
@@ -859,6 +1001,7 @@ public final class RenderGraph {
     /// encoder to encode commands for the GPU's compute pipeline.
     ///
     /// - SeeAlso: `addComputeCallbackPass(reflection:_:)`
+    @inlinable
     public func addComputeCallbackPass(file: String = #fileID, line: Int = #line,
                                        _ execute: @escaping @Sendable (ComputeCommandEncoder) async -> Void) {
         self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
@@ -883,6 +1026,7 @@ public final class RenderGraph {
     /// encoder to encode commands for the GPU's compute pipeline.
     ///
     /// - SeeAlso: `ReflectableComputeRenderPass`
+    @inlinable
     public func addComputeCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                           reflection: R.Type,
                                           _ execute: @escaping @Sendable (TypedComputeCommandEncoder<R>) async -> Void) {
@@ -907,6 +1051,7 @@ public final class RenderGraph {
     /// This enables you to access GPU resources such as transient buffers or textures associated with the render graph.
     ///
     /// - Parameter execute: A closure to execute during render graph execution.
+    @inlinable
     public func addCPUCallbackPass(file: String = #fileID, line: Int = #line,
                                    _ execute: @escaping @Sendable () -> Void) {
         self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
@@ -927,6 +1072,7 @@ public final class RenderGraph {
     ///
     /// - Parameter execute: A closure to execute that will be passed a external command encoder, where the caller can use the command
     /// encoder to encode commands directly to an underlying GPU command buffer.
+    @inlinable
     public func addExternalCallbackPass(file: String = #fileID, line: Int = #line,
                                         _ execute: @escaping @Sendable (ExternalCommandEncoder) async -> Void) {
         self.addPass(CallbackExternalRenderPass(name: "Anonymous External Encoder Pass at \(file):\(line)", execute: execute))
@@ -965,7 +1111,7 @@ public final class RenderGraph {
     // Then, it will execute the command list.
     
     func executePass(_ passRecord: RenderPassRecord, executionAllocator: TagAllocator, resourceUsageAllocator: TagAllocator) async {
-        let signpostID = Self.signposter.makeSignpostID(from: passRecord)
+        let signpostID = Self.signposter.makeSignpostID()
         let signpostState = Self.signposter.beginInterval("Execute RenderGraph Pass", id: signpostID, "Executing \(passRecord.name)")
         defer { Self.signposter.endInterval("Execute RenderGraph Pass", signpostState, "Finished executing \(passRecord.name)")}
         
@@ -1086,7 +1232,7 @@ public final class RenderGraph {
         }
     }
     
-    func computeDependencyOrdering(passIndex i: Int, dependencyTable: DependencyTable<DependencyType>, renderPasses: [RenderPassRecord], addedToList: inout [Bool], activePasses: inout [RenderPassRecord]) {
+    func computeDependencyOrdering(passIndex i: Int, dependencyTable: DependencyTable<DependencyType>, renderPasses: [RenderPassRecord], addedToList: inout [Bool], activePasses: inout [RenderPassRecord], allocator: AllocatorType) {
         let signpostState = Self.signposter.beginInterval("Compute Dependency Ordering")
         defer { Self.signposter.endInterval("Compute Dependency Ordering", signpostState) }
         
@@ -1101,25 +1247,29 @@ public final class RenderGraph {
         if renderPasses[i].isActive, !addedToList[i] {
             addedToList[i] = true
             
-            if let targetPass = renderPasses[i].pass as? DrawRenderPass {
+            if renderPasses[i].type == .draw {
+                let targetPass = renderPasses[i].pass as! ProxyDrawRenderPass
+                
+                var sharedRenderTargetPasses = ChunkArray<Int>()
+                
                 // First process all passes that can't share the same render target...
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherPass = renderPasses[j].pass as? DrawRenderPass, RenderTargetDescriptor.descriptorsAreMergeable(passA: otherPass, passB: targetPass) {
+                    if renderPasses[j].type == .draw, RenderTargetDescriptor.descriptorsAreMergeable(passA: renderPasses[j].pass as! ProxyDrawRenderPass, passB: targetPass) {
+                        // If it _can_ share the same render target, add it to the sharedRenderTargetPasses list to process later...
+                        sharedRenderTargetPasses.append(j, allocator: allocator)
                     } else {
-                        computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
+                        computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
                     }
                 }
                 
                 // ... and then process those which can.
-                for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherPass = renderPasses[j].pass as? DrawRenderPass, RenderTargetDescriptor.descriptorsAreMergeable(passA: otherPass, passB: targetPass) {
-                        computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
-                    }
+                for j in sharedRenderTargetPasses {
+                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
                 }
                 
             } else {
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
+                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
                 }
             }
             
@@ -1170,9 +1320,11 @@ public final class RenderGraph {
                 }
             }
             
-            for resource in pass.readResources {
-                assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another RenderGraph is being used in this RenderGraph.")
-                assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
+            if _isDebugAssertConfiguration() {
+                for resource in pass.readResources {
+                    assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another RenderGraph is being used in this RenderGraph.")
+                    assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
+                }
             }
             
             if pass.type == .external {
@@ -1184,10 +1336,12 @@ public final class RenderGraph {
             self.markActive(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses)
         }
         
-        var addedToList = (0..<renderPasses.count).map { _ in false }
+        let allocator = resourceUsagesAllocator.staticTaskView
+        
+        var addedToList = [Bool](repeating: false, count: renderPasses.count)
         var activePasses = [RenderPassRecord]()
         for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
-            self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
+            self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: AllocatorType(allocator))
         }
         
         var i = 0
@@ -1219,8 +1373,6 @@ public final class RenderGraph {
                 activePassDependencies.setDependency(from: pass, on: possibleDependency, to: dependency)
             }
         }
-        
-        let allocator = resourceUsagesAllocator.staticTaskView 
         
         // Index the commands for each pass in a sequential manner for the entire frame.
         var commandCount = 0
@@ -1336,10 +1488,7 @@ public final class RenderGraph {
             
             // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
             renderPasses.forEach {
-                $0.commands = nil
-                $0.unmanagedReferences?.forEach {
-                    $0.release()
-                }
+                $0.dispose()
             }
             
             self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }

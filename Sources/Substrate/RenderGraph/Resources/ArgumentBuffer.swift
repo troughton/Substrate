@@ -101,7 +101,7 @@ public struct ArgumentBufferDescriptor {
 
 public struct ArgumentBuffer : ResourceProtocol {
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public enum ArgumentResource {
         case buffer(Buffer, offset: Int)
@@ -164,9 +164,10 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.init(renderGraph: renderGraph, flags: flags)
-        if _isDebugAssertConfiguration() {
-            self.label = "Descriptor Set for \(String(reflecting: A.self))"
-        }
+
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+    self.label = "Descriptor Set for \(String(reflecting: A.self))"
+#endif
         
         var arguments = arguments
         arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
@@ -420,13 +421,16 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     
     public init(renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.argumentBuffer = ArgumentBuffer(renderGraph: renderGraph, flags: flags)
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.argumentBuffer.label = "Argument Buffer \(K.self)"
+#endif
     }
     
     public func dispose() {
         self.argumentBuffer.dispose()
     }
     
+    @inlinable
     public var handle: Resource.Handle {
         return self.argumentBuffer.handle
     }

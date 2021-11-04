@@ -17,9 +17,13 @@ struct MetalFenceHandle : Equatable {
         self.index = index
     }
     
-    init(label: String, queue: Queue, commandBufferIndex: UInt64) async {
+    init(encoderIndex: Int, queue: Queue, commandBufferIndex: UInt64) async {
         self = await MetalFenceRegistry.instance.allocate(queue: queue, commandBufferIndex: commandBufferIndex)
-        await self.fence.label = label
+#if SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+        _ = encoderIndex
+#else
+        await self.fence.label = "Encoder \(encoderIndex) Fence"
+#endif
     }
     
     var isValid : Bool {

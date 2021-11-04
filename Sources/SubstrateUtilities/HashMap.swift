@@ -1,6 +1,5 @@
 // https://github.com/emilk/emilib/blob/master/emilib/hash_map.hpp
 
-
 public protocol CustomHashable : Equatable {
     var customHashValue : Int { get }
 }
@@ -453,10 +452,10 @@ public struct HashMap<K : CustomHashable, V> {
 
 extension HashMap : Sequence {
     
-    public typealias Element = (K, V)
+    public typealias Element = (key: K, value: V)
     
     public struct Iterator : IteratorProtocol {
-        public typealias Element = (K, V)
+        public typealias Element = HashMap.Element
         
         public let hashMap : HashMap<K, V>
         public var bucket = 0
@@ -467,7 +466,7 @@ extension HashMap : Sequence {
         }
         
         @inlinable
-        public mutating func next() -> (K, V)? {
+        public mutating func next() -> Element? {
             while self.bucket < hashMap.bucketCount {
                 defer { self.bucket += 1 }
                 

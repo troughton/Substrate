@@ -82,7 +82,7 @@ public struct ResourceUsage {
     public var resource: Resource
     public var isIndirectlyBound : Bool // e.g. via a Metal argument buffer, Vulkan descriptor set, or an acceleration structure
     @usableFromInline
-    let _renderPassRecord : Unmanaged<RenderPassRecord>
+    let renderPassRecord : RenderPassRecord
     public var commandRange : Range<Int> // References the range in the pass before and during RenderGraph compilation, and the range in the full commands array after.
     public var activeRange: ActiveResourceRange = .fullResource
     
@@ -93,14 +93,9 @@ public struct ResourceUsage {
         self.type = type
         self.stages = stages
         self.activeRange = activeRange
-        self._renderPassRecord = Unmanaged.passUnretained(renderPass)
+        self.renderPassRecord = renderPass
         self.commandRange = Range(firstCommandOffset...firstCommandOffset)
         self.isIndirectlyBound = isIndirectlyBound
-    }
-    
-    @inlinable
-    var renderPassRecord: RenderPassRecord {
-        return self._renderPassRecord._withUnsafeGuaranteedRef { $0 }
     }
     
     @inlinable
@@ -115,13 +110,13 @@ public struct ResourceUsage {
     
     @inlinable
     public var affectsGPUBarriers : Bool {
-        return self.stages != .cpuBeforeRender && self.type != .unusedRenderTarget && self.type != .unusedArgumentBuffer && self._renderPassRecord._withUnsafeGuaranteedRef { $0.type != .external && $0.isActive }
+        return self.stages != .cpuBeforeRender && self.type != .unusedRenderTarget && self.type != .unusedArgumentBuffer && self.renderPassRecord.type != .external && self.renderPassRecord.isActive
     }
     
     /// - returns: Whether the usages could be merged.
     @usableFromInline
     mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, allocator: AllocatorType) -> Bool {
-        if self._renderPassRecord.toOpaque() != nextUsage._renderPassRecord.toOpaque() || self.resource != nextUsage.resource {
+        if self.renderPassRecord != nextUsage.renderPassRecord || self.resource != nextUsage.resource {
             return false
         }
         
@@ -216,7 +211,11 @@ public struct ResourceUsage {
 
 extension ResourceUsage : CustomStringConvertible {
     public var description: String {
+#if SUBSTRATE_DISABLE_AUTOMATIC_LABELS
+        return "ResourceUsage(type: \(self.type), stages: \(self.stages), isIndirectlyBound: \(self.isIndirectlyBound), activeRange: \(self.activeRange), passIndex: \(self.renderPassRecord.passIndex), commandRange: \(self.commandRange))"
+#else
         return "ResourceUsage(type: \(self.type), stages: \(self.stages), isIndirectlyBound: \(self.isIndirectlyBound), activeRange: \(self.activeRange), pass: \(self.renderPassRecord.name), commandRange: \(self.commandRange))"
+#endif
     }
 }
 

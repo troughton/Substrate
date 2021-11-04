@@ -71,7 +71,9 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
                 descriptor.hazardTrackingMode = .substrateTrackedHazards
             }
             self.heap = self.device.makeHeap(descriptor: descriptor)!
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
             self.heap!.label = "Heap for MetalHeapResourceAllocator \(ObjectIdentifier(self))"
+#endif
             self.resetHeap()
         }
     }

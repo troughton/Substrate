@@ -85,7 +85,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
             if needsLock {
                 transientRegistry!.accessLock.lock()
             }
-            let result = transientRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: false, frameStoredTextures: [texture]) // Conservatively mark the texture as stored this frame.
+            let result = transientRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: false, isStoredThisFrame: true) // Conservatively mark the texture as stored this frame.
             if needsLock {
                 transientRegistry!.accessLock.unlock()
             }

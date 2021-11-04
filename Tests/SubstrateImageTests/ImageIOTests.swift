@@ -11,7 +11,7 @@ import XCTest
 class ImageIOTests: XCTestCase {
     
     func testEXRRoundTrip() {
-        var image = Image<Float>(width: 73, height: 28, channels: 4, colorSpace: .linearSRGB, alphaMode: .premultiplied)
+        var image = Image<Float>(width: 73, height: 28, channelCount: 4, colorSpace: .linearSRGB, alphaMode: .premultiplied)
         image.apply({ _ in 0.5 }, channelRange: 0..<3)
         image.apply({ _ in 1.0 }, channelRange: 3..<4)
         

@@ -127,6 +127,8 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         self.renderGraphQueue.submitCommand(commandIndex: queueCBIndex, completionTask: completionTask)
     }
     
+    @_specialize(kind: full, where Backend == MetalBackend)
+    @_specialize(kind: full, where Backend == VulkanBackend)
     func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>)) async -> Task<RenderGraphExecutionResult, Never> {
         await self.accessSemaphore?.wait()
         await self.backend.reloadShaderLibraryIfNeeded()
@@ -158,7 +160,7 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 }
             }
             
-            var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
+            var frameCommandInfo = FrameCommandInfo<Backend.RenderTargetDescriptor>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
             self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
             await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
             

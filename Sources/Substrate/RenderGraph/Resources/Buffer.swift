@@ -32,7 +32,7 @@ public struct Buffer : ResourceProtocol {
     
 
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     /// Retrieves a `Buffer` from an existing valid `Buffer` handle.
     ///

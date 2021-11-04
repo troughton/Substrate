@@ -169,7 +169,7 @@ public protocol GroupHazardTrackableResource: ResourceProtocol {
     var hazardTrackingGroup: HazardTrackingGroup<Self>? { get nonmutating set }
 }
 
-protocol ResourceProtocolImpl: GroupHazardTrackableResource, Hashable {
+protocol ResourceProtocolImpl: GroupHazardTrackableResource, Hashable, CustomHashable {
     associatedtype Descriptor
     associatedtype SharedProperties: SharedResourceProperties where SharedProperties.Descriptor == Descriptor
     associatedtype TransientProperties: ResourceProperties where TransientProperties.Descriptor == Descriptor
@@ -191,6 +191,11 @@ extension ResourceProtocolImpl {
     public init?(_ resource: Resource) {
         guard Self.resourceType == resource.type else { return nil }
         self.init(handle: resource.handle)
+    }
+    
+    @inlinable
+    public var customHashValue : Int {
+        return Int(truncatingIfNeeded: self.handle)
     }
     
     public func dispose() {
@@ -229,7 +234,7 @@ extension ResourceProtocolImpl {
         return Self.persistentRegistry.persistentChunks?[chunkIndex][keyPath: keyPath].advanced(by: indexInChunk)
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<SharedProperties, UnsafeMutablePointer<T>>) -> T {
         get {
             return self.pointer(for: keyPath).pointee
@@ -239,7 +244,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<TransientProperties, UnsafeMutablePointer<T>>) -> T? {
         get {
             return self.pointer(for: keyPath)?.pointee
@@ -250,7 +255,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<TransientProperties, UnsafeMutablePointer<T?>>) -> T? {
         get {
             return self.pointer(for: keyPath)?.pointee
@@ -261,7 +266,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<PersistentProperties, UnsafeMutablePointer<T>>) -> T? {
         get {
             return self.pointer(for: keyPath)?.pointee
@@ -272,7 +277,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @inline(__always)
+    @inlinable @inline(__always)
     subscript<T>(keyPath: KeyPath<PersistentProperties, UnsafeMutablePointer<T?>>) -> T? {
         get {
             return self.pointer(for: keyPath)?.pointee
@@ -444,6 +449,7 @@ extension ResourceProtocolImpl {
 
 extension ResourceProtocol {
     
+    @inlinable @inline(__always)
     public static func ==(lhs: Self, rhs: Self) -> Bool {
         return lhs.handle == rhs.handle
     }
@@ -493,7 +499,7 @@ public struct Resource : ResourceProtocol, Hashable {
     public static var resourceType: ResourceType { fatalError() }
 
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public init<R : ResourceProtocol>(_ resource: R) {
         self._handle = UnsafeRawPointer(bitPattern: UInt(resource.handle))!

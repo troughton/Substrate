@@ -14,7 +14,7 @@ struct _HazardTrackingGroup: ResourceProtocol {
     // That will work for the resource command generator/pass dependency tracking, but optimising ResourceBindingEncoder.updateResourceUsages(endingEncoding:) will be more difficult
     
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .hazardTrackingGroup)

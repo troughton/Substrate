@@ -82,7 +82,7 @@ final class FGMTLThreadRenderCommandEncoder {
     let isAppleSiliconGPU: Bool
     
     let renderPassDescriptor : MTLRenderPassDescriptor
-    var pipelineDescriptor : RenderPipelineDescriptor? = nil
+    var hasFragmentFunction: Bool = false
     private let baseBufferOffsets : UnsafeMutablePointer<Int> // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     private unowned(unsafe) var boundPipelineState: MTLRenderPipelineState? = nil
     private unowned(unsafe) var boundDepthStencilState: MTLDepthStencilState? = nil
@@ -188,7 +188,7 @@ final class FGMTLThreadRenderCommandEncoder {
             if stages.contains(.vertex) {
                 encoder.setVertexBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
             }
-            if stages.contains(.fragment) || self.pipelineDescriptor?.fragmentFunction == nil { // If we currently have no fragment function, but later set one after binding an argument buffer, that argument buffer should also be bound for the fragment function.
+            if stages.contains(.fragment) || !self.hasFragmentFunction { // If we currently have no fragment function, but later set one after binding an argument buffer, that argument buffer should also be bound for the fragment function.
                 encoder.setFragmentBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
             }
             
@@ -265,7 +265,6 @@ final class FGMTLThreadRenderCommandEncoder {
                 encoder.setFragmentSamplerState(state, index: mtlBindingPath.bindIndex)
             }
             
-            
         case .setAccelerationStructure(let args):
             guard #available(macOS 12.0, iOS 15.0, *), let mtlStructure = resourceMap[args.pointee.structure] else {
                 break
@@ -310,7 +309,7 @@ final class FGMTLThreadRenderCommandEncoder {
             
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
-            self.pipelineDescriptor = descriptor
+            self.hasFragmentFunction = !descriptor.fragmentFunction.name.isEmpty
             let state = await stateCaches.renderPipelineCache[descriptor, renderTarget: renderTarget]!
             if state !== self.boundPipelineState {
                 encoder.setRenderPipelineState(state)
@@ -318,9 +317,8 @@ final class FGMTLThreadRenderCommandEncoder {
             }
             
         case .setRenderPipelineState(let statePtr):
-            let state = statePtr.takeUnretainedValue()
-            self.pipelineDescriptor = state.descriptor
-            let mtlState = Unmanaged<MTLRenderPipelineState>.fromOpaque(UnsafeRawPointer(state.state)).takeUnretainedValue()
+            let mtlState = Unmanaged<MTLRenderPipelineState>.fromOpaque(statePtr.pointee.state).takeUnretainedValue()
+            self.hasFragmentFunction = statePtr.pointee.hasFragmentFunction
             if mtlState !== self.boundPipelineState {
                 encoder.setRenderPipelineState(mtlState)
                 self.boundPipelineState = mtlState
@@ -426,7 +424,6 @@ final class FGMTLComputeCommandEncoder {
     let encoder: MTLComputeCommandEncoder
     let isAppleSiliconGPU: Bool
     
-    var pipelineDescriptor : ComputePipelineDescriptor? = nil
     private let baseBufferOffsets : UnsafeMutablePointer<Int> // 31, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     private unowned(unsafe) var boundPipelineState: MTLComputePipelineState? = nil
     
@@ -549,7 +546,6 @@ final class FGMTLComputeCommandEncoder {
             
         case .setComputePipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue()
-            self.pipelineDescriptor = descriptor.pipelineDescriptor
             let state = await stateCaches.computePipelineCache[descriptor.pipelineDescriptor, descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth]!
             if state !== self.boundPipelineState {
                 encoder.setComputePipelineState(state)
@@ -558,7 +554,6 @@ final class FGMTLComputeCommandEncoder {
             
         case .setComputePipelineState(let statePtr):
             let state = statePtr.takeUnretainedValue()
-            self.pipelineDescriptor = state.descriptor
             let mtlState = Unmanaged<MTLComputePipelineState>.fromOpaque(UnsafeRawPointer(state.state)).takeUnretainedValue()
             if mtlState !== self.boundPipelineState {
                 encoder.setComputePipelineState(mtlState)

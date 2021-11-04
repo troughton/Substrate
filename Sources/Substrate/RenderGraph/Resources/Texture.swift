@@ -24,7 +24,7 @@ public struct Texture : ResourceProtocol {
     }
 
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .texture)

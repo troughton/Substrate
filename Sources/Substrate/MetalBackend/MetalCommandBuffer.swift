@@ -15,7 +15,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     
     let backend: MetalBackend
     let commandBuffer: MTLCommandBuffer
-    let commandInfo: FrameCommandInfo<MetalBackend>
+    let commandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>
     let resourceMap: FrameResourceMap<MetalBackend>
     let compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]
     
@@ -23,7 +23,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     
     init(backend: MetalBackend,
          queue: MTLCommandQueue,
-         commandInfo: FrameCommandInfo<Backend>,
+         commandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>,
          resourceMap: FrameResourceMap<MetalBackend>,
          compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
         self.backend = backend
@@ -69,26 +69,33 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         
         switch encoderInfo.type {
         case .draw:
+            let renderTargetDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
             let mtlDescriptor : MTLRenderPassDescriptor
             do {
-                mtlDescriptor = try MTLRenderPassDescriptor(encoderInfo.renderTargetDescriptor!, resourceMap: self.resourceMap)
+                mtlDescriptor = try MTLRenderPassDescriptor(renderTargetDescriptor, resourceMap: self.resourceMap)
             } catch {
                 print("Error creating pass descriptor: \(error)")
                 return
             }
             
             let renderEncoder : FGMTLRenderCommandEncoder = /* MetalEncoderManager.useParallelEncoding ? FGMTLParallelRenderCommandEncoder(encoder: commandBuffer.makeParallelRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor) : */ FGMTLThreadRenderCommandEncoder(encoder: commandBuffer.makeRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor, isAppleSiliconGPU: backend.isAppleSiliconGPU)
+            
+        #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
             renderEncoder.encoder.label = encoderInfo.name
+        #endif
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                await renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                await renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: renderTargetDescriptor.descriptor, passRenderTarget: (passRecord.pass as! ProxyDrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             }
             renderEncoder.endEncoding()
             
         case .compute:
             let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: .concurrent)!
             let computeEncoder = FGMTLComputeCommandEncoder(encoder: mtlComputeEncoder, isAppleSiliconGPU: backend.isAppleSiliconGPU)
+            
+        #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
             computeEncoder.encoder.label = encoderInfo.name
+        #endif
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                 await computeEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
@@ -97,7 +104,10 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             
         case .blit:
             let blitEncoder = FGMTLBlitCommandEncoder(encoder: commandBuffer.makeBlitCommandEncoder()!, isAppleSiliconGPU: backend.isAppleSiliconGPU)
+            
+        #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
             blitEncoder.encoder.label = encoderInfo.name
+        #endif
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                 await blitEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)

@@ -55,7 +55,10 @@ fileprivate class TemporaryBufferArena {
                 let allocationSize = max(bytes * 3 / 2, self.blockSize)
                 
                 self.currentBlock = device.makeBuffer(length: allocationSize, options: [self.options, .substrateTrackedHazards])
+                
+#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
                 self.currentBlock!.label = "Block for TemporaryBufferArena \(ObjectIdentifier(self))"
+#endif
             }
             self.currentBlockPos = 0
             return self.allocate(bytes: bytes, alignedTo: alignment)
