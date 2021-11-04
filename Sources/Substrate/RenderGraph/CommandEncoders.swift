@@ -1268,9 +1268,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             }
             
             if self.pipelineStateChanged {
-                let box = Unmanaged.passRetained(ReferenceBox(self.renderPipelineDescriptor!))
-                commandRecorder.unmanagedReferences.append(.fromOpaque(box.toOpaque()))
-                commandRecorder.record(RenderGraphCommand.setRenderPipelineDescriptor(box))
+                commandRecorder.record(RenderGraphCommand.setRenderPipelineState, (self.currentPipelineReflection.pipelineState, self.renderPipelineDescriptor?.fragmentFunction != nil))
                 // self.pipelineStateChanged = false // set by super.updateResourceUsages
             }
         }
