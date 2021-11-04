@@ -290,7 +290,7 @@ extension ResourceProtocolImpl {
 }
 
 extension ResourceProtocol {
-    
+    @inlinable @inline(__always)
     public static func ==(lhs: Self, rhs: Self) -> Bool {
         return lhs.handle == rhs.handle
     }
@@ -331,7 +331,7 @@ extension ResourceProtocol {
 public struct Resource : ResourceProtocol, Hashable {
 
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public init<R : ResourceProtocol>(_ resource: R) {
         self._handle = UnsafeRawPointer(bitPattern: UInt(resource.handle))!
@@ -683,7 +683,8 @@ extension ResourceProtocol {
 
 public struct Heap : ResourceProtocol {
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .heap)
@@ -850,7 +851,7 @@ public struct Buffer : ResourceProtocol {
     
 
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     /// Retrieves a `Buffer` from an existing valid `Buffer` handle.
     ///
@@ -1245,7 +1246,7 @@ public struct Texture : ResourceProtocol {
     }
 
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .texture)

@@ -266,6 +266,7 @@ extension ReflectableComputeRenderPass {
     }
 }
 
+@usableFromInline
 final class CallbackDrawRenderPass : DrawRenderPass {
     public let name : String
     public let renderTargetDescriptor: RenderTargetDescriptor
@@ -299,6 +300,7 @@ final class CallbackDrawRenderPass : DrawRenderPass {
     }
 }
 
+@usableFromInline
 final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : ReflectableDrawRenderPass {
     public let name : String
     public let renderTargetDescriptor: RenderTargetDescriptor
@@ -332,6 +334,7 @@ final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : Reflec
     }
 }
 
+@usableFromInline
 final class CallbackComputeRenderPass : ComputeRenderPass {
     public let name : String
     public let executeFunc : (ComputeCommandEncoder) -> Void
@@ -346,6 +349,7 @@ final class CallbackComputeRenderPass : ComputeRenderPass {
     }
 }
 
+@usableFromInline
 final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : ReflectableComputeRenderPass {
     public let name : String
     public let executeFunc : (TypedComputeCommandEncoder<R>) -> Void
@@ -360,6 +364,7 @@ final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : Ref
     }
 }
 
+@usableFromInline
 final class CallbackCPURenderPass : CPURenderPass {
     public let name : String
     public let executeFunc : () -> Void
@@ -374,6 +379,7 @@ final class CallbackCPURenderPass : CPURenderPass {
     }
 }
 
+@usableFromInline
 final class CallbackBlitRenderPass : BlitRenderPass {
     public let name : String
     public let executeFunc : (BlitCommandEncoder) -> Void
@@ -388,6 +394,7 @@ final class CallbackBlitRenderPass : BlitRenderPass {
     }
 }
 
+@usableFromInline
 final class CallbackExternalRenderPass : ExternalRenderPass {
     public let name : String
     public let executeFunc : (ExternalCommandEncoder) -> Void
@@ -408,7 +415,7 @@ final class CallbackExternalRenderPass : ExternalRenderPass {
 final class ProxyDrawRenderPass: DrawRenderPass {
     @usableFromInline let name: String
     @usableFromInline let renderTargetDescriptor: RenderTargetDescriptor
-    @usableFromInline let colorClearOperations: [ColorClearOperation]
+    @usableFromInline let colorClearOperations: ColorAttachmentArray<ColorClearOperation>
     @usableFromInline let depthClearOperation: DepthClearOperation
     @usableFromInline let stencilClearOperation: StencilClearOperation
     
@@ -417,8 +424,8 @@ final class ProxyDrawRenderPass: DrawRenderPass {
         self.renderTargetDescriptor = renderPass.renderTargetDescriptor
         self.depthClearOperation = renderPass.depthClearOperation
         self.stencilClearOperation = renderPass.stencilClearOperation
-        self.colorClearOperations = (0..<renderTargetDescriptor.colorAttachments.count).map {
-            renderPass.colorClearOperation(attachmentIndex: $0)
+        self.colorClearOperations = ColorAttachmentArray { i in
+            renderPass.colorClearOperation(attachmentIndex: i)
         }
     }
     
@@ -650,6 +657,7 @@ public final class RenderGraph {
     ///
     /// - Parameter execute: A closure to execute that will be passed a blit command encoder, where the caller can use the command
     /// encoder to encode GPU blit commands.
+    @inlinable
     public func addBlitCallbackPass(file: String = #fileID, line: Int = #line,
                                     _ execute: @escaping (BlitCommandEncoder) -> Void) {
         self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
@@ -672,6 +680,7 @@ public final class RenderGraph {
     /// - Parameter colorClearOperation: An array of color clear operations corresponding to the elements in `renderTarget`'s `colorAttachments` array.
     /// - Parameter depthClearOperation: The operation to perform on the render target's depth attachment, if present.
     /// - Parameter stencilClearOperation: The operation to perform on the render target's stencil attachment, if present.
+    @inlinable
     public func addClearPass(file: String = #fileID, line: Int = #line,
                              renderTarget: RenderTargetDescriptor,
                              colorClearOperations: [ColorClearOperation] = [],
@@ -692,6 +701,7 @@ public final class RenderGraph {
     /// encoder to encode GPU rendering commands.
     ///
     /// - SeeAlso: `addDrawCallbackPass(file:line:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:reflection:execute:)`
+    @inlinable
     public func addDrawCallbackPass(file: String = #fileID, line: Int = #line,
                                     renderTarget: RenderTargetDescriptor,
                                     colorClearOperations: [ColorClearOperation] = [],
@@ -754,6 +764,7 @@ public final class RenderGraph {
     /// - Parameter stencilClearOperation: The operation to perform on the render target's stencil attachment, if present.
     /// - Parameter execute: A closure to execute that will be passed a render command encoder, where the caller can use the command
     /// encoder to encode GPU rendering commands.
+    @inlinable
     public func addDrawCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                        renderTarget: RenderTargetDescriptor,
                                        colorClearOperations: [ColorClearOperation] = [],
@@ -818,6 +829,7 @@ public final class RenderGraph {
     /// encoder to encode commands for the GPU's compute pipeline.
     ///
     /// - SeeAlso: `addComputeCallbackPass(reflection:_:)`
+    @inlinable
     public func addComputeCallbackPass(file: String = #fileID, line: Int = #line,
                                        _ execute: @escaping (ComputeCommandEncoder) -> Void) {
         self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
@@ -842,6 +854,7 @@ public final class RenderGraph {
     /// encoder to encode commands for the GPU's compute pipeline.
     ///
     /// - SeeAlso: `ReflectableComputeRenderPass`
+    @inlinable
     public func addComputeCallbackPass<R>(file: String = #fileID, line: Int = #line,
                                           reflection: R.Type,
                                           _ execute: @escaping (TypedComputeCommandEncoder<R>) -> Void) {
@@ -866,6 +879,7 @@ public final class RenderGraph {
     /// This enables you to access GPU resources such as transient buffers or textures associated with the render graph.
     ///
     /// - Parameter execute: A closure to execute during render graph execution.
+    @inlinable
     public func addCPUCallbackPass(file: String = #fileID, line: Int = #line,
                                    _ execute: @escaping () -> Void) {
         self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
@@ -886,6 +900,7 @@ public final class RenderGraph {
     ///
     /// - Parameter execute: A closure to execute that will be passed a external command encoder, where the caller can use the command
     /// encoder to encode commands directly to an underlying GPU command buffer.
+    @inlinable
     public func addExternalCallbackPass(file: String = #fileID, line: Int = #line,
                                         _ execute: @escaping (ExternalCommandEncoder) -> Void) {
         self.addPass(CallbackExternalRenderPass(name: "Anonymous External Encoder Pass at \(file):\(line)", execute: execute))
@@ -1037,10 +1052,12 @@ public final class RenderGraph {
         if renderPasses[i].isActive, !addedToList[i] {
             addedToList[i] = true
             
-            if let targetPass = renderPasses[i].pass as? DrawRenderPass {
+            if renderPasses[i].type == .draw {
+                let targetPass = renderPasses[i].pass as! ProxyDrawRenderPass
+                
                 // First process all passes that can't share the same render target...
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherPass = renderPasses[j].pass as? DrawRenderPass, RenderTargetDescriptor.descriptorsAreMergeable(passA: otherPass, passB: targetPass) {
+                    if renderPasses[j].type == .draw, RenderTargetDescriptor.descriptorsAreMergeable(passA: renderPasses[j].pass as! ProxyDrawRenderPass, passB: targetPass) {
                     } else {
                         computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
                     }
@@ -1048,7 +1065,7 @@ public final class RenderGraph {
                 
                 // ... and then process those which can.
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if let otherPass = renderPasses[j].pass as? DrawRenderPass, RenderTargetDescriptor.descriptorsAreMergeable(passA: otherPass, passB: targetPass) {
+                    if renderPasses[j].type == .draw, RenderTargetDescriptor.descriptorsAreMergeable(passA: renderPasses[j].pass as! ProxyDrawRenderPass, passB: targetPass) {
                         computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
                     }
                 }
@@ -1075,7 +1092,8 @@ public final class RenderGraph {
         let passHasSideEffects = BitSet(capacity: renderPasses.count)
         defer { passHasSideEffects.dispose() }
         
-        for (i, pass) in renderPasses.enumerated() {
+        for pass in renderPasses {
+            let i = pass.passIndex
             for resource in pass.writtenResources {
                 assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another RenderGraph is being used in this RenderGraph.")
                 assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
@@ -1088,7 +1106,8 @@ public final class RenderGraph {
                     pass.usesWindowTexture = true
                 }
                 
-                for (j, otherPass) in renderPasses.enumerated().dropFirst(i + 1) {
+                for otherPass in renderPasses.dropFirst(i + 1) {
+                    let j = otherPass.passIndex
                     if otherPass.readResources.contains(resource) {
                         dependencyTable.setDependency(from: j, on: i, to: .execution)
                     }
@@ -1098,9 +1117,11 @@ public final class RenderGraph {
                 }
             }
             
-            for resource in pass.readResources {
-                assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another RenderGraph is being used in this RenderGraph.")
-                assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
+            if _isDebugAssertConfiguration() {
+                for resource in pass.readResources {
+                    assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another RenderGraph is being used in this RenderGraph.")
+                    assert(resource.isValid, "Resource \(resource) is invalid but is used in the current frame.")
+                }
             }
             
             if pass.type == .external {

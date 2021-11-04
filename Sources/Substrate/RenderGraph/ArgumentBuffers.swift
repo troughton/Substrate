@@ -79,7 +79,7 @@ public typealias _ArgumentBufferArray = ArgumentBufferArray
 
 public struct ArgumentBuffer : ResourceProtocol {
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public enum ArgumentResource {
         case buffer(Buffer, offset: Int)
@@ -413,7 +413,7 @@ extension ArgumentBuffer: CustomStringConvertible {
 public struct ArgumentBufferArray : ResourceProtocol {
 
     @usableFromInline let _handle : UnsafeRawPointer
-    public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
     public init(handle: Handle) {
         assert(Resource(handle: handle).type == .argumentBufferArray)
