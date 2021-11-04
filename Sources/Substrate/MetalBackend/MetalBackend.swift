@@ -404,7 +404,7 @@ final class MetalBackend : SpecificRenderBackend {
         return MetalTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, queue: queue, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
     }
 
-    func generateFenceCommands(queue: Queue, frameCommandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>, compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
+    func generateFenceCommands(queue: Queue, frameCommandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>, commandGenerator: ResourceCommandGenerator<MetalBackend>, compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
         // MARK: - Generate the fences
         
         let dependencies = commandGenerator.commandEncoderDependencies
@@ -438,7 +438,7 @@ final class MetalBackend : SpecificRenderBackend {
         }
     }
 
-    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<MetalBackend>, commandInfo: FrameCommandInfo<MetalBackend>, commandGenerator: ResourceCommandGenerator<MetalBackend>, into compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
+    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<MetalBackend>, commandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>, commandGenerator: ResourceCommandGenerator<MetalBackend>, into compactedResourceCommands: inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
         guard !commandGenerator.commands.isEmpty else { return }
         assert(compactedResourceCommands.isEmpty)
         

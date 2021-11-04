@@ -316,4 +316,9 @@ final class VulkanBackend : SpecificRenderBackend {
     }
 }
 
+#else
+
+@available(*, unavailable)
+typealias VulkanBackend = UnavailableBackend
+
 #endif // canImport(Vulkan)

@@ -40,7 +40,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     var resourceRegistry: PersistentResourceRegistry { get }
     func makeTransientRegistry(index: Int, inflightFrameCount: Int, queue: Queue) -> TransientResourceRegistry
     
-    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<Self>, commandInfo: FrameCommandInfo<Self>, commandGenerator: ResourceCommandGenerator<Self>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>])
+    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<Self>, commandInfo: FrameCommandInfo<RenderTargetDescriptor>, commandGenerator: ResourceCommandGenerator<Self>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>])
     func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<Self>) // Called on the context's DispatchQueue.
     
     static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>)
@@ -64,7 +64,7 @@ protocol BackendQueue: AnyObject {
     associatedtype Backend: SpecificRenderBackend
     
     func makeCommandBuffer(
-            commandInfo: FrameCommandInfo<Backend>,
+        commandInfo: FrameCommandInfo<Backend.RenderTargetDescriptor>,
              resourceMap: FrameResourceMap<Backend>,
         compactedResourceCommands: [CompactedResourceCommand<Backend.CompactedResourceCommandType>]) -> Backend.CommandBuffer
 }
@@ -102,7 +102,7 @@ protocol ResourceRegistry: AnyObject {
 protocol BackendTransientResourceRegistry: ResourceRegistry {
     static func isAliasedHeapResource(resource: Resource) -> Bool
     
-    var accessLock: SpinLock { get set }
+    var accessLock: SpinLock { get }
     
     func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> Backend.BufferReference
     func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, frameStoredTextures: [Texture]) -> Backend.TextureReference

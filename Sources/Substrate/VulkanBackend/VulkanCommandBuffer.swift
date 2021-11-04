@@ -26,7 +26,7 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
     let backend: VulkanBackend
     let queue: VulkanDeviceQueue
     let commandBuffer: VkCommandBuffer
-    let commandInfo: FrameCommandInfo<VulkanBackend>
+    let commandInfo: FrameCommandInfo<VulkanRenderTargetDescriptor>
     let resourceMap: FrameResourceMap<VulkanBackend>
     let compactedResourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>]
     
@@ -48,7 +48,7 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
     
     init(backend: VulkanBackend,
          queue: VulkanDeviceQueue,
-         commandInfo: FrameCommandInfo<VulkanBackend>,
+         commandInfo: FrameCommandInfo<VulkanRenderTargetDescriptor>,
          resourceMap: FrameResourceMap<VulkanBackend>,
          compactedResourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>]) {
         self.backend = backend

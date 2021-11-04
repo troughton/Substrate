@@ -64,6 +64,8 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
 
+    @_specialize(kind: full, where Backend == MetalBackend)
+    @_specialize(kind: full, where Backend == VulkanBackend)
     func executeRenderGraph(passes: [RenderPassRecord], usedResources: Set<Resource>, dependencyTable: DependencyTable<Substrate.DependencyType>, completion: @escaping (Double) -> Void) {
         
         // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
@@ -93,7 +95,7 @@ final class RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
             return
         }
         
-        var frameCommandInfo = FrameCommandInfo<Backend>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
+        var frameCommandInfo = FrameCommandInfo<Backend.RenderTargetDescriptor>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
         self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
         self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.

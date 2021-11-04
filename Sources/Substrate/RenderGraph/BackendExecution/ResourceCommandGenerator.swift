@@ -61,7 +61,7 @@ enum PreFrameCommands {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: RenderGraphContextImpl<Backend>, storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
+    func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, commandGenerator: ResourceCommandGenerator<Backend>, context: RenderGraphContextImpl<Backend>,  storedTextures: [Texture], encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) {
         let queue = context.renderGraphQueue
         let queueIndex = Int(queue.index)
         let resourceMap = context.resourceMap
@@ -233,7 +233,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         return UInt64(bitPattern: Int64("ResourceCommandGenerator".hashValue))
     }
     
-    func processResourceResidency(resource: Resource, frameCommandInfo: FrameCommandInfo<Backend>) {
+    func processResourceResidency(resource: Resource, frameCommandInfo: FrameCommandInfo<Backend.RenderTargetDescriptor>) {
         guard Backend.requiresResourceResidencyTracking else { return }
         
         var resourceIsRenderTarget = false
@@ -301,7 +301,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
-    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry?, backend: Backend, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func generateCommands(passes: [RenderPassRecord], usedResources: Set<Resource>, transientRegistry: Backend.TransientResourceRegistry?, backend: Backend, frameCommandInfo: inout FrameCommandInfo<Backend.RenderTargetDescriptor>) {
         if passes.isEmpty {
             return
         }
@@ -583,7 +583,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
     }
     
-    func executePreFrameCommands(context: RenderGraphContextImpl<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend>) {
+    func executePreFrameCommands(context: RenderGraphContextImpl<Backend>, frameCommandInfo: inout FrameCommandInfo<Backend.RenderTargetDescriptor>) {
         self.preFrameCommands.sort()
         
         var commandEncoderIndex = 0

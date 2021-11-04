@@ -15,7 +15,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     
     let backend: MetalBackend
     let commandBuffer: MTLCommandBuffer
-    let commandInfo: FrameCommandInfo<MetalBackend>
+    let commandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>
     let resourceMap: FrameResourceMap<MetalBackend>
     let compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]
     
@@ -23,7 +23,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     
     init(backend: MetalBackend,
          queue: MTLCommandQueue,
-         commandInfo: FrameCommandInfo<Backend>,
+         commandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>,
          resourceMap: FrameResourceMap<MetalBackend>,
          compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
         self.backend = backend
@@ -69,9 +69,10 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         
         switch encoderInfo.type {
         case .draw:
+            let renderTargetDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
             let mtlDescriptor : MTLRenderPassDescriptor
             do {
-                mtlDescriptor = try MTLRenderPassDescriptor(encoderInfo.renderTargetDescriptor!, resourceMap: self.resourceMap)
+                mtlDescriptor = try MTLRenderPassDescriptor(renderTargetDescriptor, resourceMap: self.resourceMap)
             } catch {
                 print("Error creating pass descriptor: \(error)")
                 return
@@ -81,7 +82,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             renderEncoder.encoder.label = encoderInfo.name
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: encoderInfo.renderTargetDescriptor!.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: renderTargetDescriptor.descriptor, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             }
             renderEncoder.endEncoding()
             
