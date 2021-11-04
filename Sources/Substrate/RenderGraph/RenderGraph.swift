@@ -1201,7 +1201,6 @@ public final class RenderGraph {
         }
     }
     
-    @_semantics("optremark")
     func compile(renderPasses: [RenderPassRecord]) -> ([RenderPassRecord], DependencyTable<DependencyType>) {
         
         for i in renderPasses.indices {
