@@ -1158,7 +1158,7 @@ public final class RenderGraph {
         }
     }
     
-    func computeDependencyOrdering(passIndex i: Int, dependencyTable: DependencyTable<DependencyType>, renderPasses: [RenderPassRecord], addedToList: inout [Bool], activePasses: inout [RenderPassRecord]) {
+    func computeDependencyOrdering(passIndex i: Int, dependencyTable: DependencyTable<DependencyType>, renderPasses: [RenderPassRecord], addedToList: inout [Bool], activePasses: inout [RenderPassRecord], allocator: AllocatorType) {
         
         // Ideally, we should reorder the passes into an optimal order according to some heuristics.
         // For example:
@@ -1174,24 +1174,26 @@ public final class RenderGraph {
             if renderPasses[i].type == .draw {
                 let targetPass = renderPasses[i].pass as! ProxyDrawRenderPass
                 
+                var sharedRenderTargetPasses = ChunkArray<Int>()
+                
                 // First process all passes that can't share the same render target...
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
                     if renderPasses[j].type == .draw, RenderTargetDescriptor.descriptorsAreMergeable(passA: renderPasses[j].pass as! ProxyDrawRenderPass, passB: targetPass) {
+                        // If it _can_ share the same render target, add it to the sharedRenderTargetPasses list to process later...
+                        sharedRenderTargetPasses.append(j, allocator: allocator)
                     } else {
-                        computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
+                        computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
                     }
                 }
                 
                 // ... and then process those which can.
-                for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if renderPasses[j].type == .draw, RenderTargetDescriptor.descriptorsAreMergeable(passA: renderPasses[j].pass as! ProxyDrawRenderPass, passB: targetPass) {
-                        computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
-                    }
+                for j in sharedRenderTargetPasses {
+                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
                 }
                 
             } else {
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
+                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
                 }
             }
             
@@ -1251,10 +1253,12 @@ public final class RenderGraph {
             self.markActive(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses)
         }
         
-        var addedToList = (0..<renderPasses.count).map { _ in false }
+        let allocator = TagAllocator.ThreadView(allocator: RenderGraph.resourceUsagesAllocator, threadIndex: 0)
+        
+        var addedToList = [Bool](repeating: false, count: renderPasses.count)
         var activePasses = [RenderPassRecord]()
         for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
-            self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses)
+            self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: AllocatorType(allocator))
         }
         
         var i = 0
@@ -1284,8 +1288,6 @@ public final class RenderGraph {
                 activePassDependencies.setDependency(from: pass, on: possibleDependency, to: dependency)
             }
         }
-        
-        let allocator = TagAllocator.ThreadView(allocator: RenderGraph.resourceUsagesAllocator, threadIndex: 0)
         
         // Index the commands for each pass in a sequential manner for the entire frame.
         var commandCount = 0

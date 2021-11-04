@@ -129,28 +129,6 @@ extension RenderTargetAttachmentDescriptor {
     }
 }
 
-extension _RenderTargetAttachmentDescriptor {
-    static func areCompatible(_ a: Self, _ b: Self) -> Bool {
-        if a.texture != b.texture ||
-            a._level != b._level ||
-            a._slice != b._slice ||
-            a._depthPlane != b._depthPlane {
-            return false
-        }
-        
-        if let aResolveTexture = a.resolveTexture, let bResolveTexture = b.resolveTexture {
-            if aResolveTexture != bResolveTexture ||
-                a._resolveLevel != b._resolveLevel ||
-                a._resolveSlice != b._resolveSlice ||
-                a._resolveDepthPlane != b._resolveDepthPlane {
-                return false
-            }
-        }
-        
-        return true
-    }
-}
-
 public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, _RenderTargetAttachmentDescriptor, Hashable {
     public var texture: Texture
     
@@ -384,17 +362,49 @@ public struct RenderTargetDescriptor : Hashable {
         return self.size.height
     }
     
-    @_semantics("optremark")
     static func descriptorsAreMergeable(passA: ProxyDrawRenderPass, passB: ProxyDrawRenderPass) -> Bool {
         let descriptorA = passA.renderTargetDescriptor
         let descriptorB = passB.renderTargetDescriptor
         
-        if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment, !DepthAttachmentDescriptor.areCompatible(depthA, depthB) || passB.depthClearOperation.isClear  {
+        var anyMatch = false
+        var sizeA = SIMD2<Int>(repeating: .max)
+        var sizeB = SIMD2<Int>(repeating: .max)
+        
+        func areCompatible<T: _RenderTargetAttachmentDescriptor>(_ a: T, _ b: T) -> Bool {
+            if a.texture != b.texture ||
+                a._level != b._level ||
+                a._slice != b._slice ||
+                a._depthPlane != b._depthPlane {
+                return false
+            }
+            
+            if let aResolveTexture = a.resolveTexture, let bResolveTexture = b.resolveTexture {
+                if aResolveTexture != bResolveTexture ||
+                    a._resolveLevel != b._resolveLevel ||
+                    a._resolveSlice != b._resolveSlice ||
+                    a._resolveDepthPlane != b._resolveDepthPlane {
+                    return false
+                }
+            }
+            
+            let textureASize = SIMD2(a.texture.width >> a.level, a.texture.height >> a.level)
+            let textureBSize = SIMD2(b.texture.width >> b.level, b.texture.height >> b.level)
+            
+            sizeA = pointwiseMin(textureASize, sizeA)
+            sizeB = pointwiseMin(textureBSize, sizeB)
+            
+            anyMatch = true
+            
+            return true
+        }
+        
+        if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment,
+            !areCompatible(depthA, depthB) || passB.depthClearOperation.isClear  {
             return false
         }
         
         if let stencilA = descriptorA.stencilAttachment, let stencilB = descriptorB.stencilAttachment,
-           !StencilAttachmentDescriptor.areCompatible(stencilA, stencilB) || passB.stencilClearOperation.isClear {
+           !areCompatible(stencilA, stencilB) || passB.stencilClearOperation.isClear {
             return false
         }
         
@@ -403,11 +413,12 @@ public struct RenderTargetDescriptor : Hashable {
         }
         
         for i in 0..<min(descriptorA.colorAttachments.count, descriptorB.colorAttachments.count) {
-            if let colorA = descriptorA.colorAttachments[i], let colorB = descriptorB.colorAttachments[i], !ColorAttachmentDescriptor.areCompatible(colorA, colorB) || passB.colorClearOperation(attachmentIndex: i).isClear {
+            if let colorA = descriptorA.colorAttachments[i], let colorB = descriptorB.colorAttachments[i],
+                !areCompatible(colorA, colorB) || passB.colorClearOperation(attachmentIndex: i).isClear {
                 return false
             }
         }
         
-        return descriptorA.size == descriptorB.size
+        return anyMatch && sizeA == sizeB
     }
 }
