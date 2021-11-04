@@ -17,12 +17,12 @@ struct MetalFenceHandle : Equatable {
         self.index = index
     }
     
-    init(label: String, queue: Queue, commandBufferIndex: UInt64) {
+    init(encoderIndex: Int, queue: Queue, commandBufferIndex: UInt64) {
         self = MetalFenceRegistry.instance.allocate(queue: queue, commandBufferIndex: commandBufferIndex)
 #if SUBSTRATE_DISABLE_AUTOMATIC_LABELS
-        _ = label
+        _ = encoderIndex
 #else
-        self.fence.label = label
+        self.fence.label = "Encoder \(encoderIndex) Fence"
 #endif
     }
     

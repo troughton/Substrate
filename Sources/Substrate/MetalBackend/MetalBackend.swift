@@ -425,9 +425,8 @@ final class MetalBackend : SpecificRenderBackend {
             
             if signalIndex < 0 { continue }
             
-            let label = "Encoder \(sourceIndex) Fence"
             let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[sourceIndex].commandBufferIndex)
-            let fence = MetalFenceHandle(label: label, queue: queue, commandBufferIndex: commandBufferSignalValue)
+            let fence = MetalFenceHandle(encoderIndex: sourceIndex, queue: queue, commandBufferIndex: commandBufferSignalValue)
             
             compactedResourceCommands.append(CompactedResourceCommand<MetalCompactedResourceCommandType>(command: .updateFence(fence, afterStages: signalStages), index: signalIndex, order: .after))
             
