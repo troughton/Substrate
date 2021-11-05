@@ -176,7 +176,7 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        func allocateWindowHandleTexture(_ texture: Texture) throws -> Backend.TextureReference {
+        func allocateWindowHandleTexture(_ texture: Texture) async throws -> Backend.TextureReference {
             preconditionFailure()
         }
         

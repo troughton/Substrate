@@ -86,7 +86,7 @@ enum PreFrameCommands {
             
         case .materialiseTexture(let texture):
             // If the resource hasn't already been allocated and is transient, we should force it to be GPU private since the CPU is guaranteed not to use it.
-            _ = resourceRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry, isStoredThisFrame: textureIsStored(texture))
+            _ = await resourceRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: !texture._usesPersistentRegistry, isStoredThisFrame: textureIsStored(texture))
             if let textureWaitEvent = (texture.flags.contains(.historyBuffer) ? resourceRegistry!.historyBufferResourceWaitEvents[Resource(texture)] : resourceRegistry!.textureWaitEvents[texture]) {
                 waitEventValues[queueIndex] = max(textureWaitEvent.waitValue, waitEventValues[queueIndex])
             } else {

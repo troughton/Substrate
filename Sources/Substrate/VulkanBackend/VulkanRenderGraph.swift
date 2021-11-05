@@ -108,7 +108,7 @@ extension VulkanBackend {
                     if let buffer = Buffer(resource) {
                         var barrier = VkBufferMemoryBarrier()
                         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER
-                        barrier.buffer = resourceMap[buffer].buffer.vkBuffer
+                        barrier.buffer = resourceMap[buffer]!.buffer.vkBuffer
                         barrier.offset = 0
                         barrier.size = VK_WHOLE_SIZE
                         if case .buffer(let rangeA) = producingUsage.activeRange, case .buffer(let rangeB) = consumingUsage.activeRange {
@@ -126,11 +126,11 @@ extension VulkanBackend {
                         let pixelFormat = textureDescriptor.pixelFormat
                         isDepthOrStencil = pixelFormat.isDepth || pixelFormat.isStencil
                         
-                        let image = resourceMap[texture].image
+                        let image = resourceMap[texture]!.image
                         
                         var barrier = VkImageMemoryBarrier()
                         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
-                        barrier.image = resourceMap[texture].image.vkImage
+                        barrier.image = image.vkImage
                         barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).flags
                         barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).flags
                         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
@@ -151,14 +151,14 @@ extension VulkanBackend {
                                 // We transitioned to the new layout at the end of the previous render pass.
                                 // Add a subpass dependency and continue.
                                 barrier.oldLayout = barrier.newLayout
-                                renderTargetDescriptor = frameCommandInfo.commandEncoders[sourceIndex].renderTargetDescriptor!
+                                renderTargetDescriptor = frameCommandInfo.commandEncoderRenderTargets[sourceIndex]!
                                 subpassDependency.srcSubpass = UInt32(renderTargetDescriptor.subpasses.last!.index)
                                 subpassDependency.dstSubpass = VK_SUBPASS_EXTERNAL
                             } else {
                                 // The layout transition will be handled by the next render pass.
                                 // Add a subpass dependency and continue.
                                 barrier.newLayout = barrier.oldLayout
-                                renderTargetDescriptor = frameCommandInfo.commandEncoders[dependentIndex].renderTargetDescriptor!
+                                renderTargetDescriptor = frameCommandInfo.commandEncoderRenderTargets[dependentIndex]!
                                 subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
                                 subpassDependency.dstSubpass = 0
                             }
@@ -313,7 +313,7 @@ extension VulkanBackend {
 
             let sourceLayout: VkImageLayout
             let destinationLayout: VkImageLayout
-            if let image = Texture(resource).map({ resourceMap[$0].image }) {
+            if let image = Texture(resource).flatMap({ resourceMap[$0]?.image }) {
                 if afterUsageType == .frameStartLayoutTransitionCheck {
                     if !resource._usesPersistentRegistry {
                         sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED
@@ -350,7 +350,7 @@ extension VulkanBackend {
 
             var beforeCommand = beforeCommand
             
-            if let renderTargetDescriptor = currentEncoder.renderTargetDescriptor, beforeCommand > currentEncoder.commandRange.lowerBound {
+            if let renderTargetDescriptor = commandInfo.commandEncoderRenderTargets[currentEncoderIndex], beforeCommand > currentEncoder.commandRange.lowerBound {
                 var subpassDependency = VkSubpassDependency()
                 subpassDependency.dependencyFlags = VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
                 if afterUsageType == .frameStartLayoutTransitionCheck {
@@ -409,7 +409,7 @@ extension VulkanBackend {
             if let buffer = Buffer(resource) {
                 var barrier = VkBufferMemoryBarrier()
                 barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER
-                barrier.buffer = resourceMap[buffer].buffer.vkBuffer
+                barrier.buffer = resourceMap[buffer]!.buffer.vkBuffer
                 barrier.offset = 0
                 barrier.size = VK_WHOLE_SIZE // TODO: track at a more fine-grained level.
                 if case .buffer(let range) = activeRange {
@@ -424,7 +424,7 @@ extension VulkanBackend {
             } else if let texture = Texture(resource) {
                 var barrier = VkImageMemoryBarrier()
                 barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
-                barrier.image = resourceMap[texture].image.vkImage
+                barrier.image = resourceMap[texture]!.image.vkImage
                 barrier.srcAccessMask = sourceAccessMask
                 barrier.dstAccessMask = destinationAccessMask
                 barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED

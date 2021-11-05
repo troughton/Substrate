@@ -12,7 +12,7 @@ import SubstrateUtilities
 import Foundation
 import SPIRV_Cross
 
-public struct BitSet : OptionSet, Hashable {
+public struct BitSet64 : OptionSet, Hashable {
     public var rawValue : UInt64
 
     public init(rawValue: UInt64) {
@@ -202,6 +202,10 @@ final class VulkanPipelineReflection : PipelineReflection {
         
     }
     
+    var pipelineState: UnsafeRawPointer? {
+        return nil
+    }
+    
     subscript(bindingPath: ResourceBindingPath) -> ShaderResource {
         return self.resources[bindingPath]!
     }
@@ -367,6 +371,8 @@ extension ArgumentReflection {
             usageType = .readWrite
         case (.write, _):
             usageType = .write
+        default:
+            return nil
         }
 
         var renderAPIStages : RenderStages = []
@@ -475,7 +481,7 @@ final class VulkanDescriptorSetLayout {
 }
 
 enum PipelineLayoutKey : Hashable {
-    case graphics(vertexShader: String, fragmentShader: String?)
+    case graphics(vertexShader: String, fragmentShader: String)
     case compute(String)
 }
 
@@ -649,7 +655,7 @@ final class VulkanShaderLibrary {
             }
             functions.append((vertexModule.entryPointForFunction(named: vertexShader), vertexModule.compiler, SpvExecutionModelVertex))
 
-            if let fragmentShader = fragmentShader {
+            if !fragmentShader.isEmpty {
                 guard let fragmentModule = self.functionsToModules[fragmentShader] else {
                     fatalError("No shader entry point called \(fragmentShader)")
                 }

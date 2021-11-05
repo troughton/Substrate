@@ -41,6 +41,10 @@ final class VulkanStateCaches {
         vkDestroyPipelineCache(self.device.vkDevice, self.pipelineCache, nil)
     }
     
+    public func checkForLibraryReload() async {
+        // TODO: implement.
+    }
+    
     public subscript(pipelineDescriptor: VulkanRenderPipelineDescriptor, 
                      renderPass renderPass: VulkanRenderPass) -> VkPipeline? {
         if let pipeline = self.renderPipelines[pipelineDescriptor] {
@@ -111,11 +115,11 @@ final class VulkanStateCaches {
     }
     
     public func reflection(for descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) -> VulkanPipelineReflection {
-        return self.shaderLibrary.reflection(for: .graphics(vertexShader: descriptor.vertexFunction, fragmentShader: descriptor.fragmentFunction))
+        return self.shaderLibrary.reflection(for: .graphics(vertexShader: descriptor.vertexFunction.name, fragmentShader: descriptor.fragmentFunction.name))
     }
     
     public func reflection(for descriptor: ComputePipelineDescriptor) -> VulkanPipelineReflection {
-        return self.shaderLibrary.reflection(for: .compute(descriptor.function))
+        return self.shaderLibrary.reflection(for: .compute(descriptor.function.name))
     }
 }
 

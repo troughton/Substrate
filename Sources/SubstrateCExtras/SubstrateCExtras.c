@@ -1,4 +1,3 @@
-
 #include "include/SubstrateCExtras.h"
 
 _Bool LinkedNodeHeaderCompareAndSwap(LinkedNodeHeader *insertionNode, LinkedNodeHeader *nodeToInsert) {

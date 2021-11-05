@@ -72,7 +72,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             let renderTargetDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
             let mtlDescriptor : MTLRenderPassDescriptor
             do {
-                mtlDescriptor = try MTLRenderPassDescriptor(renderTargetDescriptor, resourceMap: self.resourceMap)
+                mtlDescriptor = try await MTLRenderPassDescriptor(renderTargetDescriptor, resourceMap: self.resourceMap)
             } catch {
                 print("Error creating pass descriptor: \(error)")
                 return

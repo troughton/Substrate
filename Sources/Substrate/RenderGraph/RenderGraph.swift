@@ -1293,7 +1293,7 @@ public final class RenderGraph {
         await self.evaluateResourceUsages(renderPasses: renderPasses, executionAllocator: executionAllocator, resourceUsagesAllocator: resourceUsagesAllocator)
         
         var dependencyTable = DependencyTable<DependencyType>(capacity: renderPasses.count, defaultValue: .none)
-        let passHasSideEffects = BitSet(capacity: renderPasses.count)
+        let passHasSideEffects = SubstrateUtilities.BitSet(capacity: renderPasses.count)
         defer { passHasSideEffects.dispose() }
 
         for (i, pass) in renderPasses.enumerated() {

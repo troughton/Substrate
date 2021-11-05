@@ -12,12 +12,19 @@ import SubstrateCExtras
 import SubstrateUtilities
 import Foundation
 
-final class VulkanBackend : SpecificRenderBackend {
+public final class VulkanBackend : SpecificRenderBackend {
+    @TaskLocal static var activeContext: RenderGraphContextImpl<VulkanBackend>? = nil
+    
+    static var activeContextTaskLocal: TaskLocal<RenderGraphContextImpl<VulkanBackend>?> { $activeContext }
+    
     typealias BufferReference = VkBufferReference
     typealias TextureReference = VkImageReference
     typealias ArgumentBufferReference = VulkanArgumentBuffer
     typealias ArgumentBufferArrayReference = VulkanArgumentBuffer
     typealias SamplerReference = VkSampler
+    
+    typealias VisibleFunctionTableReference = Void
+    typealias IntersectionFunctionTableReference = Void
     
     typealias TransientResourceRegistry = VulkanTransientResourceRegistry
     typealias PersistentResourceRegistry = VulkanPersistentResourceRegistry
@@ -29,6 +36,7 @@ final class VulkanBackend : SpecificRenderBackend {
     typealias BackendQueue = VulkanQueue
     typealias InterEncoderDependencyType = FineDependency
     typealias CommandBuffer = VulkanCommandBuffer
+    typealias QueueImpl = VulkanQueue
     
     public var api: RenderAPI {
         return .vulkan
@@ -40,13 +48,15 @@ final class VulkanBackend : SpecificRenderBackend {
     let resourceRegistry : VulkanPersistentResourceRegistry
     let shaderLibrary : VulkanShaderLibrary
     let stateCaches : VulkanStateCaches
+    let enableValidation : Bool
+    let enableShaderHotReloading : Bool
     
     var activeContext : RenderGraphContextImpl<VulkanBackend>? = nil
     let activeContextLock = SpinLock()
     
     var queueSyncSemaphores = [VkSemaphore?](repeating: nil, count: QueueRegistry.maxQueues)
     
-    public init(instance: VulkanInstance, shaderLibraryURL: URL) {
+    public init(instance: VulkanInstance, shaderLibraryURL: URL, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
         self.vulkanInstance = instance
         let physicalDevice = self.vulkanInstance.createSystemDefaultDevice()!
         
@@ -55,19 +65,15 @@ final class VulkanBackend : SpecificRenderBackend {
         self.resourceRegistry = VulkanPersistentResourceRegistry(instance: instance, device: self.device)
         self.shaderLibrary = try! VulkanShaderLibrary(device: self.device, url: shaderLibraryURL)
         self.stateCaches = VulkanStateCaches(device: self.device, shaderLibrary: self.shaderLibrary)
+        self.enableValidation = enableValidation
+        self.enableShaderHotReloading = enableShaderHotReloading
         
         RenderBackend._backend = self
     }
     
-    func setActiveContext(_ context: RenderGraphContextImpl<VulkanBackend>?) {
-        if context != nil {
-            self.activeContextLock.lock()
-            assert(self.activeContext == nil)
-            self.activeContext = context
-        } else {
-            assert(self.activeContext != nil)
-            self.activeContext = nil
-            self.activeContextLock.unlock()
+    func reloadShaderLibraryIfNeeded() async {
+        if self.enableShaderHotReloading {
+            await self.stateCaches.checkForLibraryReload()
         }
     }
     
@@ -83,8 +89,8 @@ final class VulkanBackend : SpecificRenderBackend {
         }
     }
     
-    public func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
-        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+    public func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer? {
+        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer, needsLock: true) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
         let buffer = bufferReference.buffer
         
         return buffer.contents(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
@@ -92,13 +98,13 @@ final class VulkanBackend : SpecificRenderBackend {
     
     public func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         if range.isEmpty { return }
-        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer, needsLock: true) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
         let buffer = bufferReference.buffer
         buffer.didModifyRange((range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
-    public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) {
-        self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: 0, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * region.size.height * region.size.depth)
+    public func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) async {
+        await self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: 0, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * region.size.height * region.size.depth)
     }
     
     public func dispose(texture: Texture) {
@@ -116,7 +122,24 @@ final class VulkanBackend : SpecificRenderBackend {
     public func dispose(argumentBufferArray: ArgumentBufferArray) {
         self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray)
     }
+    
+    @usableFromInline
+    func dispose(heap: Heap) {
+        preconditionFailure("dispose(heap:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func dispose(accelerationStructure: AccelerationStructure) {
+        preconditionFailure("dispose(accelerationStructure:) is unimplemented on Vulkan")
+    }
+    
+    @usableFromInline func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
+        preconditionFailure("dispose(intersectionFunctionTable:) is unimplemented on Vulkan")
+    }
 
+    @usableFromInline func dispose(visibleFunctionTable: VisibleFunctionTable) {
+        preconditionFailure("dispose(visibleFunctionTable:) is unimplemented on Vulkan")
+    }
+    
     public func backingResource(_ resource: Resource) -> Any? {
         return resourceRegistry.accessLock.withReadLock {
             if let buffer = Buffer(resource) {
@@ -170,6 +193,11 @@ final class VulkanBackend : SpecificRenderBackend {
         return false
     }
     
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
+        assertionFailure("materialiseAccelerationStructure is unimplemented on Vulkan")
+        return false
+    }
     
     @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
         fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
@@ -180,6 +208,11 @@ final class VulkanBackend : SpecificRenderBackend {
     }
     
     @usableFromInline func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
+        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    @usableFromInline func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any? {
         fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
     }
     
@@ -194,11 +227,11 @@ final class VulkanBackend : SpecificRenderBackend {
     }
     
     
-    @usableFromInline func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
+    public func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
         fatalError("sizeAndAlignment(for:) is unimplemented on Vulkan")
     }
     
-    @usableFromInline func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
+    public func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
         fatalError("sizeAndAlignment(for:) is unimplemented on Vulkan")
     }
     
@@ -220,9 +253,9 @@ final class VulkanBackend : SpecificRenderBackend {
     }
     
     @usableFromInline
-    func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) {
+    func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) async {
         
-        let textureReference = self.activeContext?.resourceMap.textureForCPUAccess(texture) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[texture]! }
+        let textureReference = await self.activeContext?.resourceMap.textureForCPUAccess(texture, needsLock: true) ?? resourceRegistry[texture]!
         let image = textureReference.image
 
         var data: UnsafeMutableRawPointer! = nil
@@ -264,10 +297,6 @@ final class VulkanBackend : SpecificRenderBackend {
         return .nonDiscardable // TODO: implement.
     }
     
-    @usableFromInline
-    func dispose(heap: Heap) {
-        fatalError("dispose(Heap) is unimplemented on Vulkan")
-    }
     
     @usableFromInline
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath {
@@ -280,12 +309,20 @@ final class VulkanBackend : SpecificRenderBackend {
         return false
     }
 
-    static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
-        storage.encodeArguments(from: argumentBuffer, commandIndex: firstUseCommandIndex, resourceMap: resourceMap)
+    static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) async {
+        await storage.encodeArguments(from: argumentBuffer, commandIndex: firstUseCommandIndex, resourceMap: resourceMap)
     }
     
     static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
         fatalError()
+    }
+    
+    func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: Void, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) async {
+        preconditionFailure()
+    }
+    
+    func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, storage: Void, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) async {
+        preconditionFailure()
     }
     
     func makeTransientRegistry(index: Int, inflightFrameCount: Int, queue: Queue) -> VulkanTransientResourceRegistry {
@@ -323,7 +360,7 @@ final class VulkanBackend : SpecificRenderBackend {
         self.queueSyncSemaphores[Int(queue.index)] = nil
     }
     
-    func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<Self>) {
+    func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<VulkanBackend>) {
         VulkanEventRegistry.instance.clearCompletedEvents()
     }
 }

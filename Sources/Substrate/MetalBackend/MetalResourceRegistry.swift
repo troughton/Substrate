@@ -778,7 +778,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) -> MTLTextureReference {
+    public func allocateTexture(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) async -> MTLTextureReference {
         let properties = self.computeTextureUsage(texture, isStoredThisFrame: isStoredThisFrame)
         
         if texture.flags.contains(.windowHandle) {
@@ -788,7 +788,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             if !properties.usage.isEmpty, properties.usage != .renderTarget {
                 // If we use the texture other than as a render target, we need to eagerly allocate it.
                 do {
-                    try self.allocateWindowHandleTexture(texture)
+                    try await self.allocateWindowHandleTexture(texture)
                 }
                 catch {
                     print("Error allocating window handle texture: \(error)")
@@ -859,7 +859,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     @discardableResult
-    public func allocateWindowHandleTexture(_ texture: Texture) throws -> MTLTextureReference {
+    public func allocateWindowHandleTexture(_ texture: Texture) async throws -> MTLTextureReference {
         precondition(texture.flags.contains(.windowHandle))
         
         // Retrieving the drawable needs to be done on the main thread.
@@ -932,12 +932,12 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     
     
     @discardableResult
-    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) -> MTLTextureReference {
+    public func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) async -> MTLTextureReference {
         if let mtlTexture = self.textureReferences[texture] {
             assert(mtlTexture.texture.pixelFormat == MTLPixelFormat(texture.descriptor.pixelFormat))
             return mtlTexture
         }
-        return self.allocateTexture(texture, forceGPUPrivate: forceGPUPrivate, isStoredThisFrame: isStoredThisFrame)
+        return await self.allocateTexture(texture, forceGPUPrivate: forceGPUPrivate, isStoredThisFrame: isStoredThisFrame)
     }
     
     func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {

@@ -67,7 +67,7 @@ public final class VulkanInstance {
         return true
     }
     
-    public init?(applicationName: String, applicationVersion: VulkanVersion, engineName: String, engineVersion: VulkanVersion) {
+    init?(applicationName: String, applicationVersion: VulkanVersion, engineName: String, engineVersion: VulkanVersion) {
         
         var extensionsCount : UInt32 = 0
         if !vkEnumerateInstanceExtensionProperties(nil, &extensionsCount, nil).check(){

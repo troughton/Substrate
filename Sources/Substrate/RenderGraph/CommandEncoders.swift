@@ -647,7 +647,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                         }
                     }
                     
-                    _ = args.pointee.table.replacePipelineState(with: self.currentPipelineReflection.pipelineState, expectingCurrentValue: nil)
+                    _ = args.pointee.table.replacePipelineState(with: self.currentPipelineReflection.pipelineState!, expectingCurrentValue: nil)
                     
                     resource = Resource(args.pointee.table)
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
@@ -659,7 +659,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                             return currentlyBound
                         }
                     }
-                    _ = args.pointee.table.replacePipelineState(with: self.currentPipelineReflection.pipelineState, expectingCurrentValue: nil)
+                    _ = args.pointee.table.replacePipelineState(with: self.currentPipelineReflection.pipelineState!, expectingCurrentValue: nil)
                     
                     resource = Resource(args.pointee.table)
                     UnsafeMutablePointer(mutating: args).pointee.bindingPath = bindingPath
@@ -1405,7 +1405,13 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             }
             
             if self.pipelineStateChanged {
-                commandRecorder.record(RenderGraphCommand.setRenderPipelineState, (self.currentPipelineReflection.pipelineState, self.renderPipelineDescriptor?.fragmentFunction != nil))
+                if let pipelineState = self.currentPipelineReflection.pipelineState {
+                    commandRecorder.record(RenderGraphCommand.setRenderPipelineState, (pipelineState, self.renderPipelineDescriptor?.fragmentFunction != nil))
+                } else {
+                    let box = Unmanaged.passRetained(ReferenceBox(self.renderPipelineDescriptor!))
+                    commandRecorder.addUnmanagedReference(box)
+                    commandRecorder.record(RenderGraphCommand.setRenderPipelineDescriptor(box))
+                }
                 // self.pipelineStateChanged = false // set by super.updateResourceUsages
             }
         }

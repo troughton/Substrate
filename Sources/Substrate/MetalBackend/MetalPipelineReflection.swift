@@ -34,7 +34,7 @@ final class MetalPipelineReflection : PipelineReflection {
     }
     
     let _pipelineState: AnyObject
-    var pipelineState: UnsafeRawPointer { return UnsafeRawPointer(Unmanaged.passUnretained(self._pipelineState).toOpaque()) }
+    var pipelineState: UnsafeRawPointer? { return UnsafeRawPointer(Unmanaged.passUnretained(self._pipelineState).toOpaque()) }
     
     let bindingPathCache : HashMap<BindingPathCacheKey, ResourceBindingPath>
     

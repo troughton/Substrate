@@ -78,14 +78,14 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
-    func textureForCPUAccess(_ texture: Texture, needsLock: Bool) -> Backend.TextureReference {
+    func textureForCPUAccess(_ texture: Texture, needsLock: Bool) async -> Backend.TextureReference {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!
         } else {
             if needsLock {
                 transientRegistry!.accessLock.lock()
             }
-            let result = transientRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: false, isStoredThisFrame: true) // Conservatively mark the texture as stored this frame.
+            let result = await transientRegistry!.allocateTextureIfNeeded(texture, forceGPUPrivate: false, isStoredThisFrame: true) // Conservatively mark the texture as stored this frame.
             if needsLock {
                 transientRegistry!.accessLock.unlock()
             }
@@ -93,9 +93,9 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
-    func renderTargetTexture(_ texture: Texture) throws -> Backend.TextureReference {
+    func renderTargetTexture(_ texture: Texture) async throws -> Backend.TextureReference {
         if texture.flags.contains(.windowHandle) {
-            return try self.transientRegistry!.allocateWindowHandleTexture(texture)
+            return try await self.transientRegistry!.allocateWindowHandleTexture(texture)
         }
         return self[texture]!
     }

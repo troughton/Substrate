@@ -213,7 +213,6 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
         let passDescriptor = pass.renderTargetDescriptorForActiveAttachments
         
         var newDescriptor = descriptor
-        newDescriptor.colorAttachments.append(contentsOf: repeatElement(nil, count: max(passDescriptor.colorAttachments.count - descriptor.colorAttachments.count, 0)))
         
         let previousSubpassDescriptor = self.subpasses.last!.descriptor
 

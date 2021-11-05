@@ -28,7 +28,7 @@ final class VulkanArgumentBuffer {
 
 extension VulkanArgumentBuffer {
     
-    func encodeArguments(from buffer: ArgumentBuffer, commandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
+    func encodeArguments(from buffer: ArgumentBuffer, commandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) async {
         let pipelineReflection = self.layout.pipelineReflection
         let setIndex = self.layout.set
 
@@ -60,7 +60,7 @@ extension VulkanArgumentBuffer {
 
             switch binding {
             case .texture(let texture):
-                let image = resourceMap[texture].image
+                guard let image = resourceMap[texture]?.image else { break }
 
                 self.images.append(image)
             
@@ -74,7 +74,7 @@ extension VulkanArgumentBuffer {
                 imageInfos.append(imageInfo)
 
             case .buffer(let buffer, let offset):
-                let vkBuffer = resourceMap[buffer]
+                guard let vkBuffer = resourceMap[buffer] else { break }
                 self.buffers.append(vkBuffer.buffer)
 
                 var bufferInfo = VkDescriptorBufferInfo()
@@ -92,7 +92,7 @@ extension VulkanArgumentBuffer {
 
             case .sampler(let descriptor):
                 var imageInfo = VkDescriptorImageInfo()
-                imageInfo.sampler = resourceMap[descriptor]
+                imageInfo.sampler = await resourceMap[descriptor]
             
                 descriptorWrite.pImageInfo = imageInfoSentinel
                 imageInfos.append(imageInfo)
@@ -109,6 +109,9 @@ extension VulkanArgumentBuffer {
                 descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT
                 descriptorWrite.descriptorCount = UInt32(length)
                 descriptorWrite.pNext = inlineUniformSentinel
+                
+            case .accelerationStructure, .visibleFunctionTable, .intersectionFunctionTable:
+                fatalError()
             }
 
             descriptorWrites.append(descriptorWrite)

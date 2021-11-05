@@ -17,7 +17,7 @@ class VulkanRenderPass {
 
     let attachmentCount: Int
     
-    init(device: VulkanDevice, descriptor: VulkanRenderTargetDescriptor, resourceMap: FrameResourceMap<VulkanBackend>) throws {
+    init(device: VulkanDevice, descriptor: VulkanRenderTargetDescriptor, resourceMap: FrameResourceMap<VulkanBackend>) async throws {
         self.device = device
         self.descriptor = descriptor
         
@@ -33,7 +33,7 @@ class VulkanRenderPass {
         if let depthAttachment = descriptor.descriptor.depthAttachment {
             var attachmentDescription = VkAttachmentDescription(descriptor: depthAttachment.texture.descriptor, renderTargetDescriptor: depthAttachment, depthActions: descriptor.depthActions, stencilActions: descriptor.stencilActions)
             let (previousCommandIndex, nextCommandIndex) = descriptor.depthPreviousAndNextUsageCommands
-            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(depthAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: depthAttachment.slice, level: depthAttachment.level, texture: depthAttachment.texture)
+            let (initialLayout, finalLayout) = try await resourceMap.renderTargetTexture(depthAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: depthAttachment.slice, level: depthAttachment.level, texture: depthAttachment.texture)
                  
             attachmentDescription.initialLayout = initialLayout
             attachmentDescription.finalLayout = finalLayout
@@ -46,7 +46,7 @@ class VulkanRenderPass {
             guard let colorAttachment = colorAttachment else { continue }
             var attachmentDescription = VkAttachmentDescription(descriptor: colorAttachment.texture.descriptor, renderTargetDescriptor: colorAttachment, actions: actions)
             let (previousCommandIndex, nextCommandIndex) = descriptor.colorPreviousAndNextUsageCommands[i]
-            let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(colorAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: colorAttachment.slice, level: colorAttachment.level, texture: colorAttachment.texture)
+            let (initialLayout, finalLayout) = try await resourceMap.renderTargetTexture(colorAttachment.texture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: colorAttachment.slice, level: colorAttachment.level, texture: colorAttachment.texture)
 
             attachmentDescription.initialLayout = initialLayout
             attachmentDescription.finalLayout = finalLayout
@@ -55,7 +55,7 @@ class VulkanRenderPass {
             if let resolveTexture = colorAttachment.resolveTexture {
                 var attachmentDescription = VkAttachmentDescription(descriptor: resolveTexture.descriptor, renderTargetDescriptor: colorAttachment, actions: (VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_STORE))
                 let (previousCommandIndex, nextCommandIndex) = descriptor.colorResolvePreviousAndNextUsageCommands[i]
-                let (initialLayout, finalLayout) = try resourceMap.renderTargetTexture(resolveTexture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: colorAttachment.resolveSlice, level: colorAttachment.resolveLevel, texture: resolveTexture)
+                let (initialLayout, finalLayout) = try await  resourceMap.renderTargetTexture(resolveTexture).image.renderPassLayouts(previousCommandIndex: previousCommandIndex, nextCommandIndex: nextCommandIndex, slice: colorAttachment.resolveSlice, level: colorAttachment.resolveLevel, texture: resolveTexture)
 
                 attachmentDescription.initialLayout = initialLayout
                 attachmentDescription.finalLayout = finalLayout

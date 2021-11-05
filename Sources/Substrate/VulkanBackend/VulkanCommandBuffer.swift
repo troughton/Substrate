@@ -76,12 +76,13 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
         return 0.0
     }
     
-    func encodeCommands(encoderIndex: Int) {
+    func encodeCommands(encoderIndex: Int) async {
         let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
         
         switch encoderInfo.type {
         case .draw:
-            guard let renderEncoder = VulkanRenderCommandEncoder(device: backend.device, renderTarget: encoderInfo.renderTargetDescriptor!, commandBufferResources: self, shaderLibrary: backend.shaderLibrary, caches: backend.stateCaches, resourceMap: self.resourceMap) else {
+            let renderTargetDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
+            guard let renderEncoder = VulkanRenderCommandEncoder(device: backend.device, renderTarget: renderTargetDescriptor, commandBufferResources: self, shaderLibrary: backend.shaderLibrary, caches: backend.stateCaches, resourceMap: self.resourceMap) else {
                 if _isDebugAssertConfiguration() {
                     print("Warning: skipping passes for encoder \(encoderIndex) since the drawable for the render target could not be retrieved.")
                 }
@@ -89,7 +90,7 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
             }
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor)
+               await renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor)
             }
             
         case .compute:
@@ -106,7 +107,7 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
                 blitEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands)
             }
             
-        case .external, .cpu:
+        case .external, .accelerationStructure, .cpu:
             break
         }
     }

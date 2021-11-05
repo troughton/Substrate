@@ -16,10 +16,10 @@ struct VulkanComputePipelineDescriptor : Hashable {
     var threadsPerThreadgroup : Size 
 
     func withVulkanPipelineCreateInfo(pipelineReflection: VulkanPipelineReflection, stateCaches: VulkanStateCaches, _ withInfo: (inout VkComputePipelineCreateInfo) -> Void) {
-        let specialisationInfo = stateCaches[self.descriptor._functionConstants, pipelineReflection: pipelineReflection] // TODO: also pass in threadsPerThreadgroup.
+        let specialisationInfo = stateCaches[self.descriptor.functionConstants, pipelineReflection: pipelineReflection] // TODO: also pass in threadsPerThreadgroup.
         let specialisationInfoPtr = specialisationInfo == nil ? nil : escapingPointer(to: &specialisationInfo!.info)
 
-        let module = stateCaches.shaderLibrary.moduleForFunction(self.descriptor.function)!
+        let module = stateCaches.shaderLibrary.moduleForFunction(self.descriptor.function.name)!
 
         var stage = VkPipelineShaderStageCreateInfo()
         stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO
@@ -27,7 +27,7 @@ struct VulkanComputePipelineDescriptor : Hashable {
         stage.stage = VK_SHADER_STAGE_COMPUTE_BIT
         stage.pSpecializationInfo = specialisationInfoPtr
         
-        let entryPoint = module.entryPointForFunction(named: self.descriptor.function)
+        let entryPoint = module.entryPointForFunction(named: self.descriptor.function.name)
         entryPoint.withCString { cFuncName in 
             stage.pName = cFuncName
 
@@ -39,6 +39,8 @@ struct VulkanComputePipelineDescriptor : Hashable {
             
             withInfo(&pipelineInfo)
         }
+        
+        _fixLifetime(specialisationInfo)
     }
 }
 
@@ -55,7 +57,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
         
         var descriptor : ComputePipelineDescriptor! = nil {
             didSet {
-                let key = PipelineLayoutKey.compute(descriptor.function)
+                let key = PipelineLayoutKey.compute(descriptor.function.name)
                 self.pipelineReflection = shaderLibrary.reflection(for: key)
                 self._layout = nil
                 
@@ -69,7 +71,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             if let layout = _layout {
                 return layout
             }
-            _layout = self.shaderLibrary.pipelineLayout(for: .compute(descriptor.function))
+            _layout = self.shaderLibrary.pipelineLayout(for: .compute(descriptor.function.name))
             return _layout
         }
         
@@ -225,7 +227,7 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             self.pipelineState.threadsPerThreadgroup = args.pointee.threadsPerThreadgroup
             self.prepareToDispatch()
             
-            let buffer = resourceMap[args.pointee.indirectBuffer]
+            let buffer = resourceMap[args.pointee.indirectBuffer]!
             vkCmdDispatchIndirect(self.commandBuffer, buffer.buffer.vkBuffer, VkDeviceSize(args.pointee.indirectBufferOffset) + VkDeviceSize(buffer.offset))
             
         case .setComputePipelineDescriptor(let descriptorPtr):

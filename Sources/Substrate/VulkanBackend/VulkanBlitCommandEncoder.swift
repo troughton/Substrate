@@ -50,8 +50,8 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             break
             
         case .copyBufferToTexture(let args):
-            let source = resourceMap[args.pointee.sourceBuffer]
-            let destination = resourceMap[args.pointee.destinationTexture].image
+            let source = resourceMap[args.pointee.sourceBuffer]!
+            let destination = resourceMap[args.pointee.destinationTexture]!.image
 
             let bytesPerPixel = args.pointee.destinationTexture.descriptor.pixelFormat.bytesPerPixel
 
@@ -74,8 +74,8 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             }
             
         case .copyBufferToBuffer(let args):
-            let source = resourceMap[args.pointee.sourceBuffer]
-            let destination = resourceMap[args.pointee.destinationBuffer]
+            let source = resourceMap[args.pointee.sourceBuffer]!
+            let destination = resourceMap[args.pointee.destinationBuffer]!
             
             var region = VkBufferCopy(srcOffset: VkDeviceSize(args.pointee.sourceOffset) + VkDeviceSize(source.offset), dstOffset: VkDeviceSize(args.pointee.destinationOffset) + VkDeviceSize(destination.offset), size: VkDeviceSize(args.pointee.size))
             vkCmdCopyBuffer(self.commandBufferResources.commandBuffer, source.buffer.vkBuffer, destination.buffer.vkBuffer, 1, &region)
@@ -84,8 +84,8 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             fatalError("Unimplemented.")
             
         case .copyTextureToTexture(let args):
-            let source = resourceMap[args.pointee.sourceTexture].image
-            let destination = resourceMap[args.pointee.destinationTexture].image
+            let source = resourceMap[args.pointee.sourceTexture]!.image
+            let destination = resourceMap[args.pointee.destinationTexture]!.image
 
             let bytesPerPixel = args.pointee.destinationTexture.descriptor.pixelFormat.bytesPerPixel
 
@@ -113,7 +113,7 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             }
             
         case .fillBuffer(let args):
-            let buffer = resourceMap[args.pointee.buffer]
+            let buffer = resourceMap[args.pointee.buffer]!
             let byteValue = UInt32(args.pointee.value)
             let intValue : UInt32 = (byteValue << 24) | (byteValue << 16) | (byteValue << 8) | byteValue
             vkCmdFillBuffer(self.commandBufferResources.commandBuffer, buffer.buffer.vkBuffer, VkDeviceSize(args.pointee.range.lowerBound) + VkDeviceSize(buffer.offset), VkDeviceSize(args.pointee.range.count), intValue)
@@ -122,8 +122,8 @@ class VulkanBlitCommandEncoder : VulkanCommandEncoder {
             fatalError("Mipmap generation should be handled by a series of blits at the RenderGraph level")
             
         case .blitTextureToTexture(let args):
-            let sourceImage = resourceMap[args.pointee.sourceTexture].image
-            let destImage = resourceMap[args.pointee.destinationTexture].image
+            let sourceImage = resourceMap[args.pointee.sourceTexture]!.image
+            let destImage = resourceMap[args.pointee.destinationTexture]!.image
             let sourceLayout = sourceImage.layout(commandIndex: commandIndex, slice: Int(args.pointee.sourceSlice), level: Int(args.pointee.sourceLevel), descriptor: args.pointee.sourceTexture.descriptor)
             let destLayout = destImage.layout(commandIndex: commandIndex, slice: Int(args.pointee.destinationSlice), level: Int(args.pointee.destinationLevel), descriptor: args.pointee.destinationTexture.descriptor)
             var region = VkImageBlit()

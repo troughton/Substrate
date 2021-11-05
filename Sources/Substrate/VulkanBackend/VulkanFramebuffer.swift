@@ -15,7 +15,7 @@ final class VulkanFramebuffer {
     
     let imageViews : [VulkanImageView]
     
-    init(descriptor: VulkanRenderTargetDescriptor, renderPass: VulkanRenderPass, device: VulkanDevice, resourceMap: FrameResourceMap<VulkanBackend>) throws {
+    init(descriptor: VulkanRenderTargetDescriptor, renderPass: VulkanRenderPass, device: VulkanDevice, resourceMap: FrameResourceMap<VulkanBackend>) async throws {
         self.device = device
         
         let renderTargetSize = descriptor.descriptor.size
@@ -36,14 +36,14 @@ final class VulkanFramebuffer {
         // Depth-stencil first, then colour.
 
         if let depthAttachment = descriptor.descriptor.depthAttachment {
-            let image = try resourceMap.renderTargetTexture(depthAttachment.texture).image
+            let image = try await resourceMap.renderTargetTexture(depthAttachment.texture).image
             let imageView = image.viewForAttachment(descriptor: depthAttachment)
             imageViews.append(imageView)
             attachments.append(imageView.vkView)
         }
         
         if let stencilAttachment = descriptor.descriptor.stencilAttachment, stencilAttachment.texture != descriptor.descriptor.depthAttachment?.texture {
-            let image = try resourceMap.renderTargetTexture(stencilAttachment.texture).image
+            let image = try await resourceMap.renderTargetTexture(stencilAttachment.texture).image
             let imageView = image.viewForAttachment(descriptor: stencilAttachment)
             imageViews.append(imageView)
             attachments.append(imageView.vkView)
@@ -52,7 +52,7 @@ final class VulkanFramebuffer {
         for (i, attachment) in descriptor.descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             
-            let image = try resourceMap.renderTargetTexture(attachment.texture).image
+            let image = try await resourceMap.renderTargetTexture(attachment.texture).image
             let imageView = image.viewForAttachment(descriptor: attachment)
             imageViews.append(imageView)
             attachments.append(imageView.vkView)

@@ -209,7 +209,7 @@ public final class VulkanDevice {
         return indices
     }
 
-    public func presentQueue(surface: VkSurfaceKHR) -> VulkanDeviceQueue? {
+    func presentQueue(surface: VkSurfaceKHR) -> VulkanDeviceQueue? {
         for familyIndex in 0..<self.queues.count {
             var supported: VkBool32 = 0
             vkGetPhysicalDeviceSurfaceSupportKHR(self.physicalDevice.vkDevice, UInt32(familyIndex), surface, &supported).check()

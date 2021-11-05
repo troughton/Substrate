@@ -207,15 +207,15 @@ extension MTLSamplerDescriptor {
 
 
 extension MTLRenderPassAttachmentDescriptor {
-    func fill(from descriptor: RenderTargetAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
+    func fill(from descriptor: RenderTargetAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) async throws {
         
         let texture = descriptor.texture
-        self.texture = try resourceMap.renderTargetTexture(texture).texture
+        self.texture = try await resourceMap.renderTargetTexture(texture).texture
         self.level = descriptor.level
         self.slice = descriptor.slice
         self.depthPlane = descriptor.depthPlane
         
-        self.resolveTexture = try descriptor.resolveTexture.map { try resourceMap.renderTargetTexture($0).texture }
+        self.resolveTexture = try await descriptor.resolveTexture.map { try await resourceMap.renderTargetTexture($0).texture }
         self.resolveLevel = descriptor.resolveLevel
         self.resolveSlice = descriptor.resolveSlice
         self.resolveDepthPlane = descriptor.resolveDepthPlane
@@ -226,26 +226,26 @@ extension MTLRenderPassAttachmentDescriptor {
 }
 
 extension MTLRenderPassColorAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, clearColor: MTLClearColor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
+    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, clearColor: MTLClearColor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) async throws {
         self.init()
-        try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
+        try await self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         self.clearColor = clearColor
     }
 }
 
 extension MTLRenderPassDepthAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, clearDepth: Double, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
+    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, clearDepth: Double, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) async throws {
         self.init()
-        try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
+        try await self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         self.clearDepth = clearDepth
         
     }
 }
 
 extension MTLRenderPassStencilAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, clearStencil: UInt32, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) throws {
+    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, clearStencil: UInt32, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) async throws {
         self.init()
-        try self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
+        try await self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
         
         switch self.texture!.pixelFormat {
         case .stencil8, .x24_stencil8, .x32_stencil8, .depth24Unorm_stencil8, .depth32Float_stencil8:
@@ -258,21 +258,21 @@ extension MTLRenderPassStencilAttachmentDescriptor {
 }
 
 extension MTLRenderPassDescriptor {
-    convenience init(_ descriptorWrapper: MetalRenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>) throws {
+    convenience init(_ descriptorWrapper: MetalRenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>) async throws {
         self.init()
         let descriptor = descriptorWrapper.descriptor
         
         for (i, attachment) in descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
-            self.colorAttachments[i] = try MTLRenderPassColorAttachmentDescriptor(attachment, clearColor: descriptorWrapper.clearColors[i], actions: descriptorWrapper.colorActions[i], resourceMap: resourceMap)
+            self.colorAttachments[i] = try await MTLRenderPassColorAttachmentDescriptor(attachment, clearColor: descriptorWrapper.clearColors[i], actions: descriptorWrapper.colorActions[i], resourceMap: resourceMap)
         }
         
         if let depthAttachment = descriptor.depthAttachment {
-            self.depthAttachment = try MTLRenderPassDepthAttachmentDescriptor(depthAttachment, clearDepth: descriptorWrapper.clearDepth, actions: descriptorWrapper.depthActions, resourceMap: resourceMap)
+            self.depthAttachment = try await MTLRenderPassDepthAttachmentDescriptor(depthAttachment, clearDepth: descriptorWrapper.clearDepth, actions: descriptorWrapper.depthActions, resourceMap: resourceMap)
         }
         
         if let stencilAttachment = descriptor.stencilAttachment {
-            self.stencilAttachment = try MTLRenderPassStencilAttachmentDescriptor(stencilAttachment, clearStencil: descriptorWrapper.clearStencil, actions: descriptorWrapper.stencilActions, resourceMap: resourceMap)
+            self.stencilAttachment = try await  MTLRenderPassStencilAttachmentDescriptor(stencilAttachment, clearStencil: descriptorWrapper.clearStencil, actions: descriptorWrapper.stencilActions, resourceMap: resourceMap)
         }
         
         if let visibilityBuffer = descriptor.visibilityResultBuffer, let buffer = resourceMap[visibilityBuffer] {

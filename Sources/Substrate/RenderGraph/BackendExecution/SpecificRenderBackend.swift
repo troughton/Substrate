@@ -114,8 +114,8 @@ protocol BackendTransientResourceRegistry {
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
     
     func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> Backend.BufferReference
-    func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) -> Backend.TextureReference
-    func allocateWindowHandleTexture(_ texture: Texture) throws -> Backend.TextureReference
+    func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) async -> Backend.TextureReference
+    func allocateWindowHandleTexture(_ texture: Texture) async throws -> Backend.TextureReference
     func allocateTextureView(_ texture: Texture, resourceMap: FrameResourceMap<Backend>) -> Backend.TextureReference
     
     func setDisposalFences(on resource: Resource, to fences: [FenceDependency])

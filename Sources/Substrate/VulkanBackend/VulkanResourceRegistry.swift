@@ -53,6 +53,7 @@ struct VkImageReference {
 }
 
 final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry {
+
     typealias Backend = VulkanBackend
     
     var accessLock = ReaderWriterLock()
@@ -73,8 +74,9 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     public init(instance: VulkanInstance, device: VulkanDevice) {
         self.device = device
         
-        var allocatorInfo = VmaAllocatorCreateInfo(flags: 0, physicalDevice: device.vkDevice, device: device.vkDevice, preferredLargeHeapBlockSize: 0, pAllocationCallbacks: nil, pDeviceMemoryCallbacks: nil, frameInUseCount: 0, pHeapSizeLimit: nil, pVulkanFunctions: nil, pRecordSettings: nil, instance: instance.instance, 
-                                                    vulkanApiVersion: VulkanVersion.apiVersion.value)
+        var allocatorInfo = VmaAllocatorCreateInfo(flags: 0, physicalDevice: device.vkDevice, device: device.vkDevice, preferredLargeHeapBlockSize: 0, pAllocationCallbacks: nil, pDeviceMemoryCallbacks: nil, frameInUseCount: 0, pHeapSizeLimit: nil, pVulkanFunctions: nil, pRecordSettings: nil, instance: instance.instance,
+                                                   vulkanApiVersion: VulkanVersion.apiVersion.value,
+                                                   pTypeExternalMemoryHandleTypes: nil)
         allocatorInfo.device = device.vkDevice
         allocatorInfo.physicalDevice = device.physicalDevice.vkDevice
 
@@ -84,7 +86,6 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         
         self.descriptorPool = VulkanDescriptorPool(device: device, incrementalRelease: true)
         
-        self.prepareFrame()
         VulkanEventRegistry.instance.device = self.device.vkDevice
     }
     
@@ -202,7 +203,6 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
-        self.prepareFrame()
         if let texture = Texture(resource) {
             self.textureReferences[texture] = VkImageReference(image: Unmanaged.passRetained(backingResource as! VulkanImage))
         } else if let buffer = Buffer(resource) {
@@ -246,7 +246,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64) {
-        if let image = self.persistentRegistry[texture] {
+        if let image = self[texture] {
             image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: texture.stateFlags.contains(.initialised), frameIndex: frameIndex)
         }
     }
@@ -284,6 +284,26 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         if let vkBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
             _ = vkBuffer
         }
+    }
+    
+    subscript(accelerationStructure: AccelerationStructure) -> AnyObject? {
+        return nil
+    }
+
+    subscript(visibleFunctionTable: VisibleFunctionTable) -> Void? {
+        return nil
+    }
+
+    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> Void? {
+        return nil
+    }
+
+    func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) async -> Void? {
+        return nil
+    }
+
+    func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) async -> Void? {
+        return nil
     }
     
     func cycleFrames() {
