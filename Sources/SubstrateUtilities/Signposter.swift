@@ -69,8 +69,6 @@ public struct Signposter {
         } else {
             self.signposter = nil
         }
-#else
-        self.signposter = nil
 #endif
     }
 
@@ -125,14 +123,14 @@ public struct Signposter {
     }
 
     @inlinable
-    public func withIntervalSignpost<T>(_ name: StaticString, id: SignpostID = .exclusive, _ message: SignpostMetadata, around task: () async throws -> T) reasync rethrows -> T {
+    public func withIntervalSignpost<T>(_ name: StaticString, id: SignpostID = .exclusive, _ message: SignpostMetadata, around task: () async throws -> T) async rethrows -> T {
         let state = self.beginInterval(name, id: id, message)
         let result = try await task()
         self.endInterval(name, state, message)
         return result
     }
 
-    public func withIntervalSignpost<T>(_ name: StaticString, id: SignpostID = .exclusive, around task: () async throws -> T) reasync rethrows -> T {
+    public func withIntervalSignpost<T>(_ name: StaticString, id: SignpostID = .exclusive, around task: () async throws -> T) async rethrows -> T {
         let state = self.beginInterval(name, id: id)
         let result = try await task()
         self.endInterval(name, state)

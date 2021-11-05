@@ -1295,8 +1295,7 @@ public final class RenderGraph {
         var dependencyTable = DependencyTable<DependencyType>(capacity: renderPasses.count, defaultValue: .none)
         let passHasSideEffects = BitSet(capacity: renderPasses.count)
         defer { passHasSideEffects.dispose() }
-        
-        
+
         for (i, pass) in renderPasses.enumerated() {
             for resource in pass.writtenResources {
                 assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.transientRegistryIndex, "Transient resource \(resource) associated with another RenderGraph is being used in this RenderGraph.")

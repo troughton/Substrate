@@ -116,8 +116,8 @@ extension VulkanBackend {
                             barrier.offset = VkDeviceSize(range.lowerBound)
                             barrier.size = VkDeviceSize(range.count)
                         }
-                        barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: false).rawValue
-                        barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: false).rawValue
+                        barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: false).flags
+                        barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: false).flags
                         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         bufferBarriers.append(barrier)
@@ -131,8 +131,8 @@ extension VulkanBackend {
                         var barrier = VkImageMemoryBarrier()
                         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
                         barrier.image = resourceMap[texture].image.vkImage
-                        barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
-                        barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
+                        barrier.srcAccessMask = producingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).flags
+                        barrier.dstAccessMask = consumingUsage.type.accessMask(isDepthOrStencil: isDepthOrStencil).flags
                         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED
                         barrier.oldLayout = image.layout(commandIndex: producingUsage.commandRange.last!, subresourceRange: producingUsage.activeRange)
@@ -163,9 +163,9 @@ extension VulkanBackend {
                                 subpassDependency.dstSubpass = 0
                             }
 
-                            subpassDependency.srcStageMask = producingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: producingUsage.stages).rawValue
+                            subpassDependency.srcStageMask = producingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: producingUsage.stages).flags
                             subpassDependency.srcAccessMask = barrier.srcAccessMask
-                            subpassDependency.dstStageMask = consumingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: consumingUsage.stages).rawValue
+                            subpassDependency.dstStageMask = consumingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: consumingUsage.stages).flags
                             subpassDependency.dstAccessMask = barrier.dstAccessMask
 
                             renderTargetDescriptor.addDependency(subpassDependency) 
@@ -345,8 +345,8 @@ extension VulkanBackend {
             let sourceMask = afterUsageType.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: afterStages)
             let destinationMask = beforeUsageType.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: beforeStages)
             
-            let sourceAccessMask = afterUsageType.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
-            let destinationAccessMask = beforeUsageType.accessMask(isDepthOrStencil: isDepthOrStencil).rawValue
+            let sourceAccessMask = afterUsageType.accessMask(isDepthOrStencil: isDepthOrStencil).flags
+            let destinationAccessMask = beforeUsageType.accessMask(isDepthOrStencil: isDepthOrStencil).flags
 
             var beforeCommand = beforeCommand
             
@@ -360,7 +360,7 @@ extension VulkanBackend {
                 } else {
                     subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
                 }
-                subpassDependency.srcStageMask = sourceMask.rawValue
+                subpassDependency.srcStageMask = sourceMask.flags
                 subpassDependency.srcAccessMask = sourceAccessMask
                 
                 let dependentPass = commandInfo.passes[currentPassIndex...].first(where: { $0.commandRange!.contains(beforeCommand) })!
@@ -369,7 +369,7 @@ extension VulkanBackend {
                 } else {
                     subpassDependency.dstSubpass = VK_SUBPASS_EXTERNAL
                 }
-                subpassDependency.dstStageMask = destinationMask.rawValue
+                subpassDependency.dstStageMask = destinationMask.flags
                 subpassDependency.dstAccessMask = destinationAccessMask
 
                 // If the dependency is on an attachment, then we can let the subpass dependencies handle it, _unless_ both usages are in the same subpass.

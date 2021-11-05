@@ -505,20 +505,22 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         fatalError("Unimplemented")
     }
     
+
+    @MainActor
+    private func createWindowHandleTexture(_ texture: Texture) {
+        let swapChain = self.windowReferences.removeValue(forKey: texture)!
+        self.frameSwapChains.append(swapChain)
+        let image = swapChain.nextImage(descriptor: texture.descriptor)
+        image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false, frameIndex: self.frameIndex)
+        self.textureReferences[texture] = VkImageReference(image: Unmanaged.passUnretained(image))
+    }
+
     @discardableResult
-    public func allocateWindowHandleTexture(_ texture: Texture) throws -> VkImageReference {
+    public func allocateWindowHandleTexture(_ texture: Texture) async throws -> VkImageReference {
         precondition(texture.flags.contains(.windowHandle))
         
-        RenderGraph.jobManager.syncOnMainThread {
-            if self.textureReferences[texture]!._image != nil {
-                return
-            }
-            
-            let swapChain = self.windowReferences.removeValue(forKey: texture)!
-            self.frameSwapChains.append(swapChain)
-            let image = swapChain.nextImage(descriptor: texture.descriptor)
-            image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false, frameIndex: self.frameIndex)
-            self.textureReferences[texture] = VkImageReference(image: Unmanaged.passUnretained(image))
+        if self.textureReferences[texture]!._image == nil {
+            await self.createWindowHandleTexture(texture)
         }
 
         return self.textureReferences[texture]!

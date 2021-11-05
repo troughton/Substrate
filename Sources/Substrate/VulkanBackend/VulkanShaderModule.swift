@@ -448,7 +448,7 @@ final class VulkanDescriptorSetLayout {
         layoutCreateInfo.bindingCount = UInt32(bindings.count)
         self.bindingCount = bindings.count
 
-        let bindingFlags = [VkDescriptorBindingFlags](repeating: VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT.rawValue, count: bindings.count)
+        let bindingFlags = [VkDescriptorBindingFlags](repeating: VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT.flags, count: bindings.count)
 
         self.vkLayout = bindingFlags.withUnsafeBufferPointer { bindingFlags in
             var bindingFlagsCreateInfo = VkDescriptorSetLayoutBindingFlagsCreateInfo()

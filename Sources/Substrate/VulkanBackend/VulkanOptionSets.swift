@@ -113,14 +113,43 @@ extension VkBufferUsageFlagBits : OptionSet {
     }
 }
 
-extension VkAccessFlagBits : OptionSet {}
+extension VkAccessFlagBits : OptionSet {
+    var flags: VkAccessFlags {
+        return VkAccessFlags(self.rawValue)
+    }
+}
 
-extension VkPipelineStageFlagBits : OptionSet {}
 
-extension VkCommandPoolCreateFlagBits : OptionSet {}
+extension VkDescriptorBindingFlagBits : OptionSet {
+    var flags: VkDescriptorBindingFlags {
+        return VkDescriptorBindingFlags(self.rawValue)
+    }
+}
 
-extension VkQueueFlagBits : OptionSet {}
 
-extension VkMemoryPropertyFlagBits : OptionSet {}
+
+extension VkPipelineStageFlagBits : OptionSet {
+    var flags: VkPipelineStageFlags {
+        return VkPipelineStageFlags(self.rawValue)
+    }
+}
+
+extension VkCommandPoolCreateFlagBits : OptionSet {
+    var flags: VkCommandPoolCreateFlags {
+        return VkCommandPoolCreateFlags(self.rawValue)
+    }
+}
+
+extension VkQueueFlagBits : OptionSet {
+    var flags: VkQueueFlags {
+        return VkQueueFlags(self.rawValue)
+    }
+}
+
+extension VkMemoryPropertyFlagBits : OptionSet {
+    var flags: VkMemoryPropertyFlags {
+        return VkMemoryPropertyFlags(self.rawValue)
+    }
+}
 
 #endif // canImport(Vulkan)
