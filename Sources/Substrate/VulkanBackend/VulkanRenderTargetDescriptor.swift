@@ -384,13 +384,13 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
             
             if let previousWrite = previousWrite {
                 var dependency = VkSubpassDependency()
-                dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT.rawValue
+                dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT.flags
                 dependency.srcSubpass = UInt32(previousWriteSubpass)
                 dependency.dstSubpass = UInt32(usageSubpass.index)
-                dependency.srcStageMask = previousWrite.type.shaderStageMask(isDepthOrStencil: isDepthStencil, stages: previousWrite.stages).rawValue
-                dependency.srcAccessMask = previousWrite.type.accessMask(isDepthOrStencil: isDepthStencil).rawValue
-                dependency.dstStageMask = usage.type.shaderStageMask(isDepthOrStencil: isDepthStencil, stages: usage.stages).rawValue
-                dependency.dstAccessMask = usage.type.accessMask(isDepthOrStencil: isDepthStencil).rawValue
+                dependency.srcStageMask = previousWrite.type.shaderStageMask(isDepthOrStencil: isDepthStencil, stages: previousWrite.stages).flags
+                dependency.srcAccessMask = previousWrite.type.accessMask(isDepthOrStencil: isDepthStencil).flags
+                dependency.dstStageMask = usage.type.shaderStageMask(isDepthOrStencil: isDepthStencil, stages: usage.stages).flags
+                dependency.dstAccessMask = usage.type.accessMask(isDepthOrStencil: isDepthStencil).flags
                 self.addDependency(dependency)
             }
 

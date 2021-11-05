@@ -262,7 +262,7 @@ public final class VulkanBackend : SpecificRenderBackend {
         vmaMapMemory(image.allocator!, image.allocation!, &data)
 
         var subresource = VkImageSubresource()
-        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT.rawValue;
+        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT.flags
         subresource.mipLevel = UInt32(mipmapLevel)
         subresource.arrayLayer = UInt32(slice)
 

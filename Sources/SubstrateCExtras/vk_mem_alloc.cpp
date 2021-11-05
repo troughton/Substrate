@@ -8,6 +8,7 @@
 #define VMA_IMPLEMENTATION
 #include "include/vk_mem_alloc.h"
 
+
 #pragma clang diagnostic pop
 
 #endif // __has_include(<vulkan/vulkan.h>)

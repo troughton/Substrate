@@ -31,7 +31,7 @@ public final class VulkanPhysicalDevice {
         
         for i in queueFamilies.indices {
             if VkQueueFlagBits(queueFamilies[i].queueFlags).intersection([VK_QUEUE_GRAPHICS_BIT, VK_QUEUE_COMPUTE_BIT]) != [] {
-                queueFamilies[i].queueFlags |= VK_QUEUE_TRANSFER_BIT.rawValue // All queues support transfer operations.
+                queueFamilies[i].queueFlags |= VK_QUEUE_TRANSFER_BIT.flags // All queues support transfer operations.
             }
         }
         
@@ -43,7 +43,7 @@ public final class VulkanPhysicalDevice {
         var formatProperties = VkFormatProperties()
         vkGetPhysicalDeviceFormatProperties(self.vkDevice, vkFormat, &formatProperties)
         
-        let features = VkFormatFeatureFlagBits(formatProperties.linearTilingFeatures | formatProperties.optimalTilingFeatures)
+        let features: VkFormatFeatureFlagBits = [VkFormatFeatureFlagBits(rawValue: VkFormatFeatureFlagBits.RawValue(formatProperties.linearTilingFeatures)), VkFormatFeatureFlagBits(rawValue: VkFormatFeatureFlagBits.RawValue(formatProperties.optimalTilingFeatures))]
         
         if usage.contains(.shaderRead), !features.contains(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) {
             return false

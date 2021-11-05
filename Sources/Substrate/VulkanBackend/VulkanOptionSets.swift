@@ -9,11 +9,23 @@
 import Vulkan
 import SubstrateCExtras
 
-extension VkDebugReportFlagBitsEXT : OptionSet { }
+extension VkDebugReportFlagBitsEXT : OptionSet {
+    var flags: VkDebugReportFlagsEXT {
+        return VkDebugReportFlagsEXT(bitPattern: self.rawValue)
+    }
+ }
 
-extension VkFormatFeatureFlagBits : OptionSet { }
+extension VkFormatFeatureFlagBits : OptionSet { 
+    var flags: VkFormatFeatureFlags {
+        return VkFormatFeatureFlags(bitPattern: self.rawValue)
+    }
+}
 
 extension VkImageCreateFlagBits : OptionSet {
+    var flags: VkImageCreateFlags {
+        return VkImageCreateFlags(bitPattern: self.rawValue)
+    }
+
     public static var sparseBinding : VkImageCreateFlagBits {
         return VK_IMAGE_CREATE_SPARSE_BINDING_BIT
     }
@@ -34,8 +46,6 @@ extension VkImageCreateFlagBits : OptionSet {
         return VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT
     }
 }
-
-extension VkImageAspectFlagBits : OptionSet { }
 
 extension VkImageUsageFlagBits : OptionSet {
     
@@ -72,9 +82,16 @@ extension VkImageUsageFlagBits : OptionSet {
     }
 }
 
-extension VkImageViewCreateFlagBits : OptionSet {}
+extension VkImageViewCreateFlagBits : OptionSet {
+    var flags: VkImageViewCreateFlags {
+        return VkImageViewCreateFlags(bitPattern: self.rawValue)
+    }
+}
 
 extension VkBufferUsageFlagBits : OptionSet {
+    var flags: VkBufferUsageFlags {
+        return VkBufferUsageFlags(bitPattern: self.rawValue)
+    }
     
     public static var transferSource : VkBufferUsageFlagBits {
         return VK_BUFFER_USAGE_TRANSFER_SRC_BIT
@@ -115,40 +132,62 @@ extension VkBufferUsageFlagBits : OptionSet {
 
 extension VkAccessFlagBits : OptionSet {
     var flags: VkAccessFlags {
-        return VkAccessFlags(self.rawValue)
+        return VkAccessFlags(bitPattern: self.rawValue)
     }
 }
 
 
 extension VkDescriptorBindingFlagBits : OptionSet {
     var flags: VkDescriptorBindingFlags {
-        return VkDescriptorBindingFlags(self.rawValue)
+        return VkDescriptorBindingFlags(bitPattern: self.rawValue)
     }
 }
 
+extension VkDependencyFlagBits: OptionSet {
+    var flags: VkDependencyFlags {
+        return VkDependencyFlags(bitPattern: self.rawValue)
+    }
+}
 
+extension VkImageAspectFlagBits: OptionSet {
+    var flags: VkImageAspectFlags {
+        return VkImageAspectFlags(bitPattern: self.rawValue)
+    }
+}
 
 extension VkPipelineStageFlagBits : OptionSet {
     var flags: VkPipelineStageFlags {
-        return VkPipelineStageFlags(self.rawValue)
+        return VkPipelineStageFlags(bitPattern: self.rawValue)
+    }
+}
+
+extension VkSampleCountFlagBits : OptionSet {
+    var flags: VkSampleCountFlags {
+        return VkSampleCountFlags(bitPattern: self.rawValue)
     }
 }
 
 extension VkCommandPoolCreateFlagBits : OptionSet {
     var flags: VkCommandPoolCreateFlags {
-        return VkCommandPoolCreateFlags(self.rawValue)
+        return VkCommandPoolCreateFlags(bitPattern: self.rawValue)
     }
 }
 
 extension VkQueueFlagBits : OptionSet {
     var flags: VkQueueFlags {
-        return VkQueueFlags(self.rawValue)
+        return VkQueueFlags(bitPattern: self.rawValue)
     }
 }
 
 extension VkMemoryPropertyFlagBits : OptionSet {
     var flags: VkMemoryPropertyFlags {
-        return VkMemoryPropertyFlags(self.rawValue)
+        return VkMemoryPropertyFlags(bitPattern: self.rawValue)
+    }
+}
+
+extension VmaAllocationCreateFlagBits : OptionSet {
+    var flags: VmaAllocationCreateFlags {
+        return VmaAllocationCreateFlags(bitPattern: self.rawValue)
     }
 }
 

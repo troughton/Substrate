@@ -733,7 +733,7 @@ extension VkAttachmentDescription {
         self.init()
         self.flags = 0
         self.format = VkFormat(pixelFormat: descriptor.pixelFormat)!
-        self.samples = VkSampleCountFlagBits(rawValue: UInt32(descriptor.sampleCount))
+        self.samples = VkSampleCountFlagBits(rawValue: VkSampleCountFlagBits.RawValue(descriptor.sampleCount))
         self.loadOp = actions.0
         self.storeOp = actions.1
         self.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE // This is a color attachment
@@ -746,7 +746,7 @@ extension VkAttachmentDescription {
         self.init()
         self.flags = 0
         self.format = VkFormat(pixelFormat: descriptor.pixelFormat)!
-        self.samples = VkSampleCountFlagBits(rawValue: UInt32(descriptor.sampleCount))
+        self.samples = VkSampleCountFlagBits(rawValue: VkSampleCountFlagBits.RawValue(descriptor.sampleCount))
         self.loadOp = depthActions.0
         self.storeOp = depthActions.1
         self.stencilLoadOp = stencilActions.0

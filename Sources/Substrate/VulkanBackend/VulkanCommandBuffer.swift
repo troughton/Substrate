@@ -142,7 +142,7 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
         self.waitSemaphoreWaitValues.append(repeating: 0, count: self.presentSwapchains.count)
 
         var waitDstStageMasks = self.waitSemaphores.map { VkPipelineStageFlags($0.stages) }
-        waitDstStageMasks.append(contentsOf: repeatElement(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT.rawValue, count: self.presentSwapchains.count))
+        waitDstStageMasks.append(contentsOf: repeatElement(VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT.flags, count: self.presentSwapchains.count))
         
         // Add a binary semaphore to signal for each presentation swapchain.
         let signalTimelineSemaphoreCount = self.signalSemaphores.count

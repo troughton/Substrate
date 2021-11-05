@@ -790,6 +790,6 @@ final class MetalBackend : SpecificRenderBackend {
 #else
 
 @available(*, unavailable)
-public typealias MetalBackend = UnavailableBackend
+typealias MetalBackend = UnavailableBackend
 
 #endif // canImport(Metal)
