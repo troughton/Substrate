@@ -170,8 +170,6 @@ class VulkanComputeCommandEncoder : VulkanResourceBindingCommandEncoder {
             let argumentBuffer = args.pointee.argumentBuffer
             let vkArgumentBuffer = resourceMap[argumentBuffer]
 
-            self.commandBufferResources.argumentBuffers.append(vkArgumentBuffer)
-
             var set : VkDescriptorSet? = vkArgumentBuffer.descriptorSet
             vkCmdBindDescriptorSets(self.commandBuffer, self.bindPoint, self.pipelineLayout, bindingPath.set, 1, &set, 0, nil)
 

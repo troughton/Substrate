@@ -269,8 +269,6 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
                 let argumentBuffer = args.pointee.argumentBuffer
                 let vkArgumentBuffer = resourceMap[argumentBuffer]
 
-                self.commandBufferResources.argumentBuffers.append(vkArgumentBuffer)
-
                 var set : VkDescriptorSet? = vkArgumentBuffer.descriptorSet
                 vkCmdBindDescriptorSets(self.commandBuffer, self.bindPoint, self.pipelineLayout, bindingPath.set, 1, &set, 0, nil)
 
@@ -457,8 +455,6 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             self.boundVertexBuffers[Int(args.pointee.index)] = args.pointee.buffer
             guard let handle = args.pointee.buffer else { return }
             if let buffer = self.resourceMap[handle] {
-                self.commandBufferResources.buffers.append(buffer.buffer)
-
                 var vkBuffer = buffer.buffer.vkBuffer as VkBuffer?
                 var offset = VkDeviceSize(args.pointee.offset) + VkDeviceSize(buffer.offset)
                 vkCmdBindVertexBuffers(self.commandBuffer, args.pointee.index, 1, &vkBuffer, &offset)

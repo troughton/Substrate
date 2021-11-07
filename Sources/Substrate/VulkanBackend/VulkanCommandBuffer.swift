@@ -30,14 +30,8 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
     let resourceMap: FrameResourceMap<VulkanBackend>
     let compactedResourceCommands: [CompactedResourceCommand<VulkanCompactedResourceCommandType>]
     
-    var buffers = [VulkanBuffer]()
-    var bufferView = [VulkanBufferView]()
-    var images = [VulkanImage]()
-    var imageViews = [VulkanImageView]()
     var renderPasses = [VulkanRenderPass]()
     var framebuffers = [VulkanFramebuffer]()
-    var descriptorSets = [VkDescriptorSet?]()
-    var argumentBuffers = [VulkanArgumentBuffer]()
     
     var waitSemaphores = [ResourceSemaphore]()
     var waitSemaphoreWaitValues = ExpandingBuffer<UInt64>()

@@ -324,6 +324,7 @@ final actor VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
 final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     typealias Backend = VulkanBackend
     
+    let queue: Queue
     let persistentRegistry : VulkanPersistentResourceRegistry
     let transientRegistryIndex: Int
     var accessLock = SpinLock()
@@ -359,7 +360,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     var windowReferences = [Texture : VulkanSwapChain]()
     public private(set) var frameSwapChains : [VulkanSwapChain] = []
     
-    public init(device: VulkanDevice, inflightFrameCount: Int, transientRegistryIndex: Int, persistentRegistry: VulkanPersistentResourceRegistry) {
+    public init(device: VulkanDevice, inflightFrameCount: Int, queue: Queue, transientRegistryIndex: Int, persistentRegistry: VulkanPersistentResourceRegistry) {
+        self.queue = queue
         self.inflightFrameCount = inflightFrameCount
         self.transientRegistryIndex = transientRegistryIndex
         self.persistentRegistry = persistentRegistry
@@ -713,11 +715,9 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         
         if let vkTexture = textureRef {
-            if texture.flags.contains(.windowHandle) {
+            if texture.flags.contains(.windowHandle) || texture.isTextureView {
+                CommandEndActionManager.enqueue(action: .release(.fromOpaque(vkTexture._image.toOpaque())), after: waitEvent.waitValue, on: self.queue)
                 return
-            }
-            if texture.isTextureView {
-                vkTexture._image.release()
             }
             
             var events : [FenceDependency] = []
