@@ -45,7 +45,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
 
     let shaderLibrary : VulkanShaderLibrary
     let compatibleRenderPass: VulkanCompatibleRenderPass
-    
+
     var hasChanged: Bool = false
     var pipelineReflection : VulkanPipelineReflection! = nil
 
@@ -58,6 +58,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         } 
     }
 
+    var primitiveType: PrimitiveType? = nil // Triangles, lines, or points; the exact subtype is set dynamically.
     var depthStencil : DepthStencilDescriptor? = nil { didSet { self.hasChanged = hasChanged || depthStencil != oldValue } }
     var layout: VkPipelineLayout! = nil { didSet { self.hasChanged = hasChanged || layout != oldValue } }
 
@@ -79,6 +80,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
 
     static func ==(lhs: VulkanRenderPipelineDescriptor, rhs: VulkanRenderPipelineDescriptor) -> Bool {
         guard lhs.descriptor == rhs.descriptor else { return false }
+        guard lhs.primitiveType == rhs.primitiveType else { return false }
         guard lhs.layout == rhs.layout else { return false }
         guard lhs.subpassIndex == rhs.subpassIndex else { return false }
 
@@ -126,6 +128,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         
         var inputAssemblyState = VkPipelineInputAssemblyStateCreateInfo()
         inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
+        inputAssemblyState.topology = VkPrimitiveTopology(self.primitiveType)
         
         var rasterisationState = VkPipelineRasterizationStateCreateInfo()
         rasterisationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
@@ -417,6 +420,19 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     func setPrimitiveType(_ primitiveType: PrimitiveType) {
         guard primitiveType != self.currentPrimitiveType else {
             return
+        }
+
+        let oldDescriptorType = self.pipelineDescriptor.primitiveType
+        switch primitiveType {
+        case .triangle, .triangleStrip:
+            self.pipelineDescriptor.primitiveType = .triangle
+        case .line, .lineStrip:
+            self.pipelineDescriptor.primitiveType = .line
+        case .point:
+            self.pipelineDescriptor.primitiveType = .point
+        }
+        if self.pipelineDescriptor.primitiveType != oldDescriptorType {
+            self.prepareToDraw()
         }
         
         vkCmdSetPrimitiveTopologyEXT(self.commandBuffer, VkPrimitiveTopology(primitiveType))

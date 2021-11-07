@@ -269,7 +269,7 @@ public final class VulkanBackend : SpecificRenderBackend {
     }
     
     func makeTransientRegistry(index: Int, inflightFrameCount: Int, queue: Queue) -> VulkanTransientResourceRegistry {
-        return VulkanTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
+        return VulkanTransientResourceRegistry(device: self.device, inflightFrameCount: inflightFrameCount, queue: queue, transientRegistryIndex: index, persistentRegistry: self.resourceRegistry)
     }
     
     func makeQueue(renderGraphQueue: Queue) -> VulkanQueue {
