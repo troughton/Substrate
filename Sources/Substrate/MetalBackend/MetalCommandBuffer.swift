@@ -90,7 +90,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             renderEncoder.endEncoding()
             
         case .compute:
-            let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: .concurrent)!
+            let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: MTLResourceOptions.substrateTrackedHazards == .hazardTrackingModeUntracked ? .concurrent : .serial)!
             let computeEncoder = FGMTLComputeCommandEncoder(encoder: mtlComputeEncoder, isAppleSiliconGPU: backend.isAppleSiliconGPU)
             
         #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
