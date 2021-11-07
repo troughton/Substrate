@@ -87,6 +87,9 @@ final class FGMTLThreadRenderCommandEncoder {
     private unowned(unsafe) var boundPipelineState: MTLRenderPipelineState? = nil
     private unowned(unsafe) var boundDepthStencilState: MTLDepthStencilState? = nil
     
+    private var triangleFillMode: TriangleFillMode = .fill
+    private var depthClipMode: DepthClipMode = .clip
+    
     init(encoder: MTLRenderCommandEncoder, renderPassDescriptor: MTLRenderPassDescriptor, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.renderPassDescriptor = renderPassDescriptor
@@ -310,6 +313,12 @@ final class FGMTLThreadRenderCommandEncoder {
         case .setRenderPipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue().value
             self.hasFragmentFunction = !descriptor.fragmentFunction.name.isEmpty
+            
+            if descriptor.fillMode != self.triangleFillMode {
+                self.encoder.setTriangleFillMode(MTLTriangleFillMode(descriptor.fillMode))
+                self.triangleFillMode = descriptor.fillMode
+            }
+                
             let state = await stateCaches.renderPipelineCache[descriptor, renderTarget: renderTarget]!
             if state !== self.boundPipelineState {
                 encoder.setRenderPipelineState(state)
@@ -319,6 +328,12 @@ final class FGMTLThreadRenderCommandEncoder {
         case .setRenderPipelineState(let statePtr):
             let mtlState = Unmanaged<MTLRenderPipelineState>.fromOpaque(statePtr.pointee.state).takeUnretainedValue()
             self.hasFragmentFunction = statePtr.pointee.hasFragmentFunction
+            
+            if statePtr.pointee.triangleFillMode != self.triangleFillMode {
+                self.encoder.setTriangleFillMode(MTLTriangleFillMode(statePtr.pointee.triangleFillMode))
+                self.triangleFillMode = statePtr.pointee.triangleFillMode
+            }
+                
             if mtlState !== self.boundPipelineState {
                 encoder.setRenderPipelineState(mtlState)
                 self.boundPipelineState = mtlState
@@ -341,11 +356,15 @@ final class FGMTLThreadRenderCommandEncoder {
         case .setCullMode(let cullMode):
             encoder.setCullMode(MTLCullMode(cullMode))
             
-        case .setTriangleFillMode(let fillMode):
-            encoder.setTriangleFillMode(MTLTriangleFillMode(fillMode))
-            
         case .setDepthStencilDescriptor(let descriptorPtr):
-            let state = await stateCaches.depthStencilCache[descriptorPtr.takeUnretainedValue().value]
+            let descriptor = descriptorPtr.takeUnretainedValue().value
+            
+            if descriptor.depthClipMode != self.depthClipMode {
+                self.encoder.setDepthClipMode(MTLDepthClipMode(descriptor.depthClipMode))
+                self.depthClipMode = descriptor.depthClipMode
+            }
+            
+            let state = await stateCaches.depthStencilCache[descriptor]
             if state !== self.boundDepthStencilState, renderTarget.depthAttachment != nil || renderTarget.stencilAttachment != nil {
                 encoder.setDepthStencilState(state)
                 self.boundDepthStencilState = state
@@ -353,9 +372,6 @@ final class FGMTLThreadRenderCommandEncoder {
             
         case .setScissorRect(let scissorPtr):
             encoder.setScissorRect(MTLScissorRect(scissorPtr.pointee))
-            
-        case .setDepthClipMode(let mode):
-            encoder.setDepthClipMode(MTLDepthClipMode(mode))
             
         case .setDepthBias(let args):
             encoder.setDepthBias(args.pointee.depthBias, slopeScale: args.pointee.slopeScale, clamp: args.pointee.clamp)

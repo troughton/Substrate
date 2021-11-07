@@ -303,17 +303,9 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.encoder.setCullMode(cullMode)
     }
     
-    public func setTriangleFillMode(_ fillMode: TriangleFillMode) {
-        self.encoder.setTriangleFillMode(fillMode)
-    }
-    
     //    @inlinable
     public func setScissorRect(_ rect: ScissorRect) {
         self.encoder.setScissorRect(rect)
-    }
-    
-    public func setDepthClipMode(_ depthClipMode: DepthClipMode) {
-        self.encoder.setDepthClipMode(depthClipMode)
     }
     
     public func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float) {

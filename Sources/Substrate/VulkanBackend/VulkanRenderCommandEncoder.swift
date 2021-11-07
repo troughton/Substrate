@@ -29,10 +29,10 @@ struct DynamicStateCreateInfo {
                                                            VK_DYNAMIC_STATE_BLEND_CONSTANTS,
                                                            VK_DYNAMIC_STATE_STENCIL_REFERENCE,
                                                            
-                                                           // TODO: use ExtendedDynamicState extension.
-//                                                           VK_DYNAMIC_STATE_CULL_MODE_EXT,
-//                                                           VK_DYNAMIC_STATE_FRONT_FACE_EXT,
-//                                                           VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY_EXT,
+                                                           VK_DYNAMIC_STATE_CULL_MODE_EXT,
+                                                           VK_DYNAMIC_STATE_FRONT_FACE_EXT,
+                                                           VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY_EXT,
+                                                           VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE_EXT,
 //                                                           VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE_EXT,
 //                                                           VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE_EXT,
 //                                                           VK_DYNAMIC_STATE_DEPTH_COMPARE_OP_EXT,
@@ -59,11 +59,6 @@ struct VulkanRenderPipelineDescriptor : Hashable {
     }
 
     var depthStencil : DepthStencilDescriptor? = nil { didSet { self.hasChanged = hasChanged || depthStencil != oldValue } }
-    var primitiveType: PrimitiveType = .triangle { didSet { self.hasChanged = hasChanged || primitiveType != oldValue } }
-    var cullMode : CullMode = .none { didSet { self.hasChanged = hasChanged || cullMode != oldValue } }
-    var fillMode : TriangleFillMode = .fill { didSet { self.hasChanged = hasChanged || fillMode != oldValue } }
-    var depthClipMode : DepthClipMode = .clip { didSet { self.hasChanged = hasChanged || depthClipMode != oldValue } }
-    var frontFaceWinding : Winding = .clockwise { didSet { self.hasChanged = hasChanged || frontFaceWinding != oldValue } }
     var layout: VkPipelineLayout! = nil { didSet { self.hasChanged = hasChanged || layout != oldValue } }
 
     var subpassIndex: Int = 0 { didSet { self.hasChanged = hasChanged || subpassIndex != oldValue } }
@@ -76,11 +71,6 @@ struct VulkanRenderPipelineDescriptor : Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(self.descriptor)
         hasher.combine(self.depthStencil)
-        hasher.combine(self.primitiveType)
-        hasher.combine(self.cullMode)
-        hasher.combine(self.fillMode)
-        hasher.combine(self.depthClipMode)
-        hasher.combine(self.frontFaceWinding)
         hasher.combine(self.layout)
 
         hasher.combine(self.subpassIndex)
@@ -89,11 +79,6 @@ struct VulkanRenderPipelineDescriptor : Hashable {
 
     static func ==(lhs: VulkanRenderPipelineDescriptor, rhs: VulkanRenderPipelineDescriptor) -> Bool {
         guard lhs.descriptor == rhs.descriptor else { return false }
-        guard lhs.depthStencil == rhs.depthStencil else { return false }
-        guard lhs.cullMode == rhs.cullMode else { return false }
-        guard lhs.fillMode == rhs.fillMode else { return false }
-        guard lhs.depthClipMode == rhs.depthClipMode else { return false }
-        guard lhs.frontFaceWinding == rhs.frontFaceWinding else { return false }
         guard lhs.layout == rhs.layout else { return false }
         guard lhs.subpassIndex == rhs.subpassIndex else { return false }
 
@@ -141,21 +126,12 @@ struct VulkanRenderPipelineDescriptor : Hashable {
         
         var inputAssemblyState = VkPipelineInputAssemblyStateCreateInfo()
         inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO
-        switch self.primitiveType {
-            case .point, .line, .triangle:
-                inputAssemblyState.primitiveRestartEnable = false // Disable primitive restart for list topologies.
-            default:
-                inputAssemblyState.primitiveRestartEnable = true
-        }
-        inputAssemblyState.topology = VkPrimitiveTopology(self.primitiveType)
         
         var rasterisationState = VkPipelineRasterizationStateCreateInfo()
         rasterisationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO
-        rasterisationState.depthClampEnable = VkBool32(self.depthClipMode == .clamp)
+        rasterisationState.depthClampEnable = VkBool32(self.depthStencil?.depthClipMode == .clamp)
         rasterisationState.rasterizerDiscardEnable = VkBool32(!self.descriptor.isRasterizationEnabled)
-        rasterisationState.polygonMode = VkPolygonMode(self.fillMode)
-        rasterisationState.cullMode = VkCullModeFlags(self.cullMode)
-        rasterisationState.frontFace = VkFrontFace(self.frontFaceWinding)
+        rasterisationState.polygonMode = VkPolygonMode(self.descriptor.fillMode)
         rasterisationState.depthBiasEnable = true
         rasterisationState.depthBiasConstantFactor = 0
         rasterisationState.depthBiasClamp = 0.0
@@ -235,6 +211,9 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
     var enqueuedBindings = [RenderGraphCommand]()
 
     var subpass: VulkanSubpass? = nil
+    
+    var currentPrimitiveType: PrimitiveType? = nil
+    var currentWinding: Winding? = nil
     
     public init?(device: VulkanDevice, renderTarget: VulkanRenderTargetDescriptor, commandBufferResources: VulkanCommandBuffer, shaderLibrary: VulkanShaderLibrary, caches: VulkanStateCaches, resourceMap: FrameResourceMap<VulkanBackend>) {
         self.device = device
@@ -437,6 +416,26 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
         self.checkResourceCommands(resourceCommands, resourceCommandIndex: &resourceCommandIndex, phase: .after, commandIndex: lastCommandIndex)
     }
     
+    func setPrimitiveType(_ primitiveType: PrimitiveType) {
+        guard primitiveType != self.currentPrimitiveType else {
+            return
+        }
+        
+        vkCmdSetPrimitiveTopologyEXT(self.commandBuffer, VkPrimitiveTopology(primitiveType))
+        
+        let primitiveRestartEnabled: Bool
+        switch primitiveType {
+        case .triangle, .line, .point:
+            primitiveRestartEnabled = false
+        default:
+            primitiveRestartEnabled = true
+            // Disable primitive restart for list topologies
+        }
+        vkCmdSetPrimitiveRestartEnableEXT(self.commandBuffer, primitiveRestartEnabled ? 1 : 0)
+        
+        self.currentPrimitiveType = primitiveType
+    }
+    
     func executeCommand(_ command: RenderGraphCommand) {
         switch command {
         case .clearRenderTargets:
@@ -482,13 +481,13 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             self.pipelineDescriptor.descriptor = descriptor
             
         case .drawPrimitives(let args):
-            self.pipelineDescriptor.primitiveType = args.pointee.primitiveType
+            self.setPrimitiveType(args.pointee.primitiveType)
             self.prepareToDraw()
             
             vkCmdDraw(self.commandBuffer, args.pointee.vertexCount, args.pointee.instanceCount, args.pointee.vertexStart, args.pointee.baseInstance)
             
         case .drawIndexedPrimitives(let args):
-            self.pipelineDescriptor.primitiveType = args.pointee.primitiveType
+            self.setPrimitiveType(args.pointee.primitiveType)
             
             let buffer = resourceMap[args.pointee.indexBuffer]!
             vkCmdBindIndexBuffer(self.commandBuffer, buffer.buffer.vkBuffer, VkDeviceSize(args.pointee.indexBufferOffset) + VkDeviceSize(buffer.offset), VkIndexType(args.pointee.indexType))
@@ -502,23 +501,17 @@ class VulkanRenderCommandEncoder : VulkanResourceBindingCommandEncoder {
             vkCmdSetViewport(self.commandBuffer, 0, 1, &viewport)
             
         case .setFrontFacing(let winding):
-            self.pipelineDescriptor.frontFaceWinding = winding
+            vkCmdSetFrontFaceEXT(self.commandBuffer, VkFrontFace(winding))
             
         case .setCullMode(let cullMode):
-            self.pipelineDescriptor.cullMode = cullMode
+            vkCmdSetCullModeEXT(self.commandBuffer, VkCullModeFlags(cullMode))
             
-        case .setTriangleFillMode(let fillMode):
-            self.pipelineDescriptor.fillMode = fillMode
-
         case .setDepthStencilDescriptor(let descriptorPtr):
             self.pipelineDescriptor.depthStencil = descriptorPtr.takeUnretainedValue().value
             
         case .setScissorRect(let scissorPtr):
             var scissor = VkRect2D(scissorPtr.pointee)
             vkCmdSetScissor(self.commandBuffer, 0, 1, &scissor)
-            
-        case .setDepthClipMode(let mode):
-            self.pipelineDescriptor.depthClipMode = mode
             
         case .setDepthBias(let args):
             vkCmdSetDepthBias(self.commandBuffer, args.pointee.depthBias, args.pointee.clamp, args.pointee.slopeScale)

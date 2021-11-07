@@ -74,7 +74,8 @@ public final class VulkanDevice {
     static let deviceExtensions : [StaticString] = [
         "VK_KHR_swapchain", // VK_KHR_SWAPCHAIN_EXTENSION_NAME
         "VK_KHR_timeline_semaphore",
-        "VK_EXT_extended_dynamic_state"
+        "VK_EXT_extended_dynamic_state",
+        "VK_EXT_extended_dynamic_state2"
     ]
     
     public let physicalDevice : VulkanPhysicalDevice

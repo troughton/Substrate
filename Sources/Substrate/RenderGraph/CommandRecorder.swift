@@ -109,7 +109,7 @@ enum RenderGraphCommand {
     
     case setRenderPipelineDescriptor(Unmanaged<ReferenceBox<RenderPipelineDescriptor>>)
     
-    public typealias SetRenderPipelineStateArgs = (state: UnsafeRawPointer, hasFragmentFunction: Bool)
+    public typealias SetRenderPipelineStateArgs = (state: UnsafeRawPointer, hasFragmentFunction: Bool, triangleFillMode: TriangleFillMode)
     case setRenderPipelineState(UnsafePointer<SetRenderPipelineStateArgs>)
     
     public typealias DrawPrimitivesArgs = (primitiveType: PrimitiveType, vertexStart: UInt32, vertexCount: UInt32, instanceCount: UInt32, baseInstance: UInt32)
@@ -124,13 +124,9 @@ enum RenderGraphCommand {
     
     case setCullMode(CullMode)
     
-    case setTriangleFillMode(TriangleFillMode)
-    
     case setDepthStencilDescriptor(Unmanaged<ReferenceBox<DepthStencilDescriptor>>)
     
     case setScissorRect(UnsafePointer<ScissorRect>)
-    
-    case setDepthClipMode(DepthClipMode)
     
     public typealias SetDepthBiasArgs = (depthBias: Float, slopeScale: Float, clamp: Float)
     case setDepthBias(UnsafePointer<SetDepthBiasArgs>)

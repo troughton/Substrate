@@ -61,6 +61,9 @@ public struct DepthStencilDescriptor : Hashable {
     /// Whether depth values which pass the `depthCompareFunction` should be written to the depth buffer.
     public var isDepthWriteEnabled: Bool = false
     
+    /// Whether fragments outside the frustum near or far planes should get clipped or clamped.
+    public var depthClipMode: DepthClipMode = .clip
+    
     /// The stencil state for pixels belonging to front-facing triangles. May be set to the same value as the `backFaceStencil`.
     public var frontFaceStencil = StencilDescriptor()
     
@@ -75,9 +78,11 @@ public struct DepthStencilDescriptor : Hashable {
     @inlinable
     public init(depthComparison: CompareFunction = .always,
                 depthWriteEnabled: Bool,
+                depthClipMode: DepthClipMode = .clip,
                 stencilDescriptor: StencilDescriptor = StencilDescriptor()) {
         self.depthCompareFunction = depthComparison
         self.isDepthWriteEnabled = depthWriteEnabled
+        self.depthClipMode = depthClipMode
         self.frontFaceStencil = stencilDescriptor
         self.backFaceStencil = stencilDescriptor
     }

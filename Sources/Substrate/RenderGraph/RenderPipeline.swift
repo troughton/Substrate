@@ -198,6 +198,8 @@ public struct RenderPipelineDescriptor : Hashable {
     public var isAlphaToOneEnabled: Bool = false
     public var isRasterizationEnabled: Bool = true
     
+    public var fillMode: TriangleFillMode = .fill
+    
     // Color attachment names to blend descriptors
     public var blendStates : [BlendDescriptor?]
     public var writeMasks : [ColorWriteMask]

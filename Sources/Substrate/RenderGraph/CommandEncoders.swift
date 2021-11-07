@@ -974,12 +974,8 @@ public protocol AnyRenderCommandEncoder {
     func setFrontFacing(_ frontFacingWinding: Winding)
     
     func setCullMode(_ cullMode: CullMode)
-    
-    func setTriangleFillMode(_ fillMode: TriangleFillMode)
 
     func setScissorRect(_ rect: ScissorRect)
-    
-    func setDepthClipMode(_ depthClipMode: DepthClipMode)
     
     func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float)
     
@@ -1025,9 +1021,8 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         static let frontFacing = DrawDynamicState(rawValue: 1 << 2)
         static let cullMode = DrawDynamicState(rawValue: 1 << 3)
         static let triangleFillMode = DrawDynamicState(rawValue: 1 << 4)
-        static let depthClipMode = DrawDynamicState(rawValue: 1 << 5)
-        static let depthBias = DrawDynamicState(rawValue: 1 << 6)
-        static let stencilReferenceValue = DrawDynamicState(rawValue: 1 << 7)
+        static let depthBias = DrawDynamicState(rawValue: 1 << 5)
+        static let stencilReferenceValue = DrawDynamicState(rawValue: 1 << 6)
     }
     
     let drawRenderPass : DrawRenderPass
@@ -1306,11 +1301,6 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         self.nonDefaultDynamicState.formUnion(.cullMode)
     }
     
-    public func setTriangleFillMode(_ fillMode: TriangleFillMode) {
-        commandRecorder.record(.setTriangleFillMode(fillMode))
-        self.nonDefaultDynamicState.formUnion(.triangleFillMode)
-    }
-    
     public func setDepthStencilDescriptor(_ descriptor: DepthStencilDescriptor?) {
         guard self.drawRenderPass.renderTargetDescriptor.depthAttachment != nil ||
             self.drawRenderPass.renderTargetDescriptor.stencilAttachment != nil else {
@@ -1337,11 +1327,6 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
     public func setScissorRect(_ rect: ScissorRect) {
         commandRecorder.record(RenderGraphCommand.setScissorRect, rect)
         self.nonDefaultDynamicState.formUnion(.scissorRect)
-    }
-    
-    public func setDepthClipMode(_ depthClipMode: DepthClipMode) {
-        commandRecorder.record(.setDepthClipMode(depthClipMode))
-        self.nonDefaultDynamicState.formUnion(.depthClipMode)
     }
     
     public func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float) {
@@ -1406,7 +1391,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             
             if self.pipelineStateChanged {
                 if let pipelineState = self.currentPipelineReflection.pipelineState {
-                    commandRecorder.record(RenderGraphCommand.setRenderPipelineState, (pipelineState, self.renderPipelineDescriptor?.fragmentFunction != nil))
+                    commandRecorder.record(RenderGraphCommand.setRenderPipelineState, (pipelineState, self.renderPipelineDescriptor?.fragmentFunction != nil, self.renderPipelineDescriptor?.fillMode ?? .fill))
                 } else {
                     let box = Unmanaged.passRetained(ReferenceBox(self.renderPipelineDescriptor!))
                     commandRecorder.addUnmanagedReference(box)
@@ -1445,12 +1430,6 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         }
         if self.nonDefaultDynamicState.contains(.cullMode) {
             commandRecorder.record(.setCullMode(.none))
-        }
-        if self.nonDefaultDynamicState.contains(.triangleFillMode) {
-            commandRecorder.record(.setTriangleFillMode(.fill))
-        }
-        if self.nonDefaultDynamicState.contains(.depthClipMode) {
-            commandRecorder.record(.setDepthClipMode(.clip))
         }
         if self.nonDefaultDynamicState.contains(.depthBias) {
             commandRecorder.record(RenderGraphCommand.setDepthBias, (depthBias: 0.0, slopeScale: 0.0, clamp: 0.0))
