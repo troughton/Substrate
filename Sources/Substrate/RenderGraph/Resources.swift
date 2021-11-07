@@ -127,6 +127,9 @@ public protocol ResourceProtocol: Hashable {
     
     var label: String? { get nonmutating set }
     var storageMode: StorageMode { get }
+    var baseResource: Resource? { get }
+    var usages: ChunkArray<ResourceUsage> { get nonmutating set }
+    var resourceForUsageTracking: Resource { get }
     
     /// The command buffer index on which to wait on a particular queue `queue` before it is safe to perform an access of type `type`.
     subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 { get nonmutating set }
@@ -165,7 +168,6 @@ protocol ResourceProtocolImpl: ResourceProtocol, CustomHashable {
     static func transientRegistry(index: Int) -> TransientRegistry?
     static var persistentRegistry: PersistentRegistry { get }
     
-    var usages: ChunkArray<ResourceUsage> { get nonmutating set }
 }
 
 extension ResourceProtocolImpl {
@@ -331,6 +333,10 @@ extension ResourceProtocol {
     public var backingResource: Any? {
         return RenderBackend.backingResource(self)
     }
+    
+    public var baseResource: Resource? {
+        return nil
+    }
 }
 
 public struct Resource : ResourceProtocol, Hashable {
@@ -424,6 +430,10 @@ public struct Resource : ResourceProtocol, Hashable {
                 fatalError()
             }
         }
+    }
+    
+    public var resourceForUsageTracking: Resource {
+        return self.baseResource ?? Resource(self)
     }
     
     public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {

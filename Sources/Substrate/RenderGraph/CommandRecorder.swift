@@ -300,7 +300,10 @@ final class RenderGraphCommandRecorder {
         self.record(RenderGraphCommand.insertDebugSignpost, string)
     }
     
-    func boundResourceUsageNode<C : CommandEncoder>(`for` resource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
+    func resourceUsagePointers<C : CommandEncoder>(`for` specificResource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointerList {
+        let resource = specificResource.resourceForUsageTracking
+        let activeRange = specificResource == resource ? activeRange : .fullResource
+        
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
         precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
@@ -350,128 +353,31 @@ final class RenderGraphCommandRecorder {
         }
         
         if usageType.isRead {
-            self.readResources.insert(resource.baseResource ?? resource)
+            self.readResources.insert(resource)
         }
         if usageType.isWrite {
-            self.writtenResources.insert(resource.baseResource ?? resource)
+            self.writtenResources.insert(resource)
         }
         
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: activeRange, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
+        let usage = ResourceUsage(resource: resource, type: usageType, stages: stages, activeRange: activeRange, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
+        self.resourceUsages.append((specificResource, usage), allocator: .tag(resourceUsageAllocator))
         
-        return self.resourceUsages.pointerToLastUsage
+        let usagePointer = self.resourceUsages.pointerToLastUsage
+        return .init(usagePointer: usagePointer)
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func resourceUsageNode<C : CommandEncoder>(`for` resource: ArgumentBuffer, encoder: C, usageType: ResourceUsageType, stages: RenderStages, firstCommandOffset: Int) -> ResourceUsagePointer {
-        assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
-        
-        precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
-        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.renderGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
-        
-        assert(resource.type != .argumentBuffer || !usageType.isWrite, "Read-write argument buffers are currently unsupported.")
-        assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
-        
-        if resource._usesPersistentRegistry {
-            resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
-        }
-        
-        if usageType.isRead {
-            self.readResources.insert(Resource(resource))
-        }
-        if usageType.isWrite {
-            self.writtenResources.insert(Resource(resource))
-        }
-        
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .fullResource, inArgumentBuffer: false, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
-        
-        return self.resourceUsages.pointerToLastUsage
+    func resourceUsagePointers<C : CommandEncoder>(`for` resource: ArgumentBuffer, encoder: C, usageType: ResourceUsageType, stages: RenderStages, firstCommandOffset: Int) -> ResourceUsagePointerList {
+        return self.resourceUsagePointers(for: Resource(resource), encoder: encoder, usageType: usageType, stages: stages, activeRange: .fullResource, isIndirectlyBound: false, firstCommandOffset: firstCommandOffset)
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func resourceUsageNode<C : CommandEncoder>(`for` resource: Buffer, bufferRange: Range<Int>, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
-        assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource) used but not declared.")
-        
-        precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
-        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.renderGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
-        
-        assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
-        
-        if resource._usesPersistentRegistry {
-            resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
-                
-            let bufferUsage = resource.descriptor.usageHint
-            if usageType == .read {
-                assert(bufferUsage.contains(.shaderRead))
-            }
-            if usageType == .write || usageType == .readWrite {
-                assert(bufferUsage.contains(.shaderWrite))
-            }
-            if usageType == .blitSource {
-                assert(bufferUsage.contains(.blitSource))
-            }
-            if usageType == .blitDestination {
-                assert(bufferUsage.contains(.blitDestination))
-            }
-            if usageType == .vertexBuffer {
-                assert(bufferUsage.contains(.vertexBuffer))
-            }
-            if usageType == .indexBuffer {
-                assert(bufferUsage.contains(.indexBuffer))
-            }
-        }
-        
-        if usageType.isRead {
-            self.readResources.insert(Resource(resource))
-        }
-        if usageType.isWrite {
-            self.writtenResources.insert(Resource(resource))
-        }
-        
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .buffer(bufferRange), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
-        
-        return self.resourceUsages.pointerToLastUsage
+    func resourceUsagePointers<C : CommandEncoder>(`for` resource: Buffer, bufferRange: Range<Int>, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointerList {
+        return self.resourceUsagePointers(for: Resource(resource), encoder: encoder, usageType: usageType, stages: stages, activeRange: .buffer(bufferRange), isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset)
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func resourceUsageNode<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool, firstCommandOffset: Int) -> ResourceUsagePointer {
-        assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource) used but not declared.")
-        
-        precondition(resource.isValid, "Resource \(resource) is invalid; it may be being used in a frame after it was created if it's a transient resource, or else may have been disposed if it's a persistent resource.")
-        assert(resource._usesPersistentRegistry || resource.transientRegistryIndex == self.renderGraphTransientRegistryIndex, "Transient resource \(resource) is being used on a RenderGraph other than the one it was created on.")
-        
-        assert(!usageType.isWrite || !resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "immutableOnceInitialised resource \(resource) is being written to after it has been initialised.")
-        
-        if resource._usesPersistentRegistry {
-            resource.markAsUsed(activeRenderGraphMask: self.activeRenderGraphMask)
-                
-            let textureUsage = resource.descriptor.usageHint
-            if usageType == .read {
-                assert(textureUsage.contains(.shaderRead))
-            }
-            if usageType.isRenderTarget {
-                assert(textureUsage.contains(.renderTarget))
-            }
-            if usageType == .write || usageType == .readWrite {
-                assert(textureUsage.contains(.shaderWrite))
-            }
-            if usageType == .blitSource {
-                assert(textureUsage.contains(.blitSource))
-            }
-            if usageType == .blitDestination {
-                assert(textureUsage.contains(.blitDestination))
-            }
-        }
-        
-        if usageType.isRead {
-            self.readResources.insert(resource.baseResource ?? Resource(resource))
-        }
-        if usageType.isWrite {
-            self.writtenResources.insert(resource.baseResource ?? Resource(resource))
-        }
-        
+    func resourceUsagePointers<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointerList {
         var subresourceMask = SubresourceMask()
         if let slice = slice, let level = level {
             subresourceMask.clear(subresourceCount: resource.descriptor.subresourceCount, allocator: .tagThreadView(self.dataAllocator))
@@ -480,24 +386,21 @@ final class RenderGraphCommandRecorder {
             assert(slice == nil && level == nil)
         }
         
-        let usage = ResourceUsage(resource: Resource(resource), type: usageType, stages: stages, activeRange: .texture(subresourceMask), inArgumentBuffer: inArgumentBuffer, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((Resource(resource), usage), allocator: .tagThreadView(resourceUsageAllocator))
-        
-        return self.resourceUsages.pointerToLastUsage
+        return self.resourceUsagePointers(for: Resource(resource), encoder: encoder, usageType: usageType, stages: stages, activeRange: .texture(subresourceMask), isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset)
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
     func addResourceUsage<C : CommandEncoder>(`for` resource: ArgumentBuffer, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages) {
-        let _ = self.resourceUsageNode(for: resource, encoder: encoder, usageType: usageType, stages: stages, firstCommandOffset: commandIndex)
+        let _ = self.resourceUsagePointers(for: resource, encoder: encoder, usageType: usageType, stages: stages, firstCommandOffset: commandIndex)
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func addResourceUsage<C : CommandEncoder>(`for` resource: Buffer, bufferRange: Range<Int>, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
-        let _ = self.resourceUsageNode(for: resource, bufferRange: bufferRange, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
+    func addResourceUsage<C : CommandEncoder>(`for` resource: Buffer, bufferRange: Range<Int>, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool) {
+        let _ = self.resourceUsagePointers(for: resource, bufferRange: bufferRange, encoder: encoder, usageType: usageType, stages: stages, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: commandIndex)
     }
     
     /// NOTE: Must be called _before_ the command that uses the resource.
-    func addResourceUsage<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, inArgumentBuffer: Bool) {
-        let _ = self.resourceUsageNode(for: resource, slice: slice, level: level, encoder: encoder, usageType: usageType, stages: stages, inArgumentBuffer: inArgumentBuffer, firstCommandOffset: commandIndex)
+    func addResourceUsage<C : CommandEncoder>(`for` resource: Texture, slice: Int?, level: Int?, commandIndex: Int, encoder: C, usageType: ResourceUsageType, stages: RenderStages, isIndirectlyBound: Bool) {
+        let _ = self.resourceUsagePointers(for: resource, slice: slice, level: level, encoder: encoder, usageType: usageType, stages: stages, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: commandIndex)
     }
 }
