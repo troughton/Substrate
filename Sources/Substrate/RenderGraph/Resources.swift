@@ -128,7 +128,6 @@ public protocol ResourceProtocol: Hashable {
     var label: String? { get nonmutating set }
     var storageMode: StorageMode { get }
     var baseResource: Resource? { get }
-    var usages: ChunkArray<ResourceUsage> { get nonmutating set }
     var resourceForUsageTracking: Resource { get }
     
     /// The command buffer index on which to wait on a particular queue `queue` before it is safe to perform an access of type `type`.
@@ -337,6 +336,10 @@ extension ResourceProtocol {
     public var baseResource: Resource? {
         return nil
     }
+    
+    public var resourceForUsageTracking: Resource {
+        return self.baseResource ?? Resource(self)
+    }
 }
 
 public struct Resource : ResourceProtocol, Hashable {
@@ -430,10 +433,6 @@ public struct Resource : ResourceProtocol, Hashable {
                 fatalError()
             }
         }
-    }
-    
-    public var resourceForUsageTracking: Resource {
-        return self.baseResource ?? Resource(self)
     }
     
     public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
@@ -781,6 +780,10 @@ public struct Heap : ResourceProtocol {
             return
         }
         UInt8.AtomicRepresentation.atomicLoadThenBitwiseOr(with: activeRenderGraphMask, at: activeRenderGraphs, ordering: .relaxed)
+    }
+    
+    public var resourceForUsageTracking: Resource {
+        return Resource(self)
     }
     
     public var childResources: Set<Resource> {

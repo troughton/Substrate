@@ -87,6 +87,26 @@ public struct ArgumentBuffer : ResourceProtocol {
         case sampler(SamplerDescriptor)
         // Where offset is the source offset in the source Data.
         case bytes(offset: Int, length: Int)
+        
+        public var resource: Resource? {
+            switch self {
+            case .buffer(let buffer, _):
+                return Resource(buffer)
+            case .texture(let texture):
+                return Resource(texture)
+            case .sampler, .bytes:
+                return nil
+            }
+        }
+        
+        public var activeRangeOffsetIntoResource: Int {
+            switch self {
+            case .buffer(_, let offset):
+                return offset
+            default:
+                return 0
+            }
+        }
     }
     
     public init(handle: Handle) {
@@ -596,6 +616,10 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
         }
     }
     
+    public var resourceForUsageTracking: Resource {
+        return self.argumentBuffer.resourceForUsageTracking
+    }
+    
     public var storageMode: StorageMode {
         return self.argumentBuffer.storageMode
     }
@@ -723,6 +747,10 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         nonmutating set {
             self.argumentBufferArray.label = newValue
         }
+    }
+    
+    public var resourceForUsageTracking: Resource {
+        return self.argumentBufferArray.resourceForUsageTracking
     }
     
     public var storageMode: StorageMode {

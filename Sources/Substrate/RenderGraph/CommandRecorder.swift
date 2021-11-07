@@ -360,7 +360,7 @@ final class RenderGraphCommandRecorder {
         }
         
         let usage = ResourceUsage(resource: resource, type: usageType, stages: stages, activeRange: activeRange, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
-        self.resourceUsages.append((specificResource, usage), allocator: .tag(resourceUsageAllocator))
+        self.resourceUsages.append((specificResource, usage), allocator: .tagThreadView(resourceUsageAllocator))
         
         let usagePointer = self.resourceUsages.pointerToLastUsage
         return .init(usagePointer: usagePointer)
