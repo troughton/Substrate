@@ -172,8 +172,5 @@ protocol BackendPersistentResourceRegistry: AnyObject {
     func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64)
     func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64)
     
-    func disposeTexture(_ texture: Texture)
-    func disposeBuffer(_ buffer: Buffer)
-    func disposeArgumentBuffer(_ buffer: ArgumentBuffer)
-    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray)
+    func dispose(resource: Resource)
 }

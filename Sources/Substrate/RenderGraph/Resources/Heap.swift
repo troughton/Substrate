@@ -25,7 +25,7 @@ public struct Heap : ResourceProtocol {
         
         self = HeapRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         
-        if !RenderBackend.materialiseHeap(self) {
+        if !RenderBackend.materialiseResource(self) {
             self.dispose()
             return nil
         }

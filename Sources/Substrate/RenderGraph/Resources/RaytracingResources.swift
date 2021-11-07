@@ -26,7 +26,7 @@ public struct AccelerationStructure : ResourceProtocol {
         self = AccelerationStructureRegistry.instance.allocate(descriptor: size, heap: nil, flags: flags)
         
         // vkCreateAccelerationStructureKHR
-        if !RenderBackend.materialiseAccelerationStructure(self) {
+        if !RenderBackend.materialiseResource(self) {
             assertionFailure("Allocation failed for persistent texture \(self)")
             self.dispose()
         }

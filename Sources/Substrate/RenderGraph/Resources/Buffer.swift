@@ -86,7 +86,7 @@ public struct Buffer : ResourceProtocol {
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
-            let didAllocate = RenderBackend.materialisePersistentBuffer(self)
+            let didAllocate = RenderBackend.materialiseResource(self)
             assert(didAllocate, "Allocation failed for persistent buffer \(self)")
             if !didAllocate { self.dispose() }
         }
@@ -138,7 +138,7 @@ public struct Buffer : ResourceProtocol {
         
         self = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
         
-        if !RenderBackend.materialisePersistentBuffer(self) {
+        if !RenderBackend.materialiseResource(self) {
             self.dispose()
             return nil
         }

@@ -61,17 +61,9 @@ public protocol RenderBackendProtocol : AnyObject {
 
 @usableFromInline
 protocol _RenderBackendProtocol : RenderBackendProtocol {
-    func materialisePersistentTexture(_ texture: Texture) -> Bool
-    func materialisePersistentBuffer(_ buffer: Buffer) -> Bool
-    func materialiseHeap(_ heap: Heap) -> Bool
-    @available(macOS 11.0, iOS 14.0, *)
-    func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool
+    func materialisePersistentResource(_ resource: Resource) -> Bool
     
-    func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any?
-    func replaceBackingResource(for texture: Texture, with: Any?) -> Any?
-    func replaceBackingResource(for heap: Heap, with: Any?) -> Any?
-    @available(macOS 11.0, iOS 14.0, *)
-    func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any?
+    func replaceBackingResource(for resource: Resource, with: Any?) -> Any?
     
     func registerExternalResource(_ resource: Resource, backingResource: Any)
     
@@ -98,15 +90,7 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) async -> PipelineReflection?
     func computePipelineReflection(descriptor: ComputePipelineDescriptor) async -> PipelineReflection?
     
-    func dispose(texture: Texture)
-    func dispose(buffer: Buffer)
-    func dispose(argumentBuffer: ArgumentBuffer)
-    func dispose(argumentBufferArray: ArgumentBufferArray)
-    func dispose(heap: Heap)
-    
-    func dispose(accelerationStructure: AccelerationStructure)
-    func dispose(intersectionFunctionTable: IntersectionFunctionTable)
-    func dispose(visibleFunctionTable: VisibleFunctionTable)
+    func dispose(resource: Resource)
     
     var pushConstantPath : ResourceBindingPath { get }
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
@@ -145,13 +129,13 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func materialisePersistentTexture(_ texture: Texture) -> Bool {
-        return _backend.materialisePersistentTexture(texture)
+    public static func materialiseResource<R: ResourceProtocol>(_ resource: R) -> Bool {
+        return _backend.materialisePersistentResource(Resource(resource))
     }
 
     @inlinable
-    public static func registerExternalResource(_ resource: Resource, backingResource: Any) {
-        return _backend.registerExternalResource(resource, backingResource: backingResource)
+    public static func registerExternalResource<R: ResourceProtocol>(_ resource: R, backingResource: Any) {
+        return _backend.registerExternalResource(Resource(resource), backingResource: backingResource)
     }
     
     @inlinable
@@ -159,37 +143,8 @@ public struct RenderBackend {
         return _backend.updateLabel(on: Resource(resource))
     }
     
-    @inlinable
-    public static func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
-        return _backend.materialisePersistentBuffer(buffer)
-    }
-    
-    @inlinable
-    public static func materialiseHeap(_ heap: Heap) -> Bool {
-        return _backend.materialiseHeap(heap)
-    }
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    @inlinable
-    public static func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
-        return _backend.materialiseAccelerationStructure(structure)
-    }
-    
-    static func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
-        return _backend.replaceBackingResource(for: buffer, with: with)
-    }
-    
-    static func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
-        return _backend.replaceBackingResource(for: texture, with: with)
-    }
-    
-    static func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
-        return _backend.replaceBackingResource(for: heap, with: with)
-    }
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    static func replaceBackingResource(for accelerationStructure: AccelerationStructure, with: Any?) -> Any? {
-        return _backend.replaceBackingResource(for: accelerationStructure, with: with)
+    static func replaceBackingResource<R: ResourceProtocol>(for resource: R, with: Any?) -> Any? {
+        return _backend.replaceBackingResource(for: Resource(resource), with: with)
     }
     
     @inlinable
@@ -203,43 +158,8 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func dispose(texture: Texture) {
-        return _backend.dispose(texture: texture)
-    }
-    
-    @inlinable
-    public static func dispose(buffer: Buffer) {
-        return _backend.dispose(buffer: buffer)
-    }
-    
-    @inlinable
-    public static func dispose(argumentBuffer: ArgumentBuffer) {
-        return _backend.dispose(argumentBuffer: argumentBuffer)
-    }
-    
-    @inlinable
-    public static func dispose(argumentBufferArray: ArgumentBufferArray) {
-        return _backend.dispose(argumentBufferArray: argumentBufferArray)
-    }
-    
-    @inlinable
-    public static func dispose(heap: Heap) {
-        return _backend.dispose(heap: heap)
-    }
-    
-    @inlinable
-    public static func dispose(accelerationStructure: AccelerationStructure) {
-        return _backend.dispose(accelerationStructure: accelerationStructure)
-    }
-    
-    @inlinable
-    public static func dispose(visibleFunctionTable: VisibleFunctionTable) {
-        return _backend.dispose(visibleFunctionTable: visibleFunctionTable)
-    }
-    
-    @inlinable
-    public static func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
-        return _backend.dispose(intersectionFunctionTable: intersectionFunctionTable)
+    public static func dispose<R: ResourceProtocol>(resource: R) {
+        return _backend.dispose(resource: Resource(resource))
     }
     
     @inlinable

@@ -51,7 +51,7 @@ public struct Texture : ResourceProtocol {
         
         if self.flags.contains(.persistent) {
             assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
-            let didAllocate = RenderBackend.materialisePersistentTexture(self)
+            let didAllocate = RenderBackend.materialiseResource(self)
             assert(didAllocate, "Allocation failed for persistent texture \(self)")
             if !didAllocate { self.dispose() }
         }
@@ -67,7 +67,7 @@ public struct Texture : ResourceProtocol {
         PersistentTextureRegistry.instance.initialize(resource: self, descriptor: descriptor, heap: heap, flags: self.flags)
         
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
-        let didAllocate = RenderBackend.materialisePersistentTexture(self)
+        let didAllocate = RenderBackend.materialiseResource(self)
         assert(didAllocate, "Allocation failed for persistent texture \(self)")
         if !didAllocate { self.dispose() }
     }
@@ -80,7 +80,7 @@ public struct Texture : ResourceProtocol {
         
         self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
         
-        if !RenderBackend.materialisePersistentTexture(self) {
+        if !RenderBackend.materialiseResource(self) {
             self.dispose()
             return nil
         }

@@ -52,22 +52,20 @@ struct VkImageReference {
     }
 }
 
-final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry {
+final actor VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry {
 
     typealias Backend = VulkanBackend
-    
-    var accessLock = ReaderWriterLock()
     
     let device : VulkanDevice
     let vmaAllocator : VmaAllocator
     
     let descriptorPool: VulkanDescriptorPool
     
-    var heapReferences = PersistentResourceMap<Heap, VulkanHeap>()
-    var textureReferences = PersistentResourceMap<Texture, VkImageReference>()
-    var bufferReferences = PersistentResourceMap<Buffer, VkBufferReference>()
-    var argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, VulkanArgumentBuffer>()
-    var argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, VulkanArgumentBuffer>()
+    let heapReferences = PersistentResourceMap<Heap, VulkanHeap>()
+    let textureReferences = PersistentResourceMap<Texture, VkImageReference>()
+    let bufferReferences = PersistentResourceMap<Buffer, VkBufferReference>()
+    let argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, VulkanArgumentBuffer>()
+    let argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, VulkanArgumentBuffer>()
     
     var samplers = [SamplerDescriptor: VkSampler]()
     
@@ -97,7 +95,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     @discardableResult
-    public func allocateTexture(_ texture: Texture) -> VkImageReference? {
+    public nonisolated func allocateTexture(_ texture: Texture) -> VkImageReference? {
         precondition(texture._usesPersistentRegistry)
         
         if texture.flags.contains(.windowHandle) {
@@ -138,7 +136,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     @discardableResult
-    public func allocateBuffer(_ buffer: Buffer) -> VkBufferReference? {
+    public nonisolated func allocateBuffer(_ buffer: Buffer) -> VkBufferReference? {
         precondition(buffer._usesPersistentRegistry)
         
         let usage = VkBufferUsageFlagBits(buffer.descriptor.usageHint)
@@ -172,7 +170,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer {
+    nonisolated func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer {
         if let baseArray = argumentBuffer.sourceArray {
             _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
             return self.argumentBufferReferences[argumentBuffer]!
@@ -194,7 +192,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     }
     
     @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer {
+    nonisolated func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer {
         if let vkArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
             return vkArgumentBuffer
         }
@@ -202,7 +200,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         fatalError("Unimplemented")
     }
     
-    public func importExternalResource(_ resource: Resource, backingResource: Any) {
+    public nonisolated func importExternalResource(_ resource: Resource, backingResource: Any) {
         if let texture = Texture(resource) {
             self.textureReferences[texture] = VkImageReference(image: Unmanaged.passRetained(backingResource as! VulkanImage))
         } else if let buffer = Buffer(resource) {
@@ -210,91 +208,103 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         }
     }
     
-    public subscript(texture: Texture) -> VkImageReference? {
+    public nonisolated subscript(texture: Texture) -> VkImageReference? {
         return self.textureReferences[texture]
     }
 
-    public subscript(buffer: Buffer) -> VkBufferReference? {
+    public nonisolated subscript(buffer: Buffer) -> VkBufferReference? {
         return self.bufferReferences[buffer]
     }
 
-    public subscript(argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer? {
+    public nonisolated subscript(argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer? {
         return self.argumentBufferReferences[argumentBuffer]
     }
 
-    public subscript(argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer? {
+    public nonisolated subscript(argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
     }
 
     public subscript(sampler: SamplerDescriptor) -> VkSampler {
-        if let vkSampler = self.samplers[sampler] {
-            return vkSampler
+        get async {
+            if let vkSampler = self.samplers[sampler] {
+                return vkSampler
+            }
+            
+            var samplerCreateInfo = VkSamplerCreateInfo(descriptor: sampler)
+            
+            var vkSampler : VkSampler? = nil
+            vkCreateSampler(self.device.vkDevice, &samplerCreateInfo, nil, &vkSampler)
+            
+            self.samplers[sampler] = vkSampler!
+            
+            return vkSampler!
         }
-        
-        var samplerCreateInfo = VkSamplerCreateInfo(descriptor: sampler)
-        
-        var vkSampler : VkSampler? = nil
-        vkCreateSampler(self.device.vkDevice, &samplerCreateInfo, nil, &vkSampler)
-        
-        self.samplers[sampler] = vkSampler!
-        
-        return vkSampler!
     }
     
-    func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64) {
+    nonisolated func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64) {
         
     }
     
-    func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64) {
+    nonisolated func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64) {
         if let image = self[texture] {
             image.image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: texture.stateFlags.contains(.initialised), frameIndex: frameIndex)
         }
     }
     
-    func disposeHeap(_ heap: Heap) {
-        self.heapReferences.removeValue(forKey: heap)
-    }
-    
-    func disposeTexture(_ texture: Texture) {
-        if let vkTexture = self.textureReferences.removeValue(forKey: texture) {
-            if texture.flags.contains(.windowHandle) {
-                return
+    nonisolated func dispose(resource: Resource) {
+        switch resource.type {
+        case .buffer:
+            let buffer = Buffer(resource)!
+            if let vkBuffer = self.bufferReferences.removeValue(forKey: buffer) {
+                // TODO: Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(vkBuffer._buffer.toOpaque())))
+            }
+        case .texture:
+            let texture = Texture(resource)!
+            if let vkTexture = self.textureReferences.removeValue(forKey: texture) {
+                if texture.flags.contains(.windowHandle) {
+                    return
+                }
+                // TODO: Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(vkTexture._image.toOpaque())))
             }
             
-            vkTexture._image.release()
-        }
-    }
-    
-    func disposeBuffer(_ buffer: Buffer) {
-        if let vkBuffer = self.bufferReferences.removeValue(forKey: buffer) {
-            vkBuffer._buffer.release()
-        }
-    }
-    
-    func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
-        if let vkBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
-            assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Vulkan RenderGraph backend.")
+        case .heap:
+            let heap = Heap(resource)!
+            if let vkHeap = self.heapReferences.removeValue(forKey: heap) {
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(vkHeap)))
+            }
             
-            self.descriptorPool.freeDescriptorSet(vkBuffer.descriptorSet)
-            _ = vkBuffer
+        case .argumentBuffer:
+            let buffer = ArgumentBuffer(resource)!
+            assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Vulkan RenderGraph backend.")
+            if let vkBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
+                assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal RenderGraph backend.")
+                
+                // TODO: Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(vkBuffer)))
+            }
+            
+        case .argumentBufferArray:
+            let buffer = ArgumentBufferArray(resource)!
+            if let vkBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
+                // TODO: Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(vkBuffer)))
+            }
+        default:
+            preconditionFailure("dispose(resource:): Unhandled resource type \(resource.type)")
         }
     }
     
-    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
-        if let vkBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
-            _ = vkBuffer
-        }
-    }
-    
-    subscript(accelerationStructure: AccelerationStructure) -> AnyObject? {
+    nonisolated subscript(accelerationStructure: AccelerationStructure) -> AnyObject? {
         return nil
     }
 
-    subscript(visibleFunctionTable: VisibleFunctionTable) -> Void? {
+    nonisolated subscript(visibleFunctionTable: VisibleFunctionTable) -> Void? {
         return nil
     }
 
-    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> Void? {
+    nonisolated subscript(intersectionFunctionTable: IntersectionFunctionTable) -> Void? {
         return nil
     }
 
@@ -306,7 +316,7 @@ final class VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         return nil
     }
     
-    func cycleFrames() {
+    nonisolated func cycleFrames() {
         // TODO: we should dispose command buffer resources here.
     }
 }

@@ -97,19 +97,7 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        func disposeTexture(_ texture: Texture) {
-            preconditionFailure()
-        }
-        
-        func disposeBuffer(_ buffer: Buffer) {
-            preconditionFailure()
-        }
-        
-        func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
-            preconditionFailure()
-        }
-        
-        func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
+        func dispose(resource: Resource) {
             preconditionFailure()
         }
         
@@ -329,37 +317,11 @@ final class UnavailableBackend : SpecificRenderBackend {
         preconditionFailure()
     }
     
-    func materialisePersistentTexture(_ texture: Texture) -> Bool {
+    func materialisePersistentResource(_ resource: Resource) -> Bool {
         preconditionFailure()
     }
     
-    func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
-        preconditionFailure()
-    }
-    
-    func materialiseHeap(_ heap: Heap) -> Bool {
-        preconditionFailure()
-    }
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
-        preconditionFailure()
-    }
-    
-    func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
-        preconditionFailure()
-    }
-    
-    func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
-        preconditionFailure()
-    }
-    
-    func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
-        preconditionFailure()
-    }
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any? {
+    func replaceBackingResource(for resource: Resource, with: Any?) -> Any? {
         preconditionFailure()
     }
     
@@ -424,35 +386,7 @@ final class UnavailableBackend : SpecificRenderBackend {
         preconditionFailure()
     }
     
-    func dispose(texture: Texture) {
-        preconditionFailure()
-    }
-    
-    func dispose(buffer: Buffer) {
-        preconditionFailure()
-    }
-    
-    func dispose(argumentBuffer: ArgumentBuffer) {
-        preconditionFailure()
-    }
-    
-    func dispose(argumentBufferArray: ArgumentBufferArray) {
-        preconditionFailure()
-    }
-    
-    func dispose(heap: Heap) {
-        preconditionFailure()
-    }
-    
-    func dispose(accelerationStructure: AccelerationStructure) {
-        preconditionFailure()
-    }
-    
-    func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
-        preconditionFailure()
-    }
-    
-    func dispose(visibleFunctionTable: VisibleFunctionTable) {
+    func dispose(resource: Resource) {
         preconditionFailure()
     }
     

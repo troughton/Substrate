@@ -11,19 +11,19 @@ import SubstrateCExtras
 
 extension VkDebugReportFlagBitsEXT : OptionSet {
     var flags: VkDebugReportFlagsEXT {
-        return VkDebugReportFlagsEXT(bitPattern: self.rawValue)
+        return VkDebugReportFlagsEXT(self.rawValue)
     }
  }
 
 extension VkFormatFeatureFlagBits : OptionSet { 
     var flags: VkFormatFeatureFlags {
-        return VkFormatFeatureFlags(bitPattern: self.rawValue)
+        return VkFormatFeatureFlags(self.rawValue)
     }
 }
 
 extension VkImageCreateFlagBits : OptionSet {
     var flags: VkImageCreateFlags {
-        return VkImageCreateFlags(bitPattern: self.rawValue)
+        return VkImageCreateFlags(self.rawValue)
     }
 
     public static var sparseBinding : VkImageCreateFlagBits {
@@ -84,13 +84,13 @@ extension VkImageUsageFlagBits : OptionSet {
 
 extension VkImageViewCreateFlagBits : OptionSet {
     var flags: VkImageViewCreateFlags {
-        return VkImageViewCreateFlags(bitPattern: self.rawValue)
+        return VkImageViewCreateFlags(self.rawValue)
     }
 }
 
 extension VkBufferUsageFlagBits : OptionSet {
     var flags: VkBufferUsageFlags {
-        return VkBufferUsageFlags(bitPattern: self.rawValue)
+        return VkBufferUsageFlags(self.rawValue)
     }
     
     public static var transferSource : VkBufferUsageFlagBits {
@@ -132,62 +132,62 @@ extension VkBufferUsageFlagBits : OptionSet {
 
 extension VkAccessFlagBits : OptionSet {
     var flags: VkAccessFlags {
-        return VkAccessFlags(bitPattern: self.rawValue)
+        return VkAccessFlags(self.rawValue)
     }
 }
 
 
 extension VkDescriptorBindingFlagBits : OptionSet {
     var flags: VkDescriptorBindingFlags {
-        return VkDescriptorBindingFlags(bitPattern: self.rawValue)
+        return VkDescriptorBindingFlags(self.rawValue)
     }
 }
 
 extension VkDependencyFlagBits: OptionSet {
     var flags: VkDependencyFlags {
-        return VkDependencyFlags(bitPattern: self.rawValue)
+        return VkDependencyFlags(self.rawValue)
     }
 }
 
 extension VkImageAspectFlagBits: OptionSet {
     var flags: VkImageAspectFlags {
-        return VkImageAspectFlags(bitPattern: self.rawValue)
+        return VkImageAspectFlags(self.rawValue)
     }
 }
 
 extension VkPipelineStageFlagBits : OptionSet {
     var flags: VkPipelineStageFlags {
-        return VkPipelineStageFlags(bitPattern: self.rawValue)
+        return VkPipelineStageFlags(self.rawValue)
     }
 }
 
 extension VkSampleCountFlagBits : OptionSet {
     var flags: VkSampleCountFlags {
-        return VkSampleCountFlags(bitPattern: self.rawValue)
+        return VkSampleCountFlags(self.rawValue)
     }
 }
 
 extension VkCommandPoolCreateFlagBits : OptionSet {
     var flags: VkCommandPoolCreateFlags {
-        return VkCommandPoolCreateFlags(bitPattern: self.rawValue)
+        return VkCommandPoolCreateFlags(self.rawValue)
     }
 }
 
 extension VkQueueFlagBits : OptionSet {
     var flags: VkQueueFlags {
-        return VkQueueFlags(bitPattern: self.rawValue)
+        return VkQueueFlags(self.rawValue)
     }
 }
 
 extension VkMemoryPropertyFlagBits : OptionSet {
     var flags: VkMemoryPropertyFlags {
-        return VkMemoryPropertyFlags(bitPattern: self.rawValue)
+        return VkMemoryPropertyFlags(self.rawValue)
     }
 }
 
 extension VmaAllocationCreateFlagBits : OptionSet {
     var flags: VmaAllocationCreateFlags {
-        return VmaAllocationCreateFlags(bitPattern: self.rawValue)
+        return VmaAllocationCreateFlags(self.rawValue)
     }
 }
 

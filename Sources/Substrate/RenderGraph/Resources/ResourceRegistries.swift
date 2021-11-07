@@ -416,28 +416,7 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
     }
     
     private func disposeImmediately(_ resource: Resource) {
-        switch resource.type {
-        case .buffer:
-            RenderBackend.dispose(buffer: Buffer(handle: resource.handle))
-        case .texture:
-            RenderBackend.dispose(texture: Texture(handle: resource.handle))
-        case .argumentBuffer:
-            RenderBackend.dispose(argumentBuffer: ArgumentBuffer(handle: resource.handle))
-        case .argumentBufferArray:
-            RenderBackend.dispose(argumentBufferArray: ArgumentBufferArray(handle: resource.handle))
-        case .heap:
-            RenderBackend.dispose(heap: Heap(handle: resource.handle))
-        case .accelerationStructure:
-            RenderBackend.dispose(accelerationStructure: AccelerationStructure(handle: resource.handle))
-        case .visibleFunctionTable:
-            RenderBackend.dispose(visibleFunctionTable: VisibleFunctionTable(handle: resource.handle))
-        case .intersectionFunctionTable:
-            RenderBackend.dispose(intersectionFunctionTable: IntersectionFunctionTable(handle: resource.handle))
-        case .hazardTrackingGroup:
-            break
-        default:
-            fatalError()
-        }
+        RenderBackend.dispose(resource: resource)
         
         let index = resource.index
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)

@@ -465,73 +465,75 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
 
 
-    nonisolated func disposeHeap(_ heap: Heap) {
-        if let mtlHeap = self.heapReferences.removeValue(forKey: heap) {
-            CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlHeap)))
-        }
-    }
-    
-    nonisolated func disposeTexture(_ texture: Texture) {
-        if let mtlTexture = self.textureReferences.removeValue(forKey: texture) {
-            if texture.flags.contains(.windowHandle) {
-                return
+    nonisolated func dispose(resource: Resource) {
+        switch resource.type {
+        case .buffer:
+            let buffer = Buffer(resource)!
+            if let mtlBuffer = self.bufferReferences.removeValue(forKey: buffer) {
+                if mtlBuffer.buffer.heap != nil {
+                    mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+                }
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
             }
-            if mtlTexture.texture.heap != nil {
-                mtlTexture.texture.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+        case .texture:
+            let texture = Texture(resource)!
+            if let mtlTexture = self.textureReferences.removeValue(forKey: texture) {
+                if texture.flags.contains(.windowHandle) {
+                    return
+                }
+                if mtlTexture.texture.heap != nil {
+                    mtlTexture.texture.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+                }
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlTexture._texture.toOpaque())))
             }
-            CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlTexture._texture.toOpaque())))
-        }
-    }
-    
-    nonisolated func disposeBuffer(_ buffer: Buffer) {
-        if let mtlBuffer = self.bufferReferences.removeValue(forKey: buffer) {
-            if mtlBuffer.buffer.heap != nil {
-                mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+            
+        case .heap:
+            let heap = Heap(resource)!
+            if let mtlHeap = self.heapReferences.removeValue(forKey: heap) {
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlHeap)))
             }
-            CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
-        }
-    }
-    
-    nonisolated func disposeArgumentBuffer(_ buffer: ArgumentBuffer) {
-        if let mtlBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
-            assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal RenderGraph backend.")
-            if mtlBuffer.buffer.heap != nil {
-                mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+            
+        case .argumentBuffer:
+            let buffer = ArgumentBuffer(resource)!
+            if let mtlBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
+                assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal RenderGraph backend.")
+                if mtlBuffer.buffer.heap != nil {
+                    mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+                }
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
             }
-            CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
-        }
-    }
-    
-    nonisolated func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray) {
-        if let mtlBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
-            if mtlBuffer.buffer.heap != nil {
-                mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+            
+        case .argumentBufferArray:
+            let buffer = ArgumentBufferArray(resource)!
+            if let mtlBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
+                if mtlBuffer.buffer.heap != nil {
+                    mtlBuffer.buffer.makeAliasable() // Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
+                }
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
             }
-            CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer._buffer.toOpaque())))
-        }
-    }
-    
-    nonisolated func disposeAccelerationStructure(_ structure: AccelerationStructure) {
-        if let mtlStructure = self.accelerationStructureReferences.removeValue(forKey: structure) {
-            CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlStructure)))
-        }
-    }
-    
-    nonisolated func disposeVisibleFunctionTable(_ table: VisibleFunctionTable) {
-        if let mtlTable = self.visibleFunctionTableReferences.removeValue(forKey: table) {
-            CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
-        }
-    }
-    
-    nonisolated func disposeIntersectionFunctionTable(_ table: IntersectionFunctionTable) {
-        if let mtlTable = self.intersectionFunctionTableReferences.removeValue(forKey: table) {
-            CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
+        case .accelerationStructure:
+            let structure = AccelerationStructure(resource)!
+            if let mtlStructure = self.accelerationStructureReferences.removeValue(forKey: structure) {
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlStructure)))
+            }
+            
+        case .visibleFunctionTable:
+            let table = VisibleFunctionTable(resource)!
+            if let mtlTable = self.visibleFunctionTableReferences.removeValue(forKey: table) {
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
+            }
+            
+        case .intersectionFunctionTable:
+            let table = IntersectionFunctionTable(resource)!
+            if let mtlTable = self.intersectionFunctionTableReferences.removeValue(forKey: table) {
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(mtlTable.resource)))
+            }
+        default:
+            preconditionFailure("dispose(resource:): Unhandled resource type \(resource.type)")
         }
     }
     
     nonisolated func cycleFrames() {
-        // No-op for now.
-        // Once we have unretained references we need to dispose any enqueued disposals here.
     }
     
 }

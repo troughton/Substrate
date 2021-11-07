@@ -77,20 +77,19 @@ public final class VulkanBackend : SpecificRenderBackend {
         }
     }
     
-    public func materialisePersistentTexture(_ texture: Texture) -> Bool {
-        return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateTexture(texture) != nil
-        }
-    }
-    
-    public func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
-        return resourceRegistry.accessLock.withWriteLock {
-            return self.resourceRegistry.allocateBuffer(buffer) != nil
+    public func materialisePersistentResource(_ resource: Resource) -> Bool {
+        switch resource.type {
+        case .texture:
+            return self.resourceRegistry.allocateTexture(Texture(resource)!) != nil
+        case .buffer:
+            return self.resourceRegistry.allocateBuffer(Buffer(resource)!) != nil
+        default:
+            preconditionFailure("Unhandled resource type in materialisePersistentResource")
         }
     }
     
     public func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer? {
-        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer, needsLock: true) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer, needsLock: true) ?? resourceRegistry[buffer]!
         let buffer = bufferReference.buffer
         
         return buffer.contents(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
@@ -98,7 +97,7 @@ public final class VulkanBackend : SpecificRenderBackend {
     
     public func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         if range.isEmpty { return }
-        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer, needsLock: true) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer, needsLock: true) ?? resourceRegistry[buffer]!
         let buffer = bufferReference.buffer
         buffer.didModifyRange((range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
@@ -107,49 +106,18 @@ public final class VulkanBackend : SpecificRenderBackend {
         await self.replaceTextureRegion(texture: texture, region: region, mipmapLevel: mipmapLevel, slice: 0, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * region.size.height * region.size.depth)
     }
     
-    public func dispose(texture: Texture) {
-        self.resourceRegistry.disposeTexture(texture)
-    }
-    
-    public func dispose(buffer: Buffer) {
-        self.resourceRegistry.disposeBuffer(buffer)
-    }
-
-    public func dispose(argumentBuffer: ArgumentBuffer) {
-        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer)
-    }
-
-    public func dispose(argumentBufferArray: ArgumentBufferArray) {
-        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray)
-    }
-    
-    @usableFromInline
-    func dispose(heap: Heap) {
-        preconditionFailure("dispose(heap:) is unimplemented on Vulkan")
-    }
-    
-    @usableFromInline func dispose(accelerationStructure: AccelerationStructure) {
-        preconditionFailure("dispose(accelerationStructure:) is unimplemented on Vulkan")
-    }
-    
-    @usableFromInline func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
-        preconditionFailure("dispose(intersectionFunctionTable:) is unimplemented on Vulkan")
-    }
-
-    @usableFromInline func dispose(visibleFunctionTable: VisibleFunctionTable) {
-        preconditionFailure("dispose(visibleFunctionTable:) is unimplemented on Vulkan")
+    public func dispose(resource: Resource) {
+        self.resourceRegistry.dispose(resource: resource)
     }
     
     public func backingResource(_ resource: Resource) -> Any? {
-        return resourceRegistry.accessLock.withReadLock {
-            if let buffer = Buffer(resource) {
-                let bufferReference = resourceRegistry[buffer]
-                return bufferReference?.buffer.vkBuffer
-            } else if let texture = Texture(resource) {
-                return resourceRegistry[texture]?.image.vkImage
-            }
-            return nil
+        if let buffer = Buffer(resource) {
+            let bufferReference = resourceRegistry[buffer]
+            return bufferReference?.buffer.vkBuffer
+        } else if let texture = Texture(resource) {
+            return resourceRegistry[texture]?.image.vkImage
         }
+        return nil
     }
     
     public func supportsPixelFormat(_ pixelFormat: PixelFormat, usage: TextureUsage) -> Bool {
@@ -187,32 +155,7 @@ public final class VulkanBackend : SpecificRenderBackend {
         return ResourceBindingPath.pushConstantPath
     }
     
-    @usableFromInline
-    func materialiseHeap(_ heap: Heap) -> Bool {
-        assertionFailure("Heaps are not implemented on Vulkan")
-        return false
-    }
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    @usableFromInline func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
-        assertionFailure("materialiseAccelerationStructure is unimplemented on Vulkan")
-        return false
-    }
-    
-    @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
-        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
-    }
-    
-    @usableFromInline func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
-        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
-    }
-    
-    @usableFromInline func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
-        fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
-    }
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    @usableFromInline func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any? {
+    @usableFromInline func replaceBackingResource(for resource: Resource, with: Any?) -> Any? {
         fatalError("replaceBackingResource(for:with:) is unimplemented on Vulkan")
     }
     

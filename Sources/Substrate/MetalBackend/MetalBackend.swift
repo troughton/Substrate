@@ -107,57 +107,55 @@ final class MetalBackend : SpecificRenderBackend {
         }
     }
     
-    @usableFromInline func materialisePersistentTexture(_ texture: Texture) -> Bool {
-        return self.resourceRegistry.allocateTexture(texture) != nil
+    @usableFromInline func materialisePersistentResource(_ resource: Resource) -> Bool {
+        switch resource.type {
+        case .texture:
+            return self.resourceRegistry.allocateTexture(Texture(resource)!) != nil
+        case .buffer:
+            return self.resourceRegistry.allocateBuffer(Buffer(resource)!) != nil
+        case .heap:
+            return self.resourceRegistry.allocateHeap(Heap(resource)!) != nil
+        case .accelerationStructure:
+            return self.resourceRegistry.allocateAccelerationStructure(AccelerationStructure(resource)!) != nil
+        default:
+            preconditionFailure("Unhandled resource type in materialisePersistentResource")
+        }
     }
     
-    @usableFromInline func materialisePersistentBuffer(_ buffer: Buffer) -> Bool {
-        return self.resourceRegistry.allocateBuffer(buffer) != nil
+    @usableFromInline func replaceBackingResource(for resource: Resource, with: Any?) -> Any? {
+        switch resource.type {
+        case .texture:
+            let texture = Texture(resource)!
+            let previousValue = self.resourceRegistry.textureReferences.removeValue(forKey: texture)
+            self.resourceRegistry.textureReferences[texture] = (with as! MTLTexture?).map { MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained($0)) }
+            return previousValue?._texture.takeRetainedValue()
+        case .buffer:
+            let buffer = Buffer(resource)!
+            let previousValue = self.resourceRegistry.bufferReferences.removeValue(forKey: buffer)
+            self.resourceRegistry.bufferReferences[buffer] = (with as! MTLBuffer?).map { MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained($0), offset: 0) }
+            return previousValue?._buffer.takeRetainedValue()
+        case .heap:
+            let heap = Heap(resource)!
+            let previousValue = self.resourceRegistry.heapReferences.removeValue(forKey: heap)
+            self.resourceRegistry.heapReferences[heap] = with as! MTLHeap?
+            return previousValue
+        case .accelerationStructure:
+            let structure = AccelerationStructure(resource)!
+            let previousValue = self.resourceRegistry.accelerationStructureReferences.removeValue(forKey: structure)
+            self.resourceRegistry.accelerationStructureReferences[structure] = with as! MTLResource?
+            return previousValue
+        default:
+            preconditionFailure("Unhandled resource type in replaceBackingResource")
+        }
     }
     
-    @usableFromInline func materialiseHeap(_ heap: Heap) -> Bool {
-        return self.resourceRegistry.allocateHeap(heap) != nil
-    }
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    @usableFromInline func materialiseAccelerationStructure(_ structure: AccelerationStructure) -> Bool {
-        return self.resourceRegistry.allocateAccelerationStructure(structure) != nil
-    }
-    
-    @usableFromInline func replaceBackingResource(for buffer: Buffer, with: Any?) -> Any? {
-        let previousValue = self.resourceRegistry.bufferReferences.removeValue(forKey: buffer)
-        self.resourceRegistry.bufferReferences[buffer] = (with as! MTLBuffer?).map { MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained($0), offset: 0) }
-        return previousValue?._buffer.takeRetainedValue()
-    }
-    
-    @usableFromInline func replaceBackingResource(for texture: Texture, with: Any?) -> Any? {
-        let previousValue = self.resourceRegistry.textureReferences.removeValue(forKey: texture)
-        self.resourceRegistry.textureReferences[texture] = (with as! MTLTexture?).map { MTLTextureReference(texture: Unmanaged<MTLTexture>.passRetained($0)) }
-        return previousValue?._texture.takeRetainedValue()
-    }
-    
-    @usableFromInline func replaceBackingResource(for heap: Heap, with: Any?) -> Any? {
-        let previousValue = self.resourceRegistry.heapReferences.removeValue(forKey: heap)
-        self.resourceRegistry.heapReferences[heap] = with as! MTLHeap?
-        return previousValue
-    }
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    @usableFromInline func replaceBackingResource(for structure: AccelerationStructure, with: Any?) -> Any? {
-        let previousValue = self.resourceRegistry.accelerationStructureReferences.removeValue(forKey: structure)
-        self.resourceRegistry.accelerationStructureReferences[structure] = with as! MTLResource?
-        return previousValue
-    }
-
     @usableFromInline func updateLabel(on resource: Resource) {
-        _ = Task {
-            if let buffer = Buffer(resource) {
-                self.resourceRegistry[buffer]?.buffer.label = buffer.label
-            } else if let texture = Texture(resource) {
-                self.resourceRegistry[texture]?.texture.label = texture.label
-            } else if let heap = Heap(resource) {
-                self.resourceRegistry[heap]?.label = heap.label
-            }
+        if let buffer = Buffer(resource) {
+            self.resourceRegistry[buffer]?.buffer.label = buffer.label
+        } else if let texture = Texture(resource) {
+            self.resourceRegistry[texture]?.texture.label = texture.label
+        } else if let heap = Heap(resource) {
+            self.resourceRegistry[heap]?.label = heap.label
         }
     }
     
@@ -210,38 +208,9 @@ final class MetalBackend : SpecificRenderBackend {
         return AccelerationStructureSizes(accelerationStructureSize: sizes.accelerationStructureSize, buildScratchBufferSize: sizes.buildScratchBufferSize, refitScratchBufferSize: sizes.refitScratchBufferSize)
     }
     
-    @usableFromInline func dispose(texture: Texture) {
-        self.resourceRegistry.disposeTexture(texture)
+    @usableFromInline func dispose(resource: Resource) {
+        self.resourceRegistry.dispose(resource: resource)
     }
-    
-    @usableFromInline func dispose(buffer: Buffer) {
-        self.resourceRegistry.disposeBuffer(buffer)
-    }
-    
-    @usableFromInline func dispose(argumentBuffer: ArgumentBuffer) {
-        self.resourceRegistry.disposeArgumentBuffer(argumentBuffer)
-    }
-    
-    @usableFromInline func dispose(argumentBufferArray: ArgumentBufferArray) {
-        self.resourceRegistry.disposeArgumentBufferArray(argumentBufferArray)
-    }
-    
-    @usableFromInline func dispose(heap: Heap) {
-        self.resourceRegistry.disposeHeap(heap)
-    }
-    
-    @usableFromInline func dispose(accelerationStructure: AccelerationStructure) {
-        self.resourceRegistry.disposeAccelerationStructure(accelerationStructure)
-    }
-    
-    @usableFromInline func dispose(intersectionFunctionTable: IntersectionFunctionTable) {
-        self.resourceRegistry.disposeIntersectionFunctionTable(intersectionFunctionTable)
-    }
-
-    @usableFromInline func dispose(visibleFunctionTable: VisibleFunctionTable) {
-        self.resourceRegistry.disposeVisibleFunctionTable(visibleFunctionTable)
-    }
-
     
     public func supportsPixelFormat(_ pixelFormat: PixelFormat, usage: TextureUsage) -> Bool {
         let usage = usage.subtracting([.blitSource, .blitDestination])

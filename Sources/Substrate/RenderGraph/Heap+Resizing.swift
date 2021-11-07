@@ -59,13 +59,8 @@ extension Heap {
         self.descriptor = newDescriptor
         
         for (resource, tempResource) in newChildResources {
-            if let buffer = Buffer(resource), let tempBuffer = Buffer(tempResource) {
-                let newBackingResource = RenderBackend.replaceBackingResource(for: tempBuffer, with: nil)
-                _ = RenderBackend.replaceBackingResource(for: buffer, with: newBackingResource)
-            } else if let texture = Texture(resource), let tempTexture = Texture(tempResource) {
-                let newBackingResource = RenderBackend.replaceBackingResource(for: tempTexture, with: nil)
-                _ = RenderBackend.replaceBackingResource(for: texture, with: newBackingResource)
-            }
+            let newBackingResource = RenderBackend.replaceBackingResource(for: tempResource, with: nil)
+            _ = RenderBackend.replaceBackingResource(for: resource, with: newBackingResource)
             tempResource.dispose()
         }
         
