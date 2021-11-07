@@ -608,11 +608,11 @@ public struct Image<ComponentType> : AnyImage {
     
     @inlinable
     public subscript(x: Int, y: Int, channel channel: Int) -> T {
-        get {
+        @inline(__always) get {
             precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channelCount)
             return self.storage.data[y &* self.width &* self.channelCount + x &* self.channelCount &+ channel]
         }
-        set {
+        @inline(__always) set {
             precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channelCount)
             self.ensureUniqueness()
             self.storage.data[y &* self.width &* self.channelCount &+ x * self.channelCount &+ channel] = newValue
@@ -883,7 +883,7 @@ extension Image where ComponentType: Comparable {
 extension Image where ComponentType: SIMDScalar {
     @inlinable
     public subscript(x: Int, y: Int) -> SIMD4<T> {
-        get {
+        @inline(__always) get {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
             precondition(self.width * self.height * self.channelCount < Int.max)
             
@@ -902,7 +902,7 @@ extension Image where ComponentType: SIMDScalar {
             }
             return result
         }
-        set {
+        @inline(__always) set {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
             precondition(self.width * self.height * self.channelCount < Int.max)
             
