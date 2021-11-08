@@ -203,6 +203,37 @@ enum RenderGraphCommand {
             return false
         }
     }
+    
+    var isDispatchCommand: Bool {
+        switch self {
+        case .dispatchThreads, .dispatchThreadgroups, .dispatchThreadgroupsIndirect:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    var isBlitCommand: Bool {
+        switch self {
+        case .copyBufferToTexture, .copyBufferToBuffer, .copyTextureToBuffer, .copyTextureToTexture, .blitTextureToTexture, .fillBuffer, .generateMipmaps, .synchroniseTexture, .synchroniseTextureSlice, .synchroniseBuffer:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    var isExternalCommand: Bool {
+        switch self {
+        case .encodeExternalCommand, .encodeRayIntersection, .encodeRayIntersectionRayCountBuffer:
+            return true
+        default:
+            return false
+        }
+    }
+    
+    var isGPUActionCommand: Bool {
+        return self.isDrawCommand || self.isDispatchCommand || self.isBlitCommand || self.isExternalCommand
+    }
 }
 
 extension ChunkArray where Element == (Resource, ResourceUsage) {
@@ -361,6 +392,7 @@ final class RenderGraphCommandRecorder {
         
         let usage = ResourceUsage(resource: resource, type: usageType, stages: stages, activeRange: activeRange, isIndirectlyBound: isIndirectlyBound, firstCommandOffset: firstCommandOffset, renderPass: encoder.passRecord)
         self.resourceUsages.append((specificResource, usage), allocator: .tagThreadView(resourceUsageAllocator))
+        assert(self.resourceUsages.isEmpty || self.resourceUsages.last.1.commandRange.lowerBound <= usage.commandRange.lowerBound)
         
         let usagePointer = self.resourceUsages.pointerToLastUsage
         return .init(usagePointer: usagePointer)
