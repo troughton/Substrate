@@ -52,8 +52,7 @@ extension ChunkArray where Element == ResourceUsage {
             
             let lastUsageBefore = self.pointerToLast(where: { $0.renderPassRecord == usage.renderPassRecord && $0.activeRange.intersects(with: usage.activeRange, subresourceCount: subresourceCount) && $0.commandRange.lowerBound <= usage.commandRange.lowerBound })!
             
-            let success = lastUsageBefore.pointee.mergeWithUsage(&usage, allocator: .tagThreadView(allocator))
-            assert(success)
+            _ = lastUsageBefore.pointee.mergeWithUsage(&usage, allocator: .tagThreadView(allocator))
             return
         }
         
