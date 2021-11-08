@@ -279,7 +279,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             }
             
             if isEmulatedInputAttachment ||
-                usage.type.isRenderTarget != previousUsageType.isRenderTarget {
+                usage.type.isRenderTarget != previousUsageType.isRenderTarget ||
+                usage.stages != previousUsageStages {
                 self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: usage.type, stages: usage.stages, allowReordering: !resourceIsRenderTarget && usageEncoderIndex != previousEncoderIndex), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
                                                           index: usage.commandRange.lowerBound))
             } else {
