@@ -181,8 +181,8 @@ public struct ResourceUsage {
     /// - returns: Whether the usages could be merged.
     @usableFromInline
     mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, allocator: AllocatorType) -> Bool {
-        precondition(self.renderPassRecord == nextUsage.renderPassRecord)
-        precondition(self.activeRange.intersects(with: nextUsage.activeRange, subresourceCount: resource.subresourceCount))
+        assert(self.renderPassRecord == nextUsage.renderPassRecord)
+        assert(self.activeRange.intersects(with: nextUsage.activeRange, subresourceCount: resource.subresourceCount))
         
         let rangesOverlap = self.commandRange.lowerBound < nextUsage.commandRange.upperBound && nextUsage.commandRange.lowerBound < self.commandRange.upperBound
 
