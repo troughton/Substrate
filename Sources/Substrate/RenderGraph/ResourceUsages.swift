@@ -34,9 +34,26 @@ extension ChunkArray where Element == ResourceUsage {
     
     @inlinable
     mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.ThreadView) {
-        var usage = usage
-        if self.isEmpty || !self.last.mergeWithUsage(&usage, allocator: .tagThreadView(allocator)) {
+        guard !self.isEmpty, self.last.renderPassRecord == usage.renderPassRecord else {
             self.append(usage, allocator: .tagThreadView(allocator))
+            return
+        }
+        
+        var usage = usage
+        var previousLast = self.last
+        
+        if self.last.mergeWithUsage(&usage, allocator: .tagThreadView(allocator)) {
+            return
+        }
+        
+        self.last.commandRange = self.last.commandRange.lowerBound..<Swift.min(self.last.commandRange.upperBound, usage.commandRange.lowerBound)
+        
+        self.append(usage, allocator: .tagThreadView(allocator))
+        
+        // If the previous usage extended past the usage being added, add it again to the end of the list.
+        if previousLast.commandRange.upperBound > usage.commandRange.upperBound {
+            previousLast.commandRange = usage.commandRange.upperBound..<previousLast.commandRange.upperBound
+            self.append(previousLast, allocator: .tagThreadView(allocator))
         }
     }
 }
@@ -65,9 +82,9 @@ extension ResourceUsageType {
     }
     
     @inlinable
-    public var isUAVReadWrite : Bool {
+    public var isUAVWrite : Bool {
         switch self {
-        case .readWrite:
+        case .readWrite, .write:
             return true
         default:
             return false
@@ -130,7 +147,7 @@ public struct ResourceUsage {
         
         if self.type.isRenderTarget || nextUsage.type.isRenderTarget {
             if self.type == .read || nextUsage.type == .read {
-                // If we just wrote to a different mip than the one we're using as a
+                // If we just wrote to a different mip than the one we're using as a render target.
                 
                 var readUsage = self
                 var renderTargetUsage = nextUsage
@@ -174,14 +191,17 @@ public struct ResourceUsage {
             if !subresourcesOverlap, self.type != nextUsage.type {
                 return false
             }
-
+            
+            if self.type.isWrite, nextUsage.type.isRead {
+                return false // We need to insert barriers between a write and a dependent read.
+            }
+            
             switch (self.type, nextUsage.type) {
                 case (.read, .readWrite),
-                     (.readWrite, .read),
-                     (.read, .write),
-                     (.write, .read),
-                     (.readWrite, .write),
-                     (.write, .readWrite):
+                    (.read, .write):
+                    return false
+                
+                case  (.readWrite, .write):
                     self.type = .readWrite
 
                 case _ where self.type == nextUsage.type:
@@ -191,8 +211,8 @@ public struct ResourceUsage {
 
                 default:
                     return false
-
             }
+            
             if self.isIndirectlyBound != nextUsage.isIndirectlyBound {
                 return false
             }

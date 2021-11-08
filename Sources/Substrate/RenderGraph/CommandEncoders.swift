@@ -576,7 +576,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                     let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
                     self.commandRecorder.record(command)
                     let usagePointers = self.commandRecorder.resourceUsagePointers(for: resource, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: bufferOffset), isIndirectlyBound: false, firstCommandOffset: firstCommandOffset)
-                    if reflection.usageType.isUAVReadWrite {
+                    if reflection.usageType.isUAVWrite {
                         self.boundUAVResources.insert(bindingPath)
                     } else {
                         self.boundUAVResources.remove(bindingPath)
@@ -657,7 +657,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                     
                     let usagePointers = self.commandRecorder.resourceUsagePointers(for: argumentBuffer, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, firstCommandOffset: firstCommandOffset)
                     
-                    if reflection.usageType.isUAVReadWrite {
+                    if reflection.usageType.isUAVWrite {
                         self.boundUAVResources.insert(argumentBufferPath)
                     } else {
                         self.boundUAVResources.remove(argumentBufferPath)
@@ -699,7 +699,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                     let usageNodes: ResourceUsagePointerList
                     if !self.pipelineStateChanged, let reflection = pipelineReflection.argumentReflection(at: bindingPath), reflection.isActive {
                         usageNodes = self.commandRecorder.resourceUsagePointers(for: resource, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: argumentResource.activeRangeOffsetIntoResource), isIndirectlyBound: true, firstCommandOffset: firstCommandOffset)
-                        if reflection.usageType.isUAVReadWrite {
+                        if reflection.usageType.isUAVWrite {
                             self.boundUAVResources.insert(bindingPath)
                         } else {
                             self.boundUAVResources.remove(bindingPath)
@@ -768,7 +768,7 @@ public class ResourceBindingEncoder : CommandEncoder {
                     let usagePointers = self.commandRecorder.resourceUsagePointers(for: boundResource.resource, encoder: self, usageType: reflection.usageType, stages: reflection.activeStages, activeRange: reflection.activeRange.offset(by: bufferOffset), isIndirectlyBound: boundResource.isIndirectlyBound, firstCommandOffset: firstCommandOffset)
                     boundResource.usagePointers = usagePointers
                     
-                    if reflection.usageType.isUAVReadWrite {
+                    if reflection.usageType.isUAVWrite {
                         self.boundUAVResources.insertUnique(bindingPath) // Guaranteed to not be present since we cleared boundUAVResources before this block.
                     } else if boundResource.consistentUsageAssumed {
                         deleteEntry = true // Delete the entry from this HashMap
@@ -794,7 +794,6 @@ public class ResourceBindingEncoder : CommandEncoder {
                     let usagePointers = self.commandRecorder.resourceUsagePointers(for: boundResource.resource, encoder: self, usageType: usage.type, stages: usage.stages, activeRange: usage.activeRange, isIndirectlyBound: boundResource.isIndirectlyBound, firstCommandOffset: firstCommandOffset)
                     boundResourcePtr.pointee.usagePointers = usagePointers
                 })
-                
             }
         }
         

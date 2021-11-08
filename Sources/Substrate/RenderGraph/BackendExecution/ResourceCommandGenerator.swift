@@ -244,34 +244,39 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             var previousUsageStages: RenderStages = []
             
             for usage in resource.usages
-                where usage.renderPassRecord.type != .external &&
-                    usage.resource == resource // rather than a view of this resource.
-                    //                        && usage.inArgumentBuffer
-                     {
-                        assert(usage.stages != .cpuBeforeRender) // CPU-only usages should have been filtered out by the RenderGraph
-                        assert(usage.renderPassRecord.isActive) // Only usages for active render passes should be here.
-                        
-                        let isEmulatedInputAttachment = usage.type == .inputAttachmentRenderTarget && RenderBackend.requiresEmulatedInputAttachments
-                        if usage.type.isRenderTarget {
-                            resourceIsRenderTarget = true
-                            if !isEmulatedInputAttachment {
-                                continue
-                            }
-                        }
-                        
-                        let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
-                        
-                        if isEmulatedInputAttachment ||
-                            usage.type != previousUsageType ||
-                            usage.stages != previousUsageStages ||
-                            usageEncoderIndex != previousEncoderIndex {
-                            self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: usage.type, stages: usage.stages, allowReordering: !resourceIsRenderTarget && usageEncoderIndex != previousEncoderIndex), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
-                                index: usage.commandRange.lowerBound))
-                        }
-                        
-                        previousUsageType = usage.type
-                        previousEncoderIndex = usageEncoderIndex
-                        previousUsageStages = usage.stages
+            where usage.renderPassRecord.type != .external &&
+            usage.resource == resource // rather than a view of this resource.
+            //                        && usage.inArgumentBuffer
+            {
+                assert(usage.stages != .cpuBeforeRender) // CPU-only usages should have been filtered out by the RenderGraph
+                assert(usage.renderPassRecord.isActive) // Only usages for active render passes should be here.
+                
+                
+                let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
+                
+                if usageEncoderIndex > previousEncoderIndex {
+                    resourceIsRenderTarget = false
+                }
+                
+                let isEmulatedInputAttachment = usage.type == .inputAttachmentRenderTarget && RenderBackend.requiresEmulatedInputAttachments
+                if usage.type.isRenderTarget {
+                    resourceIsRenderTarget = true
+                    if !isEmulatedInputAttachment {
+                        continue
+                    }
+                }
+                
+                if isEmulatedInputAttachment ||
+                    usage.type != previousUsageType ||
+                    usage.stages != previousUsageStages ||
+                    usageEncoderIndex != previousEncoderIndex {
+                    self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: usage.type, stages: usage.stages, allowReordering: !resourceIsRenderTarget && usageEncoderIndex != previousEncoderIndex), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
+                                                              index: usage.commandRange.lowerBound))
+                }
+                
+                previousUsageType = usage.type
+                previousEncoderIndex = usageEncoderIndex
+                previousUsageStages = usage.stages
             }
         }
     }
@@ -311,7 +316,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         defer { TaggedHeap.free(tag: Self.resourceCommandGeneratorTag) }
         
         resourceLoop: for resource in usedResources {
-            if resource.usages.isEmpty { continue }
+            if resource.usages.isEmpty || resource != resource.resourceForUsageTracking { continue }
             
             self.processResourceResidency(resource: resource, frameCommandInfo: frameCommandInfo)
             
