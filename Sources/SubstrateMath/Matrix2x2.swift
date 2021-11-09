@@ -184,11 +184,11 @@ extension Matrix2x2 where Scalar: Real {
             // We have a negative scale along one axis. Arbitrarily flip X.
             rotationSourceMatrix.columns.xy *= -1
         }
-        let directionVec = SIMD2(rotationSourceMatrix[0, 0] + rotationSourceMatrix[1, 1], rotationSourceMatrix[1, 0] - rotationSourceMatrix[0, 1]).normalized
+        let directionVec = SIMD2(rotationSourceMatrix[0, 0] + rotationSourceMatrix[1, 1], rotationSourceMatrix[0, 1] - rotationSourceMatrix[1, 0]).normalized
         
         let sinTheta = directionVec.y
         let cosTheta = directionVec.x
-        let theta = -Scalar.atan2(y: sinTheta, x: cosTheta)
+        let theta = Scalar.atan2(y: sinTheta, x: cosTheta)
         
         var R = Matrix2x2()
         R[0,0] = cosTheta
@@ -198,7 +198,7 @@ extension Matrix2x2 where Scalar: Real {
         
         let S = R.transpose * self
         
-        return (Angle(radians: theta), S)
+        return (Angle(radiansInUnboundedRange: theta), S)
     }
 }
 
