@@ -250,7 +250,8 @@ public struct DirectToTextureImageLoadingDelegate: ImageLoadingDelegate {
     }
     
     public func channelCount(for imageInfo: ImageFileInfo) -> Int {
-        if (options.contains(.autoExpandSRGBToRGBA) && imageInfo.colorSpace == .sRGB && imageInfo.channelCount < 4) || imageInfo.channelCount == 3 {
+        let isSRGB = imageInfo.colorSpace == .sRGB || (imageInfo.colorSpace == .undefined && options.contains(.mapUndefinedColorSpaceToSRGB))
+        if (options.contains(.autoExpandSRGBToRGBA) && isSRGB && imageInfo.channelCount < 4) || imageInfo.channelCount == 3 {
             var needsChannelExpansion = true
             if (imageInfo.channelCount == 1 && RenderBackend.supportsPixelFormat(.r8Unorm_sRGB)) ||
                 (imageInfo.channelCount == 2 && RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB)) {
@@ -400,7 +401,7 @@ extension Texture {
     
     public static func loadSourceImage(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions, loadingDelegate: ImageLoadingDelegate? = nil) throws -> AnyImage {
         if url.pathExtension.lowercased() == "exr" {
-            var textureData = try Image<Float>(exrAt: url)
+            var textureData = try Image<Float>(exrAt: url, loadingDelegate: loadingDelegate)
             try self.processSourceImage(&textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
             return textureData
         }
