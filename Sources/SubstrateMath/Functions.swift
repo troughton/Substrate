@@ -86,6 +86,18 @@ public func interpolate<T:BinaryFloatingPoint>(from a: T, to b: T, factor t: T) 
     return a * (1.0 - t) as T + b * t
 }
 
+/// Performs a linear interpolation between a and b by the interpolant t
+///
+/// - parameter a: start value
+/// - parameter b: end value
+/// - parameter t: interpolant
+///
+/// - returns: a value interpolated from a to b
+@inlinable
+public func interpolate<S: SIMD>(from a: S, to b: S, factor t: S) -> S where S.Scalar: BinaryFloatingPoint {
+    return a * (S.one - t) as S + b * t
+}
+
 /// Maps a value from a start range to an end range
 ///
 /// - parameter value: the value to map, within the range startMin...startMax.
