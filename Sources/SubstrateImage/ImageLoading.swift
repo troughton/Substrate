@@ -503,7 +503,9 @@ extension Image where ComponentType == UInt8 {
                 try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
                 return
             } catch {
-                assertionFailure("Wuffs decoding failed: \(error)")
+                if _isDebugAssertConfiguration() {
+                    print("Wuffs decoding failed for file at \(url): \(error)")
+                }
             }
         }
         
@@ -542,7 +544,9 @@ extension Image where ComponentType == UInt8 {
                 try self.init(wuffsData: data, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
                 return
             } catch {
-                assertionFailure("Wuffs decoding failed: \(error)")
+                if _isDebugAssertConfiguration() {
+                    print("Wuffs decoding failed for data: \(error)")
+                }
             }
         }
         
