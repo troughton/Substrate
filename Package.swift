@@ -32,7 +32,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "0.3.1"),
         .package(name: "Wuffs", url: "https://github.com/troughton/Wuffs-SPM", from: "0.3.02"),
         .package(name: "LodePNG", url: "https://github.com/troughton/LodePNG-SPM", from: "0.0.1"),
-        .package(url: "https://github.com/troughton/SwiftImGui", .upToNextMajor(from: "1.7.32")),
+        .package(url: "https://github.com/troughton/SwiftImGui", .upToNextMinor(from: "1.84.2")),
         .package(url: "https://github.com/apple/swift-numerics", from: "0.1.0"),
         .package(url: "https://github.com/apple/swift-collections/", .upToNextMajor(from: "0.0.2"))
     ],

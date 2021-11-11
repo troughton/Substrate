@@ -20,165 +20,56 @@ extension ImGuiNavInput_ {
 
 extension ImGui {
     
-    fileprivate static func updateScreens() -> [Screen] {
-        let platformIO = igGetPlatformIO()!
-        
-        let screens = Application.sharedApplication.screens
-            
-        if Int(platformIO.pointee.Monitors.Capacity) < screens.count {
-            let newData = igMemAlloc(screens.count * MemoryLayout<ImGuiPlatformMonitor>.size)
-            if platformIO.pointee.Monitors.Data != nil {
-                newData?.copyMemory(from: platformIO.pointee.Monitors.Data, byteCount: Int(platformIO.pointee.Monitors.Size) * MemoryLayout<ImGuiPlatformMonitor>.size)
-                igMemFree(platformIO.pointee.Monitors.Data)
-            }
-            platformIO.pointee.Monitors.Data = newData?.assumingMemoryBound(to: ImGuiPlatformMonitor.self)
-            platformIO.pointee.Monitors.Capacity = Int32(screens.count)
-            platformIO.pointee.Monitors.Size = Int32(screens.count)
-        }
-    
-        for (i, screen) in screens.enumerated() {
-            let monitor = ImGuiPlatformMonitor(MainPos: ImVec2(x: screen.position.x, y: screen.position.y),
-                                               MainSize: ImVec2(x: screen.dimensions.width, y: screen.dimensions.height),
-                                               WorkPos: ImVec2(x: screen.workspacePosition.x, y: screen.workspacePosition.y),
-                                               WorkSize: ImVec2(x: screen.workspaceDimensions.width, y: screen.workspaceDimensions.height),
-                                               DpiScale: screen.backingScaleFactor)
-            platformIO.pointee.Monitors.Data[i] = monitor
-        }
-
-        return screens
-    }
-    
     public static func initialisePlatformInterface() {
         
-        let (pixels, width, height, bytesPerPixel) = ImGui.getFontTexDataAsAlpha8()
+        let (pixels, width, height, bytesPerPixel) = ImGui.io.pointee.Fonts.pointee.texDataAsAlpha8
         
         var textureDescriptor = TextureDescriptor(type: .type2D, format: .r8Unorm, width: width, height: height, mipmapped: false)
         textureDescriptor.storageMode = .private
         textureDescriptor.usageHint = [.shaderRead, .blitDestination]
         let fontTexture = Texture(descriptor: textureDescriptor, flags: .persistent)
-        GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, in: fontTexture, withBytes: pixels, bytesPerRow: width * bytesPerPixel)
+        GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, in: fontTexture, withBytes: pixels!, bytesPerRow: width * bytesPerPixel)
         
-        ImGui.setFontTexID(UnsafeMutableRawPointer(bitPattern: UInt(exactly: fontTexture.handle)!))
+        ImGui.io.pointee.Fonts.pointee.setTexID(UnsafeMutableRawPointer(bitPattern: UInt(exactly: fontTexture.handle)!)!)
         
         #if os(macOS)
         ImGui.io.pointee.ConfigMacOSXBehaviors = true
         #endif
         
         #if os(iOS)
-        let configFlags : ImGuiConfigFlags_ = [ImGuiConfigFlags_DockingEnable]
-        let backendFlags : ImGuiBackendFlags_ = []
+        let configFlags : ImGui.ConfigFlags = [.navEnableGamepad, .isTouchScreen,]
+        let backendFlags : ImGui.BackendFlags = []
         #else
-        let configFlags : ImGuiConfigFlags_ = [ImGuiConfigFlags_NavEnableKeyboard, ImGuiConfigFlags_NavEnableGamepad, ImGuiConfigFlags_DockingEnable, ImGuiConfigFlags_ViewportsEnable]
-        let backendFlags : ImGuiBackendFlags_ = [ImGuiBackendFlags_HasMouseCursors, ImGuiBackendFlags_HasGamepad, ImGuiBackendFlags_PlatformHasViewports, ImGuiBackendFlags_RendererHasViewports, ImGuiBackendFlags_HasMouseHoveredViewport]
+        let configFlags : ImGui.ConfigFlags = [.navEnableKeyboard, .navEnableGamepad]
+        let backendFlags : ImGui.BackendFlags = [.hasMouseCursors, .hasGamepad]
         #endif
         
-        ImGui.io.pointee.ConfigFlags |= ImGuiConfigFlags(configFlags.rawValue)
-        ImGui.io.pointee.BackendFlags |= ImGuiBackendFlags(backendFlags.rawValue)
-        
-        #if !(os(iOS) || os(tvOS) || os(watchOS))
-        let platformIO = igGetPlatformIO()!
-        platformIO.pointee.Platform_CreateWindow = { viewport in
-            let viewport = viewport!
-            let windowSize = WindowSize(Float(viewport.pointee.Size.x), Float(viewport.pointee.Size.y))
-            let window = Application.sharedApplication.createWindow(title: "", dimensions: windowSize, flags: [.borderless, .hidden], renderGraph: Application.sharedApplication.windowRenderGraph)
-            viewport.pointee.PlatformHandle = Unmanaged<AnyObject>.passRetained(window).toOpaque()
-        }
-        
-        platformIO.pointee.Platform_DestroyWindow = { viewport in
-            Application.sharedApplication.destroyWindow(viewport!.pointee.window)
-            Unmanaged<AnyObject>.fromOpaque(viewport!.pointee.PlatformHandle).release()
-        }
-        
-        platformIO.pointee.Platform_ShowWindow = { viewport in
-            viewport!.pointee.window.isVisible = true
-        }
-        
-        platformIO.pointee.Platform_GetWindowPos = { (viewport) in
-            let window = viewport!.pointee.window
-            return ImVec2(x: window.position.x, y: window.position.y)
-        }
-        
-        platformIO.pointee.Platform_SetWindowPos = { (viewport, position) in
-            let window = viewport!.pointee.window
-            window.position = WindowPosition(position.x, position.y)
-        }
-        
-        platformIO.pointee.Platform_SetWindowSize = { (viewport, size) in
-            let window = viewport!.pointee.window
-            window.dimensions = WindowSize(Float(size.x), Float(size.y))
-        }
-        
-        platformIO.pointee.Platform_GetWindowSize = { (viewport) in
-            let windowSize = viewport!.pointee.window.dimensions
-            return ImVec2(x: Float(windowSize.width), y: Float(windowSize.height))
-        }
-        
-        platformIO.pointee.Platform_SetWindowFocus = { (viewport) in
-            viewport!.pointee.window.hasFocus = true
-        }
-        
-        platformIO.pointee.Platform_GetWindowFocus = { (viewport) in
-          return viewport!.pointee.window.hasFocus
-        }
-        
-        platformIO.pointee.Platform_SetWindowTitle = { (viewport, title) in
-            viewport!.pointee.window.title = String(cString: title!)
-        }
-        
-        platformIO.pointee.Platform_GetWindowDpiScale = { (viewport) in
-            if viewport!.pointee.PlatformHandle == nil {
-                return Application.sharedApplication.screens[0].backingScaleFactor
-            }
-            
-            let window = viewport!.pointee.window
-            return Float(window.framebufferScale)
-        }
-        
-        platformIO.pointee.Platform_RenderWindow = { (viewport, renderArguments) in
-            
-        }
-        
-        platformIO.pointee.Platform_SwapBuffers = { (viewport, renderArguments) in
-            
-        }
-        
-        platformIO.pointee.Platform_SetWindowAlpha = { (viewport, alpha) in
-            viewport!.pointee.window.alpha = alpha
-        }
-        
-        #endif // !(os(iOS) || os(tvOS) || os(watchOS))
+        ImGui.io.pointee.ConfigFlags |= configFlags.rawValue
+        ImGui.io.pointee.BackendFlags |= backendFlags.rawValue
     }
     
     public static func beginFrame(windows: [Window], inputLayer: ImGuiInputLayer, deltaTime: Double) {
-        _ = self.updateScreens()
-
-        let io = ImGui.io
+        let io = ImGui.io!
         let oldMousePosition = ImGui.io.pointee.MousePos
         
         let mainWindow = windows[0]
         
-        #if !os(iOS)
-        let mainViewport = igGetMainViewport()!
-        mainViewport.pointee.window = mainWindow
-        #endif
-        
         io.pointee.DisplaySize = ImVec2(x: Float(mainWindow.dimensions.width), y: Float(mainWindow.dimensions.height))
+        let framebufferScale = mainWindow.framebufferScale
+        io.pointee.DisplayFramebufferScale = ImVec2(x: Float(framebufferScale), y: Float(framebufferScale))
         io.pointee.DeltaTime = Float(deltaTime)
         
         io.pointee.MousePos = ImVec2(x: -Float.greatestFiniteMagnitude, y: -Float.greatestFiniteMagnitude)
         io.pointee.MouseWheel = 0.0
         io.pointee.MouseWheelH = 0.0
-        io.pointee.MouseHoveredViewport = 0
         
         let mousePosition = Vector2f(inputLayer[.mouseX].value, inputLayer[.mouseY].value)
         
         #if !os(iOS)
-        var frontmostHoveredViewport = Int.max
-        
-        let platformIO = igGetPlatformIO()!
+        let platformIO = ImGui.currentContext!
         for n in 0..<Int(platformIO.pointee.Viewports.Size) {
             let viewport = platformIO.pointee.Viewports.Data[n]!
-            let window = viewport.pointee.window
+            let window = windows[n]
             
             let focused = window.hasFocus
             if focused {
@@ -190,21 +81,6 @@ extension ImGui {
                 
                 io.pointee.MouseWheel = inputLayer[.mouseScrollY].value
                 io.pointee.MouseWheelH = inputLayer[.mouseScrollX].value
-            }
-            
-            let wantsViewportHovered = (ImGuiViewportFlags_.RawValue(viewport.pointee.Flags) & ImGuiViewportFlags_NoInputs.rawValue) == 0
-            if wantsViewportHovered {
-                let windowPosition = window.position
-                let windowDimensions = window.dimensions
-                
-                if  windowPosition.x <= mousePosition.x && windowPosition.y <= mousePosition.y &&
-                    (windowPosition.x + windowDimensions.width) >= mousePosition.x && (windowPosition.y + windowDimensions.height) >= mousePosition.y {
-                    let windowsInFrontCount = window.windowsInFrontCount
-                    if windowsInFrontCount < frontmostHoveredViewport {
-                        io.pointee.MouseHoveredViewport = viewport.pointee.ID
-                        frontmostHoveredViewport = windowsInFrontCount
-                    }
-                }
             }
         }
         #else
@@ -242,14 +118,3 @@ extension ImGui {
 
 extension ImGuiBackendFlags_ : OptionSet {}
 extension ImGuiConfigFlags_ : OptionSet {}
-
-extension ImGuiViewport {
-    public var window : Window {
-        get {
-            return Unmanaged<AnyObject>.fromOpaque(self.PlatformHandle).takeUnretainedValue() as! Window
-        }
-        set {
-            self.PlatformHandle = Unmanaged<AnyObject>.passUnretained(newValue).toOpaque()
-        }
-    }
-}

@@ -136,13 +136,15 @@ public class Application {
             let window = windows[0]
             self.delegate?.applicationRenderedImGui(self, frame: frame, renderData: imguiData, window: window, scissorRect: window.drawableSize.scissorRect)
             #else
-            ImGui.updatePlatformWindows()
             
-            for i in 0..<Int(ImGui.platformIO.pointee.Viewports.Size) {
-                let viewport = ImGui.platformIO.pointee.Viewports.Data[i]!
-                let window = viewport.pointee.window
-                let imguiData = ImGui.renderData(drawData: viewport.pointee.DrawData, clipScale: viewport.pointee.DpiScale)
-                self.delegate?.applicationRenderedImGui(self, frame: frame, renderData: imguiData, window: window, scissorRect: window.drawableSize.scissorRect)
+            let platformIO = ImGui.currentContext!.pointee
+            for i in 0..<Int(platformIO.Viewports.Size) {
+                let viewport = platformIO.Viewports.Data[i]!.pointee
+                let window = self.windows[i]
+                if ImGui.drawData.pointee.Valid {
+                    let imguiData = ImGui.renderData(drawData: ImGui.drawData.pointee, clipScale: Float(window.framebufferScale))
+                    self.delegate?.applicationRenderedImGui(self, frame: frame, renderData: imguiData, window: window, scissorRect: window.drawableSize.scissorRect)
+                }
             }
             #endif
         }

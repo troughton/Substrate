@@ -16,6 +16,10 @@ import ImGui
 import CImGui
 
 public final class CocoaInputManager : InputManagerInternal {
+    static let nwseCursor = NSCursor(image: NSImage(byReferencingFile: "/System/Library/Frameworks/WebKit.framework/Versions/Current/Frameworks/WebCore.framework/Resources/northWestSouthEastResizeCursor.png")!, hotSpot: NSPoint(x: 8, y: 8))
+    
+    static let neswCursor = NSCursor(image: NSImage(byReferencingFile: "/System/Library/Frameworks/WebKit.framework/Versions/Current/Frameworks/WebCore.framework/Resources/northEastSouthWestResizeCursor.png")!, hotSpot: NSPoint(x: 8, y: 8))
+    
     public var inputState = InputState<RawInputState>()
     
     private var eventQueue = [NSEvent]()
@@ -34,7 +38,7 @@ public final class CocoaInputManager : InputManagerInternal {
     }
     
     public func setupImGui() {
-        let io = ImGui.io
+        let io = ImGui.io!
         withUnsafeMutablePointer(to: &io.pointee.KeyMap.0) {
             let keyMap = UnsafeMutableBufferPointer(start: $0, count: Int(ImGuiKey_COUNT.rawValue))
             keyMap[Int(ImGuiKey_Tab.rawValue)] = Int32(kVK_Tab);                     // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array.
@@ -83,7 +87,7 @@ public final class CocoaInputManager : InputManagerInternal {
             }
         case .arrow:
             NSCursor.arrow.set()
-        case .move:
+        case .hand:
             NSCursor.closedHand.set()
         case .textInput:
             NSCursor.iBeam.set()
@@ -91,10 +95,14 @@ public final class CocoaInputManager : InputManagerInternal {
             NSCursor.resizeLeftRight.set()
         case .resizeNS:
             NSCursor.resizeUpDown.set()
-        case .resizeNESW: // FIXME: we should remove these private methods before release.
-            (NSCursor.perform(NSSelectorFromString("_windowResizeNorthEastSouthWestCursor"))?.takeUnretainedValue() as! NSCursor).set()
+        case .resizeNESW: 
+            Self.neswCursor.set()
         case .resizeNWSE:
-            (NSCursor.perform(NSSelectorFromString("_windowResizeNorthWestSouthEastCursor"))?.takeUnretainedValue() as! NSCursor).set()
+            Self.nwseCursor.set()
+        case .resizeAll:
+            NSCursor.resizeUpDown.set()
+        case .notAllowed:
+            NSCursor.operationNotAllowed.set()
         }
         
         if self.inputState[.keyboardScanCode][.command].isActive(frame: frame), self.inputState[.keyboardScanCode][.keyQ].isActive(frame: frame) {
@@ -125,7 +133,7 @@ public final class CocoaInputManager : InputManagerInternal {
                 })
                 
                 if let chars = event.characters {
-                    ImGui.io.pointee.addUTF8InputCharacters(chars.utf8CString)
+                    ImGui.io.pointee.addInputCharactersUTF8(str: chars)
                 }
                 
             case .keyUp:

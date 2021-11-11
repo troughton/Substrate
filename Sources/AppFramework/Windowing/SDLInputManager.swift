@@ -40,7 +40,7 @@ public final class SDLInputManager : InputManager {
     public func setupImGui() {
         let keyCount = Int(ImGuiKey_COUNT.rawValue)
         
-        let io = ImGui.io
+        let io = ImGui.io!
         withUnsafeMutablePointer(to: &io.pointee.KeyMap.0) {
             let keyMap = UnsafeMutableBufferPointer(start: $0, count: keyCount)
             keyMap[Int(ImGuiKey_Tab.rawValue)] = Int32(SDL_SCANCODE_TAB.rawValue)
@@ -146,9 +146,9 @@ public final class SDLInputManager : InputManager {
                     ImGui.io.pointee.KeySuper = SDL_GetModState().intersection([KMOD_LGUI, KMOD_RGUI]) != []
                     
                 case SDL_TEXTINPUT:
-                    var characters = event.text.text
-                    withExtendedLifetime(characters) {
-                        ImGui.io.pointee.addUTF8InputCharacters(&characters.0)
+                    let characters = event.text.text
+                    withUnsafeBytes(of: characters) { cString in
+                        ImGui.io.pointee.addInputCharactersUTF8(str: String(cString: cString.baseAddress!.assumingMemoryBound(to: CChar.self), encoding: .utf8)!)
                     }
                     
                 case SDL_MOUSEMOTION:

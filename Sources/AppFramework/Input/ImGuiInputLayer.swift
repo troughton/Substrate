@@ -21,14 +21,13 @@ public final class ImGuiInputLayer : InputLayer {
     public func processInput(rawInput: inout InputState<RawInputState>, frame: UInt64) {
         self.transitionState.update(rawState: rawInput, frame: frame)
         
-        if ImGui.wantsCaptureMouse {
+        if ImGui.io.pointee.WantCaptureMouse {
             rawInput[.mouse] = DeviceInputState<RawInputState>(type: .mouse)
         }
         
-        if ImGui.wantsCaptureKeyboard {
+        if ImGui.io.pointee.WantCaptureKeyboard {
             rawInput[.keyboardScanCode] = DeviceInputState<RawInputState>(type: .keyboardScanCode)
             rawInput[.keyboard] = DeviceInputState<RawInputState>(type: .keyboard)
         }
-        
     }
 }
