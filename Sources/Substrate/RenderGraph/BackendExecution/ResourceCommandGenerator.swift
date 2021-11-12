@@ -268,13 +268,30 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         var previousUsageType: ResourceUsageType = .unusedArgumentBuffer
         var previousUsageStages: RenderStages = []
         
+        var pendingUsageType: ResourceUsageType = .unusedArgumentBuffer
+        var pendingUsageStages: RenderStages = []
+        var pendingUsageIndex: Int = .max
+        
         for usage in resource.usages
         where usage.renderPassRecord.type != .external &&
         usage.resource == resource // rather than a view of this resource.
-        //                        && usage.isIndirectlyBound
+        //
         {
             assert(usage.stages != .cpuBeforeRender) // CPU-only usages should have been filtered out by the RenderGraph
             assert(usage.renderPassRecord.isActive) // Only usages for active render passes should be here.
+            
+            let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
+            
+            if usageEncoderIndex > previousEncoderIndex {
+                if pendingUsageIndex < .max {
+                    self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: pendingUsageType, stages: pendingUsageStages, allowReordering: !resourceIsRenderTarget), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
+                                                              index: pendingUsageIndex))
+                }
+                pendingUsageType = .unusedArgumentBuffer
+                pendingUsageStages = []
+                pendingUsageIndex = .max
+                resourceIsRenderTarget = false
+            }
             
             let isEmulatedInputAttachment = usage.type == .inputAttachmentRenderTarget && RenderBackend.requiresEmulatedInputAttachments
             if usage.type.isRenderTarget {
@@ -284,19 +301,33 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
             }
             
-            let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
-            
             if isEmulatedInputAttachment ||
-                usage.type != previousUsageType ||
-                usage.stages != previousUsageStages ||
-                usageEncoderIndex != previousEncoderIndex {
+                usage.type.isRenderTarget != previousUsageType.isRenderTarget ||
+                usage.stages != previousUsageStages {
                 self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: usage.type, stages: usage.stages, allowReordering: !resourceIsRenderTarget && usageEncoderIndex != previousEncoderIndex), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
                                                           index: usage.commandRange.lowerBound))
+            } else {
+                if usage.isWrite || pendingUsageType.isWrite {
+                    if usage.isRead || pendingUsageType.isRead {
+                        pendingUsageType = .readWrite
+                    } else {
+                        pendingUsageType = .write
+                    }
+                } else {
+                    pendingUsageType = usage.type
+                }
+                pendingUsageStages.formUnion(usage.stages)
+                pendingUsageIndex = min(usage.commandRange.lowerBound, pendingUsageIndex)
             }
             
             previousUsageType = usage.type
             previousEncoderIndex = usageEncoderIndex
             previousUsageStages = usage.stages
+        }
+        
+        if pendingUsageIndex < .max {
+            self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: pendingUsageType, stages: pendingUsageStages, allowReordering: !resourceIsRenderTarget), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
+                                                      index: pendingUsageIndex))
         }
     }
     

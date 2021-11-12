@@ -1385,6 +1385,8 @@ public final class RenderGraph {
             passRecord.commandRange = startCommandIndex..<commandCount
             assert(passRecord.commandRange!.count > 0)
             
+            let randomAccessCommandView = passRecord.commands.makeRandomAccessView(allocator: .tagTaskView(allocator))
+            
             for (resource, resourceUsage) in passRecord.resourceUsages where resourceUsage.stages != .cpuBeforeRender {
                 assert(resource.isValid)
                 self.usedResources.insert(resource)
@@ -1394,7 +1396,7 @@ public final class RenderGraph {
                 
                 var resourceUsage = resourceUsage
                 resourceUsage.commandRange = Range(uncheckedBounds: (resourceUsage.commandRange.lowerBound + startCommandIndex, resourceUsage.commandRange.upperBound + startCommandIndex))
-                resource.usages.mergeOrAppendUsage(resourceUsage, resource: resource, allocator: allocator)
+                resource.usages.mergeOrAppendUsage(resourceUsage, resource: resource, allocator: allocator, passCommands: randomAccessCommandView, passCommandOffset: startCommandIndex)
             }
             
             passRecord.resourceUsages = nil

@@ -73,6 +73,41 @@ public struct ChunkArray<Element>: Collection {
         return UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: Element.self).advanced(by: indexInChunk)
     }
     
+    
+    @inlinable
+    public func pointerToLast(where predicate: (Element) -> Bool) -> UnsafeMutablePointer<Element>? {
+        guard self.count > 0 else { return nil }
+        
+        var tailChunkCount = self.count % ChunkArray.elementsPerChunk
+        if tailChunkCount == 0 {
+            tailChunkCount = ChunkArray.elementsPerChunk
+        }
+        
+        // Check the tail chunk first.
+        let tailElements = UnsafeMutableRawPointer(self.tail!).assumingMemoryBound(to: Element.self)
+        for i in (0..<tailChunkCount).reversed() {
+            let elementPtr = tailElements.advanced(by: i)
+            if predicate(elementPtr.pointee) {
+                return elementPtr
+            }
+        }
+        
+        var foundElementPtr: UnsafeMutablePointer<Element>? = nil
+        var currentChunk = self.next!
+        while currentChunk != self.tail {
+            for i in (0..<ChunkArray.elementsPerChunk).reversed() {
+                let elementPtr = UnsafeMutableRawPointer(currentChunk).assumingMemoryBound(to: Element.self).advanced(by: i)
+                if predicate(elementPtr.pointee) {
+                    foundElementPtr = elementPtr
+                    break
+                }
+            }
+            currentChunk = currentChunk.pointee.next!
+        }
+        
+        return foundElementPtr
+    }
+    
     @inlinable
     public var last: Element {
         get {

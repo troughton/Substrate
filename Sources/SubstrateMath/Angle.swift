@@ -22,10 +22,16 @@ public struct Angle<Scalar: BinaryFloatingPoint & Real> : Hashable {
     /// The value of the angle in radians
     public var radians: Scalar
 
-	/// Creates an instance using the value in radians
+	/// Creates an instance using the value in radians.
+    /// The angle is reinterpreted to the range -pi...pi.
     @inlinable
     public init(radians val: Scalar) {
         radians = val.remainder(dividingBy: 2.0 * .pi)
+    }
+    
+    @inlinable
+    public init(radiansInUnboundedRange val: Scalar) {
+        radians = val
     }
 	
 	/// Creates an instance using the value in degrees

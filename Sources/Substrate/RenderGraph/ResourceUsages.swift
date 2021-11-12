@@ -32,11 +32,75 @@ extension ChunkArray where Element == ResourceUsage {
         return nil
     }
     
-    @inlinable
-    mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.StaticTaskView) {
-        var usage = usage
-        if self.isEmpty || !self.last.mergeWithUsage(&usage, allocator: .tagTaskView(allocator)) {
+    mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.StaticTaskView, passCommands: ChunkArray<RenderGraphCommand>.RandomAccessView, passCommandOffset: Int) {
+        guard !self.isEmpty, self.last.renderPassRecord == usage.renderPassRecord else {
             self.append(usage, allocator: .tagTaskView(allocator))
+            return
+        }
+        
+        let subresourceCount = resource.subresourceCount
+        guard let mergePointer = self.pointerToLast(where: { $0.renderPassRecord == usage.renderPassRecord && $0.activeRange.intersects(with: usage.activeRange, subresourceCount: subresourceCount) }) else {
+            self.append(usage, allocator: .tagTaskView(allocator))
+            return
+        }
+        
+        var usage = usage
+        
+        if usage.commandRange.lowerBound < mergePointer.pointee.commandRange.lowerBound {
+            // We're inserting a duplicate usage (e.g. from a different subresource). Since all usages are passed to here in order, and the only reason this can occur is
+            // via the 'previousLast.commandRange = usage.commandRange.upperBound..<previousLast.commandRange.upperBound' line below, there must already be a previous matching usage.
+            
+            let lastUsageBefore = self.pointerToLast(where: { $0.renderPassRecord == usage.renderPassRecord && $0.activeRange.intersects(with: usage.activeRange, subresourceCount: subresourceCount) && $0.commandRange.lowerBound <= usage.commandRange.lowerBound })!
+            
+            _ = lastUsageBefore.pointee.mergeWithUsage(&usage, allocator: .tagTaskView(allocator))
+            return
+        }
+        
+        var previousLast = mergePointer.pointee
+        
+        if mergePointer.pointee.mergeWithUsage(&usage, allocator: .tagTaskView(allocator)) {
+            return
+        }
+
+        if previousLast.commandRange.upperBound > usage.commandRange.lowerBound {
+            if previousLast.isWrite, !usage.isWrite {
+                // Writes override reads; we should skip this usage.
+                return
+            }
+            
+            // Transform reads that overlap with writes into readWrites.
+            switch usage.type {
+            case .read:
+                if previousLast.isWrite {
+                    usage.type = .readWrite
+                }
+            case .write:
+                if previousLast.isRead {
+                    usage.type = .readWrite
+                }
+            default:
+                break
+            }
+        }
+        
+        if usage.commandRange.lowerBound < mergePointer.pointee.commandRange.upperBound {
+            mergePointer.pointee.commandRange = mergePointer.pointee.commandRange.lowerBound..<usage.commandRange.lowerBound
+            
+            if !passCommands[mergePointer.pointee.commandRange.offset(by: -passCommandOffset)].contains(where: { $0.isGPUActionCommand }) {
+                // There are no active GPU commands in this range, so mark the usage as unused.
+                mergePointer.pointee.type = .unusedArgumentBuffer
+            }
+        }
+        
+        self.append(usage, allocator: .tagTaskView(allocator))
+        
+        // If the previous usage extended past the usage being added, add it again to the end of the list.
+        if previousLast.commandRange.upperBound >= usage.commandRange.upperBound {
+            previousLast.commandRange = usage.commandRange.upperBound..<previousLast.commandRange.upperBound
+            
+            if passCommands[previousLast.commandRange.offset(by: -passCommandOffset)].contains(where: { $0.isGPUActionCommand }) {
+                self.append(previousLast, allocator: .tagTaskView(allocator))
+            }
         }
     }
 }
@@ -65,9 +129,9 @@ extension ResourceUsageType {
     }
     
     @inlinable
-    public var isUAVReadWrite : Bool {
+    public var isUAVWrite : Bool {
         switch self {
-        case .readWrite:
+        case .readWrite, .write:
             return true
         default:
             return false
@@ -116,12 +180,10 @@ public struct ResourceUsage {
     /// - returns: Whether the usages could be merged.
     @usableFromInline
     mutating func mergeWithUsage(_ nextUsage: inout ResourceUsage, allocator: AllocatorType) -> Bool {
-        if self.renderPassRecord != nextUsage.renderPassRecord || self.resource != nextUsage.resource {
-            return false
-        }
+        assert(self.renderPassRecord == nextUsage.renderPassRecord)
+        assert(self.activeRange.intersects(with: nextUsage.activeRange, subresourceCount: resource.subresourceCount))
         
         let rangesOverlap = self.commandRange.lowerBound < nextUsage.commandRange.upperBound && nextUsage.commandRange.lowerBound < self.commandRange.upperBound
-        let subresourcesOverlap = self.activeRange.intersects(with: nextUsage.activeRange, subresourceCount: resource.subresourceCount)
 
         if !rangesOverlap, !self.type.isRenderTarget || !(self.type.isWrite && nextUsage.type.isRead) {
             // Don't merge usages of different types with non-overlapping ranges, and don't merge a write with a possible dependent read unless they're render target accesses.
@@ -130,7 +192,7 @@ public struct ResourceUsage {
         
         if self.type.isRenderTarget || nextUsage.type.isRenderTarget {
             if self.type == .read || nextUsage.type == .read {
-                // If we just wrote to a different mip than the one we're using as a
+                // If we just wrote to a different mip than the one we're using as a render target.
                 
                 var readUsage = self
                 var renderTargetUsage = nextUsage
@@ -171,17 +233,21 @@ public struct ResourceUsage {
                 }
             }
         } else {
-            if !subresourcesOverlap, self.type != nextUsage.type {
+            
+            if self.type != nextUsage.type, !self.activeRange.isEqual(to: nextUsage.activeRange, subresourceCount: resource.subresourceCount) {
                 return false
             }
-
+            
+            if self.type.isWrite, nextUsage.type.isRead {
+                return false // We need to insert barriers between a write and a dependent read.
+            }
+            
             switch (self.type, nextUsage.type) {
                 case (.read, .readWrite),
-                     (.readWrite, .read),
-                     (.read, .write),
-                     (.write, .read),
-                     (.readWrite, .write),
-                     (.write, .readWrite):
+                    (.read, .write):
+                    return false
+                
+                case  (.readWrite, .write):
                     self.type = .readWrite
 
                 case _ where self.type == nextUsage.type:
@@ -191,8 +257,8 @@ public struct ResourceUsage {
 
                 default:
                     return false
-
             }
+            
             if self.isIndirectlyBound != nextUsage.isIndirectlyBound {
                 return false
             }
