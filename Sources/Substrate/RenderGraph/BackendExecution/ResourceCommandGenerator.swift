@@ -262,42 +262,41 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         guard Backend.requiresResourceResidencyTracking else { return }
         
         var resourceIsRenderTarget = false
-        do {
-            // Track resource residency.
-            var previousEncoderIndex: Int = -1
-            var previousUsageType: ResourceUsageType = .unusedArgumentBuffer
-            var previousUsageStages: RenderStages = []
+        
+        // Track resource residency.
+        var previousEncoderIndex: Int = -1
+        var previousUsageType: ResourceUsageType = .unusedArgumentBuffer
+        var previousUsageStages: RenderStages = []
+        
+        for usage in resource.usages
+        where usage.renderPassRecord.type != .external &&
+        usage.resource == resource // rather than a view of this resource.
+        //                        && usage.isIndirectlyBound
+        {
+            assert(usage.stages != .cpuBeforeRender) // CPU-only usages should have been filtered out by the RenderGraph
+            assert(usage.renderPassRecord.isActive) // Only usages for active render passes should be here.
             
-            for usage in resource.usages
-                where usage.renderPassRecord.type != .external &&
-                    usage.resource == resource // rather than a view of this resource.
-                    //                        && usage.isIndirectlyBound
-                     {
-                        assert(usage.stages != .cpuBeforeRender) // CPU-only usages should have been filtered out by the RenderGraph
-                        assert(usage.renderPassRecord.isActive) // Only usages for active render passes should be here.
-                        
-                        let isEmulatedInputAttachment = usage.type == .inputAttachmentRenderTarget && RenderBackend.requiresEmulatedInputAttachments
-                        if usage.type.isRenderTarget {
-                            resourceIsRenderTarget = true
-                            if !isEmulatedInputAttachment {
-                                continue
-                            }
-                        }
-                        
-                        let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
-                        
-                        if isEmulatedInputAttachment ||
-                            usage.type != previousUsageType ||
-                            usage.stages != previousUsageStages ||
-                            usageEncoderIndex != previousEncoderIndex {
-                            self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: usage.type, stages: usage.stages, allowReordering: !resourceIsRenderTarget && usageEncoderIndex != previousEncoderIndex), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
-                                index: usage.commandRange.lowerBound))
-                        }
-                        
-                        previousUsageType = usage.type
-                        previousEncoderIndex = usageEncoderIndex
-                        previousUsageStages = usage.stages
+            let isEmulatedInputAttachment = usage.type == .inputAttachmentRenderTarget && RenderBackend.requiresEmulatedInputAttachments
+            if usage.type.isRenderTarget {
+                resourceIsRenderTarget = true
+                if !isEmulatedInputAttachment {
+                    continue
+                }
             }
+            
+            let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
+            
+            if isEmulatedInputAttachment ||
+                usage.type != previousUsageType ||
+                usage.stages != previousUsageStages ||
+                usageEncoderIndex != previousEncoderIndex {
+                self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: usage.type, stages: usage.stages, allowReordering: !resourceIsRenderTarget && usageEncoderIndex != previousEncoderIndex), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
+                                                          index: usage.commandRange.lowerBound))
+            }
+            
+            previousUsageType = usage.type
+            previousEncoderIndex = usageEncoderIndex
+            previousUsageStages = usage.stages
         }
     }
     
