@@ -20,8 +20,8 @@ fileprivate class TemporaryBufferArena {
     private let blockSize : Int
     var currentBlockPos = 0
     var currentBlock : MTLBuffer? = nil
-    var usedBlocks = LinkedList<MTLBuffer>()
-    var availableBlocks = LinkedList<MTLBuffer>()
+    var usedBlocks = [MTLBuffer]()
+    var availableBlocks = [(buffer: MTLBuffer, isPurged: Bool)]()
     
     // MemoryArena Public Methods
     public init(blockSize: Int = 262144, device: MTLDevice, options: MTLResourceOptions) {
@@ -42,14 +42,18 @@ fileprivate class TemporaryBufferArena {
             }
             
             // Try to get memory block from availableBlocks
-            let iterator = self.availableBlocks.makeIterator()
-            while let block = iterator.next() {
+            var i = 0
+            while i < self.availableBlocks.count {
+                let (block, isPurged) = self.availableBlocks[i]
                 if block.length >= bytes {
-                    block.setPurgeableState(.nonVolatile)
+                    if isPurged {
+                        block.setPurgeableState(.nonVolatile)
+                    }
                     self.currentBlock = block
-                    iterator.removeLast()
+                    self.availableBlocks.remove(at: i, preservingOrder: false)
                     break
                 }
+                i += 1
             }
             if self.currentBlock == nil {
                 let allocationSize = max(bytes * 3 / 2, self.blockSize)
@@ -70,18 +74,20 @@ fileprivate class TemporaryBufferArena {
     
     func makePurgeable() {
         precondition(self.usedBlocks.isEmpty && self.currentBlock == nil)
-        for block in self.availableBlocks {
-            block.setPurgeableState(.empty)
+        for i in self.availableBlocks.indices {
+            self.availableBlocks[i].buffer.setPurgeableState(.empty)
+            self.availableBlocks[i].isPurged = true
         }
     }
     
     func reset() {
+        self.availableBlocks.append(contentsOf: self.usedBlocks.lazy.map { ($0, false) })
+        self.usedBlocks.removeAll(keepingCapacity: true)
         if let currentBlock = self.currentBlock {
-            self.usedBlocks.append(currentBlock)
+            self.availableBlocks.append((currentBlock, false))
         }
         self.currentBlock = nil
         self.currentBlockPos = 0
-        self.availableBlocks.prependAndClear(contentsOf: usedBlocks)
     }
 }
 

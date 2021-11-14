@@ -53,6 +53,10 @@ public struct Signposter {
     public var signposter: Any? // OSSignposter
 #endif
     
+    public static var disabled: Signposter {
+        return Signposter(disabled: ())
+    }
+    
     public var isEnabled: Bool {
 #if canImport(OSLog)
         if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
@@ -72,10 +76,16 @@ public struct Signposter {
 #endif
     }
 
+    private init(disabled: ()) {
+#if canImport(OSLog)
+        self.signposter = nil
+#endif
+    }
+    
     public func emitEvent(_ name: StaticString, id: SignpostID = .exclusive, _ message: SignpostMetadata) {
 #if canImport(OSLog)
         if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
-            (self.signposter as! OSSignposter).emitEvent(name, id: id.osID, "\(message.message)")
+            (self.signposter as! OSSignposter?)?.emitEvent(name, id: id.osID, "\(message.message)")
         }
 #endif
     }
@@ -83,7 +93,7 @@ public struct Signposter {
     public func emitEvent(_ name: StaticString, id: SignpostID = .exclusive) {
 #if canImport(OSLog)
         if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
-            (self.signposter as! OSSignposter).emitEvent(name, id: id.osID)
+            (self.signposter as! OSSignposter?)?.emitEvent(name, id: id.osID)
         }
 #endif
     }
@@ -91,7 +101,7 @@ public struct Signposter {
     public func beginInterval(_ name: StaticString, id: SignpostID = .exclusive, _ message: SignpostMetadata) -> SignpostIntervalState {
 #if canImport(OSLog)
         if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
-            return SignpostIntervalState(state: (self.signposter as! OSSignposter).beginInterval(name, id: id.osID, "\(message.message)"))
+            return SignpostIntervalState(state: (self.signposter as! OSSignposter? ?? .disabled).beginInterval(name, id: id.osID, "\(message.message)"))
         }
 #endif
         return SignpostIntervalState(state: nil)
@@ -100,7 +110,7 @@ public struct Signposter {
     public func beginInterval(_ name: StaticString, id: SignpostID = .exclusive) -> SignpostIntervalState {
 #if canImport(OSLog)
         if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
-            return SignpostIntervalState(state: (self.signposter as! OSSignposter).beginInterval(name, id: id.osID))
+            return SignpostIntervalState(state: (self.signposter as! OSSignposter? ?? .disabled).beginInterval(name, id: id.osID))
         }
 #endif
         return SignpostIntervalState(state: nil)
@@ -109,7 +119,7 @@ public struct Signposter {
     public func endInterval(_ name: StaticString, _ state: SignpostIntervalState, _ message: SignpostMetadata) {
 #if canImport(OSLog)
         if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
-            (self.signposter as! OSSignposter).endInterval(name, state.state as! OSSignpostIntervalState, "\(message.message)")
+            (self.signposter as! OSSignposter?)?.endInterval(name, state.state as! OSSignpostIntervalState, "\(message.message)")
         }
 #endif
     }
@@ -117,7 +127,7 @@ public struct Signposter {
     public func endInterval(_ name: StaticString, _ state: SignpostIntervalState) {
 #if canImport(OSLog)
         if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
-            (self.signposter as! OSSignposter).endInterval(name, state.state as! OSSignpostIntervalState)
+            (self.signposter as! OSSignposter?)?.endInterval(name, state.state as! OSSignpostIntervalState)
         }
 #endif
     }
@@ -140,7 +150,7 @@ public struct Signposter {
     @inlinable public func makeSignpostID() -> SignpostID {
 #if canImport(OSLog)
         if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
-            return SignpostID(rawValue: (self.signposter as! OSSignposter).makeSignpostID().rawValue)
+            return SignpostID(rawValue: (self.signposter as! OSSignposter? ?? .disabled).makeSignpostID().rawValue)
         }
 #endif
         return .exclusive
@@ -149,7 +159,7 @@ public struct Signposter {
     @inlinable public func makeSignpostID(from object: AnyObject) -> SignpostID {
 #if canImport(OSLog)
         if #available(macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0, *) {
-            return SignpostID(rawValue: (self.signposter as! OSSignposter).makeSignpostID(from: object).rawValue)
+            return SignpostID(rawValue: (self.signposter as! OSSignposter? ?? .disabled).makeSignpostID(from: object).rawValue)
         }
 #endif
         return SignpostID(rawValue: UInt64(UInt(bitPattern: Unmanaged.passUnretained(object).toOpaque())))

@@ -148,9 +148,11 @@ public struct Queue : Equatable, Sendable {
         QueueRegistry.shared.dispose(self)
     }
     
-    func submitCommand(commandIndex: UInt64, completionTask: Task<Void, Never>) {
+    func submitCommand(commandIndex: UInt64, onCompletion: @Sendable @escaping () async -> Void) {
         UInt64.AtomicRepresentation.atomicStore(commandIndex, at: QueueRegistry.shared.lastSubmittedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
         UInt64.AtomicRepresentation.atomicStore(DispatchTime.now().uptimeNanoseconds, at: QueueRegistry.shared.lastSubmissionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
+        
+        let completionTask = Task.detached(priority: .high, operation: onCompletion)
         
         QueueRegistry.shared.lock.withLock {
             var commandWaitTask = QueueRegistry.shared.commandWaitTasks[Int(self.index)]
@@ -168,25 +170,28 @@ public struct Queue : Equatable, Sendable {
     }
     
     func didCompleteCommand(_ commandIndex: UInt64) async {
-        UInt64.AtomicRepresentation.atomicStore(commandIndex, at: QueueRegistry.shared.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
+        var expected = commandIndex - 1
+        repeat {
+            let (didExchange, original) = UInt64.AtomicRepresentation.atomicCompareExchange(expected: expected, desired: commandIndex, at: QueueRegistry.shared.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
+            if didExchange {
+                break
+            } else if original < commandIndex {
+                expected = original
+            } else {
+                return // We've already updated with a later command index.
+            }
+        } while true
+        
         UInt64.AtomicRepresentation.atomicStore(DispatchTime.now().uptimeNanoseconds, at: QueueRegistry.shared.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
         
-        repeat {
-            guard let nextTask = QueueRegistry.shared.lock.withLock({ QueueRegistry.shared.commandWaitTasks[Int(self.index)] }) else {
-                // We got to didCompleteCommand before we managed to call submitCommand.
-                // Give ourselves a change to call submitCommand.
-                await Task.yield()
-                continue
-            }
-            if nextTask.command < commandIndex {
-                await nextTask.task.get()
-                continue
-            }
-            QueueRegistry.shared.lock.withLock {
-                QueueRegistry.shared.commandWaitTasks[Int(self.index)] = nextTask.next
-            }
-            break
-        } while true
+        var nextTask = QueueRegistry.shared.lock.withLock({ QueueRegistry.shared.commandWaitTasks[Int(self.index)] })!
+        while nextTask.command < commandIndex {
+            await nextTask.task.get()
+            nextTask = nextTask.next!
+        }
+        QueueRegistry.shared.lock.withLock {
+            QueueRegistry.shared.commandWaitTasks[Int(self.index)] = nextTask.next
+        }
     }
     
     public var lastSubmittedCommand : UInt64 {

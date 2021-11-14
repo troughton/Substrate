@@ -24,7 +24,7 @@ public final class LinkedList<T> : Collection {
         }
     }
     
-        public class LinkedListIterator : IteratorProtocol {
+    public class LinkedListIterator : IteratorProtocol {
         public typealias Element = T
         
         @usableFromInline let list : LinkedList<T>

@@ -666,11 +666,30 @@ struct RenderPassRecord: Equatable, @unchecked Sendable {
     //    case transitive
 }
 
-final class RenderGraphExecutionResult: @unchecked Sendable {
-    public internal(set) var gpuTime: Double
+actor RenderGraphExecutionResult {
+    public internal(set) var gpuStartTime: Double
+    public internal(set) var gpuEndTime: Double
 
     public init() {
-        self.gpuTime = 0.0
+        self.gpuStartTime = 0.0
+        self.gpuEndTime = 0.0
+    }
+    
+    public init(gpuStartTime: Double, gpuEndTime: Double) {
+        self.gpuStartTime = gpuStartTime
+        self.gpuEndTime = gpuEndTime
+    }
+    
+    public var gpuTime: Double {
+        return self.gpuEndTime - self.gpuStartTime
+    }
+    
+    func setGPUStartTime(to startTime: Double) {
+        self.gpuStartTime = startTime
+    }
+    
+    func setGPUEndTime(to endTime: Double) {
+        self.gpuEndTime = endTime
     }
 }
 
@@ -697,7 +716,7 @@ protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var accessSemaphore : AsyncSemaphore? { get }
     nonisolated var renderGraphQueue: Queue { get }
-    func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>)) async -> Task<RenderGraphExecutionResult, Never>
+    func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
 }
 
@@ -745,7 +764,11 @@ public final class RenderGraph {
     let context : _RenderGraphContext
     
     public let transientRegistryIndex : Int
+#if SUBSTRATE_ENABLE_SIGNPOSTER
     static let signposter: Signposter = Signposter(subsystem: "com.substrate.rendergraph", category: "RenderGraph")
+#else
+    static let signposter: Signposter = .disabled
+#endif
     private(set) var signpostID: SignpostID
     
     static let executionLock = AsyncSpinLock()
@@ -1433,7 +1456,7 @@ public final class RenderGraph {
     }
     
     private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
-        self._lastGraphGPUTime = result.gpuTime
+        self._lastGraphGPUTime = await result.gpuTime
         
         let completionTime = DispatchTime.now().uptimeNanoseconds
         let elapsed = completionTime - self.previousFrameCompletionTime
@@ -1474,18 +1497,15 @@ public final class RenderGraph {
             }
             
             let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
-            let onCompletion = await Self.$activeRenderGraph.withValue(self) {
-                return await self.context.executeRenderGraph {
+            await Self.$activeRenderGraph.withValue(self) {
+                await self.context.executeRenderGraph {
                     let (passes, _, usedResources) = await self.compile()
                     return (passes, usedResources)
+                } onCompletion: { executionResult in
+                    await self.didCompleteRender(executionResult)
                 }
             }
             Self.signposter.endInterval("Execute RenderGraph on Context", signpostState)
-            
-            _ = Task.runDetached {
-                let result = await onCompletion.get()
-                await self.didCompleteRender(result)
-            }
             
             // Make sure the RenderGraphCommands buffers are deinitialised before the tags are freed.
             renderPasses.forEach {
