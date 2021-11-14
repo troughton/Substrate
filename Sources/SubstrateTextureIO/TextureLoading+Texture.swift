@@ -23,7 +23,7 @@ public enum MipGenerationMode: Hashable, Sendable {
 }
 
 public protocol TextureCopyable {
-    func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode) async throws
+    func copyData(to texture: Texture, slice: Int, mipGenerationMode: MipGenerationMode) async throws
     var preferredPixelFormat: PixelFormat { get }
 }
 
@@ -38,11 +38,11 @@ public enum TextureCopyError: Error {
 }
 
 extension AnyImage {
-    public func copyData(to texture: Texture, mipGenerationMode: MipGenerationMode) async throws {
+    public func copyData(to texture: Texture, slice: Int = 0, mipGenerationMode: MipGenerationMode) async throws {
         guard let data = self as? TextureCopyable else {
             throw TextureCopyError.notTextureCopyable(self)
         }
-        try await data.copyData(to: texture, mipGenerationMode: mipGenerationMode)
+        try await data.copyData(to: texture, slice: slice, mipGenerationMode: mipGenerationMode)
     }
     
     public var preferredPixelFormat: PixelFormat {
