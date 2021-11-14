@@ -1389,13 +1389,13 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             }
             
             if self.pipelineStateChanged {
-                if let pipelineState = self.currentPipelineReflection.pipelineState {
-                    commandRecorder.record(RenderGraphCommand.setRenderPipelineState, (pipelineState, self.renderPipelineDescriptor?.fragmentFunction != nil, self.renderPipelineDescriptor?.fillMode ?? .fill))
-                } else {
+//                if let pipelineState = self.currentPipelineReflection.pipelineState {
+//                    commandRecorder.record(RenderGraphCommand.setRenderPipelineState, (pipelineState, self.renderPipelineDescriptor?.fragmentFunction != nil, self.renderPipelineDescriptor?.fillMode ?? .fill))
+//                } else {
                     let box = Unmanaged.passRetained(ReferenceBox(self.renderPipelineDescriptor!))
                     commandRecorder.addUnmanagedReference(box)
                     commandRecorder.record(RenderGraphCommand.setRenderPipelineDescriptor(box))
-                }
+//                }
                 // self.pipelineStateChanged = false // set by super.updateResourceUsages
             }
         }
