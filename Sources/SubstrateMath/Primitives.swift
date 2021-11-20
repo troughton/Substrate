@@ -113,7 +113,7 @@ extension Rect where Scalar: BinaryFloatingPoint {
             return self.origin + self.size
         }
         set {
-            self.origin = newValue - self.size
+            self.size = newValue - self.origin
         }
     }
     
@@ -210,7 +210,7 @@ extension Rect where Scalar: FixedWidthInteger {
     @inlinable
     public init(minPoint: SIMD2<Scalar>, maxPoint: SIMD2<Scalar>) {
         self.origin = minPoint
-        self.size = maxPoint &- minPoint
+        self.size = maxPoint &- minPoint &+ .one // We include maxPoint.
     }
     
     @inlinable
@@ -231,10 +231,10 @@ extension Rect where Scalar: FixedWidthInteger {
     @inlinable
     public var maxPoint: SIMD2<Scalar> {
         get {
-            return self.origin &+ self.size
+            return self.origin &+ self.size &- .one
         }
         set {
-            self.origin = newValue &- self.size
+            self.size = newValue &- self.origin &+ .one
         }
     }
     
