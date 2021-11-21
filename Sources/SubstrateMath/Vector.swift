@@ -18,8 +18,8 @@ public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : FloatingP
     // Currently, the compiler will emit non-inlined calls to "Sequence.reduce<A>(into:_:)"
     // with that expression.
     
-    var result = V.Scalar.zero
-    for i in 0..<V.scalarCount {
+    var result = a[0] * b[0]
+    for i in 1..<V.scalarCount {
         result.addProduct(a[i], b[i])
     }
     return result
@@ -31,8 +31,8 @@ public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : FixedWidt
     // Currently, the compiler will emit non-inlined calls to "Sequence.reduce<A>(into:_:)"
     // with that expression.
     
-    var result = V.Scalar.zero
-    for i in 0..<V.scalarCount {
+    var result = a[0] &* b[0]
+    for i in 1..<V.scalarCount {
         result &+= a[i] &* b[i]
     }
     return result
