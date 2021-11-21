@@ -83,6 +83,7 @@ final class FGMTLThreadRenderCommandEncoder {
     
     let renderPassDescriptor : MTLRenderPassDescriptor
     var hasFragmentFunction: Bool = false
+    private let boundBuffers: UnsafeMutablePointer<UnsafeMutableRawPointer?>
     private let baseBufferOffsets : UnsafeMutablePointer<Int> // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     private unowned(unsafe) var boundPipelineState: MTLRenderPipelineState? = nil
     private unowned(unsafe) var boundDepthStencilState: MTLDepthStencilState? = nil
@@ -95,11 +96,15 @@ final class FGMTLThreadRenderCommandEncoder {
         self.renderPassDescriptor = renderPassDescriptor
         self.isAppleSiliconGPU = isAppleSiliconGPU
         
+        
+        self.boundBuffers = .allocate(capacity: 62)
+        self.boundBuffers.initialize(repeating: nil, count: 62)
         self.baseBufferOffsets = .allocate(capacity: 62)
         self.baseBufferOffsets.initialize(repeating: 0, count: 62)
     }
     
     deinit {
+        self.boundBuffers.deallocate()
         self.baseBufferOffsets.deallocate()
     }
     
@@ -133,6 +138,33 @@ final class FGMTLThreadRenderCommandEncoder {
     
     func endEncoding() {
         self.encoder.endEncoding()
+    }
+    
+    private func setBuffer(_ mtlBuffer: MTLBufferReference?, offset: Int, bindIndex: Int, stages: MTLRenderStages) {
+        guard let mtlBuffer = mtlBuffer else {
+            return
+        }
+
+        let totalOffset = offset + mtlBuffer.offset
+        
+        if stages.contains(.vertex) {
+            self.baseBufferOffsets[bindIndex] = mtlBuffer.offset
+            if self.boundBuffers[bindIndex] == mtlBuffer._buffer.toOpaque() {
+                encoder.setVertexBufferOffset(totalOffset, index: bindIndex)
+            } else {
+                self.boundBuffers[bindIndex] = mtlBuffer._buffer.toOpaque()
+                encoder.setVertexBuffer(mtlBuffer.buffer, offset: totalOffset, index: bindIndex)
+            }
+        }
+        if stages.contains(.fragment) || !self.hasFragmentFunction { // If we currently have no fragment function, but later set one after binding an argument buffer, that argument buffer should also be bound for the fragment function.
+            self.baseBufferOffsets[bindIndex + 31] = mtlBuffer.offset
+            if self.boundBuffers[bindIndex + 31] == mtlBuffer._buffer.toOpaque() {
+                encoder.setFragmentBufferOffset(totalOffset, index: bindIndex)
+            } else {
+                self.boundBuffers[bindIndex + 31] = mtlBuffer._buffer.toOpaque()
+                encoder.setFragmentBuffer(mtlBuffer.buffer, offset: totalOffset, index: bindIndex)
+            }
+        }
     }
     
     func executeCommand(_ command: RenderGraphCommand, encoder: MTLRenderCommandEncoder, renderTarget: RenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
@@ -173,11 +205,10 @@ final class FGMTLThreadRenderCommandEncoder {
             assert(index < 31, "The maximum number of buffers allowed in the buffer argument table for a single function is 31.")
             // For vertex buffers, index the bindings backwards from the maximum (30) to allow argument buffers and push constants to go first.
             
-            self.baseBufferOffsets[index] = mtlBuffer?.offset ?? 0
-            encoder.setVertexBuffer(mtlBuffer?.buffer, offset: Int(args.pointee.offset) + self.baseBufferOffsets[index], index: 30 - index)
+            self.setBuffer(mtlBuffer, offset: Int(args.pointee.offset), bindIndex: 30 - index, stages: .vertex)
             
         case .setVertexBufferOffset(let offset, let index):
-            let baseOffset = self.baseBufferOffsets[Int(index)]
+            let baseOffset = self.baseBufferOffsets[30 - Int(index)]
             encoder.setVertexBufferOffset(Int(offset) + baseOffset, index: 30 - Int(index))
             
         case .setArgumentBuffer(let args):
@@ -188,12 +219,7 @@ final class FGMTLThreadRenderCommandEncoder {
             let argumentBuffer = args.pointee.argumentBuffer
             let mtlArgumentBuffer = resourceMap[argumentBuffer]
             
-            if stages.contains(.vertex) {
-                encoder.setVertexBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
-            }
-            if stages.contains(.fragment) || !self.hasFragmentFunction { // If we currently have no fragment function, but later set one after binding an argument buffer, that argument buffer should also be bound for the fragment function.
-                encoder.setFragmentBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
-            }
+            self.setBuffer(mtlArgumentBuffer, offset: 0, bindIndex: mtlBindingPath.bindIndex, stages: stages)
             
         case .setArgumentBufferArray(let args):
             let bindingPath = args.pointee.bindingPath
@@ -203,12 +229,7 @@ final class FGMTLThreadRenderCommandEncoder {
             let argumentBuffer = args.pointee.argumentBuffer
             let mtlArgumentBuffer = resourceMap[argumentBuffer]
             
-            if stages.contains(.vertex) {
-                encoder.setVertexBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
-            }
-            if stages.contains(.fragment) {
-                encoder.setFragmentBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
-            }
+            self.setBuffer(mtlArgumentBuffer, offset: 0, bindIndex: mtlBindingPath.bindIndex, stages: stages)
             
         case .setBuffer(let args):
             guard let mtlBuffer = resourceMap[args.pointee.buffer] else {
@@ -219,14 +240,7 @@ final class FGMTLThreadRenderCommandEncoder {
             assert(mtlBindingPath.bindIndex < 31, "The maximum number of buffers allowed in the buffer argument table for a single function is 31.")
             
             let stages = mtlBindingPath.stages
-            if stages.contains(.vertex) {
-                self.baseBufferOffsets[mtlBindingPath.bindIndex] = mtlBuffer.offset
-                encoder.setVertexBuffer(mtlBuffer.buffer, offset: Int(args.pointee.offset) + mtlBuffer.offset, index: mtlBindingPath.bindIndex)
-            }
-            if stages.contains(.fragment) {
-                self.baseBufferOffsets[mtlBindingPath.bindIndex + 31] = mtlBuffer.offset
-                encoder.setFragmentBuffer(mtlBuffer.buffer, offset: Int(args.pointee.offset) + mtlBuffer.offset, index: mtlBindingPath.bindIndex)
-            }
+            self.setBuffer(mtlBuffer, offset: Int(args.pointee.offset), bindIndex: mtlBindingPath.bindIndex, stages: stages)
             
         case .setBufferOffset(let args):
             
@@ -440,6 +454,7 @@ final class FGMTLComputeCommandEncoder {
     let encoder: MTLComputeCommandEncoder
     let isAppleSiliconGPU: Bool
     
+    private let boundBuffers : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     private let baseBufferOffsets : UnsafeMutablePointer<Int> // 31, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     private unowned(unsafe) var boundPipelineState: MTLComputePipelineState? = nil
     
@@ -447,12 +462,31 @@ final class FGMTLComputeCommandEncoder {
         self.encoder = encoder
         self.isAppleSiliconGPU = isAppleSiliconGPU
         
+        self.boundBuffers = .allocate(capacity: 31)
+        self.boundBuffers.initialize(repeating: nil, count: 31)
         self.baseBufferOffsets = .allocate(capacity: 31)
         self.baseBufferOffsets.initialize(repeating: 0, count: 31)
     }
     
     deinit {
+        self.boundBuffers.deallocate()
         self.baseBufferOffsets.deallocate()
+    }
+    
+    private func setBuffer(_ mtlBuffer: MTLBufferReference?, offset: Int, bindIndex: Int) {
+        guard let mtlBuffer = mtlBuffer else {
+            return
+        }
+
+        let totalOffset = offset + mtlBuffer.offset
+        
+        self.baseBufferOffsets[bindIndex] = mtlBuffer.offset
+        if self.boundBuffers[bindIndex] == mtlBuffer._buffer.toOpaque() {
+            encoder.setBufferOffset(totalOffset, index: bindIndex)
+        } else {
+            self.boundBuffers[bindIndex] = mtlBuffer._buffer.toOpaque()
+            encoder.setBuffer(mtlBuffer.buffer, offset: totalOffset, index: bindIndex)
+        }
     }
     
     func executePass(_ pass: RenderPassRecord, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], resourceMap: FrameResourceMap<MetalBackend>, stateCaches: MetalStateCaches) async {
@@ -488,8 +522,7 @@ final class FGMTLComputeCommandEncoder {
             
             let argumentBuffer = args.pointee.argumentBuffer
             let mtlArgumentBuffer = resourceMap[argumentBuffer]
-            
-            encoder.setBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
+            self.setBuffer(mtlArgumentBuffer, offset: 0, bindIndex: mtlBindingPath.bindIndex)
             
         case .setArgumentBufferArray(let args):
             let bindingPath = args.pointee.bindingPath
@@ -498,7 +531,7 @@ final class FGMTLComputeCommandEncoder {
             let argumentBuffer = args.pointee.argumentBuffer
             let mtlArgumentBuffer = resourceMap[argumentBuffer]
             
-            encoder.setBuffer(mtlArgumentBuffer.buffer, offset: mtlArgumentBuffer.offset, index: mtlBindingPath.bindIndex)
+            self.setBuffer(mtlArgumentBuffer, offset: 0, bindIndex: mtlBindingPath.bindIndex)
             
         case .setBytes(let args):
             let mtlBindingPath = args.pointee.bindingPath
@@ -507,9 +540,8 @@ final class FGMTLComputeCommandEncoder {
         case .setBuffer(let args):
             let mtlBindingPath = args.pointee.bindingPath
             guard let mtlBuffer = resourceMap[args.pointee.buffer] else { break }
-            encoder.setBuffer(mtlBuffer.buffer, offset: Int(args.pointee.offset) + mtlBuffer.offset, index: mtlBindingPath.bindIndex)
             
-            self.baseBufferOffsets[mtlBindingPath.bindIndex] = mtlBuffer.offset
+            self.setBuffer(mtlBuffer, offset: Int(args.pointee.offset), bindIndex: mtlBindingPath.bindIndex)
             
         case .setBufferOffset(let args):
             let mtlBindingPath = args.pointee.bindingPath
