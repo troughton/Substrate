@@ -160,7 +160,6 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         resourceRegistry.clearDrawables()
     }
     
-    @MainActor
     func presentDrawables(_ drawablesToPresent: [MTLDrawable]) {
         for drawable in drawablesToPresent {
             drawable.present()
@@ -177,13 +176,8 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         let drawablesToPresent = self.drawablesToPresentOnScheduled
         self.drawablesToPresentOnScheduled = []
         if !drawablesToPresent.isEmpty {
-            detach {
-                await withUnsafeContinuation { continuation in
-                    self.commandBuffer.addScheduledHandler { _ in
-                        continuation.resume()
-                    }
-                }
-                await self.presentDrawables(drawablesToPresent)
+            self.commandBuffer.addScheduledHandler { _ in
+                self.presentDrawables(drawablesToPresent)
             }
         }
     }

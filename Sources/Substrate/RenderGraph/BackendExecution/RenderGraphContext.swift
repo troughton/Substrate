@@ -197,6 +197,10 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 }
             }
             
+            if let transientRegistry = resourceMap.transientRegistry {
+                commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
+            }
+            
             for passRecord in passes {
                 passRecord.pass = nil // Release references to the RenderPasses.
             }
