@@ -282,7 +282,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
             let usageEncoderIndex = frameCommandInfo.encoderIndex(for: usage.renderPassRecord)
             
-            if usageEncoderIndex > previousEncoderIndex {
+            if previousEncoderIndex >= 0, usageEncoderIndex > previousEncoderIndex {
                 if pendingUsageIndex < .max {
                     self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: pendingUsageType, stages: pendingUsageStages, allowReordering: !resourceIsRenderTarget), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
                                                               index: pendingUsageIndex))
