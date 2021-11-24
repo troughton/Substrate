@@ -78,6 +78,10 @@ public struct Texture : ResourceProtocol {
         assert(flags.contains(.persistent), "Heap-allocated resources must be persistent.")
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         
+        var descriptor = descriptor
+        descriptor.storageMode = heap.storageMode
+        descriptor.cacheMode = heap.cacheMode
+        
         self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
         
         if !RenderBackend.materialiseResource(self) {
