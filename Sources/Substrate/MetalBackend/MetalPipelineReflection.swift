@@ -236,7 +236,7 @@ final class MetalPipelineReflection : PipelineReflection {
     }
 
     // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
-    func reflectionCacheLinearSearch(_ path: ResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
+    func reflectionCacheLinearSearch(_ path: ResourceBindingPath) -> ArgumentReflection? {
         var i = 0
         while true { // We're guaranteed to always exit this loop since there's a sentinel value with UInt64.max at the end of reflectionCacheKeys
             if self.reflectionCacheKeys[i].value >= path.value {
@@ -247,17 +247,19 @@ final class MetalPipelineReflection : PipelineReflection {
         
         if i < self.reflectionCacheCount, self.reflectionCacheKeys[i] == path {
             return self.reflectionCacheValues[i]
-        } else if returnNearest, i - 1 > 0, i - 1 < self.reflectionCacheCount { // Check for the next lowest binding path.
+        } else if i - 1 > 0, i - 1 < self.reflectionCacheCount { // Check for the next lowest binding path.
             let foundPath = self.reflectionCacheKeys[i - 1]
             if foundPath.stageTypeAndArgBufferMask == path.stageTypeAndArgBufferMask { // Only return this if the stages, argument buffer index, and type all match.
-                return self.reflectionCacheValues[i - 1]
+                let offset = path.bindIndex - foundPath.bindIndex
+                let reflection = self.reflectionCacheValues[i - 1]
+                return offset < reflection.arrayLength ? reflection : nil
             }
         }
         return nil
     }
     
     // returnNearest: if there is no reflection for this path, return the reflection for the next lowest path (i.e. with the next lowest id).
-    func reflectionCacheBinarySearch(_ path: ResourceBindingPath, returnNearest: Bool) -> ArgumentReflection? {
+    func reflectionCacheBinarySearch(_ path: ResourceBindingPath) -> ArgumentReflection? {
         var low = 0
         var high = self.reflectionCacheCount
         
@@ -271,10 +273,12 @@ final class MetalPipelineReflection : PipelineReflection {
         
         if low < self.reflectionCacheCount, self.reflectionCacheKeys[low] == path {
             return self.reflectionCacheValues[low]
-        } else if returnNearest, low - 1 > 0, low - 1 < self.reflectionCacheCount { // Check for the next lowest binding path.
+        } else if low - 1 > 0, low - 1 < self.reflectionCacheCount { // Check for the next lowest binding path.
             let foundPath = self.reflectionCacheKeys[low - 1]
             if foundPath.stageTypeAndArgBufferMask == path.stageTypeAndArgBufferMask { // Only return this if the stages, argument buffer index, and type all match.
-                return self.reflectionCacheValues[low - 1]
+                let offset = path.bindIndex - foundPath.bindIndex
+                let reflection = self.reflectionCacheValues[low - 1]
+                return offset < reflection.arrayLength ? reflection : nil
             }
         }
         return nil
@@ -285,11 +289,11 @@ final class MetalPipelineReflection : PipelineReflection {
         path.arrayIndexMetal = 0
         if path.argumentBufferIndex == nil {
             let path = self.remapArgumentBufferPathForActiveStages(path)
-            return reflectionCacheLinearSearch(path, returnNearest: false)
+            return reflectionCacheLinearSearch(path)
         } else {
             // Resources inside argument buffers aren't separated by pipeline stage.
             path.stages = []
-            return reflectionCacheLinearSearch(path, returnNearest: true) // If the path's in an argument buffer, the id might be higher than the id used for the reflection since array indices within argument buffers are represented as offsets to the id.
+            return reflectionCacheLinearSearch(path) // If the path's in an argument buffer, the id might be higher than the id used for the reflection since array indices within argument buffers are represented as offsets to the id.
         }
     }
     

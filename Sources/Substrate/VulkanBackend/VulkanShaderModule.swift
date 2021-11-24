@@ -383,7 +383,7 @@ extension ArgumentReflection {
         let activeBufferRange = Int(resource.bindingRange.lowerBound)..<Int(resource.bindingRange.upperBound)
         let activeRange: ActiveResourceRange = resourceType == .buffer ? .buffer(activeBufferRange) : .fullResource
         
-        self.init(type: resourceType, bindingPath: resource.bindingPath, usageType: usageType, activeStages: renderAPIStages, activeRange: activeRange)
+        self.init(type: resourceType, bindingPath: resource.bindingPath, arrayLength: resource.arrayLength, usageType: usageType, activeStages: renderAPIStages, activeRange: activeRange)
     }
 }
 
