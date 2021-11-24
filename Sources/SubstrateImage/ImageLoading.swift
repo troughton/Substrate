@@ -188,7 +188,14 @@ public struct ImageFileInfo: Hashable, Codable {
             self.format = .png
             self.width = Int(width)
             self.height = Int(height)
-            self.channelCount = withUnsafePointer(to: state.info_png.color) { Int(lodepng_get_channels($0)) }
+            self.channelCount = withUnsafePointer(to: state.info_png.color) {
+                if lodepng_is_palette_type($0) != 0 {
+                    return lodepng_has_palette_alpha($0) != 0 ? 4 : 3
+                } else {
+                    return Int(lodepng_get_channels($0))
+                }
+            }
+            
             self.alphaMode = withUnsafePointer(to: state.info_png.color, { lodepng_can_have_alpha($0) != 0 }) ? .postmultiplied : .none
             self.bitDepth = Int(state.info_png.color.bitdepth)
             self.isSigned = false
