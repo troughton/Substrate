@@ -26,8 +26,6 @@ protocol PipelineReflection : AnyObject {
     func argumentBufferEncoder(at path: ResourceBindingPath, currentEncoder: UnsafeRawPointer?) -> UnsafeRawPointer?
     
     var threadExecutionWidth: Int { get }
-    
-    var pipelineState: UnsafeRawPointer { get }
 }
 
 extension PipelineReflection {

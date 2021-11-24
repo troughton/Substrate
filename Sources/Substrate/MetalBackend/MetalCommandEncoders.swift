@@ -259,9 +259,10 @@ final class FGMTLThreadRenderCommandEncoder {
                 encoder.setFragmentSamplerState(state, index: mtlBindingPath.bindIndex)
             }
             
-        case .setRenderPipelineState(let statePtr):
-            let state = Unmanaged<MTLRenderPipelineState>.fromOpaque(statePtr.pointee.state).takeUnretainedValue()
-            self.hasFragmentFunction = statePtr.pointee.hasFragmentFunction
+        case .setRenderPipelineDescriptor(let descriptorPtr):
+            let descriptor = descriptorPtr.takeUnretainedValue().value
+            self.hasFragmentFunction = descriptor.fragmentFunction != nil
+            let state = stateCaches[descriptor, renderTarget: renderTarget]!
             if state !== self.boundPipelineState {
                 encoder.setRenderPipelineState(state)
                 self.boundPipelineState = state
