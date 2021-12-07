@@ -96,6 +96,10 @@ struct Binding : Equatable, Comparable {
         if lhs.set == rhs.set && lhs.index < rhs.index { return true }
         return false
     }
+    
+    static func ==(lhs: Binding, rhs: Binding) -> Bool {
+        return lhs.set == rhs.set && lhs.index == rhs.index // The array length doesn't have to match; we just take the max.
+    }
 }
 
 struct PlatformBindings {
@@ -187,6 +191,13 @@ struct Resource : Equatable {
     }
     
     static func ==(lhs: Resource, rhs: Resource) -> Bool {
-        return lhs.type == rhs.type && lhs.binding == rhs.binding && lhs.name == rhs.name
+        var typesEqual = lhs.type == rhs.type
+        
+        if !typesEqual, case .array(let elementA, _) = lhs.type, case .array(let elementB, _) = rhs.type, elementA == elementB {
+            // Count arrays of differing lengths as being equal.
+            typesEqual = true
+        }
+        
+        return typesEqual && lhs.binding == rhs.binding && lhs.name == rhs.name
     }
 }

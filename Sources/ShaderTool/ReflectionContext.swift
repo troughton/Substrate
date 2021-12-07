@@ -161,8 +161,7 @@ final class ReflectionContext {
                     pass.boundResources.insert(sourcePass.boundResources[j], at: i)
                     j += 1
                 } else {
-                    if pass.boundResources[i].binding.arrayLength != sourcePass.boundResources[j].binding.arrayLength ||
-                        pass.boundResources[i].name != sourcePass.boundResources[j].name ||
+                    if pass.boundResources[i].name != sourcePass.boundResources[j].name ||
                         pass.boundResources[i].type != sourcePass.boundResources[j].type {
                         print("Warning: cannot merge \(sourcePass.name) with \(pass.name) since resources \(pass.boundResources[i]) and \(sourcePass.boundResources[j]) share the same binding but are different.")
                         return false
