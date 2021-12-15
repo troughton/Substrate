@@ -31,8 +31,7 @@ final class DescriptorSet {
             } else if self.resources[i].binding.index > resources[j].binding.index {
                 j += 1
             } else {
-                if self.resources[i].binding.arrayLength != resources[j].binding.arrayLength ||
-                    self.resources[i].name != resources[j].name ||
+                if self.resources[i].name != resources[j].name ||
                     self.resources[i].type != resources[j].type {
                     return false
                 }
@@ -58,6 +57,7 @@ final class DescriptorSet {
                 self.resources.insert(resources[j], at: i)
             } else {
                 // The resources are the same.
+                self.resources[i].binding.arrayLength = max(self.resources[i].binding.arrayLength, resources[j].binding.arrayLength)
                 self.resources[i].stages.formUnion(resources[j].stages)
                 self.stages.formUnion(resources[j].stages)
                 
@@ -150,7 +150,7 @@ final class DescriptorSet {
                 let arrayIndexString : String
                 if resource.binding.arrayLength > 1 {
                     arrayIndexString = " + i"
-                    stream.print("for i in 0..<\(resource.binding.arrayLength) {")
+                    stream.print("for i in 0..<self.\(resource.name).count {")
                     stream.print("if let resource = self.\(resource.name)[i] {")
                 } else {
                     arrayIndexString = ""
@@ -164,7 +164,7 @@ final class DescriptorSet {
                     if case .array(let elementType, let length) = type {
                         switch elementType {
                         case  .buffer, .texture, .sampler:
-                            assert(length == resource.binding.arrayLength)
+                            assert(length <= resource.binding.arrayLength)
                             type = elementType
                         default:
                             break
@@ -244,7 +244,7 @@ final class DescriptorSet {
                 if case .array(let elementType, let length) = type {
                     switch elementType {
                     case  .buffer, .texture, .sampler:
-                        assert(length == resource.binding.arrayLength)
+                        assert(length <= resource.binding.arrayLength)
                         type = elementType
                     default:
                         break
@@ -254,7 +254,7 @@ final class DescriptorSet {
                 let arrayIndexString : String
                 if resource.binding.arrayLength > 1 {
                     arrayIndexString = "UInt32(i)"
-                    stream.print("for i in 0..<\(resource.binding.arrayLength) {")
+                    stream.print("for i in 0..<self.\(resource.name).count {")
                     stream.print("if let resource = self.\(resource.name)[i] {")
                 } else {
                     arrayIndexString = "0"

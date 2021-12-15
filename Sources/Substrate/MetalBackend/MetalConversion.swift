@@ -203,7 +203,7 @@ extension ArgumentReflection {
         if case .buffer = argument.type {
             activeRange = .buffer(0..<argument.bufferDataSize)
         }
-        self.init(type: ResourceType(argument.type), bindingPath: bindingPath, usageType: ResourceUsageType(argument.access), activeStages: argument.isActive ? stages : [], activeRange: activeRange)
+        self.init(type: ResourceType(argument.type), bindingPath: bindingPath, arrayLength: argument.arrayLength, usageType: ResourceUsageType(argument.access), activeStages: argument.isActive ? stages : [], activeRange: activeRange)
     }
     
     init(member: MTLStructMember, argumentBuffer: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
@@ -229,7 +229,7 @@ extension ArgumentReflection {
             usageType = ResourceUsageType(member.pointerType()?.access ?? .readOnly) // It might be POD, in which case the usage is read only.
         }
         
-        self.init(type: type, bindingPath: bindingPath, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
+        self.init(type: type, bindingPath: bindingPath, arrayLength: member.arrayType()?.arrayLength ?? 1, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
     }
     
     init?(array: MTLArrayType, argumentBuffer: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
@@ -253,7 +253,7 @@ extension ArgumentReflection {
             activeRange = .buffer(0..<elementPointerType.dataSize)
         }
         
-        self.init(type: type, bindingPath: bindingPath, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
+        self.init(type: type, bindingPath: bindingPath, arrayLength: array.arrayLength, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
     }
     
 }

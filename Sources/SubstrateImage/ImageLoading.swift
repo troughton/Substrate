@@ -77,6 +77,15 @@ extension ImageFileFormat {
     }
 }
 
+fileprivate func inspectPNGChunkByName(state: inout LodePNGState, data: UnsafePointer<UInt8>, end: UnsafePointer<UInt8>, type: String) throws {
+    guard let p = lodepng_chunk_find_const(data, end, type) else {
+        return
+    }
+    if lodepng_inspect_chunk(&state, data.distance(to: p), data, data.distance(to: end)) != 0 {
+        throw ImageLoadingError.invalidData
+    }
+}
+
 public struct ImageFileInfo: Hashable, Codable {
     public let format: ImageFileFormat?
     public let width : Int
@@ -180,9 +189,26 @@ public struct ImageFileInfo: Hashable, Codable {
             var width: UInt32 = 0
             var height: UInt32 = 0
             
-            let result = data.withUnsafeBytes { lodepng_inspect(&width, &height, &state, $0.baseAddress?.assumingMemoryBound(to: UInt8.self), $0.count) }
-            if result != 0 {
-                throw ImageLoadingError.invalidData
+            
+            try data.withUnsafeBytes { data in
+                guard let baseAddress = data.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                    throw ImageLoadingError.invalidData
+                }
+                if lodepng_inspect(&width, &height, &state, baseAddress, data.count) != 0 {
+                    throw ImageLoadingError.invalidData
+                }
+                
+                // end before first IDAT chunk: do not parse more than first part of file for all this.
+                let end = lodepng_chunk_find_const(baseAddress, baseAddress.advanced(by: data.count), "IDAT") ?? baseAddress.advanced(by: data.count) // no IDAT, invalid PNG but extract info anyway
+                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "PLTE")
+                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "cHRM")
+                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "gAMA")
+                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "sRGB")
+                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "sBIT")
+//                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "bKGD")
+//                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "hIST")
+//                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "pHYs")
+                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "iCCP")
             }
             
             self.format = .png
