@@ -400,8 +400,6 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
     
     func clear(afterRenderGraph: RenderGraph) {
         self.lock.withLock {
-            self.processEnqueuedDisposals()
-            
             let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
             let chunkCount = self.chunkCount
@@ -416,6 +414,8 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
                     }
                 }
             }
+            
+            self.processEnqueuedDisposals()
         }
     }
     
@@ -952,7 +952,7 @@ struct HeapProperties: PersistentResourceProperties {
     
     var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
     
-    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
+    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
 }
 
 final class HeapRegistry: PersistentRegistry<Heap> {
