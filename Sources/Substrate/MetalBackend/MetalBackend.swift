@@ -283,15 +283,26 @@ final class MetalBackend : SpecificRenderBackend {
     }
     
     @usableFromInline func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer {
-        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        let bufferReference: MTLBufferReference
+        if buffer._usesPersistentRegistry {
+            bufferReference = resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        } else {
+            bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+        }
         return bufferReference.buffer.contents() + bufferReference.offset + range.lowerBound
+        
     }
     
     @usableFromInline func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
         #if os(macOS) || targetEnvironment(macCatalyst)
         if range.isEmpty || self.isAppleSiliconGPU { return }
         if buffer.descriptor.storageMode == .managed {
-            let mtlBuffer = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+            let mtlBuffer: MTLBufferReference
+            if buffer._usesPersistentRegistry {
+                mtlBuffer = resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+            } else {
+                mtlBuffer = self.activeContext?.resourceMap.bufferForCPUAccess(buffer) ?? resourceRegistry.accessLock.withReadLock { resourceRegistry[buffer]! }
+            }
             let offsetRange = (range.lowerBound + mtlBuffer.offset)..<(range.upperBound + mtlBuffer.offset)
             #if targetEnvironment(macCatalyst)
             unsafeBitCast(mtlBuffer.buffer, to: MTLBufferShim.self).didModifyRange(NSMakeRange(offsetRange.lowerBound, offsetRange.count))
