@@ -56,7 +56,7 @@ public final class GPUResourceUploader {
         }
     }
     
-    private static func _flush(cacheMode: CPUCacheMode, buffer: Buffer, allocationRange: (lowerBound: Int, upperBound: Int)) -> RenderGraphExecutionWaitToken {
+    private static func _flush(cacheMode: CPUCacheMode, buffer: Buffer, allocationRange: Range<Int>) -> RenderGraphExecutionWaitToken {
         let waitToken = self.renderGraph.execute()
         self.allocator(cacheMode: cacheMode).didSubmit(buffer: buffer, allocationRange: allocationRange, submissionIndex: waitToken.executionIndex)
         return waitToken
@@ -88,15 +88,13 @@ public final class GPUResourceUploader {
         public let stagingBufferRange: Range<Int>
         public private(set) var contents: UnsafeMutableRawBufferPointer
         let cacheMode: CPUCacheMode
-        let allocationRange: (lowerBound: Int, upperBound: Int)
         
         private var flushExecutionToken: RenderGraphExecutionWaitToken? = nil
         
-        init(cacheMode: CPUCacheMode, stagingBuffer: Buffer, stagingBufferRange: Range<Int>, allocationRange: (lowerBound: Int, upperBound: Int)) {
+        init(cacheMode: CPUCacheMode, stagingBuffer: Buffer, stagingBufferRange: Range<Int>) {
             self.cacheMode = cacheMode
             self.stagingBuffer = stagingBuffer
             self.stagingBufferRange = stagingBufferRange
-            self.allocationRange = allocationRange
             
             self.contents = stagingBuffer.withMutableContents(range: self.stagingBufferRange, { contents, writtenRange in
                 writtenRange = writtenRange.lowerBound..<writtenRange.lowerBound
@@ -111,10 +109,24 @@ public final class GPUResourceUploader {
         public func didModifyBuffer() {
             precondition(self.flushExecutionToken == nil)
             
-            if !self.stagingBufferRange.isEmpty {
+            if !self.stagingBufferRange.isEmpty, self.stagingBuffer.descriptor.storageMode != .shared {
                 RenderBackend.buffer(self.stagingBuffer, didModifyRange: self.stagingBufferRange)
             }
         }
+        
+        public func didFlush(token: RenderGraphExecutionWaitToken) {
+            precondition(self.flushExecutionToken == nil)
+            
+            GPUResourceUploader.queue.sync {
+                GPUResourceUploader.allocator(cacheMode: self.stagingBuffer.descriptor.cacheMode).didSubmit(buffer: self.stagingBuffer, allocationRange: self.stagingBufferRange, submissionIndex: token.executionIndex)
+            }
+            
+            self.flushExecutionToken = token
+            
+            self.stagingBuffer = nil
+            self.contents = .init(start: nil, count: 0) // Invalidate this token to avoid use-after-free issues
+        }
+        
         
         @discardableResult
         public func flush() -> RenderGraphExecutionWaitToken {
@@ -123,14 +135,10 @@ public final class GPUResourceUploader {
             }
             
             let executionToken = GPUResourceUploader.queue.sync {
-                return GPUResourceUploader._flush(cacheMode: self.cacheMode, buffer: self.stagingBuffer, allocationRange: self.allocationRange)
+                return GPUResourceUploader._flush(cacheMode: self.cacheMode, buffer: self.stagingBuffer, allocationRange: self.stagingBufferRange)
             }
             
-            self.flushExecutionToken = executionToken
-            
-            self.stagingBuffer = nil
-            self.contents = .init(start: nil, count: 0) // Invalidate this token to avoid use-after-free issues
-            
+            self.didFlush(token: executionToken)
             return executionToken
         }
     }
@@ -140,11 +148,11 @@ public final class GPUResourceUploader {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
         // NOTE: this happens outside of the queue so we don't block concurrent execution of uploads.
-        let (stagingBuffer, stagingBufferOffset, allocationRange) = self.queue.sync { self.allocator(cacheMode: cacheMode) }.withBufferContents(byteCount: length, alignedTo: alignment) { contents, writtenRange in
+        let (stagingBuffer, _, allocationRange) = self.queue.sync { self.allocator(cacheMode: cacheMode) }.withBufferContents(byteCount: length, alignedTo: alignment) { contents, writtenRange in
             writtenRange = 0..<0 // Prevent an unnecessary flush.
         }
         
-        return UploadBufferToken(cacheMode: cacheMode, stagingBuffer: stagingBuffer, stagingBufferRange: stagingBufferOffset..<(stagingBufferOffset + length), allocationRange: allocationRange)
+        return UploadBufferToken(cacheMode: cacheMode, stagingBuffer: stagingBuffer, stagingBufferRange: allocationRange)
     }
     
     @discardableResult
@@ -259,15 +267,15 @@ extension GPUResourceUploader {
         let buffer: Buffer
         let bufferContents: UnsafeMutableRawPointer
         
-        var inUseRangeStart = 0
-        var inUseRangeEnd = 0
+        var freeRangeStart = 0
+        var freeRangeEnd = -1
         
-        let pendingCommands: RingBuffer<(command: UInt64, allocationRange: (lowerBound: Int, upperBound: Int), tempBuffer: Buffer?)> = .init()
+        let pendingCommands: RingBuffer<(command: UInt64, allocationRange: Range<Int>, tempBuffer: Buffer?)> = .init()
         
         public init(renderGraphQueue: Queue, stagingBufferLength: Int = 128 * 1024 * 1024, cacheMode: CPUCacheMode) {
             self.renderGraphQueue = renderGraphQueue
             self.capacity = stagingBufferLength
-            self.buffer = Buffer(length: stagingBufferLength, storageMode: .managed, cacheMode: cacheMode, usage: .blitSource, flags: .persistent)
+            self.buffer = Buffer(length: stagingBufferLength, storageMode: .shared, cacheMode: cacheMode, usage: .blitSource, flags: .persistent)
             self.bufferContents = RenderBackend.bufferContents(for: self.buffer, range: self.buffer.range)
         }
         
@@ -275,8 +283,7 @@ extension GPUResourceUploader {
             self.buffer.dispose()
         }
         
-        
-        func didSubmit(buffer: Buffer, allocationRange: (lowerBound: Int, upperBound: Int), submissionIndex: UInt64) {
+        func didSubmit(buffer: Buffer, allocationRange: Range<Int>, submissionIndex: UInt64) {
             self.queue.sync {
                 if buffer == self.buffer {
                     let index = self.pendingCommands.firstIndex(where: { $0.command == .max && $0.allocationRange == allocationRange })!
@@ -297,8 +304,53 @@ extension GPUResourceUploader {
             }
         }
         
-        func withBufferContents(byteCount: Int, alignedTo alignment: Int, perform: (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void) rethrows -> (buffer: Buffer, offset: Int, allocationRange: (lowerBound: Int, upperBound: Int)) {
+        private func rangeIsInBounds(range: Range<Int>, limit: Int) -> Bool {
+            if range.lowerBound > limit {
+                return false
+            }
+            return limit >= range.upperBound // == limit - range.lowerBound >= range.count
+        }
+        
+        private func findAllocation(byteCount: Int, alignedTo alignment: Int) -> Range<Int>? {
+            dispatchPrecondition(condition: .onQueue(self.queue))
+            self.processCompletedCommands()
             
+            if self.freeRangeStart == self.freeRangeEnd {
+                return nil // We're full.
+            }
+            
+            var alignedPosition = self.freeRangeStart.roundedUpToMultipleOfPowerOfTwo(of: alignment)
+            var allocationRange = alignedPosition..<(alignedPosition + byteCount)
+            
+            if self.freeRangeEnd < self.freeRangeStart {
+                // The end of the free range is behind the cursor, so use the tail end of the buffer if we can.
+                if !self.rangeIsInBounds(range: allocationRange, limit: self.capacity) {
+                    // We have to go from the start of the buffer.
+                    
+                    if self.freeRangeEnd < 0 {
+                        // There's no available space; freeRangeEnd being < 0 means that none of the previous allocations have been freed yet.
+                        return nil
+                    }
+                    
+                    alignedPosition = 0
+                    allocationRange = 0..<byteCount
+                    
+                    if !self.rangeIsInBounds(range: allocationRange, limit: self.freeRangeEnd) {
+                        return nil
+                    }
+                 
+                }
+            } else if !self.rangeIsInBounds(range: allocationRange, limit: self.freeRangeEnd) {
+                return nil
+            }
+            
+            self.freeRangeStart = allocationRange.upperBound
+            self.pendingCommands.append((.max, allocationRange, nil)) // We don't know what command this is associated with yet, but we'll set that in didSubmit.
+            
+            return allocationRange
+        }
+        
+        func withBufferContents(byteCount: Int, alignedTo alignment: Int, perform: (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void) rethrows -> (buffer: Buffer, offset: Int, allocationRange: Range<Int>) {
             if byteCount > self.capacity {
                 // Allocate a buffer specifically for this staging command.
                 let buffer = Buffer(length: byteCount, storageMode: .shared, cacheMode: self.buffer.descriptor.cacheMode, usage: .blitSource, flags: .persistent)
@@ -313,72 +365,50 @@ extension GPUResourceUploader {
                 }
                 
                 self.queue.sync {
-                    self.pendingCommands.append((.max, (0, 0), buffer))
+                    self.pendingCommands.append((.max, 0..<byteCount, buffer))
                 }
                 
-                return (buffer, 0, (0, 0))
+                return (buffer, 0, 0..<buffer.length)
             }
             
             if byteCount == 0 {
                 var range = 0..<0
                 try perform(UnsafeMutableRawBufferPointer(start: nil, count: 0), &range)
-                return (self.buffer, 0, (lowerBound: 0, upperBound: 0))
+                return (self.buffer, 0, 0..<0)
             }
             
             while true {
-                if let (bufferRange, allocationRange) = self.queue.sync(execute: { () -> (Range<Int>, (lowerBound: Int, upperBound: Int))? in
-                    self.processCompletedCommands()
-                    
-                    var alignedPosition = self.inUseRangeEnd.roundedUpToMultipleOfPowerOfTwo(of: alignment)
-                    var allocationRange = alignedPosition..<(alignedPosition + byteCount)
-                    
-                    if allocationRange.endIndex > self.capacity {
-                        alignedPosition = 0
-                        allocationRange = alignedPosition..<(alignedPosition + byteCount) // 0..<byteCount
-                    }
-                    
-                    if self.inUseRangeStart > self.inUseRangeEnd {
-                        if (self.inUseRangeStart..<self.capacity).overlaps(allocationRange) ||
-                            (0..<self.inUseRangeEnd).overlaps(allocationRange) {
-                            return nil
-                        }
-                    } else {
-                        if (self.inUseRangeStart..<self.inUseRangeEnd).overlaps(allocationRange) {
-                            return nil
-                        }
-                    }
-                    
-                    let suballocatedRange = (self.inUseRangeEnd, allocationRange.endIndex)
-                    self.inUseRangeEnd = allocationRange.endIndex
-                    self.pendingCommands.append((.max, suballocatedRange, nil)) // We don't know what command this is associated with yet, but we'll set that in didSubmit.
-                    
-                    if self.inUseRangeEnd < self.inUseRangeStart {
-                        precondition((0..<self.inUseRangeEnd).contains(allocationRange))
-                    } else {
-                        self.inUseRangeStart = min(self.inUseRangeStart, allocationRange.lowerBound)
-                        precondition((self.inUseRangeStart..<self.inUseRangeEnd).contains(allocationRange))
-                    }
-                    
-                    return (allocationRange, suballocatedRange)
-                }) {
+                if let bufferRange = self.queue.sync(execute: { self.findAllocation(byteCount: byteCount, alignedTo: alignment) }) {
                     var writtenRange = 0..<byteCount
                     try perform(UnsafeMutableRawBufferPointer(start: self.bufferContents.advanced(by: bufferRange.lowerBound), count: byteCount), &writtenRange)
-                    if !writtenRange.isEmpty {
+                    if !writtenRange.isEmpty, self.buffer.storageMode != .shared {
                         RenderBackend.buffer(self.buffer, didModifyRange: (bufferRange.lowerBound + writtenRange.lowerBound)..<(bufferRange.lowerBound + writtenRange.lowerBound + writtenRange.count))
                     }
                     
-                    return (self.buffer, bufferRange.lowerBound, allocationRange)
+                    return (self.buffer, bufferRange.lowerBound, bufferRange)
                 }
             }
         }
         
+        private func deallocate(range: Range<Int>) {
+            if self.pendingCommands.allSatisfy({ $0.tempBuffer != nil }) {
+                // If there are no pending commands, mark the entire staging buffer as being free.
+                self.freeRangeStart = 0
+                self.freeRangeEnd = -1
+            } else {
+                // Otherwise, move the free range's end forward to include the newly unused space.
+                self.freeRangeEnd = range.upperBound
+            }
+        }
+        
         private func processCompletedCommands() {
+            dispatchPrecondition(condition: .onQueue(self.queue))
             while self.pendingCommands.first?.command ?? .max <= self.renderGraphQueue.lastCompletedCommand {
                 let (_, range, tempBuffer) = self.pendingCommands.popFirst()!
                 if let tempBuffer = tempBuffer {
                     tempBuffer.dispose()
                 } else {
-                    self.inUseRangeStart = range.upperBound
+                    self.deallocate(range: range)
                 }
             }
         }

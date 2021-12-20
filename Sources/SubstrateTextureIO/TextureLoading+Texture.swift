@@ -201,10 +201,10 @@ extension Image {
                 }
                 uploadBufferToken.didModifyBuffer()
                 
-                GPUResourceUploader.runBlitPass { bce in
+                let executionToken = GPUResourceUploader.runBlitPass { bce in
                     bce.copy(from: buffer, sourceOffset: sourceOffset, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
                 }
-                _ = uploadBufferToken.flush()
+                uploadBufferToken.didFlush(token: executionToken)
                 return
             }
         }
