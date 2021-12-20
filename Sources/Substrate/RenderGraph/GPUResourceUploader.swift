@@ -117,9 +117,8 @@ public final class GPUResourceUploader {
         public func didFlush(token: RenderGraphExecutionWaitToken) {
             precondition(self.flushExecutionToken == nil)
             
-            GPUResourceUploader.queue.sync {
-                GPUResourceUploader.allocator(cacheMode: self.stagingBuffer.descriptor.cacheMode).didSubmit(buffer: self.stagingBuffer, allocationRange: self.stagingBufferRange, submissionIndex: token.executionIndex)
-            }
+            // GPUResourceUploader.allocator is thread-safe given the allocator is guaranteed to already exist, and didSubmit is internally synchronised on the allocator.
+            GPUResourceUploader.allocator(cacheMode: self.stagingBuffer.descriptor.cacheMode).didSubmit(buffer: self.stagingBuffer, allocationRange: self.stagingBufferRange, submissionIndex: token.executionIndex)
             
             self.flushExecutionToken = token
             
@@ -135,7 +134,7 @@ public final class GPUResourceUploader {
             }
             
             let executionToken = GPUResourceUploader.queue.sync {
-                return GPUResourceUploader._flush(cacheMode: self.cacheMode, buffer: self.stagingBuffer, allocationRange: self.stagingBufferRange)
+                return GPUResourceUploader.renderGraph.execute()
             }
             
             self.didFlush(token: executionToken)
