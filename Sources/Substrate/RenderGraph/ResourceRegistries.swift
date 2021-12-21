@@ -584,7 +584,10 @@ final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
         let resource = self.allocateHandle(flags: flags)
         self.sharedStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)
         self.transientStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)
-        baseResource.descriptor.usageHint.formUnion(.pixelFormatView)
+
+        if baseResource.descriptor.pixelFormat.channelCount != viewDescriptor.pixelFormat.channelCount || baseResource.descriptor.pixelFormat.bytesPerPixel != viewDescriptor.pixelFormat.bytesPerPixel {
+            baseResource.descriptor.usageHint.formUnion(.pixelFormatView)
+        }
         
         return resource
     }
