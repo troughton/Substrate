@@ -321,7 +321,7 @@ public enum ImageAllocator {
     }
     
     @inlinable
-    static func allocateMemoryDefault(byteCount: Int, alignment: Int, zeroed: Bool) -> (UnsafeMutableRawBufferPointer, ImageAllocator) {
+    public static func allocateMemoryDefault(byteCount: Int, alignment: Int, zeroed: Bool) -> (UnsafeMutableRawBufferPointer, ImageAllocator) {
 #if canImport(Darwin)
         let pageSize = Int(getpagesize())
         if byteCount >= pageSize {

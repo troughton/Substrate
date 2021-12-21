@@ -185,6 +185,10 @@ extension Image {
                     await GPUResourceUploader.runBlitPass { bce in
                         bce.copy(from: substrateBuffer, sourceOffset: 0, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
                     }
+                    return true
+                }
+                if success {
+                    return
                 }
             }
 #endif
@@ -196,10 +200,10 @@ extension Image {
                 }
                 uploadBufferToken.didModifyBuffer()
                 
-                await GPUResourceUploader.runBlitPass { bce in
+                let executionToken = await GPUResourceUploader.runBlitPass { bce in
                     bce.copy(from: buffer, sourceOffset: sourceOffset, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
                 }
-                _ = await uploadBufferToken.flush()
+                await uploadBufferToken.didFlush(token: executionToken)
                 return
             }
         }
@@ -250,9 +254,11 @@ extension Image {
 }
 
 public struct DirectToTextureImageLoadingDelegate: ImageLoadingDelegate {
+    let storageMode: StorageMode
     let options: TextureLoadingOptions
     
-    public init(options: TextureLoadingOptions = .default) {
+    public init(storageMode: StorageMode = .managed, options: TextureLoadingOptions = .default) {
+        self.storageMode = storageMode
         self.options = options
     }
     
@@ -270,6 +276,11 @@ public struct DirectToTextureImageLoadingDelegate: ImageLoadingDelegate {
     }
     
     public func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) async throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator) {
+        if self.storageMode != .private {
+            // We're going to use copyBytes rather than blitting from GPU-accessible memory, so we can allocate using the default allocator.
+            return ImageAllocator.allocateMemoryDefault(byteCount: byteCount, alignment: alignment, zeroed: zeroed)
+        }
+        
         let uploadBufferToken = await GPUResourceUploader.extendedLifetimeUploadBuffer(length: byteCount, alignment: alignment, cacheMode: .defaultCache)
         if zeroed {
             _ = uploadBufferToken.contents.initializeMemory(as: UInt8.self, repeating: 0)
@@ -460,7 +471,7 @@ extension Texture {
     private func fillInternal(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
-        let textureData = try Texture.loadSourceImage(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(options: options))
+        let textureData = try Texture.loadSourceImage(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(storageMode: storageMode, options: options))
         
         if isPartiallyInitialised {
             let descriptor = TextureDescriptor(type: .type2D, format: textureData.preferredPixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
@@ -477,7 +488,7 @@ extension Texture {
     private func fillInternal(imageData: Data, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
-        let textureData = try Texture.loadSourceImage(decodingImageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(options: options))
+        let textureData = try Texture.loadSourceImage(decodingImageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(storageMode: storageMode, options: options))
         
         if isPartiallyInitialised {
             let descriptor = TextureDescriptor(type: .type2D, format: textureData.preferredPixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)

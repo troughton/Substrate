@@ -446,8 +446,6 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
     
     func clear(afterRenderGraph: RenderGraph) {
         self.lock.withLock {
-            self.processEnqueuedDisposals()
-            
             let renderGraphInactiveMask: UInt8 = ~(1 << afterRenderGraph.queue.index)
             
             let chunkCount = self.chunkCount
@@ -462,6 +460,8 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
                     }
                 }
             }
+            
+            self.processEnqueuedDisposals()
         }
     }
     
