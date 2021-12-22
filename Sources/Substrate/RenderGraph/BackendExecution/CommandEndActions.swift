@@ -58,7 +58,14 @@ final class CommandEndActionManager {
                 for action in self.deviceCommandEndActions {
                     let requirement = action.after
                     let isComplete = QueueRegistry.allQueues.enumerated()
-                        .allSatisfy { i, queue in queue.lastCompletedCommand >= requirement[i] }
+                        .allSatisfy { i, testQueue in
+                            if queue == testQueue {
+                                // We have a more recent lastCompletedCommand than the queue does.
+                                return command >= requirement[i]
+                            } else {
+                                return queue.lastCompletedCommand >= requirement[i]
+                            }
+                        }
                     if !isComplete {
                         break
                     }
