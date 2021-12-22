@@ -295,6 +295,18 @@ extension ResourceProtocolImpl {
         }
     }
     
+    public var hasPendingRenderGraph: Bool {
+        guard self._usesPersistentRegistry else {
+            return true
+        }
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+        if let activeRenderGraphs = Self.persistentRegistry.persistentChunks[chunkIndex].activeRenderGraphsOptional {
+            let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+            return activeRenderGraphMask != 0
+        }
+        return false
+    }
+    
     public var isValid : Bool {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)

@@ -389,7 +389,7 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
         while i < self.enqueuedDisposals.count {
             let resource = self.enqueuedDisposals[i]
             
-            if !resource.isKnownInUse {
+            if !resource.hasPendingRenderGraph {
                 self.disposeImmediately(resource)
                 self.enqueuedDisposals.remove(at: i, preservingOrder: false)
             } else {
@@ -421,7 +421,7 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
     
     func dispose(_ resource: Resource) {
         self.lock.withLock {
-            if resource.isKnownInUse {
+            if resource.hasPendingRenderGraph {
                 self.enqueuedDisposals.append(resource)
             } else {
                 self.disposeImmediately(resource)
