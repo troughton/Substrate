@@ -49,7 +49,10 @@ final class CommandEndActionManager {
     }
     
     func didCompleteCommand(_ command: UInt64, on queue: Queue) {
-        self.queue.async {
+        // NOTE: this must be synchronous since we need to release any used resources before CPU-side observers
+        // are notified that the command is completed; this is particularly important when the CPU
+        // is waiting for resources to be freed from a heap.
+        self.queue.sync {
             do {
                 var processedCount = 0
                 for action in self.deviceCommandEndActions {
