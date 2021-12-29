@@ -386,6 +386,19 @@ extension ResourceProtocolImpl {
         }
     }
     
+    public var hasPendingRenderGraph: Bool {
+        guard self._usesPersistentRegistry else {
+            return true
+        }
+        let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+        if let activeRenderGraphs = Self.persistentRegistry.persistentChunks?[chunkIndex].activeRenderGraphsOptional {
+            let activeRenderGraphMask = UInt8.AtomicRepresentation.atomicLoad(at: activeRenderGraphs.advanced(by: indexInChunk), ordering: .relaxed)
+            return activeRenderGraphMask != 0
+        }
+        return false
+    }
+        
+    
     /// Returns whether the resource is known to currently be in use by the CPU or GPU.
     public var isKnownInUse: Bool {
         guard let activeRenderGraphs = self._activeRenderGraphsPointer else {
