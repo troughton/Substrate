@@ -514,16 +514,20 @@ final class MetalBackend : SpecificRenderBackend {
             
             if signalIndex < 0 { continue }
             
-            let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: frameCommandInfo.commandEncoders[sourceIndex].commandBufferIndex)
+            var maxCommandBufferIndex = frameCommandInfo.commandEncoders[sourceIndex].commandBufferIndex
             
-            let fence = await MetalFenceHandle(encoderIndex: sourceIndex, queue: queue, commandBufferIndex: commandBufferSignalValue)
+            let fence = MetalFenceHandle(encoderIndex: sourceIndex, queue: queue)
             
             compactedResourceCommands.append(CompactedResourceCommand<MetalCompactedResourceCommandType>(command: .updateFence(fence, afterStages: signalStages), index: signalIndex, order: .after))
             
             for dependentIndex in dependentRange where reductionMatrix.dependency(from: dependentIndex, on: sourceIndex) {
                 let dependency = dependencies.dependency(from: dependentIndex, on: sourceIndex)!
                 compactedResourceCommands.append(CompactedResourceCommand<MetalCompactedResourceCommandType>(command: .waitForFence(fence, beforeStages: MTLRenderStages(dependency.wait.stages)), index: dependency.wait.index, order: .before))
+                
+                maxCommandBufferIndex = max(maxCommandBufferIndex, frameCommandInfo.commandEncoders[dependentIndex].commandBufferIndex)
             }
+            
+            fence.commandBufferIndex = frameCommandInfo.globalCommandBufferIndex(frameIndex: maxCommandBufferIndex)
         }
     }
 

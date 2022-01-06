@@ -17,12 +17,12 @@ struct MetalFenceHandle : Equatable {
         self.index = index
     }
     
-    init(encoderIndex: Int, queue: Queue, commandBufferIndex: UInt64) async {
-        self = await MetalFenceRegistry.instance.allocate(queue: queue, commandBufferIndex: commandBufferIndex)
+    init(encoderIndex: Int, queue: Queue) {
+        self = MetalFenceRegistry.instance.allocate(queue: queue)
 #if SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         _ = encoderIndex
 #else
-        await self.fence.label = "Encoder \(encoderIndex) Fence"
+        self.fence.label = "Encoder \(encoderIndex) Fence"
 #endif
     }
     
@@ -31,16 +31,18 @@ struct MetalFenceHandle : Equatable {
     }
     
     var fence : MTLFence {
-        get async {
-            assert(self.isValid)
-            return await MetalFenceRegistry.instance.fence(index: Int(self.index))
+        get {
+            return MetalFenceRegistry.instance.fence(index: Int(self.index))
         }
     }
     
     var commandBufferIndex : UInt64 {
-        get async {
+        get {
             assert(self.isValid)
-            return await MetalFenceRegistry.instance.commandBufferIndex(index: Int(self.index))
+            return MetalFenceRegistry.instance.commandBufferIndices[Int(self.index)].1
+        }
+        nonmutating set {
+            MetalFenceRegistry.instance.commandBufferIndices[Int(self.index)].1 = newValue
         }
     }
     
@@ -48,9 +50,10 @@ struct MetalFenceHandle : Equatable {
 }
 
 
-final actor MetalFenceRegistry {
+final class MetalFenceRegistry {
     public static var instance: MetalFenceRegistry! = nil
     
+    let lock = SpinLock()
     public let allocator : ResizingAllocator
     public var activeIndices = [UInt32]()
     public var freeIndices = RingBuffer<UInt32>()
@@ -71,7 +74,10 @@ final actor MetalFenceRegistry {
         self.fences.deinitialize(count: Int(self.maxIndex))
     }
     
-    public func allocate(queue: Queue, commandBufferIndex: UInt64) -> MetalFenceHandle {
+    public func allocate(queue: Queue) -> MetalFenceHandle {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        
         let index : UInt32
         if let reusedIndex = self.freeIndices.popFirst() {
             index = reusedIndex
@@ -83,20 +89,15 @@ final actor MetalFenceRegistry {
             self.fences.advanced(by: Int(index)).initialize(to: Unmanaged.passRetained(self.device.makeFence()!))
         }
 
-        self.commandBufferIndices[Int(index)] = (queue, commandBufferIndex)
+        self.commandBufferIndices[Int(index)] = (queue, .max)
         self.activeIndices.append(index)
         
         return MetalFenceHandle(index: index)
     }
     
     // Work around Swift 5.5 compiler crash by providing a dedicated getter.
-    func fence(index: Int) async -> MTLFence {
-        return self.fences[index].takeUnretainedValue()
-    }
-    
-    // Work around Swift 5.5 compiler crash by providing a dedicated getter.
-    func commandBufferIndex(index: Int) async -> UInt64 {
-        return self.commandBufferIndices[index].1
+    func fence(index: Int) -> MTLFence {
+        return self.lock.withLock { self.fences[index].takeUnretainedValue() }
     }
     
     func delete(at index: UInt32) {
@@ -104,20 +105,21 @@ final actor MetalFenceRegistry {
     }
 
     func clearCompletedFences() {
-        var i = 0
-        while i < self.activeIndices.count {
-            let index = self.activeIndices[i]
-            if self.commandBufferIndices[Int(index)].1 <= self.commandBufferIndices[Int(index)].0.lastCompletedCommand {
-                self.delete(at: index)
-                self.activeIndices.remove(at: i, preservingOrder: false)
-            } else {
-                i += 1
+        self.lock.withLock {
+            var i = 0
+            while i < self.activeIndices.count {
+                let index = self.activeIndices[i]
+                if self.commandBufferIndices[Int(index)].1 <= self.commandBufferIndices[Int(index)].0.lastCompletedCommand {
+                    self.delete(at: index)
+                    self.activeIndices.remove(at: i, preservingOrder: false)
+                } else {
+                    i += 1
+                }
             }
         }
     }
     
-    @inlinable
-    public func ensureCapacity(_ capacity: Int) {
+    private func ensureCapacity(_ capacity: Int) {
         if self.allocator.capacity < capacity {
             let oldCapacity = self.allocator.capacity
             let newCapacity = max(2 * oldCapacity, capacity)

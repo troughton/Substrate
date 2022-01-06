@@ -221,9 +221,10 @@ extension VulkanBackend {
 
                 let label = "Encoder \(sourceIndex) Event"
                 let sourceEncoder = frameCommandInfo.commandEncoders[sourceIndex]
-                let commandBufferSignalValue = frameCommandInfo.signalValue(commandBufferIndex: sourceEncoder.commandBufferIndex)
-                let fence = VulkanEventHandle(label: label, queue: queue, commandBufferIndex: commandBufferSignalValue)
-
+                let fence = VulkanEventHandle(label: label, queue: queue)
+                
+                fence.commandBufferIndex = frameCommandInfo.globalCommandBufferIndex(frameIndex: frameCommandInfo.commandEncoders[dependentIndex].commandBufferIndex)
+                
                 if sourceEncoder.type == .draw {
                     signalIndex = max(signalIndex, sourceEncoder.commandRange.last!) // We can't signal within a VkRenderPass instance.
                 }

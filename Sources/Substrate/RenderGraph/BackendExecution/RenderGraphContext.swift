@@ -151,7 +151,7 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 return
             }
             
-            var frameCommandInfo = FrameCommandInfo<Backend.RenderTargetDescriptor>(passes: passes, initialCommandBufferSignalValue: self.queueCommandBufferIndex + 1)
+            var frameCommandInfo = FrameCommandInfo<Backend.RenderTargetDescriptor>(passes: passes, initialCommandBufferGlobalIndex: self.queueCommandBufferIndex + 1)
             self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
             await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
             

@@ -682,7 +682,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                                     textureIsStored: { frameCommandInfo.storedTextures.contains($0) },
                                     encoderDependencies: &self.commandEncoderDependencies,
                                     waitEventValues: &queueCommandWaitIndices,
-                                    signalEventValue: frameCommandInfo.signalValue(commandBufferIndex: commandBufferIndex))
+                                    signalEventValue: frameCommandInfo.globalCommandBufferIndex(frameIndex: commandBufferIndex))
         }
         
         frameCommandInfo.commandEncoders[commandEncoderIndex].queueCommandWaitIndices = queueCommandWaitIndices
