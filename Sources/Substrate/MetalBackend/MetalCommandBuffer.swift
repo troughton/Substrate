@@ -173,8 +173,6 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             onCompletion(self)
         }
         
-        self.commandBuffer.commit()
-        
         let drawablesToPresent = self.drawablesToPresentOnScheduled
         self.drawablesToPresentOnScheduled = []
         if !drawablesToPresent.isEmpty {
@@ -182,6 +180,8 @@ final class MetalCommandBuffer: BackendCommandBuffer {
                 self.presentDrawables(drawablesToPresent)
             }
         }
+        
+        self.commandBuffer.commit()
     }
     
     var error: Error? {
