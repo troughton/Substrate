@@ -27,7 +27,7 @@ struct CommandEncoderInfo {
 
 struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
     let globalFrameIndex: UInt64
-    let baseCommandBufferSignalValue: UInt64
+    let baseCommandBufferGlobalIndex: UInt64
     
     let passes: [RenderPassRecord]
     let passEncoderIndices: [Int]
@@ -37,10 +37,10 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
     // storedTextures contain all textures that are stored to (i.e. textures that aren't eligible to be memoryless on iOS).
     let storedTextures: [Texture]
     
-    init(passes: [RenderPassRecord], initialCommandBufferSignalValue: UInt64) {
+    init(passes: [RenderPassRecord], initialCommandBufferGlobalIndex: UInt64) {
         self.globalFrameIndex = RenderGraph.globalSubmissionIndex
         self.passes = passes
-        self.baseCommandBufferSignalValue = initialCommandBufferSignalValue
+        self.baseCommandBufferGlobalIndex = initialCommandBufferGlobalIndex
         
         var storedTextures = [Texture]()
         let renderTargetDescriptors = FrameCommandInfo.generateRenderTargetDescriptors(passes: passes, storedTextures: &storedTextures)
@@ -141,8 +141,8 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
         return self.encoder(for: pass.passIndex)
     }
     
-    public func signalValue(commandBufferIndex: Int) -> UInt64 {
-        return self.baseCommandBufferSignalValue + UInt64(commandBufferIndex)
+    public func globalCommandBufferIndex(frameIndex: Int) -> UInt64 {
+        return self.baseCommandBufferGlobalIndex + UInt64(frameIndex)
     }
     
     // Generates a render target descriptor, if applicable, for each pass.
