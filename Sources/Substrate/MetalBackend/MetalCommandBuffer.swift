@@ -162,18 +162,18 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         self.commandBuffer.addCompletedHandler { _ in
             onCompletion(self)
         }
-        self.commandBuffer.commit()
         
         let drawablesToPresent = self.drawablesToPresentOnScheduled
         self.drawablesToPresentOnScheduled = []
         if !drawablesToPresent.isEmpty {
-            RenderGraph.jobManager.asyncOnMainThread {
-                self.commandBuffer.waitUntilScheduled()
+            self.commandBuffer.addScheduledHandler { commandBuffer in
                 for drawable in drawablesToPresent {
                     drawable.present()
                 }
             }
         }
+        
+        self.commandBuffer.commit()
     }
     
     var error: Error? {
