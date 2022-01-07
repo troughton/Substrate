@@ -96,12 +96,14 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
     
         let executionResult = RenderGraphExecutionResult()
         
+        let continuation = DeferredContinuation()
+        
+        commandBuffer.commit { _ in
+            continuation.resume()
+        }
+        
         self.renderGraphQueue.submitCommand(commandIndex: queueCBIndex) {
-            let commandBuffer = await withUnsafeContinuation { (continuation: UnsafeContinuation<Backend.CommandBuffer, Never>) in
-                commandBuffer.commit(onCompletion: { (commandBuffer) in
-                    continuation.resume(returning: commandBuffer)
-                })
-            }
+            await continuation.wait()
             
             if let error = commandBuffer.error {
                 print("Error executing command buffer \(queueCBIndex): \(error)")
@@ -114,7 +116,7 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
                 await executionResult.setGPUEndTime(to: commandBuffer.gpuEndTime)
                 await onCompletion(executionResult)
             }
-                         
+            
             await self.renderGraphQueue.didCompleteCommand(queueCBIndex)
             
             if isLast {
