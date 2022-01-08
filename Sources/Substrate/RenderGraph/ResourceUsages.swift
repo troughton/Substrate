@@ -32,15 +32,15 @@ extension ChunkArray where Element == ResourceUsage {
         return nil
     }
     
-    mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator.StaticTaskView, passCommands: ChunkArray<RenderGraphCommand>.RandomAccessView, passCommandOffset: Int) {
+    mutating func mergeOrAppendUsage(_ usage: ResourceUsage, resource: Resource, allocator: TagAllocator, passCommands: ChunkArray<RenderGraphCommand>.RandomAccessView, passCommandOffset: Int) {
         guard !self.isEmpty, self.last.renderPassRecord == usage.renderPassRecord else {
-            self.append(usage, allocator: .tagTaskView(allocator))
+            self.append(usage, allocator: .init(allocator))
             return
         }
         
         let subresourceCount = resource.subresourceCount
         guard let mergePointer = self.pointerToLast(where: { $0.renderPassRecord == usage.renderPassRecord && $0.activeRange.intersects(with: usage.activeRange, subresourceCount: subresourceCount) }) else {
-            self.append(usage, allocator: .tagTaskView(allocator))
+            self.append(usage, allocator: .init(allocator))
             return
         }
         
@@ -52,13 +52,13 @@ extension ChunkArray where Element == ResourceUsage {
             
             let lastUsageBefore = self.pointerToLast(where: { $0.renderPassRecord == usage.renderPassRecord && $0.activeRange.intersects(with: usage.activeRange, subresourceCount: subresourceCount) && $0.commandRange.lowerBound <= usage.commandRange.lowerBound })!
             
-            _ = lastUsageBefore.pointee.mergeWithUsage(&usage, allocator: .tagTaskView(allocator))
+            _ = lastUsageBefore.pointee.mergeWithUsage(&usage, allocator: .init(allocator))
             return
         }
         
         var previousLast = mergePointer.pointee
         
-        if mergePointer.pointee.mergeWithUsage(&usage, allocator: .tagTaskView(allocator)) {
+        if mergePointer.pointee.mergeWithUsage(&usage, allocator: .init(allocator)) {
             return
         }
 
@@ -92,14 +92,14 @@ extension ChunkArray where Element == ResourceUsage {
             }
         }
         
-        self.append(usage, allocator: .tagTaskView(allocator))
+        self.append(usage, allocator: .init(allocator))
         
         // If the previous usage extended past the usage being added, add it again to the end of the list.
         if previousLast.commandRange.upperBound >= usage.commandRange.upperBound {
             previousLast.commandRange = usage.commandRange.upperBound..<previousLast.commandRange.upperBound
             
             if passCommands[previousLast.commandRange.offset(by: -passCommandOffset)].contains(where: { $0.isGPUActionCommand }) {
-                self.append(previousLast, allocator: .tagTaskView(allocator))
+                self.append(previousLast, allocator: .init(allocator))
             }
         }
     }

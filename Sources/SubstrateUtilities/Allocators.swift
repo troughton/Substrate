@@ -60,7 +60,7 @@ public final class Allocator {
         case .system:
             return UnsafeMutableRawPointer.allocate(byteCount: byteCount, alignment: alignment)
         case .tag(let tagAllocator):
-            return tagAllocator.dynamicTaskView.allocate(bytes: byteCount, alignment: alignment)
+            return tagAllocator.dynamicThreadView.allocate(bytes: byteCount, alignment: alignment)
         case .threadLocalTag(let tagAllocator):
             return tagAllocator.allocate(bytes: byteCount, alignment: alignment)
         case .lockingTag(let tagAllocator):
@@ -78,7 +78,7 @@ public final class Allocator {
         case .system:
             return UnsafeMutablePointer.allocate(capacity: capacity)
         case .tag(let tagAllocator):
-            return tagAllocator.dynamicTaskView.allocate(capacity: capacity)
+            return tagAllocator.dynamicThreadView.allocate(capacity: capacity)
         case .threadLocalTag(let tagAllocator):
             return tagAllocator.allocate(capacity: capacity)
         case .lockingTag(let tagAllocator):

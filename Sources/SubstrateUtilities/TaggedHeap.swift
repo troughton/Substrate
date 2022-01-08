@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Atomics
 
 extension UnsafeMutableRawBufferPointer {
     fileprivate func contains(_ pointer: UnsafeRawPointer) -> Bool {
@@ -31,6 +32,7 @@ public enum TaggedHeap {
     }
     
     static let maxTasksPerAllocator = 512
+    static let maxThreadPoolWidth = 128 // GCD pool width (64) rounded up to the next power of two.
     
     public typealias Tag = UInt64
     public static var blockSize = 64 * 1024
@@ -238,7 +240,7 @@ public struct LockingTagAllocator {
     
     @usableFromInline
     struct Header {
-        @usableFromInline var lock : SpinLock
+        @usableFromInline var lock : UInt32.AtomicRepresentation
         @usableFromInline let tag : TaggedHeap.Tag
         @usableFromInline var memory : UnsafeMutableRawPointer
         @usableFromInline var offset : Int
@@ -246,7 +248,7 @@ public struct LockingTagAllocator {
         
         @inlinable
         init(tag: TaggedHeap.Tag, memory: UnsafeMutableRawPointer, offset: Int, allocationSize: Int) {
-            self.lock = SpinLock()
+            self.lock = .init(LockState.free.rawValue)
             self.tag = tag
             self.memory = memory
             self.offset = offset
@@ -286,8 +288,22 @@ public struct LockingTagAllocator {
         self.header.initialize(to: header)
     }
     
-    public func dispose() {
-        self.header.pointee.lock.deinit()
+    private var lockPointer: UnsafeMutablePointer<UInt32.AtomicRepresentation> {
+        return UnsafeMutableRawPointer(self.header).assumingMemoryBound(to: UInt32.AtomicRepresentation.self)
+    }
+    
+    @usableFromInline
+    func lock() {
+        let lockPointer = self.lockPointer
+        while UInt32.AtomicRepresentation.atomicLoad(at: lockPointer, ordering: .relaxed) == LockState.taken.rawValue ||
+                UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: lockPointer, ordering: .acquiring) == LockState.taken.rawValue {
+            yieldCPU()
+        }
+    }
+    
+    @usableFromInline
+    func unlock() {
+        _ = UInt32.AtomicRepresentation.atomicExchange(LockState.free.rawValue, at: self.lockPointer, ordering: .releasing)
     }
     
     @inlinable
@@ -295,10 +311,9 @@ public struct LockingTagAllocator {
         return TaggedHeap.tagMatches(self.header.pointee.tag, pointer: self.header.pointee.memory)
     }
     
-    @inlinable
     public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
-        self.header.pointee.lock.lock()
-        defer { self.header.pointee.lock.unlock() }
+        self.lock()
+        defer { self.unlock() }
         return self.header.pointee.allocate(bytes: bytes, alignment: alignment)
     }
     
@@ -307,7 +322,6 @@ public struct LockingTagAllocator {
         return self.allocate(bytes: capacity * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment).bindMemory(to: T.self, capacity: capacity)
     }
     
-    @inlinable
     public func deallocate(_ pointer: UnsafeMutableRawPointer) {
         // No-op.
     }
@@ -368,7 +382,7 @@ public struct TagAllocator {
     }
     
     @inlinable
-    public init(tag: TaggedHeap.Tag, threadCount: Int = TaggedHeap.maxTasksPerAllocator) {
+    public init(tag: TaggedHeap.Tag, threadCount: Int = TaggedHeap.maxThreadPoolWidth) {
         let firstBlock = TaggedHeap.allocateBlocks(tag: tag, count: 1)
         self.memory = firstBlock
         
@@ -434,7 +448,7 @@ public struct TagAllocator {
     }
     
     /// Calls a statically-set function to determine the current thread.
-    public struct DynamicTaskView {
+    public struct DynamicThreadView {
         @usableFromInline var allocator : TagAllocator
         
         @inlinable
@@ -444,12 +458,12 @@ public struct TagAllocator {
         
         @inlinable
         public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
-            return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: self.allocator.executorMap.bucketIndexForCurrentTask)
+            return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: self.allocator.executorMap.bucketIndexForCurrentThread)
         }
         
         @inlinable
         public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
-            return self.allocator.allocate(capacity: capacity, threadIndex: self.allocator.executorMap.bucketIndexForCurrentTask)
+            return self.allocator.allocate(capacity: capacity, threadIndex: self.allocator.executorMap.bucketIndexForCurrentThread)
         }
 
         @inlinable
@@ -464,31 +478,31 @@ public struct TagAllocator {
     }
     
     @inlinable
-    public var dynamicTaskView : DynamicTaskView {
-        return DynamicTaskView(allocator: self)
+    public var dynamicThreadView : DynamicThreadView {
+        return DynamicThreadView(allocator: self)
     }
     
     /// Locked to a single executor determined when the executor view was created.
     public struct StaticTaskView {
         @usableFromInline var allocator : TagAllocator
-        public var threadIndex : Int
+        public var taskIndex : Int
         
         @inlinable
-        public init(allocator: TagAllocator, threadIndex: Int) {
+        public init(allocator: TagAllocator, taskIndex: Int) {
             self.allocator = allocator
-            self.threadIndex = threadIndex
+            self.taskIndex = taskIndex
         }
         
         @inlinable
         public func allocate(bytes: Int, alignment: Int) -> UnsafeMutableRawPointer {
-            assert(self.threadIndex == self.allocator.executorMap.bucketIndexForCurrentTask)
-            return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: self.threadIndex)
+            assert(self.taskIndex == self.allocator.executorMap.bucketIndexForCurrentTask)
+            return self.allocator.allocate(bytes: bytes, alignment: alignment, threadIndex: self.taskIndex)
         }
         
         @inlinable
         public func allocate<T>(type: T.Type = T.self, capacity: Int) -> UnsafeMutablePointer<T> {
-            assert(self.threadIndex == self.allocator.executorMap.bucketIndexForCurrentTask)
-            return self.allocator.allocate(capacity: capacity, threadIndex: self.threadIndex)
+            assert(self.taskIndex == self.allocator.executorMap.bucketIndexForCurrentTask)
+            return self.allocator.allocate(capacity: capacity, threadIndex: self.taskIndex)
         }
 
         @inlinable
@@ -502,10 +516,10 @@ public struct TagAllocator {
         }
     }
     
-    /// NOTE: staticTaskView can only be used within the current task.
+    // NOTE: staticTaskView can only be used within the current task.
     @inlinable
     public var staticTaskView: StaticTaskView {
-        return StaticTaskView(allocator: self, threadIndex: self.executorMap.bucketIndexForCurrentTask)
+        return StaticTaskView(allocator: self, taskIndex: self.executorMap.bucketIndexForCurrentTask)
     }
 }
 
@@ -612,6 +626,12 @@ struct ExecutorAtomicLinearProbingMap {
         }
         
         return self.bucketIndex(for: task)
+    }
+    
+    @inlinable
+    public var bucketIndexForCurrentThread: Int {
+        let threadID = pthread_self()
+        return self.bucketIndex(for: UnsafeRawPointer(threadID))
     }
 }
 

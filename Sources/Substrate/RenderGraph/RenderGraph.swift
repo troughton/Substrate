@@ -1358,7 +1358,7 @@ public final class RenderGraph {
             self.markActive(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses)
         }
         
-        let allocator = resourceUsagesAllocator.staticTaskView
+        let allocator = resourceUsagesAllocator
         
         var addedToList = [Bool](repeating: false, count: renderPasses.count)
         var activePasses = [RenderPassRecord]()
@@ -1408,7 +1408,7 @@ public final class RenderGraph {
             passRecord.commandRange = startCommandIndex..<commandCount
             assert(passRecord.commandRange!.count > 0)
             
-            let randomAccessCommandView = passRecord.commands.makeRandomAccessView(allocator: .tagTaskView(allocator))
+            let randomAccessCommandView = passRecord.commands.makeRandomAccessView(allocator: .init(allocator))
             
             for (resource, resourceUsage) in passRecord.resourceUsages where resourceUsage.stages != .cpuBeforeRender {
                 assert(resource.isValid)
