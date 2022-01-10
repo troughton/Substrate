@@ -752,9 +752,7 @@ final class MetalBackend : SpecificRenderBackend {
                 }
             }
         }
-        Task {
-            await MetalFenceRegistry.instance.clearCompletedFences()
-        }
+        MetalFenceRegistry.instance.clearCompletedFences()
         MetalResourcePurgeabilityManager.instance.processPurgeabilityChanges()
     }
 
