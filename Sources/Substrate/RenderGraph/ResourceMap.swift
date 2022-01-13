@@ -72,10 +72,12 @@ struct PersistentResourceMap<R : ResourceProtocolImpl & Equatable, V> {
         let allocatedChunkCount = Int.AtomicRepresentation.atomicLoad(at: self.allocatedChunkCount, ordering: .relaxed)
         if chunkIndex >= allocatedChunkCount {
             self.lock.lock()
-            while chunkIndex >= Int.AtomicRepresentation.atomicLoad(at: self.allocatedChunkCount, ordering: .relaxed) {
-                let newChunkIndex = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(by: 1, at: self.allocatedChunkCount, ordering: .relaxed)
-                self.chunks.advanced(by: newChunkIndex).initialize(to: .init(allocator: self.allocator))
+            var currentChunkCount = Int.AtomicRepresentation.atomicLoad(at: self.allocatedChunkCount, ordering: .relaxed)
+            while chunkIndex >= currentChunkCount {
+                self.chunks.advanced(by: currentChunkCount).initialize(to: .init(allocator: self.allocator))
+                currentChunkCount += 1
             }
+            Int.AtomicRepresentation.atomicStore(currentChunkCount, at: self.allocatedChunkCount, ordering: .relaxed)
             self.lock.unlock()
         }
         return (self.chunks[chunkIndex].keys.advanced(by: indexInChunk),
