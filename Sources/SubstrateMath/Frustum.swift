@@ -140,9 +140,6 @@ public struct Frustum<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codab
     public let farPlane : FrustumPlane<Scalar>
     
     public init(worldToProjectionMatrix: Matrix4x4<Scalar>) {
-        // FIXME: These planes are complete guesses (as to which is near, far, left, right etc.
-        // Thankfully, nothing relies on that currently.
-        
         let vp = worldToProjectionMatrix
         
         let n1x = (vp[0][3] + vp[0][0])
@@ -156,11 +153,11 @@ public struct Frustum<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codab
         let n2z = (vp[2][3] - vp[2][0])
         self.rightPlane = FrustumPlane(normalVector: SIMD3<Scalar>(n2x, n2y, n2z), constant: (vp[3][3] - vp[3][0]))
         
-        let n3x = (vp[0][3] - vp[0][0])
-        let n3y = (vp[1][3] - vp[1][0])
-        let n3z = (vp[2][3] - vp[2][0])
+        let n3x = (vp[0][3] - vp[0][1])
+        let n3y = (vp[1][3] - vp[1][1])
+        let n3z = (vp[2][3] - vp[2][1])
         
-        self.topPlane = FrustumPlane(normalVector: SIMD3<Scalar>(n3x, n3y, n3z), constant: (vp[3][3] - vp[3][0]))
+        self.topPlane = FrustumPlane(normalVector: SIMD3<Scalar>(n3x, n3y, n3z), constant: (vp[3][3] - vp[3][1]))
         
         let n4x = (vp[0][3] + vp[0][1])
         let n4y = (vp[1][3] + vp[1][1])
