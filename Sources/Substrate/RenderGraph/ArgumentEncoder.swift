@@ -42,7 +42,7 @@ public struct BufferBacked<T> {
         }
     }
     
-    var isDirty: Bool = false
+    @usableFromInline var isDirty: Bool = false
     @usableFromInline var _buffer: OffsetView<Buffer>?
     
     public var buffer : OffsetView<Buffer>? {
@@ -54,6 +54,7 @@ public struct BufferBacked<T> {
         }
     }
     
+    @inlinable
     public init(wrappedValue: T?) {
         self.wrappedValue = wrappedValue
         self._buffer = nil
