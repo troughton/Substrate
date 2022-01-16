@@ -158,7 +158,7 @@ public struct ResourceUsage {
         self.stages = stages
         self.activeRange = activeRange
         self.renderPassRecord = renderPass
-        self.commandRange = Range(firstCommandOffset...firstCommandOffset)
+        self.commandRange = firstCommandOffset..<(firstCommandOffset + 1)
         self.isIndirectlyBound = isIndirectlyBound
     }
     
