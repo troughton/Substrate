@@ -6,13 +6,15 @@
 //
 
 public struct SIMDVector3f {
-    public var x = Vector4f() // stores x0, x1, x2, x3
-    public var y = Vector4f() // stores y0, y1, y2, y3
-    public var z = Vector4f() // etc.
+    public var x: Vector4f // stores x0, x1, x2, x3
+    public var y: Vector4f // stores y0, y1, y2, y3
+    public var z: Vector4f // etc.
     
     @inlinable
     public init() {
-        
+        self.x = Vector4f()
+        self.y = Vector4f()
+        self.z = Vector4f()
     }
     
     @inlinable
@@ -24,14 +26,17 @@ public struct SIMDVector3f {
 }
 
 public struct SIMDVector4f {
-    public var x = Vector4f() // stores x0, x1, x2, x3
-    public var y = Vector4f() // stores y0, y1, y2, y3
-    public var z = Vector4f() // etc.
-    public var w = Vector4f()
+    public var x: Vector4f // stores x0, x1, x2, x3
+    public var y: Vector4f // stores y0, y1, y2, y3
+    public var z: Vector4f // etc.
+    public var w: Vector4f
     
     @inlinable
     public init() {
-        
+        self.x = Vector4f()
+        self.y = Vector4f()
+        self.z = Vector4f()
+        self.w = Vector4f()
     }
     
     @inlinable
@@ -44,14 +49,17 @@ public struct SIMDVector4f {
 }
 
 public struct SIMDAffineMatrix {
-    public var c0 = SIMDVector3f()
-    public var c1 = SIMDVector3f()
-    public var c2 = SIMDVector3f()
-    public var c3 = SIMDVector3f()
+    public var c0: SIMDVector3f
+    public var c1: SIMDVector3f
+    public var c2: SIMDVector3f
+    public var c3: SIMDVector3f
     
     @inlinable
     public init() {
-        
+        self.c0 = SIMDVector3f()
+        self.c1 = SIMDVector3f()
+        self.c2 = SIMDVector3f()
+        self.c3 = SIMDVector3f()
     }
     
     @inlinable
@@ -64,14 +72,17 @@ public struct SIMDAffineMatrix {
 }
 
 public struct SIMDMatrix {
-    public var x = SIMDVector4f()
-    public var y = SIMDVector4f()
-    public var z = SIMDVector4f()
-    public var w = SIMDVector4f()
+    public var x: SIMDVector4f
+    public var y: SIMDVector4f
+    public var z: SIMDVector4f
+    public var w: SIMDVector4f
     
     @inlinable
     public init() {
-        
+        self.x = SIMDVector4f()
+        self.y = SIMDVector4f()
+        self.z = SIMDVector4f()
+        self.w = SIMDVector4f()
     }
     
     @inlinable

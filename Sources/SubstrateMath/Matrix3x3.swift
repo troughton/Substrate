@@ -37,7 +37,7 @@ public struct Matrix3x3<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
     }
     
     /// Access the `col`th column vector
-    @inlinable
+    @inlinable @inline(__always)
     public subscript(col: Int) -> SIMD3<Scalar> {
         get {
             switch col {
@@ -59,7 +59,7 @@ public struct Matrix3x3<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
     }
     
     /// Access the `col`th column vector and then `row`th element
-    @inlinable
+    @inlinable @inline(__always)
     public subscript(row: Int, col: Int) -> Scalar {
         get {
             return self[col][row]

@@ -31,6 +31,7 @@ public struct StateBacked<T, State: AnyObject> {
     public var wrappedValue: T
     public var state: State?
     
+    @inlinable
     public init(wrappedValue: T) {
         self.wrappedValue = wrappedValue
     }
@@ -45,6 +46,7 @@ public struct FunctionDescriptor : Hashable, ExpressibleByStringLiteral, Sendabl
         
     }
     
+    @inlinable
     public init(functionName: String, constants: FunctionConstants? = nil) {
         self.name = functionName
         self.constants = constants

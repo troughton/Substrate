@@ -70,7 +70,7 @@ public struct AffineMatrix2D<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable
     }
     
     /// Access the `col`th column vector
-    @inlinable
+    @inlinable @inline(__always)
     public subscript(col: Int) -> SIMD2<Scalar> {
         get {
             switch col {
@@ -91,7 +91,7 @@ public struct AffineMatrix2D<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable
         }
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public subscript(row row: Int) -> SIMD3<Scalar> {
         get {
             switch row {

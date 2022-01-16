@@ -40,7 +40,7 @@ public struct Matrix4x4<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
     }
     
     /// Access the `col`th column vector
-    @inlinable
+    @inlinable @inline(__always)
     public subscript(col: Int) -> SIMD4<Scalar> {
         get {
             switch col {
@@ -64,7 +64,7 @@ public struct Matrix4x4<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
     }
     
     /// Access the `col`th column vector and then `row`th element
-    @inlinable
+    @inlinable @inline(__always)
     public subscript(row: Int, col: Int) -> Scalar {
         get {
             return self[col][row]
@@ -230,6 +230,7 @@ extension Matrix4x4 {
 
 extension Matrix4x4 {
     /// Returns the identity matrix
+    @inlinable
     public static var identity : Matrix4x4 { return Matrix4x4(diagonal: SIMD4<Scalar>(repeating: 1)) }
 }
 

@@ -86,7 +86,7 @@ public struct AffineMatrix<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, 
         }
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public subscript(row row: Int) -> SIMD4<Scalar> {
         get {
             switch row {
@@ -109,7 +109,7 @@ public struct AffineMatrix<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, 
         }
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public subscript(row: Int, col: Int) -> Scalar {
         get {
             switch row {

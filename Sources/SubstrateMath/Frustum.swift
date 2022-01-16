@@ -101,8 +101,6 @@ public struct FrustumPlane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, 
     }
 }
 
-private let isGL = false
-
 public struct Frustum<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     enum PlaneDirection {
         case far
@@ -139,6 +137,7 @@ public struct Frustum<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codab
     public let nearPlane : FrustumPlane<Scalar>
     public let farPlane : FrustumPlane<Scalar>
     
+    @inlinable
     public init(worldToProjectionMatrix: Matrix4x4<Scalar>) {
         let vp = worldToProjectionMatrix
         
@@ -164,15 +163,7 @@ public struct Frustum<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codab
         let n4z = (vp[2][3] + vp[2][1])
         self.bottomPlane = FrustumPlane(normalVector: SIMD3<Scalar>(n4x, n4y, n4z), constant: (vp[3][3] + vp[3][1]))
         
-        let n5xGL = (vp[0][3] + vp[0][2])
-        let n5yGL = (vp[1][3] + vp[1][2])
-        let n5zGL = (vp[2][3] + vp[2][2])
-        
-        if isGL {
-            self.nearPlane = FrustumPlane(normalVector: SIMD3<Scalar>(n5xGL, n5yGL, n5zGL), constant: (vp[3][3] + vp[3][2]))
-        } else {
-            self.nearPlane = FrustumPlane(normalVector: SIMD3<Scalar>(vp[0][2], vp[1][2], vp[2][2]), constant: vp[3][2])
-        }
+        self.nearPlane = FrustumPlane(normalVector: SIMD3<Scalar>(vp[0][2], vp[1][2], vp[2][2]), constant: vp[3][2])
         
         let n6x = (vp[0][3] - vp[0][2])
         let n6y = (vp[1][3] - vp[1][2])

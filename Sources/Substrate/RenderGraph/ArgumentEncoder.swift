@@ -56,6 +56,7 @@ public struct BufferBacked<T> {
         }
     }
     
+    @inlinable
     public init(wrappedValue: T?) {
         precondition(_isPOD(T.self))
         self.wrappedValue = wrappedValue
