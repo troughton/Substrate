@@ -184,7 +184,8 @@ public struct Queue : Equatable, Sendable {
         
         UInt64.AtomicRepresentation.atomicStore(DispatchTime.now().uptimeNanoseconds, at: QueueRegistry.shared.lastCompletionTimes.advanced(by: Int(self.index)), ordering: .relaxed)
         
-        var nextTask = QueueRegistry.shared.lock.withLock({ QueueRegistry.shared.commandWaitTasks[Int(self.index)] })!
+        guard var nextTask = QueueRegistry.shared.lock.withLock({ QueueRegistry.shared.commandWaitTasks[Int(self.index)] }) else { return }
+        
         while nextTask.command < commandIndex {
             await nextTask.task.get()
             nextTask = nextTask.next!
