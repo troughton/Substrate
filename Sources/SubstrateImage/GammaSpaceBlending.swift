@@ -142,13 +142,13 @@ extension Image where ComponentType == Float {
     public mutating func convertPremultLinearBlendedSRGBToPostmultSRGBBlendedSRGB() {
         if self.alphaMode == .none { return }
         
-        precondition(self.alphaMode == .premultiplied, "The texture must use postmultiplied alpha.")
+        precondition(self.alphaMode == .premultiplied, "The texture must use premultiplied alpha.")
         precondition(self.colorSpace == .sRGB, "The texture must be in the sRGB color space.")
         
         defer { self.alphaMode = .postmultiplied }
         
         /*
-         Assume postmultiplied alpha:
+         Assume premultiplied alpha:
          
          Correct:
          blendR = linearToSRGB(sRGBToLinear(baseR) * (1.0 - alpha) + sRGBToLinear(r) * alpha)
