@@ -171,19 +171,19 @@ public struct Buffer : ResourceProtocol {
         RenderBackend.registerExternalResource(Resource(self), backingResource: externalResource)
     }
     
-    public func withContents<A>(_ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
-        return try self.withContents(range: self.range, perform)
+    public func withContents<A>(checkHasCPUAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
+        return try self.withContents(range: self.range, checkHasCPUAccess: checkHasCPUAccess, perform)
     }
     
-    public func withContents<A>(range: Range<Int>, _ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
-        self.checkHasCPUAccess(accessType: .read)
+    public func withContents<A>(range: Range<Int>, checkHasCPUAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
+        if checkHasCPUAccess { self.checkHasCPUAccess(accessType: .read) }
         let contents = RenderBackend.bufferContents(for: self, range: range)
         return try /* await */perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
     }
     
     @inlinable
-    func _withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
-        self.checkHasCPUAccess(accessType: .readWrite)
+    func _withMutableContents<A>(range: Range<Int>, checkHasCPUAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
+        if checkHasCPUAccess { self.checkHasCPUAccess(accessType: .readWrite) }
         let contents = RenderBackend.bufferContents(for: self, range: range)
         var modifiedRange = range
         
@@ -197,23 +197,23 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public func withMutableContents<A>(_ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /* reasync */ rethrows -> A {
-        return try self.withMutableContents(range: self.range, perform)
+    public func withMutableContents<A>(checkHasCPUAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /* reasync */ rethrows -> A {
+        return try self.withMutableContents(range: self.range, checkHasCPUAccess: checkHasCPUAccess, perform)
     }
     
     @inlinable
-    public func withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
-        return try self._withMutableContents(range: range, perform)
+    public func withMutableContents<A>(range: Range<Int>, checkHasCPUAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
+        return try self._withMutableContents(range: range, checkHasCPUAccess: checkHasCPUAccess, perform)
     }
     
     @inlinable
-    public func withContents<A>(_ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) async rethrows -> A {
-        return try await self.withContents(range: self.range, perform)
+    public func withContents<A>(waitForAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) async rethrows -> A {
+        return try await self.withContents(range: self.range, waitForAccess: waitForAccess, perform)
     }
     
     @inlinable
-    public func withContents<A>(range: Range<Int>, _ perform: (UnsafeRawBufferPointer) throws -> A) async rethrows -> A {
-        await self.waitForCPUAccess(accessType: .read)
+    public func withContents<A>(range: Range<Int>, waitForAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) throws -> A) async rethrows -> A {
+        if waitForAccess { await self.waitForCPUAccess(accessType: .read) }
         if let contents = RenderBackend.bufferContents(for: self, range: range) {
             return try perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
         } else {
@@ -222,15 +222,15 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public func withMutableContents<A>(_ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) async rethrows -> A {
-        return try await self.withMutableContents(range: self.range, perform)
+    public func withMutableContents<A>(waitForAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) async rethrows -> A {
+        return try await self.withMutableContents(range: self.range, waitForAccess: waitForAccess, perform)
     }
     
     @inlinable
-    public func withMutableContents<A>(range: Range<Int>, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) throws -> A) async rethrows -> A {
-        await self.waitForCPUAccess(accessType: .readWrite)
+    public func withMutableContents<A>(range: Range<Int>, waitForAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) throws -> A) async rethrows -> A {
+        if waitForAccess { await self.waitForCPUAccess(accessType: .readWrite) }
         if let _ = RenderBackend.bufferContents(for: self, range: range) {
-            return try self._withMutableContents(range: range, perform)
+            return try self._withMutableContents(range: range, checkHasCPUAccess: false, perform)
         } else {
             preconditionFailure("Buffer \(self) has not been materialised at the time of the withMutableContents call.")
         }
