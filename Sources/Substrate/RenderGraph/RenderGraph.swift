@@ -759,8 +759,8 @@ public final class RenderGraph {
     private var _lastGraphCPUTime = 1000.0 / 60.0
     private var _lastGraphGPUTime = 1000.0 / 60.0
     
-    var submissionNotifyQueue = [() async -> Void]()
-    var completionNotifyQueue = [() async -> Void]()
+    var submissionNotifyQueue = [@Sendable () async -> Void]()
+    var completionNotifyQueue = [@Sendable () async -> Void]()
     let context : _RenderGraphContext
     
     public let transientRegistryIndex : Int
@@ -1300,11 +1300,9 @@ public final class RenderGraph {
         }
     }
     
-    func compile() async -> ([RenderPassRecord], DependencyTable<DependencyType>, Set<Resource>) {
+    func compile(renderPasses: [RenderPassRecord]) async -> ([RenderPassRecord], DependencyTable<DependencyType>, Set<Resource>) {
         let signpostState = Self.signposter.beginInterval("Compile RenderGraph")
         defer { Self.signposter.endInterval("Compile RenderGraph", signpostState) }
-        
-        let renderPasses = self.renderPasses
         
         let resourceUsagesAllocator = TagAllocator(tag: RenderGraphTagType.resourceUsageNodes.tag)
         let executionAllocator = TagAllocator(tag: RenderGraphTagType.renderGraphExecution.tag)
@@ -1432,18 +1430,24 @@ public final class RenderGraph {
     }
     
     @available(*, deprecated, renamed: "onSubmission")
-    public func waitForGPUSubmission(_ function: @escaping () -> Void) async {
-        self.submissionNotifyQueue.append(function)
+    public func waitForGPUSubmission(_ function: @Sendable @escaping () -> Void) async {
+        self.renderPassLock.withLock {
+            self.submissionNotifyQueue.append(function)
+        }
     }
     
     /// Enqueue `function` to be executed once the render graph is submitted to the GPU.
-    public func onSubmission(_ function: @escaping () async -> Void) async {
-        self.submissionNotifyQueue.append(function)
+    public func onSubmission(_ function: @Sendable @escaping () async -> Void) async {
+        self.renderPassLock.withLock {
+            self.submissionNotifyQueue.append(function)
+        }
     }
     
     /// Enqueue `function` to be executed once the render graph has completed on the GPU.
-    public func onGPUCompletion(_ function: @escaping () async -> Void) async {
-        self.completionNotifyQueue.append(function)
+    public func onGPUCompletion(_ function: @Sendable @escaping () async -> Void) async {
+        self.renderPassLock.withLock {
+            self.completionNotifyQueue.append(function)
+        }
     }
     
     /// Returns true if this RenderGraph already has the maximum number of GPU frames in-flight, and would have to wait
@@ -1463,8 +1467,6 @@ public final class RenderGraph {
         self.previousFrameCompletionTime = completionTime
         self._lastGraphCPUTime = Double(elapsed) * 1e-6
         //            print("Frame \(currentFrameIndex) completed in \(self.lastGraphCPUTime)ms.")
-        
-        self.completionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
     }
     
     /// Process the render passes that have been enqueued on this render graph through calls to `addPass()` or similar by culling passes that don't produce
@@ -1481,28 +1483,45 @@ public final class RenderGraph {
         let signpostState = Self.signposter.beginInterval("Execute RenderGraph", id: self.signpostID)
         defer { Self.signposter.endInterval("Execute RenderGraph", signpostState) }
         
-        return await Self.executionLock.withLock { // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
+        return await Self.executionLock.withLock { () -> RenderGraphExecutionWaitToken in // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
+            
             self.renderPassLock.lock()
+            defer {
+                self.renderPassLock.unlock()
+            }
+            
             let renderPasses = self.renderPasses
-            self.renderPassLock.unlock()
+            let submissionNotifyQueue = self.submissionNotifyQueue
+            let completionNotifyQueue = self.completionNotifyQueue
+            
+            self.renderPasses.removeAll(keepingCapacity: true)
+            self.completionNotifyQueue.removeAll()
+            self.submissionNotifyQueue.removeAll(keepingCapacity: true)
+            
+            defer {
+                if !submissionNotifyQueue.isEmpty {
+                    Task.detached {
+                        for item in submissionNotifyQueue {
+                            await item()
+                        }
+                    }
+                }
+            }
             
             guard !renderPasses.isEmpty else {
-                self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
-                self.submissionNotifyQueue.removeAll(keepingCapacity: true)
-                
-                self.completionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
-                self.completionNotifyQueue.removeAll(keepingCapacity: true)
-                
                 return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
             }
             
             let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
             await Self.$activeRenderGraph.withValue(self) {
                 await self.context.executeRenderGraph {
-                    let (passes, _, usedResources) = await self.compile()
+                    let (passes, _, usedResources) = await self.compile(renderPasses: renderPasses)
                     return (passes, usedResources)
                 } onCompletion: { executionResult in
                     await self.didCompleteRender(executionResult)
+                    for item in completionNotifyQueue {
+                        await item()
+                    }
                 }
             }
             Self.signposter.endInterval("Execute RenderGraph on Context", signpostState)
@@ -1511,10 +1530,6 @@ public final class RenderGraph {
             renderPasses.forEach {
                 $0.dispose()
             }
-            
-            self.submissionNotifyQueue.forEach { observer in _ = Task.runDetached { await observer() } }
-            self.submissionNotifyQueue.removeAll(keepingCapacity: true)
-            self.completionNotifyQueue.removeAll(keepingCapacity: true)
             
             self.reset()
             
