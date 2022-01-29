@@ -248,7 +248,7 @@ public struct LockingTagAllocator {
         
         @inlinable
         init(tag: TaggedHeap.Tag, memory: UnsafeMutableRawPointer, offset: Int, allocationSize: Int) {
-            self.lock = .init(LockState.free.rawValue)
+            self.lock = .init(SpinLockState.free.rawValue)
             self.tag = tag
             self.memory = memory
             self.offset = offset
@@ -295,15 +295,15 @@ public struct LockingTagAllocator {
     @usableFromInline
     func lock() {
         let lockPointer = self.lockPointer
-        while UInt32.AtomicRepresentation.atomicLoad(at: lockPointer, ordering: .relaxed) == LockState.taken.rawValue ||
-                UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: lockPointer, ordering: .acquiring) == LockState.taken.rawValue {
+        while UInt32.AtomicRepresentation.atomicLoad(at: lockPointer, ordering: .relaxed) == SpinLockState.taken.rawValue ||
+                UInt32.AtomicRepresentation.atomicExchange(SpinLockState.taken.rawValue, at: lockPointer, ordering: .acquiring) == SpinLockState.taken.rawValue {
             yieldCPU()
         }
     }
     
     @usableFromInline
     func unlock() {
-        _ = UInt32.AtomicRepresentation.atomicExchange(LockState.free.rawValue, at: self.lockPointer, ordering: .releasing)
+        _ = UInt32.AtomicRepresentation.atomicExchange(SpinLockState.free.rawValue, at: self.lockPointer, ordering: .releasing)
     }
     
     @inlinable

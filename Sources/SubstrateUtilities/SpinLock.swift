@@ -8,8 +8,7 @@
 import Atomics
 import Foundation
 
-@usableFromInline
-enum LockState : UInt32 {
+public enum SpinLockState : UInt32 {
     case free
     case taken
 }
@@ -35,7 +34,13 @@ public struct SpinLock {
     @inlinable
     public init() {
         self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<UInt32.AtomicRepresentation>.size, alignment: 64).assumingMemoryBound(to: UInt32.AtomicRepresentation.self)
-        UInt32.AtomicRepresentation.atomicStore(LockState.free.rawValue, at: self.value, ordering: .relaxed)
+        UInt32.AtomicRepresentation.atomicStore(SpinLockState.free.rawValue, at: self.value, ordering: .relaxed)
+    }
+    
+    @inlinable
+    public init(at location: UnsafeMutablePointer<UInt32.AtomicRepresentation>) {
+        self.value = location
+        UInt32.AtomicRepresentation.atomicStore(SpinLockState.free.rawValue, at: self.value, ordering: .relaxed)
     }
     
     @inlinable
@@ -46,21 +51,21 @@ public struct SpinLock {
     @inlinable
     public var isLocked : Bool {
         get {
-            return UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue
+            return UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == SpinLockState.taken.rawValue
         }
     }
     
     @inlinable
     public func lock() {
-        while UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == LockState.taken.rawValue ||
-                UInt32.AtomicRepresentation.atomicExchange(LockState.taken.rawValue, at: self.value, ordering: .acquiring) == LockState.taken.rawValue {
+        while UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == SpinLockState.taken.rawValue ||
+                UInt32.AtomicRepresentation.atomicExchange(SpinLockState.taken.rawValue, at: self.value, ordering: .acquiring) == SpinLockState.taken.rawValue {
             yieldCPU()
         }
     }
     
     @inlinable
     public func unlock() {
-        _ = UInt32.AtomicRepresentation.atomicExchange(LockState.free.rawValue, at: self.value, ordering: .releasing)
+        _ = UInt32.AtomicRepresentation.atomicExchange(SpinLockState.free.rawValue, at: self.value, ordering: .releasing)
     }
     
     @inlinable

@@ -17,7 +17,7 @@ public struct ReaderWriterLock {
     @inlinable
     public init() {
         self.value = UnsafeMutablePointer.allocate(capacity: 1)
-        UInt32.AtomicRepresentation.atomicStore(LockState.free.rawValue, at: self.value, ordering: .relaxed)
+        UInt32.AtomicRepresentation.atomicStore(SpinLockState.free.rawValue, at: self.value, ordering: .relaxed)
     }
     
     @inlinable
