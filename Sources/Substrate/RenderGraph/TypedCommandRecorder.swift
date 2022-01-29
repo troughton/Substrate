@@ -106,12 +106,20 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     
     var descriptorSetChangeMask : UInt8 = 0
     
+    @usableFromInline var _pushConstants : R.PushConstants
+    
+    @inlinable // Use a computed property rather than a stored property + didSet so the set can be inlined.
     public var pushConstants : R.PushConstants {
-        didSet {
+        get {
+            self._pushConstants
+        }
+        set {
+            let oldValue = self._pushConstants
+            self._pushConstants = newValue
             withUnsafeBytes(of: oldValue, { oldValue in
-                withUnsafeBytes(of: self.pushConstants, { pushConstants in
+                withUnsafeBytes(of: self._pushConstants, { pushConstants in
                     if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) != 0 {
-                        self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, path: RenderBackend.pushConstantPath)
+                        self.encoder.setBytes(pushConstants.baseAddress!, length: pushConstants.count, path: RenderBackend.pushConstantPath)
                         hasSetPushConstants = true
                     }
                 })
@@ -170,7 +178,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     public init(encoder: RenderCommandEncoder) {
         self.encoder = encoder
         
-        self.pushConstants = R.PushConstants()
+        self._pushConstants = R.PushConstants()
         
         self.set0 = R.Set0()
         self.set1 = R.Set1()

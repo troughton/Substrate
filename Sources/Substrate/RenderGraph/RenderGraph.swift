@@ -1463,7 +1463,7 @@ public final class RenderGraph {
         self._lastGraphGPUTime = await result.gpuTime
         
         let completionTime = DispatchTime.now().uptimeNanoseconds
-        let elapsed = completionTime - self.previousFrameCompletionTime
+        let elapsed = completionTime - min(self.previousFrameCompletionTime, completionTime)
         self.previousFrameCompletionTime = completionTime
         self._lastGraphCPUTime = Double(elapsed) * 1e-6
         //            print("Frame \(currentFrameIndex) completed in \(self.lastGraphCPUTime)ms.")

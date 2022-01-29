@@ -29,6 +29,24 @@ protocol CommandEncoder : AnyObject {
     func endEncoding()
 }
 
+// Performance: avoid slow range initialiser until https://github.com/apple/swift/pull/40871 makes it into a release branch.
+extension Range where Bound: Strideable, Bound.Stride: SignedInteger {
+  /// Creates an instance equivalent to the given `ClosedRange`.
+  ///
+  /// - Parameter other: A closed range to convert to a `Range` instance.
+  ///
+  /// An equivalent range must be representable as an instance of Range<Bound>.
+  /// For example, passing a closed range with an upper bound of `Int.max`
+  /// triggers a runtime error, because the resulting half-open range would
+  /// require an upper bound of `Int.max + 1`, which is not representable as
+  /// an `Int`.
+  @inlinable // trivial-implementation
+  public init(_ other: ClosedRange<Bound>) {
+    let upperBound = other.upperBound.advanced(by: 1)
+    self.init(uncheckedBounds: (lower: other.lowerBound, upper: upperBound))
+  }
+}
+
 extension CommandEncoder {
     /// Returns the offset of the next command within this pass' command list.
     @inlinable

@@ -388,6 +388,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             var activeSubresources = ActiveResourceRange.fullResource
             var usageIndex = usagesArray.startIndex
             var skipUntilAfterInapplicableUsage = false // When processing subresources, we skip until we encounter a usage that is incompatible with our current subresources, since every usage up until that point will have already been processed.
+            var hasEncounteredWrite = false
             
             while usageIndex < usagesArray.count {
                 defer {
@@ -444,9 +445,10 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     processInputAttachmentUsage(usage, activeRange: activeSubresources)
                 }
                 
-                let previousWriteIndex = usagesArray.indexOfPreviousWrite(before: usageIndex, resource: resource)
+                let previousWriteIndex = hasEncounteredWrite ? usagesArray.indexOfPreviousWrite(before: usageIndex, resource: resource) : nil
                 
                 if usage.isWrite {
+                    hasEncounteredWrite = true
                     assert(!resource.flags.contains(.immutableOnceInitialised) || !resource.stateFlags.contains(.initialised), "A resource with the flag .immutableOnceInitialised is being written to in \(usage) when it has already been initialised.")
                     
                     // Process all the reads since the last write.

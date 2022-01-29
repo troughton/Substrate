@@ -184,6 +184,9 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     
     @inlinable
     public func append(repeating element: Element, count: Int) {
+        precondition(count >= 0)
+        guard count > 0 else { return }
+        
         self.reserveCapacity(self.count + count)
         self.buffer.unsafelyUnwrapped.advanced(by: self.count).initialize(repeating: element, count: count)
         self.count += count
