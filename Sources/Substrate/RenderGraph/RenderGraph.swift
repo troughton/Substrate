@@ -171,7 +171,7 @@ public protocol ComputeRenderPass : RenderPass {
 public protocol CPURenderPass : RenderPass {
     /// `execute` is called by the render graph to allow a `CPURenderPass` to perform work that accesses GPU resources.
     /// It will be called in sequence order of the submission of `CPURenderPass` instances to the render graph.
-    func execute()
+    func execute() async
 }
 
 /// A `BlitRenderPass` is a pass that uses GPU's blit/copy pipeline to copy data between GPU resources.
@@ -382,15 +382,15 @@ final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : Ref
 @usableFromInline
 final class CallbackCPURenderPass : CPURenderPass {
     public let name : String
-    public let executeFunc : () -> Void
+    public let executeFunc : @Sendable () async -> Void
     
-    public init(name: String, execute: @escaping @Sendable () -> Void) {
+    public init(name: String, execute: @escaping @Sendable () async -> Void) {
         self.name = name
         self.executeFunc = execute
     }
     
-    public func execute() {
-        self.executeFunc()
+    public func execute() async {
+        await self.executeFunc()
     }
 }
 
@@ -1076,7 +1076,7 @@ public final class RenderGraph {
     /// - Parameter execute: A closure to execute during render graph execution.
     @inlinable
     public func addCPUCallbackPass(file: String = #fileID, line: Int = #line,
-                                   _ execute: @escaping @Sendable () -> Void) {
+                                   _ execute: @escaping @Sendable () async -> Void) {
         self.addPass(CallbackCPURenderPass(name: "Anonymous CPU Pass at \(file):\(line)", execute: execute))
     }
     
@@ -1086,7 +1086,7 @@ public final class RenderGraph {
     /// - Parameter name: The name of the pass.
     /// - Parameter execute: A closure to execute during render graph execution.
     public func addCPUCallbackPass(name: String,
-                                   _ execute: @escaping @Sendable () -> Void) {
+                                   _ execute: @escaping @Sendable () async -> Void) {
         self.addPass(CallbackCPURenderPass(name: name, execute: execute))
     }
     
@@ -1170,7 +1170,7 @@ public final class RenderGraph {
             ece.endEncoding()
             
         case let cpuPass as CPURenderPass:
-            cpuPass.execute()
+            await cpuPass.execute()
             
         default:
             if #available(macOS 11.0, iOS 14.0, *), let accelerationStructurePass = passRecord.pass as? AccelerationStructureRenderPass {
