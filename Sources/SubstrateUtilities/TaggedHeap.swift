@@ -32,7 +32,7 @@ public enum TaggedHeap {
     }
     
     static let maxTasksPerAllocator = 512
-    static let maxThreadPoolWidth = 128 // GCD pool width (64) rounded up to the next power of two.
+    public static let maxThreadPoolWidth = 128 // GCD pool width (64) rounded up to the next power of two.
     
     public typealias Tag = UInt64
     public static var blockSize = 64 * 1024
