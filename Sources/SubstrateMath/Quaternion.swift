@@ -174,6 +174,11 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
 extension Matrix4x4 where Scalar : Real {
     
     @inlinable
+    public init(_ q: Quaternion<Scalar>) {
+        self.init(quaternion: q)
+    }
+    
+    @inlinable
     public init(quaternion q: Quaternion<Scalar>) {
         self = Matrix4x4<Scalar>.identity
         
