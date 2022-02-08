@@ -37,7 +37,22 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     // The euler angles represent a rotation around Y, then around X', then around Z'.
     @inlinable
     public init(eulerAngles: SIMD3<Scalar>) {
-        self = Quaternion(angle: Angle(radians: eulerAngles.z), axis: SIMD3(0, 0, 1)) * Quaternion(angle: Angle(radians: eulerAngles.x), axis: SIMD3(1, 0, 0)) * Quaternion(angle: Angle(radians: eulerAngles.y), axis: SIMD3(0, 1, 0))
+        let yaw = eulerAngles.y
+        let pitch = -eulerAngles.x
+        let roll = -eulerAngles.z
+        
+        let cy = Scalar.cos(yaw * 0.5)
+        let sy = Scalar.sin(yaw * 0.5)
+        let cp = Scalar.cos(pitch * 0.5)
+        let sp = Scalar.sin(pitch * 0.5)
+        let cr = Scalar.cos(roll * 0.5)
+        let sr = Scalar.sin(roll * 0.5)
+        
+        let x: Scalar = cr * sp * cy + sr * cp * sy
+        let y: Scalar = sr * sp * cy - cr * cp * sy
+        let z: Scalar = sr * cp * cy - cr * sp * sy
+        let w: Scalar = cr * cp * cy + sr * sp * sy
+        self.init(x, y, z, w)
     }
     
     @inlinable
@@ -85,8 +100,7 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     @inlinable
     public var eulerAngles : SIMD3<Scalar> {
         get {
-            let conj = self.conjugate
-            return SIMD3<Scalar>(conj.pitch, conj.yaw, conj.roll)
+            return SIMD3<Scalar>(self.pitch, self.yaw, self.roll)
         }
         set(newValue) {
             self = Quaternion(eulerAngles: newValue)
@@ -96,7 +110,7 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     /// The roll is the rotation around the positive Z axis, and is applied third.
     @inlinable
     public var roll : Scalar {
-        let sinRCosP : Scalar = 2.0 * (self.x * self.y as Scalar + self.z * self.w as Scalar)
+        let sinRCosP : Scalar = 2.0 * (self.w * self.z as Scalar - self.x * self.y as Scalar)
         let cosRCosP : Scalar = 1.0 - 2.0 * (self.x * self.x as Scalar + self.z * self.z as Scalar) as Scalar
         return -Scalar.atan2(y: sinRCosP, x: cosRCosP)
     }
@@ -104,16 +118,16 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     /// The pitch is the rotation around the positive X axis, and is applied second.
     @inlinable
     public var pitch : Scalar {
-        let sinP : Scalar = 2.0 * (self.w * self.x as Scalar - self.y * self.z as Scalar)
+        let sinP : Scalar = 2.0 * (self.w * self.x as Scalar + self.y * self.z as Scalar)
         return -Scalar.asin(clamp(sinP, min: -1 as Scalar, max: 1 as Scalar))
     }
     
     /// The yaw is the rotation around the positive Y axis, and is applied first.
     @inlinable
     public var yaw : Scalar {
-        let sinYCosP: Scalar = 2.0 * (self.w * self.y as Scalar - self.x * self.z as Scalar)
+        let sinYCosP: Scalar = 2.0 * (self.x * self.z as Scalar - self.w * self.y as Scalar)
         let cosYCosP: Scalar = 1.0 - 2.0 * (self.x * self.x as Scalar + self.y * self.y as Scalar)
-        return -Scalar.atan2(y: sinYCosP, x: cosYCosP)
+        return Scalar.atan2(y: sinYCosP, x: cosYCosP)
     }
     
     @inlinable
@@ -160,7 +174,11 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     
     @inlinable
     public var conjugate : Quaternion {
-        return Quaternion(-self.x, -self.y, -self.z, self.w)
+        get {
+            return Quaternion(-self.x, -self.y, -self.z, self.w)
+        } set {
+            self = Quaternion(-newValue.x, -newValue.y, -newValue.z, newValue.w)
+        }
     }
     
     @inlinable

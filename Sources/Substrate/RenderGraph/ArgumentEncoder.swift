@@ -44,7 +44,7 @@ public struct BufferBacked<T> {
         }
     }
     
-    var isDirty: Bool = false
+    @usableFromInline var isDirty: Bool = false
     @usableFromInline var _buffer: OffsetView<Buffer>?
     
     public var buffer : OffsetView<Buffer>? {
