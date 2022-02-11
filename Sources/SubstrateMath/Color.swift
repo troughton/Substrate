@@ -7,7 +7,7 @@
 
 import RealModule
 
-public struct RGBColor : Equatable, Hashable {
+public struct RGBColor : Equatable, Hashable, Sendable {
     public var r: Float
     public var g: Float
     public var b: Float
@@ -132,7 +132,7 @@ extension RGBColor: CustomStringConvertible {
 
 public typealias RGBColour = RGBColor
 
-public struct XYZColor : Equatable, Hashable {
+public struct XYZColor : Equatable, Hashable, Sendable {
     public var x: Float
     public var y: Float
     public var z: Float
@@ -205,7 +205,7 @@ public struct XYZColor : Equatable, Hashable {
 }
 
 /// Reference: https://bottosson.github.io/posts/oklab/
-public struct OklabColor : Equatable, Hashable {
+public struct OklabColor : Equatable, Hashable, Sendable {
     public var L: Float
     public var a: Float
     public var b: Float
@@ -315,7 +315,7 @@ extension XYZColor {
     }
 }
 
-public struct RGBAColor : Equatable, Hashable {
+public struct RGBAColor : Equatable, Hashable, Sendable {
     
     public var r: Float
     public var g: Float

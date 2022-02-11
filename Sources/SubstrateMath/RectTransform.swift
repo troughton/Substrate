@@ -79,7 +79,7 @@ public struct RectTransform<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable,
 @available(*, deprecated, renamed: "RectTransform")
 public typealias DisplayTransform = RectTransform
 
-extension RectTransform: Equatable {}
+extension RectTransform: @unchecked Sendable where Scalar: Sendable {}
 
 extension RectTransform {
     @inlinable

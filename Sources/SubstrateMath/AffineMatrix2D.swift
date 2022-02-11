@@ -167,6 +167,9 @@ public struct AffineMatrix2D<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable
                """
     }
 }
+
+extension AffineMatrix2D: @unchecked Sendable where Scalar: Sendable {}
+
 extension AffineMatrix2D {
 
     @inlinable

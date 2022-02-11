@@ -6,7 +6,6 @@
 typealias PackedSIMD3<Scalar> = PackedVector3<Float>
 typealias PackedVector3d = PackedVector3<Double>
 
-@frozen
 public struct PackedVector3<Scalar: SIMDScalar>: Hashable, Codable {
     public var x: Scalar
     public var y: Scalar
@@ -26,6 +25,8 @@ public struct PackedVector3<Scalar: SIMDScalar>: Hashable, Codable {
         self.z = value
     }
 }
+
+extension PackedVector3: @unchecked Sendable where Scalar: Sendable {}
 
 extension PackedVector3 {
     @inlinable

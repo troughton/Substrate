@@ -5,7 +5,6 @@
 import RealModule
 
 /// A column-major 2x2 matrix.
-@frozen
 public struct Matrix2x2<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
     public var columns: SIMD4<Scalar>
   
@@ -129,6 +128,8 @@ public struct Matrix2x2<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
     }
     
 }
+
+extension Matrix2x2: @unchecked Sendable where Scalar: Sendable {}
 
 extension Matrix2x2 {
     /// Returns the identity matrix

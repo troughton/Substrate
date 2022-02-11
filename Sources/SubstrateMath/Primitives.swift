@@ -9,7 +9,6 @@
 import Swift
 import RealModule
 
-@frozen
 public struct Rect<Scalar: SIMDScalar>: Hashable, Codable {
     public var origin : SIMD2<Scalar>
     public var size : SIMD2<Scalar>
@@ -194,6 +193,8 @@ extension Rect where Scalar: BinaryFloatingPoint {
     }
 }
 
+extension Rect: @unchecked Sendable where Scalar: Sendable {}
+
 extension Rect where Scalar: FixedWidthInteger {
     @inlinable
     public init<Other: FixedWidthInteger & SIMDScalar>(clamping other: Rect<Other>) {
@@ -255,7 +256,6 @@ extension Rect where Scalar: FixedWidthInteger {
     }
 }
 
-@frozen
 public struct AxisAlignedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & Comparable>: Hashable, Codable {
     public var minPoint : SIMD3<Scalar>
     public var maxPoint : SIMD3<Scalar>
@@ -549,21 +549,38 @@ public struct AxisAlignedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & 
 
 }
 
-@frozen
+extension AxisAlignedBoundingBox: @unchecked Sendable where Scalar: Sendable {}
+
 public struct Cylinder<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     public var position : SIMD3<Scalar>
     public var end : SIMD3<Scalar>
     public var radius : Scalar
+    
+    @inlinable
+    public init(position: SIMD3<Scalar>, end: SIMD3<Scalar>, radius: Scalar) {
+        self.position = position
+        self.end = end
+        self.radius = radius
+    }
 }
 
-@frozen
+extension Cylinder: @unchecked Sendable where Scalar: Sendable {}
+
 public struct Disk<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     public var centre : SIMD3<Scalar>
     public var normal : SIMD3<Scalar>
     public var radius : Scalar
+    
+    @inlinable
+    public init(centre: SIMD3<Scalar>, normal: SIMD3<Scalar>, radius: Scalar) {
+        self.centre = centre
+        self.normal = normal
+        self.radius = radius
+    }
 }
 
-@frozen
+extension Disk : @unchecked Sendable where Scalar: Sendable {}
+
 public struct OrientedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & Real>: Hashable, Codable {
     public var transform : AffineMatrix<Scalar>
     
@@ -579,7 +596,8 @@ public struct OrientedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & Rea
     }
 }
 
-@frozen
+extension OrientedBoundingBox: @unchecked Sendable where Scalar: Sendable {}
+
 public struct ProjectedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & Real>: Hashable, Codable {
     public var transform : Matrix4x4<Scalar>
     
@@ -606,7 +624,8 @@ public struct ProjectedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & Re
     }
 }
 
-@frozen
+extension ProjectedBoundingBox: @unchecked Sendable where Scalar: Sendable {}
+
 public struct Plane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
     public var equation : SIMD4<Scalar>
 
@@ -673,6 +692,8 @@ public struct Plane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
     }
 }
 
+extension Plane: @unchecked Sendable where Scalar: Sendable {}
+
 extension Plane: Codable {
     @inlinable
     public init(from decoder: Decoder) throws {
@@ -687,7 +708,6 @@ extension Plane: Codable {
     }
 }
 
-@frozen
 public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
     public var origin : SIMD3<Scalar>
     public var direction : SIMD3<Scalar> {
@@ -852,7 +872,8 @@ public struct Ray<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
     }
 }
 
-@frozen
+extension Ray: @unchecked Sendable where Scalar: Sendable {}
+
 public struct Sphere<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     public var centreAndRadius : SIMD4<Scalar>
     
@@ -887,7 +908,8 @@ public struct Sphere<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codabl
     }
 }
 
-@frozen
+extension Sphere: @unchecked Sendable where Scalar: Sendable {}
+
 public struct Triangle<Vertex> {
     public var v0 : Vertex
     public var v1 : Vertex
@@ -912,6 +934,7 @@ extension Triangle: Equatable where Vertex: Equatable {}
 extension Triangle: Hashable where Vertex: Hashable {}
 extension Triangle: Encodable where Vertex: Encodable {}
 extension Triangle: Decodable where Vertex: Decodable {}
+extension Triangle: @unchecked Sendable where Vertex: Sendable {}
 
 extension AffineMatrix {
     @inlinable
@@ -943,7 +966,7 @@ extension AffineMatrix {
     }
 }
 
-public enum Axis {
+public enum Axis: Hashable, Sendable {
     case x
     case y
     case z

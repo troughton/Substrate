@@ -5,7 +5,6 @@
 import RealModule
 
 /// A floating point value that represents an angle
-@frozen
 public struct Angle<Scalar: BinaryFloatingPoint & Real> : Hashable {
 	
     /// The value of the angle in degrees
@@ -58,6 +57,7 @@ public struct Angle<Scalar: BinaryFloatingPoint & Real> : Hashable {
 }
 
 extension Angle : Codable where Scalar : Codable {}
+extension Angle: @unchecked Sendable where Scalar: Sendable {}
 
 extension Angle {
     @inlinable

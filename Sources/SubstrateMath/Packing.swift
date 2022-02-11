@@ -46,8 +46,7 @@ struct FloatBits {
 }
 
 
-@frozen
-public struct Float16 : Hashable, Codable {
+public struct Float16 : Hashable, Codable, Sendable {
     public var bitPattern : UInt16
     
     @inlinable

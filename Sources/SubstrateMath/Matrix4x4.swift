@@ -4,7 +4,6 @@
 
 import RealModule
 
-@frozen
 public struct Matrix4x4<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
     public var c0: SIMD4<Scalar>
     public var c1: SIMD4<Scalar>
@@ -227,6 +226,9 @@ extension Matrix4x4 {
         )
     }
 }
+
+
+extension Matrix4x4: @unchecked Sendable where Scalar: Sendable {}
 
 extension Matrix4x4 {
     /// Returns the identity matrix

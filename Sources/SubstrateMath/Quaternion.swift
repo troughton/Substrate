@@ -189,6 +189,8 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     }
 }
 
+extension Quaternion: @unchecked Sendable where Scalar: Sendable {}
+
 extension Matrix4x4 where Scalar : Real {
     
     @inlinable

@@ -277,6 +277,8 @@ extension AffineMatrix {
     }
 }
 
+extension AffineMatrix: @unchecked Sendable where Scalar: Sendable {}
+
 extension Matrix3x3 {
     @inlinable
     public init(_ affineMatrix: AffineMatrix<Scalar>) {

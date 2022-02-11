@@ -5,7 +5,6 @@
 import Swift
 import RealModule
 
-@frozen
 public struct Matrix3x3<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
     public var c0: SIMD3<Scalar>
     public var c1: SIMD3<Scalar>
@@ -161,6 +160,8 @@ public struct Matrix3x3<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
     }
     
 }
+
+extension Matrix3x3: @unchecked Sendable where Scalar: Sendable {}
 
 extension Matrix3x3 {
     /// Returns the identity matrix

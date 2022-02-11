@@ -8,7 +8,7 @@
 
 import Swift
 
-public enum Extent : Int, CaseIterable {
+public enum Extent : Int, CaseIterable, Sendable {
     case minX_MinY_MinZ = 0b000
     case minX_MinY_MaxZ = 0b001
     case minX_MaxY_MinZ = 0b010
@@ -23,7 +23,6 @@ public enum Extent : Int, CaseIterable {
     static let MaxZFlag = 0b001
 }
 
-@frozen
 public struct SIMDPlane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     public let normalX : SIMD4<Scalar>
     public let normalY : SIMD4<Scalar>
@@ -39,7 +38,8 @@ public struct SIMDPlane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Cod
     }
 }
 
-@frozen
+extension SIMDPlane: @unchecked Sendable where Scalar: Sendable {}
+
 public struct FrustumPlane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     public let storage : SIMD4<Scalar>
     
@@ -100,6 +100,8 @@ public struct FrustumPlane<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, 
         return SIMDPlane(normalX: self.normalVector.x, normalY: self.normalVector.y, normalZ: self.normalVector.z, constant: self.constant)
     }
 }
+
+extension FrustumPlane: @unchecked Sendable where Scalar: Sendable {}
 
 public struct Frustum<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable {
     enum PlaneDirection {
@@ -236,3 +238,5 @@ public struct Frustum<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codab
     }
     
 }
+
+extension Frustum: @unchecked Sendable where Scalar: Sendable {}

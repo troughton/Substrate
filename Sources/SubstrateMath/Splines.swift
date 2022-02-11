@@ -8,7 +8,6 @@
 
 import RealModule
 
-@frozen
 public struct CubicPolynomial<V: BinaryFloatingPoint> {
     public let a : V
     public let b : V
@@ -136,8 +135,8 @@ public struct CubicPolynomial<V: BinaryFloatingPoint> {
     }
 }
 
+extension CubicPolynomial: @unchecked Sendable where V: Sendable {}
 
-@frozen
 public struct SIMDCubicPolynomial<V: SIMD> where V.Scalar: BinaryFloatingPoint & Real {
     public let a : V
     public let b : V
@@ -265,6 +264,8 @@ public struct SIMDCubicPolynomial<V: SIMD> where V.Scalar: BinaryFloatingPoint &
     }
 }
 
+extension SIMDCubicPolynomial: @unchecked Sendable where V: Sendable {}
+
 public struct CatmullRomSpline<V: BinaryFloatingPoint> {
     public let polynomials : [CubicPolynomial<V>]
     public let polynomialLengths : [V]
@@ -378,6 +379,8 @@ public struct CatmullRomSpline<V: BinaryFloatingPoint> {
     
 }
 
+extension CatmullRomSpline: @unchecked Sendable where V: Sendable {}
+
 public struct SIMDCatmullRomSpline<V: SIMD> where V.Scalar: BinaryFloatingPoint & Real {
     public let polynomials : [SIMDCubicPolynomial<V>]
     public let polynomialLengths : [V.Scalar]
@@ -489,3 +492,5 @@ public struct SIMDCatmullRomSpline<V: SIMD> where V.Scalar: BinaryFloatingPoint 
         return (index, polyT)
     }
 }
+
+extension SIMDCatmullRomSpline: @unchecked Sendable where V: Sendable {}

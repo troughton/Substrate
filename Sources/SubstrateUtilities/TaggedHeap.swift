@@ -236,7 +236,7 @@ public enum TaggedHeap {
 }
 
 /// A tag allocator which is shared between threads
-public struct LockingTagAllocator {
+public struct LockingTagAllocator: Sendable {
     
     @usableFromInline
     struct Header {
@@ -333,7 +333,7 @@ public struct LockingTagAllocator {
 }
 
 /// A tag allocator that maintains a per-thread block.
-public struct TagAllocator {
+public struct TagAllocator: Sendable {
     @usableFromInline
     struct Header {
         @usableFromInline let tag : TaggedHeap.Tag
@@ -448,7 +448,7 @@ public struct TagAllocator {
     }
     
     /// Calls a statically-set function to determine the current thread.
-    public struct DynamicThreadView {
+    public struct DynamicThreadView: Sendable {
         @usableFromInline var allocator : TagAllocator
         
         @inlinable
