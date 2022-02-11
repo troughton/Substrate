@@ -21,7 +21,7 @@ extension RawRepresentable where Self.RawValue == String {
 }
 
 #if canImport(Metal)
-import Metal
+@preconcurrency import Metal
 
 public struct MetalIndexedFunctionArgument : FunctionArgumentKey {
     public var type: MTLArgumentType

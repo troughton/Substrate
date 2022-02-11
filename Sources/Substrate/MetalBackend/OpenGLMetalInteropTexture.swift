@@ -7,7 +7,7 @@
 
 #if canImport(Metal) && !targetEnvironment(macCatalyst)
 
-import Metal
+@preconcurrency import Metal
 
 #if os(macOS)
 import AppKit

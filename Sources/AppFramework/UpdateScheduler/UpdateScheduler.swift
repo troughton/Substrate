@@ -32,7 +32,7 @@ public final class SDLUpdateScheduler : UpdateScheduler  {
 
 #if os(macOS)
 
-import MetalKit
+@preconcurrency import MetalKit
 
 @MainActor
 public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDelegate  {
@@ -76,7 +76,7 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
 
 #elseif os(iOS) || os(tvOS)
 
-import MetalKit
+@preconcurrency import MetalKit
 
 @MainActor
 public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDelegate  {

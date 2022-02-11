@@ -8,7 +8,7 @@
 #if canImport(Metal)
 
 import SubstrateUtilities
-import Metal
+@preconcurrency import Metal
 
 fileprivate class TemporaryBufferArena {
     

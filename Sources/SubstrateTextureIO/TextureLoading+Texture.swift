@@ -10,7 +10,7 @@ import Substrate
 import stb_image
 import SubstrateImage
 #if canImport(Metal)
-import Metal
+@preconcurrency import Metal
 #endif
 
 public enum MipGenerationMode: Hashable, Sendable {

@@ -9,7 +9,7 @@
 #if canImport(Metal)
 
 import SubstrateUtilities
-import Metal
+@preconcurrency import Metal
 
 final class MetalCommandQueue: BackendQueue {
     typealias Backend = MetalBackend

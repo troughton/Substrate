@@ -6,8 +6,8 @@
 //
 
 #if canImport(Metal)
-import Metal
-import MetalKit
+@preconcurrency import Metal
+@preconcurrency import MetalKit
 import SubstrateUtilities
 
 final class MetalCommandBuffer: BackendCommandBuffer {

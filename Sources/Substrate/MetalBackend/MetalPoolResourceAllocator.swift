@@ -8,7 +8,7 @@
 #if canImport(Metal)
 
 import SubstrateUtilities
-import Metal
+@preconcurrency import Metal
 
 // The pool allocators should be used only for resources that are CPU backed (i.e. that cannot be heap allocated).
 

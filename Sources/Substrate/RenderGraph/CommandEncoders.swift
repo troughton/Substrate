@@ -8,11 +8,11 @@
 import SubstrateUtilities
 
 #if canImport(Metal)
-import Metal
+@preconcurrency import Metal
 #endif
 
 #if canImport(MetalPerformanceShaders)
-import MetalPerformanceShaders
+@preconcurrency import MetalPerformanceShaders
 #endif
 
 #if canImport(Vulkan)

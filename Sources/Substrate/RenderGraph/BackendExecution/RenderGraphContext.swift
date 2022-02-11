@@ -15,7 +15,7 @@ extension TaggedHeap.Tag {
     }
 }
 
-final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContext {
+actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContext {
     public let accessSemaphore: AsyncSemaphore?
        
     let backend: Backend
@@ -127,8 +127,8 @@ final actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraph
         }
     }
     
-    @_specialize(kind: full, where Backend == MetalBackend)
-    @_specialize(kind: full, where Backend == VulkanBackend)
+//    @_specialize(kind: full, where Backend == MetalBackend)
+//    @_specialize(kind: full, where Backend == VulkanBackend)
     func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async {
         await self.accessSemaphore?.wait()
         await self.backend.reloadShaderLibraryIfNeeded()

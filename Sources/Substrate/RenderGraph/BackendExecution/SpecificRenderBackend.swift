@@ -67,7 +67,7 @@ protocol BackendRenderTargetDescriptor: AnyObject {
 }
 
 protocol BackendQueue: AnyObject {
-    associatedtype Backend: SpecificRenderBackend
+    associatedtype Backend: SpecificRenderBackend where Backend.QueueImpl == Self
     
     func makeCommandBuffer(
         commandInfo: FrameCommandInfo<Backend.RenderTargetDescriptor>,
@@ -76,7 +76,7 @@ protocol BackendQueue: AnyObject {
 }
 
 protocol BackendCommandBuffer: AnyObject {
-    associatedtype Backend: SpecificRenderBackend
+    associatedtype Backend: SpecificRenderBackend where Backend.CommandBuffer == Self
     
     func encodeCommands(encoderIndex: Int) async
     
@@ -95,7 +95,7 @@ protocol BackendTransientResourceRegistry {
     static func isAliasedHeapResource(resource: Resource) -> Bool
     
     // ResourceRegistry requirements:
-    associatedtype Backend: SpecificRenderBackend
+    associatedtype Backend: SpecificRenderBackend where Backend.TransientResourceRegistry == Self
     
     subscript(buffer: Buffer) -> Backend.BufferReference? { get }
     subscript(texture: Texture) -> Backend.TextureReference? { get }
@@ -141,7 +141,7 @@ extension BackendTransientResourceRegistry {
 protocol BackendPersistentResourceRegistry: AnyObject {
     
     // ResourceRegistry requirements:
-    associatedtype Backend: SpecificRenderBackend
+    associatedtype Backend: SpecificRenderBackend where Backend.PersistentResourceRegistry == Self
     
     subscript(buffer: Buffer) -> Backend.BufferReference? { get }
     subscript(texture: Texture) -> Backend.TextureReference? { get }

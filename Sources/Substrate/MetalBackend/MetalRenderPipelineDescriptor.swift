@@ -7,7 +7,7 @@
 
 #if canImport(Metal)
 
-import Metal
+@preconcurrency import Metal
 
 struct MetalRenderPipelineDescriptor : Hashable {
     var descriptor : RenderPipelineDescriptor

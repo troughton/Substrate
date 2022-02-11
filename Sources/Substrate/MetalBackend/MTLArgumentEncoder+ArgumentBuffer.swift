@@ -7,7 +7,7 @@
 
 #if canImport(Metal)
 
-import Metal
+@preconcurrency import Metal
 
 extension ArgumentBuffer {
     func setArguments(storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) async {

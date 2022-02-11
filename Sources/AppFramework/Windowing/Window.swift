@@ -94,7 +94,7 @@ public protocol Window : AnyObject {
     /// How many windows are in front of this window
     var windowsInFrontCount : Int { get }
     
-    func displayOpenDialog(allowedFileTypes: [String], options: FileChooserOptions) -> [URL]?
+    func displayOpenDialog(allowedFileTypes: [String]?, options: FileChooserOptions) -> [URL]?
     func displaySaveDialog(allowedFileTypes: [String], options: FileChooserOptions) -> URL?
     
     func cycleFrames()

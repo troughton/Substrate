@@ -8,7 +8,7 @@
 #if canImport(Metal)
 
 import Foundation
-import Metal
+@preconcurrency import Metal
 import OrderedCollections
 import SubstrateUtilities
 

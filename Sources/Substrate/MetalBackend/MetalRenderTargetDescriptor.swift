@@ -7,7 +7,7 @@
 
 #if canImport(Metal)
 
-import Metal
+@preconcurrency import Metal
 
 final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var descriptor : RenderTargetDescriptor

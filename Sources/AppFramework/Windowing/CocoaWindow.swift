@@ -10,8 +10,8 @@ import SubstrateUtilities
 import Substrate
 
 #if os(macOS) || os(iOS)
-import MetalKit
-import Metal
+@preconcurrency import MetalKit
+@preconcurrency import Metal
 
 public protocol MTKWindow {
     var mtkView : MTKView { get }
@@ -324,7 +324,7 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
         self.delegate?.drawableSizeDidChange(on: self)
     }
     
-    public func displayOpenDialog(allowedFileTypes: [String], options: FileChooserOptions) -> [URL]? {
+    public func displayOpenDialog(allowedFileTypes: [String]?, options: FileChooserOptions) -> [URL]? {
         var urls : [URL]? = nil
         let panel = NSOpenPanel()
         panel.allowedFileTypes = allowedFileTypes

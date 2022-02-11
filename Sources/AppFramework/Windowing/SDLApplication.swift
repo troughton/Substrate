@@ -55,7 +55,7 @@ public class SDLVulkanWindow : SDLWindow {
 
 #if canImport(Metal)
 
-import MetalKit
+@preconcurrency import MetalKit
 
 public class SDLMetalWindow : SDLWindow {
     var metalView : SDL_MetalView? = nil

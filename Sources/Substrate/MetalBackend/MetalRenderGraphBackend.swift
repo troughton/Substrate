@@ -7,7 +7,7 @@
 
 #if canImport(Metal)
 
-import Metal
+@preconcurrency import Metal
 import SubstrateUtilities
 import Atomics
 

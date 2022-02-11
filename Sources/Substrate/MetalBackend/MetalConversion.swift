@@ -7,7 +7,7 @@
 
 #if canImport(Metal)
 
-import Metal
+@preconcurrency import Metal
 
 //MARK: From Metal
 

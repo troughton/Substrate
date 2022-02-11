@@ -10,7 +10,7 @@
 
 #if os(macOS)
     import AppKit
-    import MetalKit
+    @preconcurrency import MetalKit
 #endif
 
 import SubstrateUtilities
@@ -120,8 +120,8 @@ open class SDLWindow : Window {
         _texture.reset()
     }
     
-    public func displayOpenDialog(allowedFileTypes: [String], options: FileChooserOptions) -> [URL]? {
-        let filterList = allowedFileTypes.joined(separator: ",")
+    public func displayOpenDialog(allowedFileTypes: [String]?, options: FileChooserOptions) -> [URL]? {
+        let filterList = allowedFileTypes?.joined(separator: ",")
 
         var outPath : UnsafeMutablePointer<nfdchar_t>? = nil
         let result : nfdresult_t

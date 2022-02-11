@@ -19,24 +19,29 @@ enum CommandEndActionType {
     }
 }
 
-struct CommandEndAction {
+struct CommandEndAction: Sendable {
     let type: CommandEndActionType
     let after: QueueCommandIndices
 }
 
-struct QueueEndAction {
+struct QueueEndAction: Sendable {
     let type: CommandEndActionType
     let after: UInt64
 }
 
+@globalActor
 final actor CommandEndActionManager {
-    static let manager = CommandEndActionManager()
+    static let shared = CommandEndActionManager()
     
     var deviceCommandEndActions = RingBuffer<CommandEndAction>()
     var queueCommandEndActions = (0..<QueueRegistry.maxQueues).map { _ in RingBuffer<QueueEndAction>() }
     
-    func enqueue(action: CommandEndActionType, after commandIndices: QueueCommandIndices = QueueRegistry.lastSubmittedCommands) {
+    func enqueue(action: CommandEndActionType, after commandIndices: QueueCommandIndices) {
         self.deviceCommandEndActions.append(CommandEndAction(type: action, after: commandIndices))
+    }
+    
+    func enqueue(deviceAction: CommandEndAction) { // FIXME: Swift Assertion failed: (Layout->getElementOffset(F.LayoutFieldIndex) == F.Offset), function finish, file CoroFrame.cpp, line 771.
+        self.deviceCommandEndActions.append(deviceAction)
     }
     
     func enqueue(action: CommandEndActionType, after commandIndex: UInt64, on queue: Queue) {
@@ -79,21 +84,22 @@ final actor CommandEndActionManager {
         }
     }
     
-    static func enqueue(action: CommandEndActionType, after commandIndices: QueueCommandIndices = QueueRegistry.lastSubmittedCommands) {
-        _ = Task {
-            await manager.enqueue(action: action, after: commandIndices)
+    static nonisolated func enqueue(action: CommandEndActionType, after commandIndices: QueueCommandIndices = QueueRegistry.lastSubmittedCommands) {
+        let action = CommandEndAction(type: action, after: commandIndices)
+        Task { @CommandEndActionManager in
+            await shared.enqueue(deviceAction: action)
         }
     }
     
-    static func enqueue(action: CommandEndActionType, after commandIndex: UInt64, on queue: Queue) {
-        _ = Task {
-            await manager.enqueue(action: action, after: commandIndex, on: queue)
+    static nonisolated func enqueue(action: CommandEndActionType, after commandIndex: UInt64, on queue: Queue) {
+        Task { @CommandEndActionManager in
+            await shared.enqueue(action: action, after: commandIndex, on: queue)
         }
     }
     
-    static func didCompleteCommand(_ command: UInt64, on queue: Queue) {
-        _ = Task {
-            await manager.didCompleteCommand(command, on: queue)
+    static nonisolated func didCompleteCommand(_ command: UInt64, on queue: Queue) {
+        Task { @CommandEndActionManager in
+            await shared.didCompleteCommand(command, on: queue)
         }
     }
 }

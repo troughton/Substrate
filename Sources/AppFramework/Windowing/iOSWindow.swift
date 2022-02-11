@@ -8,8 +8,8 @@
 #if os(iOS)
 import Foundation
 import UIKit
-import Metal
-import MetalKit
+@preconcurrency import Metal
+@preconcurrency import MetalKit
 import Substrate
 import SubstrateUtilities
 
@@ -150,7 +150,7 @@ public class CocoaWindow : Window, MTKWindow {
         }
     }
     
-    public func displayOpenDialog(allowedFileTypes: [String], options: FileChooserOptions) -> [URL]? {
+    public func displayOpenDialog(allowedFileTypes: [String]?, options: FileChooserOptions) -> [URL]? {
         let pickerDelegate = DocumentPickerDelegate()
         DispatchQueue.main.async {
             let importPicker = UIDocumentPickerViewController(documentTypes: allowedFileTypes, in: .import)
