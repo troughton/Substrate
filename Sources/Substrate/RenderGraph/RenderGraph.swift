@@ -693,7 +693,7 @@ actor RenderGraphExecutionResult {
     }
 }
 
-public struct RenderGraphSubmissionWaitToken {
+public struct RenderGraphSubmissionWaitToken: Sendable {
     public let queue: Queue
     public let submissionIndex: UInt64
     
@@ -702,7 +702,7 @@ public struct RenderGraphSubmissionWaitToken {
     }
 }
 
-public struct RenderGraphExecutionWaitToken {
+public struct RenderGraphExecutionWaitToken: Sendable {
     public let queue: Queue
     public let executionIndex: UInt64
     
