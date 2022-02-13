@@ -411,6 +411,9 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.bufferWaitEvents.prepareFrame()
         
         self.descriptorPools[self.descriptorPoolIndex].resetDescriptorPool()
+        
+        self.frameManagedBufferAllocator.flush()
+        self.frameManagedWriteCombinedBufferAllocator.flush()
     }
     
     public func registerWindowTexture(for texture: Texture, swapchain: Any) {

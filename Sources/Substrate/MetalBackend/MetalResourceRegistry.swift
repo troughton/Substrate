@@ -643,6 +643,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.bufferWaitEvents.prepareFrame()
         self.argumentBufferWaitEvents.prepareFrame()
         self.argumentBufferArrayWaitEvents.prepareFrame()
+        
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        self.frameManagedBufferAllocator.flush()
+        self.frameManagedWriteCombinedBufferAllocator.flush()
+        #endif
     }
     
     public func registerWindowTexture(for texture: Texture, swapchain: Any) {

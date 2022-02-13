@@ -82,6 +82,18 @@ fileprivate class VulkanTemporaryBufferArena {
         return retVal
     }
     
+    func flush() {
+        if self.storageMode == .managed {
+            for block in self.usedBlocks {
+                block.didModifyRange(0..<block.length)
+            }
+            if self.currentBlockPos > 0 {
+                self.currentBlock?.didModifyRange(0..<self.currentBlockPos)
+            }
+        }
+        
+    }
+    
     func reset() {
         self.currentBlockPos = 0
         self.availableBlocks.prependAndClear(contentsOf: usedBlocks)
@@ -113,6 +125,10 @@ class VulkanTemporaryBufferAllocator : VulkanBufferAllocator {
     func depositBuffer(_ buffer: VkBufferReference, events: [FenceDependency], waitSemaphore: ContextWaitEvent) {
         assert(events.isEmpty)
         self.nextFrameWaitSemaphoreValue = max(self.waitSemaphoreValue, waitSemaphore.waitValue)
+    }
+    
+    func flush() {
+        self.arenas[self.currentIndex].flush()
     }
     
     public func cycleFrames() {

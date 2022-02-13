@@ -80,6 +80,19 @@ fileprivate class TemporaryBufferArena {
         }
     }
     
+    func flush() {
+    #if os(macOS) || targetEnvironment(macCatalyst)
+        if self.options.contains(.storageModeManaged) {
+            for block in self.usedBlocks {
+                block.didModifyRange(0..<block.length)
+            }
+            if self.currentBlockPos > 0 {
+                self.currentBlock?.didModifyRange(0..<self.currentBlockPos)
+            }
+        }
+    #endif
+    }
+    
     func reset() {
         self.availableBlocks.append(contentsOf: self.usedBlocks.lazy.map { ($0, false) })
         self.usedBlocks.removeAll(keepingCapacity: true)
@@ -126,6 +139,10 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
         }
     }
     
+    func flush() {
+        self.arenas[self.currentIndex].flush()
+    }
+        
     func makePurgeable() {
         for arena in self.arenas {
             arena.makePurgeable()
