@@ -85,7 +85,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     
     var pipelineDescriptorChanged : Bool = false
     var depthStencilDescriptorChanged : Bool = false
-    var hasSetPushConstants : Bool = false
+    @usableFromInline var hasSetPushConstants : Bool = false
     
     @StateBacked<TypedRenderPipelineDescriptor<R>, RenderPipelineState>
     public var pipeline : TypedRenderPipelineDescriptor<R> {
@@ -110,10 +110,10 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     
     @inlinable // Use a computed property rather than a stored property + didSet so the set can be inlined.
     public var pushConstants : R.PushConstants {
-        get {
+        @inline(__always) get {
             self._pushConstants
         }
-        set {
+        @inline(__always) set {
             let oldValue = self._pushConstants
             self._pushConstants = newValue
             withUnsafeBytes(of: oldValue, { oldValue in

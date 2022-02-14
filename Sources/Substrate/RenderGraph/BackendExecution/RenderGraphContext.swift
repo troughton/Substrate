@@ -129,93 +129,91 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     
 //    @_specialize(kind: full, where Backend == MetalBackend)
 //    @_specialize(kind: full, where Backend == VulkanBackend)
-    func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async {
+    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async {
         await self.accessSemaphore?.wait()
         await self.backend.reloadShaderLibraryIfNeeded()
-        await self.activeContextLock.lock()
-        defer {
-            self.activeContextLock.unlock()
-        }
         
-        return await Backend.activeContextTaskLocal.withValue(self) {
-            let (passes, usedResources) = await executeFunc()
-            
-            // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
-            self.resourceRegistry?.prepareFrame()
-            
-            if passes.isEmpty {
-                if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
-                    self.accessSemaphore?.signal()
-                    await onCompletion(RenderGraphExecutionResult())
-                } else {
-                    self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, onCompletion))
-                }
-                return
-            }
-            
-            var frameCommandInfo = FrameCommandInfo<Backend.RenderTargetDescriptor>(passes: passes, initialCommandBufferGlobalIndex: self.queueCommandBufferIndex + 1)
-            self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
-            await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
-            
-            await RenderGraph.signposter.withIntervalSignpost("Sort and Compact Resource Commands") {
-                self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
+        return await self.activeContextLock.withLock {
+            return await Backend.activeContextTaskLocal.withValue(self) {
+                let (passes, usedResources) = await executeFunc()
                 
-                var compactedResourceCommands = self.compactedResourceCommands // Re-use its storage
-                self.compactedResourceCommands = []
-                await backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &compactedResourceCommands)
-                self.compactedResourceCommands = compactedResourceCommands
-            }
-            
-            var commandBuffers = [Backend.CommandBuffer]()
-            var waitedEvents = QueueCommandIndices(repeating: 0)
-            
-            for (i, encoderInfo) in frameCommandInfo.commandEncoders.enumerated() {
-                let commandBufferIndex = encoderInfo.commandBufferIndex
-                if commandBufferIndex != commandBuffers.endIndex - 1 {
-                    if let transientRegistry = resourceMap.transientRegistry {
-                        commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
+                // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
+                self.resourceRegistry?.prepareFrame()
+                
+                if passes.isEmpty {
+                    if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
+                        self.accessSemaphore?.signal()
+                        await onCompletion(RenderGraphExecutionResult())
+                    } else {
+                        self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, onCompletion))
                     }
-                    commandBuffers.append(self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
-                                                                              resourceMap: resourceMap,
-                                                                              compactedResourceCommands: self.compactedResourceCommands))
+                    return
                 }
                 
-                let waitEventValues = encoderInfo.queueCommandWaitIndices
-                for queue in QueueRegistry.allQueues {
-                    if waitedEvents[Int(queue.index)] < waitEventValues[Int(queue.index)],
-                        waitEventValues[Int(queue.index)] > queue.lastCompletedCommand {
-                        if let event = backend.syncEvent(for: queue) {
-                            commandBuffers.last!.waitForEvent(event, value: waitEventValues[Int(queue.index)])
-                        } else {
-                            // It's not a queue known to this backend, so the best we can do is sleep and wait until the queue is completd.
-                            await queue.waitForCommandCompletion(waitEventValues[Int(queue.index)])
+                var frameCommandInfo = FrameCommandInfo<Backend.RenderTargetDescriptor>(passes: passes, initialCommandBufferGlobalIndex: self.queueCommandBufferIndex + 1)
+                self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
+                await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
+                
+                await RenderGraph.signposter.withIntervalSignpost("Sort and Compact Resource Commands") {
+                    self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
+                    
+                    var compactedResourceCommands = self.compactedResourceCommands // Re-use its storage
+                    self.compactedResourceCommands = []
+                    await backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &compactedResourceCommands)
+                    self.compactedResourceCommands = compactedResourceCommands
+                }
+                
+                var commandBuffers = [Backend.CommandBuffer]()
+                var waitedEvents = QueueCommandIndices(repeating: 0)
+                
+                for (i, encoderInfo) in frameCommandInfo.commandEncoders.enumerated() {
+                    let commandBufferIndex = encoderInfo.commandBufferIndex
+                    if commandBufferIndex != commandBuffers.endIndex - 1 {
+                        if let transientRegistry = resourceMap.transientRegistry {
+                            commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
+                        }
+                        commandBuffers.append(self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
+                                                                                  resourceMap: resourceMap,
+                                                                                  compactedResourceCommands: self.compactedResourceCommands))
+                    }
+                    
+                    let waitEventValues = encoderInfo.queueCommandWaitIndices
+                    for queue in QueueRegistry.allQueues {
+                        if waitedEvents[Int(queue.index)] < waitEventValues[Int(queue.index)],
+                            waitEventValues[Int(queue.index)] > queue.lastCompletedCommand {
+                            if let event = backend.syncEvent(for: queue) {
+                                commandBuffers.last!.waitForEvent(event, value: waitEventValues[Int(queue.index)])
+                            } else {
+                                // It's not a queue known to this backend, so the best we can do is sleep and wait until the queue is completd.
+                                await queue.waitForCommandCompletion(waitEventValues[Int(queue.index)])
+                            }
                         }
                     }
+                    waitedEvents = pointwiseMax(waitEventValues, waitedEvents)
+                    
+                    await RenderGraph.signposter.withIntervalSignpost("Encode to Command Buffer", "Encode commands for command encoder \(i)") {
+                        await commandBuffers.last!.encodeCommands(encoderIndex: i)
+                    }
                 }
-                waitedEvents = pointwiseMax(waitEventValues, waitedEvents)
                 
-                await RenderGraph.signposter.withIntervalSignpost("Encode to Command Buffer", "Encode commands for command encoder \(i)") {
-                    await commandBuffers.last!.encodeCommands(encoderIndex: i)
+                if let transientRegistry = resourceMap.transientRegistry {
+                    commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
                 }
-            }
-            
-            if let transientRegistry = resourceMap.transientRegistry {
-                commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
-            }
-            
-            for passRecord in passes {
-                passRecord.pass = nil // Release references to the RenderPasses.
-            }
-            
-            TaggedHeap.free(tag: .renderGraphResourceCommandArrayTag)
-            
-            self.resourceRegistry?.cycleFrames()
-            self.commandGenerator.reset()
-            self.compactedResourceCommands.removeAll(keepingCapacity: true)
-            
-            let syncEvent = backend.syncEvent(for: self.renderGraphQueue)!
-            for (i, commandBuffer) in commandBuffers.enumerated() {
-                await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, syncEvent: syncEvent, onCompletion: onCompletion)
+                
+                for passRecord in passes {
+                    passRecord.pass = nil // Release references to the RenderPasses.
+                }
+                
+                TaggedHeap.free(tag: .renderGraphResourceCommandArrayTag)
+                
+                self.resourceRegistry?.cycleFrames()
+                self.commandGenerator.reset()
+                self.compactedResourceCommands.removeAll(keepingCapacity: true)
+                
+                let syncEvent = backend.syncEvent(for: self.renderGraphQueue)!
+                for (i, commandBuffer) in commandBuffers.enumerated() {
+                    await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, syncEvent: syncEvent, onCompletion: onCompletion)
+                }
             }
         }
     }

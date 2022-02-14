@@ -716,7 +716,7 @@ protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var accessSemaphore : AsyncSemaphore? { get }
     nonisolated var renderGraphQueue: Queue { get }
-    func executeRenderGraph(_ executeFunc: () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async
+    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
 }
 

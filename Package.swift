@@ -1,4 +1,4 @@
-// swift-tools-version:5.2
+// swift-tools-version:5.5
 
 import PackageDescription
 
@@ -10,7 +10,7 @@ let vulkanDependencies: [Target.Dependency] = [.target(name: "Vulkan")]
 
 let package = Package(
     name: "Substrate",
-    platforms: [.macOS(.v10_14), .iOS(.v13), .tvOS(.v13)],
+    platforms: [.macOS(.v11), .iOS(.v14), .tvOS(.v14)],
     products: [
         .library(name: "SwiftFrameGraph", targets: ["Substrate", "SwiftFrameGraph"]),
         .library(name: "FrameGraphTextureIO", targets: ["SubstrateTextureIO", "FrameGraphTextureIO"]),
@@ -57,37 +57,22 @@ let package = Package(
                     .product(name: "CWuffs", package: "Wuffs"),
                     .product(name: "RealModule", package: "swift-numerics")],
                 swiftSettings: [
-                    .unsafeFlags([
-                        "-Xfrontend", "-enable-experimental-concurrency",
-                        "-Xfrontend", "-disable-availability-checking",
-                    ])
                 ]),
         
         .testTarget(name: "SubstrateImageTests", dependencies: ["SubstrateImage"]),
         
         .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage"],
                 swiftSettings: [
-                    .unsafeFlags([
-                        "-Xfrontend", "-enable-experimental-concurrency",
-                        "-Xfrontend", "-disable-availability-checking",
-                    ])
                 ]),
         
         .target(name: "SubstrateCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
         .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross"), .product(name: "OrderedCollections", package: "swift-collections")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"],
                 swiftSettings: [
-                    .unsafeFlags([
-                        "-Xfrontend", "-enable-experimental-concurrency",
-                        "-Xfrontend", "-disable-availability-checking",
-                    ])
+//                    .define("SUBSTRATE_DISABLE_AUTOMATIC_LABELS"),
                 ]),
         .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"],
                 swiftSettings: [
                     .define("SUBSTRATE_DISABLE_AUTOMATIC_LABELS"),
-                    .unsafeFlags([
-                        "-Xfrontend", "-enable-experimental-concurrency",
-                        "-Xfrontend", "-disable-availability-checking",
-                    ])
                 ]),
         .testTarget(name: "SubstrateUtilitiesTests", dependencies: ["SubstrateUtilities"]),
         
@@ -114,11 +99,6 @@ let package = Package(
             dependencies: ["SubstrateUtilities", "Substrate", "SubstrateMath", .product(name: "ImGui", package: "SwiftImGui"), "CNativeFileDialog", "CSDL2"] + vulkanDependencies,
             exclude: ["CMakeLists.txt", "Input/CMakeLists.txt", "UpdateScheduler/CMakeLists.txt", "Windowing/CMakeLists.txt"],
             swiftSettings: [
-                .unsafeFlags([
-                    "-Xfrontend", "-enable-experimental-concurrency",
-                    "-Xfrontend", "-disable-availability-checking",
-                    "-Xfrontend", "-validate-tbd-against-ir=none",
-                ])
             ]),
     ],
     cLanguageStandard: .c11, cxxLanguageStandard: .cxx14

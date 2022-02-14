@@ -35,7 +35,7 @@ public struct SignpostID: RawRepresentable {
 }
 
 public struct SignpostMetadata: ExpressibleByStringLiteral, ExpressibleByStringInterpolation {
-    var message: String
+    @usableFromInline var message: String
     
     @inlinable
     public init(stringLiteral value: StringLiteralType) {

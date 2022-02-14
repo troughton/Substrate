@@ -126,7 +126,10 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         case .accelerationStructure:
             if #available(macOS 11.0, iOS 14.0, *) {
                 let accelerationStructureEncoder = FGMTLAccelerationStructureCommandEncoder(encoder: commandBuffer.makeAccelerationStructureCommandEncoder()!, isAppleSiliconGPU: backend.isAppleSiliconGPU)
+                
+                #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
                 accelerationStructureEncoder.encoder.label = encoderInfo.name
+                #endif
                 
                 for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                     await accelerationStructureEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
