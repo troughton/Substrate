@@ -78,52 +78,35 @@ public struct SpinLock {
 }
 
 
-public struct AsyncSpinLock {
-    @usableFromInline let value : UnsafeMutablePointer<UnsafeMutableRawPointer.AtomicOptionalRepresentation>
-
+public actor AsyncSpinLock {
+    @usableFromInline var currentTask: Task<Void, Never>?
+    
     @inlinable
     public init() {
-        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<UnsafeMutableRawPointer.AtomicOptionalRepresentation>.size, alignment: 64).assumingMemoryBound(to: UnsafeMutableRawPointer.AtomicOptionalRepresentation.self)
-        UnsafeMutableRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.value, ordering: .relaxed)
-    }
-    
-    @inlinable
-    public func `deinit`() {
-        self.value.deallocate()
-    }
-    
-    @inlinable
-    public var isLocked : Bool {
-        get {
-            return UnsafeMutableRawPointer.AtomicOptionalRepresentation.atomicLoad(at: self.value, ordering: .relaxed) != nil
-        }
-    }
-    
-    @inlinable
-    public func lock() async {
-        guard let currentTask = withUnsafeCurrentTask(body: { $0 }) else { preconditionFailure() }
-        let currentTaskUnmanaged = unsafeBitCast(currentTask, to: UnsafeMutableRawPointer.self)
         
-        repeat {
-            let swapResult = UnsafeMutableRawPointer.AtomicOptionalRepresentation.atomicCompareExchange(expected: nil, desired: currentTaskUnmanaged, at: self.value, successOrdering: .acquiring, failureOrdering: .relaxed)
-            if swapResult.exchanged { return }
-            
-            let waitingOnTask = unsafeBitCast(swapResult.original!, to: Task<Void, Never>.self)
-            await waitingOnTask.get()
-            
-        } while true
     }
     
     @inlinable
-    public func unlock() {
-        UnsafeMutableRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.value, ordering: .releasing)
+    public func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable @escaping () async -> T) async -> T {
+        while let currentTask = self.currentTask {
+            _ = await currentTask.value
+        }
+        let newTask = Task { await perform() }
+        self.currentTask = Task { _ = await newTask.value }
+        let result = await newTask.value
+        self.currentTask = nil
+        return result
     }
     
     @inlinable
-    public func withLock<T>(_ perform: () async throws -> T) async rethrows -> T {
-        await self.lock()
-        let result = try await perform()
-        self.unlock()
+    public func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable @escaping () async throws -> T) async throws -> T {
+        while let currentTask = self.currentTask {
+            _ = await currentTask.value
+        }
+        let newTask = Task { try await perform() }
+        self.currentTask = Task { _ = try? await newTask.value }
+        defer { self.currentTask = nil }
+        let result = try await newTask.value
         return result
     }
 }
