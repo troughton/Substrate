@@ -146,47 +146,6 @@ public struct Semaphore {
     }
 }
 
-public struct AsyncSemaphore {
-    @usableFromInline let value : UnsafeMutablePointer<Int32.AtomicRepresentation>
-    
-    @inlinable
-    public init(value: Int32) {
-        self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<Int32.AtomicRepresentation>.size, alignment: 64).assumingMemoryBound(to: Int32.AtomicRepresentation.self)
-        Int32.AtomicRepresentation.atomicStore(value, at: self.value, ordering: .relaxed)
-    }
-    
-    @inlinable
-    public func `deinit`() {
-        self.value.deallocate()
-    }
-    
-    @inlinable
-    public func signal() {
-        Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.value, ordering: .releasing)
-    }
-    
-    @inlinable
-    public func signal(count: Int) {
-        Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(by: Int32(count), at: self.value, ordering: .releasing)
-    }
-    
-    @inlinable
-    public var currentValue: Int32 {
-        return Int32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .acquiring)
-    }
-    
-    @inlinable
-    public func wait() async {
-        // If the value was greater than 0, we can proceed immediately.
-        while Int32.AtomicRepresentation.atomicLoadThenWrappingDecrement(at: self.value, ordering: .acquiring) <= 0 {
-            // Otherwise, reset and try again.
-            Int32.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.value, ordering: .relaxed)
-            await Task.yield()
-        }
-    }
-}
-
-
 public struct Synchronised<T> {
     @usableFromInline var lock : SpinLock
     public var value : T

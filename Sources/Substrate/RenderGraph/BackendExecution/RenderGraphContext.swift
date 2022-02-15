@@ -8,6 +8,7 @@
 import SubstrateUtilities
 import Foundation
 import Dispatch
+import Atomics
 
 extension TaggedHeap.Tag {
     static var renderGraphResourceCommandArrayTag: Self {
@@ -16,7 +17,7 @@ extension TaggedHeap.Tag {
 }
 
 actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContext {
-    public let accessSemaphore: AsyncSemaphore?
+    let accessStream: AsyncStream<Void>? // Acts as a semaphore to prevent too many frames being submitted at once.
        
     let backend: Backend
     let resourceRegistry: Backend.TransientResourceRegistry?
@@ -34,6 +35,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     var compactedResourceCommands = [CompactedResourceCommand<Backend.CompactedResourceCommandType>]()
        
     var enqueuedEmptyFrameCompletionHandlers = [(UInt64, @Sendable (RenderGraphExecutionResult) async -> Void)]()
+    private nonisolated let accessStreamContinuation: AsyncStream<Void>.Continuation?
     
     public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
@@ -41,16 +43,30 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         self.commandQueue = backend.makeQueue(renderGraphQueue: self.renderGraphQueue)
         self.transientRegistryIndex = transientRegistryIndex
         self.resourceRegistry = inflightFrameCount > 0 ? backend.makeTransientRegistry(index: transientRegistryIndex, inflightFrameCount: inflightFrameCount, queue: self.renderGraphQueue) : nil
-        self.accessSemaphore = inflightFrameCount > 0 ? AsyncSemaphore(value: Int32(inflightFrameCount)) : nil
+        
+        if inflightFrameCount > 0 {
+            var accessStreamContinuation: AsyncStream<Void>.Continuation? = nil
+            let accessStream = AsyncStream<Void> { continuation in
+                accessStreamContinuation = continuation
+                for _ in 0..<inflightFrameCount {
+                    continuation.yield()
+                }
+            }
+            self.accessStream = accessStream
+            self.accessStreamContinuation = accessStreamContinuation
+        } else {
+            self.accessStream = nil
+            self.accessStreamContinuation = nil
+        }
         
         self.commandGenerator = ResourceCommandGenerator()
         self.syncEvent = backend.makeSyncEvent(for: self.renderGraphQueue)
     }
     
+    
     deinit {
         backend.freeSyncEvent(for: self.renderGraphQueue)
         self.renderGraphQueue.dispose()
-        self.accessSemaphore?.deinit()
     }
     
     func registerWindowTexture(for texture: Texture, swapchain: Any) async {
@@ -71,7 +87,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         while let (afterCBIndex, completionHandler) = self.enqueuedEmptyFrameCompletionHandlers.first {
             if afterCBIndex > afterSubmissionIndex { break }
             await completionHandler(.init())
-            self.accessSemaphore?.signal()
+            self.accessStreamContinuation?.yield()
             self.enqueuedEmptyFrameCompletionHandlers.removeFirst()
         }
     }
@@ -122,7 +138,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
             if isLast {
                 CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
                 self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
-                self.accessSemaphore?.signal()
+                self.accessStreamContinuation?.yield()
             }
         }
     }
@@ -130,7 +146,14 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
 //    @_specialize(kind: full, where Backend == MetalBackend)
 //    @_specialize(kind: full, where Backend == VulkanBackend)
     func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async {
-        await self.accessSemaphore?.wait()
+        if self.accessStream != nil {
+            // Wait until we have a frame's ring buffers available.
+            for await completedFrame in self.accessStream! {
+                _ = completedFrame
+                break
+            }
+        }
+        
         await self.backend.reloadShaderLibraryIfNeeded()
         
         return await self.activeContextLock.withLock {
@@ -142,7 +165,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 
                 if passes.isEmpty {
                     if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
-                        self.accessSemaphore?.signal()
+                        self.accessStreamContinuation?.yield()
                         await onCompletion(RenderGraphExecutionResult())
                     } else {
                         self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, onCompletion))

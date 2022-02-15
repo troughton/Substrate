@@ -714,7 +714,6 @@ public struct RenderGraphExecutionWaitToken: Sendable {
 // _RenderGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
 protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
-    nonisolated var accessSemaphore : AsyncSemaphore? { get }
     nonisolated var renderGraphQueue: Queue { get }
     func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
@@ -1452,12 +1451,10 @@ public final class RenderGraph {
     
     /// Returns true if this RenderGraph already has the maximum number of GPU frames in-flight, and would have to wait
     /// for the ring buffers to become available before executing.
-    public var hasMaximumFrameCountInFlight: Bool {
-        if self.context.accessSemaphore?.currentValue ?? .max > 0 {
-            return false
-        }
-        return true
-    }
+    // FIXME: should be expressed by waiting on the render graph with a timeout
+//    public var hasMaximumFrameCountInFlight: Bool {
+//
+//    }
     
     private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
         self._lastGraphGPUTime = await result.gpuTime
