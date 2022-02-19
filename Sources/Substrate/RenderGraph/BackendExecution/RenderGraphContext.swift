@@ -177,6 +177,8 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
                 await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
                 
+                self.resourceRegistry?.flushTransientBuffers() // This needs to happen after the pre-frame commands, since that's when any deferred buffer actions are executed.
+                
                 await RenderGraph.signposter.withIntervalSignpost("Sort and Compact Resource Commands") {
                     self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
                     

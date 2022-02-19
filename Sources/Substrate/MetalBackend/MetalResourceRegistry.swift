@@ -643,7 +643,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.bufferWaitEvents.prepareFrame()
         self.argumentBufferWaitEvents.prepareFrame()
         self.argumentBufferArrayWaitEvents.prepareFrame()
-        
+    }
+    
+    public func flushTransientBuffers() {
         #if os(macOS) || targetEnvironment(macCatalyst)
         self.frameManagedBufferAllocator.flush()
         self.frameManagedWriteCombinedBufferAllocator.flush()
