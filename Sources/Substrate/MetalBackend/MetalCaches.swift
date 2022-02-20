@@ -210,6 +210,34 @@ final actor MetalDepthStencilStateCache {
     }
 }
 
+final class MetalArgumentEncoderCache {
+    let device: MTLDevice
+    private var cache: [ArgumentBufferDescriptor: MTLArgumentEncoder]
+    let lock = SpinLock()
+    
+    init(device: MTLDevice) {
+        self.device = device
+        self.cache = [:]
+    }
+    
+    deinit {
+        self.lock.deinit()
+    }
+    
+    public subscript(descriptor: ArgumentBufferDescriptor) -> MTLArgumentEncoder {
+        return self.lock.withLock {
+            if let encoder = self.cache[descriptor] {
+                return encoder
+            }
+            
+            let arguments = descriptor.argumentDescriptors
+            let encoder = self.device.makeArgumentEncoder(arguments: arguments)
+            self.cache[descriptor] = encoder
+            return encoder!
+        }
+    }
+}
+
 final class MetalStateCaches {
     let device : MTLDevice
     
@@ -220,6 +248,7 @@ final class MetalStateCaches {
     var renderPipelineCache: MetalRenderPipelineCache
     var computePipelineCache: MetalComputePipelineCache
     let depthStencilCache: MetalDepthStencilStateCache
+    let argumentEncoderCache: MetalArgumentEncoderCache
     
     public init(device: MTLDevice, libraryPath: String?) {
         self.device = device
@@ -247,6 +276,7 @@ final class MetalStateCaches {
         self.renderPipelineCache = .init(device: self.device, functionCache: functionCache)
         self.computePipelineCache = .init(device: self.device, functionCache: functionCache)
         self.depthStencilCache = .init(device: self.device)
+        self.argumentEncoderCache = .init(device: self.device)
     }
     
     func checkForLibraryReload() async {

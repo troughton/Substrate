@@ -260,6 +260,49 @@ extension ArgumentReflection {
 
 //MARK: To Metal
 
+extension ArgumentBufferDescriptor {
+    public var argumentDescriptors: [MTLArgumentDescriptor] {
+        return self.arguments.map { argument in
+            let result = MTLArgumentDescriptor()
+            result.index = argument.index
+            result.arrayLength = argument.arrayLength
+            result.access = MTLArgumentAccess(argument.accessType)
+            switch argument.resource {
+            case .inlineData(let dataType):
+                result.dataType = MTLDataType(dataType)
+            case .constantBuffer(let alignment):
+                result.dataType = .pointer
+                result.constantBlockAlignment = alignment
+            case .storageBuffer:
+                result.dataType = .pointer
+            case .texture(let textureType):
+                result.dataType = .texture
+                result.textureType = MTLTextureType(textureType)
+            case .sampler:
+                result.dataType = .sampler
+            case .accelerationStructure:
+                result.dataType = .pointer
+            }
+            return result
+        }
+    }
+}
+
+extension MTLArgumentAccess {
+    init(_ access: ResourceAccessType) {
+        switch access {
+        case .read:
+            self = .readOnly
+        case .readWrite:
+            self = .readWrite
+        case .write:
+            self = .writeOnly
+        default:
+            preconditionFailure()
+        }
+    }
+}
+
 extension MTLBarrierScope {
     init(_ barrierScope: BarrierScope, isAppleSiliconGPU: Bool) {
         self = []

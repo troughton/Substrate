@@ -243,6 +243,47 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return mtlBuffer
     }
     
+    @discardableResult
+    public nonisolated func allocateArgumentBuffer(_ argumentBuffer: ArgumentBuffer, stateCaches: MetalStateCaches) -> MTLBufferReference? {
+        precondition(argumentBuffer._usesPersistentRegistry)
+        
+        // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
+        
+        let options: MTLResourceOptions = [.storageModeShared, .substrateTrackedHazards]
+        
+        let mtlBuffer : MTLBufferReference
+        
+        let descriptor = argumentBuffer.descriptor
+        
+        let encoder = stateCaches.argumentEncoderCache[descriptor]
+        _ = argumentBuffer.replaceEncoder(with: Unmanaged.passUnretained(encoder).toOpaque(), expectingCurrentValue: nil)
+        
+        if let heap = argumentBuffer.heap {
+            guard let mtlHeap = self.heapReferences[heap] else {
+                print("Warning: requested heap \(heap) for buffer \(argumentBuffer) is invalid.")
+                return nil
+            }
+            guard let mtlBufferObj = mtlHeap.makeBuffer(length: encoder.encodedLength, options: options) else {
+                return nil
+            }
+            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
+        } else {
+            guard let mtlBufferObj = self.device.makeBuffer(length: encoder.encodedLength, options: options) else {
+                return nil
+            }
+            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
+        }
+        
+        if let label = argumentBuffer.label {
+            mtlBuffer.buffer.label = label
+        }
+        
+        assert(self.argumentBufferReferences[argumentBuffer] == nil)
+        self.argumentBufferReferences[argumentBuffer] = mtlBuffer
+        
+        return mtlBuffer
+    }
+    
     func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> MTLBufferReference {
 //        #if os(macOS)
 //        let options : MTLResourceOptions = [.storageModeManaged, .substrateTrackedHazards]

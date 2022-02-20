@@ -107,7 +107,7 @@ public struct ResourceStateFlags : OptionSet {
     public static let initialised = ResourceStateFlags(rawValue: 1 << 0)
 }
 
-public struct ResourceAccessType: OptionSet {
+public struct ResourceAccessType: OptionSet, Hashable, Sendable {
     public let rawValue: UInt8
     
     public init(rawValue: UInt8) {

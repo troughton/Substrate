@@ -9,6 +9,174 @@ import Foundation
 import Substrate
 import SPIRV_Cross
 
+extension DataType {
+    init?(_ spirvType: SPIRVType) {
+        switch spirvType {
+        case .void:
+            self = .none
+        case .bool:
+            self = .bool
+        case .int8:
+            self = .char
+        case .uint8:
+            self = .uchar
+        case .int16:
+            self = .short
+        case .uint16:
+            self = .ushort
+        case .int32:
+            self = .int
+        case .uint32:
+            self = .uint
+        case .int64:
+            return nil
+        case .uint64:
+            return nil
+        case .half:
+            self = .half
+        case .float:
+            self = .float
+        case .double:
+            return nil
+        case .atomicCounter:
+            self = .uint
+            
+        case .vector(.float, 2):
+            self = .float2
+        case .vector(.float, 3):
+            self = .float3
+        case .vector(.float, 4):
+            self = .float4
+            
+        case .vector(.half, 2):
+            self = .half2
+        case .vector(.half, 3):
+            self = .half3
+        case .vector(.half, 4):
+            self = .half4
+            
+        case .vector(.int32, 2):
+            self = .int2
+        case .vector(.int32, 3):
+            self = .int3
+        case .vector(.int32, 4):
+            self = .int4
+            
+        case .vector(.uint32, 2):
+            self = .uint2
+        case .vector(.uint32, 3):
+            self = .uint3
+        case .vector(.uint32, 4):
+            self = .uint4
+            
+        case .vector(.int16, 2):
+            self = .short2
+        case .vector(.int16, 3):
+            self = .short3
+        case .vector(.int16, 4):
+            self = .short4
+            
+        case .vector(.uint16, 2):
+            self = .ushort2
+        case .vector(.uint16, 3):
+            self = .ushort3
+        case .vector(.uint16, 4):
+            self = .ushort4
+            
+        case .vector(.int8, 2):
+            self = .char2
+        case .vector(.int8, 3):
+            self = .char3
+        case .vector(.int8, 4):
+            self = .char4
+            
+        case .vector(.uint8, 2):
+            self = .uchar2
+        case .vector(.uint8, 3):
+            self = .uchar3
+        case .vector(.uint8, 4):
+            self = .uchar4
+            
+        case .vector(.bool, 2):
+            self = .bool2
+        case .vector(.bool, 3):
+            self = .bool3
+        case .vector(.bool, 4):
+            self = .bool4
+            
+        case .packedVector(.float, 3):
+            self = .float3
+        case .packedVector(.half, 3):
+            self = .half3
+        case .packedVector(.int32, 3):
+            self = .int3
+        case .packedVector(.uint32, 3):
+            self = .uint3
+        case .packedVector(.int16, 3):
+            self = .short3
+        case .packedVector(.uint16, 3):
+            self = .ushort3
+        case .packedVector(.int8, 3):
+            self = .char3
+        case .packedVector(.uint8, 3):
+            self = .uchar3
+        case .packedVector(.bool, 3):
+            self = .bool3
+            
+        case .matrix(.float, 2, 2):
+            self = .float2x2
+        case .matrix(.float, 2, 3):
+            self = .float2x3
+        case .matrix(.float, 2, 4):
+            self = .float2x4
+            
+        case .matrix(.float, 3, 2):
+            self = .float3x2
+        case .matrix(.float, 3, 3):
+            self = .float3x3
+        case .matrix(.float, 3, 4):
+            self = .float3x4
+            
+        case .matrix(.float, 4, 2):
+            self = .float4x2
+        case .matrix(.float, 4, 3):
+            self = .float4x3
+        case .matrix(.float, 4, 4):
+            self = .float4x4
+            
+        case .matrix(.half, 2, 2):
+            self = .half2x2
+        case .matrix(.half, 2, 3):
+            self = .half2x3
+        case .matrix(.half, 2, 4):
+            self = .half2x4
+            
+        case .matrix(.half, 3, 2):
+            self = .half3x2
+        case .matrix(.half, 3, 3):
+            self = .half3x3
+        case .matrix(.half, 3, 4):
+            self = .half3x4
+            
+        case .matrix(.half, 4, 2):
+            self = .half4x2
+        case .matrix(.half, 4, 3):
+            self = .half4x3
+        case .matrix(.half, 4, 4):
+            self = .half4x4
+            
+        case .array:
+            self = .array
+            
+        case .struct:
+            self = .struct
+            
+        default:
+            return nil
+        }
+    }
+}
+
 final class DescriptorSet {
     static let setCount : Int = 8
     
@@ -72,6 +240,55 @@ final class DescriptorSet {
         }
     }
     
+    func printArgumentBufferDescriptor(to stream: inout ReflectionPrinter) {
+        stream.print("public static var argumentBufferDescriptor : ArgumentBufferDescriptor {")
+        stream.print("return ArgumentDescriptor(arguments: [")
+        for resource in self.resources {
+            let argumentResourceType: ArgumentDescriptor.ArgumentResourceType
+            let accessType: ResourceAccessType
+            switch resource.viewType {
+            case .uniformBuffer:
+                argumentResourceType = .constantBuffer(alignment: 0)
+                accessType = .read
+            case .storageBuffer:
+                argumentResourceType = .storageBuffer
+                accessType = .readWrite // FIXME:
+            case .image, .inputAttachment:
+                argumentResourceType = .texture(type: .type2D) // FIXME:
+                accessType = .read
+            case .storageImage:
+                argumentResourceType = .texture(type: .type2D) // FIXME:
+                accessType = .readWrite
+            case .sampler:
+                argumentResourceType = .sampler
+                accessType = .read
+            case .pushConstantBlock:
+                guard let dataType = DataType(resource.type) else {
+                    print("Warning: skipping resource \(resource) in argument buffer descriptor.")
+                    continue
+                }
+                argumentResourceType = .inlineData(type: dataType)
+                accessType = .read
+            }
+            
+            let accessTypeString: String
+                switch accessType {
+                case .read:
+                    accessTypeString = ".read"
+                case .write:
+                    accessTypeString = ".write"
+                case .readWrite:
+                    accessTypeString = ".readWrite"
+                default:
+                    accessTypeString = String(describing: accessType)
+                }
+            
+            stream.print("ArgumentDescriptor(resource: .\(argumentResourceType), index: \(resource.binding.index), arrayLength: \(max(resource.binding.arrayLength, 1)), accessType: \(accessTypeString)),")
+        }
+        stream.print("])")
+        stream.print("}")
+    }
+    
     func printStruct(to stream: inout ReflectionPrinter, typeLookup: TypeLookup, setIndex: Int) {
         if self.resources.isEmpty {
             return
@@ -81,6 +298,8 @@ final class DescriptorSet {
                 
         stream.print("public static let activeStages : RenderStages = \(self.stages)")
         stream.newLine()
+        
+        self.printArgumentBufferDescriptor(to: &stream)
         
         stream.print("@inlinable")
         stream.print("public init() {}")

@@ -115,6 +115,8 @@ final class MetalBackend : SpecificRenderBackend {
             return self.resourceRegistry.allocateBuffer(Buffer(resource)!) != nil
         case .heap:
             return self.resourceRegistry.allocateHeap(Heap(resource)!) != nil
+        case .argumentBuffer:
+            return self.resourceRegistry.allocateArgumentBuffer(ArgumentBuffer(resource)!, stateCaches: self.stateCaches) != nil
         case .accelerationStructure:
             return self.resourceRegistry.allocateAccelerationStructure(AccelerationStructure(resource)!) != nil
         default:

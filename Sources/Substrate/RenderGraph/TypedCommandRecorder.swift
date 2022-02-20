@@ -37,6 +37,10 @@ public struct NilSet : ShaderDescriptorSet {
     
     public mutating func encode(into argBuffer: ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?) {
     }
+    
+    public static var argumentBufferDescriptor: ArgumentBufferDescriptor {
+        return .init(arguments: [])
+    }
 }
 
 public struct NilPushConstants : NoArgConstructable {

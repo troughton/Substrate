@@ -1,6 +1,6 @@
 import Foundation
 
-public enum TextureType : UInt, Sendable {
+public enum TextureType : UInt, Hashable, Sendable {
     
     case type1D
     
