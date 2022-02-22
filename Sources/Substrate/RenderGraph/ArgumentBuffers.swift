@@ -554,6 +554,11 @@ extension ArgumentBufferArray: CustomStringConvertible {
 public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     public let argumentBuffer : ArgumentBuffer
     
+    public init?(_ resource: Resource) {
+        guard resource.type == .argumentBuffer else { return nil }
+        self.init(handle: resource.handle)
+    }
+    
     public init(handle: Handle) {
         self.argumentBuffer = ArgumentBuffer(handle: handle)
     }
@@ -698,6 +703,11 @@ extension TypedArgumentBuffer {
 
 public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtocol {
     public let argumentBufferArray : ArgumentBufferArray
+    
+    public init?(_ resource: Resource) {
+        guard resource.type == .argumentBuffer else { return nil }
+        self.init(handle: resource.handle)
+    }
     
     public init(handle: Handle) {
         self.argumentBufferArray = ArgumentBufferArray(handle: handle)

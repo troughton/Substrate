@@ -120,6 +120,8 @@ public typealias ActiveRenderGraphMask = UInt8
 
 public protocol ResourceProtocol: Hashable {
     init(handle: Handle)
+    init?(_ resource: Resource)
+    
     func dispose()
     
     var handle: Handle { get }
