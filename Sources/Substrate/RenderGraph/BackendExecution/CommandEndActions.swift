@@ -50,18 +50,14 @@ final actor CommandEndActionManager {
     
     func didCompleteCommand(_ command: UInt64, on queue: Queue) {
         do {
+            var lastCompletedCommands = QueueRegistry.lastCompletedCommands
+            lastCompletedCommands[Int(queue.index)] = command // We have a more recent lastCompletedCommand than the queue does.
+            
             var processedCount = 0
             for action in self.deviceCommandEndActions {
                 let requirement = action.after
-                let isComplete = QueueRegistry.allQueues.enumerated()
-                    .allSatisfy { i, testQueue in
-                        if queue == testQueue {
-                            // We have a more recent lastCompletedCommand than the queue does.
-                            return command >= requirement[i]
-                        } else {
-                            return queue.lastCompletedCommand >= requirement[i]
-                        }
-                    }
+                let isComplete = all(lastCompletedCommands .>= requirement)
+                
                 if !isComplete {
                     break
                 }
