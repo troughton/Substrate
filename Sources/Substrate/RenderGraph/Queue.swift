@@ -115,16 +115,16 @@ public final class QueueRegistry {
     
     public static var lastSubmittedCommands: QueueCommandIndices {
         var commands = QueueCommandIndices(repeating: 0)
-        for (i, queue) in self.allQueues.enumerated() {
-            commands[i] = queue.lastSubmittedCommand
+        for queue in self.allQueues {
+            commands[Int(queue.index)] = queue.lastSubmittedCommand
         }
         return commands
     }
     
     public static var lastCompletedCommands: QueueCommandIndices {
         var commands = QueueCommandIndices(repeating: 0)
-        for (i, queue) in self.allQueues.enumerated() {
-            commands[i] = queue.lastCompletedCommand
+        for queue in self.allQueues {
+            commands[Int(queue.index)] = queue.lastCompletedCommand
         }
         return commands
     }
