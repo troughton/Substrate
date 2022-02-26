@@ -347,14 +347,16 @@ final class DescriptorSet {
         }
         
         for resource in self.resources {
-            if resource.viewType == .uniformBuffer {
-                stream.print("@BufferBacked public var \(resource.name) : \(resource.type.name)? = nil")
+            if resource.viewType == .inlineUniformBlock {
+                stream.print("public var \(resource.name): \(resource.type.name) = .init()")
+            } else if resource.viewType == .uniformBuffer {
+                stream.print("@BufferBacked public var \(resource.name): \(resource.type.name)? = nil")
             } else {
                 let wrapperType = resource.viewType == .uniformBuffer || resource.viewType == .storageBuffer ? "@OffsetView " : ""
                 if wrapperType.isEmpty, resource.binding.arrayLength > 1 { // FIXME: how do we handle this case for arrays which require property wrappers?
-                    stream.print("\(wrapperType)public var \(resource.name) : [\(resource.viewType.substrateTypeName)?] = .init(repeating: nil, count: \(resource.binding.arrayLength))")
+                    stream.print("\(wrapperType)public var \(resource.name): [\(resource.viewType.substrateTypeName)?] = .init(repeating: nil, count: \(resource.binding.arrayLength))")
                 } else {
-                    stream.print("\(wrapperType)public var \(resource.name) : \(resource.viewType.substrateTypeName)? = nil")
+                    stream.print("\(wrapperType)public var \(resource.name): \(resource.viewType.substrateTypeName)? = nil")
                 }
             }
         }
@@ -382,7 +384,10 @@ final class DescriptorSet {
             }
 
             for resource in self.resources {
-                if resource.viewType == .uniformBuffer {
+                if resource.viewType == .inlineUniformBlock {
+                    stream.print("argBuffer.setValue(self.\(resource.name), key: ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index), type: .buffer))")
+                    continue
+                } else if resource.viewType == .uniformBuffer {
                     // @BufferBacked property
                     
                     stream.print("if let resource = self.$\(resource.name).buffer {")
@@ -476,7 +481,10 @@ final class DescriptorSet {
             }
 
             for resource in self.resources {
-                if resource.viewType == .uniformBuffer {
+                if resource.viewType == .inlineUniformBlock {
+                    stream.print("argBuffer.setValue(self.\(resource.name), key: ResourceBindingPath(set: UInt32(setIndex), binding: \(resource.binding.index), arrayIndex: 0))")
+                    continue
+                } else if resource.viewType == .uniformBuffer {
                     // @BufferBacked property
                     
                     stream.print("if let resource = self.$\(resource.name).buffer {")

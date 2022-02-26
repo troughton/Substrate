@@ -41,7 +41,7 @@ enum ResourceViewType {
     
     var substrateTypeName : String {
         switch self {
-        case .uniformBuffer, .storageBuffer:
+        case .uniformBuffer, .storageBuffer, .inlineUniformBlock:
             return "Buffer"
         case .image, .storageImage, .inputAttachment:
             return "Texture"

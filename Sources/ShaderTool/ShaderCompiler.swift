@@ -17,15 +17,22 @@ struct EntryPoint : Hashable {
     var renderPass : String
 }
 
+struct InlineUniformBlockBinding: Hashable {
+    var set: Int
+    var binding: Int
+}
+
 struct DXCSourceFile : Equatable {
     static let entryPointPattern = Regex(#"\[shader\(\"(\w+)\"\)\]\s*(?:\[[^\]]+\])*\s*\w+\s([^\(]+)"#)
     static let externalEntryPointPattern = Regex(#"USES-SHADER:\s+(\S+)"#)
+    static let inlineUniformBlockPattern = Regex(#"INLINE-UNIFORM-BLOCK:(?:\s*\(((\d+)\s*, (\d+))\)\s*,*)+"#)
     
     let url : URL
     let renderPass : String
     let modificationTime : Date
     let entryPoints : [EntryPoint]
     let externalEntryPoints : Set<String> // Entry points from used from another source file.
+    let inlineUniformBlocks : Set<InlineUniformBlockBinding> // Bindings which should be interpreted as inline uniform blocks.
     
     init(url: URL, modificationTimes: [URL : Date]) throws {
         self.url = url
@@ -42,10 +49,15 @@ struct DXCSourceFile : Equatable {
         self.externalEntryPoints = Set(DXCSourceFile.externalEntryPointPattern.allMatches(in: fileText).map { match in
             return match.captures[0]!
         })
+        self.inlineUniformBlocks = Set(DXCSourceFile.inlineUniformBlockPattern.allMatches(in: fileText).map { match in
+            let binding = Int(match.captures[1]!)!
+            let set = Int(match.captures[2]!)!
+            return .init(set: set, binding: binding)
+        })
     }
     
     static func ==(lhs: DXCSourceFile, rhs: DXCSourceFile) -> Bool {
-        return lhs.url == rhs.url && lhs.entryPoints == rhs.entryPoints && lhs.externalEntryPoints == rhs.externalEntryPoints
+        return lhs.url == rhs.url && lhs.entryPoints == rhs.entryPoints && lhs.externalEntryPoints == rhs.externalEntryPoints && lhs.inlineUniformBlocks == rhs.inlineUniformBlocks
     }
 }
 
@@ -66,6 +78,10 @@ struct SPIRVFile {
     
     var exists : Bool {
         return FileManager.default.fileExists(atPath: self.url.path)
+    }
+    
+    var inlineUniformBlocks : Set<InlineUniformBlockBinding> {
+        return self.sourceFile.inlineUniformBlocks
     }
 }
 

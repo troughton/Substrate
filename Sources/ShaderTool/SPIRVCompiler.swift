@@ -88,6 +88,10 @@ final class SPIRVCompiler {
                 binding.msl_buffer = UInt32(i + 1)
                 spvc_compiler_msl_add_resource_binding(self.compiler, &binding)
             }
+            
+            for inlineUniformBlock in file.inlineUniformBlocks {
+                spvc_compiler_msl_add_inline_uniform_block(self.compiler, UInt32(inlineUniformBlock.set), UInt32(inlineUniformBlock.binding))
+            }
         }
         
         if self.forceInvariantPosition {
