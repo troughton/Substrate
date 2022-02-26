@@ -240,53 +240,83 @@ final class DescriptorSet {
         }
     }
     
-    func printArgumentBufferDescriptor(to stream: inout ReflectionPrinter) {
-        stream.print("public static var argumentBufferDescriptor : ArgumentBufferDescriptor {")
+    func printArgumentBufferDescriptor(to stream: inout ReflectionPrinter, platformBindingPath: KeyPath<PlatformBindings, UInt32?>?) {
         stream.print("return ArgumentDescriptor(arguments: [")
         for resource in self.resources {
             let argumentResourceType: ArgumentDescriptor.ArgumentResourceType
-            let accessType: ResourceAccessType
             switch resource.viewType {
             case .uniformBuffer:
                 argumentResourceType = .constantBuffer(alignment: 0)
-                accessType = .read
             case .storageBuffer:
                 argumentResourceType = .storageBuffer
-                accessType = .readWrite // FIXME:
-            case .image, .inputAttachment:
-                argumentResourceType = .texture(type: .type2D) // FIXME:
-                accessType = .read
-            case .storageImage:
-                argumentResourceType = .texture(type: .type2D) // FIXME:
-                accessType = .readWrite
+            case .image, .storageImage:
+                guard let textureType = resource.textureType else {
+                    print("Warning: skipping resource '\(resource.name)' in argument buffer descriptor.")
+                    continue
+                }
+                argumentResourceType = .texture(type: textureType)
+            case .inputAttachment:
+                argumentResourceType = .texture(type: .type2D)
             case .sampler:
                 argumentResourceType = .sampler
-                accessType = .read
-            case .pushConstantBlock:
+            case .pushConstantBlock, .inlineUniformBlock:
                 guard let dataType = DataType(resource.type) else {
-                    print("Warning: skipping resource \(resource) in argument buffer descriptor.")
+                    print("Warning: skipping resource '\(resource.name)' in argument buffer descriptor.")
                     continue
                 }
                 argumentResourceType = .inlineData(type: dataType)
-                accessType = .read
             }
             
             let accessTypeString: String
-                switch accessType {
-                case .read:
-                    accessTypeString = ".read"
-                case .write:
-                    accessTypeString = ".write"
-                case .readWrite:
-                    accessTypeString = ".readWrite"
-                default:
-                    accessTypeString = String(describing: accessType)
-                }
+            switch resource.accessType {
+            case .read:
+                accessTypeString = ".read"
+            case .write:
+                accessTypeString = ".write"
+            case .readWrite:
+                accessTypeString = ".readWrite"
+            default:
+                accessTypeString = String(describing: resource.accessType)
+            }
             
-            stream.print("ArgumentDescriptor(resource: .\(argumentResourceType), index: \(resource.binding.index), arrayLength: \(max(resource.binding.arrayLength, 1)), accessType: \(accessTypeString)),")
+            if platformBindingPath == \.appleSiliconMetalIndex, resource.viewType == .storageImage {
+                continue // Apple Silicon doesn't support read-write textures in argument buffers
+            }
+            
+            var bindingIndex = resource.binding.index
+            if let platformBindingPath = platformBindingPath {
+                bindingIndex = resource.platformBindings[keyPath: platformBindingPath].map { Int($0) } ?? resource.binding.index
+            }
+            
+            if resource.viewType == .storageImage { // Apple Silicon doesn't support read-write textures in argument buffers
+                stream.print("#if !canImport(Metal) || (os(macOS) && (arch(i386) || arch(x86_64)))")
+            }
+            stream.print("ArgumentDescriptor(resource: .\(argumentResourceType), index: \(bindingIndex), arrayLength: \(max(resource.binding.arrayLength, 1)), accessType: \(accessTypeString)),")
+            if resource.viewType == .storageImage {
+                stream.print("#endif")
+            }
         }
         stream.print("])")
+    }
+    
+    func printArgumentBufferDescriptor(to stream: inout ReflectionPrinter) {
+        stream.print("public static var argumentBufferDescriptor : ArgumentBufferDescriptor {")
+        
+        if self.resources.contains(where: { $0.platformBindings.macOSMetalIndex != UInt32($0.binding.index) || $0.platformBindings.macOSMetalIndex != $0.platformBindings.appleSiliconMetalIndex }) {
+            stream.print("#if canImport(Metal)")
+            stream.print("#if os(macOS) && (arch(i386) || arch(x86_64))")
+            self.printArgumentBufferDescriptor(to: &stream, platformBindingPath: \.macOSMetalIndex)
+            stream.print("#else")
+            self.printArgumentBufferDescriptor(to: &stream, platformBindingPath: \.appleSiliconMetalIndex)
+            stream.print("#endif")
+            stream.print("#else")
+            self.printArgumentBufferDescriptor(to: &stream, platformBindingPath: nil)
+            stream.print("#endif")
+        } else {
+            self.printArgumentBufferDescriptor(to: &stream, platformBindingPath: nil)
+        }
         stream.print("}")
+        stream.newLine()
     }
     
     func printStruct(to stream: inout ReflectionPrinter, typeLookup: TypeLookup, setIndex: Int) {

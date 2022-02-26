@@ -82,7 +82,7 @@ public typealias _ArgumentBufferArray = ArgumentBufferArray
 public struct ArgumentDescriptor: Hashable, Sendable {
     public enum ArgumentResourceType: Hashable, Sendable {
         case inlineData(type: DataType)
-        case constantBuffer(alignment: Int)
+        case constantBuffer(alignment: Int = 0)
         case storageBuffer
         case texture(type: TextureType)
         case sampler
@@ -99,6 +99,26 @@ public struct ArgumentDescriptor: Hashable, Sendable {
         self.index = index
         self.arrayLength = arrayLength
         self.accessType = accessType
+    }
+}
+
+extension ArgumentDescriptor.ArgumentResourceType: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .inlineData(let type):
+            return "inlineData(type: .\(type))"
+        case .constantBuffer(let alignment):
+            return "constantBuffer(alignment: \(alignment))"
+        case .storageBuffer:
+            return "storageBuffer"
+        case .texture(let type):
+            let typeString = String(describing: type)
+            return "texture(type: .\(typeString))"
+        case .sampler:
+            return "sampler"
+        case .accelerationStructure:
+            return "accelerationStructure"
+        }
     }
 }
 

@@ -32,6 +32,7 @@ extension ResourceType {
 enum ResourceViewType {
     case uniformBuffer
     case storageBuffer
+    case inlineUniformBlock
     case pushConstantBlock
     case image
     case storageImage
@@ -53,7 +54,7 @@ enum ResourceViewType {
     
     var baseType : ResourceType {
         switch self {
-        case .uniformBuffer, .storageBuffer, .pushConstantBlock:
+        case .uniformBuffer, .storageBuffer, .pushConstantBlock, .inlineUniformBlock:
             return .buffer
         case .image, .storageImage, .inputAttachment:
             return .texture
@@ -64,7 +65,7 @@ enum ResourceViewType {
     
     var spvcType : spvc_resource_type {
         switch self {
-        case .uniformBuffer:
+        case .uniformBuffer, .inlineUniformBlock:
             return SPVC_RESOURCE_TYPE_UNIFORM_BUFFER
         case .storageBuffer:
             return SPVC_RESOURCE_TYPE_STORAGE_BUFFER
@@ -82,7 +83,7 @@ enum ResourceViewType {
     }
     
     static var boundTypes : [ResourceViewType] {
-        return [.uniformBuffer, .storageBuffer, .image, .storageImage, .inputAttachment, .sampler]
+        return [.uniformBuffer, .storageBuffer, .inlineUniformBlock, .image, .storageImage, .inputAttachment, .sampler]
     }
 }
 
@@ -139,14 +140,18 @@ struct Resource : Equatable {
     var name : String
     var stages : RenderStages
     var viewType : ResourceViewType
+    var textureType : TextureType?
+    var accessType : ResourceAccessType
     var platformBindings : PlatformBindings
     
-    init(type: SPIRVType, binding: Binding, name: String, stage: RenderStages, viewType: ResourceViewType, platformBindings: PlatformBindings) {
+    init(type: SPIRVType, binding: Binding, name: String, stage: RenderStages, viewType: ResourceViewType, textureType: TextureType?, accessType: ResourceAccessType, platformBindings: PlatformBindings) {
         self.type = type
         self.binding = binding
         self.name = name
         self.stages = stage
         self.viewType = viewType
+        self.textureType = textureType
+        self.accessType = accessType
         self.platformBindings = platformBindings
     }
     
@@ -166,12 +171,78 @@ struct Resource : Equatable {
             }
         }
         
+        
         let resourceTypeHandle = spvc_compiler_get_type_handle(compiler.compiler, resource.type_id)
         
         let name = String(cString: spvc_compiler_get_name(compiler.compiler, resource.id)) // String(cString: resource.name)
         let set = Int(spvc_compiler_get_decoration(compiler.compiler, resource.id, SpvDecorationDescriptorSet))
         let binding = Int(spvc_compiler_get_decoration(compiler.compiler, resource.id, SpvDecorationBinding))
         let arrayLength = Int(spvc_type_get_array_dimension(resourceTypeHandle, 0))
+        
+        var viewType = viewType
+        if compiler.file.inlineUniformBlocks.contains(.init(set: set, binding: binding)) {
+            switch viewType {
+            case .uniformBuffer, .inlineUniformBlock, .pushConstantBlock:
+                viewType = .inlineUniformBlock
+            default:
+                print("Warning: Resource \(name) at binding (binding = \(binding), set = \(set)) is not a valid candidate for an inline uniform block.")
+            }
+        }
+        
+        var textureType: TextureType? = nil
+        let accessType: ResourceAccessType
+        switch viewType {
+        case .uniformBuffer, .pushConstantBlock, .inlineUniformBlock:
+            accessType = .read
+        case .storageBuffer:
+            var decorationCount = 0
+            var decorations: UnsafePointer<SpvDecoration>? = nil
+            spvc_compiler_get_buffer_block_decorations(compiler.compiler, resource.id, &decorations, &decorationCount)
+            
+            let decorationsBuffer = UnsafeBufferPointer(start: decorations, count: decorationCount)
+            
+            let isNonReadable = decorationsBuffer.contains(SpvDecorationNonReadable)
+            let isNonWritable = decorationsBuffer.contains(SpvDecorationNonWritable)
+            
+            var access = ResourceAccessType.readWrite
+            if isNonReadable { access.remove(.read) }
+            if isNonWritable { access.remove(.write) }
+            accessType = access
+        case .image, .storageImage, .inputAttachment:
+            let accessQualifier = spvc_type_get_image_access_qualifier(resourceTypeHandle)
+            if viewType != .storageImage || accessQualifier == SpvAccessQualifierReadOnly {
+                accessType = .read
+            } else if accessQualifier == SpvAccessQualifierWriteOnly {
+                accessType = .write
+            } else {
+                accessType = .readWrite
+            }
+            
+            let dimension = spvc_type_get_image_dimension(resourceTypeHandle)
+            let isArray = spvc_type_get_image_arrayed(resourceTypeHandle) == SPVC_TRUE
+            let isMultisampled = spvc_type_get_image_multisampled(resourceTypeHandle) == SPVC_TRUE
+            switch dimension {
+            case SpvDim1D:
+                textureType = isArray ? .type1DArray : .type1D
+            case SpvDim2D:
+                if isMultisampled {
+                    textureType = isArray ? .type2DMultisampleArray : .type2DMultisample
+                } else {
+                    textureType = isArray ? .type2DArray : .type2D
+                }
+            case SpvDim3D:
+                textureType = .type3D
+            case SpvDimCube:
+                textureType = isArray ? .typeCubeArray : .typeCube
+            case SpvDimBuffer:
+                textureType = .typeTextureBuffer
+            default:
+                break
+            }
+            
+        case .sampler:
+            accessType = .read
+        }
         
         var platformBindings = PlatformBindings()
         
@@ -187,7 +258,7 @@ struct Resource : Equatable {
             }
         }
         
-        self.init(type: type, binding: Binding(set: set, index: binding, arrayLength: arrayLength), name: name, stage: stage, viewType: viewType, platformBindings: platformBindings)
+        self.init(type: type, binding: Binding(set: set, index: binding, arrayLength: arrayLength), name: name, stage: stage, viewType: viewType, textureType: textureType, accessType: accessType, platformBindings: platformBindings)
     }
     
     static func ==(lhs: Resource, rhs: Resource) -> Bool {
