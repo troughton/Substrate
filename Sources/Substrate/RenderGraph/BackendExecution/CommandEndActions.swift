@@ -8,7 +8,7 @@
 import Foundation
 import SubstrateUtilities
 
-enum CommandEndActionType: Sendable {
+enum CommandEndActionType: @unchecked Sendable {
     case release(Unmanaged<AnyObject>)
     
     func execute() {

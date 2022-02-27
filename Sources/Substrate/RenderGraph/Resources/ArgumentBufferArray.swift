@@ -126,6 +126,10 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         self.argumentBufferArray = argBufferArray
     }
     
+    public init(_ argumentBufferArray: ArgumentBufferArray) {
+        self.argumentBufferArray = argumentBufferArray
+    }
+    
     public init(handle: Handle) {
         self.argumentBufferArray = ArgumentBufferArray(handle: handle)
     }

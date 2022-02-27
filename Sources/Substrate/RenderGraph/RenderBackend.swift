@@ -15,8 +15,7 @@ import Foundation
 import Vulkan
 #endif
 
-@usableFromInline
-protocol PipelineReflection : AnyObject {
+public protocol PipelineReflection : AnyObject {
     var pipelineState: UnsafeRawPointer? { get }
     
     func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?

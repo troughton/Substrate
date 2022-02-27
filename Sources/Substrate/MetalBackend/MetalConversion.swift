@@ -267,7 +267,7 @@ extension ArgumentBufferDescriptor {
             result.index = argument.index
             result.arrayLength = argument.arrayLength
             result.access = MTLArgumentAccess(argument.accessType)
-            switch argument.resource {
+            switch argument.resourceType {
             case .inlineData(let dataType):
                 result.dataType = MTLDataType(dataType)
             case .constantBuffer(let alignment):

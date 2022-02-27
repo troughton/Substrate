@@ -89,14 +89,14 @@ public struct ArgumentDescriptor: Hashable, Sendable {
         case accelerationStructure
     }
     
-    public var resource: ArgumentResourceType // VkDescriptorSetLayoutBinding.descriptorType
+    public var resourceType: ArgumentResourceType // VkDescriptorSetLayoutBinding.descriptorType
     public var index: Int // VkDescriptorSetLayoutBinding.binding
     public var arrayLength: Int // VkDescriptorSetLayoutBinding.descriptorCount
     public var accessType: ResourceAccessType // VkDescriptorSetLayoutBinding.descriptorType
     
-    public init(resource: ArgumentResourceType, index: Int, arrayLength: Int, accessType: ResourceAccessType) {
-        self.resource = resource
-        self.index = index
+    public init(resourceType: ArgumentResourceType, index: Int? = nil, arrayLength: Int = 1, accessType: ResourceAccessType = .read) {
+        self.resourceType = resourceType
+        self.index = index ?? -1
         self.arrayLength = arrayLength
         self.accessType = accessType
     }
@@ -125,8 +125,16 @@ extension ArgumentDescriptor.ArgumentResourceType: CustomStringConvertible {
 public struct ArgumentBufferDescriptor: Hashable, Sendable {
     public var arguments: [ArgumentDescriptor]
     
+    @inlinable
     public init(arguments: [ArgumentDescriptor]) {
         self.arguments = arguments
+        
+        var nextIndex = 0
+        for i in self.arguments.indices {
+            precondition(self.arguments[i].index < 0 || self.arguments[i].index >= nextIndex, "Arguments must be in order of ascending index.")
+            self.arguments[i].index = max(self.arguments[i].index, nextIndex)
+            nextIndex = self.arguments[i].index + 1
+        }
     }
 }
 
@@ -176,15 +184,19 @@ public struct ArgumentBuffer : ResourceProtocol {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
    
-    public init(renderGraph: RenderGraph? = nil) {
+    public init(bindingPath: ResourceBindingPath, pipelineReflection: PipelineReflection, renderGraph: RenderGraph? = nil) {
         guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
             fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
+        }
+        guard let encoder = pipelineReflection.argumentBufferEncoder(at: bindingPath, currentEncoder: nil) else {
+            preconditionFailure("Binding path \(bindingPath) does not represent an argument buffer binding in the provided pipeline reflection.")
         }
         precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
         
         self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: .init(arguments: []), flags: [])
         
         assert(self.encoder == nil)
+        self.replaceEncoder(with: encoder, expectingCurrentValue: nil)
     }
     
     public init(descriptor: ArgumentBufferDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
@@ -455,6 +467,10 @@ public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
     
     public init?(_ resource: Resource) {
         guard let argumentBuffer = ArgumentBuffer(resource) else { return nil }
+        self.argumentBuffer = argumentBuffer
+    }
+    
+    public init(_ argumentBuffer: ArgumentBuffer) {
         self.argumentBuffer = argumentBuffer
     }
     

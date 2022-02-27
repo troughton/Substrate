@@ -384,7 +384,7 @@ public class ResourceBindingEncoder : CommandEncoder {
         
         let bindingPath = RenderBackend.argumentBufferPath(at: setIndex, stages: A.activeStages)
         
-        let argumentBuffer = ArgumentBuffer()
+        let argumentBuffer = ArgumentBuffer(descriptor: A.argumentBufferDescriptor)
         assert(argumentBuffer.bindings.isEmpty)
         arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
      

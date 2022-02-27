@@ -241,7 +241,7 @@ final class DescriptorSet {
     }
     
     func printArgumentBufferDescriptor(to stream: inout ReflectionPrinter, platformBindingPath: KeyPath<PlatformBindings, UInt32?>?) {
-        stream.print("return ArgumentDescriptor(arguments: [")
+        stream.print("return ArgumentBufferDescriptor(arguments: [")
         for resource in self.resources {
             let argumentResourceType: ArgumentDescriptor.ArgumentResourceType
             switch resource.viewType {
@@ -287,14 +287,7 @@ final class DescriptorSet {
             if let platformBindingPath = platformBindingPath {
                 bindingIndex = resource.platformBindings[keyPath: platformBindingPath].map { Int($0) } ?? resource.binding.index
             }
-            
-            if resource.viewType == .storageImage { // Apple Silicon doesn't support read-write textures in argument buffers
-                stream.print("#if !canImport(Metal) || (os(macOS) && (arch(i386) || arch(x86_64)))")
-            }
-            stream.print("ArgumentDescriptor(resource: .\(argumentResourceType), index: \(bindingIndex), arrayLength: \(max(resource.binding.arrayLength, 1)), accessType: \(accessTypeString)),")
-            if resource.viewType == .storageImage {
-                stream.print("#endif")
-            }
+            stream.print("ArgumentDescriptor(resourceType: .\(argumentResourceType), index: \(bindingIndex), arrayLength: \(max(resource.binding.arrayLength, 1)), accessType: \(accessTypeString)),")
         }
         stream.print("])")
     }
@@ -302,7 +295,7 @@ final class DescriptorSet {
     func printArgumentBufferDescriptor(to stream: inout ReflectionPrinter) {
         stream.print("public static var argumentBufferDescriptor : ArgumentBufferDescriptor {")
         
-        if self.resources.contains(where: { $0.platformBindings.macOSMetalIndex != UInt32($0.binding.index) || $0.platformBindings.macOSMetalIndex != $0.platformBindings.appleSiliconMetalIndex }) {
+        if self.resources.contains(where: { $0.viewType == .storageImage || $0.platformBindings.macOSMetalIndex != UInt32($0.binding.index) || $0.platformBindings.macOSMetalIndex != $0.platformBindings.appleSiliconMetalIndex }) {
             stream.print("#if canImport(Metal)")
             stream.print("#if os(macOS) && (arch(i386) || arch(x86_64))")
             self.printArgumentBufferDescriptor(to: &stream, platformBindingPath: \.macOSMetalIndex)
