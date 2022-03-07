@@ -630,6 +630,7 @@ public struct Image<ComponentType> : AnyImage {
     
     @inlinable
     public mutating func apply(_ function: (T) -> T, channelRange: Range<Int>) {
+        precondition(channelRange.lowerBound >= 0 && channelRange.upperBound <= self.channelCount)
         self.ensureUniqueness()
         for y in 0..<self.height {
             let yBase = y * self.width * self.channelCount
