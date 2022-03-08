@@ -68,7 +68,7 @@ extension Angle : Codable where Scalar : Codable {}
 extension Angle {
     @inlinable
     public static func sin(_ a: Angle<Scalar>) -> Scalar {
-        return Scalar.cos(a.radians)
+        return Scalar.sin(a.radians)
     }
 
     @inlinable
