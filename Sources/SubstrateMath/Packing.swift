@@ -57,17 +57,36 @@ public struct Float16 : Hashable, Codable {
     
     @inlinable
     public var exponentBitPattern : UInt16 {
-        return self.bitPattern >> 10 & 0b11111
+        get {
+            return self.bitPattern >> 10 & 0b11111
+        } set {
+            self.bitPattern &= 0b1000001111111111
+            self.bitPattern |= (newValue & 0b11111) << 5
+        }
     }
     
     @inlinable
     public var sign : FloatingPointSign {
-        return self.bitPattern >> 15 & 0b1 == 0 ? .plus : .minus
+        get {
+            return self.bitPattern >> 15 & 0b1 == 0 ? .plus : .minus
+        } set {
+            switch newValue {
+            case .plus:
+                self.bitPattern &= ~(1 << 15)
+            case .minus:
+                self.bitPattern |= 1 << 15
+            }
+        }
     }
     
     @inlinable
     public var significandBitPattern : UInt16 {
-        return self.bitPattern & 0b1111111111
+        get {
+            return self.bitPattern & 0b1111111111
+        } set {
+            self.bitPattern &= 0b0000000000
+            self.bitPattern |= newValue & 0b1111111111
+        }
     }
 }
 
@@ -77,10 +96,10 @@ extension Float {
     public init(_ h: Float16) {
         // https://fgiesen.wordpress.com/2012/03/28/half-to-float-done-quic/
         let magic = Float32(bitPattern: 126 << 23)
-        var o = FloatBits(bitPattern: (0 as Float).bitPattern)
+        var o = FloatBits(bitPattern: 0)
         
         if h.exponentBitPattern == 0 { // Zero / Denormal
-            o.bitPattern = magic.bitPattern
+            o.bitPattern = magic.bitPattern &+ UInt32(h.significandBitPattern)
             o.bitPattern = (Float(bitPattern: o.bitPattern) - magic).bitPattern
         } else {
             o.significandBitPattern = UInt32(h.significandBitPattern) << 13
@@ -99,11 +118,23 @@ extension Float {
 extension Float16 {
     @inlinable
     public init(_ float: Float) {
+        // https://stackoverflow.com/a/60047308{
         let x = float.bitPattern
-        var result = 0 as UInt32
-        result |= (x >> 16) & 0x8000
-        result |= ((((x & 0x7f800000) &- 0x38000000) >> 13) & 0x7c00)
-        result |= (x >> 13) & 0x03ff
+        let b = x &+ 0x00001000; // round-to-nearest-even: add last bit after truncated mantissa
+        let e = (b & 0x7F800000) >> 23 // exponent
+        let m = b & 0x007FFFFF // mantissa; in line below: 0x007FF000 = 0x00800000-0x00001000 = decimal indicator flag - initial rounding
+           
+        var result = (b & 0x80000000) >> 16
+        
+        if e > 101 && e < 113 {
+            result |= (((0x007FF000 &+ m) >> (125 &- e)) &+ 1) >> 1
+        }
+        if e > 112 {
+            result |= (((e &- 112) << 10) & 0x7C00) | m >> 13
+        }
+        if e > 143 {
+            result |= 0x7FFF
+        }
         self.init(bitPattern: UInt16(result))
     }
 }
