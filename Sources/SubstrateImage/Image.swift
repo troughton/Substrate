@@ -1211,14 +1211,14 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
 extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     @inlinable
     public var averageValue: SIMD4<Float> {
-        let scale = 1.0 / Float(self.width * self.height)
-        var average = SIMD4<Float>(repeating: 0)
+        let scale = 1.0 / Double(self.width * self.height)
+        var average = SIMD4<Double>(repeating: 0.0)
         for y in 0..<self.height {
             for x in 0..<self.width {
-                average += self[floatVectorAt: x, y] * scale
+                average += SIMD4<Double>(self[floatVectorAt: x, y]) * scale
             }
         }
-        return average
+        return SIMD4<Float>(average)
     }
 }
 
