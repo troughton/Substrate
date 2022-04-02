@@ -20,7 +20,7 @@
 /// All necessary methods for RandomAccess and MutableCollection are defaulted, as well as a
 /// `subscript[unchecked:]` and the `withUnsafe[Mutable]BufferPointer` methods.
 /// Conforming types should not implement these methods.
-public protocol StaticArray: RandomAccessCollection, MutableCollection where Index == Int {
+public protocol StaticArray: RandomAccessCollection, MutableCollection, ExpressibleByArrayLiteral where Index == Int {
   /// Initialize with element values taken from an iterator.
   ///
   /// It is an error if the iterator runs out of values before this container is full. It is *not* an error for the
@@ -30,6 +30,14 @@ public protocol StaticArray: RandomAccessCollection, MutableCollection where Ind
   
   /// Initialize with a function mapping from index to element value.
   init(_startIndex: Int, _ function: (Int) -> Element)
+}
+
+extension StaticArray {
+    @inlinable
+    public init(arrayLiteral: Element...) {
+        var iterator = arrayLiteral.makeIterator()
+        self.init(_iterator: &iterator)
+    }
 }
 
 /// A fixed-size array holding exactly one element.
