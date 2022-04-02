@@ -63,6 +63,21 @@ public func cross<S>(_ u: SIMD3<S>, _ v: SIMD3<S>) -> SIMD3<S> where S : Numeric
 }
 
 @inlinable
+public func reflect<S>(incident: SIMD3<S>, normal: SIMD3<S>) -> SIMD3<S> where S: BinaryFloatingPoint {
+    return incident - SIMD3<S>(repeating: 2.0) * dot(incident, normal) * normal
+}
+
+@inlinable
+public func refract<S>(incident I: SIMD3<S>, normal N: SIMD3<S>, eta: S) -> SIMD3<S> where S : BinaryFloatingPoint {
+    let k = 1.0 - eta * eta * (1.0 - dot(N, I) * dot(N, I))
+    if k < 0.0 {
+        return .zero
+    } else {
+        return eta * I - (eta * dot(N, I) + k.squareRoot()) * N
+    }
+}
+
+@inlinable
 public func interpolate<V : SIMD>(from: V, to: V, factor: V.Scalar) -> V where V.Scalar : FloatingPoint {
     return from + (to - from) * V(repeating: factor)
 }
