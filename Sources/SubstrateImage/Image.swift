@@ -914,9 +914,9 @@ extension Image where ComponentType: SIMDScalar {
     }
     
     public struct PixelView: Collection {
-        @usableFromInline var pixelView: PixelView
+        @usableFromInline var image: Image
         
-        public struct Index {
+        public struct Index: Equatable, Comparable {
             @usableFromInline var offset: Int
             
             @inlinable
@@ -928,6 +928,16 @@ extension Image where ComponentType: SIMDScalar {
             @inlinable
             init(offset: Int) {
                 self.offset = offset
+            }
+            
+            @inlinable
+            public static func ==(lhs: Index, rhs: Index) -> Bool {
+                return lhs.offset == rhs.offset
+            }
+            
+            @inlinable
+            public static func <(lhs: Index, rhs: Index) -> Bool {
+                return lhs.offset < rhs.offset
             }
         }
         
@@ -948,12 +958,12 @@ extension Image where ComponentType: SIMDScalar {
                 return self.image.withUnsafeBufferPointer { imageBuffer in
                     var result = SIMD4<T>()
                     if channelCount != 4, let alphaChannelIndex = alphaChannelIndex {
-                        for i in 0..<min(alphaChannelIndex, 3) {
+                        for i in 0..<Swift.min(alphaChannelIndex, 3) {
                             result[i] = imageBuffer[position.offset &+ i]
                         }
                         result[3] = imageBuffer[position.offset &+ alphaChannelIndex]
                     } else {
-                        for i in 0..<min(self.channelCount, 4) {
+                        for i in 0..<Swift.min(channelCount, 4) {
                             result[i] = imageBuffer[position.offset &+ i]
                         }
                     }
@@ -970,12 +980,12 @@ extension Image where ComponentType: SIMDScalar {
                 
                 self.image.withUnsafeMutableBufferPointer { imageBuffer in
                     if channelCount != 4, let alphaChannelIndex = alphaChannelIndex {
-                        for i in 0..<min(alphaChannelIndex, 3) {
+                        for i in 0..<Swift.min(alphaChannelIndex, 3) {
                             imageBuffer[position.offset &+ i] = newValue.value[i]
                         }
                         imageBuffer[position.offset &+ alphaChannelIndex] = newValue.value.w
                     } else {
-                        for i in 0..<min(self.channelCount, 4) {
+                        for i in 0..<Swift.min(channelCount, 4) {
                             imageBuffer[position.offset &+ i] = newValue.value[i]
                         }
                     }
@@ -1004,13 +1014,13 @@ extension Image where ComponentType: SIMDScalar {
         }
         
         @inlinable
-        public var endIndex: (x: Int, y: Int) {
+        public var endIndex: Index {
             return .init(offset: self.image.width * self.image.height * self.image.channelCount)
         }
         
         @inlinable
         public func index(after i: Index) -> Index {
-            return .init(offset: i + 1)
+            return .init(offset: i.offset + 1)
         }
     }
     
