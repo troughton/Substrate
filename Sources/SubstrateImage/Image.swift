@@ -883,14 +883,14 @@ extension Image where ComponentType: Comparable {
 
 extension Image where ComponentType: SIMDScalar {
     @inlinable
-    public subscript(x: Int, y: Int) -> SIMD4<T> {
+    public subscript(x: Int, y: Int) -> SIMD4<ComponentType> {
         @inline(__always) get {
             precondition(x >= 0 && y >= 0 && x < self.width && y < self.height)
             precondition(self.width * self.height * self.channelCount < Int.max)
             
             let storage = self.storage.data.baseAddress.unsafelyUnwrapped
             
-            var result = SIMD4<T>()
+            var result = SIMD4<ComponentType>()
             if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
                 for i in 0..<min(alphaChannelIndex, 3) {
                     result[i] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i]
@@ -921,6 +921,123 @@ extension Image where ComponentType: SIMDScalar {
                     storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i] = newValue[i]
                 }
             }
+        }
+    }
+    
+    public struct PixelView: Collection {
+        @usableFromInline var pixelView: PixelView
+        
+        public struct Index {
+            @usableFromInline var offset: Int
+            
+            @inlinable
+            init(x: Int, y: Int, image: Image) {
+                precondition((0..<image.width).contains(x) && (0..<image.height).contains(y))
+                self.offset = image.channelCount * (image.width * y + x)
+            }
+            
+            @inlinable
+            init(offset: Int) {
+                self.offset = offset
+            }
+        }
+        
+        @inlinable
+        init(image: Image) {
+            self.image = image
+        }
+        
+        @inlinable
+        public subscript(position: Index) -> (pixel: (x: Int, y: Int), value: SIMD4<ComponentType>) {
+            @inline(__always) get {
+                let channelCount = self.image.channelCount
+                let alphaChannelIndex = self.image.alphaChannelIndex
+                
+                let pixelIndex = position.offset / channelCount
+                let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.image.height)
+                
+                return self.image.withUnsafeBufferPointer { imageBuffer in
+                    var result = SIMD4<T>()
+                    if channelCount != 4, let alphaChannelIndex = alphaChannelIndex {
+                        for i in 0..<min(alphaChannelIndex, 3) {
+                            result[i] = imageBuffer[position.offset &+ i]
+                        }
+                        result[3] = imageBuffer[position.offset &+ alphaChannelIndex]
+                    } else {
+                        for i in 0..<min(self.channelCount, 4) {
+                            result[i] = imageBuffer[position.offset &+ i]
+                        }
+                    }
+                    return ((x, y), result)
+                }
+            }
+            @inline(__always) set {
+                let channelCount = self.image.channelCount
+                let alphaChannelIndex = self.image.alphaChannelIndex
+                
+                let pixelIndex = position.offset / channelCount
+                let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.image.height)
+                precondition(newValue.pixel == (x, y))
+                
+                self.image.withUnsafeMutableBufferPointer { imageBuffer in
+                    if channelCount != 4, let alphaChannelIndex = alphaChannelIndex {
+                        for i in 0..<min(alphaChannelIndex, 3) {
+                            imageBuffer[position.offset &+ i] = newValue.value[i]
+                        }
+                        imageBuffer[position.offset &+ alphaChannelIndex] = newValue.value.w
+                    } else {
+                        for i in 0..<min(self.channelCount, 4) {
+                            imageBuffer[position.offset &+ i] = newValue.value[i]
+                        }
+                    }
+                }
+            }
+        }
+        
+        @inlinable
+        public subscript(x: Int, y: Int) -> SIMD4<ComponentType> {
+            @inline(__always) get {
+                return self.image[x, y]
+            }
+            @inline(__always) set {
+                self.image[x, y] = newValue
+            }
+        }
+        
+        @inlinable
+        public var count: Int {
+            return self.image.width * self.image.height
+        }
+        
+        @inlinable
+        public var startIndex: Index {
+            return .init(offset: 0)
+        }
+        
+        @inlinable
+        public var endIndex: (x: Int, y: Int) {
+            return .init(offset: self.image.width * self.image.height * self.image.channelCount)
+        }
+        
+        @inlinable
+        public func index(after i: Index) -> Index {
+            return .init(offset: i + 1)
+        }
+    }
+    
+    @inlinable
+    public var pixels: PixelView {
+        get {
+            return PixelView(image: self)
+        }
+        set {
+            self = newValue.image
+        }
+        _modify {
+            var pixelView = PixelView(image: self)
+            self.storage = .init(data: .init(start: nil, count: 0), allocator: .temporaryBuffer)
+            yield &pixelView
+            self = pixelView.image
         }
     }
 }
@@ -1222,14 +1339,14 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
 extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     @inlinable
     public var averageValue: SIMD4<Float> {
-        let scale = 1.0 / Float(self.width * self.height)
-        var average = SIMD4<Float>(repeating: 0)
+        let scale = 1.0 / Double(self.width * self.height)
+        var average = SIMD4<Double>(repeating: 0.0)
         for y in 0..<self.height {
             for x in 0..<self.width {
-                average += self[floatVectorAt: x, y] * scale
+                average += SIMD4<Double>(self[floatVectorAt: x, y]) * scale
             }
         }
-        return average
+        return SIMD4<Float>(average)
     }
 }
 

@@ -13,7 +13,16 @@ import SubstrateUtilities
 extension MTLResourceOptions {
     static var substrateTrackedHazards : MTLResourceOptions {
         // This gives us a convenient way to toggle whether the RenderGraph or Metal should handle resource tracking.
+#if SUBSTRATE_USE_PLATFORM_HAZARD_TRACKING
+        if #available(macOS 10.15, *) {
+            return .hazardTrackingModeTracked
+        } else {
+            // Fallback on earlier versions
+            return []
+        }
+#else
         return .hazardTrackingModeUntracked
+#endif
     }
 }
 
@@ -21,7 +30,11 @@ extension MTLResourceOptions {
 extension MTLHazardTrackingMode {
     static var substrateTrackedHazards : MTLHazardTrackingMode {
         // This gives us a convenient way to toggle whether the RenderGraph or Metal should handle resource tracking.
-        return MTLResourceOptions.substrateTrackedHazards == .hazardTrackingModeUntracked ? .untracked : .tracked
+#if SUBSTRATE_USE_PLATFORM_HAZARD_TRACKING
+        return .tracked
+#else
+        return .untracked
+#endif
     }
 }
 
