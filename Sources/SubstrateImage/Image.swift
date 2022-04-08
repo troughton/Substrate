@@ -1304,11 +1304,18 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
         case .wrap:
             floorCoord = floorCoord % size
             ceilCoord = ceilCoord % size
+            floorCoord.replace(with: floorCoord &+ size, where: floorCoord .< .zero)
+            ceilCoord.replace(with: ceilCoord &+ size, where: ceilCoord .< .zero)
         case .reflect:
             floorCoord = floorCoord % (2 &* size)
             ceilCoord = ceilCoord % (2 &* size)
+            
+            floorCoord.replace(with: floorCoord &+ (2 &* size), where: floorCoord .< .zero)
+            ceilCoord.replace(with: ceilCoord &+ (2 &* size), where: ceilCoord .< .zero)
+            
             floorCoord.replace(with: 2 &* size &- floorCoord, where: floorCoord .> maxCoord)
             ceilCoord.replace(with: 2 &* size &- ceilCoord, where: ceilCoord .> maxCoord)
+            
         case .clamp:
             floorCoord = pointwiseMax(pointwiseMin(floorCoord, maxCoord), .zero)
             ceilCoord = pointwiseMax(pointwiseMin(ceilCoord, maxCoord), .zero)
