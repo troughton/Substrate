@@ -1292,8 +1292,8 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<Float> {
         var floorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
         var ceilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
-        let lerpX = Float(pixelCoordinate.x.remainder(dividingBy: 1.0))
-        let lerpY = Float(pixelCoordinate.y.remainder(dividingBy: 1.0))
+        let lerpX = Float(pixelCoordinate.x - pixelCoordinate.x.rounded(.down))
+        let lerpY = Float(pixelCoordinate.y - pixelCoordinate.y.rounded(.down))
         
         let size = SIMD2(self.width, self.height)
         let maxCoord = size &- 1
