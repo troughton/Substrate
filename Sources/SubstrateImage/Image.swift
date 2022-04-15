@@ -705,9 +705,9 @@ public struct Image<ComponentType> : AnyImage {
         
         return result
     }
-    
+  
     @inlinable
-    public func resized(width: Int, height: Int, wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default) -> Image<T> {
+    public func resized(width: Int, height: Int, horizontalWrapMode: ImageEdgeWrapMode, verticalWrapMode: ImageEdgeWrapMode, horizontalFilter: ImageResizeFilter = .default, verticalFilter: ImageResizeFilter = .default) -> Image<T> {
         if width == self.width && height == self.height {
             return self
         }
@@ -761,8 +761,8 @@ public struct Image<ComponentType> : AnyImage {
                                  Int32(self.channelCount),
                                  self.channelCount == 4 ? 3 : -1,
                                  flags,
-                                 wrapMode.stbirMode, wrapMode.stbirMode,
-                                 filter.stbirFilter, filter.stbirFilter,
+                                 horizontalWrapMode.stbirMode, verticalWrapMode.stbirMode,
+                                 horizontalFilter.stbirFilter, verticalFilter.stbirFilter,
                                  stbColorSpace, nil)
             }
         }
@@ -779,6 +779,11 @@ public struct Image<ComponentType> : AnyImage {
         default:
             fatalError()
         }
+    }
+    
+    @inlinable
+    public func resized(width: Int, height: Int, wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default) -> Image<T> {
+        return self.resized(width: width, height: height, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode, horizontalFilter: filter, verticalFilter: filter)
     }
     
     public func generateMipChain(wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default, compressedBlockSize: Int, mipmapCount: Int? = nil) -> [Image<T>] {
