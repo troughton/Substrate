@@ -52,7 +52,7 @@ public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_
     }
     let rescaled = c * scale
     //    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
-    let rounded = rescaled + (rescaled > 0 ? 0.5 : -0.5) // We follow this by a floor through conversion to int, so we can round by adding 0.5
+    let rounded = rescaled + (rescaled >= 0 ? 0.5 : -0.5) // We follow this by a floor through conversion to int, so we can round by adding 0.5
     if I.self == Int8.self {
         return Int8(rounded) as! I
     } else if I.self == Int16.self {
