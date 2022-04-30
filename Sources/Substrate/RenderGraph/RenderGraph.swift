@@ -770,7 +770,7 @@ public final class RenderGraph {
 #endif
     private(set) var signpostID: SignpostID
     
-    static let executionLock = AsyncSpinLock()
+    static let executionStream = TaskStream()
     
     /// Creates a new RenderGraph instance. There may only be up to eight RenderGraph's at any given time.
     ///
@@ -1480,7 +1480,7 @@ public final class RenderGraph {
         let signpostState = Self.signposter.beginInterval("Execute RenderGraph", id: self.signpostID)
         defer { Self.signposter.endInterval("Execute RenderGraph", signpostState) }
         
-        return await Self.executionLock.withLock { () -> RenderGraphExecutionWaitToken in // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
+        return await Self.executionStream.enqueueAndWait { () -> RenderGraphExecutionWaitToken in // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
             
             self.renderPassLock.lock()
             defer {
@@ -1510,15 +1510,15 @@ public final class RenderGraph {
             }
             
             let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
-            await Self.$activeRenderGraph.withValue(self) {
-                await self.context.executeRenderGraph {
+            await self.context.executeRenderGraph {
+                return await Self.$activeRenderGraph.withValue(self) {
                     let (passes, _, usedResources) = await self.compile(renderPasses: renderPasses)
                     return (passes, usedResources)
-                } onCompletion: { executionResult in
-                    await self.didCompleteRender(executionResult)
-                    for item in completionNotifyQueue {
-                        await item()
-                    }
+                }
+            } onCompletion: { executionResult in
+                await self.didCompleteRender(executionResult)
+                for item in completionNotifyQueue {
+                    await item()
                 }
             }
             Self.signposter.endInterval("Execute RenderGraph on Context", signpostState)

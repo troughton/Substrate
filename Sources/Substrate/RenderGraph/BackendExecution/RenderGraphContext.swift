@@ -22,7 +22,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     let backend: Backend
     let resourceRegistry: Backend.TransientResourceRegistry?
     let commandGenerator: ResourceCommandGenerator<Backend>
-    let activeContextLock = AsyncSpinLock()
+    let taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
     
     var queueCommandBufferIndex: UInt64 = 0 // The last command buffer submitted
     let syncEvent: Backend.Event
@@ -61,9 +61,21 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         
         self.commandGenerator = ResourceCommandGenerator()
         self.syncEvent = backend.makeSyncEvent(for: self.renderGraphQueue)
+        
+        var taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation? = nil
+        let taskStream = AsyncStream<@Sendable () async -> Void> { continuation in
+            taskStreamContinuation = continuation
+        }
+        self.taskStreamContinuation = taskStreamContinuation!
+        
+        Task {
+            for await task in taskStream {
+                await task()
+            }
+        }
     }
-    
-    
+                                             
+                                             
     deinit {
         backend.freeSyncEvent(for: self.renderGraphQueue)
         self.renderGraphQueue.dispose()
@@ -82,6 +94,15 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
+    public nonisolated func withContext<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @escaping @Sendable () async -> T) async -> T {
+        let taskStreamContinuation = self.taskStreamContinuation
+        return await withUnsafeContinuation { continuation in
+            taskStreamContinuation.yield {
+                continuation.resume(returning: await perform())
+            }
+        }
+    }
+    
     func processEmptyFrameCompletionHandlers(afterSubmissionIndex: UInt64) async {
         // Notify any completion handlers that were enqueued for frames with no work.
         while let (afterCBIndex, completionHandler) = self.enqueuedEmptyFrameCompletionHandlers.first {
@@ -91,7 +112,6 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
             self.enqueuedEmptyFrameCompletionHandlers.removeFirst()
         }
     }
-    
     
     func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, commandBufferIndex: Int, lastCommandBufferIndex: Int, syncEvent: Backend.Event, onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async {
         // Make sure that the sync event value is what we expect, so we don't update it past
@@ -156,7 +176,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         
         await self.backend.reloadShaderLibraryIfNeeded()
         
-        return await self.activeContextLock.withLock {
+        return await self.withContext {
             return await Backend.activeContextTaskLocal.withValue(self) {
                 let (passes, usedResources) = await executeFunc()
                 
