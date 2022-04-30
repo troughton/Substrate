@@ -183,9 +183,13 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     
     @inlinable
     public var inverse : Quaternion {
-        let lengthSquared = self.lengthSquared
-        let scale = 1.0 / lengthSquared
-        return self.conjugate * scale
+        get {
+            let lengthSquared = self.lengthSquared
+            let scale = 1.0 / lengthSquared
+            return self.conjugate * scale
+        } set {
+            self = newValue.inverse
+        }
     }
 }
 

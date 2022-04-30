@@ -365,7 +365,7 @@ extension Image where ComponentType == UInt8 {
     }
     
     public func writeJPEG(to url: URL, quality: Double = 0.9) throws {
-        let result = stbi_write_jpg(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress, /* quality = */ Int32((min(max(0.0, quality), 1.0) * 100.0).rounded()))
+        let result = stbi_write_jpg(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress, /* quality = */ Int32((Swift.min(Swift.max(0.0, quality), 1.0) * 100.0).rounded()))
         if result == 0 {
             throw TextureSaveError.errorWritingFile("(no error message)")
         }

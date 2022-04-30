@@ -31,7 +31,7 @@ public typealias TextureResizeFilter = ImageResizeFilter
 
 @inlinable
 func clamp<T: Comparable>(_ val: T, min minValue: T, max maxValue: T) -> T {
-    return min(max(val, minValue), maxValue)
+    return Swift.min(Swift.max(val, minValue), maxValue)
 }
 
 // Reference: https://docs.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
@@ -52,7 +52,7 @@ public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_
     }
     let rescaled = c * scale
     //    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
-    let rounded = rescaled + (rescaled > 0 ? 0.5 : -0.5) // We follow this by a floor through conversion to int, so we can round by adding 0.5
+    let rounded = rescaled + (rescaled >= 0 ? 0.5 : -0.5) // We follow this by a floor through conversion to int, so we can round by adding 0.5
     if I.self == Int8.self {
         return Int8(rounded) as! I
     } else if I.self == Int16.self {
@@ -67,7 +67,7 @@ public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>
     if c != c { // Check for NaN – this check is faster than c.isNaN
         return 0
     }
-    let c = min(1.0, max(c, 0.0))
+    let c = Swift.min(1.0, Swift.max(c, 0.0))
     let scale: Float
     if I.self == UInt8.self {
         scale = Float(UInt8.max)
@@ -629,7 +629,18 @@ public struct Image<ComponentType> : AnyImage {
     }
     
     @inlinable
-    public mutating func apply(_ function: (T) -> T, channelRange: Range<Int>) {
+    public mutating func apply(_ mapValues: (T) -> T) {
+        self.apply(channelRange: 0..<self.channelCount, mapValues)
+    }
+    
+    
+    @inlinable
+    public mutating func apply(_ mapValues: (_ x: Int, _ y: Int, _ channel: Int, _ value: T) -> T) {
+        self.apply(channelRange: 0..<self.channelCount, mapValues)
+    }
+    
+    @inlinable
+    public mutating func apply(channelRange: Range<Int>, _ mapValues: (T) -> T) {
         precondition(channelRange.lowerBound >= 0 && channelRange.upperBound <= self.channelCount)
         self.ensureUniqueness()
         for y in 0..<self.height {
@@ -637,10 +648,31 @@ public struct Image<ComponentType> : AnyImage {
             for x in 0..<self.width {
                 let baseIndex = yBase + x * self.channelCount
                 for c in channelRange {
-                    self.storage.data[baseIndex + c] = function(self.storage.data[baseIndex + c])
+                    self.storage.data[baseIndex + c] = mapValues(self.storage.data[baseIndex + c])
                 }
             }
         }
+    }
+    
+    @inlinable
+    public mutating func apply(channelRange: Range<Int>, _ mapValues: (_ x: Int, _ y: Int, _ channel: Int, _ value: T) -> T) {
+        precondition(channelRange.lowerBound >= 0 && channelRange.upperBound <= self.channelCount)
+        self.ensureUniqueness()
+        for y in 0..<self.height {
+            let yBase = y * self.width * self.channelCount
+            for x in 0..<self.width {
+                let baseIndex = yBase + x * self.channelCount
+                for c in channelRange {
+                    self.storage.data[baseIndex + c] = mapValues(x, y, c, self.storage.data[baseIndex + c])
+                }
+            }
+        }
+    }
+    
+    @available(*, deprecated, renamed: "apply(channelRange:_:)")
+    @inlinable
+    public mutating func apply(_ function: (T) -> T, channelRange: Range<Int>) {
+        self.apply(channelRange: channelRange, function)
     }
     
     @inlinable
@@ -716,9 +748,9 @@ public struct Image<ComponentType> : AnyImage {
         
         return result
     }
-    
+  
     @inlinable
-    public func resized(width: Int, height: Int, wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default) -> Image<T> {
+    public func resized(width: Int, height: Int, horizontalWrapMode: ImageEdgeWrapMode, verticalWrapMode: ImageEdgeWrapMode, horizontalFilter: ImageResizeFilter = .default, verticalFilter: ImageResizeFilter = .default) -> Image<T> {
         if width == self.width && height == self.height {
             return self
         }
@@ -772,8 +804,8 @@ public struct Image<ComponentType> : AnyImage {
                                  Int32(self.channelCount),
                                  self.channelCount == 4 ? 3 : -1,
                                  flags,
-                                 wrapMode.stbirMode, wrapMode.stbirMode,
-                                 filter.stbirFilter, filter.stbirFilter,
+                                 horizontalWrapMode.stbirMode, verticalWrapMode.stbirMode,
+                                 horizontalFilter.stbirFilter, verticalFilter.stbirFilter,
                                  stbColorSpace, nil)
             }
         }
@@ -790,6 +822,11 @@ public struct Image<ComponentType> : AnyImage {
         default:
             fatalError()
         }
+    }
+    
+    @inlinable
+    public func resized(width: Int, height: Int, wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default) -> Image<T> {
+        return self.resized(width: width, height: height, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode, horizontalFilter: filter, verticalFilter: filter)
     }
     
     public func generateMipChain(wrapMode: ImageEdgeWrapMode, filter: ImageResizeFilter = .default, compressedBlockSize: Int, mipmapCount: Int? = nil) -> [Image<T>] {
@@ -892,12 +929,12 @@ extension Image where ComponentType: SIMDScalar {
             
             var result = SIMD4<ComponentType>()
             if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
-                for i in 0..<min(alphaChannelIndex, 3) {
+                for i in 0..<Swift.min(alphaChannelIndex, 3) {
                     result[i] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i]
                 }
                 result[3] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ alphaChannelIndex]
             } else {
-                for i in 0..<min(self.channelCount, 4) {
+                for i in 0..<Swift.min(self.channelCount, 4) {
                     result[i] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i]
                 }
             }
@@ -912,12 +949,12 @@ extension Image where ComponentType: SIMDScalar {
             let storage = self.storage.data.baseAddress.unsafelyUnwrapped
             
             if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
-                for i in 0..<min(alphaChannelIndex, 3) {
+                for i in 0..<Swift.min(alphaChannelIndex, 3) {
                     storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i] = newValue[i]
                 }
                 storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ alphaChannelIndex] = newValue.w
             } else {
-                for i in 0..<min(self.channelCount, 4) {
+                for i in 0..<Swift.min(self.channelCount, 4) {
                     storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i] = newValue[i]
                 }
             }
@@ -927,30 +964,7 @@ extension Image where ComponentType: SIMDScalar {
     public struct PixelView: Collection {
         @usableFromInline var image: Image
         
-        public struct Index: Equatable, Comparable {
-            @usableFromInline var offset: Int
-            
-            @inlinable
-            init(x: Int, y: Int, image: Image) {
-                precondition((0..<image.width).contains(x) && (0..<image.height).contains(y))
-                self.offset = image.channelCount * (image.width * y + x)
-            }
-            
-            @inlinable
-            init(offset: Int) {
-                self.offset = offset
-            }
-            
-            @inlinable
-            public static func ==(lhs: Index, rhs: Index) -> Bool {
-                return lhs.offset == rhs.offset
-            }
-            
-            @inlinable
-            public static func <(lhs: Index, rhs: Index) -> Bool {
-                return lhs.offset < rhs.offset
-            }
-        }
+        public typealias Index = Image.Index
         
         @inlinable
         init(image: Image) {
@@ -958,7 +972,7 @@ extension Image where ComponentType: SIMDScalar {
         }
         
         @inlinable
-        public subscript(position: Index) -> (pixel: (x: Int, y: Int), value: SIMD4<ComponentType>) {
+        public subscript(position: Index) -> (x: Int, y: Int, value: SIMD4<ComponentType>) {
             @inline(__always) get {
                 let channelCount = self.image.channelCount
                 let alphaChannelIndex = self.image.alphaChannelIndex
@@ -978,7 +992,7 @@ extension Image where ComponentType: SIMDScalar {
                             result[i] = imageBuffer[position.offset &+ i]
                         }
                     }
-                    return ((x, y), result)
+                    return (x, y, result)
                 }
             }
             @inline(__always) set {
@@ -987,7 +1001,7 @@ extension Image where ComponentType: SIMDScalar {
                 
                 let pixelIndex = position.offset / channelCount
                 let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.image.height)
-                precondition(newValue.pixel == (x, y))
+                precondition(newValue.x == x && newValue.y == y)
                 
                 self.image.withUnsafeMutableBufferPointer { imageBuffer in
                     if channelCount != 4, let alphaChannelIndex = alphaChannelIndex {
@@ -1031,7 +1045,7 @@ extension Image where ComponentType: SIMDScalar {
         
         @inlinable
         public func index(after i: Index) -> Index {
-            return .init(offset: i.offset + 1)
+            return .init(offset: i.offset + self.image.channelCount)
         }
     }
     
@@ -1049,6 +1063,73 @@ extension Image where ComponentType: SIMDScalar {
             yield &pixelView
             self = pixelView.image
         }
+    }
+}
+
+extension Image: Collection {
+    public struct Index: Equatable, Comparable {
+        @usableFromInline var offset: Int
+        
+        @inlinable
+        init(x: Int, y: Int, image: Image) {
+            precondition((0..<image.width).contains(x) && (0..<image.height).contains(y))
+            self.offset = image.channelCount * (image.width * y + x)
+        }
+        
+        @inlinable
+        init(x: Int, y: Int, channel: Int, image: Image) {
+            precondition((0..<image.width).contains(x) && (0..<image.height).contains(y) && (0..<image.channelCount).contains(channel))
+            self.offset = image.channelCount * (image.width * y + x) + channel
+        }
+        
+        @inlinable
+        init(offset: Int) {
+            self.offset = offset
+        }
+        
+        @inlinable
+        public static func ==(lhs: Index, rhs: Index) -> Bool {
+            return lhs.offset == rhs.offset
+        }
+        
+        @inlinable
+        public static func <(lhs: Index, rhs: Index) -> Bool {
+            return lhs.offset < rhs.offset
+        }
+    }
+        
+    @inlinable
+    public subscript(position: Index) -> (x: Int, y: Int, channel: Int, value: ComponentType) {
+        @inline(__always) get {
+            let channelCount = self.channelCount
+            
+            let (pixelIndex, channelIndex) = position.offset.quotientAndRemainder(dividingBy: channelCount)
+            let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.height)
+            
+            return self.withUnsafeBufferPointer { imageBuffer in
+                return (x, y, channelIndex, imageBuffer[position.offset])
+            }
+        }
+    }
+        
+    @inlinable
+    public var count: Int {
+        return self.width * self.height * self.channelCount
+    }
+    
+    @inlinable
+    public var startIndex: Index {
+        return .init(offset: 0)
+    }
+    
+    @inlinable
+    public var endIndex: Index {
+        return .init(offset: self.width * self.height * self.channelCount)
+    }
+    
+    @inlinable
+    public func index(after i: Index) -> Index {
+        return .init(offset: i.offset + 1)
     }
 }
 
@@ -1303,8 +1384,8 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<Float> {
         var floorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
         var ceilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
-        let lerpX = Float(pixelCoordinate.x.remainder(dividingBy: 1.0))
-        let lerpY = Float(pixelCoordinate.y.remainder(dividingBy: 1.0))
+        let lerpX = Float(pixelCoordinate.x - pixelCoordinate.x.rounded(.down))
+        let lerpY = Float(pixelCoordinate.y - pixelCoordinate.y.rounded(.down))
         
         let size = SIMD2(self.width, self.height)
         let maxCoord = size &- 1
@@ -1315,11 +1396,18 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
         case .wrap:
             floorCoord = floorCoord % size
             ceilCoord = ceilCoord % size
+            floorCoord.replace(with: floorCoord &+ size, where: floorCoord .< .zero)
+            ceilCoord.replace(with: ceilCoord &+ size, where: ceilCoord .< .zero)
         case .reflect:
             floorCoord = floorCoord % (2 &* size)
             ceilCoord = ceilCoord % (2 &* size)
+            
+            floorCoord.replace(with: floorCoord &+ (2 &* size), where: floorCoord .< .zero)
+            ceilCoord.replace(with: ceilCoord &+ (2 &* size), where: ceilCoord .< .zero)
+            
             floorCoord.replace(with: 2 &* size &- floorCoord, where: floorCoord .> maxCoord)
             ceilCoord.replace(with: 2 &* size &- ceilCoord, where: ceilCoord .> maxCoord)
+            
         case .clamp:
             floorCoord = pointwiseMax(pointwiseMin(floorCoord, maxCoord), .zero)
             ceilCoord = pointwiseMax(pointwiseMin(ceilCoord, maxCoord), .zero)
@@ -1504,7 +1592,7 @@ extension Image where ComponentType == Float {
         let alphaChannel = self.channelCount - 1
         for y in 0..<self.height {
             for x in 0..<self.width {
-                let alpha = max(self[x, y, channel: alphaChannel], .leastNormalMagnitude)
+                let alpha = Swift.max(self[x, y, channel: alphaChannel], .leastNormalMagnitude)
                 for c in 0..<alphaChannel {
                     let newValue = self[x, y, channel: c] / alpha
                     self.setUnchecked(x: x, y: y, channel: c, value: clamp(newValue, min: 0.0, max: 1.0))
