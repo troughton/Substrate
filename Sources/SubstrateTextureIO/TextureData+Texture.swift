@@ -47,8 +47,8 @@ extension Image {
             var descriptor = texture.descriptor
             descriptor.storageMode = .managed
             descriptor.textureType = .type2D
-            descriptor.width = max(descriptor.width >> mipmapLevel, 1)
-            descriptor.height = max(descriptor.height >> mipmapLevel, 1)
+            descriptor.width = Swift.max(descriptor.width >> mipmapLevel, 1)
+            descriptor.height = Swift.max(descriptor.height >> mipmapLevel, 1)
             descriptor.mipmapLevelCount = 1
             
             let cpuVisibleTexture = Texture(descriptor: descriptor, flags: .persistent)
@@ -65,7 +65,7 @@ extension Image {
         
         assert(texture.storageMode != .private)
         
-        self.init(width: max(texture.width >> mipmapLevel, 1), height: max(texture.height >> mipmapLevel, 1),
+        self.init(width: Swift.max(texture.width >> mipmapLevel, 1), height: Swift.max(texture.height >> mipmapLevel, 1),
                   channelCount: pixelFormat.channelCount, colorSpace: pixelFormat.isSRGB ? .sRGB : .linearSRGB, alphaMode: alphaMode)
         
         let bytesPerRow = self.width * self.channelCount * MemoryLayout<T>.stride
