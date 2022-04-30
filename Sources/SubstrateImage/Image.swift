@@ -1238,7 +1238,7 @@ extension Image where ComponentType: BinaryInteger & FixedWidthInteger & Unsigne
         }
         
         let sourceColorSpace = self.colorSpace
-        self.apply({ floatToUnorm(ImageColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }, channelRange: self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount)
+        self.apply(channelRange: self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount) { floatToUnorm(ImageColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }
     }
     
     @_specialize(kind: full, where ComponentType == UInt8)
@@ -1538,7 +1538,7 @@ extension Image where ComponentType == Float {
         }
         
         let sourceColorSpace = self.colorSpace
-        self.apply({ ImageColorSpace.convert($0, from: sourceColorSpace, to: toColorSpace) }, channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount)
+        self.apply(channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount) { ImageColorSpace.convert($0, from: sourceColorSpace, to: toColorSpace) }
         self.colorSpace = toColorSpace
     }
     
