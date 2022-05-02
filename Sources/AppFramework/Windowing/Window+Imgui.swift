@@ -204,7 +204,7 @@ extension ImGui {
                 
                 if  windowPosition.x <= mousePosition.x && windowPosition.y <= mousePosition.y &&
                     (windowPosition.x + windowDimensions.width) >= mousePosition.x && (windowPosition.y + windowDimensions.height) >= mousePosition.y {
-                    let windowsInFrontCount = window.windowsInFrontCount
+                    let windowsInFrontCount = windows.count > 1 ? window.windowsInFrontCount : 0
                     if windowsInFrontCount < frontmostHoveredViewport {
                         io.pointee.MouseHoveredViewport = viewport.pointee.ID
                         frontmostHoveredViewport = windowsInFrontCount
