@@ -967,7 +967,7 @@ extension Image where ComponentType: SIMDScalar {
                 let alphaChannelIndex = self.image.alphaChannelIndex
                 
                 let pixelIndex = position.offset / channelCount
-                let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.image.height)
+                let (y, x) = pixelIndex.quotientAndRemainder(dividingBy: self.image.width)
                 
                 return self.image.withUnsafeBufferPointer { imageBuffer in
                     var result = SIMD4<T>()
@@ -989,7 +989,7 @@ extension Image where ComponentType: SIMDScalar {
                 let alphaChannelIndex = self.image.alphaChannelIndex
                 
                 let pixelIndex = position.offset / channelCount
-                let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.image.height)
+                let (y, x) = pixelIndex.quotientAndRemainder(dividingBy: self.image.width)
                 precondition(newValue.x == x && newValue.y == y)
                 
                 self.image.withUnsafeMutableBufferPointer { imageBuffer in
@@ -1093,7 +1093,7 @@ extension Image: Collection {
             let channelCount = self.channelCount
             
             let (pixelIndex, channelIndex) = position.offset.quotientAndRemainder(dividingBy: channelCount)
-            let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.height)
+            let (y, x) = pixelIndex.quotientAndRemainder(dividingBy: self.width)
             
             return self.withUnsafeBufferPointer { imageBuffer in
                 return (x, y, channelIndex, imageBuffer[position.offset])
