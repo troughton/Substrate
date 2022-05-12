@@ -1370,6 +1370,31 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     }
     
     @inlinable
+    public func computeWrappedCoordinate(x: Int, y: Int, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD2<Int>? {
+        var coord = SIMD2<Int>(x, y)
+        
+        let size = SIMD2(self.width, self.height)
+        let maxCoord = size &- 1
+        
+        switch wrapMode {
+        case .zero:
+            break
+        case .wrap:
+            coord = coord % size
+            coord.replace(with: coord &+ size, where: coord .< .zero)
+        case .reflect:
+            coord = coord % (2 &* size)
+            coord.replace(with: coord &+ (2 &* size), where: coord .< .zero)
+            coord.replace(with: 2 &* size &- coord, where: coord .> maxCoord)
+        case .clamp:
+            coord = pointwiseMax(pointwiseMin(coord, maxCoord), .zero)
+        }
+        
+        if wrapMode == .zero, any(coord .< SIMD2<Int>.zero .| coord .> maxCoord) { return nil }
+        return coord
+    }
+    
+    @inlinable
     public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<Float> {
         var floorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
         var ceilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
