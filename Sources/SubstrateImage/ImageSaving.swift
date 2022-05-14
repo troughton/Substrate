@@ -444,6 +444,32 @@ public enum EXRPixelType {
     }
 }
 
+public enum EXRCompressionType {
+    case none
+    case rle
+    case zips
+    case zip
+    case piz
+    case zfp // TinyEXR extension
+    
+    fileprivate var tinyEXRType: Int32 {
+        switch self {
+        case .none:
+            return TINYEXR_COMPRESSIONTYPE_NONE
+        case .rle:
+            return TINYEXR_COMPRESSIONTYPE_RLE
+        case .zips:
+            return TINYEXR_COMPRESSIONTYPE_ZIPS
+        case .zip:
+            return TINYEXR_COMPRESSIONTYPE_ZIP
+        case .piz:
+            return TINYEXR_COMPRESSIONTYPE_PIZ
+        case .zfp:
+            return TINYEXR_COMPRESSIONTYPE_ZFP
+        }
+    }
+}
+
 extension Image where ComponentType == Float {
     
     public func writeHDR(to url: URL) throws {
@@ -453,7 +479,7 @@ extension Image where ComponentType == Float {
         }
     }
     
-    func withEXRImage<R>(pixelType: EXRPixelType, _ perform: (_ image: UnsafePointer<EXRImage>, _ header: UnsafePointer<EXRHeader>) throws -> R) rethrows -> R {
+    func withEXRImage<R>(pixelType: EXRPixelType, _ perform: (_ image: UnsafePointer<EXRImage>, _ header: UnsafeMutablePointer<EXRHeader>) throws -> R) rethrows -> R {
         var header = EXRHeader()
         InitEXRHeader(&header)
 
@@ -530,14 +556,17 @@ extension Image where ComponentType == Float {
         return result
     }
     
-    public func exrData(pixelType: EXRPixelType = .float) throws -> Data {
+    public func exrData(pixelType: EXRPixelType = .float, compressionType: EXRCompressionType = .zip) throws -> Data {
         var texture = self
         texture.convert(toColorSpace: .linearSRGB)
         texture.convertToPremultipliedAlpha()
         
         return try texture.withEXRImage(pixelType: pixelType) { (image, header) -> Data in
+            header.pointee.compression_type = compressionType.tinyEXRType
+            
             var memory: UnsafeMutablePointer<UInt8>? = nil
             var error : UnsafePointer<Int8>? = nil
+            
             let dataSize = SaveEXRImageToMemory(image, header, &memory, &error)
             
             if memory == nil || error != nil {
@@ -548,12 +577,14 @@ extension Image where ComponentType == Float {
         }
     }
     
-    public func writeEXR(to url: URL, pixelType: EXRPixelType = .float) throws {
+    public func writeEXR(to url: URL, pixelType: EXRPixelType = .float, compressionType: EXRCompressionType = .zip) throws {
         var texture = self
         texture.convert(toColorSpace: .linearSRGB)
         texture.convertToPremultipliedAlpha()
         
         try texture.withEXRImage(pixelType: pixelType) { (image, header) -> Void in
+            header.pointee.compression_type = compressionType.tinyEXRType
+            
             var error : UnsafePointer<Int8>? = nil
             let result = SaveEXRImageToFile(image, header, url.path, &error)
             

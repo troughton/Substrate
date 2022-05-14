@@ -173,7 +173,7 @@ public enum TextureLoadingError : Error {
 }
 
 extension Image {
-    private func copyData(to texture: Texture, region: Region, mipmapLevel: Int, slice: Int = 0) async {
+    public func copyData(to texture: Texture, region: Region, mipmapLevel: Int, slice: Int = 0) async {
         if texture.descriptor.storageMode == .private {
 #if canImport(Metal)
             if case .vm_allocate = self.allocator {

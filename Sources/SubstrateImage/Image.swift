@@ -385,6 +385,16 @@ final class ImageStorage<T> {
         self.allocator = allocator
     }
     
+    @inlinable
+    subscript(x: Int, y: Int, channel channel: Int, width width: Int, height height: Int, channelCount channelCount: Int) -> T {
+        @inline(__always) get {
+            return self.data[y &* width &* channelCount + x &* channelCount &+ channel]
+        }
+        @inline(__always) set {
+            self.data[y &* width &* channelCount &+ x * channelCount &+ channel] = newValue
+        }
+    }
+    
     deinit {
         self.allocator.deallocate(data: UnsafeMutableRawBufferPointer(self.data))
     }
@@ -978,7 +988,7 @@ extension Image where ComponentType: SIMDScalar {
                 let alphaChannelIndex = self.image.alphaChannelIndex
                 
                 let pixelIndex = position.offset / channelCount
-                let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.image.height)
+                let (y, x) = pixelIndex.quotientAndRemainder(dividingBy: self.image.width)
                 
                 return self.image.withUnsafeBufferPointer { imageBuffer in
                     var result = SIMD4<T>()
@@ -1000,7 +1010,7 @@ extension Image where ComponentType: SIMDScalar {
                 let alphaChannelIndex = self.image.alphaChannelIndex
                 
                 let pixelIndex = position.offset / channelCount
-                let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.image.height)
+                let (y, x) = pixelIndex.quotientAndRemainder(dividingBy: self.image.width)
                 precondition(newValue.x == x && newValue.y == y)
                 
                 self.image.withUnsafeMutableBufferPointer { imageBuffer in
@@ -1104,7 +1114,7 @@ extension Image: Collection {
             let channelCount = self.channelCount
             
             let (pixelIndex, channelIndex) = position.offset.quotientAndRemainder(dividingBy: channelCount)
-            let (x, y) = pixelIndex.quotientAndRemainder(dividingBy: self.height)
+            let (y, x) = pixelIndex.quotientAndRemainder(dividingBy: self.width)
             
             return self.withUnsafeBufferPointer { imageBuffer in
                 return (x, y, channelIndex, imageBuffer[position.offset])
@@ -1378,6 +1388,31 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
                                ComponentType(_imageNormalizingFloat: newValue.z),
                                ComponentType(_imageNormalizingFloat: newValue.w))
         }
+    }
+    
+    @inlinable
+    public func computeWrappedCoordinate(x: Int, y: Int, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD2<Int>? {
+        var coord = SIMD2<Int>(x, y)
+        
+        let size = SIMD2(self.width, self.height)
+        let maxCoord = size &- 1
+        
+        switch wrapMode {
+        case .zero:
+            break
+        case .wrap:
+            coord = coord % size
+            coord.replace(with: coord &+ size, where: coord .< .zero)
+        case .reflect:
+            coord = coord % (2 &* size)
+            coord.replace(with: coord &+ (2 &* size), where: coord .< .zero)
+            coord.replace(with: 2 &* size &- coord, where: coord .> maxCoord)
+        case .clamp:
+            coord = pointwiseMax(pointwiseMin(coord, maxCoord), .zero)
+        }
+        
+        if wrapMode == .zero, any(coord .< SIMD2<Int>.zero .| coord .> maxCoord) { return nil }
+        return coord
     }
     
     @inlinable
