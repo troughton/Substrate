@@ -385,6 +385,16 @@ final class ImageStorage<T> {
         self.allocator = allocator
     }
     
+    @inlinable
+    subscript(x: Int, y: Int, channel channel: Int, width width: Int, height height: Int, channelCount channelCount: Int) -> T {
+        @inline(__always) get {
+            return self.data[y &* width &* channelCount + x &* channelCount &+ channel]
+        }
+        @inline(__always) set {
+            self.data[y &* width &* channelCount &+ x * channelCount &+ channel] = newValue
+        }
+    }
+    
     deinit {
         self.allocator.deallocate(data: UnsafeMutableRawBufferPointer(self.data))
     }
