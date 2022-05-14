@@ -12,8 +12,8 @@ extension DispatchSemaphore {
     @inlinable
     public func withSemaphore<T>(_ perform: () throws -> T) rethrows -> T {
         self.wait()
+        defer { self.signal() }
         let result = try perform()
-        self.signal()
         return result
     }
 }

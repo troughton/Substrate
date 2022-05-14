@@ -66,8 +66,8 @@ public struct SpinLock {
     @inlinable
     public func withLock<T>(_ perform: () throws -> T) rethrows -> T {
         self.lock()
+        defer { self.unlock() }
         let result = try perform()
-        self.unlock()
         return result
     }
 }
