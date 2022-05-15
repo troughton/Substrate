@@ -101,6 +101,7 @@ public final class CocoaNSWindow : NSWindow {
     }
 }
 
+@MainActor
 public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
     internal let window : NSWindow
     public let mtkView : MTKView
@@ -271,13 +272,9 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
     }
     
     deinit {
-        if Thread.isMainThread {
-            self.window.close()
-        } else {
-            let window = self.window
-            DispatchQueue.main.async {
-                window.close()
-            }
+        let window = self.window
+        Task { @MainActor in
+            window.close()
         }
     }
     
