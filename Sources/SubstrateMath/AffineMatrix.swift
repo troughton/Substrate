@@ -319,7 +319,7 @@ extension AffineMatrix {
     public static func lookAtLH(eye: SIMD3<Scalar>, forward view: SIMD3<Scalar>, up: SIMD3<Scalar> = SIMD3(0, 1, 0)) -> AffineMatrix {
         var up = up
         if abs(dot(up, view)) > 0.99 {
-            up = SIMD3<Scalar>(1, 0, 0)
+            up = SIMD3<Scalar>(0, 0, 1)
         }
         
         let right = normalize(cross(up, view))
@@ -341,7 +341,7 @@ extension AffineMatrix {
     public static func lookAtInv(eye: SIMD3<Scalar>, forward view: SIMD3<Scalar>, up: SIMD3<Scalar> = SIMD3(0, 1, 0)) -> AffineMatrix {
         var up = up
         if abs(dot(up, view)) > 0.99 {
-            up = SIMD3<Scalar>(1, 0, 0)
+            up = SIMD3<Scalar>(0, 0, 1)
         }
         
         let right = normalize(cross(up, view))
@@ -357,7 +357,7 @@ extension AffineMatrix {
     public static func lookAt(forward: SIMD3<Scalar>) -> AffineMatrix {
         var up = SIMD3<Scalar>(0, 1, 0)
         if abs(dot(up, forward)) > 0.99 {
-            up = SIMD3<Scalar>(1, 0, 0)
+            up = SIMD3<Scalar>(0, 0, 1)
         }
         
         let right = normalize(cross(up, forward))
