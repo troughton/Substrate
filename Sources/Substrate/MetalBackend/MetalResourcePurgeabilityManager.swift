@@ -28,6 +28,7 @@ final class MetalResourcePurgeabilityManager {
     @discardableResult
     func setPurgeableState(on resource: MTLResource, to state: MTLPurgeableState) -> MTLPurgeableState {
         self.lock.withSemaphore {
+            let pendingValue = self.pendingPurgabilityChanges.removeValue(forKey: ObjectIdentifier(resource))
             switch state {
             case .volatile, .empty:
                 let pendingCommands = QueueRegistry.lastSubmittedCommands
@@ -38,7 +39,6 @@ final class MetalResourcePurgeabilityManager {
                     fallthrough
                 }
             default:
-                let pendingValue = self.pendingPurgabilityChanges.removeValue(forKey: ObjectIdentifier(resource))
                 let trueValue = resource.setPurgeableState(state)
                 return pendingValue?.state == .empty ? .empty : trueValue
             }
