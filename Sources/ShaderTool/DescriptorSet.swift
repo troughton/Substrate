@@ -103,7 +103,11 @@ final class DescriptorSet {
             } else {
                 let wrapperType = resource.viewType == .uniformBuffer || resource.viewType == .storageBuffer ? "@OffsetView " : ""
                 if wrapperType.isEmpty, resource.binding.arrayLength > 1 { // FIXME: how do we handle this case for arrays which require property wrappers?
-                    stream.print("\(wrapperType)public var \(resource.name) : [\(resource.viewType.substrateTypeName)?] = .init(repeating: nil, count: \(resource.binding.arrayLength))")
+                    if resource.binding.arrayLength <= 16 {
+                        stream.print("\(wrapperType)public var \(resource.name) : Array\(resource.binding.arrayLength)<\(resource.viewType.substrateTypeName)?> = .init(repeating: nil)")
+                    } else {
+                        stream.print("\(wrapperType)public var \(resource.name) : AutoGrowingArray<\(resource.viewType.substrateTypeName)> = .init()")
+                    }
                 } else {
                     stream.print("\(wrapperType)public var \(resource.name) : \(resource.viewType.substrateTypeName)? = nil")
                 }
