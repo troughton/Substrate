@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct AutoGrowingArray<Element>: Collection {
+public struct AutoGrowingArray<Element>: Collection, ExpressibleByArrayLiteral {
     public var contents: [Element?]
     
     @inlinable
@@ -33,6 +33,11 @@ public struct AutoGrowingArray<Element>: Collection {
     @inlinable
     public init<S: Sequence>(_ sequence: S) where S.Element == Element? {
         self.contents = .init(sequence)
+    }
+    
+    @inlinable
+    public init(arrayLiteral elements: Element?...) {
+        self.contents = elements
     }
     
     @inlinable
