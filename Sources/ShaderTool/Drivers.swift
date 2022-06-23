@@ -120,6 +120,7 @@ final class DXCDriver {
             ["-D" + "EntryPoint_\(entryPoint)",
              "-fspv-target-env=vulkan1.1",
              "-fspv-reflect",
+             "-HV", "2021",
              "-T", type.shaderModel,
              "-spirv", "-fcgl",
              "-Vd", sourceFile.path,
