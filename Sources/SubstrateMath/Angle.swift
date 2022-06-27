@@ -23,12 +23,19 @@ public struct Angle<Scalar: BinaryFloatingPoint & Real> : Hashable {
     public var radians: Scalar
 
 	/// Creates an instance using the value in radians.
-    /// The angle is reinterpreted to the range -pi...pi.
     @inlinable
     public init(radians val: Scalar) {
+        radians = val
+    }
+    
+    /// Creates an instance using the value in radians.
+    /// The angle is reinterpreted to the range -pi...pi.
+    @inlinable
+    public init(truncatingRadians val: Scalar) {
         radians = val.remainder(dividingBy: 2.0 * .pi)
     }
     
+    @available(*, deprecated, renamed: "init(radians:)")
     @inlinable
     public init(radiansInUnboundedRange val: Scalar) {
         radians = val
@@ -42,13 +49,20 @@ public struct Angle<Scalar: BinaryFloatingPoint & Real> : Hashable {
     
     /// Creates an instance using the value in degrees
     @inlinable
+    public init(truncatingDegrees val: Scalar) {
+        self.init(truncatingRadians: val / 180.0 * .pi)
+    }
+    
+    @available(*, deprecated, renamed: "init(degrees:)")
+    /// Creates an instance using the value in degrees
+    @inlinable
     public init(degreesInUnboundedRange val: Scalar) {
-        self.init(radiansInUnboundedRange: val / 180.0 * .pi)
+        self.init(degrees: val / 180.0 * .pi)
     }
     
     @inlinable
     public init<Other>(_ angle: Angle<Other>) {
-        self.init(radiansInUnboundedRange: Scalar(angle.radians))
+        self.init(radians: Scalar(angle.radians))
     }
     
     // MARK: Constants

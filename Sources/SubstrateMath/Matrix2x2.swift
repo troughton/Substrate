@@ -198,7 +198,7 @@ extension Matrix2x2 where Scalar: Real {
         
         let S = R.transpose * self
         
-        return (Angle(radiansInUnboundedRange: theta), S)
+        return (Angle(radians: theta), S)
     }
 }
 
