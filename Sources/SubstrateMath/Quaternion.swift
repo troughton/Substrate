@@ -173,6 +173,11 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     }
     
     @inlinable
+    public var length : Scalar {
+        return Scalar.sqrt(self.lengthSquared)
+    }
+    
+    @inlinable
     public var conjugate : Quaternion {
         get {
             return Quaternion(-self.x, -self.y, -self.z, self.w)
@@ -285,16 +290,23 @@ public func dot<Scalar>(_ u: Quaternion<Scalar>, _ v: Quaternion<Scalar>) -> Sca
 @inlinable
 public func slerp<Scalar>(from: Quaternion<Scalar>, to: Quaternion<Scalar>, factor t: Scalar) -> Quaternion<Scalar> {
     // Calculate angle between them.
-    let cosHalfTheta : Scalar = dot(from, to)
+    var cosHalfTheta : Scalar = dot(from, to)
+    var to = to
     
     // if this == other or this == -other then theta = 0 and we can return this
     if (abs(cosHalfTheta) >= 1.0) {
         return from;
     }
     
+    if cosHalfTheta < 0 {
+        // Ensure we take the shortest path
+        cosHalfTheta = -cosHalfTheta
+        to = Quaternion(-to.storage)
+    }
+    
     // Calculate temporary values.
     let halfTheta : Scalar = Scalar.acos(cosHalfTheta)
-    let sinHalfTheta : Scalar = (1.0 - cosHalfTheta * cosHalfTheta).squareRoot()
+    let sinHalfTheta : Scalar = Scalar.sin(halfTheta)
     
     var x : Scalar, y : Scalar, z : Scalar, w : Scalar
     
