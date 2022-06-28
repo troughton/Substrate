@@ -95,6 +95,27 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
         }
     }
     
+    @inlinable
+    public var s : Scalar {
+        get {
+            return self.storage.w
+        }
+        set {
+            self.storage.w = newValue
+        }
+    }
+    
+    
+    @inlinable
+    public var v : SIMD3<Scalar> {
+        get {
+            return self.storage.xyz
+        }
+        set {
+            self.storage.xyz = newValue
+        }
+    }
+    
     /// Applied as rotation around Y (heading), then around X' (attitude), then around Z' (bank).
     /// Assumes a left-handed coordinate system with X to the right, Y up, and Z forward.
     @inlinable
@@ -280,11 +301,7 @@ public func normalize<Scalar>(_ x: Quaternion<Scalar>) -> Quaternion<Scalar> {
 
 @inlinable
 public func dot<Scalar>(_ u: Quaternion<Scalar>, _ v: Quaternion<Scalar>) -> Scalar {
-    let x : Scalar = u.x * v.x
-    let y : Scalar = u.y * v.y
-    let z : Scalar = u.z * v.z
-    let w : Scalar = u.w * v.w
-    return x + y + z + w
+    return dot(u.storage, v.storage)
 }
 
 @inlinable
