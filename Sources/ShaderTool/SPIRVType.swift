@@ -308,16 +308,16 @@ extension SPIRVType : CustomStringConvertible {
             """
             if needsManualHashableEquatable {
                 
-                var memberEqualityChecks = [String]()
+                var memberInequalityChecks = [String]()
                 var memberHashFunctions = [String]()
                 for member in members {
                     if case .array(_, let length) = member.type {
                         for i in 0..<length {
-                            memberEqualityChecks.append("lhs.\(member.name).\(i) == rhs.\(member.name).\(i)")
+                            memberInequalityChecks.append("if lhs.\(member.name).\(i) != rhs.\(member.name).\(i) { return false }")
                             memberHashFunctions.append("hasher.combine(\(member.name).\(i))")
                         }
                     } else {
-                        memberEqualityChecks.append("lhs.\(member.name) == rhs.\(member.name)")
+                        memberInequalityChecks.append("if lhs.\(member.name) != rhs.\(member.name) { return false }")
                         memberHashFunctions.append("hasher.combine(\(member.name))")
                     }
                 }
@@ -325,7 +325,8 @@ extension SPIRVType : CustomStringConvertible {
                     
                     @inlinable
                     public static func ==(lhs: \(self.name), rhs: \(self.name)) -> Bool {
-                        return \(memberEqualityChecks.joined(separator: " &&\n        "))
+                        \(memberInequalityChecks.joined(separator: "\n"))
+                        return true
                     }
 
                 """

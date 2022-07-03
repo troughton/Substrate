@@ -95,6 +95,27 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
         }
     }
     
+    @inlinable
+    public var s : Scalar {
+        get {
+            return self.storage.w
+        }
+        set {
+            self.storage.w = newValue
+        }
+    }
+    
+    
+    @inlinable
+    public var v : SIMD3<Scalar> {
+        get {
+            return self.storage.xyz
+        }
+        set {
+            self.storage.xyz = newValue
+        }
+    }
+    
     /// Applied as rotation around Y (heading), then around X' (attitude), then around Z' (bank).
     /// Assumes a left-handed coordinate system with X to the right, Y up, and Z forward.
     @inlinable
@@ -170,6 +191,11 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     @inlinable
     public var lengthSquared : Scalar {
         return dot(self, self)
+    }
+    
+    @inlinable
+    public var length : Scalar {
+        return Scalar.sqrt(self.lengthSquared)
     }
     
     @inlinable
@@ -277,26 +303,29 @@ public func normalize<Scalar>(_ x: Quaternion<Scalar>) -> Quaternion<Scalar> {
 
 @inlinable
 public func dot<Scalar>(_ u: Quaternion<Scalar>, _ v: Quaternion<Scalar>) -> Scalar {
-    let x : Scalar = u.x * v.x
-    let y : Scalar = u.y * v.y
-    let z : Scalar = u.z * v.z
-    let w : Scalar = u.w * v.w
-    return x + y + z + w
+    return dot(u.storage, v.storage)
 }
 
 @inlinable
 public func slerp<Scalar>(from: Quaternion<Scalar>, to: Quaternion<Scalar>, factor t: Scalar) -> Quaternion<Scalar> {
     // Calculate angle between them.
-    let cosHalfTheta : Scalar = dot(from, to)
+    var cosHalfTheta : Scalar = dot(from, to)
+    var to = to
     
     // if this == other or this == -other then theta = 0 and we can return this
     if (abs(cosHalfTheta) >= 1.0) {
         return from;
     }
     
+    if cosHalfTheta < 0 {
+        // Ensure we take the shortest path
+        cosHalfTheta = -cosHalfTheta
+        to = Quaternion(-to.storage)
+    }
+    
     // Calculate temporary values.
     let halfTheta : Scalar = Scalar.acos(cosHalfTheta)
-    let sinHalfTheta : Scalar = (1.0 - cosHalfTheta * cosHalfTheta).squareRoot()
+    let sinHalfTheta : Scalar = Scalar.sin(halfTheta)
     
     var x : Scalar, y : Scalar, z : Scalar, w : Scalar
     
