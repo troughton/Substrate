@@ -46,27 +46,14 @@ public protocol RenderPass : AnyObject {
     /// If  `writtenResources` contains persistent or history-buffer resources, a pass that writes to them is never culled
     /// even if no other pass reads from them within the same render graph.
     ///
-    /// `readResources` is ignored if `writtenResources` is empty.
-    var readResources : [Resource] { get }
-    
-    /// Render passes can optionally declare a list of resources that are read and written by the pass.
-    /// When `writtenResources` is non-empty, execution of the pass is delayed until it is determined
-    /// that some other pass has a dependency on a resource within `writtenResources`. If no other pass
-    /// reads from any of the resources this pass writes to, the pass' `execute` method will never be called.
-    /// This is useful for conditionally avoiding CPU work performed within the `execute` method.
-    ///
-    /// If  `writtenResources` contains persistent or history-buffer resources, a pass that writes to them is never culled
-    /// even if no other pass reads from them within the same render graph.
-    var writtenResources : [Resource] { get }
+    /// FIXME:  this documentation is out of date.
+    var usedResources : [ExplicitResourceUsage] { get }
 }
 
 extension RenderPass {
     public var name: String {
         return String(reflecting: type(of: self))
     }
-    
-    public var readResources : [Resource] { return [] }
-    public var writtenResources : [Resource] { return [] }
 }
 
 /// A `DrawRenderPass` is any pass that uses the GPU's raster pipeline to draw to some number of render targets.

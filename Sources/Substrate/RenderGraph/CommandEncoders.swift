@@ -1006,7 +1006,7 @@ public protocol AnyRenderCommandEncoder {
 }
 
 /// `RenderCommandEncoder` allows you to encode rendering commands to be executed by the GPU within a single `DrawRenderPass`.
-public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEncoder {
+public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEncoder {
     
     @usableFromInline
     enum Attachment : Hashable, CustomHashable {
