@@ -100,10 +100,6 @@ extension Image where ComponentType == Float {
             // Convolve the middle section of the image.
             for x in 0..<Swift.max(self.width - windowRadiusInclusive, 0) {
                 for c in 0..<self.channelCount {
-                    for i in 0..<simdWidth where simdMask[i] {
-                        precondition(slidingWindow[c * windowWidth + windowRadius][i] == self[x, yVector[i], channel: c])
-                    }
-                    
                     let dotVector = zip(weightsVector, slidingWindow.dropFirst(c * weightsVector.count))
                         .reduce(SIMDType<Float>.zero, {
                             // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
