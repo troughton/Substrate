@@ -77,7 +77,7 @@ extension Image where ComponentType == Float {
             // Load the current pixel (x = 0)
             for c in 0..<self.channelCount {
                 for i in 0..<simdWidth {
-                    slidingWindow[c * windowWidth + windowRadius][i] = self[0, yVector[i], channel: c]
+                    slidingWindow[c * windowWidth + windowRadius][i] = simdMask[i] ? self[0, yVector[i], channel: c] : 0.0
                 }
             }
             
@@ -194,7 +194,7 @@ extension Image where ComponentType == Float {
             // Load the current pixel (x = 0)
             for c in 0..<self.channelCount {
                 for i in 0..<simdWidth {
-                    slidingWindow[c * windowWidth + windowRadius][i] = self[xVector[i], 0, channel: c]
+                    slidingWindow[c * windowWidth + windowRadius][i] = simdMask[i] ? self[xVector[i], 0, channel: c] : 0.0
                 }
             }
             
