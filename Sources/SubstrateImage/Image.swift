@@ -548,7 +548,7 @@ public struct Image<ComponentType> : AnyImage {
     @usableFromInline
     var truncatedStorageData: UnsafeMutableBufferPointer<ComponentType> {
         // ImageStorage may be over-allocated, so this returns only the portion that contains valid pixels.
-        return .init(rebasing: self.storage.data.prefix(self.elementCount))
+        return UnsafeMutableBufferPointer(start: self.storage.data.baseAddress, count: self.elementCount)
     }
     
     @inlinable
