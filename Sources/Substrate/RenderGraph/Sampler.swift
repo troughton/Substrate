@@ -89,3 +89,13 @@ public struct SamplerDescriptor : Hashable, Codable, Sendable {
     
     public var compareFunction: CompareFunction = .never
 }
+
+public final class SamplerState {
+    public let descriptor: SamplerDescriptor
+    public let state: OpaquePointer
+    
+    init(descriptor: SamplerDescriptor, state: OpaquePointer) {
+        self.descriptor = descriptor
+        self.state = state
+    }
+}

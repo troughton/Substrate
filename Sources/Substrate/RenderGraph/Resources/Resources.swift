@@ -48,6 +48,9 @@ public struct RenderStages : OptionSet, Hashable {
     
     public static var vertex: RenderStages = RenderStages(rawValue: 1 << 0)
     public static var fragment: RenderStages = RenderStages(rawValue: 1 << 1)
+    public static var tile: RenderStages = RenderStages(rawValue: 1 << 2)
+    public static var object: RenderStages = RenderStages(rawValue: 1 << 3)
+    public static var mesh: RenderStages = RenderStages(rawValue: 1 << 4)
     
     public static var compute: RenderStages = RenderStages(rawValue: 1 << 5)
     public static var blit: RenderStages = RenderStages(rawValue: 1 << 6)

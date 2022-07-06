@@ -332,6 +332,18 @@ public class ResourceBindingEncoder : CommandEncoder {
         self.needsUpdateBindings = true
     }
     
+    public func setTexture(_ texture: Texture?, path: ResourceBindingPath) {
+        guard let texture = texture else { return }
+        
+        let args : RenderGraphCommand.SetTextureArgs = (.nil, texture)
+        
+        self.resourceBindingCommands.append(
+            (path, .setTexture(commandRecorder.copyData(args)))
+        )
+        
+        self.needsUpdateBindings = true
+    }
+    
     /// Bind the acceleration structure `structure` to the current command encoder at the binding corresponding to `key`.
     @available(macOS 11.0, iOS 14.0, *)
     public func setAccelerationStructure(_ structure: AccelerationStructure?, key: FunctionArgumentKey) {
@@ -1460,7 +1472,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
 }
 
 
-public final class ComputeCommandEncoder : ResourceBindingEncoder {
+public class ComputeCommandEncoder : ResourceBindingEncoder {
     
     let computeRenderPass : ComputeRenderPass
     
@@ -1570,7 +1582,7 @@ public final class ComputeCommandEncoder : ResourceBindingEncoder {
     }
 }
 
-public final class BlitCommandEncoder : CommandEncoder {
+public class BlitCommandEncoder : CommandEncoder {
 
     @usableFromInline let commandRecorder : RenderGraphCommandRecorder
     @usableFromInline let passRecord: RenderPassRecord
@@ -1772,7 +1784,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
 }
 
 @available(macOS 11.0, iOS 14.0, *)
-public final class AccelerationStructureCommandEncoder : CommandEncoder {
+public class AccelerationStructureCommandEncoder : CommandEncoder {
     
     @usableFromInline let commandRecorder : RenderGraphCommandRecorder
     @usableFromInline let passRecord: RenderPassRecord

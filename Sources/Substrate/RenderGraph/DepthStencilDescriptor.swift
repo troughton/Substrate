@@ -88,3 +88,12 @@ public struct DepthStencilDescriptor : Hashable {
     }
 }
 
+public final class DepthStencilState {
+    public let descriptor: DepthStencilDescriptor
+    public let state: OpaquePointer
+    
+    init(descriptor: DepthStencilDescriptor, state: OpaquePointer) {
+        self.descriptor = descriptor
+        self.state = state
+    }
+}
