@@ -68,7 +68,7 @@ public protocol DrawRenderPass : RenderPass {
     /// to benefit performance, although this should have no observable change in behaviour.
     ///
     /// - SeeAlso: `RenderTargetDescriptor`
-    var renderTargetDescriptor : RenderTargetDescriptor { get }
+    var renderTargetsDescriptor : RenderTargetsDescriptor { get }
     
     /// `execute` is called by the render graph to allow a `DrawRenderPass` to encode GPU work for the render pass.
     /// It may be called concurrently with any other (non-CPU) render pass, but will be executed in submission order on the GPU.
