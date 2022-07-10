@@ -595,8 +595,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     private let frameSharedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator
     
     #if os(macOS) || targetEnvironment(macCatalyst)
-    private let frameManagedBufferAllocator : MetalTemporaryBufferAllocator!
-    private let frameManagedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator!
+    private let frameManagedBufferAllocator : MetalTemporaryBufferAllocator?
+    private let frameManagedWriteCombinedBufferAllocator : MetalTemporaryBufferAllocator?
     #endif
     
     private let historyBufferAllocator : MetalPoolResourceAllocator
@@ -738,9 +738,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             } else {
                 switch cacheMode {
                 case .writeCombined:
-                    return self.frameManagedWriteCombinedBufferAllocator
+                    return self.frameManagedWriteCombinedBufferAllocator!
                 case .defaultCache:
-                    return self.frameManagedBufferAllocator
+                    return self.frameManagedBufferAllocator!
                 }
             }
             #else
