@@ -142,6 +142,12 @@ final class FGMTLThreadRenderCommandEncoder {
     
     private func setBuffer(_ mtlBuffer: MTLBufferReference?, offset: Int, bindIndex: Int, stages: MTLRenderStages) {
         guard let mtlBuffer = mtlBuffer else {
+            if stages.contains(.vertex) {
+                self.boundBuffers[bindIndex] = nil
+            }
+            if stages.contains(.fragment) || !self.hasFragmentFunction { // If we currently have no fragment function, but later set one after binding an argument buffer, that argument buffer should also be bound for the fragment function.
+                self.boundBuffers[bindIndex + 31] = nil
+            }
             return
         }
 
@@ -475,6 +481,7 @@ final class FGMTLComputeCommandEncoder {
     
     private func setBuffer(_ mtlBuffer: MTLBufferReference?, offset: Int, bindIndex: Int) {
         guard let mtlBuffer = mtlBuffer else {
+            self.boundBuffers[bindIndex] = nil
             return
         }
 
