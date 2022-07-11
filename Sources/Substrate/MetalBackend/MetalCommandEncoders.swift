@@ -195,9 +195,11 @@ final class FGMTLThreadRenderCommandEncoder {
             let stages = mtlBindingPath.stages
             if stages.contains(.vertex) {
                 encoder.setVertexBytes(args.pointee.bytes, length: Int(args.pointee.length), index: mtlBindingPath.bindIndex)
+                self.boundBuffers[mtlBindingPath.bindIndex] = nil
             }
             if stages.contains(.fragment) {
                 encoder.setFragmentBytes(args.pointee.bytes, length: Int(args.pointee.length), index: mtlBindingPath.bindIndex)
+                self.boundBuffers[mtlBindingPath.bindIndex] = nil
             }
             
         case .setVertexBuffer(let args):
@@ -211,7 +213,7 @@ final class FGMTLThreadRenderCommandEncoder {
             assert(index < 31, "The maximum number of buffers allowed in the buffer argument table for a single function is 31.")
             // For vertex buffers, index the bindings backwards from the maximum (30) to allow argument buffers and push constants to go first.
             
-            self.setBuffer(mtlBuffer, offset: Int(args.pointee.offset), bindIndex: 30 - index, stages: .vertex)
+            self.setBuffer(mtlBuffer, offset: (mtlBuffer?.offset ?? 0) + Int(args.pointee.offset), bindIndex: 30 - index, stages: .vertex)
             
         case .setVertexBufferOffset(let offset, let index):
             let baseOffset = self.baseBufferOffsets[30 - Int(index)]
@@ -543,6 +545,7 @@ final class FGMTLComputeCommandEncoder {
         case .setBytes(let args):
             let mtlBindingPath = args.pointee.bindingPath
             encoder.setBytes(args.pointee.bytes, length: Int(args.pointee.length), index: mtlBindingPath.bindIndex)
+            self.boundBuffers[mtlBindingPath.bindIndex] = nil
             
         case .setBuffer(let args):
             let mtlBindingPath = args.pointee.bindingPath
