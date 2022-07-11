@@ -604,6 +604,7 @@ final class MetalBackend : SpecificRenderBackend {
             }
             encoderUseResourceCommandIndex = .max
             encoderUseResources.removeAll(keepingCapacity: true)
+            encoderResidentResources.removeAll(keepingCapacity: true)
         }
         
         let getResource: (Resource) -> Unmanaged<MTLResource>? = { resource in
