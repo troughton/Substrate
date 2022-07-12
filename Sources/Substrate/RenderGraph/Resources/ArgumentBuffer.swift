@@ -9,21 +9,10 @@ import Foundation
 import SubstrateUtilities
 import Atomics
 
-public protocol FunctionArgumentKey {
-    var stringValue : String { get }
-    func bindingPath(arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath?
-}
-
-extension RawRepresentable where Self.RawValue == String {
-    public var stringValue : String {
-        return self.rawValue
-    }
-}
-
 #if canImport(Metal)
 @preconcurrency import Metal
 
-public struct MetalIndexedFunctionArgument : FunctionArgumentKey {
+public struct MetalIndexedFunctionArgument {
     public var type: MTLArgumentType
     public var index : Int
     public var stages : RenderStages
@@ -43,27 +32,6 @@ public struct MetalIndexedFunctionArgument : FunctionArgumentKey {
     }
 }
 #endif
-
-extension FunctionArgumentKey {
-    
-    public func bindingPath(arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath? {
-        return nil
-    }
-    
-    func bindingPath(argumentBufferPath: ResourceBindingPath?, arrayIndex: Int, pipelineReflection: PipelineReflection) -> ResourceBindingPath? {
-        return self.bindingPath(arrayIndex: arrayIndex, argumentBufferPath: argumentBufferPath) ?? pipelineReflection.bindingPath(argumentName: self.stringValue, arrayIndex: arrayIndex, argumentBufferPath: argumentBufferPath)
-    }
-    
-    func computedBindingPath(pipelineReflection: PipelineReflection) -> ResourceBindingPath? {
-        return self.bindingPath(arrayIndex: 0, argumentBufferPath: nil) ?? pipelineReflection.bindingPath(argumentName: self.stringValue, arrayIndex: 0, argumentBufferPath: nil)
-    }
-}
-
-extension String : FunctionArgumentKey {
-    public var stringValue : String {
-        return self
-    }
-}
 
 public protocol ArgumentBufferEncodable {
     static var activeStages : RenderStages { get }

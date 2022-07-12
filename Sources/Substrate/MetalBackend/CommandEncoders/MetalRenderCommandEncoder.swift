@@ -19,6 +19,22 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         self.resourceMap = resourceMap
     }
     
+    override func pushDebugGroup(_ string: String) {
+        encoder.pushDebugGroup(string)
+    }
+    
+    override func popDebugGroup() {
+        encoder.popDebugGroup()
+    }
+    
+    override func insertDebugSignpost(_ string: String) {
+        encoder.insertDebugSignpost(string)
+    }
+    
+    override func setLabel(_ label: String) {
+        encoder.label = label
+    }
+    
     override func setBytes(_ bytes: UnsafeRawPointer, length: Int, path: ResourceBindingPath) {
         let index = path.index
         if path.stages.contains(.vertex) {
@@ -176,16 +192,18 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    
     override func setViewport(_ viewport: Viewport) {
+        super.setViewport(viewport)
         encoder.setViewport(MTLViewport(viewport))
     }
     
     override func setFrontFacing(_ winding: Winding) {
+        super.setFrontFacing(winding)
         encoder.setFrontFacing(MTLWinding(winding))
     }
     
     override func setCullMode(_ cullMode: CullMode) {
+        super.setCullMode(cullMode)
         encoder.setCullMode(MTLCullMode(cullMode))
     }
     
@@ -194,10 +212,12 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     override func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float) {
+        super.setDepthBias(depthBias, slopeScale: slopeScale, clamp: clamp)
         encoder.setDepthBias(depthBias, slopeScale: slopeScale, clamp: clamp)
     }
     
     override func setScissorRect(_ rect: ScissorRect) {
+        super.setScissorRect(rect)
         encoder.setScissorRect(MTLScissorRect(rect))
     }
     
@@ -222,10 +242,12 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     override func setStencilReferenceValue(_ referenceValue: UInt32) {
+        super.setStencilReferenceValue(referenceValue)
         encoder.setStencilReferenceValue(referenceValue)
     }
     
     override func setStencilReferenceValues(front frontReferenceValue: UInt32, back backReferenceValue: UInt32) {
+        super.setStencilReferenceValues(front: frontReferenceValue, back: backReferenceValue)
         encoder.setStencilReferenceValues(front: frontReferenceValue, back: backReferenceValue)
     }
     
@@ -241,16 +263,21 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     override func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
+        super.drawPrimitives(type: primitiveType, vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
         encoder.drawPrimitives(type: MTLPrimitiveType(type), vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
     }
     
     override func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int) {
+        super.drawPrimitives(type: primitiveType, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
+        
         let mtlBuffer = resourceMap[indirectBuffer]!
         
         encoder.drawPrimitives(type: MTLPrimitiveType(type), indirectBuffer: mtlBuffer, indirectBufferOffset: mtlBuffer.offset + indirectBufferOffset)
     }
     
     override func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int = 1, baseVertex: Int = 0, baseInstance: Int = 0) {
+        super.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
+        
         let mtlBuffer = resourceMap[indexBuffer]!
         
         encoder.drawIndexedPrimitives(type: MTLPrimitiveType(primitiveType), indexCount: indexCount, indexType: MTLIndexType(indexType), indexBuffer: mtlBuffer.buffer, indexBufferOffset: mtlBuffer.offset + indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
@@ -258,6 +285,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     
     
     override func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, indirectBuffer: Buffer, indirectBufferOffset: Int) {
+        super.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
         
         let mtlIndexBuffer = resourceMap[indexBuffer]!
         let mtlIndirectBuffer = resourceMap[indirectBuffer]!
@@ -301,5 +329,10 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     override func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages) {
         let mtlResources = resources.map { resourceMap[$0]! }
         encoder.memoryBarrier(resources: mtlResources, after: MTLRenderStages(after), before: MTLRenderStages(before))
+    }
+    
+    override func endEncoding() {
+        super.endEncoding()
+        encoder.endEncoding()
     }
 }

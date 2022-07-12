@@ -19,6 +19,18 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
         self.resourceMap = resourceMap
     }
     
+    override func setLabel(_ label: String) {
+        encoder.label = label
+    }
+    
+    override func popDebugGroup() {
+        encoder.popDebugGroup()
+    }
+    
+    override func insertDebugSignpost(_ string: String) {
+        encoder.insertDebugSignpost(string)
+    }
+    
     override func setBytes(_ bytes: UnsafeRawPointer, length: Int, path: ResourceBindingPath) {
         let index = path.index
         encoder.setBytes(bytes, length: length, index: index)
@@ -89,10 +101,12 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
     }
     
     override func dispatchThreadgroups(_ threadgroupsPerGrid: Size, threadsPerThreadgroup: Size) {
+        super.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
         encoder.dispatchThreadgroups(MTLSize(threadgroupsPerGrid), threadsPerThreadgroup: MTLSize(threadsPerThreadgroup))
     }
     
     override func dispatchThreads(_ threadsPerGrid: Size, threadsPerThreadgroup: Size) {
+        super.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
         encoder.dispatchThreads(MTLSize(threadsPerGrid), threadsPerThreadgroup: MTLSize(threadsPerThreadgroup))
     }
     
