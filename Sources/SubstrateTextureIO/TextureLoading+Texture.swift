@@ -210,7 +210,7 @@ extension Image {
         
         await self.withUnsafeBufferPointer { bytes in
             let bytesPerRow = self.width * self.channelCount * MemoryLayout<T>.stride
-            _ = await GPUResourceUploader.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: slice, in: texture, withBytes: bytes.baseAddress!, bytesPerRow: bytesPerRow, bytesPerImage: self.height)
+            _ = await GPUResourceUploader.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: slice, in: texture, withBytes: bytes.baseAddress!, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * self.height)
         }
     }
     
