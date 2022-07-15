@@ -146,7 +146,7 @@ final class MetalStateCaches {
         
         var reflection : MTLRenderPipelineReflection? = nil
         do {
-            let state = try self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.argumentInfo, .bufferTypeInfo], reflection: &reflection)
+            let state = try self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo], reflection: &reflection)
             
             // TODO: can we retrieve the thread execution width for render pipelines?
             let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderReflection: reflection!)
@@ -206,7 +206,7 @@ final class MetalStateCaches {
         
         var reflection : MTLComputePipelineReflection? = nil
         do {
-            let state = try self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.argumentInfo, .bufferTypeInfo], reflection: &reflection)
+            let state = try self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo], reflection: &reflection)
             
             let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeReflection: reflection!)
             
