@@ -247,9 +247,9 @@ public struct OklabColor : Equatable, Hashable {
     }
     
     public init(fromLinearSRGB c: RGBColor) {
-        let l = 0.4121656120 * c.r + 0.5362752080 * c.g + 0.0514575653 * c.b
-        let m = 0.2118591070 * c.r + 0.6807189584 * c.g + 0.1074065790 * c.b
-        let s = 0.0883097947 * c.r + 0.2818474174 * c.g + 0.6302613616 * c.b
+        let l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b
+        let m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b
+        let s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b
 
         let l_ = Float.pow(l, 1.0 / 3.0)
         let m_ = Float.pow(m, 1.0 / 3.0)
