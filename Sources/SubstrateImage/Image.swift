@@ -723,6 +723,17 @@ public struct Image<ComponentType> : AnyImage {
         
         return other
     }
+    
+    @inlinable
+    public func map<Other>(_ function: (_ x: Int, _ y: Int, _ channel: Int, _ value: ComponentType) -> Other) -> Image<Other> {
+        var other = Image<Other>(width: self.width, height: self.height, channelCount: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+        
+        for (x, y, channel, val) in self {
+            other[x, y, channel: channel] = function(x, y, channel, val)
+        }
+        
+        return other
+    }
 
     @inlinable
     public func cropped(originX: Int, originY: Int, width: Int, height: Int, clampOutOfBounds: Bool = false) -> Image<T> {
@@ -1062,6 +1073,17 @@ extension Image where ComponentType: SIMDScalar {
             yield &pixelView
             self = pixelView.image
         }
+    }
+    
+    @inlinable
+    public func mapPixels<Other: SIMDScalar>(_ function: (_ x: Int, _ y: Int, _ pixel: SIMD4<ComponentType>) -> SIMD4<Other>) -> Image<Other> {
+        var other = Image<Other>(width: self.width, height: self.height, channelCount: self.channelCount, colorSpace: self.colorSpace, alphaMode: self.alphaMode)
+         
+        for (x, y, val) in self.pixels {
+            other[x, y] = function(x, y, val)
+        }
+        
+        return other
     }
 }
 
