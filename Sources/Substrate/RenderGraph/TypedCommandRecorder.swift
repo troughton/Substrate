@@ -271,8 +271,12 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.encoder.setBufferOffset(offset, at: path)
     }
     
-    public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) {
-        self.encoder.setSampler(descriptor, at: path)
+    public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) async {
+       await self.encoder.setSampler(descriptor, at: path)
+    }
+    
+    public func setSampler(_ state: SamplerState?, at path: ResourceBindingPath) {
+        self.encoder.setSampler(state, at: path)
     }
     
     public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
@@ -506,8 +510,8 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         self.encoder.setStageInRegion(region)
     }
     
-    public func setThreadgroupMemoryLength(_ length: Int, index: Int) {
-        self.encoder.setThreadgroupMemoryLength(length, index: index)
+    public func setThreadgroupMemoryLength(_ length: Int, at index: Int) {
+        self.encoder.setThreadgroupMemoryLength(length, at: index)
     }
     
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
@@ -522,8 +526,12 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         self.encoder.setBufferOffset(offset, at: path)
     }
     
-    public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) {
-        self.encoder.setSampler(descriptor, at: path)
+    public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) async {
+        await self.encoder.setSampler(descriptor, at: path)
+    }
+    
+    public func setSampler(_ state: SamplerState?, at path: ResourceBindingPath) {
+        self.encoder.setSampler(state, at: path)
     }
     
     public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {

@@ -12,12 +12,14 @@ import Metal
 final class MetalComputeCommandEncoder: ComputeCommandEncoder {
     let encoder: MTLComputeCommandEncoder
     let resourceMap: FrameResourceMap<MetalBackend>
+    let isAppleSiliconGPU: Bool
     
     private var baseBufferOffsets = [Int](repeating: 0, count: 31) // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     
-    init(passRecord: RenderPassRecord, encoder: MTLComputeCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>) {
+    init(passRecord: RenderPassRecord, encoder: MTLComputeCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.resourceMap = resourceMap
+        self.isAppleSiliconGPU = isAppleSiliconGPU
         super.init(renderPass: passRecord.pass as! ComputeRenderPass, passRecord: passRecord)
     }
     
@@ -58,7 +60,14 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
         encoder.setTexture(mtlTexture.texture, index: index)
     }
     
-    override func setSamplerState(_ state: SamplerState?, at path: ResourceBindingPath) {
+    
+    override func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) async {
+        guard let descriptor = descriptor else { return }
+        let sampler = await self.resourceMap.persistentRegistry[descriptor]
+        self.setSampler(SamplerState(descriptor: descriptor, state: OpaquePointer(Unmanaged.passUnretained(sampler).toOpaque())), at: path)
+    }
+    
+    override func setSampler(_ state: SamplerState?, at path: ResourceBindingPath) {
         guard let state = state else { return }
         
         let index = path.index
@@ -97,8 +106,7 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
         }
     }
     
-    override func setThreadgroupMemoryLength(_ length: Int, at path: ResourceBindingPath) {
-        let index = path.index
+    override func setThreadgroupMemoryLength(_ length: Int, at index: Int) {
         encoder.setThreadgroupMemoryLength(length, index: index)
     }
     
@@ -117,8 +125,8 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
         encoder.dispatchThreadgroups(indirectBuffer: mtlBuffer.buffer, indirectBufferOffset: mtlBuffer.offset + indirectBufferOffset, threadsPerThreadgroup: MTLSize(threadsPerThreadgroup))
     }
     
-    override func useResource(_ resource: Resource, usage: ResourceUsageType) {
-        encoder.useResource(resourceMap[resource], usage: MTLResourceUsage(usage))
+    override func useResource(_ resource: Resource, access: ResourceAccessFlags) {
+        encoder.useResource(resourceMap[resource], usage: MTLResourceUsage(access, isAppleSiliconGPU: self.isAppleSiliconGPU))
     }
     
     override func useHeap(_ heap: Heap) {
@@ -126,7 +134,7 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
     }
     
     override func memoryBarrier(scope: BarrierScope) {
-        encoder.memoryBarrier(scope: MTLBarrierScope(scope))
+        encoder.memoryBarrier(scope: MTLBarrierScope(scope, isAppleSiliconGPU: self.isAppleSiliconGPU))
     }
     
     override func memoryBarrier(resources: [Resource]) {

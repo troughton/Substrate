@@ -533,6 +533,22 @@ extension MTLResourceOptions {
     }
 }
 
+extension MTLResourceUsage {
+    public init(_ access: ResourceAccessFlags, isAppleSiliconGPU: Bool) {
+        self.init(rawValue: 0)
+        
+        if !access.intersection([.shaderRead, .vertexBuffer, .indexBuffer, .constantBuffer, .blitSource]).isEmpty {
+            self.formUnion(.read)
+        }
+        if access.contains(.inputAttachment), !isAppleSiliconGPU {
+            self.formUnion(.read)
+        }
+        if access.contains(.shaderWrite) {
+            self.formUnion(.write)
+        }
+    }
+}
+
 extension MTLSamplerAddressMode {
     public init(_ mode: SamplerAddressMode) {
         self.init(rawValue: mode.rawValue)!

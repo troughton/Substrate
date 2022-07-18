@@ -18,6 +18,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     associatedtype TransientResourceRegistry: BackendTransientResourceRegistry where TransientResourceRegistry.Backend == Self
     associatedtype PersistentResourceRegistry: BackendPersistentResourceRegistry where PersistentResourceRegistry.Backend == Self
     
+    associatedtype ResourceReference
     associatedtype BufferReference
     associatedtype TextureReference
     associatedtype ArgumentBufferReference
@@ -61,7 +62,7 @@ extension SpecificRenderBackend {
 
 protocol BackendRenderTargetDescriptor: AnyObject {
     init(renderPass: RenderPassRecord)
-    var descriptor: RenderTargetDescriptor { get }
+    var descriptor: RenderTargetsDescriptor { get }
     func descriptorMergedWithPass(_ pass: RenderPassRecord, storedTextures: inout [Texture]) -> Self
     func finalise(storedTextures: inout [Texture])
 }
@@ -101,6 +102,7 @@ protocol BackendTransientResourceRegistry {
     subscript(texture: Texture) -> Backend.TextureReference? { get }
     subscript(argumentBuffer: ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
     subscript(argumentBufferArray: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get }
+    subscript(resource: Resource) -> Backend.ResourceReference? { get }
     
     var accessLock: SpinLock { get }
     
@@ -149,6 +151,7 @@ protocol BackendPersistentResourceRegistry: AnyObject {
     subscript(texture: Texture) -> Backend.TextureReference? { get }
     subscript(argumentBuffer: ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
     subscript(argumentBufferArray: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get }
+    subscript(resource: Resource) -> Backend.ResourceReference? { get }
     
     func cycleFrames()
     func allocateArgumentBufferIfNeeded(_ buffer: ArgumentBuffer) async -> Backend.ArgumentBufferReference

@@ -200,7 +200,11 @@ public class ResourceBindingEncoder : CommandEncoder {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func setSamplerState(_ state: SamplerState?, at path: ResourceBindingPath) {
+    public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) async {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func setSampler(_ state: SamplerState?, at path: ResourceBindingPath) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
@@ -443,6 +447,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         self.nonDefaultDynamicState.formUnion(.stencilReferenceValue)
     }
     
+    
     public func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
         assert(instanceCount > 0, "instanceCount(\(instanceCount)) must be non-zero.")
 
@@ -485,7 +490,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
+    public func useResource(_ resource: Resource, access: ResourceAccessFlags, stages: RenderStages) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
@@ -557,6 +562,10 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         self.currentComputePipeline = pipelineBox
     }
     
+    public func setComputePipelineState(_ pipelineState: ComputePipelineState) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
     /// The number of threads in a SIMD group/wave for the current pipeline state.
     public var currentThreadExecutionWidth: Int {
         return self.currentPipelineReflection?.threadExecutionWidth ?? 0
@@ -566,7 +575,7 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func setThreadgroupMemoryLength(_ length: Int, index: Int) {
+    public func setThreadgroupMemoryLength(_ length: Int, at index: Int) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
@@ -619,7 +628,7 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func useResource(_ resource: Resource, usage: ResourceUsageType) {
+    public func useResource(_ resource: Resource, access: ResourceAccessFlags) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     

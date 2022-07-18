@@ -123,7 +123,13 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func setSamplerState(_ state: SamplerState?, at path: ResourceBindingPath) {
+    override func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) async {
+        guard let descriptor = descriptor else { return }
+        let sampler = await self.resourceMap.persistentRegistry[descriptor]
+        self.setSampler(SamplerState(descriptor: descriptor, state: OpaquePointer(Unmanaged.passUnretained(sampler).toOpaque())), at: path)
+    }
+    
+    override func setSampler(_ state: SamplerState?, at path: ResourceBindingPath) {
         guard let state = state else { return }
         
         let index = path.index
@@ -316,7 +322,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         encoder.dispatchThreadsPerTile(MTLSize(threadsPerTile))
     }
     
-    override func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
+    override func useResource(_ resource: Resource, access: ResourceAccessFlags, stages: RenderStages) {
         encoder.useResource(resourceMap[resource], usage: MTLResourceUsage(usage), stages: MTLRenderStages(stages))
     }
     

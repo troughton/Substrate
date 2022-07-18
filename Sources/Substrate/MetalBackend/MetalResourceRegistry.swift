@@ -483,6 +483,29 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return self.intersectionFunctionTableReferences[table]
     }
     
+    public subscript(resource: Resource) -> MTLResource? {
+        switch resource.type {
+        case .buffer:
+            return self[Buffer(handle: resource.handle)]?.buffer
+        case .texture:
+            return self[Texture(handle: resource.handle)]?.texture
+        case .argumentBuffer:
+            return self[ArgumentBuffer(handle: resource.handle)]?.buffer
+        case .argumentBufferArray:
+            return self[ArgumentBufferArray(handle: resource.handle)]?.buffer
+        case .heap:
+            return self.heapReferences[Heap(handle: resource.handle)]
+        case .accelerationStructure:
+            return self[AccelerationStructure(handle: resource.handle)]
+        case .visibleFunctionTable:
+            return self[VisibleFunctionTable(handle: resource.handle)]
+        case .intersectionFunctionTable:
+            return self[IntersectionFunctionTable(handle: resource.handle)]
+        default:
+            return nil
+        }
+    }
+    
     public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
         get async {
             if let state = self.samplerReferences[descriptor] {
@@ -1056,6 +1079,21 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
 
     public subscript(argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
         return self.argumentBufferArrayReferences[argumentBufferArray]
+    }
+    
+    public subscript(resource: Resource) -> MTLResource? {
+        switch resource.type {
+        case .buffer:
+            return self[Buffer(handle: resource.handle)]?.buffer
+        case .texture:
+            return self[Texture(handle: resource.handle)]?.texture
+        case .argumentBuffer:
+            return self[ArgumentBuffer(handle: resource.handle)]?.buffer
+        case .argumentBufferArray:
+            return self[ArgumentBufferArray(handle: resource.handle)]?.buffer
+        default:
+            return nil
+        }
     }
     
     public func withHeapAliasingFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout [FenceDependency]) -> Void) {

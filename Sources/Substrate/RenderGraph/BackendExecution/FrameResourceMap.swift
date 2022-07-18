@@ -42,6 +42,14 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
+    subscript(resource: Resource) -> Backend.ResourceReference {
+        if resource._usesPersistentRegistry {
+            return persistentRegistry[resource]!
+        } else {
+            return transientRegistry![resource]!
+        }
+    }
+    
     subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference {
         get async {
             return await persistentRegistry[sampler]
