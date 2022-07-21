@@ -203,15 +203,19 @@ public struct Queue : Equatable {
     }
     
     public func waitForCommandCompletion(_ index: UInt64) {
+    #if os(Windows)
         while self.lastCompletedCommand < index {
-            #if os(Windows)
             _sleep(0)
-            #else
-            pthread_mutex_lock(QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
-            pthread_cond_wait(QueueRegistry.instance.commandCompletedCondVars.advanced(by: Int(self.index)), QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
-            pthread_mutex_unlock(QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
-            #endif
         }
+    #else
+        if self.lastCompletedCommand < index {
+            pthread_mutex_lock(QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
+            while self.lastCompletedCommand < index {
+                pthread_cond_wait(QueueRegistry.instance.commandCompletedCondVars.advanced(by: Int(self.index)), QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
+            }
+            pthread_mutex_unlock(QueueRegistry.instance.commandCompletedMutexes.advanced(by: Int(self.index)))
+        }
+    #endif
     }
 }
 
