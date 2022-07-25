@@ -73,7 +73,7 @@ public final class MemoryArena {
     
     /// NOTE: Returns uninitialised memory that the user is responsible for initialising or deinitialising.
     @inlinable
-    public func allocate<T>(count: Int = 1) -> UnsafeMutablePointer<T> {
+    public func allocate<T>(count: Int = 1, as type: T.Type = T.self) -> UnsafeMutablePointer<T> {
         let stride = count == 1 ? MemoryLayout<T>.size : MemoryLayout<T>.stride
         let retVal = self.allocate(bytes: count * stride, alignedTo: MemoryLayout<T>.alignment).bindMemory(to: T.self, capacity: count)
         
