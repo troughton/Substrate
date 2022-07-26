@@ -14,12 +14,20 @@ public typealias Vector4f = SIMD4<Float>
 
 @inlinable @inline(__always)
 public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : FloatingPoint {
-    return (a * b).sum()
+    var result = V.Scalar.zero
+    for i in 0..<V.scalarCount {
+        result += a[i] * b[i]
+    }
+    return result
 }
 
 @inlinable @inline(__always)
 public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : FixedWidthInteger {
-    return (a &* b).wrappedSum()
+    var result = V.Scalar.zero
+    for i in 0..<V.scalarCount {
+        result &+= a[i] &* b[i]
+    }
+    return result
 }
 
 extension SIMD where Scalar : FloatingPoint {
