@@ -54,7 +54,6 @@ public enum AllocatorType {
 
 public final class Allocator {
     
-    @inlinable
     public static func allocate(byteCount: Int, alignment: Int, allocator: AllocatorType) -> UnsafeMutableRawPointer {
         switch allocator {
         case .system:
@@ -74,20 +73,7 @@ public final class Allocator {
     
     @inlinable
     public static func allocate<T>(type: T.Type = T.self, capacity: Int = 1, allocator: AllocatorType) -> UnsafeMutablePointer<T> {
-        switch allocator {
-        case .system:
-            return UnsafeMutablePointer.allocate(capacity: capacity)
-        case .tag(let tagAllocator):
-            return tagAllocator.dynamicThreadView.allocate(capacity: capacity)
-        case .threadLocalTag(let tagAllocator):
-            return tagAllocator.allocate(capacity: capacity)
-        case .lockingTag(let tagAllocator):
-            return tagAllocator.allocate(capacity: capacity)
-        case .tagThreadView(let tagAllocator):
-            return tagAllocator.allocate(capacity: capacity)
-        case .custom(let arena):
-            return arena.takeUnretainedValue().allocate(count: capacity)
-        }
+        return self.allocate(byteCount: capacity * MemoryLayout<T>.stride, alignment: MemoryLayout<T>.alignment, allocator: allocator).bindMemory(to: T.self, capacity: capacity)
     }
     
     @inlinable
