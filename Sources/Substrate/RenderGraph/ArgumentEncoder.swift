@@ -36,15 +36,22 @@ public struct OffsetView<T> {
 
 @propertyWrapper
 public struct BufferBacked<T> {
+    @usableFromInline var _wrappedValue: T?
+    @usableFromInline var isDirty: Bool = false
+    @usableFromInline var _buffer: OffsetView<Buffer>?
+    
+    
+    @inlinable
     public var wrappedValue : T? {
-        didSet {
+        get {
+            return self._wrappedValue
+        } set {
+            self._wrappedValue = newValue
             self.isDirty = true
         }
     }
     
-    @usableFromInline var isDirty: Bool = false
-    @usableFromInline var _buffer: OffsetView<Buffer>?
-    
+    @inlinable
     public var buffer : OffsetView<Buffer>? {
         mutating get {
             if self.isDirty {
@@ -61,9 +68,12 @@ public struct BufferBacked<T> {
         self.isDirty = wrappedValue != nil
     }
     
+    @inlinable
     public mutating func updateBuffer() {
-        if var value = self.wrappedValue {
-            self._buffer = OffsetView(value: Buffer(length: MemoryLayout<T>.size, storageMode: .shared, bytes: &value), offset: 0)
+        if let value = self.wrappedValue {
+            self._buffer = withUnsafeBytes(of: value) {
+                OffsetView(value: Buffer(length: MemoryLayout<T>.size, storageMode: .shared, bytes: $0.baseAddress), offset: 0)
+            }
         }
     }
     
