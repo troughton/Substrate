@@ -769,6 +769,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     
     let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
     let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
+    let maxAllocationLengths: UnsafeMutablePointer<Int>
     let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)>>
     let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
     let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray?>
@@ -780,6 +781,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     init(capacity: Int) {
         self.usages = .allocate(capacity: capacity)
         self.encoders = .allocate(capacity: capacity)
+        self.maxAllocationLengths = .allocate(capacity: capacity)
         self.enqueuedBindings = .allocate(capacity: capacity)
         self.bindings = .allocate(capacity: capacity)
         self.sourceArrays = .allocate(capacity: capacity)
@@ -789,6 +791,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     func deallocate() {
         self.usages.deallocate()
         self.encoders.deallocate()
+        self.maxAllocationLengths.deallocate()
         self.enqueuedBindings.deallocate()
         self.bindings.deallocate()
         self.sourceArrays.deallocate()
@@ -798,6 +801,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     func initialize(index indexInChunk: Int, descriptor: Void, heap: Heap?, flags: ResourceFlags) {
         self.usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
         self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
+        self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
         self.enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.sourceArrays.advanced(by: indexInChunk).initialize(to: nil)
@@ -807,6 +811,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     func initialize(index indexInChunk: Int, sourceArray: ArgumentBufferArray) {
         self.usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
         self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
+        self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
         self.enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
@@ -816,6 +821,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     func deinitialize(from index: Int, count: Int) {
         self.usages.advanced(by: index).deinitialize(count: count)
         self.encoders.advanced(by: index).deinitialize(count: count)
+        self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
         self.enqueuedBindings.advanced(by: index).deinitialize(count: count)
         self.bindings.advanced(by: index).deinitialize(count: count)
         self.sourceArrays.advanced(by: index).deinitialize(count: count)
