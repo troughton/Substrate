@@ -8,66 +8,42 @@
 
 import Swift
 
-public enum BlendFactor : UInt, Hashable, Codable {
-    
+public enum BlendFactor : UInt8, Hashable, Codable {
     case zero
-    
     case one
-    
     case sourceColor
-    
     case oneMinusSourceColor
-    
     case sourceAlpha
-    
     case oneMinusSourceAlpha
-    
     case destinationColor
-    
     case oneMinusDestinationColor
-    
     case destinationAlpha
-    
     case oneMinusDestinationAlpha
-    
     case sourceAlphaSaturated
-    
     case blendColor
-    
     case oneMinusBlendColor
-    
     case blendAlpha
-    
     case oneMinusBlendAlpha
-    
     case source1Color
-    
     case oneMinusSource1Color
-    
     case source1Alpha
-    
     case oneMinusSource1Alpha
 }
 
-public enum BlendOperation : UInt, Hashable, Codable {
-    
+public enum BlendOperation : UInt8, Hashable, Codable {
     case add
-    
     case subtract
-    
     case reverseSubtract
-    
     case min
-    
     case max
 }
 
 public struct ColorWriteMask : OptionSet, Hashable, Codable {
     
-    public var rawValue: UInt
+    public var rawValue: UInt8
     
     @inlinable
-    public init(rawValue: UInt) {
+    public init(rawValue: UInt8) {
         self.rawValue = rawValue
     }
     
@@ -83,8 +59,7 @@ public struct ColorWriteMask : OptionSet, Hashable, Codable {
 }
 
 
-public enum PixelFormat : UInt, Hashable, Codable, CaseIterable {
-    
+public enum PixelFormat : UInt16, Hashable, Codable, CaseIterable {
     case invalid = 0
     
     /* Normal 8 bit formats */
@@ -529,15 +504,12 @@ extension PixelFormat {
 }
 
 @available(OSX 10.11, *)
-public enum CPUCacheMode : UInt, Hashable, Codable {
-    
-    
+public enum CPUCacheMode : UInt8, Hashable, Codable {
     case defaultCache
-    
     case writeCombined
 }
 
-public enum StorageMode : UInt, Hashable, Codable {
+public enum StorageMode : UInt8, Hashable, Codable {
     case shared
     case managed
     case `private`
@@ -555,21 +527,15 @@ public struct BlitOption : OptionSet, Hashable, Codable {
     }
 }
 
-public enum PrimitiveType : UInt, Hashable, Codable {
-    
+public enum PrimitiveType : UInt8, Hashable, Codable {
     case point
-    
     case line
-    
     case lineStrip
-    
     case triangle
-    
     case triangleStrip
 }
 
-public enum DataType : UInt, Hashable, Codable {
-    
+public enum DataType : UInt8, Hashable, Codable {
     case none
     
     case `struct`
@@ -645,183 +611,109 @@ public enum DataType : UInt, Hashable, Codable {
     case bool4
 }
 
-public enum VertexFormat : UInt, Hashable, Codable {
-    
-    
+public enum VertexFormat : UInt8, Hashable, Codable {
     case invalid
     
-    
     case uchar2
-    
     case uchar3
-    
     case uchar4
     
-    
     case char2
-    
     case char3
-    
     case char4
     
-    
     case uchar2Normalized
-    
     case uchar3Normalized
-    
     case uchar4Normalized
     
-    
     case char2Normalized
-    
     case char3Normalized
-    
     case char4Normalized
     
-    
     case ushort2
-    
     case ushort3
-    
     case ushort4
     
-    
     case short2
-    
     case short3
-    
     case short4
     
-    
     case ushort2Normalized
-    
     case ushort3Normalized
-    
     case ushort4Normalized
     
-    
     case short2Normalized
-    
     case short3Normalized
-    
     case short4Normalized
     
-    
     case half2
-    
     case half3
-    
     case half4
     
-    
     case float
-    
     case float2
-    
     case float3
-    
     case float4
     
-    
     case int
-    
     case int2
-    
     case int3
-    
     case int4
     
-    
     case uint
-    
     case uint2
-    
     case uint3
-    
     case uint4
     
-    
     case int1010102Normalized
-    
     case uint1010102Normalized
 }
 
-public enum IndexType : UInt, Hashable, Codable {
+public enum IndexType : UInt8, Hashable, Codable {
     case uint16
     case uint32
 }
 
-public enum CullMode : UInt, Hashable, Codable {
-    
-    
+public enum CullMode : UInt8, Hashable, Codable {
     case none
-    
     case front
-    
     case back
 }
 
-public enum Winding : UInt, Hashable, Codable {
-    
-    
+public enum Winding : UInt8, Hashable, Codable {
     case clockwise
-    
     case counterClockwise
 }
 
-public enum DepthClipMode : UInt, Hashable, Codable {
-    
-    
+public enum DepthClipMode : UInt8, Hashable, Codable {
     case clip
-    
     case clamp
 }
 
-public enum TriangleFillMode : UInt, Hashable, Codable {
-    
-    
+public enum TriangleFillMode : UInt8, Hashable, Codable {
     case fill
-    
     case lines
 }
 
-public enum CompareFunction : UInt, Hashable, Codable {
-    
-    
+public enum CompareFunction : UInt8, Hashable, Codable {
     case never
-    
     case less
-    
     case equal
-    
     case lessEqual
-    
     case greater
-    
     case notEqual
-    
     case greaterEqual
-    
     case always
 }
 
-public enum StencilOperation : UInt, Hashable, Codable {
-    
-    
+public enum StencilOperation : UInt8, Hashable, Codable {
     case keep
-    
     case zero
-    
     case replace
-    
     case incrementClamp
-    
     case decrementClamp
-    
     case invert
-    
     case incrementWrap
-    
     case decrementWrap
 }
 
