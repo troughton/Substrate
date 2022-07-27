@@ -152,13 +152,13 @@ extension DrawRenderPass {
         return Array(inferredResources.values)
     }
     
-    var renderTargetsDescriptorForActiveAttachments: RenderTargetsDescriptor {
+    func renderTargetsDescriptorForActiveAttachments(passIndex: Int) -> RenderTargetsDescriptor {
         // Filter out any unused attachments.
         var descriptor = self.renderTargetsDescriptor
         
         let isUsedAttachment: (Texture) -> Bool = { attachment in
             return attachment.usages.contains(where: {
-                return $0.renderPassRecord.pass === self && $0.type.isRenderTarget && $0.type != .unusedRenderTarget
+                return $0.passIndex == passIndex && $0.usage.access.isRenderTarget
             })
         }
         
@@ -1334,32 +1334,18 @@ public final class RenderGraph {
         }
         
         // Index the commands for each pass in a sequential manner for the entire frame.
-        var commandCount = 0
         for (i, passRecord) in activePasses.enumerated() {
             precondition(passRecord.isActive)
             
-            let startCommandIndex = commandCount
-            commandCount += passRecord.commands.count
-            
             passRecord.passIndex = i
-            passRecord.commandRange = startCommandIndex..<commandCount
-            assert(passRecord.commandRange!.count > 0)
             
-            let randomAccessCommandView = passRecord.commands.makeRandomAccessView(allocator: .init(allocator))
-            
-            for (resource, resourceUsage) in passRecord.resourceUsages where resourceUsage.stages != .cpuBeforeRender {
-                assert(resource.isValid)
-                self.usedResources.insert(resource)
-                if resourceUsage.resource != resource {
-                    self.usedResources.insert(resourceUsage.resource)
-                }
+            for resourceUsage in passRecord.pass.resources where resourceUsage.stages != .cpuBeforeRender {
+                assert(resourceUsage.resource.isValid)
+                self.usedResources.insert(resourceUsage.resource)
                 
-                var resourceUsage = resourceUsage
-                resourceUsage.commandRange = Range(uncheckedBounds: (resourceUsage.commandRange.lowerBound + startCommandIndex, resourceUsage.commandRange.upperBound + startCommandIndex))
-                resource.usages.mergeOrAppendUsage(resourceUsage, resource: resource, allocator: allocator, passCommands: randomAccessCommandView, passCommandOffset: startCommandIndex)
+                let recordedUsage = RecordedResourceUsage(passIndex: i, usage: resourceUsage)
+                resourceUsage.resource.usages.append(recordedUsage, allocator: AllocatorType(allocator))
             }
-            
-            passRecord.resourceUsages = nil
         }
         
         // Compilation is finished, so reset that tag.

@@ -350,7 +350,7 @@ struct TextureProperties: SharedResourceProperties {
     }
     
     var descriptors : UnsafeMutablePointer<TextureDescriptor>
-    var usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    var usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     
     init(capacity: Int) {
         self.descriptors = UnsafeMutablePointer.allocate(capacity: capacity)
@@ -391,7 +391,7 @@ struct TextureProperties: SharedResourceProperties {
         self.usages.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 
 final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {

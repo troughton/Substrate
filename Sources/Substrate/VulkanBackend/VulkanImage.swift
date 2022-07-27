@@ -159,7 +159,7 @@ class VulkanImage {
         return self.descriptor.matches(descriptor: descriptor)
     }
     
-    func computeFrameLayouts(resource: Resource, usages: ChunkArray<ResourceUsage>, preserveLastLayout: Bool, frameIndex: UInt64) {
+    func computeFrameLayouts(resource: Resource, usages: ChunkArray<RecordedResourceUsage>, preserveLastLayout: Bool, frameIndex: UInt64) {
         defer { self.frameLayoutsLastFrameIndex = frameIndex }
         
         let subresourceCount = self.descriptor.subresourceCount

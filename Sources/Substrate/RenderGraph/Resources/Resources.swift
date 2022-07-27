@@ -142,7 +142,7 @@ public protocol ResourceProtocol: Sendable {
     var storageMode: StorageMode { get }
     var heap: Heap? { get }
     var baseResource: Resource? { get }
-    var usages: ChunkArray<ResourceUsage> { get nonmutating set }
+    var usages: ChunkArray<RecordedResourceUsage> { get nonmutating set }
     var resourceForUsageTracking: Resource { get }
     
     /// The command buffer index on which to wait on a particular queue `queue` before it is safe to perform an access of type `type`.
@@ -314,7 +314,7 @@ extension ResourceProtocolImpl {
     }
     
     @inlinable
-    var _usagesPointer: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? {
+    var _usagesPointer: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? {
         if self._usesPersistentRegistry {
             if let hazardTrackingGroup = self.hazardTrackingGroup {
                 return hazardTrackingGroup.group._usagesPointer
@@ -328,7 +328,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    public var usages: ChunkArray<ResourceUsage> {
+    public var usages: ChunkArray<RecordedResourceUsage> {
         get {
             let trackingResource = self.resourceForUsageTracking
             if trackingResource.handle != self.handle {
@@ -625,7 +625,7 @@ public struct Resource : ResourceProtocol, Hashable {
         }
     }
     
-    public var usages: ChunkArray<ResourceUsage> {
+    public var usages: ChunkArray<RecordedResourceUsage> {
         get {
             self[\.usages]
         }

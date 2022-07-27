@@ -78,3 +78,8 @@ public struct ExplicitResourceUsage {
     // Render target usages can be inferred from load actions and render target descriptors.
     // We _do_ need to know whether render targets are written to or not.
 }
+
+public struct RecordedResourceUsage {
+    var passIndex: Int
+    var usage: ExplicitResourceUsage
+}

@@ -75,7 +75,7 @@ public struct HazardTrackingGroup<R: ResourceProtocol> {
         }
     }
     
-    public var usages: ChunkArray<ResourceUsage> {
+    public var usages: ChunkArray<RecordedResourceUsage> {
         get {
             return self.group.usages
         }
@@ -172,7 +172,7 @@ struct HazardTrackingGroupProperties: SharedResourceProperties {
     
     let resourceTypes : UnsafeMutablePointer<ResourceType>
     let resources : UnsafeMutablePointer<Set<Resource>>
-    let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     
     init(capacity: Int) {
         self.resourceTypes = .allocate(capacity: capacity)
@@ -198,7 +198,7 @@ struct HazardTrackingGroupProperties: SharedResourceProperties {
         self.usages.deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 
 final class HazardTrackingGroupRegistry: PersistentRegistry<_HazardTrackingGroup> {

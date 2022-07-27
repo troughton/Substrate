@@ -81,7 +81,7 @@ protocol ResourceProperties {
 }
 
 protocol SharedResourceProperties: ResourceProperties {
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { get }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { get }
 }
 
 protocol PersistentResourceProperties: ResourceProperties {
@@ -96,7 +96,7 @@ struct EmptyProperties<Descriptor>: PersistentResourceProperties & SharedResourc
     func initialize(index: Int, descriptor: Descriptor, heap: Heap?, flags: ResourceFlags) {}
     func deinitialize(from index: Int, count: Int) {}
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { nil }
     var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
     var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
     var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }

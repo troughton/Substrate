@@ -174,6 +174,6 @@ struct ArgumentBufferArrayProperties: SharedResourceProperties {
         self.descriptors.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { nil }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { nil }
     
 }

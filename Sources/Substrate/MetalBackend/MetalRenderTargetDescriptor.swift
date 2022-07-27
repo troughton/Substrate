@@ -10,7 +10,7 @@
 @preconcurrency import Metal
 
 final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
-    var descriptor : RenderTargetDescriptor
+    var descriptor : RenderTargetsDescriptor
     var renderPasses = [DrawRenderPass]()
     
     var colorActions : [(MTLLoadAction, MTLStoreAction)] = []
@@ -21,8 +21,8 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var clearDepth: Double = 0.0
     var clearStencil: UInt32 = 0
     
-    init(renderPass: DrawRenderPass) {
-        self.descriptor = renderPass.renderTargetsDescriptorForActiveAttachments
+    init(renderPass: DrawRenderPass, passIndex: Int) {
+        self.descriptor = renderPass.renderTargetsDescriptorForActiveAttachments(passIndex: passIndex)
         self.colorActions = .init(repeating: (.dontCare, .dontCare), count: self.descriptor.colorAttachments.count)
         self.updateClearValues(pass: renderPass, descriptor: self.descriptor)
         self.renderPasses.append(renderPass)

@@ -494,7 +494,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
-    let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     let descriptors: UnsafeMutablePointer<ArgumentBufferDescriptor>
     let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
     let maxAllocationLengths: UnsafeMutablePointer<Int>
@@ -548,6 +548,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.sourceArrays.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 

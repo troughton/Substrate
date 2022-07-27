@@ -114,7 +114,7 @@ struct AccelerationStructureProperties: SharedResourceProperties {
     }
     
     let sizes : UnsafeMutablePointer<Int>
-    let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     let descriptors : UnsafeMutablePointer<AccelerationStructureDescriptor?>
     
     init(capacity: Int) {
@@ -141,7 +141,7 @@ struct AccelerationStructureProperties: SharedResourceProperties {
         self.descriptors.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { usages }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { usages }
 }
 
 final class AccelerationStructureRegistry: PersistentRegistry<AccelerationStructure> {
@@ -271,7 +271,7 @@ struct VisibleFunctionTableProperties: SharedResourceProperties {
     }
     
     let functions : UnsafeMutablePointer<[FunctionDescriptor?]>
-    let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
     
     init(capacity: Int) {
@@ -288,7 +288,7 @@ struct VisibleFunctionTableProperties: SharedResourceProperties {
     
     func initialize(index: Int, descriptor functionCount: Int, heap: Heap?, flags: ResourceFlags) {
         self.functions.advanced(by: index).initialize(to: .init(repeating: nil, count: functionCount))
-        self.usages.advanced(by: index).initialize(to: ChunkArray<ResourceUsage>())
+        self.usages.advanced(by: index).initialize(to: ChunkArray<RecordedResourceUsage>())
         self.pipelineStates.advanced(by: index).initialize(to: .init(nil))
     }
     
@@ -298,7 +298,7 @@ struct VisibleFunctionTableProperties: SharedResourceProperties {
         self.pipelineStates.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { self.usages }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 
 final class VisibleFunctionTableRegistry: PersistentRegistry<VisibleFunctionTable> {
@@ -436,7 +436,7 @@ struct IntersectionFunctionTableProperties: SharedResourceProperties {
     }
     
     let descriptors : UnsafeMutablePointer<IntersectionFunctionTableDescriptor>
-    let usages : UnsafeMutablePointer<ChunkArray<ResourceUsage>>
+    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation>
     
     init(capacity: Int) {
@@ -453,7 +453,7 @@ struct IntersectionFunctionTableProperties: SharedResourceProperties {
     
     func initialize(index: Int, descriptor: IntersectionFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.usages.advanced(by: index).initialize(to: ChunkArray<ResourceUsage>())
+        self.usages.advanced(by: index).initialize(to: ChunkArray<RecordedResourceUsage>())
         self.pipelineStates.advanced(by: index).initialize(to: .init(nil))
     }
     
@@ -463,7 +463,7 @@ struct IntersectionFunctionTableProperties: SharedResourceProperties {
         self.pipelineStates.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<ResourceUsage>>? { usages }
+    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { usages }
 }
 
 final class IntersectionFunctionTableRegistry: PersistentRegistry<IntersectionFunctionTable> {

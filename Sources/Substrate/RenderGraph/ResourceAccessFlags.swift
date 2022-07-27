@@ -83,6 +83,10 @@ public struct ResourceAccessFlags: OptionSet {
     public var isWrite: Bool {
         return !self.isDisjoint(with: [.shaderWrite, .colorAttachmentWrite, .depthStencilAttachmentWrite, .blitDestination, .cpuWrite])
     }
+    
+    public var isRenderTarget : Bool {
+        return !self.isDisjoint(with: [.colorAttachment, .depthStencilAttachment, .inputAttachment])
+    }
 }
 
 public struct BufferAccessFlags: OptionSet {
