@@ -9,29 +9,67 @@
 import SubstrateUtilities
 
 public struct VertexBufferLayoutDescriptor : Hashable {
-    public var stride: Int
+    @usableFromInline var _stride: UInt16
     public var stepFunction: VertexStepFunction
-    public var stepRate: Int
+    @usableFromInline var _stepRate: UInt32
+    
+    @inlinable
+    public var stride: Int {
+        get {
+            return Int(self._stride)
+        } set {
+            self._stride = UInt16(newValue)
+        }
+    }
+    
+    @inlinable
+    public var stepRate: Int {
+        get {
+            return Int(self._stepRate)
+        }
+        set {
+            self._stepRate = UInt32(self._stepRate)
+        }
+    }
     
     @inlinable
     public init(stride: Int = 0, stepFunction: VertexStepFunction = .constant, stepRate: Int = 1) {
-        self.stride = stride
+        self._stride = UInt16(stride)
         self.stepFunction = stepFunction
-        self.stepRate = stepRate
+        self._stepRate = UInt32(stepRate)
     }
 }
 
 
 public struct VertexAttributeDescriptor : Hashable {
     public var format: VertexFormat
-    public var offset: Int
-    public var bufferIndex: Int
+    @usableFromInline var _offset: UInt16
+    @usableFromInline var _bufferIndex: UInt16
+    
+    @inlinable
+    public var offset: Int {
+        get {
+            return Int(self._offset)
+        } set {
+            self._offset = UInt16(newValue)
+        }
+    }
+    
+    @inlinable
+    public var bufferIndex: Int {
+        get {
+            return Int(self._bufferIndex)
+        }
+        set {
+            self._bufferIndex = UInt16(newValue)
+        }
+    }
     
     @inlinable
     public init(format: VertexFormat, offset: Int, bufferIndex: Int) {
         self.format = format
-        self.offset = offset
-        self.bufferIndex = bufferIndex
+        self._offset = UInt16(offset)
+        self._bufferIndex = UInt16(bufferIndex)
     }
 }
 

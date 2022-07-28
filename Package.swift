@@ -33,7 +33,7 @@ let package = Package(
         .package(name: "Wuffs", url: "https://github.com/troughton/Wuffs-SPM", from: "0.3.02"),
         .package(name: "LodePNG", url: "https://github.com/troughton/LodePNG-SPM", from: "0.0.1"),
         .package(url: "https://github.com/troughton/SwiftImGui", .branch("docking")),
-        .package(url: "https://github.com/apple/swift-numerics", from: "0.1.0"),
+        .package(url: "https://github.com/apple/swift-numerics", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-collections/", .upToNextMajor(from: "0.0.2"))
     ],
     targets: [

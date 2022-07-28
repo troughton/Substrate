@@ -362,63 +362,62 @@ public struct RenderTargetDescriptor : Hashable, Sendable {
         return self.size.height
     }
     
-    static func descriptorsAreMergeable(passA: ProxyDrawRenderPass, passB: ProxyDrawRenderPass) -> Bool {
-        let descriptorA = passA.renderTargetDescriptor
-        let descriptorB = passB.renderTargetDescriptor
-        
-        var anyMatch = false
-        var sizeA = SIMD2<Int>(repeating: .max)
-        var sizeB = SIMD2<Int>(repeating: .max)
-        
-        func areCompatible<T: _RenderTargetAttachmentDescriptor>(_ a: T, _ b: T) -> Bool {
-            if a.texture != b.texture ||
-                a._level != b._level ||
-                a._slice != b._slice ||
-                a._depthPlane != b._depthPlane {
-                return false
-            }
-            
-            if let aResolveTexture = a.resolveTexture, let bResolveTexture = b.resolveTexture {
-                if aResolveTexture != bResolveTexture ||
-                    a._resolveLevel != b._resolveLevel ||
-                    a._resolveSlice != b._resolveSlice ||
-                    a._resolveDepthPlane != b._resolveDepthPlane {
-                    return false
-                }
-            }
-            
-            let textureASize = SIMD2(a.texture.width >> a.level, a.texture.height >> a.level)
-            let textureBSize = SIMD2(b.texture.width >> b.level, b.texture.height >> b.level)
-            
-            sizeA = pointwiseMin(textureASize, sizeA)
-            sizeB = pointwiseMin(textureBSize, sizeB)
-            
-            anyMatch = true
-            
+    
+    func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ desc: inout D?, with new: D?, clearOperation: ClearOperation) -> Bool {
+        guard let descriptor = desc else {
+            desc = new
             return true
         }
         
-        if let depthA = descriptorA.depthAttachment, let depthB = descriptorB.depthAttachment,
-            !areCompatible(depthA, depthB) || passB.depthClearOperation.isClear  {
+        guard let new = new else {
+            return true
+        }
+        
+        if clearOperation.isClear {
+            // If descriptor was not nil, it must've already had and been using this attachment,
+            // so we can't overwrite its load action.
             return false
         }
         
-        if let stencilA = descriptorA.stencilAttachment, let stencilB = descriptorB.stencilAttachment,
-           !areCompatible(stencilA, stencilB) || passB.stencilClearOperation.isClear {
-            return false
+        return  descriptor.texture     == new.texture &&
+                descriptor.level       == new.level &&
+                descriptor.slice       == new.slice &&
+                descriptor.depthPlane  == new.depthPlane
+    }
+    
+    mutating func tryMerge(withPass pass: ProxyDrawRenderPass) -> Bool {
+        if pass.renderTargetDescriptor.size != self.size {
+            return false // The render targets must be the same size.
         }
         
-        if let visA = descriptorA.visibilityResultBuffer, let visB = descriptorB.visibilityResultBuffer, visA != visB {
-            return false
-        }
+        let passDescriptor = pass.renderTargetDescriptor
         
-        for i in 0..<min(descriptorA.colorAttachments.count, descriptorB.colorAttachments.count) {
-            if let colorA = descriptorA.colorAttachments[i], let colorB = descriptorB.colorAttachments[i],
-                !areCompatible(colorA, colorB) || passB.colorClearOperation(attachmentIndex: i).isClear {
+        var newDescriptor = self
+        
+        for i in 0..<min(newDescriptor.colorAttachments.count, passDescriptor.colorAttachments.count) {
+            if !self.tryUpdateDescriptor(&newDescriptor.colorAttachments[i], with: passDescriptor.colorAttachments[i], clearOperation: pass.colorClearOperation(attachmentIndex: i)) {
                 return false
             }
         }
         
-        return anyMatch && sizeA == sizeB
+        if !self.tryUpdateDescriptor(&newDescriptor.depthAttachment, with: passDescriptor.depthAttachment, clearOperation: pass.depthClearOperation) {
+            return false
+        }
+        
+        if !self.tryUpdateDescriptor(&newDescriptor.stencilAttachment, with: passDescriptor.stencilAttachment, clearOperation: pass.stencilClearOperation) {
+            return false
+        }
+        
+        if newDescriptor.visibilityResultBuffer != nil && passDescriptor.visibilityResultBuffer != newDescriptor.visibilityResultBuffer {
+            return false
+        } else {
+            newDescriptor.visibilityResultBuffer = passDescriptor.visibilityResultBuffer
+        }
+        
+        newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, passDescriptor.renderTargetArrayLength)
+        
+        self = newDescriptor
+        
+        return true
     }
 }

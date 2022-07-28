@@ -14,6 +14,8 @@ import RealModule
 extension Quaternion {
     // https://docs.microsoft.com/en-us/previous-versions/windows/desktop/bb281635(v=vs.85)
     // Assumes the input is a unit quaternion.
+    @_specialize(kind: full, where Scalar == Float)
+    @_specialize(kind: full, where Scalar == Double)
     public static func log(_ q: Quaternion) -> Quaternion {
         let sinTheta = q.storage.xyz.length
         if sinTheta < .ulpOfOne || sinTheta > 1.0 {
@@ -26,6 +28,8 @@ extension Quaternion {
 
     // https://docs.microsoft.com/en-us/previous-versions/windows/desktop/bb281622(v=vs.85)
     // Expects a pure quaternion, so w == 0
+    @_specialize(kind: full, where Scalar == Float)
+    @_specialize(kind: full, where Scalar == Double)
     public static func exp(_ q: Quaternion) -> Quaternion {
         let theta = q.storage.xyz.length
         if theta < .ulpOfOne {
@@ -60,6 +64,8 @@ extension Quaternion {
     // https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt
     
     /// Returns a quaternion between q1 and q2 as part of a smooth SQUAD segment
+    @_specialize(kind: full, where Scalar == Float)
+    @_specialize(kind: full, where Scalar == Double)
     public static func interpolateSplineSegment(leading q0: Quaternion, start q1: Quaternion, end q2: Quaternion, trailing q3: Quaternion, factor t: Scalar) -> Quaternion {
         var q0 = q0
         var q2 = q2
@@ -93,6 +99,8 @@ extension Quaternion {
     }
 
     /// Returns a smooth approximation between q1 and q2 using t1 and t2 as 'tangents'
+    @_specialize(kind: full, where Scalar == Float)
+    @_specialize(kind: full, where Scalar == Double)
     public static func squad(startRotation q1: Quaternion, startTangent t1: Quaternion, endTangent t2: Quaternion, endRotation q2: Quaternion, factor t: Scalar) -> Quaternion {
         let slerpT: Scalar = 2.0 * t * (1.0 - t)
         let slerp1: Quaternion = Quaternion.slerpNoInvert(from: q1, to: q2, factor: t)

@@ -293,36 +293,41 @@ extension AffineMatrix2D where Scalar : Real {
     // Reference: https://github.com/StevenMcGrath/TransformUtilities/blob/2328b22c954844e130cce4349a3127c2dbbd41e5/TransformUtilities/Utility%20Classes/TUTransformUtilities.m#L379
     @inlinable
     public var decomposed: (translation: SIMD2<Scalar>, rotation: Angle<Scalar>, scale: SIMD2<Scalar>, shear: Angle<Scalar>) {
-        let translation = self.translation
-        
-        var m = Matrix2x2<Scalar>(self)
-        var scale = SIMD2<Scalar>.one
-        
-        // compute x scale factor and normalize first column
-        scale.x = m[0].length
-        m[0] = m[0] / scale.x
-        
-        // compute shear factor and make 2nd column orthogonal to 1st
-        var shear: Scalar = 0
-        shear = dot(m[0], m[1])
-        m[1] = m[1] + m[0] * -shear
-        
-        // compute y scale factor and normalize 2nd column
-        scale.y = m[1].length
-        m[1] = m[1] / scale.y
-        shear /= scale.y
-        shear = Scalar.atan(shear)
-
-        // Check for a coordinate system flip. If the determinant is -1,
-        // then negate the matrix and the scaling factors.
-        if m[0, 0] * m[1, 1] - m[0, 1] * m[1, 0] < 0 {
-            scale *= -1
-            m[0] *= -1
-            m[1] *= -1
+        get {
+            let translation = self.translation
+            
+            var m = Matrix2x2<Scalar>(self)
+            var scale = SIMD2<Scalar>.one
+            
+            // compute x scale factor and normalize first column
+            scale.x = m[0].length
+            m[0] = m[0] / scale.x
+            
+            // compute shear factor and make 2nd column orthogonal to 1st
+            var shear: Scalar = 0
+            shear = dot(m[0], m[1])
+            m[1] = m[1] + m[0] * -shear
+            
+            // compute y scale factor and normalize 2nd column
+            scale.y = m[1].length
+            m[1] = m[1] / scale.y
+            shear /= scale.y
+            shear = Scalar.atan(shear)
+            
+            // Check for a coordinate system flip. If the determinant is -1,
+            // then negate the matrix and the scaling factors.
+            if m[0, 0] * m[1, 1] - m[0, 1] * m[1, 0] < 0 {
+                scale *= -1
+                m[0] *= -1
+                m[1] *= -1
+            }
+            
+            let rotation = -Scalar.atan2(y: m[1, 0] - m[0, 1], x: m[0, 0] + m[1, 1])
+            return (translation, Angle<Scalar>(radians: rotation), scale, Angle<Scalar>(radians: shear))
         }
-        
-        let rotation = -Scalar.atan2(y: m[1, 0] - m[0, 1], x: m[0, 0] + m[1, 1])
-        return (translation, Angle<Scalar>(radians: rotation), scale, Angle<Scalar>(radians: shear))
+        set {
+            self = .shearScaleRotateTranslate(shear: newValue.shear, scale: newValue.scale, rotation: newValue.rotation, translation: newValue.translation)
+        }
     }
     
     // Reference: http://www.cs.cornell.edu/courses/cs4620/2014fa/lectures/polarnotes.pdf

@@ -21,8 +21,13 @@ public struct BlendDescriptor : Hashable, Sendable {
     
     public var alphaBlendOperation: BlendOperation = .add
     
-    public init() {
-        
+    public init(sourceRGBBlendFactor: BlendFactor = .one, destinationRGBBlendFactor: BlendFactor = .zero, rgbBlendOperation: BlendOperation = .add, sourceAlphaBlendFactor: BlendFactor = .one, destinationAlphaBlendFactor: BlendFactor = .zero, alphaBlendOperation: BlendOperation = .add) {
+        self.sourceRGBBlendFactor = sourceRGBBlendFactor
+        self.destinationRGBBlendFactor = destinationRGBBlendFactor
+        self.rgbBlendOperation = rgbBlendOperation
+        self.sourceAlphaBlendFactor = sourceAlphaBlendFactor
+        self.destinationAlphaBlendFactor = destinationAlphaBlendFactor
+        self.alphaBlendOperation = alphaBlendOperation
     }
 }
 

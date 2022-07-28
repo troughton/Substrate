@@ -279,6 +279,17 @@ public struct ArgumentBuffer : ResourceProtocol {
         return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: self.pointer(for: \.encoders), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
     }
     
+    /// A limit for the maximum buffer size that may be allocated by the backend for this argument buffer.
+    /// Useful for capping the length of bindless arrays to the actually used capacity.
+    public var maximumAllocationLength : Int {
+        get {
+            return self.pointer(for: \.maxAllocationLengths).pointee
+        }
+        nonmutating set {
+            self.pointer(for: \.maxAllocationLengths).pointee = newValue
+        }
+    }
+    
     public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)> {
         _read {
             yield self.pointer(for: \.enqueuedBindings).pointee

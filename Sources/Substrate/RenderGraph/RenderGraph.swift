@@ -1254,9 +1254,30 @@ public final class RenderGraph {
         }
     }
     
-    func computeDependencyOrdering(passIndex i: Int, dependencyTable: DependencyTable<DependencyType>, renderPasses: [RenderPassRecord], addedToList: inout [Bool], activePasses: inout [RenderPassRecord], allocator: AllocatorType) {
-        let signpostState = Self.signposter.beginInterval("Compute Dependency Ordering")
-        defer { Self.signposter.endInterval("Compute Dependency Ordering", signpostState) }
+    func computePassRenderTargetIndices(passes: [ProxyDrawRenderPass?]) -> [Int] {
+        var activeRenderTargets = [(index: Int, renderTargets: RenderTargetDescriptor)]()
+        
+        var descriptorIndices = [Int](repeating: -1, count: passes.count)
+        var nextDescriptorIndex = 0
+        
+        passLoop: for (passIndex, pass) in passes.enumerated() {
+            guard let pass = pass else { continue }
+            
+            for i in activeRenderTargets.indices.reversed() {
+                if activeRenderTargets[i].renderTargets.tryMerge(withPass: pass) {
+                    descriptorIndices[passIndex] = activeRenderTargets[i].index
+                    continue passLoop
+                }
+            }
+            
+            activeRenderTargets.append((nextDescriptorIndex, pass.renderTargetDescriptor))
+            nextDescriptorIndex += 1
+        }
+        
+        return descriptorIndices
+    }
+    
+    func computeDependencyOrdering(passIndex i: Int, dependencyTable: DependencyTable<DependencyType>, renderPasses: [RenderPassRecord], passRenderTargetIndices: [Int], addedToList: inout [Bool], activePasses: inout [RenderPassRecord], allocator: AllocatorType) {
         
         // Ideally, we should reorder the passes into an optimal order according to some heuristics.
         // For example:
@@ -1270,28 +1291,26 @@ public final class RenderGraph {
             addedToList[i] = true
             
             if renderPasses[i].type == .draw {
-                let targetPass = renderPasses[i].pass as! ProxyDrawRenderPass
-                
                 var sharedRenderTargetPasses = ChunkArray<Int>()
                 
                 // First process all passes that can't share the same render target...
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    if renderPasses[j].type == .draw, RenderTargetDescriptor.descriptorsAreMergeable(passA: renderPasses[j].pass as! ProxyDrawRenderPass, passB: targetPass) {
+                    if passRenderTargetIndices[j] == passRenderTargetIndices[i] {
                         // If it _can_ share the same render target, add it to the sharedRenderTargetPasses list to process later...
                         sharedRenderTargetPasses.append(j, allocator: allocator)
                     } else {
-                        computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
+                        computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, passRenderTargetIndices: passRenderTargetIndices, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
                     }
                 }
                 
                 // ... and then process those which can.
                 for j in sharedRenderTargetPasses {
-                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
+                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, passRenderTargetIndices: passRenderTargetIndices, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
                 }
                 
             } else {
                 for j in (0..<i).reversed() where dependencyTable.dependency(from: i, on: j) != .none {
-                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
+                    computeDependencyOrdering(passIndex: j, dependencyTable: dependencyTable, renderPasses: renderPasses, passRenderTargetIndices: passRenderTargetIndices, addedToList: &addedToList, activePasses: &activePasses, allocator: allocator)
                 }
             }
             
@@ -1359,8 +1378,9 @@ public final class RenderGraph {
         
         var addedToList = [Bool](repeating: false, count: renderPasses.count)
         var activePasses = [RenderPassRecord]()
+        let passRenderTargetIndices = self.computePassRenderTargetIndices(passes: renderPasses.map { $0.type == .draw ? ($0.pass! as! ProxyDrawRenderPass) : nil })
         for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
-            self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, addedToList: &addedToList, activePasses: &activePasses, allocator: AllocatorType(allocator))
+            self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, passRenderTargetIndices: passRenderTargetIndices, addedToList: &addedToList, activePasses: &activePasses, allocator: AllocatorType(allocator))
         }
         
         var i = 0

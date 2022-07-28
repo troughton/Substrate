@@ -12,27 +12,19 @@ public typealias Vector2f = SIMD2<Float>
 public typealias Vector3f = SIMD3<Float>
 public typealias Vector4f = SIMD4<Float>
 
-@inlinable @_transparent
+@inlinable @inline(__always)
 public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : FloatingPoint {
-    // TODO: should be (a * b).sum() when the compiler is able to consistently optimise this.
-    // Currently, the compiler will emit non-inlined calls to "Sequence.reduce<A>(into:_:)"
-    // with that expression.
-    
-    var result = a[0] * b[0]
-    for i in 1..<V.scalarCount {
-        result.addProduct(a[i], b[i])
+    var result = V.Scalar.zero
+    for i in 0..<V.scalarCount {
+        result += a[i] * b[i]
     }
     return result
 }
 
-@inlinable @_transparent
+@inlinable @inline(__always)
 public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : FixedWidthInteger {
-    // TODO: should be (a &* b).wrappedSum() when the compiler is able to consistently optimise this.
-    // Currently, the compiler will emit non-inlined calls to "Sequence.reduce<A>(into:_:)"
-    // with that expression.
-    
-    var result = a[0] &* b[0]
-    for i in 1..<V.scalarCount {
+    var result = V.Scalar.zero
+    for i in 0..<V.scalarCount {
         result &+= a[i] &* b[i]
     }
     return result

@@ -406,14 +406,10 @@ public struct FunctionConstants : Hashable, Sendable {
     }
 }
 
-public enum VertexStepFunction : UInt {
+public enum VertexStepFunction : UInt8 {
     case constant
-    
     case perVertex
-    
     case perInstance
-    
     case perPatch
-    
     case perPatchControlPoint
 }

@@ -193,7 +193,7 @@ extension RenderStages {
 
 extension PixelFormat {
     public init(_ pixelFormat: MTLPixelFormat) {
-        self.init(rawValue: pixelFormat.rawValue)!
+        self.init(rawValue: UInt16(truncatingIfNeeded: pixelFormat.rawValue))!
     }
 }
 
@@ -322,13 +322,13 @@ extension MTLBarrierScope {
 
 extension MTLBlendFactor {
     public init(_ blendFactor: BlendFactor) {
-        self.init(rawValue: blendFactor.rawValue)!
+        self.init(rawValue: UInt(blendFactor.rawValue))!
     }
 }
 
 extension MTLBlendOperation {
     public init(_ blendOperation: BlendOperation) {
-        self.init(rawValue: blendOperation.rawValue)!
+        self.init(rawValue: UInt(blendOperation.rawValue))!
     }
 }
 
@@ -340,7 +340,7 @@ extension MTLBlitOption {
 
 extension MTLCompareFunction {
     public init(_ compareFunction: CompareFunction) {
-        self.init(rawValue: compareFunction.rawValue)!
+        self.init(rawValue: UInt(compareFunction.rawValue))!
     }
 }
 
@@ -352,31 +352,31 @@ extension MTLClearColor {
 
 extension MTLColorWriteMask {
     public init(_ colorWriteMask: ColorWriteMask) {
-        self.init(rawValue: colorWriteMask.rawValue)
+        self.init(rawValue: UInt(colorWriteMask.rawValue))
     }
 }
 
 extension MTLCPUCacheMode {
     public init(_ mode: CPUCacheMode) {
-        self.init(rawValue: mode.rawValue)!
+        self.init(rawValue: UInt(mode.rawValue))!
     }
 }
 
 extension MTLCullMode {
     public init(_ mode: CullMode) {
-        self.init(rawValue: mode.rawValue)!
+        self.init(rawValue: UInt(mode.rawValue))!
     }
 }
 
 extension MTLTriangleFillMode {
     public init(_ mode: TriangleFillMode) {
-        self.init(rawValue: mode.rawValue)!
+        self.init(rawValue: UInt(mode.rawValue))!
     }
 }
 
 extension MTLDataType {
     public init(_ dataType: DataType) {
-        self.init(rawValue: dataType.rawValue)!
+        self.init(rawValue: UInt(dataType.rawValue))!
     }
 }
 
@@ -441,7 +441,7 @@ extension MTLFunctionConstantValues {
 
 extension MTLIndexType {
     public init(_ type: IndexType) {
-        self.init(rawValue: type.rawValue)!
+        self.init(rawValue: UInt(type.rawValue))!
     }
 }
 
@@ -453,14 +453,14 @@ extension MTLOrigin {
 
 extension MTLPrimitiveType {
     public init(_ type: PrimitiveType) {
-        self.init(rawValue: type.rawValue)!
+        self.init(rawValue: UInt(type.rawValue))!
     }
 }
 
 
 extension MTLPixelFormat {
     public init(_ pixelFormat: PixelFormat) {
-        self.init(rawValue: pixelFormat.rawValue)!
+        self.init(rawValue: UInt(pixelFormat.rawValue))!
     }
 }
 
@@ -573,7 +573,7 @@ extension MTLSize {
 
 extension MTLStencilOperation {
     public init(_ stencilOperation: StencilOperation) {
-        self.init(rawValue: stencilOperation.rawValue)!
+        self.init(rawValue: UInt(stencilOperation.rawValue))!
     }
 }
 
@@ -618,13 +618,13 @@ extension MTLViewport {
 
 extension MTLVertexFormat {
     public init(_ vertexFormat: VertexFormat) {
-        self.init(rawValue: vertexFormat.rawValue)!
+        self.init(rawValue: UInt(vertexFormat.rawValue))!
     }
 }
 
 extension MTLVertexStepFunction {
     public init(_ stepFunction: VertexStepFunction) {
-        self.init(rawValue: stepFunction.rawValue)!
+        self.init(rawValue: UInt(stepFunction.rawValue))!
     }
 }
 
