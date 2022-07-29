@@ -197,6 +197,21 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
+    func _withMutableContents<A>(range: Range<Int>, checkHasCPUAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) async throws -> A) async rethrows -> A {
+        if checkHasCPUAccess { self.checkHasCPUAccess(accessType: .readWrite) }
+        let contents = RenderBackend.bufferContents(for: self, range: range)
+        var modifiedRange = range
+        
+        let result = try await perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
+        
+        if !modifiedRange.isEmpty, self._usesPersistentRegistry { // Transient buffers are flushed automatically before rendering.
+            RenderBackend.buffer(self, didModifyRange: modifiedRange)
+        }
+        self.stateFlags.formUnion(.initialised)
+        return result
+    }
+    
+    @inlinable
     public func withMutableContents<A>(checkHasCPUAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /* reasync */ rethrows -> A {
         return try self.withMutableContents(range: self.range, checkHasCPUAccess: checkHasCPUAccess, perform)
     }
@@ -207,30 +222,30 @@ public struct Buffer : ResourceProtocol {
     }
     
     @inlinable
-    public func withContents<A>(waitForAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) async rethrows -> A {
+    public func withContents<A>(waitForAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) async throws -> A) async rethrows -> A {
         return try await self.withContents(range: self.range, waitForAccess: waitForAccess, perform)
     }
     
     @inlinable
-    public func withContents<A>(range: Range<Int>, waitForAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) throws -> A) async rethrows -> A {
+    public func withContents<A>(range: Range<Int>, waitForAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) async throws -> A) async rethrows -> A {
         if waitForAccess { await self.waitForCPUAccess(accessType: .read) }
         if let contents = RenderBackend.bufferContents(for: self, range: range) {
-            return try perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
+            return try await perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
         } else {
             preconditionFailure("Buffer \(self) has not been materialised at the time of the withContents call.")
         }
     }
     
     @inlinable
-    public func withMutableContents<A>(waitForAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) async rethrows -> A {
+    public func withMutableContents<A>(waitForAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) async throws -> A) async rethrows -> A {
         return try await self.withMutableContents(range: self.range, waitForAccess: waitForAccess, perform)
     }
     
     @inlinable
-    public func withMutableContents<A>(range: Range<Int>, waitForAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) throws -> A) async rethrows -> A {
+    public func withMutableContents<A>(range: Range<Int>, waitForAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) async throws -> A) async rethrows -> A {
         if waitForAccess { await self.waitForCPUAccess(accessType: .readWrite) }
         if let _ = RenderBackend.bufferContents(for: self, range: range) {
-            return try self._withMutableContents(range: range, checkHasCPUAccess: false, perform)
+            return try await self._withMutableContents(range: range, checkHasCPUAccess: false, perform)
         } else {
             preconditionFailure("Buffer \(self) has not been materialised at the time of the withMutableContents call.")
         }
