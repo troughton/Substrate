@@ -761,6 +761,7 @@ public final class RenderGraph {
     var submissionNotifyQueue = [@Sendable () async -> Void]()
     var completionNotifyQueue = [@Sendable () async -> Void]()
     let context : _RenderGraphContext
+    let inflightFrameCount: Int
     
     public let transientRegistryIndex : Int
 #if SUBSTRATE_ENABLE_SIGNPOSTER
@@ -788,6 +789,7 @@ public final class RenderGraph {
     public init(inflightFrameCount: Int, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384, transientArgumentBufferArrayCapacity: Int = 1024) {
         // If inflightFrameCount is 0, no transient resources are allowed.
         self.transientRegistryIndex = inflightFrameCount > 0 ? TransientRegistryManager.allocate() : -1
+        self.inflightFrameCount = max(inflightFrameCount, 1)
         
         if self.transientRegistryIndex >= 0 {
             TransientBufferRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientBufferCapacity)
@@ -1449,21 +1451,21 @@ public final class RenderGraph {
     }
     
     @available(*, deprecated, renamed: "onSubmission")
-    public func waitForGPUSubmission(_ function: @Sendable @escaping () -> Void) async {
+    public func waitForGPUSubmission(_ function: @Sendable @escaping () -> Void) {
         self.renderPassLock.withLock {
             self.submissionNotifyQueue.append(function)
         }
     }
     
     /// Enqueue `function` to be executed once the render graph is submitted to the GPU.
-    public func onSubmission(_ function: @Sendable @escaping () async -> Void) async {
+    public func onSubmission(_ function: @Sendable @escaping () async -> Void) {
         self.renderPassLock.withLock {
             self.submissionNotifyQueue.append(function)
         }
     }
     
     /// Enqueue `function` to be executed once the render graph has completed on the GPU.
-    public func onGPUCompletion(_ function: @Sendable @escaping () async -> Void) async {
+    public func onGPUCompletion(_ function: @Sendable @escaping () async -> Void) {
         self.renderPassLock.withLock {
             self.completionNotifyQueue.append(function)
         }
@@ -1471,10 +1473,9 @@ public final class RenderGraph {
     
     /// Returns true if this RenderGraph already has the maximum number of GPU frames in-flight, and would have to wait
     /// for the ring buffers to become available before executing.
-    // FIXME: should be expressed by waiting on the render graph with a timeout
-//    public var hasMaximumFrameCountInFlight: Bool {
-//
-//    }
+    public var hasMaximumFrameCountInFlight: Bool {
+        return self.queue.lastCompletedCommand - self.queue.lastSubmittedCommand >= self.inflightFrameCount
+    }
     
     private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
         self._lastGraphGPUTime = await result.gpuTime
