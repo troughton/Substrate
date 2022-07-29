@@ -8,6 +8,15 @@
 import Foundation
 
 public final class TaskStream {
+    @usableFromInline final class TaskHolder<R> {
+        @usableFromInline let task: @Sendable () async throws -> R
+        
+        @inlinable
+        init(task: @escaping @Sendable  () async throws -> R) {
+            self.task = task
+        }
+    }
+    
     let taskHandle: Task<Void, Never>
     let taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
     
@@ -29,25 +38,36 @@ public final class TaskStream {
         self.taskHandle.cancel()
     }
     
-    public func enqueueAndWait<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @escaping @Sendable () async -> T) async -> T {
+    public func enqueueAndWait<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async -> T) async -> T {
         let taskStreamContinuation = self.taskStreamContinuation
-        return await withUnsafeContinuation { continuation in
-            taskStreamContinuation.yield {
-                continuation.resume(returning: await perform())
+        return await withoutActuallyEscaping(perform) { perform in
+            let task = TaskHolder<T>(task: perform)
+            let result: T = await withUnsafeContinuation { continuation in
+                taskStreamContinuation.yield { [unowned task, continuation] in
+                    let result = try! await task.task()
+                    continuation.resume(returning: result)
+                }
             }
+            _fixLifetime(task)
+            return result
         }
     }
     
-    public func enqueueAndWait<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @escaping @Sendable () async throws -> T) async throws -> T {
+    public func enqueueAndWait<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async throws -> T) async throws -> T {
         let taskStreamContinuation = self.taskStreamContinuation
-        return try await withUnsafeThrowingContinuation { continuation in
-            taskStreamContinuation.yield {
-                do {
-                    continuation.resume(returning: try await perform())
-                } catch {
-                    continuation.resume(throwing: error)
+        return try await withoutActuallyEscaping(perform) { perform in
+            let task = TaskHolder<T>(task: perform)
+            let result: T = try await withUnsafeThrowingContinuation { continuation in
+                taskStreamContinuation.yield { [unowned task, continuation] in
+                    do {
+                        continuation.resume(returning: try await task.task())
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
+            _fixLifetime(task)
+            return result
         }
     }
     
