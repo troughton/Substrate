@@ -42,15 +42,15 @@ public struct ResourceUsage {
         self.type = type
     }
     
-    public init(_ buffer: Buffer, _ type: BufferUsage, stages: RenderStages = [], byteRange: Range<Int>? = nil) {
+    public init(_ buffer: Buffer, usage type: BufferUsage, stages: RenderStages = [], byteRange: Range<Int>? = nil) {
         self.init(resource: Resource(buffer), type: ResourceUsageType(type), stages: stages, subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource])
     }
     
-    public init(_ texture: Texture, _ type: TextureUsage, stages: RenderStages = [], subresources: [TextureSubresourceRange]? = nil) {
+    public init(_ texture: Texture, usage type: TextureUsage, stages: RenderStages = [], subresources: [TextureSubresourceRange]? = nil) {
         self.init(resource: Resource(texture), type: ResourceUsageType(type), stages: stages, subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource])
     }
     
-    public init(_ texture: Texture, _ type: TextureUsage, stages: RenderStages = [], slice: Int, mipLevel: Int) {
+    public init(_ texture: Texture, usage type: TextureUsage, stages: RenderStages = [], slice: Int, mipLevel: Int) {
         self.init(resource: Resource(texture), type: ResourceUsageType(type), stages: stages, subresources: [.textureSlices(.init(slice: slice, mipLevel: mipLevel))])
     }
 

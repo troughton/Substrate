@@ -153,6 +153,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
    
     public init(bindingPath: ResourceBindingPath, pipelineReflection: PipelineReflection, renderGraph: RenderGraph? = nil) {
+        
         guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
             fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
         }

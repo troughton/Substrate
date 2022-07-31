@@ -77,6 +77,8 @@ public struct Buffer : ResourceProtocol {
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             self = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         } else {
+            precondition(descriptor.storageMode != .private || RenderGraph.activeRenderGraph == nil, "GPU-private transient resources cannot be created during render graph execution. Instead, create this resource in an init() method and pass in the render graph to use.")
+            
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }

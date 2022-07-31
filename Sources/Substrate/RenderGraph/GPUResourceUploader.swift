@@ -90,7 +90,7 @@ public final actor GPUResourceUploader {
     @GPUResourceUploader
     @discardableResult
     public static func generateMipmaps(for texture: Texture) async -> RenderGraphExecutionWaitToken {
-        self.renderGraph.addPass(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")", resources: [.init(texture, [.blitSource, .blitDestination])]) { bce in
+        self.renderGraph.addPass(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")", resources: [.init(texture, usage: [.blitSource, .blitDestination])]) { bce in
             bce.generateMipmaps(for: texture)
         })
         
@@ -183,7 +183,7 @@ public final actor GPUResourceUploader {
         }
         
         self.renderGraph.addBlitCallbackPass(name: "uploadBytes(length: \(length), cacheMode: \(cacheMode))", resources: resources + [
-            .init(stagingBuffer, .blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + length))
+            .init(stagingBuffer, usage: .blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + length))
         ]) { bce in
             copyFromBuffer(stagingBuffer, stagingBufferOffset, bce)
         }
@@ -222,8 +222,8 @@ public final actor GPUResourceUploader {
             }
             
             self.renderGraph.addBlitCallbackPass(name: "uploadBytes(count: \(count), to: \(buffer), offset: \(offset))", resources: [
-                .init(stagingBuffer, .blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + count)),
-                .init(buffer, .blitDestination, byteRange: offset..<(offset + count))
+                .init(stagingBuffer, usage: .blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + count)),
+                .init(buffer, usage: .blitDestination, byteRange: offset..<(offset + count))
             ]) { bce in
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, to: buffer, destinationOffset: offset, size: count)
             }
@@ -260,8 +260,8 @@ public final actor GPUResourceUploader {
             
             self.renderGraph.addBlitCallbackPass(name: "replaceTextureRegion(\(region), mipmapLevel: \(mipmapLevel), slice: \(slice), in: \(texture), withBytes: \(bytes), bytesPerRow: \(bytesPerRow), bytesPerImage: \(bytesPerImage))",
             resources: [
-                .init(stagingBuffer, .blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + bytesPerImage)),
-                .init(texture, .blitDestination, slice: slice, mipLevel: mipmapLevel)
+                .init(stagingBuffer, usage: .blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + bytesPerImage)),
+                .init(texture, usage: .blitDestination, slice: slice, mipLevel: mipmapLevel)
             ]
             ) { bce in
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, sourceBytesPerRow: bytesPerRow, sourceBytesPerImage: bytesPerImage, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: region.origin)

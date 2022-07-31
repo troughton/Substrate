@@ -135,7 +135,7 @@ extension DrawRenderPass {
             if let attachment = attachment, resources[Resource(attachment.texture)] == nil {
                 let subresource = TextureSubresourceRange(slice: attachment.slice, mipLevel: attachment.level)
                 
-                inferredResources[Resource(attachment.texture), default: .init(attachment.texture, .colorAttachment, stages: .fragment, subresources: [])]
+                inferredResources[Resource(attachment.texture), default: .init(attachment.texture, usage: .colorAttachment, stages: .fragment, subresources: [])]
                     .subresources.append(.textureSlices(subresource))
             }
         }
@@ -143,14 +143,14 @@ extension DrawRenderPass {
         if let attachment = renderTargets.depthAttachment, resources[Resource(attachment.texture)] == nil {
             let subresource = TextureSubresourceRange(slice: attachment.slice, mipLevel: attachment.level)
             
-            inferredResources[Resource(attachment.texture), default: .init(attachment.texture, .depthStencilAttachment, stages: [.vertex, .fragment], subresources: [])]
+            inferredResources[Resource(attachment.texture), default: .init(attachment.texture, usage:  .depthStencilAttachment, stages: [.vertex, .fragment], subresources: [])]
                 .subresources.append(.textureSlices(subresource))
         }
         
         if let attachment = renderTargets.stencilAttachment, resources[Resource(attachment.texture)] == nil {
             let subresource = TextureSubresourceRange(slice: attachment.slice, mipLevel: attachment.level)
             
-            inferredResources[Resource(attachment.texture), default: .init(attachment.texture, .depthStencilAttachment, stages: [.vertex, .fragment], subresources: [])]
+            inferredResources[Resource(attachment.texture), default: .init(attachment.texture, usage:  .depthStencilAttachment, stages: [.vertex, .fragment], subresources: [])]
                 .subresources.append(.textureSlices(subresource))
         }
         return Array(inferredResources.values)
@@ -897,7 +897,7 @@ public final class RenderGraph {
             if case .clear = clearOperation, let attachment = renderTargets.colorAttachments[0] {
                 resources.append(
                     .init(attachment.texture,
-                          .colorAttachmentWrite,
+                          usage: .colorAttachmentWrite,
                           stages: .fragment,
                           slice: attachment.slice, mipLevel: attachment.level)
                 )
@@ -907,7 +907,7 @@ public final class RenderGraph {
         if case .clear = depthClearOperation, let attachment = renderTargets.depthAttachment {
             resources.append(
                 .init(attachment.texture,
-                      .depthStencilAttachmentWrite,
+                      usage: .depthStencilAttachmentWrite,
                       stages: .fragment,
                       slice: attachment.slice, mipLevel: attachment.level)
             )
@@ -916,7 +916,7 @@ public final class RenderGraph {
         if case .clear = stencilClearOperation, let attachment = renderTargets.stencilAttachment {
             resources.append(
                 .init(attachment.texture,
-                      .depthStencilAttachmentWrite,
+                      usage: .depthStencilAttachmentWrite,
                       stages: .fragment,
                       slice: attachment.slice, mipLevel: attachment.level)
             )
