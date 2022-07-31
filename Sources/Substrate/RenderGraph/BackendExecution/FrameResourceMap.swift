@@ -50,7 +50,7 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
-    subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference {
+    subscript(sampler: SamplerDescriptor) -> SamplerState {
         get async {
             return await persistentRegistry[sampler]
         }

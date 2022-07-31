@@ -88,7 +88,7 @@ public struct DepthStencilDescriptor : Hashable {
     }
 }
 
-public final class DepthStencilState {
+public class DepthStencilState {
     public let descriptor: DepthStencilDescriptor
     public let state: OpaquePointer
     

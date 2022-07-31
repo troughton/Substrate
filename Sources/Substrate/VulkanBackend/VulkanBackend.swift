@@ -141,8 +141,8 @@ public final class VulkanBackend : SpecificRenderBackend {
     }
     
     @usableFromInline
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: Substrate.RenderTargetDescriptor) -> PipelineReflection? {
-        return self.stateCaches.reflection(for: descriptor, renderTarget: renderTarget)
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor) -> PipelineReflection? {
+        return self.stateCaches.reflection(for: descriptor)
     }
     
     @usableFromInline

@@ -344,6 +344,8 @@ final class DescriptorSet {
                 stream.print("public var \(resource.name): \(resource.type.name) = .init()")
             } else if resource.viewType == .uniformBuffer {
                 stream.print("@BufferBacked public var \(resource.name): \(resource.type.name)? = nil")
+            } else if resource.viewType == .sampler {
+                stream.print("@StateBacked public var \(resource.name): \(resource.type.name) = .init()")
             } else {
                 let wrapperType = resource.viewType == .uniformBuffer || resource.viewType == .storageBuffer ? "@OffsetView " : ""
                 if wrapperType.isEmpty, resource.binding.arrayLength > 1 { // FIXME: how do we handle this case for arrays which require property wrappers?
@@ -360,7 +362,7 @@ final class DescriptorSet {
         
         stream.newLine()
         
-        stream.print("public mutating func encode(into argBuffer: ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder? = nil) {")
+        stream.print("public mutating func encode(into argBuffer: ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder? = nil) async {")
 
         // Metal 
         do {
@@ -394,6 +396,14 @@ final class DescriptorSet {
                     
                     stream.print(")")
                     stream.print("}")
+                    
+                    continue
+                } else if resource.viewType == .sampler {
+                    // @BufferBacked property
+                    stream.print("argBuffer.bindings.append(")
+                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index), type: .buffer), .sampler(await self.$\(resource.name).state))")
+                    
+                    stream.print(")")
                     
                     continue
                 }

@@ -134,7 +134,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     let visibleFunctionTableReferences = PersistentResourceMap<VisibleFunctionTable, MTLVisibleFunctionTableReference>()
     let intersectionFunctionTableReferences = PersistentResourceMap<IntersectionFunctionTable, MTLIntersectionFunctionTableReference>()
     
-    var samplerReferences = [SamplerDescriptor : MTLSamplerState]()
+    var samplerReferences = [SamplerDescriptor : SamplerState]()
     
     private let device : MTLDevice
     
@@ -504,14 +504,15 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
     }
     
-    public subscript(descriptor: SamplerDescriptor) -> MTLSamplerState {
+    public subscript(descriptor: SamplerDescriptor) -> SamplerState {
         get async {
             if let state = self.samplerReferences[descriptor] {
                 return state
             }
             
             let mtlDescriptor = MTLSamplerDescriptor(descriptor, isAppleSiliconGPU: device.isAppleSiliconGPU)
-            let state = self.device.makeSamplerState(descriptor: mtlDescriptor)!
+            let mtlState = self.device.makeSamplerState(descriptor: mtlDescriptor)!
+            let state = SamplerState(descriptor: descriptor, state: OpaquePointer(Unmanaged.passRetained(mtlState).toOpaque()))
             self.samplerReferences[descriptor] = state
             
             return state

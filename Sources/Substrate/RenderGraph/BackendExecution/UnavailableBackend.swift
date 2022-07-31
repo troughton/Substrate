@@ -65,7 +65,7 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference {
+        subscript(sampler: SamplerDescriptor) -> SamplerState {
             get async {
                 preconditionFailure()
             }
@@ -75,6 +75,7 @@ final class UnavailableBackend : SpecificRenderBackend {
         subscript(accelerationStructure: AccelerationStructure) -> AnyObject? {
             preconditionFailure()
         }
+        
         @available(macOS 11.0, iOS 14.0, *)
         subscript(visibleFunctionTable: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference? {
             preconditionFailure()
@@ -260,7 +261,6 @@ final class UnavailableBackend : SpecificRenderBackend {
     typealias ResourceReference = Void
     typealias BufferReference = Void
     typealias TextureReference = Void
-    typealias SamplerReference = Void
     typealias ArgumentBufferReference = Void
     typealias ArgumentBufferArrayReference = Void
     typealias VisibleFunctionTableReference = Void
@@ -358,6 +358,22 @@ final class UnavailableBackend : SpecificRenderBackend {
         preconditionFailure()
     }
     
+    func renderPipelineState(for descriptor: RenderPipelineDescriptor) async -> RenderPipelineState {
+        preconditionFailure()
+    }
+    
+    func computePipelineState(for descriptor: ComputePipelineDescriptor) async -> ComputePipelineState {
+        preconditionFailure()
+    }
+    
+    func depthStencilState(for descriptor: DepthStencilDescriptor) async -> DepthStencilState {
+        preconditionFailure()
+    }
+    
+    func samplerState(for descriptor: SamplerDescriptor) async -> SamplerState {
+        preconditionFailure()
+    }
+    
     func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) {
         preconditionFailure()
     }
@@ -391,7 +407,7 @@ final class UnavailableBackend : SpecificRenderBackend {
         preconditionFailure()
     }
     
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: Substrate.RenderTargetDescriptor) -> PipelineReflection? {
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor) -> PipelineReflection? {
         preconditionFailure()
     }
     

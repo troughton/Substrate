@@ -306,55 +306,41 @@ extension MTLRenderPipelineColorAttachmentDescriptor {
 }
 
 extension MTLRenderPipelineDescriptor {
-    convenience init?(_ descriptor: MetalRenderPipelineDescriptor, functionCache: MetalFunctionCache) async {
+    convenience init?(_ descriptor: RenderPipelineDescriptor, functionCache: MetalFunctionCache) async {
         self.init()
-        if let label = descriptor.descriptor.label {
+        if let label = descriptor.label {
             self.label = label
         }
         
-        guard let vertexFunction = await functionCache.function(for: descriptor.descriptor.vertexFunction) else {
+        guard let vertexFunction = await functionCache.function(for: descriptor.vertexFunction) else {
             return nil
         }
         self.vertexFunction = vertexFunction
         
-        if !descriptor.descriptor.fragmentFunction.name.isEmpty {
-            guard let function = await functionCache.function(for: descriptor.descriptor.fragmentFunction) else {
+        if !descriptor.fragmentFunction.name.isEmpty {
+            guard let function = await functionCache.function(for: descriptor.fragmentFunction) else {
                 return nil
             }
             self.fragmentFunction = function
         }
         
-        if let vertexDescriptor = descriptor.descriptor.vertexDescriptor {
+        if let vertexDescriptor = descriptor.vertexDescriptor {
             self.vertexDescriptor = MTLVertexDescriptor(vertexDescriptor)
         }
         
-        self.isAlphaToCoverageEnabled = descriptor.descriptor.isAlphaToCoverageEnabled
-        self.isAlphaToOneEnabled = descriptor.descriptor.isAlphaToOneEnabled
+        self.isAlphaToCoverageEnabled = descriptor.isAlphaToCoverageEnabled
+        self.isAlphaToOneEnabled = descriptor.isAlphaToOneEnabled
         
-        self.isRasterizationEnabled = descriptor.descriptor.isRasterizationEnabled
+        self.isRasterizationEnabled = descriptor.isRasterizationEnabled
         
-        self.depthAttachmentPixelFormat = descriptor.depthAttachmentFormat
-        self.stencilAttachmentPixelFormat = descriptor.stencilAttachmentFormat
-        
-        var sampleCount = 0
-        if let depthSampleCount = descriptor.depthSampleCount {
-            sampleCount = depthSampleCount
-        }
-        if let stencilSampleCount = descriptor.stencilSampleCount {
-            assert(sampleCount == 0 || sampleCount == stencilSampleCount)
-            sampleCount = stencilSampleCount
-        }
+        self.depthAttachmentPixelFormat = MTLPixelFormat(descriptor.depthAttachmentFormat)
+        self.stencilAttachmentPixelFormat = MTLPixelFormat(descriptor.stencilAttachmentFormat)
         
         for i in 0..<descriptor.colorAttachmentFormats.count {
-            self.colorAttachments[i] = MTLRenderPipelineColorAttachmentDescriptor(blendDescriptor: descriptor.descriptor.blendStates[i, default: nil], writeMask: descriptor.descriptor.writeMasks[i, default: []], pixelFormat: descriptor.colorAttachmentFormats[i, default: .invalid])
-            
-            if let attachmentSampleCount = descriptor.colorAttachmentSampleCounts[i] {
-                assert(sampleCount == 0 || sampleCount == attachmentSampleCount)
-                sampleCount = attachmentSampleCount
-            }
+            self.colorAttachments[i] = MTLRenderPipelineColorAttachmentDescriptor(blendDescriptor: descriptor.blendStates[i, default: nil], writeMask: descriptor.writeMasks[i, default: []], pixelFormat: MTLPixelFormat(descriptor.colorAttachmentFormats[i, default: .invalid]))
         }
         
-        self.rasterSampleCount = sampleCount
+        self.rasterSampleCount = descriptor.rasterSampleCount
     }
 }
 

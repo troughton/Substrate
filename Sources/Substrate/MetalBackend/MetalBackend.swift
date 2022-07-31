@@ -325,6 +325,22 @@ final class MetalBackend : SpecificRenderBackend {
         return nil
     }
     
+    @usableFromInline func renderPipelineState(for descriptor: RenderPipelineDescriptor) async -> RenderPipelineState {
+        return await self.stateCaches.renderPipelineState(descriptor: descriptor)!
+    }
+    
+    @usableFromInline func computePipelineState(for descriptor: ComputePipelineDescriptor) async -> ComputePipelineState {
+        return await self.stateCaches.computePipelineState(descriptor: descriptor)!
+    }
+    
+    @usableFromInline func depthStencilState(for descriptor: DepthStencilDescriptor) async -> DepthStencilState {
+        return await self.stateCaches.depthStencilCache[descriptor]
+    }
+    
+    @usableFromInline func samplerState(for descriptor: SamplerDescriptor) async -> SamplerState {
+        return await self.resourceRegistry[descriptor]
+    }
+    
     @usableFromInline func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) async {
         assert(texture.flags.contains(.persistent) || Self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
         
@@ -347,8 +363,8 @@ final class MetalBackend : SpecificRenderBackend {
     }
     
     @usableFromInline
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: Substrate.RenderTargetDescriptor) async -> PipelineReflection? {
-        return await self.stateCaches.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor) async -> PipelineReflection? {
+        return await self.stateCaches.renderPipelineReflection(descriptor: descriptor)
     }
     
     @usableFromInline

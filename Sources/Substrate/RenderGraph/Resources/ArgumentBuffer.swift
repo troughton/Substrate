@@ -38,7 +38,7 @@ public protocol ArgumentBufferEncodable {
     
     static var argumentBufferDescriptor: ArgumentBufferDescriptor { get }
     
-    mutating func encode(into argBuffer: ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?)
+    mutating func encode(into argBuffer: ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?) async
 }
 
 @available(*, deprecated, renamed: "ArgumentBuffer")
@@ -184,7 +184,7 @@ public struct ArgumentBuffer : ResourceProtocol {
         assert(self.encoder == nil)
     }
     
-    public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
+    public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) async {
         self.init(descriptor: A.argumentBufferDescriptor, renderGraph: renderGraph, flags: flags)
 
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
@@ -192,7 +192,7 @@ public struct ArgumentBuffer : ResourceProtocol {
 #endif
         
         var arguments = arguments
-        arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
+        await arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
     }
     
     init(flags: ResourceFlags = [], sourceArray: ArgumentBufferArray) {
@@ -336,8 +336,9 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     @inlinable
-    public func setSampler(_ sampler: SamplerDescriptor, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation.")
+    public func setSampler(_ sampler: SamplerDescriptor, at path: ResourceBindingPath) async {
+        let samplerState = await SamplerState(descriptor: sampler)
+        self.setSampler(samplerState, at: path)
     }
     
     @inlinable
@@ -386,7 +387,14 @@ extension ArgumentBuffer {
         }
     }
     
-    public func setSamplers(_ samplers: [SamplerDescriptor], paths: [ResourceBindingPath]) {
+    public func setSamplers(_ samplers: [SamplerDescriptor], paths: [ResourceBindingPath]) async {
+        for (sampler, path) in zip(samplers, paths) {
+            await self.setSampler(sampler, at: path)
+        }
+    }
+    
+    
+    public func setSamplers(_ samplers: [SamplerState], paths: [ResourceBindingPath]) {
         for (sampler, path) in zip(samplers, paths) {
             self.setSampler(sampler, at: path)
         }

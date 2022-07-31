@@ -10,7 +10,7 @@ target_sources(Substrate PRIVATE
   MetalHeapResourceAllocator.swift
   MetalPipelineReflection.swift
   MetalPoolResourceAllocator.swift
-  MetalRenderPipelineDescriptor.swift
+  RenderPipelineDescriptor.swift
   MetalRenderTargetDescriptor.swift
   MetalResourceAllocator.swift
   MetalResourceBindingPath.swift

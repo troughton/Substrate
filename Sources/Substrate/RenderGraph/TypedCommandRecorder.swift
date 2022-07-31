@@ -91,19 +91,15 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     var depthStencilDescriptorChanged : Bool = false
     @usableFromInline var hasSetPushConstants : Bool = false
     
-    @StateBacked<TypedRenderPipelineDescriptor<R>, RenderPipelineState>
+    @StateBacked
     public var pipeline : TypedRenderPipelineDescriptor<R> {
         didSet {
             self.pipelineDescriptorChanged = true
         }
     }
     
-    public var depthStencil : DepthStencilDescriptor {
-        get {
-            return self.encoder.depthStencilDescriptor.unsafelyUnwrapped
-        }
-        set {
-            self.encoder.depthStencilDescriptor = newValue
+    public var depthStencil : DepthStencilDescriptor = .init() {
+        didSet {
             self.depthStencilDescriptorChanged = true
         }
     }
@@ -193,8 +189,8 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.set6 = R.Set6()
         self.set7 = R.Set7()
         
-        self.pipeline = TypedRenderPipelineDescriptor(attachmentCount: encoder.drawRenderPass.renderTargetsDescriptor.colorAttachments.count)
-        self.encoder.depthStencilDescriptor = DepthStencilDescriptor()
+        self.pipeline = TypedRenderPipelineDescriptor()
+        self.pipeline.descriptor.setPixelFormatsAndSampleCount(from: encoder.drawRenderPass.renderTargetsDescriptor)
     }
     
     func updateEncoderState() async {
@@ -205,38 +201,38 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         }
         
         if self.depthStencilDescriptorChanged {
-            self.encoder.setDepthStencilDescriptor(self.depthStencil)
+            await self.encoder.setDepthStencilDescriptor(self.depthStencil)
         }
         
         if self.pipelineDescriptorChanged {
             self.pipeline.flushConstants()
-            await self.encoder.setRenderPipelineDescriptor(self.pipeline.descriptor)
+            self.encoder.setRenderPipelineState(await self.$pipeline.state)
         }
         
         if self.descriptorSetChangeMask != 0 {
             if (self.descriptorSetChangeMask & (1 << 0)) != 0 {
-                self.encoder.setArguments(&self.set0, at: 0)
+                await self.encoder.setArguments(&self.set0, at: 0)
             }
             if (self.descriptorSetChangeMask & (1 << 1)) != 0 {
-                self.encoder.setArguments(&self.set1, at: 1)
+                await self.encoder.setArguments(&self.set1, at: 1)
             }
             if (self.descriptorSetChangeMask & (1 << 2)) != 0 {
-                self.encoder.setArguments(&self.set2, at: 2)
+                await self.encoder.setArguments(&self.set2, at: 2)
             }
             if (self.descriptorSetChangeMask & (1 << 3)) != 0 {
-                self.encoder.setArguments(&self.set3, at: 3)
+                await self.encoder.setArguments(&self.set3, at: 3)
             }
             if (self.descriptorSetChangeMask & (1 << 4)) != 0 {
-                self.encoder.setArguments(&self.set4, at: 4)
+                await self.encoder.setArguments(&self.set4, at: 4)
             }
             if (self.descriptorSetChangeMask & (1 << 5)) != 0 {
-                self.encoder.setArguments(&self.set5, at: 5)
+                await self.encoder.setArguments(&self.set5, at: 5)
             }
             if (self.descriptorSetChangeMask & (1 << 6)) != 0 {
-                self.encoder.setArguments(&self.set6, at: 6)
+                await self.encoder.setArguments(&self.set6, at: 6)
             }
             if (self.descriptorSetChangeMask & (1 << 7)) != 0 {
-                self.encoder.setArguments(&self.set7, at: 7)
+                await self.encoder.setArguments(&self.set7, at: 7)
             }
         }
     }
@@ -348,7 +344,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     
     var descriptorSetChangeMask : UInt8 = 0
     
-    @StateBacked<TypedComputePipelineDescriptor<R>, ComputePipelineState>
+    @StateBacked
     public var pipeline : TypedComputePipelineDescriptor<R> {
         didSet {
             self.pipelineDescriptorChanged = true
@@ -445,7 +441,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     func updatePipelineState() async {
         if self.pipelineDescriptorChanged {
             self.pipeline.flushConstants()
-            await self.encoder.setComputePipelineDescriptor(self.pipeline.descriptor)
+            self.encoder.setComputePipelineState(await self.$pipeline.state)
             self.pipelineDescriptorChanged = false
         }
     }
@@ -459,28 +455,28 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         
         if self.descriptorSetChangeMask != 0 {
             if (self.descriptorSetChangeMask & (1 << 0)) != 0 {
-                self.encoder.setArguments(&self.set0, at: 0)
+                await self.encoder.setArguments(&self.set0, at: 0)
             }
             if (self.descriptorSetChangeMask & (1 << 1)) != 0 {
-                self.encoder.setArguments(&self.set1, at: 1)
+                await self.encoder.setArguments(&self.set1, at: 1)
             }
             if (self.descriptorSetChangeMask & (1 << 2)) != 0 {
-                self.encoder.setArguments(&self.set2, at: 2)
+                await self.encoder.setArguments(&self.set2, at: 2)
             }
             if (self.descriptorSetChangeMask & (1 << 3)) != 0 {
-                self.encoder.setArguments(&self.set3, at: 3)
+                await self.encoder.setArguments(&self.set3, at: 3)
             }
             if (self.descriptorSetChangeMask & (1 << 4)) != 0 {
-                self.encoder.setArguments(&self.set4, at: 4)
+                await self.encoder.setArguments(&self.set4, at: 4)
             }
             if (self.descriptorSetChangeMask & (1 << 5)) != 0 {
-                self.encoder.setArguments(&self.set5, at: 5)
+                await self.encoder.setArguments(&self.set5, at: 5)
             }
             if (self.descriptorSetChangeMask & (1 << 6)) != 0 {
-                self.encoder.setArguments(&self.set6, at: 6)
+                await self.encoder.setArguments(&self.set6, at: 6)
             }
             if (self.descriptorSetChangeMask & (1 << 7)) != 0 {
-                self.encoder.setArguments(&self.set7, at: 7)
+                await self.encoder.setArguments(&self.set7, at: 7)
             }
         }
     }

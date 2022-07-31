@@ -25,7 +25,6 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     associatedtype ArgumentBufferArrayReference
     associatedtype VisibleFunctionTableReference
     associatedtype IntersectionFunctionTableReference
-    associatedtype SamplerReference
     
     associatedtype InterEncoderDependencyType: Dependency
     
@@ -159,7 +158,7 @@ protocol BackendPersistentResourceRegistry: AnyObject {
     
     // PersistentResourceRegistry requirements:
     
-    subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference { get async }
+    subscript(sampler: SamplerDescriptor) -> SamplerState { get async }
     
     @available(macOS 11.0, iOS 14.0, *)
     subscript(accelerationStructure: AccelerationStructure) -> AnyObject? { get }

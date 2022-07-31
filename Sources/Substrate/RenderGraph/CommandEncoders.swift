@@ -129,8 +129,6 @@ public class ResourceBindingEncoder : CommandEncoder {
     let bindingEncoderImpl: ResourceBindingEncoderImpl
     
     @usableFromInline
-    var pipelineStateChanged = false
-    @usableFromInline
     var depthStencilStateChanged = false
     
     @usableFromInline
@@ -210,14 +208,14 @@ public class ResourceBindingEncoder : CommandEncoder {
     /// Construct an `ArgumentBuffer` specified by the `ArgumentBufferEncodable` value `arguments`
     /// and bind it to the binding index `setIndex`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
     /// descriptor set at `setIndex` for Vulkan.
-    public func setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) {
+    public func setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) async {
         if A.self == NilSet.self {
             return
         }
         
         let argumentBuffer = ArgumentBuffer(descriptor: A.argumentBufferDescriptor)
         assert(argumentBuffer.bindings.isEmpty)
-        arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
+        await arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
      
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
@@ -395,9 +393,6 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     let drawRenderPass : DrawRenderPass
     let impl: RenderCommandEncoderImpl
     
-    var renderPipelineDescriptor : RenderPipelineDescriptor? = nil
-    var depthStencilDescriptor : DepthStencilDescriptor? = nil
-    
     var nonDefaultDynamicState: DrawDynamicState = []
 
     init(renderPass: DrawRenderPass, passRecord: RenderPassRecord, impl: RenderCommandEncoderImpl) {
@@ -409,13 +404,13 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     }
     
     public func setRenderPipelineDescriptor(_ descriptor: RenderPipelineDescriptor, retainExistingBindings: Bool = true) async {
-        self.renderPipelineDescriptor = descriptor
-        self.currentPipelineReflection = await RenderBackend.renderPipelineReflection(descriptor: descriptor, renderTarget: self.drawRenderPass.renderTargetsDescriptor)
-        
-        self.pipelineStateChanged = true
+        var descriptor = descriptor
+        descriptor.setPixelFormatsAndSampleCount(from: self.drawRenderPass.renderTargetsDescriptor)
+        self.setRenderPipelineState(await RenderBackend._backend.renderPipelineState(for: descriptor))
     }
     
     public func setRenderPipelineState(_ pipelineState: RenderPipelineState) {
+        self.currentPipelineReflection = pipelineState.reflection
         impl.setRenderPipelineState(pipelineState)
     }
     
@@ -443,7 +438,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         impl.setCullMode(cullMode)
     }
     
-    public func setDepthStencilDescriptor(_ descriptor: DepthStencilDescriptor?) {
+    public func setDepthStencilDescriptor(_ descriptor: DepthStencilDescriptor?) async {
         guard self.drawRenderPass.renderTargetsDescriptor.depthAttachment != nil ||
             self.drawRenderPass.renderTargetsDescriptor.stencilAttachment != nil else {
                 return
@@ -459,8 +454,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
             descriptor.backFaceStencil = .init()
         }
         
-        self.depthStencilDescriptor = descriptor
-        self.depthStencilStateChanged = true
+        self.setDepthStencilState(await RenderBackend._backend.depthStencilState(for: descriptor))
     }
     
     public func setDepthStencilState(_ depthStencilState: DepthStencilState) {
@@ -497,7 +491,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         assert(instanceCount > 0, "instanceCount(\(instanceCount)) must be non-zero.")
 
         guard self.currentPipelineReflection != nil else {
-            assert(self.renderPipelineDescriptor != nil, "No render or compute pipeline is set for pass \(renderPass.name).")
+            assertionFailure("No render or compute pipeline is set for pass \(renderPass.name).")
             return
         }
         
@@ -506,7 +500,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     
     public func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int) {
         guard self.currentPipelineReflection != nil else {
-            assert(self.renderPipelineDescriptor != nil, "No render or compute pipeline is set for pass \(renderPass.name).")
+            assertionFailure("No render or compute pipeline is set for pass \(renderPass.name).")
             return
         }
         
@@ -517,7 +511,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         assert(instanceCount > 0, "instanceCount(\(instanceCount)) must be non-zero.")
         
         guard self.currentPipelineReflection != nil else {
-            assert(self.renderPipelineDescriptor != nil, "No render or compute pipeline is set for pass \(renderPass.name).")
+            assertionFailure("No render or compute pipeline is set for pass \(renderPass.name).")
             return
         }
         
@@ -622,8 +616,6 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     let computeRenderPass : ComputeRenderPass
     let impl: ComputeCommandEncoderImpl
     
-    private var currentComputePipeline : ComputePipelineDescriptorBox? = nil
-    
     init(renderPass: ComputeRenderPass, passRecord: RenderPassRecord, impl: ComputeCommandEncoderImpl) {
         self.computeRenderPass = renderPass
         self.impl = impl
@@ -632,16 +624,12 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         assert(passRecord.pass === renderPass)
     }
     
-    public func setComputePipelineDescriptor(_ descriptor: ComputePipelineDescriptor, retainExistingBindings: Bool = true) async {
-        self.currentPipelineReflection = await RenderBackend.computePipelineReflection(descriptor: descriptor)
-        
-        self.pipelineStateChanged = true
-
-        let pipelineBox = ComputePipelineDescriptorBox(descriptor)
-        self.currentComputePipeline = pipelineBox
+    public func setComputePipelineDescriptor(_ descriptor: ComputePipelineDescriptor) async {
+        self.setComputePipelineState(await RenderBackend._backend.computePipelineState(for: descriptor))
     }
     
     public func setComputePipelineState(_ pipelineState: ComputePipelineState) {
+        self.currentPipelineReflection = pipelineState.reflection
         impl.setComputePipelineState(pipelineState)
     }
     
@@ -657,48 +645,35 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     public func setThreadgroupMemoryLength(_ length: Int, at index: Int) {
         impl.setThreadgroupMemoryLength(length, at: index)
     }
-    
-    @usableFromInline
-    func updateThreadgroupExecutionWidth(threadsPerThreadgroup: Size) {
-        let threads = threadsPerThreadgroup.width * threadsPerThreadgroup.height * threadsPerThreadgroup.depth
-        let isMultiple = threads % self.currentThreadExecutionWidth == 0
-        self.currentComputePipeline!.threadGroupSizeIsMultipleOfThreadExecutionWidth = self.currentComputePipeline!.threadGroupSizeIsMultipleOfThreadExecutionWidth && isMultiple
-    }
 
     public func dispatchThreads(_ threadsPerGrid: Size, threadsPerThreadgroup: Size) {
         guard self.currentPipelineReflection != nil else {
-            assert(self.currentComputePipeline != nil, "No compute pipeline is set for pass \(renderPass.name).")
+            assertionFailure("No compute pipeline is set for pass \(renderPass.name).")
             return
         }
         precondition(threadsPerGrid.width > 0 && threadsPerGrid.height > 0 && threadsPerGrid.depth > 0)
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
-
-        self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
         
         impl.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
     
     public func dispatchThreadgroups(_ threadgroupsPerGrid: Size, threadsPerThreadgroup: Size) {
         guard self.currentPipelineReflection != nil else {
-            assert(self.currentComputePipeline != nil, "No compute pipeline is set for pass \(renderPass.name).")
+            assertionFailure("No compute pipeline is set for pass \(renderPass.name).")
             return
         }
         precondition(threadgroupsPerGrid.width > 0 && threadgroupsPerGrid.height > 0 && threadgroupsPerGrid.depth > 0)
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
-        
-        self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
         
         impl.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
     
     public func dispatchThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size) {
         guard self.currentPipelineReflection != nil else {
-            assert(self.currentComputePipeline != nil, "No compute pipeline is set for pass \(renderPass.name).")
+            assertionFailure("No compute pipeline is set for pass \(renderPass.name).")
             return
         }
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
-        
-        self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
         
         impl.dispatchThreadgroups(indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset, threadsPerThreadgroup: threadsPerThreadgroup)
     }

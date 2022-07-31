@@ -31,17 +31,6 @@ public struct BlendDescriptor : Hashable, Sendable {
     }
 }
 
-@propertyWrapper
-public struct StateBacked<T, State: AnyObject> {
-    public var wrappedValue: T
-    public var state: State?
-    
-    @inlinable
-    public init(wrappedValue: T) {
-        self.wrappedValue = wrappedValue
-    }
-}
-
 public struct FunctionDescriptor : Hashable, ExpressibleByStringLiteral, Sendable {
     public var name : String = ""
     public var constants : FunctionConstants? = nil
@@ -70,8 +59,12 @@ public struct FunctionDescriptor : Hashable, ExpressibleByStringLiteral, Sendabl
 public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
     public var descriptor : RenderPipelineDescriptor
     
-    public init(attachmentCount: Int) {
-        self.descriptor = RenderPipelineDescriptor(attachmentCount: attachmentCount)
+    public init() {
+        self.descriptor = RenderPipelineDescriptor()
+    }
+    
+    public init(descriptor: RenderPipelineDescriptor) {
+        self.descriptor = descriptor
     }
     
     @inlinable
@@ -148,9 +141,19 @@ public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
         }
     }
     
+    @inlinable
+    public var fillMode: TriangleFillMode {
+        get {
+            return self.descriptor.fillMode
+        }
+        set {
+            self.descriptor.fillMode = newValue
+        }
+    }
+    
     // Color attachment names to blend descriptors
     @inlinable
-    public var blendStates : [BlendDescriptor?] {
+    public var blendStates : ColorAttachmentArray<BlendDescriptor?> {
         _read {
             yield self.descriptor.blendStates
         }
@@ -160,7 +163,7 @@ public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
     }
     
     @inlinable
-    public var writeMasks : [ColorWriteMask] {
+    public var writeMasks : ColorAttachmentArray<ColorWriteMask> {
         _read {
             yield self.descriptor.writeMasks
         }
@@ -188,9 +191,13 @@ public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
 }
 
 public struct RenderPipelineDescriptor : Hashable {
-    public init(attachmentCount: Int) {
-        self.blendStates = [BlendDescriptor?](repeating: nil, count: attachmentCount)
-        self.writeMasks = [ColorWriteMask](repeating: .all, count: attachmentCount)
+    public init() {
+        
+    }
+    
+    public init(renderTargets: RenderTargetsDescriptor) {
+        self.init()
+        self.setPixelFormatsAndSampleCount(from: renderTargets)
     }
     
     public var label: String? = nil
@@ -207,9 +214,14 @@ public struct RenderPipelineDescriptor : Hashable {
     
     public var fillMode: TriangleFillMode = .fill
     
-    // Color attachment names to blend descriptors
-    public var blendStates : [BlendDescriptor?]
-    public var writeMasks : [ColorWriteMask]
+    public var colorAttachmentFormats : ColorAttachmentArray<PixelFormat> = .init(repeating: .invalid)
+    public var depthAttachmentFormat : PixelFormat = .invalid
+    public var stencilAttachmentFormat : PixelFormat = .invalid
+    
+    public var rasterSampleCount : Int = 1
+    
+    public var blendStates : ColorAttachmentArray<BlendDescriptor?> = .init(repeating: nil)
+    public var writeMasks : ColorAttachmentArray<ColorWriteMask> = .init(repeating: .all)
     public var functionConstants : FunctionConstants? {
         get {
             return self.vertexFunction.constants ?? self.fragmentFunction.constants
@@ -225,6 +237,31 @@ public struct RenderPipelineDescriptor : Hashable {
         self.functionConstants = try! FunctionConstants(functionConstants)
     }
     
+    @inlinable
+    public mutating func setPixelFormatsAndSampleCount(from descriptor: RenderTargetsDescriptor) {
+        self.colorAttachmentFormats = .init(descriptor.colorAttachments.lazy.map { $0?.texture.descriptor.pixelFormat ?? .invalid })
+        self.depthAttachmentFormat = descriptor.depthAttachment?.texture.descriptor.pixelFormat ?? .invalid
+        self.stencilAttachmentFormat = descriptor.stencilAttachment?.texture.descriptor.pixelFormat ?? .invalid
+        
+        var sampleCount = 0
+        if let depthSampleCount = descriptor.depthAttachment?.texture.descriptor.sampleCount {
+            sampleCount = depthSampleCount
+        }
+        if let stencilSampleCount = descriptor.stencilAttachment?.texture.descriptor.sampleCount {
+            assert(sampleCount == 0 || sampleCount == stencilSampleCount)
+            sampleCount = stencilSampleCount
+        }
+        
+        for i in 0..<descriptor.colorAttachments.count {
+            if let attachmentSampleCount = descriptor.colorAttachments[i]?.texture.descriptor.sampleCount {
+                assert(sampleCount == 0 || sampleCount == attachmentSampleCount)
+                sampleCount = attachmentSampleCount
+            }
+        }
+        
+        self.rasterSampleCount = sampleCount
+    }
+    
     // Hash computation.
     // Hashes don't need to be unique, so let's go for a simple function
     // and rely on == for the proper check.
@@ -236,7 +273,7 @@ public struct RenderPipelineDescriptor : Hashable {
     }
 }
 
-public final class RenderPipelineState {
+public class RenderPipelineState {
     public let descriptor: RenderPipelineDescriptor
     public let state: OpaquePointer
     let reflection: PipelineReflection
@@ -253,6 +290,11 @@ public struct TypedComputePipelineDescriptor<R : RenderPassReflection> {
     
     public init() {
         self.descriptor = ComputePipelineDescriptor()
+    }
+    
+    @inlinable
+    public init(descriptor: ComputePipelineDescriptor) {
+        self.descriptor = descriptor
     }
     
     public var function: R.ComputeFunction? {
@@ -304,9 +346,10 @@ public struct ComputePipelineDescriptor : Hashable, Sendable {
     }
     
     public var linkedFunctions: [FunctionDescriptor] = []
+    public var threadgroupSizeIsMultipleOfThreadExecutionWidth = false
     
     @inlinable
-    init() {
+    public init() {
         
     }
     
@@ -320,7 +363,6 @@ public struct ComputePipelineDescriptor : Hashable, Sendable {
         self.function = function
     }
     
-    
     @inlinable
     public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) {
         self.functionConstants = try! FunctionConstants(functionConstants)
@@ -332,14 +374,16 @@ public struct ComputePipelineDescriptor : Hashable, Sendable {
     }
 }
 
-public final class ComputePipelineState {
+public class ComputePipelineState {
     public let descriptor: ComputePipelineDescriptor
     public let state: OpaquePointer
     let reflection: PipelineReflection
+    let threadExecutionWidth: Int
     
-    init(descriptor: ComputePipelineDescriptor, state: OpaquePointer, reflection: PipelineReflection) {
+    init(descriptor: ComputePipelineDescriptor, state: OpaquePointer, reflection: PipelineReflection, threadExecutionWidth: Int) {
         self.descriptor = descriptor
         self.state = state
         self.reflection = reflection
+        self.threadExecutionWidth = threadExecutionWidth
     }
 }

@@ -72,6 +72,11 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer?
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
     
+    func renderPipelineState(for descriptor: RenderPipelineDescriptor) async -> RenderPipelineState
+    func computePipelineState(for descriptor: ComputePipelineDescriptor) async -> ComputePipelineState
+    func depthStencilState(for descriptor: DepthStencilDescriptor) async -> DepthStencilState
+    func samplerState(for descriptor: SamplerDescriptor) async -> SamplerState
+    
     func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) async
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) async
     func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) async
@@ -86,7 +91,7 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func accelerationStructureSizes(for descriptor: AccelerationStructureDescriptor) -> AccelerationStructureSizes
     
     // Note: The pipeline reflection functions may return nil if reflection information could not be created for the pipeline.
-    func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) async -> PipelineReflection?
+    func renderPipelineReflection(descriptor: RenderPipelineDescriptor) async -> PipelineReflection?
     func computePipelineReflection(descriptor: ComputePipelineDescriptor) async -> PipelineReflection?
     
     func dispose(resource: Resource)
@@ -147,8 +152,8 @@ public struct RenderBackend {
     }
     
     @inlinable
-    static func renderPipelineReflection(descriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) async -> PipelineReflection? {
-        return await _backend.renderPipelineReflection(descriptor: descriptor, renderTarget: renderTarget)
+    static func renderPipelineReflection(descriptor: RenderPipelineDescriptor) async -> PipelineReflection? {
+        return await _backend.renderPipelineReflection(descriptor: descriptor)
     }
     
     @inlinable
