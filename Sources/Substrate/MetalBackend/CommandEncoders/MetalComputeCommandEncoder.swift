@@ -40,6 +40,10 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoderImpl {
     }
     
     func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer, at index: Int, stages: RenderStages) {
+        if !argumentBuffer.flags.contains(.persistent) {
+            _ = resourceMap.transientRegistry!.allocateArgumentBufferIfNeeded(argumentBuffer)
+        }
+            
         let bufferStorage = resourceMap[argumentBuffer]
         if !argumentBuffer.stateFlags.contains(.initialised) {
             argumentBuffer.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
@@ -51,6 +55,10 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoderImpl {
     }
     
     func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, at index: Int, stages: RenderStages) {
+        if !argumentBufferArray.flags.contains(.persistent) {
+            _ = resourceMap.transientRegistry!.allocateArgumentBufferArrayIfNeeded(argumentBufferArray)
+        }
+            
         let bufferStorage = resourceMap[argumentBufferArray]
         if !argumentBufferArray._bindings.contains(where: { !($0?.stateFlags ?? .initialised).contains(.initialised) }) {
             argumentBufferArray.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)

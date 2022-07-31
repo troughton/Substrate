@@ -72,14 +72,21 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     
     func setVertexBuffer(_ buffer: Buffer, offset: Int, index: Int) {
         guard let mtlBufferRef = resourceMap[buffer] else { return }
-        encoder.setVertexBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: index)
+        
+        assert(index < 31, "The maximum number of buffers allowed in the buffer argument table for a single function is 31.")
+        self.setBuffer(mtlBufferRef, offset: offset, at: 30 - index, stages: .vertex)
     }
     
     func setVertexBufferOffset(_ offset: Int, index: Int) {
-        encoder.setVertexBufferOffset(offset, index: index)
+        assert(index < 31, "The maximum number of buffers allowed in the buffer argument table for a single function is 31.")
+        encoder.setVertexBufferOffset(offset, index: 30 - index)
     }
     
     func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer, at index: Int, stages: RenderStages) {
+        if !argumentBuffer.flags.contains(.persistent) {
+            _ = resourceMap.transientRegistry!.allocateArgumentBufferIfNeeded(argumentBuffer)
+        }
+            
         let bufferStorage = resourceMap[argumentBuffer]
         if !argumentBuffer.stateFlags.contains(.initialised) {
             argumentBuffer.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
@@ -90,7 +97,12 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     }
     
     func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, at index: Int, stages: RenderStages) {
+        if !argumentBufferArray.flags.contains(.persistent) {
+            _ = resourceMap.transientRegistry!.allocateArgumentBufferArrayIfNeeded(argumentBufferArray)
+        }
+            
         let bufferStorage = resourceMap[argumentBufferArray]
+        
         if !argumentBufferArray._bindings.contains(where: { !($0?.stateFlags ?? .initialised).contains(.initialised) }) {
             argumentBufferArray.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
         }

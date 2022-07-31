@@ -289,6 +289,7 @@ public struct TransientResourceMap<R : ResourceProtocol & Equatable, V> {
         }
         
         let oldCapacity = self.capacity
+        let capacity = max(capacity, 2 * oldCapacity)
         
         let newKeys : UnsafeMutablePointer<R?> = Allocator.allocate(capacity: capacity, allocator: self.allocator)
         newKeys.initialize(repeating: nil, count: capacity)
@@ -344,7 +345,9 @@ public struct TransientResourceMap<R : ResourceProtocol & Equatable, V> {
             if resource._usesPersistentRegistry {
                 return nil
             } else {
-                assert(resource.index < self.capacity)
+                if resource.index >= self.capacity {
+                    return nil
+                }
                 
                 if self.keys[resource.index] == resource {
                     return self.values[resource.index]
@@ -355,7 +358,10 @@ public struct TransientResourceMap<R : ResourceProtocol & Equatable, V> {
         }
         set {
             assert(!resource._usesPersistentRegistry)
-            assert(resource.index < self.capacity)
+            
+            if resource.index >= self.capacity {
+                self.reserveCapacity(resource.index + 1)
+            }
             
             if let newValue = newValue {
                 if self.keys[resource.index] != nil {
