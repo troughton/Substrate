@@ -333,6 +333,22 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         await self.updateEncoderState()
         self.encoder.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
     }
+    
+    public func useResource<R: ResourceProtocol>(_ resource: R, usage: ResourceUsageType, stages: RenderStages) {
+        self.encoder.useResource(resource, usage: usage, stages: stages)
+    }
+    
+    public func useHeap(_ heap: Heap, stages: RenderStages) {
+        self.encoder.useHeap(heap, stages: stages)
+    }
+    
+    public func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages) {
+        self.encoder.memoryBarrier(scope: scope, after: after, before: before)
+    }
+    
+    public func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages) {
+        self.encoder.memoryBarrier(resources: resources, after: after, before: before)
+    }
 }
 
 
@@ -555,6 +571,22 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     public func dispatchThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size) async {
         await self.updateEncoderState()
         self.encoder.dispatchThreadgroups(indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset, threadsPerThreadgroup: threadsPerThreadgroup)
+    }
+    
+    public func useResource<R: ResourceProtocol>(_ resource: R, usage: ResourceUsageType) {
+        self.encoder.useResource(resource, usage: usage)
+    }
+    
+    public func useHeap(_ heap: Heap) {
+        self.encoder.useHeap(heap)
+    }
+    
+    public func memoryBarrier(scope: BarrierScope) {
+        self.encoder.memoryBarrier(scope: scope)
+    }
+    
+    public func memoryBarrier(resources: [Resource]) {
+        self.encoder.memoryBarrier(resources: resources)
     }
 }
 

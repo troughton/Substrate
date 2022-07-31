@@ -708,13 +708,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.argumentBufferArrayWaitEvents.prepareFrame()
     }
     
-    public func flushTransientBuffers() {
-        #if os(macOS) || targetEnvironment(macCatalyst)
-        self.frameManagedBufferAllocator?.flush()
-        self.frameManagedWriteCombinedBufferAllocator?.flush()
-        #endif
-    }
-    
     public func registerWindowTexture(for texture: Texture, swapchain: Any) {
         self.windowReferences[texture] = (swapchain as! CAMetalLayer)
     }

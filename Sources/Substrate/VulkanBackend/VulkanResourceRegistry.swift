@@ -413,16 +413,10 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.descriptorPools[self.descriptorPoolIndex].resetDescriptorPool()
     }
     
-    public func flushTransientBuffers() {
-        self.frameManagedBufferAllocator.flush()
-        self.frameManagedWriteCombinedBufferAllocator.flush()
-    }
-    
     public func registerWindowTexture(for texture: Texture, swapchain: Any) {
         self.windowReferences[texture] = (swapchain as! VulkanSwapChain)
     }
     
-
     func allocatorForBuffer(storageMode: StorageMode, cacheMode: CPUCacheMode, flags: ResourceFlags) -> VulkanBufferAllocator {
         assert(!flags.contains(.persistent))
         

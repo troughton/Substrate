@@ -189,7 +189,7 @@ public struct Buffer : ResourceProtocol {
         
         let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
         
-        if !modifiedRange.isEmpty, self._usesPersistentRegistry { // Transient buffers are flushed automatically before rendering.
+        if !modifiedRange.isEmpty { // Transient buffers are flushed automatically before rendering.
             RenderBackend.buffer(self, didModifyRange: modifiedRange)
         }
         self.stateFlags.formUnion(.initialised)
@@ -204,7 +204,7 @@ public struct Buffer : ResourceProtocol {
         
         let result = try await perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
         
-        if !modifiedRange.isEmpty, self._usesPersistentRegistry { // Transient buffers are flushed automatically before rendering.
+        if !modifiedRange.isEmpty { // Transient buffers are flushed automatically before rendering.
             RenderBackend.buffer(self, didModifyRange: modifiedRange)
         }
         self.stateFlags.formUnion(.initialised)
@@ -270,9 +270,7 @@ public struct Buffer : ResourceProtocol {
         if let contents = RenderBackend.bufferContents(for: self, range: range) {
             let range = 0..<source.count * MemoryLayout<C.Element>.stride
             _ = UnsafeMutableRawBufferPointer(start: contents, count: range.count).initializeMemory(as: C.Element.self, from: source)
-            if self._usesPersistentRegistry { // Transient buffers are flushed automatically before rendering.
-                RenderBackend.buffer(self, didModifyRange: range)
-            }
+            RenderBackend.buffer(self, didModifyRange: range)
             self.stateFlags.formUnion(.initialised)
         } else {
             self._deferredSliceActions.append(DeferredBufferSlice(closure: {
@@ -288,9 +286,7 @@ public struct Buffer : ResourceProtocol {
     /// This call is usually unnecessary; the withMutableContents functions will call this for you.
     @inlinable
     public func flushRange(_ range: Range<Int>) {
-        if self._usesPersistentRegistry { // Transient buffers are flushed automatically before rendering.
-            RenderBackend.buffer(self, didModifyRange: range)
-        }
+        RenderBackend.buffer(self, didModifyRange: range)
     }
     
     func applyDeferredSliceActions() {

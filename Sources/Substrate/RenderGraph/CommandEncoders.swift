@@ -542,8 +542,8 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         impl.dispatchThreadsPerTile(threadsPerTile)
     }
     
-    public func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
-        impl.useResource(resource, usage: usage, stages: stages)
+    public func useResource<R: ResourceProtocol>(_ resource: R, usage: ResourceUsageType, stages: RenderStages) {
+        impl.useResource(Resource(resource), usage: usage, stages: stages)
     }
     
     public func useHeap(_ heap: Heap, stages: RenderStages) {
@@ -682,8 +682,8 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         impl.drawMeshThreadgroups(indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset, threadsPerThreadgroup: threadsPerThreadgroup)
     }
     
-    public func useResource(_ resource: Resource, usage: ResourceUsageType) {
-        impl.useResource(resource, usage: usage)
+    public func useResource<R: ResourceProtocol>(_ resource: R, usage: ResourceUsageType) {
+        impl.useResource(Resource(resource), usage: usage)
     }
     
     public func useHeap(_ heap: Heap) {

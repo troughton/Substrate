@@ -92,6 +92,8 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
             argumentBuffer.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
         }
         
+        // FIXME: should call useResources on everything in the argument buffer if it's not explicitly declared as used by the pass.
+        
         let bindIndex = index + 1 // since buffer 0 is push constants
         self.setBuffer(bufferStorage, offset: 0, at: bindIndex, stages: MTLRenderStages(stages))
     }

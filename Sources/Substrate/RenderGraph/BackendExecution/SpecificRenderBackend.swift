@@ -112,8 +112,6 @@ protocol BackendTransientResourceRegistry {
     
     // TransientResourceRegistry requirements:
     
-    func flushTransientBuffers()
-    
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
     
     func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> Backend.BufferReference

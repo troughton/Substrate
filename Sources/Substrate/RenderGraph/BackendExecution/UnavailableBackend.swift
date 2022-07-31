@@ -237,10 +237,6 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        func flushTransientBuffers() {
-            preconditionFailure()
-        }
-        
         func cycleFrames() {
             preconditionFailure()
         }
