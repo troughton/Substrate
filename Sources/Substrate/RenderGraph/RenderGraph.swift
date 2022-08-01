@@ -1273,6 +1273,7 @@ public final class RenderGraph {
             }
             
             activeRenderTargets.append((nextDescriptorIndex, pass.renderTargetDescriptor))
+            descriptorIndices[passIndex] = nextDescriptorIndex
             nextDescriptorIndex += 1
         }
         
