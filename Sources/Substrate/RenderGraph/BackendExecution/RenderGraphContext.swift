@@ -113,7 +113,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         }
     }
     
-    func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, commandBufferIndex: Int, lastCommandBufferIndex: Int, syncEvent: Backend.Event, onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async {
+    func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, commandBufferIndex: Int, lastCommandBufferIndex: Int, syncEvent: Backend.Event, executionResult: RenderGraphExecutionResult, onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async {
         // Make sure that the sync event value is what we expect, so we don't update it past
         // the signal for another buffer before that buffer has completed.
         // We only need to do this if we haven't already waited in this command buffer for it.
@@ -129,8 +129,6 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         
         let isFirst = commandBufferIndex == 0
         let isLast = commandBufferIndex == lastCommandBufferIndex
-    
-        let executionResult = RenderGraphExecutionResult()
         
         let continuation = DeferredContinuation()
         
@@ -146,10 +144,10 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
             }
             
             if isFirst {
-                await executionResult.setGPUStartTime(to: commandBuffer.gpuStartTime)
+                executionResult.setGPUStartTime(to: commandBuffer.gpuStartTime)
             }
             if isLast { // Only call completion for the last command buffer.
-                await executionResult.setGPUEndTime(to: commandBuffer.gpuEndTime)
+                executionResult.setGPUEndTime(to: commandBuffer.gpuEndTime)
                 await onCompletion(executionResult)
             }
             
@@ -255,9 +253,11 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 self.commandGenerator.reset()
                 self.compactedResourceCommands.removeAll(keepingCapacity: true)
                 
+                let executionResult = RenderGraphExecutionResult()
+                
                 let syncEvent = backend.syncEvent(for: self.renderGraphQueue)!
                 for (i, commandBuffer) in commandBuffers.enumerated() {
-                    await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, syncEvent: syncEvent, onCompletion: onCompletion)
+                    await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, syncEvent: syncEvent, executionResult: executionResult, onCompletion: onCompletion)
                 }
             }
         }

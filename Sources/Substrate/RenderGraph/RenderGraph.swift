@@ -666,18 +666,25 @@ struct RenderPassRecord: Equatable, @unchecked Sendable {
     //    case transitive
 }
 
-actor RenderGraphExecutionResult {
+final class RenderGraphExecutionResult {
+    let lock: SpinLock
     public internal(set) var gpuStartTime: Double
     public internal(set) var gpuEndTime: Double
 
     public init() {
+        self.lock = SpinLock()
         self.gpuStartTime = 0.0
         self.gpuEndTime = 0.0
     }
     
     public init(gpuStartTime: Double, gpuEndTime: Double) {
+        self.lock = SpinLock()
         self.gpuStartTime = gpuStartTime
         self.gpuEndTime = gpuEndTime
+    }
+    
+    deinit {
+        self.lock.deinit()
     }
     
     public var gpuTime: Double {
@@ -685,11 +692,15 @@ actor RenderGraphExecutionResult {
     }
     
     func setGPUStartTime(to startTime: Double) {
-        self.gpuStartTime = startTime
+        self.lock.withLock {
+            self.gpuStartTime = startTime
+        }
     }
     
     func setGPUEndTime(to endTime: Double) {
-        self.gpuEndTime = endTime
+        self.lock.withLock {
+            self.gpuEndTime = endTime
+        }
     }
 }
 
@@ -1485,7 +1496,6 @@ public final class RenderGraph {
         let elapsed = completionTime - min(self.previousFrameCompletionTime, completionTime)
         self.previousFrameCompletionTime = completionTime
         self._lastGraphCPUTime = Double(elapsed) * 1e-6
-        //            print("Frame \(currentFrameIndex) completed in \(self.lastGraphCPUTime)ms.")
     }
     
     /// Process the render passes that have been enqueued on this render graph through calls to `addPass()` or similar by culling passes that don't produce
