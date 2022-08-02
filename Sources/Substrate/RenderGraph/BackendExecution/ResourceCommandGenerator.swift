@@ -369,7 +369,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         defer { TaggedHeap.free(tag: Self.resourceCommandGeneratorTag) }
         
         resourceLoop: for resource in usedResources {
-            if resource.usages.isEmpty || resource != resource.resourceForUsageTracking { continue }
+            if resource.usages.isEmpty { continue }
             
             self.processResourceResidency(resource: resource, frameCommandInfo: frameCommandInfo)
             
