@@ -327,10 +327,20 @@ extension ResourceProtocolImpl {
     
     public var usages: ChunkArray<ResourceUsage> {
         get {
-            return self._usagesPointer?.pointee ?? .init()
+            let trackingResource = self.resourceForUsageTracking
+            if trackingResource.handle != self.handle {
+                return trackingResource.usages
+            } else {
+                return self._usagesPointer?.pointee ?? .init()
+            }
         }
         nonmutating set {
-            self._usagesPointer?.pointee = newValue
+            let trackingResource = self.resourceForUsageTracking
+            if trackingResource.handle != self.handle {
+                trackingResource.usages = newValue
+            } else {
+                self._usagesPointer?.pointee = newValue
+            }
         }
     }
     
