@@ -363,7 +363,7 @@ final class RenderGraphCommandRecorder {
     
     func resourceUsagePointers<C : CommandEncoder>(`for` specificResource: Resource, encoder: C, usageType: ResourceUsageType, stages: RenderStages, activeRange: ActiveResourceRange, isIndirectlyBound: Bool, firstCommandOffset: Int) -> ResourceUsagePointerList {
         let resource = specificResource.resourceForUsageTracking
-        let activeRange = specificResource == resource ? activeRange : .fullResource
+        let activeRange = resource.type == .hazardTrackingGroup ? .fullResource : activeRange
         
         assert(encoder.renderPass.writtenResources.isEmpty || encoder.renderPass.writtenResources.contains(where: { $0.handle == resource.handle }) || encoder.renderPass.readResources.contains(where: { $0.handle == resource.handle }), "Resource \(resource.handle) used but not declared.")
         
