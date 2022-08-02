@@ -126,7 +126,10 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
     }
     
     override func useResource(_ resource: Resource, access: ResourceAccessFlags) {
-        encoder.useResource(resourceMap[resource], usage: MTLResourceUsage(access, isAppleSiliconGPU: self.isAppleSiliconGPU))
+        guard let mtlResource = resourceMap[resource] else {
+            return
+        }
+        encoder.useResource(mtlResource, usage: MTLResourceUsage(access, isAppleSiliconGPU: self.isAppleSiliconGPU))
     }
     
     override func useHeap(_ heap: Heap) {

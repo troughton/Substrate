@@ -34,7 +34,7 @@ public protocol RenderTargetAttachmentDescriptor {
 }
 
 // Since none of the level/slice/depth plane values are allowed to exceed UInt16.max, we can reduce the storage requirements.
-protocol _RenderTargetAttachmentDescriptor: RenderTargetAttachmentDescriptor {
+public protocol _RenderTargetAttachmentDescriptor: RenderTargetAttachmentDescriptor {
     var _level: UInt16 { get set }
     
     var _slice: UInt16 { get set }
@@ -51,7 +51,7 @@ protocol _RenderTargetAttachmentDescriptor: RenderTargetAttachmentDescriptor {
     var _resolveDepthPlane : UInt16 { get set }
 }
 
-extension _RenderTargetAttachmentDescriptor {
+extension RenderTargetAttachmentDescriptor where Self: _RenderTargetAttachmentDescriptor {
     @inlinable
     public var level: Int {
         get {
@@ -135,12 +135,12 @@ public struct ColorAttachmentDescriptor : RenderTargetAttachmentDescriptor, _Ren
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     public var resolveTexture : Texture? = nil
     
-    @usableFromInline var _level: UInt16
-    @usableFromInline var _slice: UInt16
-    @usableFromInline var _depthPlane: UInt16
-    @usableFromInline var _resolveLevel : UInt16
-    @usableFromInline var _resolveSlice : UInt16
-    @usableFromInline var _resolveDepthPlane : UInt16
+    public var _level: UInt16
+    public var _slice: UInt16
+    public var _depthPlane: UInt16
+    public var _resolveLevel : UInt16
+    public var _resolveSlice : UInt16
+    public var _resolveDepthPlane : UInt16
     
     @inlinable
     public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
@@ -162,12 +162,12 @@ public struct DepthAttachmentDescriptor : RenderTargetAttachmentDescriptor, _Ren
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     public var resolveTexture : Texture? = nil
     
-    @usableFromInline var _level: UInt16
-    @usableFromInline var _slice: UInt16
-    @usableFromInline var _depthPlane: UInt16
-    @usableFromInline var _resolveLevel : UInt16
-    @usableFromInline var _resolveSlice : UInt16
-    @usableFromInline var _resolveDepthPlane : UInt16
+    public var _level: UInt16
+    public var _slice: UInt16
+    public var _depthPlane: UInt16
+    public var _resolveLevel : UInt16
+    public var _resolveSlice : UInt16
+    public var _resolveDepthPlane : UInt16
     
     @inlinable
     public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
@@ -189,12 +189,12 @@ public struct StencilAttachmentDescriptor : RenderTargetAttachmentDescriptor, _R
     /// The texture to perform a multisample resolve action on at the completion of the render pass.
     public var resolveTexture : Texture? = nil
     
-    @usableFromInline var _level: UInt16
-    @usableFromInline var _slice: UInt16
-    @usableFromInline var _depthPlane: UInt16
-    @usableFromInline var _resolveLevel : UInt16
-    @usableFromInline var _resolveSlice : UInt16
-    @usableFromInline var _resolveDepthPlane : UInt16
+    public var _level: UInt16
+    public var _slice: UInt16
+    public var _depthPlane: UInt16
+    public var _resolveLevel : UInt16
+    public var _resolveSlice : UInt16
+    public var _resolveDepthPlane : UInt16
     
     @inlinable
     public init(texture: Texture, level: Int = 0, slice: Int = 0, depthPlane: Int = 0,
@@ -388,7 +388,7 @@ public struct RenderTargetsDescriptor : Hashable, Sendable {
                 descriptor.depthPlane  == new.depthPlane
     }
     
-    mutating func tryMerge(withPass pass: ProxyDrawRenderPass) -> Bool {
+    mutating func tryMerge(withPass pass: DrawRenderPass) -> Bool {
         if pass.renderTargetsDescriptor.size != self.size {
             return false // The render targets must be the same size.
         }

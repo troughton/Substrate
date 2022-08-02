@@ -390,6 +390,10 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         self.needsUpdateBindings = true
     }
     
+    public func setRenderPipelineState(_ pipelineState: RenderPipelineState) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
     public func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
@@ -430,6 +434,10 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         self.depthStencilStateChanged = true
     }
     
+    public func setDepthStencilState(_ depthStencilState: DepthStencilState) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
 //    @inlinable
     public func setScissorRect(_ rect: ScissorRect) {
         self.nonDefaultDynamicState.formUnion(.scissorRect)
@@ -447,10 +455,21 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         self.nonDefaultDynamicState.formUnion(.stencilReferenceValue)
     }
     
+    @available(macOS 12.0, iOS 15.0, *)
+    public func setThreadgroupMemoryLength(_ length: Int, at path: ResourceBindingPath) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
     
     public func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
         assert(instanceCount > 0, "instanceCount(\(instanceCount)) must be non-zero.")
 
+        guard self.currentPipelineReflection != nil else {
+            assert(self.renderPipelineDescriptor != nil, "No render or compute pipeline is set for pass \(renderPass.name).")
+            return
+        }
+    }
+    
+    public func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int) {
         guard self.currentPipelineReflection != nil else {
             assert(self.renderPipelineDescriptor != nil, "No render or compute pipeline is set for pass \(renderPass.name).")
             return

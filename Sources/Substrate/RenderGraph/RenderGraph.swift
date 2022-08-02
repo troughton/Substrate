@@ -310,7 +310,7 @@ extension ReflectableComputeRenderPass {
 @usableFromInline
 final class CallbackDrawRenderPass : DrawRenderPass {
     public let name : String
-    public let renderTargetsDescriptor: RenderTargetDescriptor
+    public let renderTargetsDescriptor: RenderTargetsDescriptor
     public let colorClearOperations: [ColorClearOperation]
     public let depthClearOperation: DepthClearOperation
     public let stencilClearOperation: StencilClearOperation
@@ -318,14 +318,14 @@ final class CallbackDrawRenderPass : DrawRenderPass {
     public let executeFunc : (RenderCommandEncoder) async -> Void
     
     public init(name: String,
-                renderTargets: RenderTargetDescriptor,
+                renderTargets: RenderTargetsDescriptor,
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
                 resources: [ExplicitResourceUsage] = [],
                 execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
         self.name = name
-        self.renderTargetsDescriptor = renderTarget
+        self.renderTargetsDescriptor = renderTargets
         self.colorClearOperations = colorClearOperations
         self.depthClearOperation = depthClearOperation
         self.stencilClearOperation = stencilClearOperation
@@ -348,21 +348,21 @@ final class CallbackDrawRenderPass : DrawRenderPass {
 @usableFromInline
 final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : ReflectableDrawRenderPass {
     public let name : String
-    public let renderTargetsDescriptor: RenderTargetDescriptor
+    public let renderTargetsDescriptor: RenderTargetsDescriptor
     public let colorClearOperations: [ColorClearOperation]
     public let depthClearOperation: DepthClearOperation
     public let stencilClearOperation: StencilClearOperation
     public let resources: [ExplicitResourceUsage]
     public let executeFunc : (TypedRenderCommandEncoder<R>) async -> Void
     
-    public init(name: String, renderTargets: RenderTargetDescriptor,
+    public init(name: String, renderTargets: RenderTargetsDescriptor,
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
                 resources: [ExplicitResourceUsage] = [],
                 reflection: R.Type, execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
         self.name = name
-        self.renderTargetsDescriptor = renderTarget
+        self.renderTargetsDescriptor = renderTargets
         self.colorClearOperations = colorClearOperations
         self.depthClearOperation = depthClearOperation
         self.stencilClearOperation = stencilClearOperation
@@ -561,10 +561,6 @@ struct RenderPassRecord: Equatable, @unchecked Sendable {
     }
     
     func dispose() {
-        self.commands = nil
-        self.unmanagedReferences?.forEach {
-            $0.release()
-        }
         self.storage.deinitialize(count: 1)
         self.storage.deallocate()
     }
@@ -1142,63 +1138,6 @@ public final class RenderGraph {
     // Backend will look over all resource usages and figure out necessary resource transitions and creation/destruction times (could be synced with command numbers e.g. before command 300, transition resource A to state X).
     // Then, it will execute the command list.
     
-    func executePass(_ passRecord: RenderPassRecord, executionAllocator: TagAllocator, resourceUsageAllocator: TagAllocator) async {
-        let signpostID = Self.signposter.makeSignpostID()
-        let signpostState = Self.signposter.beginInterval("Execute RenderGraph Pass", id: signpostID, "Executing \(passRecord.name)")
-        defer { Self.signposter.endInterval("Execute RenderGraph Pass", signpostState, "Finished executing \(passRecord.name)")}
-        
-        let renderPassScratchTag = RenderGraphTagType.renderPassExecutionTag(passIndex: passRecord.passIndex)
-        
-        let commandRecorder = RenderGraphCommandRecorder(renderGraphTransientRegistryIndex: self.transientRegistryIndex,
-                                                         renderGraphQueue: self.queue,
-                                                         renderPassScratchAllocator: ThreadLocalTagAllocator(tag: renderPassScratchTag),
-                                                         renderGraphExecutionAllocator: executionAllocator,
-                                                         resourceUsageAllocator: resourceUsageAllocator)
-        
-        
-        
-        switch passRecord.pass {
-        case let drawPass as DrawRenderPass:
-            let rce = RenderCommandEncoder(commandRecorder: commandRecorder, renderPass: drawPass, passRecord: passRecord)
-            await drawPass.execute(renderCommandEncoder: rce)
-            rce.endEncoding()
-            
-        case let computePass as ComputeRenderPass:
-            let cce = ComputeCommandEncoder(commandRecorder: commandRecorder, renderPass: computePass, passRecord: passRecord)
-            await computePass.execute(computeCommandEncoder: cce)
-            cce.endEncoding()
-            
-        case let blitPass as BlitRenderPass:
-            let bce = BlitCommandEncoder(commandRecorder: commandRecorder, renderPass: blitPass, passRecord: passRecord)
-            await blitPass.execute(blitCommandEncoder: bce)
-            bce.endEncoding()
-            
-        case let externalPass as ExternalRenderPass:
-            let ece = ExternalCommandEncoder(commandRecorder: commandRecorder, renderPass: externalPass, passRecord: passRecord)
-            await externalPass.execute(externalCommandEncoder: ece)
-            ece.endEncoding()
-            
-        case let cpuPass as CPURenderPass:
-            await cpuPass.execute()
-            
-        default:
-            if #available(macOS 11.0, iOS 14.0, *), let accelerationStructurePass = passRecord.pass as? AccelerationStructureRenderPass {
-                let asce = AccelerationStructureCommandEncoder(commandRecorder: commandRecorder, accelerationStructureRenderPass: accelerationStructurePass, passRecord: passRecord)
-                accelerationStructurePass.execute(accelerationStructureCommandEncoder: asce)
-                asce.endEncoding()
-            } else {
-                fatalError("Unknown pass type for pass \(passRecord)")
-            }
-        }
-        
-        passRecord.readResources = commandRecorder.readResources
-        passRecord.writtenResources = commandRecorder.writtenResources
-        passRecord.resourceUsages = commandRecorder.resourceUsages
-        passRecord.unmanagedReferences = commandRecorder.unmanagedReferences
-        
-        TaggedHeap.free(tag: renderPassScratchTag)
-    }
-    
     nonisolated func fillUsedResourcesFromPass(passRecord: RenderPassRecord, resourceUsageAllocator: TagAllocator) {
         passRecord.readResources = .init(allocator: .tag(resourceUsageAllocator))
         passRecord.writtenResources = .init(allocator: .tag(resourceUsageAllocator))
@@ -1236,8 +1175,8 @@ public final class RenderGraph {
         }
     }
     
-    func computePassRenderTargetIndices(passes: [ProxyDrawRenderPass?]) -> [Int] {
-        var activeRenderTargets = [(index: Int, renderTargets: RenderTargetDescriptor)]()
+    func computePassRenderTargetIndices(passes: [DrawRenderPass?]) -> [Int] {
+        var activeRenderTargets = [(index: Int, renderTargets: RenderTargetsDescriptor)]()
         
         var descriptorIndices = [Int](repeating: -1, count: passes.count)
         var nextDescriptorIndex = 0
@@ -1252,7 +1191,7 @@ public final class RenderGraph {
                 }
             }
             
-            activeRenderTargets.append((nextDescriptorIndex, pass.renderTargetDescriptor))
+            activeRenderTargets.append((nextDescriptorIndex, pass.renderTargetsDescriptor))
             descriptorIndices[passIndex] = nextDescriptorIndex
             nextDescriptorIndex += 1
         }
@@ -1361,7 +1300,7 @@ public final class RenderGraph {
         
         var addedToList = [Bool](repeating: false, count: renderPasses.count)
         var activePasses = [RenderPassRecord]()
-        let passRenderTargetIndices = self.computePassRenderTargetIndices(passes: renderPasses.map { $0.type == .draw ? ($0.pass! as! ProxyDrawRenderPass) : nil })
+        let passRenderTargetIndices = self.computePassRenderTargetIndices(passes: renderPasses.map { $0.type == .draw ? ($0.pass! as! DrawRenderPass) : nil })
         for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
             self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, passRenderTargetIndices: passRenderTargetIndices, addedToList: &addedToList, activePasses: &activePasses, allocator: AllocatorType(allocator))
         }
@@ -1369,12 +1308,10 @@ public final class RenderGraph {
         var i = 0
         while i < activePasses.count {
             let passRecord = activePasses[i]
-            if passRecord.commandRange == nil {
-                await self.executePass(passRecord,
-                                       executionAllocator: executionAllocator,
-                                       resourceUsageAllocator: executionAllocator)
+            if passRecord.type == .cpu {
+                await (passRecord.pass as! CPURenderPass).execute()
             }
-            if passRecord.type == .cpu || passRecord.commandRange!.count == 0 {
+            if passRecord.type == .cpu {
                 passRecord.isActive = false // We've definitely executed the pass now, so there's no more work to be done on it by the GPU backends.
                 activePasses.remove(at: i)
             } else {

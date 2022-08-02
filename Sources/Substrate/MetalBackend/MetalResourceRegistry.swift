@@ -483,7 +483,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return self.intersectionFunctionTableReferences[table]
     }
     
-    public subscript(resource: Resource) -> MTLResource? {
+    public nonisolated subscript(resource: Resource) -> MTLResource? {
         switch resource.type {
         case .buffer:
             return self[Buffer(handle: resource.handle)]?.buffer
@@ -493,14 +493,12 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             return self[ArgumentBuffer(handle: resource.handle)]?.buffer
         case .argumentBufferArray:
             return self[ArgumentBufferArray(handle: resource.handle)]?.buffer
-        case .heap:
-            return self.heapReferences[Heap(handle: resource.handle)]
         case .accelerationStructure:
-            return self[AccelerationStructure(handle: resource.handle)]
+            return self[AccelerationStructure(handle: resource.handle)] as! MTLResource?
         case .visibleFunctionTable:
-            return self[VisibleFunctionTable(handle: resource.handle)]
+            return self[VisibleFunctionTable(handle: resource.handle)]?.resource
         case .intersectionFunctionTable:
-            return self[IntersectionFunctionTable(handle: resource.handle)]
+            return self[IntersectionFunctionTable(handle: resource.handle)]?.resource
         default:
             return nil
         }

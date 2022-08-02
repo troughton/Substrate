@@ -12,12 +12,14 @@ import Metal
 final class MetalRenderCommandEncoder: RenderCommandEncoder {
     let encoder: MTLRenderCommandEncoder
     let resourceMap: FrameResourceMap<MetalBackend>
+    let isAppleSiliconGPU: Bool
     
     private var baseBufferOffsets = [Int](repeating: 0, count: 31 * 5) // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     
-    init(passRecord: RenderPassRecord, encoder: MTLRenderCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>) {
+    init(passRecord: RenderPassRecord, encoder: MTLRenderCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.resourceMap = resourceMap
+        self.isAppleSiliconGPU = isAppleSiliconGPU
         super.init(renderPass: passRecord.pass as! DrawRenderPass, passRecord: passRecord)
     }
     
@@ -215,10 +217,6 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         encoder.setCullMode(MTLCullMode(cullMode))
     }
     
-    override func setDepthClipMode(_ depthClipMode: DepthClipMode) {
-        encoder.setDepthClipMode(MTLDepthClipMode(depthClipMode))
-    }
-    
     override func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float) {
         super.setDepthBias(depthBias, slopeScale: slopeScale, clamp: clamp)
         encoder.setDepthBias(depthBias, slopeScale: slopeScale, clamp: clamp)
@@ -229,24 +227,23 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         encoder.setScissorRect(MTLScissorRect(rect))
     }
     
-    override func setTriangleFillMode(_ fillMode: TriangleFillMode) {
-        encoder.setTriangleFillMode(MTLTriangleFillMode(fillMode))
-    }
-    
-    override func setBlendColor(red: Float, green: Float, blue: Float, alpha: Float) {
-        encoder.setBlendColor(red: red, green: green, blue: blue, alpha: alpha)
-    }
+//    override func setBlendColor(red: Float, green: Float, blue: Float, alpha: Float) {
+//        encoder.setBlendColor(red: red, green: green, blue: blue, alpha: alpha)
+//    }
     
     override func setRenderPipelineState(_ pipelineState: RenderPipelineState) {
         Unmanaged<MTLRenderPipelineState>.fromOpaque(UnsafeRawPointer(pipelineState.state))._withUnsafeGuaranteedRef {
             encoder.setRenderPipelineState($0)
         }
+        
+        encoder.setTriangleFillMode(MTLTriangleFillMode(pipelineState.descriptor.fillMode))
     }
     
     override func setDepthStencilState(_ depthStencilState: DepthStencilState) {
         Unmanaged<MTLDepthStencilState>.fromOpaque(UnsafeRawPointer(depthStencilState.state))._withUnsafeGuaranteedRef {
             encoder.setDepthStencilState($0)
         }
+        encoder.setDepthClipMode(MTLDepthClipMode(depthStencilState.descriptor.depthClipMode))
     }
     
     override func setStencilReferenceValue(_ referenceValue: UInt32) {
@@ -272,7 +269,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     
     override func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
         super.drawPrimitives(type: primitiveType, vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
-        encoder.drawPrimitives(type: MTLPrimitiveType(type), vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
+        encoder.drawPrimitives(type: MTLPrimitiveType(primitiveType), vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
     }
     
     override func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int) {
@@ -280,7 +277,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         
         let mtlBuffer = resourceMap[indirectBuffer]!
         
-        encoder.drawPrimitives(type: MTLPrimitiveType(type), indirectBuffer: mtlBuffer, indirectBufferOffset: mtlBuffer.offset + indirectBufferOffset)
+        encoder.drawPrimitives(type: MTLPrimitiveType(primitiveType), indirectBuffer: mtlBuffer.buffer, indirectBufferOffset: mtlBuffer.offset + indirectBufferOffset)
     }
     
     override func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int = 1, baseVertex: Int = 0, baseInstance: Int = 0) {
@@ -323,7 +320,10 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     override func useResource(_ resource: Resource, access: ResourceAccessFlags, stages: RenderStages) {
-        encoder.useResource(resourceMap[resource], usage: MTLResourceUsage(usage), stages: MTLRenderStages(stages))
+        guard let mtlResource = resourceMap[resource] else {
+            return
+        }
+        encoder.useResource(mtlResource, usage: MTLResourceUsage(access, isAppleSiliconGPU: self.isAppleSiliconGPU), stages: MTLRenderStages(stages))
     }
     
     override func useHeap(_ heap: Heap, stages: RenderStages) {
@@ -331,7 +331,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     override func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages) {
-        encoder.memoryBarrier(scope: MTLBarrierScope(scope), after: MTLRenderStages(after), before: MTLRenderStages(before))
+        encoder.memoryBarrier(scope: MTLBarrierScope(scope, isAppleSiliconGPU: self.isAppleSiliconGPU), after: MTLRenderStages(after), before: MTLRenderStages(before))
     }
     
     override func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages) {

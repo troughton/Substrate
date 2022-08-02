@@ -42,11 +42,11 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
-    subscript(resource: Resource) -> Backend.ResourceReference {
+    subscript(resource: Resource) -> Backend.ResourceReference? {
         if resource._usesPersistentRegistry {
-            return persistentRegistry[resource]!
+            return persistentRegistry[resource]
         } else {
-            return transientRegistry![resource]!
+            return transientRegistry![resource]
         }
     }
     

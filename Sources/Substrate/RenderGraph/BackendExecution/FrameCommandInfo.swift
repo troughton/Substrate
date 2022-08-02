@@ -14,7 +14,6 @@ struct CommandEncoderInfo {
     var queueFamilyIndex: Int // corresponding to the Vulkan concept of queue families; this indicates whether e.g. the encoder is executed on the main render queue vs async compute etc.
     
     var passRange: Range<Int>
-    var commandRange: Range<Int>
     
     var queueCommandWaitIndices: QueueCommandIndices
     
@@ -66,7 +65,6 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
                                                      commandBufferIndex: commandBufferIndex,
                                                      queueFamilyIndex: queueFamilyIndex,
                                                      passRange: passRange,
-                                                     commandRange: passes[passRange.first!].commandRange!.lowerBound..<passes[passRange.last!].commandRange!.upperBound,
                                                      queueCommandWaitIndices: QueueCommandIndices(repeating: 0),
                                                      usesWindowTexture: usesWindowTexture)
                 

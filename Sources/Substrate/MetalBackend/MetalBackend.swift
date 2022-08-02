@@ -78,6 +78,7 @@ final class MetalBackend : SpecificRenderBackend {
     typealias VisibleFunctionTableReference = MTLVisibleFunctionTableReference
     typealias IntersectionFunctionTableReference = MTLIntersectionFunctionTableReference
     typealias SamplerReference = MTLSamplerState
+    typealias ResourceReference = MTLResource
     
     typealias TransientResourceRegistry = MetalTransientResourceRegistry
     typealias PersistentResourceRegistry = MetalPersistentResourceRegistry
