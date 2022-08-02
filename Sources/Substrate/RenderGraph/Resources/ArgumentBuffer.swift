@@ -258,12 +258,6 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    public var enqueuedBindings : ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)> {
-        _read {
-            yield self.pointer(for: \.enqueuedBindings).pointee
-        }
-    }
-    
     public var bindings : ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)> {
         _read {
             yield self.pointer(for: \.bindings).pointee
@@ -272,33 +266,6 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     public var storageMode: StorageMode {
         return .shared
-    }
-    
-    // Thread-safe
-    func translateEnqueuedBindings(_ closure: (FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource) -> ResourceBindingPath?) {
-        
-        func translateBindings() {
-            var i = 0
-            while i < self.enqueuedBindings.count {
-                let (key, arrayIndex, binding) = self.enqueuedBindings[i]
-                if let bindingPath = closure(key, arrayIndex, binding) {
-                    self.enqueuedBindings.remove(at: i)
-                    self.bindings.append((bindingPath, binding))
-                } else {
-                    i += 1
-                }
-            }
-        }
-
-        if self._usesPersistentRegistry {
-            PersistentArgumentBufferRegistry.instance.lock.withLock {
-                translateBindings()
-            }
-        } else {
-            TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].lock.withLock {
-                translateBindings()
-            }
-        }
     }
     
     public func _bytes(offset: Int) -> UnsafeRawPointer {
@@ -327,70 +294,70 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+    public func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
         guard let buffer = buffer else { return }
         
         assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.enqueuedBindings.append(
-            (key, arrayIndex, .buffer(buffer, offset: offset))
+        self.bindings.append(
+            (path, .buffer(buffer, offset: offset))
         )
     }
     
-    public func setTexture(_ texture: Texture, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+    public func setTexture(_ texture: Texture, at path: ResourceBindingPath) {
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.enqueuedBindings.append(
-            (key, arrayIndex, .texture(texture))
+        self.bindings.append(
+            (path, .texture(texture))
         )
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public func setAccelerationStructure(_ structure: AccelerationStructure, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+    public func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath) {
         assert(!self.flags.contains(.persistent) || structure.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.enqueuedBindings.append(
-            (key, arrayIndex, .accelerationStructure(structure))
+        self.bindings.append(
+            (path, .accelerationStructure(structure))
         )
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public func setVisibleFunctionTable(_ table: VisibleFunctionTable, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+    public func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath) {
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.enqueuedBindings.append(
-            (key, arrayIndex, .visibleFunctionTable(table))
+        self.bindings.append(
+            (path, .visibleFunctionTable(table))
         )
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath) {
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.enqueuedBindings.append(
-            (key, arrayIndex, .intersectionFunctionTable(table))
+        self.bindings.append(
+            (path, .intersectionFunctionTable(table))
         )
     }
     
     @inlinable
-    public func setSampler(_ sampler: SamplerDescriptor, key: FunctionArgumentKey, arrayIndex: Int = 0) {
-        self.enqueuedBindings.append(
-            (key, arrayIndex, .sampler(sampler))
+    public func setSampler(_ sampler: SamplerDescriptor, at path: ResourceBindingPath) {
+        self.bindings.append(
+            (path, .sampler(sampler))
         )
     }
     
-    public func setValue<T>(_ value: T, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+    public func setValue<T>(_ value: T, at path: ResourceBindingPath) {
         assert(_isPOD(T.self), "Only POD types should be used with setValue.")
         
         var value = value
         withUnsafeBytes(of: &value) { bufferPointer in
-            self.setBytes(bufferPointer.baseAddress!, length: bufferPointer.count, for: key, arrayIndex: arrayIndex)
+            self.setBytes(bufferPointer.baseAddress!, length: bufferPointer.count, at: path)
         }
     }
     
-    public func setValue<T : ResourceProtocol>(_ value: T, key: FunctionArgumentKey, arrayIndex: Int = 0) {
+    public func setValue<T : ResourceProtocol>(_ value: T, at path: ResourceBindingPath) {
         preconditionFailure("setValue should not be used with resources; use setBuffer or setTexture instead.")
     }
     
-    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, for key: FunctionArgumentKey, arrayIndex: Int = 0) {
+    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
         let currentOffset = self._copyBytes(bytes, length: length)
-        self.enqueuedBindings.append(
-            (key, arrayIndex, .bytes(offset: currentOffset, length: length))
+        self.bindings.append(
+            (path, .bytes(offset: currentOffset, length: length))
         )
     }
     
@@ -401,21 +368,21 @@ public struct ArgumentBuffer : ResourceProtocol {
 
 extension ArgumentBuffer {
     
-    public func setBuffers(_ buffers: [Buffer], offsets: [Int], keys: [FunctionArgumentKey]) {
-        for (buffer, (offset, key)) in zip(buffers, zip(offsets, keys)) {
-            self.setBuffer(buffer, offset: offset, key: key)
+    public func setBuffers(_ buffers: [Buffer], offsets: [Int], paths: [ResourceBindingPath]) {
+        for (buffer, (offset, path)) in zip(buffers, zip(offsets, paths)) {
+            self.setBuffer(buffer, offset: offset, at: path)
         }
     }
     
-    public func setTextures(_ textures: [Texture], keys: [FunctionArgumentKey]) {
-        for (texture, key) in zip(textures, keys) {
-            self.setTexture(texture, key: key)
+    public func setTextures(_ textures: [Texture], paths: [ResourceBindingPath]) {
+        for (texture, path) in zip(textures, paths) {
+            self.setTexture(texture, at: path)
         }
     }
     
-    public func setSamplers(_ samplers: [SamplerDescriptor], keys: [FunctionArgumentKey]) {
-        for (sampler, key) in zip(samplers, keys) {
-            self.setSampler(sampler, key: key)
+    public func setSamplers(_ samplers: [SamplerDescriptor], paths: [ResourceBindingPath]) {
+        for (sampler, path) in zip(samplers, paths) {
+            self.setSampler(sampler, at: path)
         }
     }
 }
@@ -437,172 +404,7 @@ extension ArgumentBuffer: ResourceProtocolImpl {
 
 extension ArgumentBuffer: CustomStringConvertible {
     public var description: String {
-        return "ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self.bindings), enqueuedBindings: \(self.enqueuedBindings), flags: \(self.flags) }"
-    }
-}
-
-public struct TypedArgumentBuffer<K : FunctionArgumentKey> : ResourceProtocol {
-    public let argumentBuffer : ArgumentBuffer
-    
-    public init?(_ resource: Resource) {
-        guard let argumentBuffer = ArgumentBuffer(resource) else { return nil }
-        self.argumentBuffer = argumentBuffer
-    }
-    
-    public init(_ argumentBuffer: ArgumentBuffer) {
-        self.argumentBuffer = argumentBuffer
-    }
-    
-    public init(handle: Handle) {
-        self.argumentBuffer = ArgumentBuffer(handle: handle)
-    }
-    
-    public init(descriptor: ArgumentBufferDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
-        self.argumentBuffer = ArgumentBuffer(descriptor: descriptor, renderGraph: renderGraph, flags: flags)
-#if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
-        self.argumentBuffer.label = "Argument Buffer \(K.self)"
-#endif
-    }
-    
-    public func dispose() {
-        self.argumentBuffer.dispose()
-    }
-    
-    @inlinable
-    public var handle: Resource.Handle {
-        return self.argumentBuffer.handle
-    }
-    
-    public var stateFlags: ResourceStateFlags {
-        get {
-            return self.argumentBuffer.stateFlags
-        }
-        nonmutating set {
-            self.argumentBuffer.stateFlags = newValue
-        }
-    }
-    
-    public var flags : ResourceFlags {
-        return self.argumentBuffer.flags
-    }
-    
-    public var sourceArray : TypedArgumentBufferArray<K>? {
-        return self.argumentBuffer.sourceArray.map { TypedArgumentBufferArray(handle: $0.handle) }
-    }
-    
-    public var isKnownInUse: Bool {
-        return self.argumentBuffer.isKnownInUse
-    }
-    
-    public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
-        self.argumentBuffer.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
-    }
-    
-    public var isValid: Bool {
-        return self.argumentBuffer.isValid
-    }
-    
-    public var label : String? {
-        get {
-            return self.argumentBuffer.label
-        }
-        nonmutating set {
-            self.argumentBuffer.label = newValue
-        }
-    }
-    
-    public var usages: ChunkArray<ResourceUsage> {
-        get {
-            return self.argumentBuffer.usages
-        }
-        nonmutating set {
-            self.argumentBuffer.usages = newValue
-        }
-    }
-    
-    public var resourceForUsageTracking: Resource {
-        return self.argumentBuffer.resourceForUsageTracking
-    }
-    
-    public var storageMode: StorageMode {
-        return self.argumentBuffer.storageMode
-    }
-    
-    public func setBuffer(_ buffer: Buffer?, offset: Int, key: K, arrayIndex: Int = 0) {
-        guard let buffer = buffer else { return }
-        
-        assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.argumentBuffer.enqueuedBindings.append(
-            (key, arrayIndex, .buffer(buffer, offset: offset))
-        )
-    }
-    
-    public func setTexture(_ texture: Texture, key: K, arrayIndex: Int = 0) {
-        assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.argumentBuffer.enqueuedBindings.append(
-            (key, arrayIndex, .texture(texture))
-        )
-    }
-    
-    public func setSampler(_ sampler: SamplerDescriptor, key: K, arrayIndex: Int = 0) {
-        self.argumentBuffer.enqueuedBindings.append(
-            (key, arrayIndex, .sampler(sampler))
-        )
-    }
-
-    public func setValue<T : ResourceProtocol>(_ value: T, key: K, arrayIndex: Int = 0) {
-        assertionFailure("Cannot set a resource with setValue; did you mean to use setTexture or setBuffer?")
-    }
-    
-    public func setValue<T>(_ value: T, key: K, arrayIndex: Int = 0) {
-        assert(_isPOD(T.self), "Only POD types should be used with setValue.")
-        
-        var value = value
-        withUnsafeBytes(of: &value) { bufferPointer in
-            self.setBytes(bufferPointer.baseAddress!, length: bufferPointer.count, for: key, arrayIndex: arrayIndex)
-        }
-    }
-    
-    public func setValue<T : ResourceProtocol>(_ value: T, key: FunctionArgumentKey, arrayIndex: Int = 0) {
-        preconditionFailure("setValue should not be used with resources; use setBuffer or setTexture instead.")
-    }
-    
-    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, for key: K, arrayIndex: Int = 0) {
-        let currentOffset = self.argumentBuffer._copyBytes(bytes, length: length)
-        self.argumentBuffer.enqueuedBindings.append(
-            (key, arrayIndex, .bytes(offset: currentOffset, length: length))
-        )
-    }
-    
-    public static var resourceType: ResourceType {
-        return .argumentBuffer
-    }
-}
-
-extension TypedArgumentBuffer {
-    
-    public func setBuffers(_ buffers: [Buffer], offsets: [Int], keys: [K]) {
-        for (buffer, (offset, key)) in zip(buffers, zip(offsets, keys)) {
-            self.setBuffer(buffer, offset: offset, key: key)
-        }
-    }
-    
-    public func setTextures(_ textures: [Texture], keys: [K]) {
-        for (texture, key) in zip(textures, keys) {
-            self.setTexture(texture, key: key)
-        }
-    }
-    
-    public func setSamplers(_ samplers: [SamplerDescriptor], keys: [K]) {
-        for (sampler, key) in zip(samplers, keys) {
-            self.setSampler(sampler, key: key)
-        }
-    }
-}
-
-extension TypedArgumentBuffer: CustomStringConvertible {
-    public var description: String {
-        return self.argumentBuffer.description
+        return "ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self.bindings), flags: \(self.flags) }"
     }
 }
 
@@ -696,7 +498,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     let descriptors: UnsafeMutablePointer<ArgumentBufferDescriptor>
     let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
     let maxAllocationLengths: UnsafeMutablePointer<Int>
-    let enqueuedBindings : UnsafeMutablePointer<ExpandingBuffer<(FunctionArgumentKey, Int, ArgumentBuffer.ArgumentResource)>>
     let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
     let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray?>
     
@@ -707,7 +508,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.descriptors = .allocate(capacity: capacity)
         self.encoders = .allocate(capacity: capacity)
         self.maxAllocationLengths = .allocate(capacity: capacity)
-        self.enqueuedBindings = .allocate(capacity: capacity)
         self.bindings = .allocate(capacity: capacity)
         self.sourceArrays = .allocate(capacity: capacity)
     }
@@ -717,7 +517,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.descriptors.deallocate()
         self.encoders.deallocate()
         self.maxAllocationLengths.deallocate()
-        self.enqueuedBindings.deallocate()
         self.bindings.deallocate()
         self.sourceArrays.deallocate()
     }
@@ -727,7 +526,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
         self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
-        self.enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.sourceArrays.advanced(by: indexInChunk).initialize(to: nil)
     }
@@ -737,7 +535,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.descriptors.advanced(by: indexInChunk).initialize(to: sourceArray.descriptor)
         self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
-        self.enqueuedBindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
     }
@@ -747,7 +544,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.encoders.advanced(by: index).deinitialize(count: count)
         self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
-        self.enqueuedBindings.advanced(by: index).deinitialize(count: count)
         self.bindings.advanced(by: index).deinitialize(count: count)
         self.sourceArrays.advanced(by: index).deinitialize(count: count)
     }

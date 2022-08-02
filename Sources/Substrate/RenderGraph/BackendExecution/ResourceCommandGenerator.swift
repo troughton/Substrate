@@ -168,12 +168,16 @@ enum PreFrameCommands {
     }
 }
 
-struct BarrierScope: OptionSet {
-    let rawValue: Int
+public struct BarrierScope: OptionSet {
+    public let rawValue: Int
     
-    static let buffers: BarrierScope = BarrierScope(rawValue: 1 << 0)
-    static let textures: BarrierScope = BarrierScope(rawValue: 1 << 1)
-    static let renderTargets: BarrierScope = BarrierScope(rawValue: 1 << 2)
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+    
+    public static let buffers: BarrierScope = BarrierScope(rawValue: 1 << 0)
+    public static let textures: BarrierScope = BarrierScope(rawValue: 1 << 1)
+    public static let renderTargets: BarrierScope = BarrierScope(rawValue: 1 << 2)
 }
 
 enum FrameResourceCommands {

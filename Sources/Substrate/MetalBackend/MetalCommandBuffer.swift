@@ -67,6 +67,8 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     func encodeCommands(encoderIndex: Int) async {
         let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
         
+        var resourceCommandIndex = 0
+        
         switch encoderInfo.type {
         case .draw:
             let renderTargetsDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
@@ -78,63 +80,75 @@ final class MetalCommandBuffer: BackendCommandBuffer {
                 return
             }
             
-            let renderEncoder : FGMTLRenderCommandEncoder = /* MetalEncoderManager.useParallelEncoding ? FGMTLParallelRenderCommandEncoder(encoder: commandBuffer.makeParallelRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor) : */ FGMTLThreadRenderCommandEncoder(encoder: commandBuffer.makeRenderCommandEncoder(descriptor: mtlDescriptor)!, renderPassDescriptor: mtlDescriptor, isAppleSiliconGPU: backend.isAppleSiliconGPU)
+            let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: mtlDescriptor)!
             
         #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
-            renderEncoder.encoder.label = encoderInfo.name
+            renderEncoder.label = encoderInfo.name
         #endif
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                await passRecord.pass.execute(renderCommandEncoder: RenderCommandEncoder(commandRecorder: <#T##RenderGraphCommandRecorder#>, renderPass: passRecord.pass, passRecord: <#T##RenderPassRecord#>))
+                renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                await renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: renderTargetsDescriptor.descriptor, passRenderTarget: (passRecord.pass as! ProxyDrawRenderPass).renderTargetsDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                await (passRecord.pass as! DrawRenderPass).execute(renderCommandEncoder: MetalRenderCommandEncoder(passRecord: passRecord, encoder: renderEncoder, resourceMap: self.resourceMap))
+                
+                renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
             }
             renderEncoder.endEncoding()
             
         case .compute:
             let dispatchType: MTLDispatchType = MTLResourceOptions.substrateTrackedHazards != .hazardTrackingModeUntracked ? .serial : .concurrent
-            let mtlComputeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: dispatchType
-            )!
-            let computeEncoder = FGMTLComputeCommandEncoder(encoder: mtlComputeEncoder, isAppleSiliconGPU: backend.isAppleSiliconGPU)
+            let computeEncoder = commandBuffer.makeComputeCommandEncoder(dispatchType: dispatchType)!
             
         #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
-            computeEncoder.encoder.label = encoderInfo.name
+            computeEncoder.label = encoderInfo.name
         #endif
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                await computeEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                computeEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                
+                await (passRecord.pass as! ComputeRenderPass).execute(computeCommandEncoder: MetalComputeCommandEncoder(passRecord: passRecord, encoder: computeEncoder, resourceMap: self.resourceMap))
+                
+                
+                computeEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
             }
             computeEncoder.endEncoding()
             
         case .blit:
-            let blitEncoder = FGMTLBlitCommandEncoder(encoder: commandBuffer.makeBlitCommandEncoder()!, isAppleSiliconGPU: backend.isAppleSiliconGPU)
+            let blitEncoder = commandBuffer.makeBlitCommandEncoder()!
             
         #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
-            blitEncoder.encoder.label = encoderInfo.name
+            blitEncoder.label = encoderInfo.name
         #endif
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                await blitEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                blitEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                
+                await (passRecord.pass as! BlitRenderPass).execute(blitCommandEncoder: MetalBlitCommandEncoder(passRecord: passRecord, encoder: blitEncoder, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU))
+                
+                
+                blitEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
             }
             blitEncoder.endEncoding()
             
         case .external:
-            let commandEncoder = FGMTLExternalCommandEncoder(commandBuffer: self.commandBuffer)
-            
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                await commandEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                await (passRecord.pass as! ExternalRenderPass).execute(externalCommandEncoder: MetalExternalCommandEncoder(commandBuffer: self.commandBuffer, passRecord: passRecord))
             }
             
         case .accelerationStructure:
             if #available(macOS 11.0, iOS 14.0, *) {
-                let accelerationStructureEncoder = FGMTLAccelerationStructureCommandEncoder(encoder: commandBuffer.makeAccelerationStructureCommandEncoder()!, isAppleSiliconGPU: backend.isAppleSiliconGPU)
+                let accelerationStructureEncoder = commandBuffer.makeAccelerationStructureCommandEncoder()!
                 
                 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
-                accelerationStructureEncoder.encoder.label = encoderInfo.name
+                accelerationStructureEncoder.label = encoderInfo.name
                 #endif
                 
                 for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                    await accelerationStructureEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                    accelerationStructureEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                    
+                    (passRecord.pass as! AccelerationStructureRenderPass).execute(accelerationStructureCommandEncoder: MetalAccelerationStructureCommandEncoder(passRecord: passRecord, encoder: accelerationStructureEncoder, resourceMap: self.resourceMap))
+                    
+                    accelerationStructureEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 }
                 accelerationStructureEncoder.endEncoding()
             } else {

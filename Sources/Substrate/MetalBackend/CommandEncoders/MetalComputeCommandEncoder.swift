@@ -5,6 +5,7 @@
 //  Created by Thomas Roughton on 6/07/22.
 //
 
+#if canImport(Metal)
 import Foundation
 import Metal
 
@@ -14,9 +15,10 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
     
     private var baseBufferOffsets = [Int](repeating: 0, count: 31) // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     
-    init(encoder: MTLComputeCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>) {
+    init(passRecord: RenderPassRecord, encoder: MTLComputeCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>) {
         self.encoder = encoder
         self.resourceMap = resourceMap
+        super.init(renderPass: passRecord.pass as! ComputeRenderPass, passRecord: passRecord)
     }
     
     override func setLabel(_ label: String) {
@@ -31,12 +33,12 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
         encoder.insertDebugSignpost(string)
     }
     
-    override func setBytes(_ bytes: UnsafeRawPointer, length: Int, path: ResourceBindingPath) {
+    override func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
         let index = path.index
         encoder.setBytes(bytes, length: length, index: index)
     }
     
-    override func setBuffer(_ buffer: Buffer?, offset: Int, path: ResourceBindingPath) {
+    override func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
         guard let buffer = buffer,
               let mtlBufferRef = resourceMap[buffer] else { return }
         let index = path.index
@@ -44,19 +46,19 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
         self.baseBufferOffsets[index] = mtlBufferRef.offset
     }
     
-    override func setBufferOffset(_ offset: Int, path: ResourceBindingPath) {
+    override func setBufferOffset(_ offset: Int, at path: ResourceBindingPath) {
         let index = path.index
         encoder.setBufferOffset(self.baseBufferOffsets[index] + offset, index: index)
     }
     
-    override func setTexture(_ texture: Texture?, path: ResourceBindingPath) {
+    override func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
         guard let texture = texture,
               let mtlTexture = self.resourceMap[texture] else { return }
         let index = path.index
         encoder.setTexture(mtlTexture.texture, index: index)
     }
     
-    override func setSamplerState(_ state: SamplerState?, path: ResourceBindingPath) {
+    override func setSamplerState(_ state: SamplerState?, at path: ResourceBindingPath) {
         guard let state = state else { return }
         
         let index = path.index
@@ -66,7 +68,7 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    override func setVisibleFunctionTable(_ table: VisibleFunctionTable?, path: ResourceBindingPath) {
+    override func setVisibleFunctionTable(_ table: VisibleFunctionTable?, at path: ResourceBindingPath) {
         guard let table = table,
               let mtlTable = self.resourceMap[table] else { return }
         let index = path.index
@@ -74,7 +76,7 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    override func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, path: ResourceBindingPath) {
+    override func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, at path: ResourceBindingPath) {
         guard let table = table,
               let mtlTable = self.resourceMap[table] else { return }
         let index = path.index
@@ -82,7 +84,7 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    override func setAccelerationStructure(_ structure: AccelerationStructure?, path: ResourceBindingPath) {
+    override func setAccelerationStructure(_ structure: AccelerationStructure?, at path: ResourceBindingPath) {
         guard let structure = structure,
               let mtlStructure = self.resourceMap[structure] as! MTLAccelerationStructure? else { return }
         let index = path.index
@@ -95,7 +97,7 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
         }
     }
     
-    override func setThreadgroupMemoryLength(_ length: Int, path: ResourceBindingPath) {
+    override func setThreadgroupMemoryLength(_ length: Int, at path: ResourceBindingPath) {
         let index = path.index
         encoder.setThreadgroupMemoryLength(length, index: index)
     }
@@ -115,7 +117,7 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
         encoder.dispatchThreadgroups(indirectBuffer: mtlBuffer.buffer, indirectBufferOffset: mtlBuffer.offset + indirectBufferOffset, threadsPerThreadgroup: MTLSize(threadsPerThreadgroup))
     }
     
-    override func useResource(_ resource: Resource, usage: ResourceUsageType, ) {
+    override func useResource(_ resource: Resource, usage: ResourceUsageType) {
         encoder.useResource(resourceMap[resource], usage: MTLResourceUsage(usage))
     }
     
@@ -132,3 +134,37 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoder {
         encoder.memoryBarrier(resources: mtlResources)
     }
 }
+
+
+extension MTLComputeCommandEncoder {
+    func executeResourceCommands(resourceCommandIndex: inout Int, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], passIndex: Int, order: PerformOrder, isAppleSiliconGPU: Bool) {
+        while resourceCommandIndex < resourceCommands.count {
+            let command = resourceCommands[resourceCommandIndex]
+            
+            guard command.index < passIndex || (command.index == passIndex && command.order == order) else {
+                break
+            }
+            
+            switch command.command {
+            case .resourceMemoryBarrier(let resources, _, _):
+                self.__memoryBarrier(resources: resources.baseAddress!, count: resources.count)
+
+            case .scopedMemoryBarrier(let scope, _, _):
+                self.memoryBarrier(scope: scope)
+                
+            case .updateFence(let fence, _):
+                self.updateFence(fence.fence)
+                
+            case .waitForFence(let fence, _):
+                self.waitForFence(fence.fence)
+                
+            case .useResources(let resources, let usage, _):
+                self.__use(resources.baseAddress!, count: resources.count, usage: usage)
+            }
+            
+            resourceCommandIndex += 1
+        }
+    }
+}
+
+#endif // canImport(Metal)

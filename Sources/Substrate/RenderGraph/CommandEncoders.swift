@@ -184,38 +184,38 @@ public class ResourceBindingEncoder : CommandEncoder {
         
     }
     
-    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, path: ResourceBindingPath) {
+    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func setBuffer(_ buffer: Buffer?, offset: Int, path: ResourceBindingPath) {
+    public func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func setBufferOffset(_ offset: Int, path: ResourceBindingPath) {
+    public func setBufferOffset(_ offset: Int, at path: ResourceBindingPath) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func setTexture(_ texture: Texture?, path: ResourceBindingPath) {
+    public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func setSamplerState(_ state: SamplerState?, path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
-    }
-    
-    @available(macOS 12.0, iOS 15.0, *)
-    public func setVisibleFunctionTable(_ table: VisibleFunctionTable?, path: ResourceBindingPath) {
+    public func setSamplerState(_ state: SamplerState?, at path: ResourceBindingPath) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, path: ResourceBindingPath) {
+    public func setVisibleFunctionTable(_ table: VisibleFunctionTable?, at path: ResourceBindingPath) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    public func setAccelerationStructure(_ structure: AccelerationStructure?, path: ResourceBindingPath) {
+    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, at path: ResourceBindingPath) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    @available(macOS 12.0, iOS 15.0, *)
+    public func setAccelerationStructure(_ structure: AccelerationStructure?, at path: ResourceBindingPath) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
@@ -256,24 +256,14 @@ public class ResourceBindingEncoder : CommandEncoder {
     
     /// Bind `argumentBuffer` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
     /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
-    public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
-        guard let argumentBuffer = argumentBuffer?.argumentBuffer else { return }
-        self.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
+    public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
+        preconditionFailure("\(#function) needs concrete implementation")
     }
     
     /// Bind `argumentBufferArray` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
     /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
-    public func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
-        guard let argumentBufferArray = argumentBufferArray?.argumentBufferArray else { return }
-        self.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
-    }
-    
-    public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, key: FunctionArgumentKey) {
-        self.setArgumentBuffer(argumentBuffer?.argumentBuffer, key: key)
-    }
-    
-    public func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, key: FunctionArgumentKey, assumeConsistentUsage: Bool = false) {
-        self.setArgumentBufferArray(argumentBufferArray?.argumentBufferArray, key: key, assumeConsistentUsage: assumeConsistentUsage)
+    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages) {
+        preconditionFailure("\(#function) needs concrete implementation")
     }
     
     @usableFromInline func endEncoding() {
@@ -296,15 +286,15 @@ extension ResourceBindingEncoder {
         
         var value = value
         withUnsafeBytes(of: &value) { bytes in
-            self.setBytes(bytes.baseAddress!, length: bytes.count, path: path)
+            self.setBytes(bytes.baseAddress!, length: bytes.count, at: path)
         }
     }
 }
 
 public protocol AnyRenderCommandEncoder {
-    func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, at index: Int, stages: RenderStages)
+    func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages)
     
-    func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool)
+    func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages)
     
     func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int)
     
@@ -471,6 +461,46 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         }
     }
     
+    public func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, indirectBuffer: Buffer, indirectBufferOffset: Int) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    
+    @available(macOS 13.0, iOS 16.0, *)
+    public func drawMeshThreadgroups(_ threadgroupsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    @available(macOS 13.0, iOS 16.0, *)
+    public func drawMeshThreads(_ threadsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    @available(macOS 13.0, iOS 16.0, *)
+    public func drawMeshThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func dispatchThreadsPerTile(_ threadsPerTile: Size) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func useHeap(_ heap: Heap, stages: RenderStages) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
     @usableFromInline override func endEncoding() {
         // Reset any dynamic state to the defaults.
         let renderTargetSize = self.drawRenderPass.renderTargetsDescriptor.size
@@ -584,6 +614,26 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
     }
+    
+    public func drawMeshThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func useResource(_ resource: Resource, usage: ResourceUsageType) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func useHeap(_ heap: Heap) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func memoryBarrier(scope: BarrierScope) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
+    
+    public func memoryBarrier(resources: [Resource]) {
+        preconditionFailure("\(#function) needs concrete implementation")
+    }
 }
 
 public class BlitCommandEncoder : CommandEncoder {
@@ -667,7 +717,7 @@ public class BlitCommandEncoder : CommandEncoder {
     }
 }
 
-public final class ExternalCommandEncoder : CommandEncoder {
+public class ExternalCommandEncoder : CommandEncoder {
     @usableFromInline let passRecord: RenderPassRecord
     let externalRenderPass : ExternalRenderPass
     
@@ -710,7 +760,7 @@ public final class ExternalCommandEncoder : CommandEncoder {
         
     }
     
-    func encodeCommand(_ command: @escaping (_ commandBuffer: UnsafeRawPointer) -> Void) {
+    func encodeCommand(_ command: (_ commandBuffer: UnsafeRawPointer) -> Void) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
@@ -743,14 +793,11 @@ public final class ExternalCommandEncoder : CommandEncoder {
 public class AccelerationStructureCommandEncoder : CommandEncoder {
     
     @usableFromInline let passRecord: RenderPassRecord
-    @usableFromInline let startCommandIndex: Int
     let accelerationStructureRenderPass : AccelerationStructureRenderPass
     
     init(accelerationStructureRenderPass: AccelerationStructureRenderPass, passRecord: RenderPassRecord) {
-        self.commandRecorder = commandRecorder
         self.accelerationStructureRenderPass = accelerationStructureRenderPass
         self.passRecord = passRecord
-        self.startCommandIndex = self.commandRecorder.nextCommandIndex
         
         assert(passRecord.pass === renderPass)
         
@@ -763,7 +810,7 @@ public class AccelerationStructureCommandEncoder : CommandEncoder {
     
     public var label : String = "" {
         didSet {
-            commandRecorder.setLabel(label)
+            self.setLabel(label)
         }
     }
     

@@ -123,7 +123,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
             withUnsafeBytes(of: oldValue, { oldValue in
                 withUnsafeBytes(of: self._pushConstants, { pushConstants in
                     if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) != 0 {
-                        self.encoder.setBytes(pushConstants.baseAddress!, length: pushConstants.count, path: RenderBackend.pushConstantPath)
+                        self.encoder.setBytes(pushConstants.baseAddress!, length: pushConstants.count, at: RenderBackend.pushConstantPath)
                         hasSetPushConstants = true
                     }
                 })
@@ -259,40 +259,32 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.encoder.insertDebugSignpost(string)
     }
     
-    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, key: FunctionArgumentKey) {
-        self.encoder.setBytes(bytes, length: length, key: key)
+    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
+        self.encoder.setBytes(bytes, length: length, at: path)
     }
     
-    public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey) {
-        self.encoder.setBuffer(buffer, offset: offset, key: key)
+    public func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
+        self.encoder.setBuffer(buffer, offset: offset, at: path)
     }
     
-    public func setBufferOffset(_ offset: Int, key: FunctionArgumentKey) {
-        self.encoder.setBufferOffset(offset, key: key)
+    public func setBufferOffset(_ offset: Int, at path: ResourceBindingPath) {
+        self.encoder.setBufferOffset(offset, at: path)
     }
     
-    public func setSampler(_ descriptor: SamplerDescriptor?, key: FunctionArgumentKey) {
-        self.encoder.setSampler(descriptor, key: key)
+    public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) {
+        self.encoder.setSampler(descriptor, at: path)
     }
     
-    public func setTexture(_ texture: Texture?, key: FunctionArgumentKey) {
-        self.encoder.setTexture(texture, key: key)
+    public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
+        self.encoder.setTexture(texture, at: path)
     }
     
     public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
         self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
     }
     
-    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
-        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
-    }
-    
-    public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
-        self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
-    }
-    
-    public func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
-        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
+    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages) {
+        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages)
     }
     
     public func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int) {
@@ -364,7 +356,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
             withUnsafeBytes(of: oldValue, { oldValue in
                 withUnsafeBytes(of: self.pushConstants, { pushConstants in
                     if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) != 0 {
-                        self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, path: RenderBackend.pushConstantPath)
+                        self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, at: RenderBackend.pushConstantPath)
                         hasSetPushConstants = true
                     }
                 })
@@ -518,24 +510,24 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         self.encoder.setThreadgroupMemoryLength(length, index: index)
     }
     
-    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, key: FunctionArgumentKey) {
-        self.encoder.setBytes(bytes, length: length, key: key)
+    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
+        self.encoder.setBytes(bytes, length: length, at: path)
     }
     
-    public func setBuffer(_ buffer: Buffer?, offset: Int, key: FunctionArgumentKey) {
-        self.encoder.setBuffer(buffer, offset: offset, key: key)
+    public func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
+        self.encoder.setBuffer(buffer, offset: offset, at: path)
     }
     
-    public func setBufferOffset(_ offset: Int, key: FunctionArgumentKey) {
-        self.encoder.setBufferOffset(offset, key: key)
+    public func setBufferOffset(_ offset: Int, at path: ResourceBindingPath) {
+        self.encoder.setBufferOffset(offset, at: path)
     }
     
-    public func setSampler(_ descriptor: SamplerDescriptor?, key: FunctionArgumentKey) {
-        self.encoder.setSampler(descriptor, key: key)
+    public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) {
+        self.encoder.setSampler(descriptor, at: path)
     }
     
-    public func setTexture(_ texture: Texture?, key: FunctionArgumentKey) {
-        self.encoder.setTexture(texture, key: key)
+    public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
+        self.encoder.setTexture(texture, at: path)
     }
     
     public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
@@ -543,15 +535,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     }
     
     public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
-        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
-    }
-    
-    public func setArgumentBuffer<K>(_ argumentBuffer: TypedArgumentBuffer<K>?, at index: Int, stages: RenderStages) {
-        self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
-    }
-    
-    public func setArgumentBufferArray<K>(_ argumentBufferArray: TypedArgumentBufferArray<K>?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
-        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages, assumeConsistentUsage: assumeConsistentUsage)
+        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages)
     }
     
     public func dispatchThreads(_ threadsPerGrid: Size, threadsPerThreadgroup: Size) async {
@@ -574,16 +558,6 @@ extension TypedComputeCommandEncoder : CommandEncoder {
     @usableFromInline
     var passRecord: RenderPassRecord {
         return self.encoder.passRecord
-    }
-    
-    @usableFromInline
-    var commandRecorder: RenderGraphCommandRecorder {
-        return self.encoder.commandRecorder
-    }
-    
-    @usableFromInline
-    var startCommandIndex: Int {
-        return self.encoder.startCommandIndex
     }
     
     @usableFromInline

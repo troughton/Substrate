@@ -5,6 +5,7 @@
 //  Created by Thomas Roughton on 6/07/22.
 //
 
+#if canImport(Metal)
 import Foundation
 import Metal
 
@@ -14,9 +15,10 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     
     private var baseBufferOffsets = [Int](repeating: 0, count: 31 * 5) // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     
-    init(encoder: MTLRenderCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>) {
+    init(passRecord: RenderPassRecord, encoder: MTLRenderCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>) {
         self.encoder = encoder
         self.resourceMap = resourceMap
+        super.init(renderPass: passRecord.pass as! DrawRenderPass, passRecord: passRecord)
     }
     
     override func pushDebugGroup(_ string: String) {
@@ -35,7 +37,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         encoder.label = label
     }
     
-    override func setBytes(_ bytes: UnsafeRawPointer, length: Int, path: ResourceBindingPath) {
+    override func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
         let index = path.index
         if path.stages.contains(.vertex) {
             encoder.setVertexBytes(bytes, length: length, index: index)
@@ -55,7 +57,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         encoder.setVertexBufferOffset(offset, index: index)
     }
     
-    override func setBuffer(_ buffer: Buffer?, offset: Int, path: ResourceBindingPath) {
+    override func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
         guard let buffer = buffer,
               let mtlBufferRef = resourceMap[buffer] else { return }
         let index = path.index
@@ -81,7 +83,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func setBufferOffset(_ offset: Int, path: ResourceBindingPath) {
+    override func setBufferOffset(_ offset: Int, at path: ResourceBindingPath) {
         let index = path.index
         if path.stages.contains(.vertex) {
             encoder.setVertexBufferOffset(self.baseBufferOffsets[index] + offset, index: index)
@@ -100,7 +102,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func setTexture(_ texture: Texture?, path: ResourceBindingPath) {
+    override func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
         guard let texture = texture,
               let mtlTexture = self.resourceMap[texture] else { return }
         let index = path.index
@@ -121,7 +123,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func setSamplerState(_ state: SamplerState?, path: ResourceBindingPath) {
+    override func setSamplerState(_ state: SamplerState?, at path: ResourceBindingPath) {
         guard let state = state else { return }
         
         let index = path.index
@@ -145,7 +147,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    override func setVisibleFunctionTable(_ table: VisibleFunctionTable?, path: ResourceBindingPath) {
+    override func setVisibleFunctionTable(_ table: VisibleFunctionTable?, at path: ResourceBindingPath) {
         guard let table = table,
               let mtlTable = self.resourceMap[table] else { return }
         let index = path.index
@@ -161,7 +163,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    override func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, path: ResourceBindingPath) {
+    override func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, at path: ResourceBindingPath) {
         guard let table = table,
               let mtlTable = self.resourceMap[table] else { return }
         let index = path.index
@@ -177,7 +179,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    override func setAccelerationStructure(_ structure: AccelerationStructure?, path: ResourceBindingPath) {
+    override func setAccelerationStructure(_ structure: AccelerationStructure?, at path: ResourceBindingPath) {
         guard let structure = structure,
               let mtlStructure = self.resourceMap[structure] as! MTLAccelerationStructure? else { return }
         let index = path.index
@@ -252,7 +254,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    override func setThreadgroupMemoryLength(_ length: Int, path: ResourceBindingPath) {
+    override func setThreadgroupMemoryLength(_ length: Int, at path: ResourceBindingPath) {
         let index = path.index
         if path.stages.contains(.tile) {
             encoder.setThreadgroupMemoryLength(length, offset: 0, index: index)
@@ -284,13 +286,13 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     
-    override func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, indirectBuffer: Buffer, indirectBufferOffset: Int) {
-        super.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
+    override func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, indirectBuffer: Buffer, indirectBufferOffset: Int) {
+        super.drawIndexedPrimitives(type: primitiveType, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
         
         let mtlIndexBuffer = resourceMap[indexBuffer]!
         let mtlIndirectBuffer = resourceMap[indirectBuffer]!
         
-        encoder.drawIndexedPrimitives(type: MTLPrimitiveType(primitiveType), indexCount: indexCount, indexType: MTLIndexType(indexType), indexBuffer: mtlIndexBuffer.buffer, indexBufferOffset: mtlIndexBuffer.offset + indexBufferOffset, indirectBuffer: mtlIndirectBuffer.buffer, indirectBufferOffset: mtlIndirectBuffer.offset + indirectBufferOffset)
+        encoder.drawIndexedPrimitives(type: MTLPrimitiveType(primitiveType), indexType: MTLIndexType(indexType), indexBuffer: mtlIndexBuffer.buffer, indexBufferOffset: mtlIndexBuffer.offset + indexBufferOffset, indirectBuffer: mtlIndirectBuffer.buffer, indirectBufferOffset: mtlIndirectBuffer.offset + indirectBufferOffset)
     }
     
     
@@ -301,7 +303,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     
     @available(macOS 13.0, iOS 16.0, *)
     override func drawMeshThreads(_ threadsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
-        encoder.drawMeshThreadgroups(MTLSize(threadgroupsPerGrid), threadsPerObjectThreadgroup: MTLSize(threadsPerObjectThreadgroup), threadsPerMeshThreadgroup: MTLSize(threadsPerMeshThreadgroup))
+        encoder.drawMeshThreadgroups(MTLSize(threadsPerGrid), threadsPerObjectThreadgroup: MTLSize(threadsPerObjectThreadgroup), threadsPerMeshThreadgroup: MTLSize(threadsPerMeshThreadgroup))
     }
     
     @available(macOS 13.0, iOS 16.0, *)
@@ -319,7 +321,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     override func useHeap(_ heap: Heap, stages: RenderStages) {
-        encoder.useHeap(resourceMap[heap], stages: MTLRenderStages(stages))
+        encoder.useHeap(resourceMap.persistentRegistry[heap]!, stages: MTLRenderStages(stages))
     }
     
     override func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages) {
@@ -330,9 +332,53 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         let mtlResources = resources.map { resourceMap[$0]! }
         encoder.memoryBarrier(resources: mtlResources, after: MTLRenderStages(after), before: MTLRenderStages(before))
     }
-    
-    override func endEncoding() {
-        super.endEncoding()
-        encoder.endEncoding()
+}
+
+extension MTLRenderCommandEncoder {
+    func executeResourceCommands(resourceCommandIndex: inout Int, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], passIndex: Int, order: PerformOrder, isAppleSiliconGPU: Bool) {
+        while resourceCommandIndex < resourceCommands.count {
+            let command = resourceCommands[resourceCommandIndex]
+            
+            guard command.index < passIndex || (command.index == passIndex && command.order == order) else {
+                break
+            }
+            
+            switch command.command {
+            case .resourceMemoryBarrier(let resources, let afterStages, let beforeStages):
+                #if os(macOS) || targetEnvironment(macCatalyst)
+                if !isAppleSiliconGPU {
+                    self.__memoryBarrier(resources: resources.baseAddress!, count: resources.count, after: afterStages, before: beforeStages)
+                }
+                #else
+                break
+                #endif
+                
+            case .scopedMemoryBarrier(let scope, let afterStages, let beforeStages):
+                #if os(macOS) || targetEnvironment(macCatalyst)
+                if !isAppleSiliconGPU {
+                    self.memoryBarrier(scope: scope, after: afterStages, before: beforeStages)
+                }
+                #else
+                break
+                #endif
+                
+            case .updateFence(let fence, let afterStages):
+                self.updateFence(fence.fence, after: afterStages)
+                
+            case .waitForFence(let fence, let beforeStages):
+                self.waitForFence(fence.fence, before: beforeStages)
+                
+            case .useResources(let resources, let usage, let stages):
+                if #available(iOS 13.0, macOS 10.15, *) {
+                    self.use(resources.baseAddress!, count: resources.count, usage: usage, stages: stages)
+                } else {
+                    self.__use(resources.baseAddress!, count: resources.count, usage: usage)
+                }
+            }
+            
+            resourceCommandIndex += 1
+        }
     }
 }
+
+#endif // canImport(Metal)

@@ -5,6 +5,7 @@
 //  Created by Thomas Roughton on 6/07/22.
 //
 
+#if canImport(Metal)
 import Foundation
 import Metal
 
@@ -13,10 +14,11 @@ final class MetalBlitCommandEncoder: BlitCommandEncoder {
     let resourceMap: FrameResourceMap<MetalBackend>
     let isAppleSiliconGPU: Bool
     
-    init(encoder: MTLBlitCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>, isAppleSiliconGPU: Bool) {
+    init(passRecord: RenderPassRecord, encoder: MTLBlitCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.resourceMap = resourceMap
         self.isAppleSiliconGPU = isAppleSiliconGPU
+        super.init(renderPass: passRecord.pass as! BlitRenderPass, passRecord: passRecord)
     }
     
     override func copy(from sourceBuffer: Buffer, sourceOffset: Int, sourceBytesPerRow: Int, sourceBytesPerImage: Int, sourceSize: Size, to destinationTexture: Texture, destinationSlice: Int, destinationLevel: Int, destinationOrigin: Origin, options: BlitOption = []) {
@@ -77,3 +79,31 @@ final class MetalBlitCommandEncoder: BlitCommandEncoder {
         #endif
     }
 }
+
+extension MTLBlitCommandEncoder {
+    func executeResourceCommands(resourceCommandIndex: inout Int, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], passIndex: Int, order: PerformOrder, isAppleSiliconGPU: Bool) {
+        while resourceCommandIndex < resourceCommands.count {
+            let command = resourceCommands[resourceCommandIndex]
+            
+            guard command.index < passIndex || (command.index == passIndex && command.order == order) else {
+                break
+            }
+            
+            switch command.command {
+            case .resourceMemoryBarrier, .scopedMemoryBarrier, .useResources:
+                break
+                
+            case .updateFence(let fence, _):
+                self.updateFence(fence.fence)
+                
+            case .waitForFence(let fence, _):
+                self.waitForFence(fence.fence)
+            }
+            
+            resourceCommandIndex += 1
+        }
+    }
+}
+
+#endif // canImport(Metal)
+
