@@ -58,7 +58,7 @@ final class FGMTLParallelRenderCommandEncoder {
             let encoder = self.parallelEncoder.makeRenderCommandEncoder()!
             let fgEncoder = FGMTLThreadRenderCommandEncoder(encoder: encoder, renderPassDescriptor: renderPassDescriptor, isAppleSiliconGPU: self.isAppleSiliconGPU)
             
-            let task = detach {
+            let task = Task.detached {
                 await fgEncoder.executePass(pass, resourceCommands: resourceCommands, renderTarget: renderTarget, passRenderTarget: passRenderTarget, resourceMap: resourceMap, stateCaches: stateCaches)
                 fgEncoder.endEncoding()
             }
@@ -71,7 +71,7 @@ final class FGMTLParallelRenderCommandEncoder {
         self.currentEncoder?.endEncoding()
         
         for task in self.pendingTasks {
-            await task.get()
+            _ = await task.value
         }
         self.parallelEncoder.endEncoding()
     }
@@ -434,10 +434,10 @@ final class FGMTLThreadRenderCommandEncoder {
                 #endif
                 
             case .updateFence(let fence, let afterStages):
-                await self.updateFence(fence.fence, afterStages: afterStages)
+                self.updateFence(fence.fence, afterStages: afterStages)
                 
             case .waitForFence(let fence, let beforeStages):
-                await self.waitForFence(fence.fence, beforeStages: beforeStages)
+                self.waitForFence(fence.fence, beforeStages: beforeStages)
                 
             case .useResources(let resources, let usage, let stages):
                 if #available(iOS 13.0, macOS 10.15, *) {
@@ -642,10 +642,10 @@ final class FGMTLComputeCommandEncoder {
                 encoder.memoryBarrier(scope: scope)
                 
             case .updateFence(let fence, _):
-                await encoder.updateFence(fence.fence)
+                encoder.updateFence(fence.fence)
                 
             case .waitForFence(let fence, _):
-                await encoder.waitForFence(fence.fence)
+                encoder.waitForFence(fence.fence)
                 
             case .useResources(let resources, let usage, _):
                 encoder.__use(resources.baseAddress!, count: resources.count, usage: usage)
@@ -761,10 +761,10 @@ final class FGMTLBlitCommandEncoder {
                 break
                 
             case .updateFence(let fence, _):
-                await encoder.updateFence(fence.fence)
+                encoder.updateFence(fence.fence)
                 
             case .waitForFence(let fence, _):
-                await encoder.waitForFence(fence.fence)
+                encoder.waitForFence(fence.fence)
             }
             
         }
@@ -908,10 +908,10 @@ final class FGMTLAccelerationStructureCommandEncoder {
                 encoder.__use(resources.baseAddress!, count: resources.count, usage: usage)
                 
             case .updateFence(let fence, _):
-                await encoder.updateFence(fence.fence)
+                encoder.updateFence(fence.fence)
                 
             case .waitForFence(let fence, _):
-                await encoder.waitForFence(fence.fence)
+                encoder.waitForFence(fence.fence)
             }
             
         }
