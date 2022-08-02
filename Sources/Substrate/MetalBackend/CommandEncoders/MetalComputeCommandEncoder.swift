@@ -54,21 +54,6 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoderImpl {
         self.baseBufferOffsets[bindIndex] = bufferStorage.offset
     }
     
-    func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, at index: Int, stages: RenderStages) {
-        if !argumentBufferArray.flags.contains(.persistent) {
-            _ = resourceMap.transientRegistry!.allocateArgumentBufferArrayIfNeeded(argumentBufferArray)
-        }
-            
-        let bufferStorage = resourceMap[argumentBufferArray]
-        if !argumentBufferArray._bindings.contains(where: { !($0?.stateFlags ?? .initialised).contains(.initialised) }) {
-            argumentBufferArray.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
-        }
-        
-        let bindIndex = index + 1 // since buffer 0 is push constants
-        encoder.setBuffer(bufferStorage.buffer, offset: bufferStorage.offset, index: bindIndex)
-        self.baseBufferOffsets[bindIndex] = bufferStorage.offset
-    }
-    
     func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
         let index = path.index
         encoder.setBytes(bytes, length: length, index: index)

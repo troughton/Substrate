@@ -74,7 +74,6 @@ final class MetalBackend : SpecificRenderBackend {
     typealias BufferReference = MTLBufferReference
     typealias TextureReference = MTLTextureReference
     typealias ArgumentBufferReference = MTLBufferReference
-    typealias ArgumentBufferArrayReference = MTLBufferReference
     typealias VisibleFunctionTableReference = MTLVisibleFunctionTableReference
     typealias IntersectionFunctionTableReference = MTLIntersectionFunctionTableReference
     typealias SamplerReference = MTLSamplerState
@@ -394,10 +393,6 @@ final class MetalBackend : SpecificRenderBackend {
     
     static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {
         await argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
-    }
-    
-    static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {
-        await argumentBufferArray.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
     func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: MTLVisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {

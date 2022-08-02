@@ -98,21 +98,6 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
         self.setBuffer(bufferStorage, offset: 0, at: bindIndex, stages: MTLRenderStages(stages))
     }
     
-    func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, at index: Int, stages: RenderStages) {
-        if !argumentBufferArray.flags.contains(.persistent) {
-            _ = resourceMap.transientRegistry!.allocateArgumentBufferArrayIfNeeded(argumentBufferArray)
-        }
-            
-        let bufferStorage = resourceMap[argumentBufferArray]
-        
-        if !argumentBufferArray._bindings.contains(where: { !($0?.stateFlags ?? .initialised).contains(.initialised) }) {
-            argumentBufferArray.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
-        }
-        
-        let bindIndex = index + 1 // since buffer 0 is push constants
-        self.setBuffer(bufferStorage, offset: 0, at: bindIndex, stages: MTLRenderStages(stages))
-    }
-    
     func setBuffer(_ mtlBufferRef: MTLBufferReference, offset: Int, at index: Int, stages: MTLRenderStages) {
         if stages.contains(.vertex) {
             encoder.setVertexBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: index)

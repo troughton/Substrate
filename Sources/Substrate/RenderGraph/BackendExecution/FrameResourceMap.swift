@@ -34,14 +34,6 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
-    subscript(buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference {
-        if buffer._usesPersistentRegistry {
-            return persistentRegistry[buffer]!
-        } else {
-            return transientRegistry![buffer]!
-        }
-    }
-    
     subscript(resource: Resource) -> Backend.ResourceReference? {
         if resource._usesPersistentRegistry {
             return persistentRegistry[resource]

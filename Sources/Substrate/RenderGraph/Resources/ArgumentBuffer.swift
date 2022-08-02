@@ -44,9 +44,6 @@ public protocol ArgumentBufferEncodable {
 @available(*, deprecated, renamed: "ArgumentBuffer")
 public typealias _ArgumentBuffer = ArgumentBuffer
 
-@available(*, deprecated, renamed: "ArgumentBuffer")
-public typealias _ArgumentBufferArray = ArgumentBufferArray
-
 public struct ArgumentDescriptor: Hashable, Sendable {
     public enum ArgumentResourceType: Hashable, Sendable {
         case inlineData(type: DataType)
@@ -196,27 +193,10 @@ public struct ArgumentBuffer : ResourceProtocol {
         await arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
     }
     
-    init(flags: ResourceFlags = [], sourceArray: ArgumentBufferArray) {
-        if flags.contains(.persistent) {
-            self = PersistentArgumentBufferRegistry.instance.allocate(flags: flags, sourceArray: sourceArray)
-        } else {
-            self = TransientArgumentBufferRegistry.instances[sourceArray.transientRegistryIndex].allocate(flags: flags, sourceArray: sourceArray)
-        }
-        
-        assert(self.encoder == nil)
-    }
-    
     public var descriptor: ArgumentBufferDescriptor {
         _read {
             yield self.pointer(for: \.descriptors).pointee
         }
-    }
-    
-    public var sourceArray : ArgumentBufferArray? {
-        if self.flags.contains(.resourceView) {
-            return self[\.sourceArrays]
-        }
-        return nil
     }
     
     public var stateFlags: ResourceStateFlags {
@@ -431,29 +411,12 @@ final class TransientArgumentBufferRegistry: TransientChunkRegistry<ArgumentBuff
     override class var maxChunks: Int { 2048 }
     
     let inlineDataAllocator : ExpandingBuffer<UInt8> = .init()
-    
-    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> ArgumentBuffer {
-        let resource = self.allocateHandle(flags: flags)
-        let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: ArgumentBuffer.itemsPerChunk)
-        self.sharedPropertyChunks?[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
-        self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
-        return resource
-    }
 }
 
 final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer> {
     static let instance = PersistentArgumentBufferRegistry()
     
     override class var maxChunks: Int { 256 }
-    
-    func allocate(flags: ResourceFlags, sourceArray: ArgumentBufferArray) -> ArgumentBuffer {
-        let handle = self.allocateHandle(flags: flags)
-        let (chunkIndex, indexInChunk) = handle.index.quotientAndRemainder(dividingBy: ArgumentBuffer.itemsPerChunk)
-        self.sharedChunks?[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
-        self.persistentChunks?[chunkIndex].initialize(index: indexInChunk, sourceArray: sourceArray)
-        self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
-        return handle
-    }
 }
 
 struct ArgumentBufferProperties: SharedResourceProperties {
@@ -491,7 +454,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
             self.activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
         }
         
-        func initialize(index indexInChunk: Int, sourceArray: ArgumentBufferArray) {
+        func initialize(index indexInChunk: Int) {
             self.inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
             self.heaps.advanced(by: indexInChunk).initialize(to: nil)
             self.readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
@@ -515,7 +478,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     let stateFlags: UnsafeMutablePointer<ResourceStateFlags>
     let maxAllocationLengths: UnsafeMutablePointer<Int>
     let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
-    let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray?>
     
     typealias Descriptor = ArgumentBufferDescriptor
     
@@ -526,7 +488,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.stateFlags = .allocate(capacity: capacity)
         self.maxAllocationLengths = .allocate(capacity: capacity)
         self.bindings = .allocate(capacity: capacity)
-        self.sourceArrays = .allocate(capacity: capacity)
     }
     
     func deallocate() {
@@ -536,7 +497,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.stateFlags.deallocate()
         self.maxAllocationLengths.deallocate()
         self.bindings.deallocate()
-        self.sourceArrays.deallocate()
     }
     
     func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
@@ -546,17 +506,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-        self.sourceArrays.advanced(by: indexInChunk).initialize(to: nil)
-    }
-    
-    func initialize(index indexInChunk: Int, sourceArray: ArgumentBufferArray) {
-        self.usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
-        self.descriptors.advanced(by: indexInChunk).initialize(to: sourceArray.descriptor)
-        self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
-        self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
-        self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
-        self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
-        self.sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
     }
     
     func deinitialize(from index: Int, count: Int) {
@@ -566,7 +515,6 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.stateFlags.advanced(by: index).deinitialize(count: count)
         self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
         self.bindings.advanced(by: index).deinitialize(count: count)
-        self.sourceArrays.advanced(by: index).deinitialize(count: count)
     }
     
     var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }

@@ -283,10 +283,6 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
     }
     
-    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages) {
-        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages)
-    }
-    
     public func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int) {
        self.encoder.setVertexBuffer(buffer, offset: offset, index: index)
     }
@@ -552,10 +548,6 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     
     public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
         self.encoder.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
-    }
-    
-    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages, assumeConsistentUsage: Bool = false) {
-        self.encoder.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages)
     }
     
     public func dispatchThreads(_ threadsPerGrid: Size, threadsPerThreadgroup: Size) async {

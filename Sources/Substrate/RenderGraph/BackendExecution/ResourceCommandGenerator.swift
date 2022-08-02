@@ -44,7 +44,6 @@ enum PreFrameCommands {
     case materialiseTexture(Texture)
     case materialiseTextureView(Texture)
     case materialiseArgumentBuffer(ArgumentBuffer)
-    case materialiseArgumentBufferArray(ArgumentBufferArray)
     case materialiseVisibleFunctionTable(VisibleFunctionTable)
     case materialiseIntersectionFunctionTable(IntersectionFunctionTable)
     case disposeResource(Resource, afterStages: RenderStages)
@@ -61,7 +60,7 @@ enum PreFrameCommands {
             return 0
         case .materialiseTextureView:
             return 1
-        case .materialiseArgumentBuffer, .materialiseArgumentBufferArray:
+        case .materialiseArgumentBuffer:
             return 2
         case .disposeResource, .waitForHeapAliasingFences, .waitForCommandBuffer, .updateCommandBufferWaitIndex:
             return 3
@@ -107,18 +106,6 @@ enum PreFrameCommands {
             }
             await Backend.fillArgumentBuffer(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
             
-            
-        case .materialiseArgumentBufferArray(let argumentBuffer):
-            let argBufferReference : Backend.ArgumentBufferArrayReference
-            if argumentBuffer.flags.contains(.persistent) {
-                argBufferReference = await resourceMap.persistentRegistry.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
-                await argumentBuffer.waitForCPUAccess(accessType: .write)
-            } else {
-                argBufferReference = resourceRegistry!.allocateArgumentBufferArrayIfNeeded(argumentBuffer)
-                waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferArrayWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
-            }
-            await Backend.fillArgumentBufferArray(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
-    
         case .materialiseVisibleFunctionTable(let table):
             precondition(table.flags.contains(.persistent))
             
@@ -505,8 +492,6 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     switch resource.type {
                     case .argumentBuffer:
                         command = .materialiseArgumentBuffer(ArgumentBuffer(handle: resource.handle))
-                    case .argumentBufferArray:
-                        command = .materialiseArgumentBufferArray(ArgumentBufferArray(handle: resource.handle))
                     case .visibleFunctionTable:
                         command = .materialiseVisibleFunctionTable(VisibleFunctionTable(handle: resource.handle))
                     case .intersectionFunctionTable:

@@ -19,28 +19,10 @@ extension ArgumentBuffer {
         let destPointer = storage.buffer.contents() + storage.offset
         destPointer.assumingMemoryBound(to: UInt8.self).assign(repeating: 0, count: min(self.maximumAllocationLength, argEncoder.encoder.encodedLength))
         
-        argEncoder.encoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
+        argEncoder.encoder.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: 0)
         argEncoder.encodeArguments(from: self, resourceMap: resourceMap)
         
         self.markAsInitialised()
-    }
-}
-
-extension ArgumentBufferArray {
-    func setArguments(storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
-        var argEncoder : MetalArgumentEncoder? = nil
-        
-        for (i, argumentBuffer) in self._bindings.enumerated() {
-            guard let argumentBuffer = argumentBuffer else { continue }
-            if argumentBuffer.stateFlags.contains(.initialised) { continue }
-            
-            if argEncoder == nil {
-                argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-            }
-            
-            argEncoder!.encoder.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: i)
-            argEncoder!.encodeArguments(from: argumentBuffer, resourceMap: resourceMap)
-        }
     }
 }
 

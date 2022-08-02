@@ -729,24 +729,13 @@ protocol _RenderGraphContext : Actor {
 @usableFromInline enum RenderGraphTagType : UInt64 {
     static let renderGraphTag : UInt64 = 0xf9322463 // CRC-32 of "RenderGraph"
     
-    /// Scratch data that exists only while a render pass is being executed.
-    case renderPassExecution
-    
-    /// Data that exists while the RenderGraph is being compiled.
-    case renderGraphCompilation
-    
     /// Data that exists until the RenderGraph has been executed on the backend.
     case renderGraphExecution
     
     /// Resource usage nodes – exists until the RenderGraph has been executed on the backend.
     case resourceUsageNodes
     
-    public static func renderPassExecutionTag(passIndex: Int) -> TaggedHeap.Tag {
-        return (RenderGraphTagType.renderGraphTag << 32) | (RenderGraphTagType.renderPassExecution.rawValue << 16) | TaggedHeap.Tag(passIndex)
-    }
-    
     public var tag : TaggedHeap.Tag {
-        assert(self != .renderPassExecution)
         let tag = (RenderGraphTagType.renderGraphTag << 32) | (self.rawValue << 16)
         return tag
     }
@@ -793,8 +782,7 @@ public final class RenderGraph {
     ///
     /// - Parameter transientBufferCapacity: The maximum number of transient `Buffer`s that can be used in a single `RenderGraph` submission.
     ///
-    /// - Parameter transientArgumentBufferArrayCapacity: The maximum number of transient `ArgumentBufferArray`s that can be used in a single `RenderGraph` submission.
-    public init(inflightFrameCount: Int, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384, transientArgumentBufferArrayCapacity: Int = 1024) {
+    public init(inflightFrameCount: Int, transientBufferCapacity: Int = 16384, transientTextureCapacity: Int = 16384) {
         // If inflightFrameCount is 0, no transient resources are allowed.
         self.transientRegistryIndex = inflightFrameCount > 0 ? TransientRegistryManager.allocate() : -1
         self.inflightFrameCount = max(inflightFrameCount, 1)
@@ -802,7 +790,6 @@ public final class RenderGraph {
         if self.transientRegistryIndex >= 0 {
             TransientBufferRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientBufferCapacity)
             TransientTextureRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientTextureCapacity)
-            TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientArgumentBufferArrayCapacity)
         }
         
         switch RenderBackend._backend.api {
@@ -1362,9 +1349,6 @@ public final class RenderGraph {
             }
         }
         
-        // Compilation is finished, so reset that tag.
-        TaggedHeap.free(tag: RenderGraphTagType.renderGraphCompilation.tag)
-        
         return (activePasses, activePassDependencies, self.usedResources)
     }
     
@@ -1480,13 +1464,11 @@ public final class RenderGraph {
             TransientBufferRegistry.instances[transientRegistryIndex].clear()
             TransientTextureRegistry.instances[transientRegistryIndex].clear()
             TransientArgumentBufferRegistry.instances[transientRegistryIndex].clear()
-            TransientArgumentBufferArrayRegistry.instances[transientRegistryIndex].clear()
         }
             
         PersistentTextureRegistry.instance.clear(afterRenderGraph: self)
         PersistentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)
-        PersistentArgumentBufferArrayRegistry.instance.clear(afterRenderGraph: self)
         HeapRegistry.instance.clear(afterRenderGraph: self)
         HazardTrackingGroupRegistry.instance.clear(afterRenderGraph: self)
         

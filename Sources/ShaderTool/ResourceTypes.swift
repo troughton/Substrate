@@ -21,8 +21,6 @@ extension ResourceType {
             return "Heap"
         case .argumentBuffer:
             return "ArgumentBuffer"
-        case .argumentBufferArray:
-            return "ArgumentBufferArray"
         default:
             fatalError()
         }

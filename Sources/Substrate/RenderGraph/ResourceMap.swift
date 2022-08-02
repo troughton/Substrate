@@ -246,8 +246,6 @@ public struct TransientResourceMap<R : ResourceProtocol & Equatable, V> {
             self.reserveCapacity(TransientTextureRegistry.instances[self.transientRegistryIndex].capacity)
         case is ArgumentBuffer.Type:
             break
-        case is ArgumentBufferArray.Type:
-            self.reserveCapacity(TransientArgumentBufferArrayRegistry.instances[self.transientRegistryIndex].capacity)
         case is Heap.Type:
             break
         default:
@@ -273,8 +271,6 @@ public struct TransientResourceMap<R : ResourceProtocol & Equatable, V> {
             let count = TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].count
             self.reserveCapacity(count)
             self.count = count
-        case is ArgumentBufferArray.Type:
-            self.count = TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].count
         case is Heap.Type:
             break
         default:

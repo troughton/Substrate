@@ -118,10 +118,6 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        subscript(argumentBufferArray: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? {
-            preconditionFailure()
-        }
-        
         func prepareFrame() {
             preconditionFailure()
         }
@@ -133,11 +129,6 @@ final class UnavailableBackend : SpecificRenderBackend {
         func allocateArgumentBufferIfNeeded(_ buffer: ArgumentBuffer) -> Backend.ArgumentBufferReference {
             preconditionFailure()
         }
-        
-        func allocateArgumentBufferArrayIfNeeded(_ buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference {
-            preconditionFailure()
-        }
-        
         
         func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) async -> Backend.VisibleFunctionTableReference? {
             preconditionFailure()
@@ -193,10 +184,6 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray, waitEvent: ContextWaitEvent) {
-            preconditionFailure()
-        }
-        
         func withHeapAliasingFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout [FenceDependency]) -> Void) {
             preconditionFailure()
         }
@@ -229,10 +216,6 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        subscript(argumentBufferArray: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? {
-            preconditionFailure()
-        }
-        
         func prepareFrame() {
             preconditionFailure()
         }
@@ -245,10 +228,6 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        func allocateArgumentBufferArrayIfNeeded(_ buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference {
-            preconditionFailure()
-        }
-        
         typealias Backend = UnavailableBackend
     }
     
@@ -258,7 +237,6 @@ final class UnavailableBackend : SpecificRenderBackend {
     typealias BufferReference = Void
     typealias TextureReference = Void
     typealias ArgumentBufferReference = Void
-    typealias ArgumentBufferArrayReference = Void
     typealias VisibleFunctionTableReference = Void
     typealias IntersectionFunctionTableReference = Void
     typealias Event = Void
@@ -311,10 +289,6 @@ final class UnavailableBackend : SpecificRenderBackend {
     }
     
     static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<UnavailableBackend>) {
-        preconditionFailure()
-    }
-    
-    static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: ArgumentBufferArrayReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<UnavailableBackend>) {
         preconditionFailure()
     }
     

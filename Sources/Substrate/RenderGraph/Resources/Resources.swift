@@ -15,7 +15,6 @@ public enum ResourceType : UInt8 {
     case sampler
     case threadgroupMemory
     case argumentBuffer
-    case argumentBufferArray
     case imageblockData
     case imageblock
     case visibleFunctionTable
@@ -25,7 +24,7 @@ public enum ResourceType : UInt8 {
     
     public var isMaterialisedOnFirstUse: Bool {
         switch self {
-        case .argumentBuffer, .argumentBufferArray, .visibleFunctionTable, .intersectionFunctionTable:
+        case .argumentBuffer, .visibleFunctionTable, .intersectionFunctionTable:
             return true
         default:
             return false
@@ -558,8 +557,6 @@ public struct Resource : ResourceProtocol, Hashable {
             return perform(Texture(handle: self.handle))
         case .argumentBuffer:
             return perform(ArgumentBuffer(handle: self.handle))
-        case .argumentBufferArray:
-            return perform(ArgumentBufferArray(handle: self.handle))
         case .heap:
             return perform(Heap(handle: self.handle))
         case .accelerationStructure:
@@ -664,8 +661,6 @@ extension Resource: CustomStringConvertible {
             return Texture(handle: self.handle).description
         case .argumentBuffer:
             return ArgumentBuffer(handle: self.handle).description
-        case .argumentBufferArray:
-            return ArgumentBufferArray(handle: self.handle).description
         case .heap:
             return Heap(handle: self.handle).description
         case .accelerationStructure:

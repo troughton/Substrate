@@ -65,7 +65,6 @@ final actor VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     let textureReferences = PersistentResourceMap<Texture, VkImageReference>()
     let bufferReferences = PersistentResourceMap<Buffer, VkBufferReference>()
     let argumentBufferReferences = PersistentResourceMap<ArgumentBuffer, VulkanArgumentBuffer>()
-    let argumentBufferArrayReferences = PersistentResourceMap<ArgumentBufferArray, VulkanArgumentBuffer>()
     
     var samplers = [SamplerDescriptor: VkSampler]()
     
@@ -91,7 +90,6 @@ final actor VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         self.textureReferences.deinit()
         self.bufferReferences.deinit()
         self.argumentBufferReferences.deinit()
-        self.argumentBufferArrayReferences.deinit()
     }
     
     @discardableResult
@@ -171,10 +169,6 @@ final actor VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     
     @discardableResult
     nonisolated func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer {
-        if let baseArray = argumentBuffer.sourceArray {
-            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
-            return self.argumentBufferReferences[argumentBuffer]!
-        }
         if let vkArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
             return vkArgumentBuffer
         }
@@ -189,15 +183,6 @@ final actor VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         self.argumentBufferReferences[argumentBuffer] = buffer
         
         return buffer
-    }
-    
-    @discardableResult
-    nonisolated func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer {
-        if let vkArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
-            return vkArgumentBuffer
-        }
-        
-        fatalError("Unimplemented")
     }
     
     public nonisolated func importExternalResource(_ resource: Resource, backingResource: Any) {
@@ -219,11 +204,7 @@ final actor VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
     public nonisolated subscript(argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer? {
         return self.argumentBufferReferences[argumentBuffer]
     }
-
-    public nonisolated subscript(argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer? {
-        return self.argumentBufferArrayReferences[argumentBufferArray]
-    }
-
+    
     public subscript(sampler: SamplerDescriptor) -> VkSampler {
         get async {
             if let vkSampler = self.samplers[sampler] {
@@ -277,20 +258,12 @@ final actor VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
             
         case .argumentBuffer:
             let buffer = ArgumentBuffer(resource)!
-            assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Vulkan RenderGraph backend.")
             if let vkBuffer = self.argumentBufferReferences.removeValue(forKey: buffer) {
-                assert(buffer.sourceArray == nil, "Persistent argument buffers from an argument buffer array should not be disposed individually; this needs to be fixed within the Metal RenderGraph backend.")
                 
                 // TODO: Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
                 CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(vkBuffer)))
             }
             
-        case .argumentBufferArray:
-            let buffer = ArgumentBufferArray(resource)!
-            if let vkBuffer = self.argumentBufferArrayReferences.removeValue(forKey: buffer) {
-                // TODO: Allow future allocations to alias against this resource, even if it may still be retained by a command buffer.
-                CommandEndActionManager.enqueue(action: .release(Unmanaged.passRetained(vkBuffer)))
-            }
         default:
             preconditionFailure("dispose(resource:): Unhandled resource type \(resource.type)")
         }
@@ -332,7 +305,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     private var textureReferences : TransientResourceMap<Texture, VkImageReference>
     private var bufferReferences : TransientResourceMap<Buffer, VkBufferReference>
     private var argumentBufferReferences : TransientResourceMap<ArgumentBuffer, VulkanArgumentBuffer>
-    private var argumentBufferArrayReferences : TransientResourceMap<ArgumentBufferArray, VulkanArgumentBuffer>
     
     var textureWaitEvents: TransientResourceMap<Texture, ContextWaitEvent>
     var bufferWaitEvents: TransientResourceMap<Buffer, ContextWaitEvent>
@@ -369,7 +341,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.textureReferences = .init(transientRegistryIndex: transientRegistryIndex)
         self.bufferReferences = .init(transientRegistryIndex: transientRegistryIndex)
         self.argumentBufferReferences = .init(transientRegistryIndex: transientRegistryIndex)
-        self.argumentBufferArrayReferences = .init(transientRegistryIndex: transientRegistryIndex)
         
         self.textureWaitEvents = .init(transientRegistryIndex: transientRegistryIndex)
         self.bufferWaitEvents = .init(transientRegistryIndex: transientRegistryIndex)
@@ -393,7 +364,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.textureReferences.deinit()
         self.bufferReferences.deinit()
         self.argumentBufferReferences.deinit()
-        self.argumentBufferArrayReferences.deinit()
         
         self.textureWaitEvents.deinit()
         self.bufferWaitEvents.deinit()
@@ -405,7 +375,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.textureReferences.prepareFrame()
         self.bufferReferences.prepareFrame()
         self.argumentBufferReferences.prepareFrame()
-        self.argumentBufferArrayReferences.prepareFrame()
         
         self.textureWaitEvents.prepareFrame()
         self.bufferWaitEvents.prepareFrame()
@@ -636,10 +605,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     
     @discardableResult
     func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> VulkanArgumentBuffer {
-        if let baseArray = argumentBuffer.sourceArray {
-            _ = self.allocateArgumentBufferArrayIfNeeded(baseArray)
-            return self.argumentBufferReferences[argumentBuffer]!
-        }
         if let vkArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
             return vkArgumentBuffer
         }
@@ -652,17 +617,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         self.argumentBufferReferences[argumentBuffer] = vkArgumentBuffer
 
         return vkArgumentBuffer
-    }
-    
-    @discardableResult
-    func allocateArgumentBufferArrayIfNeeded(_ argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer {
-//        if let vkArgumentBuffer = self.argumentBufferArrayReferences[argumentBufferArray] {
-//            return vkArgumentBuffer
-//        }
-//        
-//        let layout = VkDescriptorSetLayout(argumentBufferArray._bindings.first(where: { $0?.encoder != nil })!!.encoder!)
-       
-        fatalError("Argument buffer arrays are currently unsupported on Vulkan.")
     }
     
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
@@ -686,10 +640,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         return self.argumentBufferReferences[argumentBuffer]
     }
 
-    public subscript(argumentBufferArray: ArgumentBufferArray) -> VulkanArgumentBuffer? {
-        return self.argumentBufferArrayReferences[argumentBufferArray]
-    }
-    
     public func withHeapAliasingFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout [FenceDependency]) -> Void) {
         let resource = Resource(handle: resourceHandle)
         
@@ -757,11 +707,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         // FIXME: should we manage individual descriptor sets instead?
     }
     
-    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray, waitEvent: ContextWaitEvent) {
-        // No-op; this should be managed by resetting the descriptor set pool.
-        // FIXME: should we manage individual descriptor sets instead?
-    }
-    
     func registerInitialisedHistoryBufferForDisposal(resource: Resource) {
         assert(resource.flags.contains(.historyBuffer) && resource.stateFlags.contains(.initialised))
         resource.dispose() // This will dispose it in the RenderGraph persistent allocator, which will in turn call dispose here at the end of the frame.
@@ -775,7 +720,6 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         // Clear all transient resources at the end of the frame.
         self.bufferReferences.removeAll()
         self.argumentBufferReferences.removeAll()
-        self.argumentBufferArrayReferences.removeAll()
         
         self.heapResourceUsageFences.removeAll(keepingCapacity: true)
         self.heapResourceDisposalFences.removeAll(keepingCapacity: true)

@@ -22,7 +22,6 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     associatedtype BufferReference
     associatedtype TextureReference
     associatedtype ArgumentBufferReference
-    associatedtype ArgumentBufferArrayReference
     associatedtype VisibleFunctionTableReference
     associatedtype IntersectionFunctionTableReference
     
@@ -47,7 +46,6 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<Self>) // Called on the context's DispatchQueue.
     
     static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>) async
-    static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: ArgumentBufferArrayReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>) async
     
     func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: VisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>) async
     func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, storage: IntersectionFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>) async
@@ -100,7 +98,6 @@ protocol BackendTransientResourceRegistry {
     subscript(buffer: Buffer) -> Backend.BufferReference? { get }
     subscript(texture: Texture) -> Backend.TextureReference? { get }
     subscript(argumentBuffer: ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
-    subscript(argumentBufferArray: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get }
     subscript(resource: Resource) -> Backend.ResourceReference? { get }
     
     var accessLock: SpinLock { get }
@@ -108,7 +105,6 @@ protocol BackendTransientResourceRegistry {
     func prepareFrame()
     func cycleFrames()
     func allocateArgumentBufferIfNeeded(_ buffer: ArgumentBuffer) -> Backend.ArgumentBufferReference
-    func allocateArgumentBufferArrayIfNeeded(_ buffer: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference
     
     // TransientResourceRegistry requirements:
     
@@ -123,20 +119,17 @@ protocol BackendTransientResourceRegistry {
     func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent)
     func disposeBuffer(_ buffer: Buffer, waitEvent: ContextWaitEvent)
     func disposeArgumentBuffer(_ buffer: ArgumentBuffer, waitEvent: ContextWaitEvent)
-    func disposeArgumentBufferArray(_ buffer: ArgumentBufferArray, waitEvent: ContextWaitEvent)
     
     func withHeapAliasingFencesIfPresent(for resourceHandle: Resource.Handle, perform: (inout [FenceDependency]) -> Void)
     
     var textureWaitEvents: TransientResourceMap<Texture, ContextWaitEvent> { get }
     var bufferWaitEvents: TransientResourceMap<Buffer, ContextWaitEvent> { get }
     var argumentBufferWaitEvents: TransientResourceMap<ArgumentBuffer, ContextWaitEvent>? { get }
-    var argumentBufferArrayWaitEvents: TransientResourceMap<ArgumentBufferArray, ContextWaitEvent>? { get }
     var historyBufferResourceWaitEvents: [Resource : ContextWaitEvent] { get }
 }
 
 extension BackendTransientResourceRegistry {
     var argumentBufferWaitEvents: TransientResourceMap<ArgumentBuffer, ContextWaitEvent>? { nil }
-    var argumentBufferArrayWaitEvents: TransientResourceMap<ArgumentBufferArray, ContextWaitEvent>? { nil }
 }
 
 protocol BackendPersistentResourceRegistry: AnyObject {
@@ -147,12 +140,10 @@ protocol BackendPersistentResourceRegistry: AnyObject {
     subscript(buffer: Buffer) -> Backend.BufferReference? { get }
     subscript(texture: Texture) -> Backend.TextureReference? { get }
     subscript(argumentBuffer: ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
-    subscript(argumentBufferArray: ArgumentBufferArray) -> Backend.ArgumentBufferArrayReference? { get }
     subscript(resource: Resource) -> Backend.ResourceReference? { get }
     
     func cycleFrames()
     func allocateArgumentBufferIfNeeded(_ buffer: ArgumentBuffer) async -> Backend.ArgumentBufferReference
-    func allocateArgumentBufferArrayIfNeeded(_ buffer: ArgumentBufferArray) async -> Backend.ArgumentBufferArrayReference
     
     // PersistentResourceRegistry requirements:
     

@@ -20,7 +20,6 @@ public final class VulkanBackend : SpecificRenderBackend {
     typealias BufferReference = VkBufferReference
     typealias TextureReference = VkImageReference
     typealias ArgumentBufferReference = VulkanArgumentBuffer
-    typealias ArgumentBufferArrayReference = VulkanArgumentBuffer
     typealias SamplerReference = VkSampler
     
     typealias VisibleFunctionTableReference = Void
@@ -254,10 +253,6 @@ public final class VulkanBackend : SpecificRenderBackend {
 
     static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) async {
         await storage.encodeArguments(from: argumentBuffer, commandIndex: firstUseCommandIndex, resourceMap: resourceMap)
-    }
-    
-    static func fillArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) {
-        fatalError()
     }
     
     func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: Void, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) async {

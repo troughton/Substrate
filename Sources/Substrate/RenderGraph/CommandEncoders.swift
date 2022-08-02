@@ -116,10 +116,6 @@ protocol ResourceBindingEncoderImpl: CommandEncoderImpl {
     /// Bind `argumentBuffer` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
     /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
     func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer, at index: Int, stages: RenderStages)
-    
-    /// Bind `argumentBufferArray` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
-    /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
-    func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, at index: Int, stages: RenderStages)
 }
 
 /// `ResourceBindingEncoder` is the common superclass `CommandEncoder` for all command encoders that can bind resources.
@@ -248,18 +244,6 @@ public class ResourceBindingEncoder : CommandEncoder {
         bindingEncoderImpl.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
     }
     
-    /// Bind `argumentBufferArray` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
-    /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
-    public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages) {
-        guard let argumentBufferArray = argumentBufferArray else { return }
-        let bindingPath = RenderBackend.argumentBufferPath(at: index, stages: stages)
-        for argumentBuffer in argumentBufferArray._bindings {
-            argumentBuffer?.updateEncoder(pipelineReflection: self.currentPipelineReflection, bindingPath: bindingPath)
-        }
-        
-        bindingEncoderImpl.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages)
-    }
-    
     @usableFromInline func endEncoding() {
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.popDebugGroup() // Pass Name
@@ -287,8 +271,6 @@ extension ResourceBindingEncoder {
 
 public protocol AnyRenderCommandEncoder {
     func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages)
-    
-    func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages)
     
     func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int)
     
