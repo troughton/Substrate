@@ -389,11 +389,11 @@ public struct RenderTargetsDescriptor : Hashable, Sendable {
     }
     
     mutating func tryMerge(withPass pass: ProxyDrawRenderPass) -> Bool {
-        if pass.renderTargetDescriptor.size != self.size {
+        if pass.renderTargetsDescriptor.size != self.size {
             return false // The render targets must be the same size.
         }
         
-        let passDescriptor = pass.renderTargetDescriptor
+        let passDescriptor = pass.renderTargetsDescriptor
         
         var newDescriptor = self
         

@@ -19,15 +19,15 @@ struct MetalRenderPipelineDescriptor : Hashable {
     var depthSampleCount : Int?
     var stencilSampleCount : Int?
     
-    public init(_ descriptor: RenderPipelineDescriptor, renderTargetDescriptor: RenderTargetDescriptor) {
+    public init(_ descriptor: RenderPipelineDescriptor, renderTargetsDescriptor: RenderTargetDescriptor) {
         self.descriptor = descriptor
-        self.colorAttachmentFormats = renderTargetDescriptor.colorAttachments.map { MTLPixelFormat($0?.texture.descriptor.pixelFormat ?? .invalid) }
-        self.depthAttachmentFormat = MTLPixelFormat(renderTargetDescriptor.depthAttachment?.texture.descriptor.pixelFormat ?? .invalid)
-        self.stencilAttachmentFormat = MTLPixelFormat(renderTargetDescriptor.stencilAttachment?.texture.descriptor.pixelFormat ?? .invalid)
+        self.colorAttachmentFormats = renderTargetsDescriptor.colorAttachments.map { MTLPixelFormat($0?.texture.descriptor.pixelFormat ?? .invalid) }
+        self.depthAttachmentFormat = MTLPixelFormat(renderTargetsDescriptor.depthAttachment?.texture.descriptor.pixelFormat ?? .invalid)
+        self.stencilAttachmentFormat = MTLPixelFormat(renderTargetsDescriptor.stencilAttachment?.texture.descriptor.pixelFormat ?? .invalid)
         
-        self.colorAttachmentSampleCounts = renderTargetDescriptor.colorAttachments.map { $0?.texture.descriptor.sampleCount }
-        self.depthSampleCount = renderTargetDescriptor.depthAttachment?.texture.descriptor.sampleCount
-        self.stencilSampleCount = renderTargetDescriptor.stencilAttachment?.texture.descriptor.sampleCount
+        self.colorAttachmentSampleCounts = renderTargetsDescriptor.colorAttachments.map { $0?.texture.descriptor.sampleCount }
+        self.depthSampleCount = renderTargetsDescriptor.depthAttachment?.texture.descriptor.sampleCount
+        self.stencilSampleCount = renderTargetsDescriptor.stencilAttachment?.texture.descriptor.sampleCount
     }
 }
 

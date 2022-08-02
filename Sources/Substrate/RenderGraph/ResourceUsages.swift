@@ -21,7 +21,7 @@ import SubstrateCExtras
 
 @usableFromInline typealias ResourceUsagePointer = UnsafeMutablePointer<ResourceUsage>
 
-extension ChunkArray where Element == ResourceUsage {
+extension ChunkArray where Element == ExplicitResourceUsage {
     @inlinable
     var firstActiveUsage : ResourceUsage? {
         for usage in self {

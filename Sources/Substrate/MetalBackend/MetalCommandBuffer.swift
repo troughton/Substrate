@@ -69,10 +69,10 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         
         switch encoderInfo.type {
         case .draw:
-            let renderTargetDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
+            let renderTargetsDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
             let mtlDescriptor : MTLRenderPassDescriptor
             do {
-                mtlDescriptor = try await MTLRenderPassDescriptor(renderTargetDescriptor, resourceMap: self.resourceMap)
+                mtlDescriptor = try await MTLRenderPassDescriptor(renderTargetsDescriptor, resourceMap: self.resourceMap)
             } catch {
                 print("Error creating pass descriptor: \(error)")
                 return
@@ -85,7 +85,9 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         #endif
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                await renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: renderTargetDescriptor.descriptor, passRenderTarget: (passRecord.pass as! ProxyDrawRenderPass).renderTargetDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
+                await passRecord.pass.execute(renderCommandEncoder: RenderCommandEncoder(commandRecorder: <#T##RenderGraphCommandRecorder#>, renderPass: passRecord.pass, passRecord: <#T##RenderPassRecord#>))
+                
+                await renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, renderTarget: renderTargetsDescriptor.descriptor, passRenderTarget: (passRecord.pass as! ProxyDrawRenderPass).renderTargetsDescriptor, resourceMap: self.resourceMap, stateCaches: backend.stateCaches)
             }
             renderEncoder.endEncoding()
             

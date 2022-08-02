@@ -1081,7 +1081,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         
         var needsClearCommand = false
         
-        for (i, attachment) in renderPass.renderTargetDescriptor.colorAttachments.enumerated() {
+        for (i, attachment) in renderPass.renderTargetsDescriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             needsClearCommand = needsClearCommand || renderPass.colorClearOperation(attachmentIndex: i).isClear
             let usagePointers = self.commandRecorder.resourceUsagePointers(for: attachment.texture, slice: attachment.slice, level: attachment.level, encoder: self, usageType: renderPass.colorClearOperation(attachmentIndex: i).isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .fragment, isIndirectlyBound: false, firstCommandOffset: 0)
@@ -1090,7 +1090,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
             self.renderTargetAttachmentUsages[.color(i)] = usagePointer
         }
         
-        if let depthAttachment = renderPass.renderTargetDescriptor.depthAttachment {
+        if let depthAttachment = renderPass.renderTargetsDescriptor.depthAttachment {
             needsClearCommand = needsClearCommand || renderPass.depthClearOperation.isClear
             let usagePointers = self.commandRecorder.resourceUsagePointers(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: 0)
             assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
@@ -1098,7 +1098,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
             self.renderTargetAttachmentUsages[.depth] = usagePointer
         }
         
-        if let stencilAttachment = renderPass.renderTargetDescriptor.stencilAttachment {
+        if let stencilAttachment = renderPass.renderTargetsDescriptor.stencilAttachment {
             needsClearCommand = needsClearCommand || renderPass.stencilClearOperation.isClear
             let usagePointers = self.commandRecorder.resourceUsagePointers(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: 0)
             assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
@@ -1131,7 +1131,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
             return
         }
         
-        for (i, attachment) in drawRenderPass.renderTargetDescriptor.colorAttachments.enumerated() {
+        for (i, attachment) in drawRenderPass.renderTargetsDescriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
             
             defer {
@@ -1186,7 +1186,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
             return // No depth writes enabled, depth test always passes, no stencil tests.
         }
         
-        depthCheck: if let depthAttachment = drawRenderPass.renderTargetDescriptor.depthAttachment {
+        depthCheck: if let depthAttachment = drawRenderPass.renderTargetsDescriptor.depthAttachment {
             let type : ResourceUsageType
             switch (depthStencilDescriptor.depthCompareFunction, depthStencilDescriptor.isDepthWriteEnabled) {
             case (.always, false):
@@ -1228,7 +1228,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
             }
         }
         
-        stencilCheck: if let stencilAttachment = drawRenderPass.renderTargetDescriptor.stencilAttachment {
+        stencilCheck: if let stencilAttachment = drawRenderPass.renderTargetsDescriptor.stencilAttachment {
             let isRead = depthStencilDescriptor.backFaceStencil.stencilCompareFunction != .always || depthStencilDescriptor.frontFaceStencil.stencilCompareFunction != .always
             let isWrite =   depthStencilDescriptor.backFaceStencil.stencilFailureOperation != .keep ||
                             depthStencilDescriptor.backFaceStencil.depthFailureOperation != .keep ||
@@ -1286,7 +1286,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         }
         
         self.renderPipelineDescriptor = descriptor
-        self.currentPipelineReflection = await RenderBackend.renderPipelineReflection(descriptor: descriptor, renderTarget: self.drawRenderPass.renderTargetDescriptor)
+        self.currentPipelineReflection = await RenderBackend.renderPipelineReflection(descriptor: descriptor, renderTarget: self.drawRenderPass.renderTargetsDescriptor)
         
         self.pipelineStateChanged = true
         self.needsUpdateBindings = true
@@ -1331,17 +1331,17 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     }
     
     public func setDepthStencilDescriptor(_ descriptor: DepthStencilDescriptor?) {
-        guard self.drawRenderPass.renderTargetDescriptor.depthAttachment != nil ||
-            self.drawRenderPass.renderTargetDescriptor.stencilAttachment != nil else {
+        guard self.drawRenderPass.renderTargetsDescriptor.depthAttachment != nil ||
+            self.drawRenderPass.renderTargetsDescriptor.stencilAttachment != nil else {
                 return
         }
         
         var descriptor = descriptor ?? DepthStencilDescriptor()
-        if self.drawRenderPass.renderTargetDescriptor.depthAttachment == nil {
+        if self.drawRenderPass.renderTargetsDescriptor.depthAttachment == nil {
             descriptor.depthCompareFunction = .always
             descriptor.isDepthWriteEnabled = false
         }
-        if self.drawRenderPass.renderTargetDescriptor.stencilAttachment == nil {
+        if self.drawRenderPass.renderTargetsDescriptor.stencilAttachment == nil {
             descriptor.frontFaceStencil = .init()
             descriptor.backFaceStencil = .init()
         }
@@ -1447,7 +1447,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     
     @usableFromInline override func endEncoding() {
         // Reset any dynamic state to the defaults.
-        let renderTargetSize = self.drawRenderPass.renderTargetDescriptor.size
+        let renderTargetSize = self.drawRenderPass.renderTargetsDescriptor.size
         if self.nonDefaultDynamicState.contains(.viewport) {
             commandRecorder.record(RenderGraphCommand.setViewport, Viewport(originX: 0.0, originY: 0.0, width: Double(renderTargetSize.width), height: Double(renderTargetSize.height), zNear: 0.0, zFar: 1.0))
         }

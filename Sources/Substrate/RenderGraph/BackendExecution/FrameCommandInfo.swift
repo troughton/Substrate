@@ -43,7 +43,7 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
         self.baseCommandBufferGlobalIndex = initialCommandBufferGlobalIndex
         
         var storedTextures = [Texture]()
-        let renderTargetDescriptors = FrameCommandInfo.generateRenderTargetDescriptors(passes: passes, storedTextures: &storedTextures)
+        let renderTargetsDescriptors = FrameCommandInfo.generateRenderTargetDescriptors(passes: passes, storedTextures: &storedTextures)
         self.storedTextures = storedTextures
         
         assert(passes.enumerated().allSatisfy({ $0 == $1.passIndex }))
@@ -81,7 +81,7 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
 #endif
                 
                 commandEncoders.append(encoderInfo)
-                commandEncoderRenderTargets.append(renderTargetDescriptors[passRange.lowerBound])
+                commandEncoderRenderTargets.append(renderTargetsDescriptors[passRange.lowerBound])
             }
             
             var encoderFirstPass = 0
@@ -92,7 +92,7 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
                 assert(pass.passIndex != previousPass.passIndex)
                 
                 if (pass.type != .draw && !(pass.type == .blit && previousPass.type == .blit)) ||
-                    renderTargetDescriptors[previousPass.passIndex] !== renderTargetDescriptors[pass.passIndex] {
+                    renderTargetsDescriptors[previousPass.passIndex] !== renderTargetsDescriptors[pass.passIndex] {
                     // Save the current command encoder and start a new one
                     addEncoder(encoderFirstPass..<i, encoderUsesWindowTexture)
                     encoderFirstPass = i

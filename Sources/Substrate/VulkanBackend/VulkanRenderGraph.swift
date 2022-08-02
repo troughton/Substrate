@@ -146,19 +146,19 @@ extension VulkanBackend {
                             // Handle this through a subpass dependency.
                             // TODO: when we support queue ownership transfers, we may also need a pipeline barrier here.
                             var subpassDependency = VkSubpassDependency()
-                            let renderTargetDescriptor: VulkanRenderTargetDescriptor
+                            let renderTargetsDescriptor: VulkanRenderTargetDescriptor
                             if producingUsage.type.isRenderTarget {
                                 // We transitioned to the new layout at the end of the previous render pass.
                                 // Add a subpass dependency and continue.
                                 barrier.oldLayout = barrier.newLayout
-                                renderTargetDescriptor = frameCommandInfo.commandEncoderRenderTargets[sourceIndex]!
-                                subpassDependency.srcSubpass = UInt32(renderTargetDescriptor.subpasses.last!.index)
+                                renderTargetsDescriptor = frameCommandInfo.commandEncoderRenderTargets[sourceIndex]!
+                                subpassDependency.srcSubpass = UInt32(renderTargetsDescriptor.subpasses.last!.index)
                                 subpassDependency.dstSubpass = VK_SUBPASS_EXTERNAL
                             } else {
                                 // The layout transition will be handled by the next render pass.
                                 // Add a subpass dependency and continue.
                                 barrier.newLayout = barrier.oldLayout
-                                renderTargetDescriptor = frameCommandInfo.commandEncoderRenderTargets[dependentIndex]!
+                                renderTargetsDescriptor = frameCommandInfo.commandEncoderRenderTargets[dependentIndex]!
                                 subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
                                 subpassDependency.dstSubpass = 0
                             }
@@ -168,7 +168,7 @@ extension VulkanBackend {
                             subpassDependency.dstStageMask = consumingUsage.type.shaderStageMask(isDepthOrStencil: isDepthOrStencil, stages: consumingUsage.stages).flags
                             subpassDependency.dstAccessMask = barrier.dstAccessMask
 
-                            renderTargetDescriptor.addDependency(subpassDependency) 
+                            renderTargetsDescriptor.addDependency(subpassDependency) 
                             continue
                         } else {
                             let previousUsage = texture.usages.lazy.filter { $0.affectsGPUBarriers }.prefix(while: { !$0.commandRange.contains(consumingUsage.commandRange.first!) }).last
@@ -351,12 +351,12 @@ extension VulkanBackend {
 
             var beforeCommand = beforeCommand
             
-            if let renderTargetDescriptor = commandInfo.commandEncoderRenderTargets[currentEncoderIndex], beforeCommand > currentEncoder.commandRange.lowerBound {
+            if let renderTargetsDescriptor = commandInfo.commandEncoderRenderTargets[currentEncoderIndex], beforeCommand > currentEncoder.commandRange.lowerBound {
                 var subpassDependency = VkSubpassDependency()
                 subpassDependency.dependencyFlags = VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) // FIXME: ideally should be VkDependencyFlags(VK_DEPENDENCY_BY_REGION_BIT) for all cases except temporal AA.
                 if afterUsageType == .frameStartLayoutTransitionCheck {
                     subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
-                } else if let passUsageSubpass = renderTargetDescriptor.subpassForPassIndex(currentPassIndex) {
+                } else if let passUsageSubpass = renderTargetsDescriptor.subpassForPassIndex(currentPassIndex) {
                     subpassDependency.srcSubpass = UInt32(passUsageSubpass.index)
                 } else {
                     subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL
@@ -365,7 +365,7 @@ extension VulkanBackend {
                 subpassDependency.srcAccessMask = sourceAccessMask
                 
                 let dependentPass = commandInfo.passes[currentPassIndex...].first(where: { $0.commandRange!.contains(beforeCommand) })!
-                if let destinationUsageSubpass = renderTargetDescriptor.subpassForPassIndex(dependentPass.passIndex) {
+                if let destinationUsageSubpass = renderTargetsDescriptor.subpassForPassIndex(dependentPass.passIndex) {
                     subpassDependency.dstSubpass = UInt32(destinationUsageSubpass.index)
                 } else {
                     subpassDependency.dstSubpass = VK_SUBPASS_EXTERNAL
@@ -380,7 +380,7 @@ extension VulkanBackend {
                 if subpassDependency.srcSubpass == subpassDependency.dstSubpass {
                     precondition(resource.type == .texture, "We can only insert pipeline barriers within render passes for textures.")
                     assert(subpassDependency.srcSubpass != VK_SUBPASS_EXTERNAL, "Dependent pass \(dependentPass.passIndex): Subpass dependency from \(afterUsageType) (afterCommand \(afterCommand)) to \(beforeUsageType) (beforeCommand \(beforeCommand)) for resource \(resource) is EXTERNAL to EXTERNAL, which is invalid.")
-                    renderTargetDescriptor.addDependency(subpassDependency)
+                    renderTargetsDescriptor.addDependency(subpassDependency)
                 } else if sourceLayout != destinationLayout, // guaranteed to not be a buffer since buffers have UNDEFINED image layouts above.
                           !afterUsageType.isRenderTarget, !beforeUsageType.isRenderTarget {
                     // We need to insert a pipeline barrier to handle a layout transition.
@@ -398,11 +398,11 @@ extension VulkanBackend {
 
                         // resourceCommands.append(VulkanFrameResourceCommand(command: .pipelineBarrier(memoryBarrierInfo), index: dependentCommandIndex, order: .before))
                         // subpassDependency.srcSubpass = subpassDependency.dstSubpass
-                        // renderTargetDescriptor.addDependency(subpassDependency)
+                        // renderTargetsDescriptor.addDependency(subpassDependency)
                     }
                 } else {
                     // A subpass dependency should be enough to handle this case.
-                    renderTargetDescriptor.addDependency(subpassDependency)
+                    renderTargetsDescriptor.addDependency(subpassDependency)
                     return true
                 }
             }

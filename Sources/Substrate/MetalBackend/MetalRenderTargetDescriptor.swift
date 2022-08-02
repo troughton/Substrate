@@ -22,7 +22,7 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var clearStencil: UInt32 = 0
     
     init(renderPass: DrawRenderPass) {
-        self.descriptor = renderPass.renderTargetDescriptorForActiveAttachments
+        self.descriptor = renderPass.renderTargetsDescriptorForActiveAttachments
         self.colorActions = .init(repeating: (.dontCare, .dontCare), count: self.descriptor.colorAttachments.count)
         self.updateClearValues(pass: renderPass, descriptor: self.descriptor)
         self.renderPasses.append(renderPass)
@@ -99,11 +99,11 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     }
     
     func tryMerge(withPass pass: DrawRenderPass) -> Bool {
-        if pass.renderTargetDescriptor.size != self.descriptor.size {
+        if pass.renderTargetsDescriptor.size != self.descriptor.size {
             return false // The render targets must be the same size.
         }
         
-        let passDescriptor = pass.renderTargetDescriptorForActiveAttachments
+        let passDescriptor = pass.renderTargetsDescriptorForActiveAttachments
         
         var newDescriptor = descriptor
         
@@ -179,7 +179,7 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
                 continue
             case _ where usage.type.isRenderTarget:
                 guard let renderPass = usage.renderPassRecord.pass as? DrawRenderPass else { fatalError() }
-                let descriptor = renderPass.renderTargetDescriptor
+                let descriptor = renderPass.renderTargetsDescriptor
                 if let depthAttachment = descriptor.depthAttachment,
                     depthAttachment.texture == attachment.texture,
                     depthAttachment.slice == attachment.slice,

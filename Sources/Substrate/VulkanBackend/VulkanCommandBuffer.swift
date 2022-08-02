@@ -75,8 +75,8 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
         
         switch encoderInfo.type {
         case .draw:
-            let renderTargetDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
-            guard let renderEncoder = VulkanRenderCommandEncoder(device: backend.device, renderTarget: renderTargetDescriptor, commandBufferResources: self, shaderLibrary: backend.shaderLibrary, caches: backend.stateCaches, resourceMap: self.resourceMap) else {
+            let renderTargetsDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
+            guard let renderEncoder = VulkanRenderCommandEncoder(device: backend.device, renderTarget: renderTargetsDescriptor, commandBufferResources: self, shaderLibrary: backend.shaderLibrary, caches: backend.stateCaches, resourceMap: self.resourceMap) else {
                 if _isDebugAssertConfiguration() {
                     print("Warning: skipping passes for encoder \(encoderIndex) since the drawable for the render target could not be retrieved.")
                 }
@@ -84,7 +84,7 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
             }
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-               await renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetDescriptor)
+               await renderEncoder.executePass(passRecord, resourceCommands: self.compactedResourceCommands, passRenderTarget: (passRecord.pass as! DrawRenderPass).renderTargetsDescriptor)
             }
             
         case .compute:

@@ -52,7 +52,7 @@ final actor MetalRenderPipelineCache {
     
     public subscript(descriptor: RenderPipelineDescriptor, renderTarget renderTarget: RenderTargetDescriptor) -> MTLRenderPipelineState? {
         get async {
-            let metalDescriptor = MetalRenderPipelineDescriptor(descriptor, renderTargetDescriptor: renderTarget)
+            let metalDescriptor = MetalRenderPipelineDescriptor(descriptor, renderTargetsDescriptor: renderTarget)
             
             let lookupKey = RenderPipelineFunctionNames(vertexFunction: descriptor.vertexFunction.name, fragmentFunction: descriptor.fragmentFunction.name)
             

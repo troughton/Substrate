@@ -78,11 +78,11 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     
     init(renderPass: RenderPassRecord) {
         let drawRenderPass = renderPass.pass as! DrawRenderPass
-        self.descriptor = drawRenderPass.renderTargetDescriptorForActiveAttachments
+        self.descriptor = drawRenderPass.renderTargetsDescriptorForActiveAttachments
         self.renderPasses.append(renderPass)
         self.updateClearValues(pass: drawRenderPass, descriptor: self.descriptor)
 
-        self.subpasses.append(VulkanSubpass(descriptor: drawRenderPass.renderTargetDescriptor, index: 0))
+        self.subpasses.append(VulkanSubpass(descriptor: drawRenderPass.renderTargetsDescriptor, index: 0))
     }
 
     func updateClearValues(pass: DrawRenderPass, descriptor: RenderTargetDescriptor) {
@@ -207,10 +207,10 @@ final class VulkanRenderTargetDescriptor: BackendRenderTargetDescriptor {
     func tryMerge(withPass passRecord: RenderPassRecord) -> Bool {
         let pass = passRecord.pass as! DrawRenderPass
         
-        if pass.renderTargetDescriptor.size != self.descriptor.size {
+        if pass.renderTargetsDescriptor.size != self.descriptor.size {
             return false // The render targets must be the same size.
         }
-        let passDescriptor = pass.renderTargetDescriptorForActiveAttachments
+        let passDescriptor = pass.renderTargetsDescriptorForActiveAttachments
         
         var newDescriptor = descriptor
         

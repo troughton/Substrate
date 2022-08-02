@@ -33,45 +33,46 @@ public struct ExplicitResourceUsage {
     }
     
     public var resource: Resource
-    public var access: ResourceAccessFlags
     public var subresources: [Subresource]
+    public var access: ResourceAccessFlags
+    public var stages: RenderStages // empty means the default for the pass.
     
-    public static func buffer(_ buffer: Buffer, access: BufferAccessFlags, byteRange: Range<Int>? = nil) -> ExplicitResourceUsage {
-        return .init(resource: Resource(buffer), access: ResourceAccessFlags(access), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource])
+    public static func buffer(_ buffer: Buffer, byteRange: Range<Int>? = nil, access: BufferAccessFlags, stages: RenderStages = []) -> ExplicitResourceUsage {
+        return .init(resource: Resource(buffer), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], access: ResourceAccessFlags(access), stages: stages)
     }
     
-    public static func texture(_ texture: Texture, access: TextureAccessFlags, subresources: [TextureSubresourceRange]? = nil) -> ExplicitResourceUsage {
-        return .init(resource: Resource(texture), access: ResourceAccessFlags(access), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource])
+    public static func texture(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, access: TextureAccessFlags, stages: RenderStages = []) -> ExplicitResourceUsage {
+        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], access: ResourceAccessFlags(access), stages: stages)
     }
     
     // MARK: -
     
-    public static func read(_ buffer: Buffer, byteRange: Range<Int>? = nil) -> ExplicitResourceUsage {
-        return .init(resource: Resource(buffer), access: .shaderRead, subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource])
+    public static func read(_ buffer: Buffer, byteRange: Range<Int>? = nil, stages: RenderStages = []) -> ExplicitResourceUsage {
+        return .init(resource: Resource(buffer), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], access: .shaderRead, stages: stages)
     }
     
-    public static func readWrite(_ buffer: Buffer, byteRange: Range<Int>? = nil) -> ExplicitResourceUsage {
-        return .init(resource: Resource(buffer), access: .shaderReadWrite, subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource])
+    public static func readWrite(_ buffer: Buffer, byteRange: Range<Int>? = nil, stages: RenderStages = []) -> ExplicitResourceUsage {
+        return .init(resource: Resource(buffer), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], access: .shaderReadWrite, stages: stages)
     }
     
-    public static func write(_ buffer: Buffer, byteRange: Range<Int>? = nil) -> ExplicitResourceUsage {
-        return .init(resource: Resource(buffer), access: .shaderWrite, subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource])
+    public static func write(_ buffer: Buffer, byteRange: Range<Int>? = nil, stages: RenderStages = []) -> ExplicitResourceUsage {
+        return .init(resource: Resource(buffer), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], access: .shaderWrite, stages: stages)
     }
     
-    public static func read(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil) -> ExplicitResourceUsage {
-        return .init(resource: Resource(texture), access: .shaderRead, subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource])
+    public static func read(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ExplicitResourceUsage {
+        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], access: .shaderRead, stages: stages)
     }
     
-    public static func readWrite(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil) -> ExplicitResourceUsage {
-        return .init(resource: Resource(texture), access: .shaderReadWrite, subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource])
+    public static func readWrite(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ExplicitResourceUsage {
+        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], access: .shaderReadWrite, stages: stages)
     }
     
-    public static func write(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil) -> ExplicitResourceUsage {
-        return .init(resource: Resource(texture), access: .shaderWrite, subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource])
+    public static func write(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ExplicitResourceUsage {
+        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], access: .shaderWrite, stages: stages)
     }
     
-    public static func inputAttachment(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil) -> ExplicitResourceUsage {
-        return .init(resource: Resource(texture), access: .inputAttachment, subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource])
+    public static func inputAttachment(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ExplicitResourceUsage {
+        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], access: .inputAttachment, stages: stages)
     }
     
     // Render target usages can be inferred from load actions and render target descriptors.
