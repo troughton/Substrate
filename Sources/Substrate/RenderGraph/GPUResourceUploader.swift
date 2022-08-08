@@ -347,7 +347,7 @@ extension GPUResourceUploader {
                 let buffer = Buffer(length: byteCount, storageMode: .shared, cacheMode: self.buffer.descriptor.cacheMode, usage: .blitSource, flags: .persistent)
                 
                 do {
-                    try await buffer.withMutableContents { buffer, range in
+                    try buffer.withMutableContents { buffer, range in
                         try perform(buffer, &range)
                     }
                 } catch {
