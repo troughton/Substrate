@@ -163,7 +163,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     
 //    @_specialize(kind: full, where Backend == MetalBackend)
 //    @_specialize(kind: full, where Backend == VulkanBackend)
-    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async {
+    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken {
         if self.accessStream != nil {
             // Wait until we have a frame's ring buffers available.
             for await completedFrame in self.accessStream! {
@@ -174,8 +174,8 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         
         await self.backend.reloadShaderLibraryIfNeeded()
         
-        return await self.withContext {
-            return await Backend.activeContextTaskLocal.withValue(self) {
+        return await self.withContext { () async -> RenderGraphExecutionWaitToken in
+            return await Backend.activeContextTaskLocal.withValue(self) { () async -> RenderGraphExecutionWaitToken in
                 let (passes, usedResources) = await executeFunc()
                 
                 // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
@@ -188,7 +188,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     } else {
                         self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, onCompletion))
                     }
-                    return
+                    return RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: self.queueCommandBufferIndex)
                 }
                 
                 var frameCommandInfo = FrameCommandInfo<Backend.RenderTargetDescriptor>(passes: passes, initialCommandBufferGlobalIndex: self.queueCommandBufferIndex + 1)
@@ -259,6 +259,8 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 for (i, commandBuffer) in commandBuffers.enumerated() {
                     await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, syncEvent: syncEvent, executionResult: executionResult, onCompletion: onCompletion)
                 }
+                
+                return RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: self.queueCommandBufferIndex)
             }
         }
     }

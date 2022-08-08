@@ -23,7 +23,8 @@ public enum MipGenerationMode: Hashable, Sendable {
 }
 
 public protocol TextureCopyable {
-    func copyData(to texture: Texture, slice: Int, mipGenerationMode: MipGenerationMode) async throws
+    @discardableResult
+    func copyData(to texture: Texture, slice: Int, mipGenerationMode: MipGenerationMode) async throws -> RenderGraphExecutionWaitToken
     var preferredPixelFormat: PixelFormat { get }
 }
 
@@ -38,11 +39,12 @@ public enum TextureCopyError: Error {
 }
 
 extension AnyImage {
-    public func copyData(to texture: Texture, slice: Int = 0, mipGenerationMode: MipGenerationMode) async throws {
+    @discardableResult
+    public func copyData(to texture: Texture, slice: Int = 0, mipGenerationMode: MipGenerationMode) async throws -> RenderGraphExecutionWaitToken {
         guard let data = self as? TextureCopyable else {
             throw TextureCopyError.notTextureCopyable(self)
         }
-        try await data.copyData(to: texture, slice: slice, mipGenerationMode: mipGenerationMode)
+        return try await data.copyData(to: texture, slice: slice, mipGenerationMode: mipGenerationMode)
     }
     
     public var preferredPixelFormat: PixelFormat {
@@ -173,22 +175,22 @@ public enum TextureLoadingError : Error {
 }
 
 extension Image {
-    public func copyData(to texture: Texture, region: Region, mipmapLevel: Int, slice: Int = 0) async {
+    @discardableResult
+    public func copyData(to texture: Texture, region: Region, mipmapLevel: Int, slice: Int = 0) async -> RenderGraphExecutionWaitToken {
         if texture.descriptor.storageMode == .private {
 #if canImport(Metal)
             if case .vm_allocate = self.allocator {
                 // On Metal, we can make vm_allocate'd buffers directly accessible to the GPU.
                 let allocatedSize = self.allocatedSize
-                let success = await self.withUnsafeBufferPointer { bytes -> Bool in
-                    guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: allocatedSize, options: .storageModeShared, deallocator: nil) else { return false }
+                let token = await self.withUnsafeBufferPointer { bytes -> RenderGraphExecutionWaitToken? in
+                    guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: allocatedSize, options: .storageModeShared, deallocator: nil) else { return nil }
                     let substrateBuffer = Buffer(descriptor: BufferDescriptor(length: allocatedSize, storageMode: .shared, cacheMode: .defaultCache, usage: .blitSource), externalResource: mtlBuffer)
-                    await GPUResourceUploader.runBlitPass { bce in
+                    return await GPUResourceUploader.runBlitPass { bce in
                         bce.copy(from: substrateBuffer, sourceOffset: 0, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
                     }
-                    return true
                 }
-                if success {
-                    return
+                if let token = token {
+                    return token
                 }
             }
 #endif
@@ -204,17 +206,18 @@ extension Image {
                     bce.copy(from: buffer, sourceOffset: sourceOffset, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
                 }
                 await uploadBufferToken.didFlush(token: executionToken)
-                return
+                return executionToken
             }
         }
         
-        await self.withUnsafeBufferPointer { bytes in
+        return await self.withUnsafeBufferPointer { bytes in
             let bytesPerRow = self.width * self.channelCount * MemoryLayout<T>.stride
-            _ = await GPUResourceUploader.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: slice, in: texture, withBytes: bytes.baseAddress!, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * self.height)
+            return await GPUResourceUploader.replaceTextureRegion(region, mipmapLevel: mipmapLevel, slice: slice, in: texture, withBytes: bytes.baseAddress!, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerRow * self.height)
         }
     }
     
-    public func copyData(to texture: Texture, slice: Int = 0, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws {
+    @discardableResult
+    public func copyData(to texture: Texture, slice: Int = 0, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws -> RenderGraphExecutionWaitToken {
         if _isDebugAssertConfiguration(), self.colorSpace == .sRGB, !texture.descriptor.pixelFormat.isSRGB {
             print("Warning: the source texture data is in the sRGB color space but the texture's pixel format is linear RGB.")
         }
@@ -226,36 +229,49 @@ extension Image {
             throw TextureLoadingError.mismatchingDimensions(expected: Size(width: self.width, height: self.height), actual: texture.descriptor.size)
         }
         
-        await withTaskGroup(of: Void.self) { taskGroup in
+        return await withTaskGroup(of: RenderGraphExecutionWaitToken.self) { taskGroup in
             if texture.descriptor.mipmapLevelCount > 1, case .cpu(let wrapMode, let filter) = mipGenerationMode {
                 let mips = self.generateMipChain(wrapMode: wrapMode, filter: filter, compressedBlockSize: 1, mipmapCount: texture.descriptor.mipmapLevelCount)
                                
                 for (i, data) in mips.enumerated().prefix(texture.descriptor.mipmapLevelCount) {
-                    taskGroup.async {
+                    taskGroup.addTask {
                         await data.copyData(to: texture, region: Region(x: 0, y: 0, width: data.width, height: data.height), mipmapLevel: i, slice: slice)
                     }
                 }
             } else {
-                taskGroup.async {
-                    await self.copyData(to: texture, region: Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, slice: slice)
+                taskGroup.addTask {
+                    var token = await self.copyData(to: texture, region: Region(x: 0, y: 0, width: self.width, height: self.height), mipmapLevel: 0, slice: slice)
                     if texture.descriptor.mipmapLevelCount > 1, case .gpuDefault = mipGenerationMode {
                         if self.channelCount == 4, self.alphaMode == .postmultiplied {
                             if _isDebugAssertConfiguration() {
                                 print("Warning: generating mipmaps using the GPU's default mipmap generation for texture \(texture.label ?? "Texture(handle: \(texture.handle))") which expects premultiplied alpha, but the texture has an alpha mode of \(self.alphaMode). Fringing may be visible")
                             }
                         }
-                        await GPUResourceUploader.generateMipmaps(for: texture)
+                        let mipmapToken = await GPUResourceUploader.generateMipmaps(for: texture)
+                        assert(token.queue == mipmapToken.queue)
+                        token.executionIndex = Swift.max(mipmapToken.executionIndex, token.executionIndex)
                     }
+                    return token
                 }
             }
+            
+            var token = RenderGraphExecutionWaitToken(queue: .invalid, executionIndex: 0)
+            
+            for await result in taskGroup {
+                assert(token.queue == .invalid || token.queue == result.queue)
+                token.queue = result.queue
+                token.executionIndex = Swift.max(token.executionIndex, result.executionIndex)
+            }
+            
+            return token
         }
         
     }
 }
 
 public struct DirectToTextureImageLoadingDelegate: ImageLoadingDelegate {
-    let storageMode: StorageMode
-    let options: TextureLoadingOptions
+    public var storageMode: StorageMode
+    public var options: TextureLoadingOptions
     
     public init(storageMode: StorageMode = .managed, options: TextureLoadingOptions = .default) {
         self.storageMode = storageMode
@@ -309,7 +325,8 @@ extension Texture {
         try await self.fillInternal(imageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, options: options, isPartiallyInitialised: true)
     }
     
-    public func copyData(from textureData: AnyImage, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws {
+    @discardableResult
+    public func copyData(from textureData: AnyImage, mipGenerationMode: MipGenerationMode = .gpuDefault) async throws -> RenderGraphExecutionWaitToken {
         return try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
     }
 
@@ -467,8 +484,9 @@ extension Texture {
             return textureData
         }
     }
-
-    private func fillInternal(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws {
+    
+    @discardableResult
+    private func fillInternal(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws -> RenderGraphExecutionWaitToken {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
         let textureData = try Texture.loadSourceImage(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(storageMode: storageMode, options: options))
@@ -478,14 +496,16 @@ extension Texture {
             self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
         }
         
-        try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
-        
         if self.label == nil {
             self.label = url.lastPathComponent
         }
+        
+        return try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
+        
     }
     
-    private func fillInternal(imageData: Data, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws {
+    @discardableResult
+    private func fillInternal(imageData: Data, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws -> RenderGraphExecutionWaitToken {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
         let textureData = try Texture.loadSourceImage(decodingImageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(storageMode: storageMode, options: options))
@@ -495,14 +515,16 @@ extension Texture {
             self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
         }
         
-        try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
+        return try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
     }
     
-    public func fill(fromFileAt url: URL, colorSpace: ImageColorSpace = .undefined, sourceAlphaMode: ImageAlphaMode = .inferred, gpuAlphaMode: ImageAlphaMode = .none, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) async throws {
-        try await self.fillInternal(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: self.descriptor.mipmapLevelCount > 1, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
+    @discardableResult
+    public func fill(fromFileAt url: URL, colorSpace: ImageColorSpace = .undefined, sourceAlphaMode: ImageAlphaMode = .inferred, gpuAlphaMode: ImageAlphaMode = .none, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) async throws -> RenderGraphExecutionWaitToken {
+        return try await self.fillInternal(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: self.descriptor.mipmapLevelCount > 1, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
     }
     
-    public func fill(decodingImageData imageData: Data, colorSpace: ImageColorSpace = .undefined, sourceAlphaMode: ImageAlphaMode = .inferred, gpuAlphaMode: ImageAlphaMode = .none, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) async throws {
-        try await self.fillInternal(imageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: self.descriptor.mipmapLevelCount > 1, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
+    @discardableResult
+    public func fill(decodingImageData imageData: Data, colorSpace: ImageColorSpace = .undefined, sourceAlphaMode: ImageAlphaMode = .inferred, gpuAlphaMode: ImageAlphaMode = .none, mipGenerationMode: MipGenerationMode = .gpuDefault, options: TextureLoadingOptions = .default) async throws -> RenderGraphExecutionWaitToken {
+        return try await self.fillInternal(imageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, mipmapped: self.descriptor.mipmapLevelCount > 1, mipGenerationMode: mipGenerationMode, storageMode: self.descriptor.storageMode, usage: self.descriptor.usageHint, options: options, isPartiallyInitialised: false)
     }
 }

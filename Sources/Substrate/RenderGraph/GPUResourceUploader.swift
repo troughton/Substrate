@@ -193,7 +193,7 @@ public final actor GPUResourceUploader {
         assert(offset + count <= buffer.length)
         
         if buffer.storageMode == .shared || buffer.storageMode == .managed {
-            try await buffer.withMutableContents(range: offset..<(offset + count)) {
+            try buffer.withMutableContents(range: offset..<(offset + count)) {
                 try bytes($0, &$1)
             }
             return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)

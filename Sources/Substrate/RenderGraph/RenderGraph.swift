@@ -714,10 +714,18 @@ public struct RenderGraphSubmissionWaitToken: Sendable {
 }
 
 public struct RenderGraphExecutionWaitToken: Sendable {
-    public let queue: Queue
-    public let executionIndex: UInt64
+    public var queue: Queue
+    public var executionIndex: UInt64
+    
+    public init(queue: Queue, executionIndex: UInt64) {
+        self.queue = queue
+        self.executionIndex = executionIndex
+    }
     
     public func wait() async {
+        guard self.queue.index < QueueRegistry.maxQueues else {
+            return
+        }
         await self.queue.waitForCommandCompletion(self.executionIndex)
     }
 }
@@ -726,7 +734,7 @@ public struct RenderGraphExecutionWaitToken: Sendable {
 protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var renderGraphQueue: Queue { get }
-    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async
+    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
 }
 
@@ -1541,7 +1549,7 @@ public final class RenderGraph {
             }
             
             let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
-            await self.context.executeRenderGraph {
+            let waitToken = await self.context.executeRenderGraph {
                 return await Self.$activeRenderGraph.withValue(self) {
                     let (passes, _, usedResources) = await self.compile(renderPasses: renderPasses)
                     return (passes, usedResources)
@@ -1563,7 +1571,7 @@ public final class RenderGraph {
             
             RenderGraph.globalSubmissionIndex.wrappingIncrement(ordering: .relaxed)
             
-            return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
+            return waitToken
         }
     }
     

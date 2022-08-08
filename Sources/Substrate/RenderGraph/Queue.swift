@@ -237,11 +237,15 @@ public struct Queue : Equatable, Sendable {
     public func waitForCommandCompletion(_ index: UInt64) async {
         while self.lastCompletedCommand < index {
             if let commandWaitTask = QueueRegistry.shared.lock.withLock({ QueueRegistry.shared.commandWaitTasks[Int(self.index)] })?.task {
-                await commandWaitTask.get()
+                await commandWaitTask.value
             } else {
                 await Task.yield()
             }
         }
+    }
+    
+    public static var invalid: Queue {
+        return .init(index: .max)
     }
 }
 
