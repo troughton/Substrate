@@ -1515,9 +1515,6 @@ public final class RenderGraph {
         return await Self.executionStream.enqueueAndWait { () -> RenderGraphExecutionWaitToken in // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
             
             self.renderPassLock.lock()
-            defer {
-                self.renderPassLock.unlock()
-            }
             
             let renderPasses = self.renderPasses
             let submissionNotifyQueue = self.submissionNotifyQueue
@@ -1526,6 +1523,8 @@ public final class RenderGraph {
             self.renderPasses.removeAll(keepingCapacity: true)
             self.completionNotifyQueue.removeAll()
             self.submissionNotifyQueue.removeAll(keepingCapacity: true)
+            
+            self.renderPassLock.unlock()
             
             defer {
                 if !submissionNotifyQueue.isEmpty {
