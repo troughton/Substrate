@@ -1520,33 +1520,34 @@ public final class RenderGraph {
         let signpostState = Self.signposter.beginInterval("Execute RenderGraph", id: self.signpostID)
         defer { Self.signposter.endInterval("Execute RenderGraph", signpostState) }
         
-        return await Self.executionStream.enqueueAndWait { () -> RenderGraphExecutionWaitToken in // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
-            
-            self.renderPassLock.lock()
-            
-            let renderPasses = self.renderPasses
-            let submissionNotifyQueue = self.submissionNotifyQueue
-            let completionNotifyQueue = self.completionNotifyQueue
-            
-            self.renderPasses.removeAll(keepingCapacity: true)
-            self.completionNotifyQueue.removeAll()
-            self.submissionNotifyQueue.removeAll(keepingCapacity: true)
-            
-            self.renderPassLock.unlock()
-            
-            defer {
-                if !submissionNotifyQueue.isEmpty {
-                    Task.detached {
-                        for item in submissionNotifyQueue {
-                            await item()
-                        }
+        self.renderPassLock.lock()
+        
+        let renderPasses = self.renderPasses
+        let submissionNotifyQueue = self.submissionNotifyQueue
+        let completionNotifyQueue = self.completionNotifyQueue
+        
+        self.renderPasses.removeAll()
+        self.completionNotifyQueue.removeAll()
+        self.submissionNotifyQueue.removeAll()
+        
+        self.renderPassLock.unlock()
+        
+        defer {
+            if !submissionNotifyQueue.isEmpty {
+                Task.detached {
+                    for item in submissionNotifyQueue {
+                        await item()
                     }
                 }
             }
+        }
+        
+        guard !renderPasses.isEmpty else {
+            return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
+        }
+        
+        return await Self.executionStream.enqueueAndWait { [renderPasses, completionNotifyQueue] () -> RenderGraphExecutionWaitToken in // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
             
-            guard !renderPasses.isEmpty else {
-                return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
-            }
             
             let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
             let waitToken = await self.context.executeRenderGraph {
