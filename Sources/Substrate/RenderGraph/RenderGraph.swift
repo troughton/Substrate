@@ -1498,7 +1498,7 @@ public final class RenderGraph {
     }
     
     private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
-        self._lastGraphGPUTime = await result.gpuTime
+        self._lastGraphGPUTime = result.gpuTime
         
         let completionTime = DispatchTime.now().uptimeNanoseconds
         let elapsed = completionTime - min(self.previousFrameCompletionTime, completionTime)
