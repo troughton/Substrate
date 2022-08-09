@@ -781,6 +781,7 @@ public final class RenderGraph {
     var completionNotifyQueue = [@Sendable () async -> Void]()
     let context : _RenderGraphContext
     let inflightFrameCount: Int
+    let currentInflightFrameCount: ManagedAtomic<Int> = .init(0)
     
     public let transientRegistryIndex : Int
 #if SUBSTRATE_ENABLE_SIGNPOSTER
@@ -1494,10 +1495,11 @@ public final class RenderGraph {
     /// Returns true if this RenderGraph already has the maximum number of GPU frames in-flight, and would have to wait
     /// for the ring buffers to become available before executing.
     public var hasMaximumFrameCountInFlight: Bool {
-        return self.queue.lastCompletedCommand - self.queue.lastSubmittedCommand >= self.inflightFrameCount
+        return self.currentInflightFrameCount.load(ordering: .relaxed) >= self.inflightFrameCount
     }
     
     private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
+        self.currentInflightFrameCount.wrappingDecrement(ordering: .relaxed)
         self._lastGraphGPUTime = result.gpuTime
         
         let completionTime = DispatchTime.now().uptimeNanoseconds
@@ -1545,6 +1547,8 @@ public final class RenderGraph {
         guard !renderPasses.isEmpty else {
             return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
         }
+        
+        self.currentInflightFrameCount.wrappingIncrement(ordering: .relaxed)
         
         return await Self.executionStream.enqueueAndWait { [renderPasses, completionNotifyQueue] () -> RenderGraphExecutionWaitToken in // NOTE: if we decide not to have a global lock on RenderGraph execution, we need to handle resource usages on a per-render-graph basis.
             
