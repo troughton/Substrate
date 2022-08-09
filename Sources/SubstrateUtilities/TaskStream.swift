@@ -18,7 +18,7 @@ public final class TaskStream {
     }
     
     let taskHandle: Task<Void, Never>
-    let taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
+    @usableFromInline let taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
     
     public init(priority: TaskPriority = .medium) {
         var taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation? = nil
@@ -38,7 +38,8 @@ public final class TaskStream {
         self.taskHandle.cancel()
     }
     
-    public func enqueueAndWait<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async -> T) async -> T {
+    @inlinable @inline(__always)
+    public func enqueueAndWait<T>(@_implicitSelfCapture _ perform: @Sendable () async -> T) async -> T {
         let taskStreamContinuation = self.taskStreamContinuation
         return await withoutActuallyEscaping(perform) { perform in
             let task = TaskHolder<T>(task: perform)
@@ -53,7 +54,8 @@ public final class TaskStream {
         }
     }
     
-    public func enqueueAndWait<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async throws -> T) async throws -> T {
+    @inlinable @inline(__always)
+    public func enqueueAndWait<T>(@_implicitSelfCapture _ perform: @Sendable () async throws -> T) async throws -> T {
         let taskStreamContinuation = self.taskStreamContinuation
         return try await withoutActuallyEscaping(perform) { perform in
             let task = TaskHolder<T>(task: perform)
