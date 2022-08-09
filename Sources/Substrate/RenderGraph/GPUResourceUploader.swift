@@ -67,10 +67,10 @@ public final actor GPUResourceUploader {
     
     @discardableResult
     @GPUResourceUploader
-    public static func runBlitPass(_ pass: @escaping @Sendable (_ bce: BlitCommandEncoder) -> Void) async -> RenderGraphExecutionWaitToken {
+    public static func runBlitPass(name: String = "GPUResourceUploader Blit Pass at \(#file):\(#line)", _ pass: @escaping @Sendable (_ bce: BlitCommandEncoder) -> Void) async -> RenderGraphExecutionWaitToken {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
-        self.renderGraph.addPass(CallbackBlitRenderPass(name: "GPUResourceUploader Copy Pass", execute: pass))
+        self.renderGraph.addPass(CallbackBlitRenderPass(name: name, execute: pass))
         return await self.renderGraph.execute()
     }
     
