@@ -60,6 +60,19 @@ public final actor GPUResourceUploader {
     
     @GPUResourceUploader
     private static func _flush(cacheMode: CPUCacheMode, buffer: Buffer, allocationRange: Range<Int>) async -> RenderGraphExecutionWaitToken {
+        // NOTE: the below call relies on the enqueued passes being the ones that will get executed on the RenderGraph when we return, and that in turn depends on renderGraph.execute() being immediately called.
+        // According to the semantics of SE-0338 (https://github.com/apple/swift-evolution/blob/main/proposals/0338-clarify-execution-non-actor-async.md), async functions are run on the global executor; that means that the compiler would insert a
+        // hop-to-executor call before running renderGraph.execute(), which in turn means that if there's no
+        // executor available to run it, the call will be suspended and run at some later point.
+        // The tricky part is that in the meantime, another thread may have called renderGraph.execute()
+        // and mixed up the order in which passes are executed.
+        // That in itself wouldn't be an issue, except that there's _another_ hop-to-executor for enqueuing
+        // the passes on the render graph context TaskStream. If _that_ suspends, we can end up in situations
+        // where the call to renderGraph.execute() returns before the enqueued passes have actually been executed,
+        // meaning that any waits on the wait token will not wait sufficiently long.
+        // To work around this, both RenderGraph.execute() and TaskStream are labelled with
+        // @_unsafeInheritExecutor, in the same way that the with_Continuation family of functions are
+        // (since those are the semantics we want).
         let waitToken = await self.renderGraph.execute()
         await self.allocator(cacheMode: cacheMode).didSubmit(buffer: buffer, allocationRange: allocationRange, submissionIndex: waitToken.executionIndex)
         return waitToken

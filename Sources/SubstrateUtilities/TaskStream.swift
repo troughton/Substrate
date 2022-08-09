@@ -39,6 +39,7 @@ public final class TaskStream {
     }
     
     @inlinable @inline(__always)
+    @_unsafeInheritExecutor
     public func enqueueAndWait<T>(@_implicitSelfCapture _ perform: @Sendable () async -> T) async -> T {
         let taskStreamContinuation = self.taskStreamContinuation
         return await withoutActuallyEscaping(perform) { perform in
@@ -55,6 +56,7 @@ public final class TaskStream {
     }
     
     @inlinable @inline(__always)
+    @_unsafeInheritExecutor
     public func enqueueAndWait<T>(@_implicitSelfCapture _ perform: @Sendable () async throws -> T) async throws -> T {
         let taskStreamContinuation = self.taskStreamContinuation
         return try await withoutActuallyEscaping(perform) { perform in
