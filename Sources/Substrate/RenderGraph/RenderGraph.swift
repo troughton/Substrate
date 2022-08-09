@@ -1601,7 +1601,6 @@ public final class RenderGraph {
             IntersectionFunctionTableRegistry.instance.clear(afterRenderGraph: self)
         }
         
-        self.renderPasses.removeAll(keepingCapacity: true)
         self.usedResources.removeAll(keepingCapacity: true)
         
         TaggedHeap.free(tag: RenderGraphTagType.renderGraphExecution.tag)
