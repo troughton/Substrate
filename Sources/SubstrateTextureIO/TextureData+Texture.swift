@@ -55,7 +55,7 @@ extension Image {
             await GPUResourceUploader.runBlitPass { [descriptor] encoder in
                 encoder.copy(from: texture, sourceSlice: slice, sourceLevel: mipmapLevel, sourceOrigin: Origin(), sourceSize: descriptor.size, to: cpuVisibleTexture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: Origin())
                 encoder.synchronize(texture: cpuVisibleTexture)
-            }
+            }.wait()
             
             await self.init(texture: cpuVisibleTexture, alphaMode: alphaMode)
             cpuVisibleTexture.dispose()
