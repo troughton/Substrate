@@ -201,6 +201,9 @@ protocol TargetCompiler {
     func compile(spirvCompilers: [SPIRVCompiler], sourceDirectory: URL, workingDirectory: URL, outputDirectory: URL, withDebugInformation debug: Bool) throws
 }
 
+#if canImport(Metal)
+import Metal
+
 final class MetalCompiler : TargetCompiler {
     let target: Target
     let driver : MetalDriver
@@ -316,10 +319,180 @@ final class MetalCompiler : TargetCompiler {
                 let metalLibraryPath = outputDirectory.appendingPathComponent("Library-\(target.metalPlatform!.rawValue).metallib")
                 print("\(self.target): Linking Metal library at \(metalLibraryPath.path)")
                 try self.driver.generateLibrary(airFiles: sourceFiles.map { $1 }, outputLibrary: metalLibraryPath).waitUntilExit()
+                
+                do {
+                    try self.generateReflection(forLibraryAt: metalLibraryPath)
+                } catch {
+                    print(error)
+                }
             }
             catch {
                 throw CompilerError.libraryGenerationFailed(error)
             }
         }
     }
+    
+    enum ReflectionError: Error {
+        case deviceCreationFailed
+    }
+    
+    func generateReflection(forLibraryAt libraryURL: URL) throws {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw ReflectionError.deviceCreationFailed
+        }
+        
+        var functions = [MTLFunctionType: [MTLFunction]]()
+        
+        let library = try device.makeLibrary(URL: libraryURL)
+        for name in library.functionNames {
+            guard let function = library.makeFunction(name: name) else { continue }
+            
+            functions[function.functionType, default: []].append(function)
+        }
+        
+        print(functions.mapValues { $0.map { $0.name }})
+        
+        for vertexFunction in functions[.vertex, default: []] {
+            let pipelineDescriptor = MTLRenderPipelineDescriptor()
+            pipelineDescriptor.vertexFunction = vertexFunction
+            
+            if let vertexAttributes = vertexFunction.vertexAttributes {
+                let vertexDescriptor = MTLVertexDescriptor()
+                
+                var offset = 0
+                for attribute in vertexAttributes {
+                    let format: MTLVertexFormat
+                    switch attribute.attributeType {
+                    case .float:
+                        format = .float
+                        offset += MemoryLayout<Float>.stride
+                    case .float2:
+                        format = .float2
+                    case .float3:
+                        format = .float3
+                    case .float4:
+                        format = .float4
+                    case .half:
+                        format = .half
+                    case .half2:
+                        format = .half2
+                    case .half3:
+                        format = .half3
+                    case .half4:
+                        format = .half4
+                    case .int:
+                        format = .int
+                    case .int2:
+                        format = .int2
+                    case .int3:
+                        format = .int3
+                    case .int4:
+                        format = .int4
+                    case .uint:
+                        format = .uint
+                    case .uint2:
+                        format = .uint2
+                    case .uint3:
+                        format = .uint3
+                    case .uint4:
+                        format = .uint4
+                    case .short:
+                        format = .short
+                    case .short2:
+                        format = .short2
+                    case .short3:
+                        format = .short3
+                    case .short4:
+                        format = .short4
+                    case .ushort:
+                        format = .ushort
+                    case .ushort2:
+                        format = .ushort2
+                    case .ushort3:
+                        format = .ushort3
+                    case .ushort4:
+                        format = .ushort4
+                    case .char:
+                        format = .char
+                    case .char2:
+                        format = .char2
+                    case .char3:
+                        format = .char3
+                    case .char4:
+                        format = .char4
+                    case .uchar:
+                        format = .uchar
+                    case .uchar2:
+                        format = .uchar2
+                    case .uchar3:
+                        format = .uchar3
+                    case .uchar4:
+                        format = .uchar4
+                    case .r8Unorm:
+                        format = .ucharNormalized
+                    case .r8Snorm:
+                        format = .charNormalized
+                    case .r16Unorm:
+                        format = .ushortNormalized
+                    case .r16Snorm:
+                        format = .shortNormalized
+                    case .rg8Unorm:
+                        format = .uchar2Normalized
+                    case .rg8Snorm:
+                        format = .char2Normalized
+                    case .rg16Unorm:
+                        format = .ushort2Normalized
+                    case .rg16Snorm:
+                        format = .short2Normalized
+                    case .rgba8Unorm:
+                        format = .uchar4Normalized
+                    case .rgba8Unorm_srgb:
+                        format = .uchar4Normalized
+                    case .rgba8Snorm:
+                        format = .char4Normalized
+                    case .rgba16Unorm:
+                        format = .ushort4Normalized
+                    case .rgba16Snorm:
+                        format = .short4Normalized
+                    case .rgb10a2Unorm:
+                        format = .uint1010102Normalized
+                    default:
+                        continue
+                    }
+                    vertexDescriptor.attributes[attribute.attributeIndex].format = format
+                    vertexDescriptor.attributes[attribute.attributeIndex].bufferIndex = 0
+                    vertexDescriptor.attributes[attribute.attributeIndex].offset = offset
+                    offset += 16
+                }
+                
+                vertexDescriptor.layouts[0].stepFunction = .perVertex
+                vertexDescriptor.layouts[0].stepRate = 1
+                vertexDescriptor.layouts[0].stride = offset
+                
+                pipelineDescriptor.vertexDescriptor = vertexDescriptor
+            }
+            
+            let constants = MTLFunctionConstantValues()
+            for (_, value) in vertexFunction.functionConstantsDictionary where value.required {
+                var valueToSet = SIMD8<UInt64>.zero
+                constants.setConstantValue(&valueToSet, type: value.type, index: value.index)
+            }
+            
+            let newVertexFunction = try library.makeFunction(name: vertexFunction.name, constantValues: constants)
+            pipelineDescriptor.vertexFunction = newVertexFunction
+            
+            do {
+                var pipelineReflection: MTLRenderPipelineReflection? = nil
+                let _ = try device.makeRenderPipelineState(descriptor: pipelineDescriptor, options: .bufferTypeInfo, reflection: &pipelineReflection)
+                
+                if let pipelineReflection = pipelineReflection {
+                    print(pipelineReflection)
+                }
+            } catch {
+                print(error)
+            }
+        }
+    }
 }
+
+#endif
