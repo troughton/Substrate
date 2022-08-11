@@ -37,18 +37,51 @@ extension MetalArgumentEncoder {
             case .texture(let texture):
                 guard let mtlTexture = resourceMap[texture]?.texture else { continue }
                 self.encoder.setTexture(mtlTexture, index: bindingIndex)
+                
+                if let mtlHeap = mtlTexture.heap {
+                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
+                } else {
+                    argBuffer.usedResources.insert(Unmanaged.passUnretained(mtlTexture).toOpaque())
+                }
+                
             case .buffer(let buffer, let offset):
                 guard let mtlBuffer = resourceMap[buffer] else { continue }
                 self.encoder.setBuffer(mtlBuffer.buffer, offset: offset + mtlBuffer.offset, index: bindingIndex)
+                
+                if let mtlHeap = mtlBuffer.buffer.heap {
+                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
+                } else {
+                    argBuffer.usedResources.insert(mtlBuffer._buffer.toOpaque())
+                }
+                
             case .accelerationStructure(let structure):
-                guard #available(macOS 11.0, iOS 14.0, *), let mtlStructure = resourceMap[structure] else { continue }
-                self.encoder.setAccelerationStructure((mtlStructure as! MTLAccelerationStructure), index: bindingIndex)
+                guard #available(macOS 11.0, iOS 14.0, *), let mtlStructure = resourceMap[structure] as! MTLAccelerationStructure? else { continue }
+                self.encoder.setAccelerationStructure(mtlStructure, index: bindingIndex)
+                
+                if let mtlHeap = mtlStructure.heap {
+                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
+                } else {
+                    argBuffer.usedResources.insert(Unmanaged.passUnretained(mtlStructure).toOpaque())
+                }
+                
             case .visibleFunctionTable(let table):
                 guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[table] else { continue }
                 self.encoder.setVisibleFunctionTable(mtlTable.table, index: bindingIndex)
+                
+                if let mtlHeap = mtlTable.table.heap {
+                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
+                } else {
+                    argBuffer.usedResources.insert(Unmanaged.passUnretained(mtlTable.table).toOpaque())
+                }
             case .intersectionFunctionTable(let table):
                 guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[table] else { continue }
                 self.encoder.setIntersectionFunctionTable(mtlTable.table, index: bindingIndex)
+                
+                if let mtlHeap = mtlTable.table.heap {
+                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
+                } else {
+                    argBuffer.usedResources.insert(Unmanaged.passUnretained(mtlTable.table).toOpaque())
+                }
             case .sampler(let samplerState):
                 self.encoder.setSamplerState(Unmanaged<MTLSamplerState>.fromOpaque(UnsafeRawPointer(samplerState.state)).takeUnretainedValue(), index: bindingIndex)
             case .bytes(let offset, let length):

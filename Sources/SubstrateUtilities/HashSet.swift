@@ -9,7 +9,7 @@
 /// HashMap is a struct to avoid retains/releases, but that means that any user must manually
 /// call `deinit` once they're finished.
 /// Based off https://github.com/emilk/emilib/blob/master/emilib/hash_map.hpp
-public struct HashSet<K : CustomHashable> {
+public struct HashSet<K : Hashable> {
     
     public let allocator : AllocatorType
     
@@ -260,7 +260,7 @@ public struct HashSet<K : CustomHashable> {
     public func findFilledBucket(key: K) -> Int {
         if self.isEmpty { return -1 }
         
-        let hashValue = key.customHashValue
+        let hashValue = key.hashValue
         for offset in 0...self.maxProbeLength {
             let bucket = (hashValue &+ offset) & self.mask
             if self.states[bucket] == .filled {
@@ -279,7 +279,7 @@ public struct HashSet<K : CustomHashable> {
     // In the latter case, the bucket is expected to be filled.
     @inlinable
     public mutating func findOrAllocate(key: K) -> Int {
-        let hashValue = key.customHashValue
+        let hashValue = key.hashValue
         
         var hole = -1
         var offset = 0
@@ -324,7 +324,7 @@ public struct HashSet<K : CustomHashable> {
     // key is not in this map. Find a place to put it.
     @inlinable
     public mutating func findEmptyBucket(key: K) -> Int {
-        let hashValue = key.customHashValue
+        let hashValue = key.hashValue
         
         var offset = 0
         while true {

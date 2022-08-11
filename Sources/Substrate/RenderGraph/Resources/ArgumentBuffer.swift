@@ -229,6 +229,30 @@ public struct ArgumentBuffer : ResourceProtocol {
         return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: self.pointer(for: \.encoders), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
     }
     
+    
+#if canImport(Metal)
+    // For Metal: residency tracking.
+    
+    public var usedResources: HashSet<UnsafeMutableRawPointer> {
+        _read {
+            yield self.pointer(for: \.usedResources).pointee
+        }
+        nonmutating _modify {
+            yield &self.pointer(for: \.usedResources).pointee
+        }
+    }
+    
+    public var usedHeaps: HashSet<UnsafeMutableRawPointer> {
+        _read {
+            yield self.pointer(for: \.usedHeaps).pointee
+        }
+        nonmutating _modify {
+            yield &self.pointer(for: \.usedHeaps).pointee
+        }
+    }
+    
+#endif
+    
     /// A limit for the maximum buffer size that may be allocated by the backend for this argument buffer.
     /// Useful for capping the length of bindless arrays to the actually used capacity.
     public var maximumAllocationLength : Int {
@@ -479,6 +503,11 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     let maxAllocationLengths: UnsafeMutablePointer<Int>
     let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
     
+    #if canImport(Metal)
+    let usedResources: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
+    let usedHeaps: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
+    #endif
+    
     typealias Descriptor = ArgumentBufferDescriptor
     
     init(capacity: Int) {
@@ -488,6 +517,11 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.stateFlags = .allocate(capacity: capacity)
         self.maxAllocationLengths = .allocate(capacity: capacity)
         self.bindings = .allocate(capacity: capacity)
+
+#if canImport(Metal)
+        self.usedResources = .allocate(capacity: capacity)
+        self.usedHeaps = .allocate(capacity: capacity)
+#endif
     }
     
     func deallocate() {
@@ -497,6 +531,11 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.stateFlags.deallocate()
         self.maxAllocationLengths.deallocate()
         self.bindings.deallocate()
+        
+#if canImport(Metal)
+        self.usedResources.deallocate()
+        self.usedHeaps.deallocate()
+#endif
     }
     
     func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
@@ -506,6 +545,11 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
+        
+#if canImport(Metal)
+        self.usedResources.advanced(by: indexInChunk).initialize(to: .init()) // TODO: pass in the appropriate allocator.
+        self.usedHeaps.advanced(by: indexInChunk).initialize(to: .init())
+#endif
     }
     
     func deinitialize(from index: Int, count: Int) {
@@ -515,6 +559,15 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.stateFlags.advanced(by: index).deinitialize(count: count)
         self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
         self.bindings.advanced(by: index).deinitialize(count: count)
+        
+#if canImport(Metal)
+        for i in 0..<count {
+            self.usedResources[index + i].deinit()
+            self.usedHeaps[index + i].deinit()
+        }
+        self.usedResources.advanced(by: index).deinitialize(count: count)
+        self.usedHeaps.advanced(by: index).deinitialize(count: count)
+#endif
     }
     
     var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }

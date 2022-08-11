@@ -11,6 +11,7 @@ import Metal
 
 final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     let encoder: MTLRenderCommandEncoder
+    let usedResources: Set<UnsafeMutableRawPointer>
     let resourceMap: FrameResourceMap<MetalBackend>
     let isAppleSiliconGPU: Bool
     
@@ -18,8 +19,9 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     
     private var baseBufferOffsets = [Int](repeating: 0, count: 31 * 5) // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     
-    init(passRecord: RenderPassRecord, encoder: MTLRenderCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>, isAppleSiliconGPU: Bool) {
+    init(passRecord: RenderPassRecord, encoder: MTLRenderCommandEncoder, usedResources: Set<UnsafeMutableRawPointer>, resourceMap: FrameResourceMap<MetalBackend>, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
+        self.usedResources = usedResources
         self.resourceMap = resourceMap
         self.isAppleSiliconGPU = isAppleSiliconGPU
         
@@ -91,8 +93,14 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
         if !argumentBuffer.stateFlags.contains(.initialised) {
             argumentBuffer.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
         }
+
+        for resource in argumentBuffer.usedResources where !self.usedResources.contains(resource) {
+            encoder.useResource(Unmanaged<MTLResource>.fromOpaque(resource).takeUnretainedValue(), usage: .read, stages: MTLRenderStages(stages))
+        }
         
-        // FIXME: should call useResources on everything in the argument buffer if it's not explicitly declared as used by the pass.
+        for heap in argumentBuffer.usedHeaps {
+            encoder.useHeap(Unmanaged<MTLHeap>.fromOpaque(heap).takeUnretainedValue(), stages: MTLRenderStages(stages))
+        }
         
         let bindIndex = index + 1 // since buffer 0 is push constants
         self.setBuffer(bufferStorage, offset: 0, at: bindIndex, stages: MTLRenderStages(stages))
@@ -366,7 +374,9 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
 }
 
 extension MTLRenderCommandEncoder {
-    func executeResourceCommands(resourceCommandIndex: inout Int, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>], passIndex: Int, order: PerformOrder, isAppleSiliconGPU: Bool) {
+    func executeResourceCommands(resourceCommandIndex: inout Int, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>],
+                                 usedResources: inout Set<UnsafeMutableRawPointer>, // Unmanaged<MTLResource>
+                                 passIndex: Int, order: PerformOrder, isAppleSiliconGPU: Bool) {
         while resourceCommandIndex < resourceCommands.count {
             let command = resourceCommands[resourceCommandIndex]
             
@@ -404,6 +414,10 @@ extension MTLRenderCommandEncoder {
                     self.use(resources.baseAddress!, count: resources.count, usage: usage, stages: stages)
                 } else {
                     self.__use(resources.baseAddress!, count: resources.count, usage: usage)
+                }
+                
+                for i in resources.indices {
+                    usedResources.insert(Unmanaged<MTLResource>.passUnretained(resources[i]).toOpaque())
                 }
             }
             
