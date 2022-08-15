@@ -116,6 +116,7 @@ public func unormToFloat<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>
 public enum ImageLoadingError : Error {
     case invalidFile(URL)
     case invalidData
+    case unsupportedComponentFormat(Any.Type)
     case pngDecodingError(String)
     case exrParseError(String)
     case unsupportedMultipartEXR(URL)
@@ -225,11 +226,11 @@ public enum ImageAlphaMode: String, Codable, Hashable, Sendable {
     
     case inferred
     
-    func inferFromFileFormat(fileExtension: String, channelCount: Int) -> ImageAlphaMode {
+    func inferFromFileFormat(format: ImageFileFormat?, channelCount: Int) -> ImageAlphaMode {
         if channelCount != 2 && channelCount != 4 {
             return .none
         }
-        if case .inferred = self, let format = ImageFileFormat(extension: fileExtension) {
+        if case .inferred = self, let format = format {
             switch format {
             case .png:
                 return .postmultiplied
