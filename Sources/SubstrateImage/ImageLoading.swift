@@ -303,6 +303,7 @@ public struct ImageFileInfo: Hashable, Codable {
             let bitmapImageRep = NSBitmapImageRep(forIncrementalLoad: ())
             var dataPrefixCount = 2048 // Start with a 2KB chunk. We only want to load the header.
             
+            var loadingComplete = false
             loadLoop: repeat {
                 let status = bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: dataPrefixCount == data.count)
                 switch status {
@@ -316,13 +317,16 @@ public struct ImageFileInfo: Hashable, Codable {
                     dataPrefixCount = data.count
                 case NSBitmapImageRep.LoadStatus.completed.rawValue,
                     _ where status > 0:
+                    loadingComplete = status == NSBitmapImageRep.LoadStatus.completed.rawValue
                     break loadLoop
                 default:
                     throw ImageLoadingError.invalidData
                 }
             } while true
             
-            bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: true)
+            if !loadingComplete {
+                bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: true)
+            }
             
             self.format = format
             self.width = bitmapImageRep.pixelsWide
