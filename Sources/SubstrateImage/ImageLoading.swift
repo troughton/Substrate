@@ -161,8 +161,8 @@ public struct ImageFileInfo: Hashable, Codable {
                 return
             } else {
 #if canImport(AppKit)
-                // NOTE: 'public.image' is checked in ImageFileInfo.requiresNSBitmapImageDecode
-                if let format = try? Self.init(format: .init(typeIdentifier: "public.image"), data: data) {
+                // NOTE: 'public.image' is checked in ImageFileInfo.requiresNSBitmapImageRepDecode
+                if let format = try? Self.init(format: .genericImage, data: data) {
                     // Try NSBitmapImageRep
                     self = format
                     return
@@ -301,14 +301,14 @@ public struct ImageFileInfo: Hashable, Codable {
         default:
             #if canImport(AppKit)
             let bitmapImageRep = NSBitmapImageRep(forIncrementalLoad: ())
-            var dataPrefixCount = 1024 // Start with a 1KB chunk. We only want to load the header.
+            var dataPrefixCount = 2048 // Start with a 2KB chunk. We only want to load the header.
             
             loadLoop: repeat {
                 let status = bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: dataPrefixCount == data.count)
                 switch status {
                 case NSBitmapImageRep.LoadStatus.unknownType.rawValue,
                     NSBitmapImageRep.LoadStatus.readingHeader.rawValue:
-                    dataPrefixCount += 1024
+                    dataPrefixCount += 2048
                 case NSBitmapImageRep.LoadStatus.invalidData.rawValue,
                     NSBitmapImageRep.LoadStatus.unexpectedEOF.rawValue:
                     throw ImageLoadingError.invalidData
@@ -328,7 +328,7 @@ public struct ImageFileInfo: Hashable, Codable {
             self.width = bitmapImageRep.pixelsWide
             self.height = bitmapImageRep.pixelsHigh
             self.channelCount = bitmapImageRep.samplesPerPixel
-            self.bitDepth = bitmapImageRep.bitsPerPixel
+            self.bitDepth = bitmapImageRep.bitsPerPixel / bitmapImageRep.samplesPerPixel
             self.isSigned = false
             self.isFloatingPoint = bitmapImageRep.bitmapFormat.contains(.floatingPointSamples)
             
@@ -461,7 +461,7 @@ extension ImageFileInfo {
 #if canImport(AppKit)
     fileprivate var requiresNSBitmapImageRepDecode: Bool {
         guard let format = self.format else { return false }
-        if format.typeIdentifier == "public.image" {
+        if format == .genericImage {
             // public.image is used for images where NSBitmapImageRep
             // was used to load them but we don't know the exact format.
             return true
@@ -641,7 +641,7 @@ extension Image where ComponentType == UInt8 {
             guard let bitmapImage = NSBitmapImageRep(data: try Data(contentsOf: url, options: .mappedIfSafe)) else {
                 throw ImageLoadingError.invalidFile(url)
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
+            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -692,7 +692,7 @@ extension Image where ComponentType == UInt8 {
             guard let bitmapImage = NSBitmapImageRep(data: data) else {
                 throw ImageLoadingError.invalidData
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
+            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -741,7 +741,7 @@ extension Image where ComponentType == Int8 {
             guard let bitmapImage = NSBitmapImageRep(data: try Data(contentsOf: url, options: .mappedIfSafe)) else {
                 throw ImageLoadingError.invalidFile(url)
             }
-            self = try bitmapImage.makeImage(loadingDelegate: loadingDelegate)
+            self = try bitmapImage.makeImage(fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -785,7 +785,7 @@ extension Image where ComponentType == Int8 {
             guard let bitmapImage = NSBitmapImageRep(data: data) else {
                 throw ImageLoadingError.invalidData
             }
-            self = try bitmapImage.makeImage(loadingDelegate: loadingDelegate)
+            self = try bitmapImage.makeImage(fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -833,7 +833,7 @@ extension Image where ComponentType == UInt16 {
             guard let bitmapImage = NSBitmapImageRep(data: try Data(contentsOf: url, options: .mappedIfSafe)) else {
                 throw ImageLoadingError.invalidFile(url)
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
+            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -883,7 +883,7 @@ extension Image where ComponentType == UInt16 {
             guard let bitmapImage = NSBitmapImageRep(data: data) else {
                 throw ImageLoadingError.invalidData
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
+            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -938,7 +938,7 @@ extension Image where ComponentType == Float {
             guard let bitmapImage = NSBitmapImageRep(data: try Data(contentsOf: url, options: .mappedIfSafe)) else {
                 throw ImageLoadingError.invalidFile(url)
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
+            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -993,7 +993,7 @@ extension Image where ComponentType == Float {
             guard let bitmapImage = NSBitmapImageRep(data: data) else {
                 throw ImageLoadingError.invalidData
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
+            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -1202,7 +1202,7 @@ extension Image where ComponentType: SIMDScalar {
     @_specialize(kind: full, where ComponentType == UInt8)
     @_specialize(kind: full, where ComponentType == UInt16)
     @_specialize(kind: full, where ComponentType == Float)
-    public init?(cgImage: CGImage) {
+    public init(cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         var cgImage = cgImage
         
         let cgColorSpace = cgImage.colorSpace
@@ -1225,9 +1225,8 @@ extension Image where ComponentType: SIMDScalar {
         }
         
         guard let data = cgImage.dataProvider?.data as NSData? else {
-            return nil
+            throw ImageLoadingError.invalidData
         }
-        
         
         let alphaMode: ImageAlphaMode
         switch cgImage.alphaInfo {
@@ -1239,12 +1238,19 @@ extension Image where ComponentType: SIMDScalar {
             alphaMode = .none
         }
         
-        self.init(width: cgImage.width, height: cgImage.height,
-                  channelCount: cgImage.bitsPerPixel / cgImage.bitsPerComponent,
-                  colorSpace: colorSpace,
-                  alphaMode: alphaMode)
+        let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
+        let channelCount = loadingDelegate.channelCount(for: fileInfo)
         
-        let channelCount = self.channelCount
+        let (imageData, allocator) = try loadingDelegate.allocateMemory(byteCount: cgImage.width * cgImage.height * channelCount * MemoryLayout<ComponentType>.stride, alignment: MemoryLayout<SIMD4<ComponentType>>.stride, zeroed: false)
+        
+        self.init(width: cgImage.width, height: cgImage.height,
+                  channelCount: channelCount,
+                  colorSpace: colorSpace,
+                  alphaMode: alphaMode,
+                  data: imageData.bindMemory(to: ComponentType.self),
+                  allocator: allocator)
+        
+        let sourceChannelCount = cgImage.bitsPerPixel / cgImage.bitsPerComponent
         let width = self.width
         let height = self.height
         
@@ -1252,8 +1258,19 @@ extension Image where ComponentType: SIMDScalar {
             for y in 0..<height {
                 let base = data.bytes + y * cgImage.bytesPerRow
                 let dest = contentsBuffer.baseAddress!.advanced(by: y * width * channelCount)
-                for i in 0..<width * channelCount {
-                    dest[i] = base.load(fromByteOffset: i * MemoryLayout<ComponentType>.stride, as: ComponentType.self)
+                if sourceChannelCount == channelCount {
+                    for i in 0..<width * channelCount {
+                        dest.advanced(by: i).initialize(to: base.load(fromByteOffset: i * MemoryLayout<ComponentType>.stride, as: ComponentType.self))
+                    }
+                } else {
+                    for x in 0..<width {
+                        for c in 0..<Swift.min(sourceChannelCount, channelCount) {
+                            dest.advanced(by: x * channelCount + c).initialize(to: base.load(fromByteOffset: (x * sourceChannelCount + c) * MemoryLayout<ComponentType>.stride, as: ComponentType.self))
+                        }
+                        for c in Swift.min(sourceChannelCount, channelCount)..<channelCount {
+                            dest.advanced(by: x * channelCount + c).withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<ComponentType>.size) { $0.initialize(repeating: 0 as UInt8, count: MemoryLayout<ComponentType>.size) }
+                        }
+                    }
                 }
             }
             
@@ -1261,27 +1278,48 @@ extension Image where ComponentType: SIMDScalar {
             let alphaInfo: CGImageAlphaInfo? = CGImageAlphaInfo(rawValue: cgImage.bitmapInfo.rawValue & CGBitmapInfo.alphaInfoMask.rawValue)
             let alphaFirst: Bool = alphaInfo == .premultipliedFirst || alphaInfo == .first || alphaInfo == .noneSkipFirst
             let alphaLast: Bool = alphaInfo == .premultipliedLast || alphaInfo == .last || alphaInfo == .noneSkipLast
-            let endianLittle: Bool = !cgImage.bitmapInfo.intersection([.byteOrder32Little, .byteOrder16Little]).isEmpty
+            var argbOrder: Bool = false
+            if cgImage.bitsPerComponent == 8, !cgImage.bitmapInfo.intersection([.byteOrder16Little, .byteOrder32Little]).isEmpty {
+                argbOrder = true
+            } else if cgImage.bitsPerComponent == 16, cgImage.bitmapInfo.contains(.byteOrder32Little) {
+                argbOrder = true
+            } else if cgImage.bitsPerComponent == 16, !cgImage.bitmapInfo.contains(.byteOrder16Little) {
+                contentsBuffer.withMemoryRebound(to: UInt16.self) { buffer in
+                    for i in buffer.indices {
+                        buffer[i] = buffer[i].bigEndian
+                    }
+                }
+                
+                argbOrder = false
+            } else if cgImage.bitsPerComponent == 32, !cgImage.bitmapInfo.contains(.byteOrder32Little) {
+                contentsBuffer.withMemoryRebound(to: UInt32.self) { buffer in
+                    for i in buffer.indices {
+                        buffer[i] = buffer[i].bigEndian
+                    }
+                }
+                
+                argbOrder = false
+            }
             
             if channelCount == 2 {
-                if alphaFirst != endianLittle {
+                if alphaFirst != argbOrder {
                     for baseIndex in stride(from: 0, to: contentsBuffer.count, by: channelCount) {
                         contentsBuffer.swapAt(baseIndex + 0, baseIndex + 1) // AR to RA
                     }
                 }
             } else if channelCount == 3 {
-                if endianLittle {
+                if argbOrder {
                     for baseIndex in stride(from: 0, to: contentsBuffer.count, by: channelCount) {
                         contentsBuffer.swapAt(baseIndex + 0, baseIndex + 2) // BGR to RGB
                     }
                 }
             } else if channelCount == 4 {
                 let swizzle: SIMD4<Int>
-                if alphaFirst && endianLittle {
+                if alphaFirst && argbOrder {
                     swizzle = SIMD4(2, 1, 0, 3)
                 } else if alphaFirst {
                     swizzle = SIMD4(1, 2, 3, 0)
-                } else if alphaLast && endianLittle {
+                } else if alphaLast && argbOrder {
                     swizzle = SIMD4(3, 2, 1, 0)
                 } else {
                     swizzle = SIMD4(0, 1, 2, 3)
@@ -1346,33 +1384,25 @@ extension Image {
 
 extension NSBitmapImageRep {
     @inline(__always)
-    fileprivate func makeImageFromCGImage<T: SIMDScalar>(cgImage: CGImage, format: T.Type = T.self) throws -> Image<T>? {
+    fileprivate func makeImageFromCGImage<T: SIMDScalar>(cgImage: CGImage, format: T.Type = T.self, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws -> Image<T> {
         let bitmapInfo = cgImage.bitmapInfo
         if bitmapInfo.contains(.floatComponents) {
-            return try Image<Float>(cgImage: cgImage)?.converted(to: format)
-        } else if bitmapInfo.contains(.byteOrder16Little) {
-            return try Image<UInt16>(cgImage: cgImage)?.converted(to: format)
-        } else if bitmapInfo.contains(.byteOrder16Big) {
-            var image = Image<UInt16>(cgImage: cgImage)
-            let channelRange = 0..<(image?.channelCount ?? 0)
-            image?.apply(channelRange: channelRange) { $0.littleEndian }
-            return try image?.converted(to: format)
-        } else if bitmapInfo.contains(.byteOrder32Little) {
-            return try Image<UInt32>(cgImage: cgImage)?.converted(to: format)
-        } else if bitmapInfo.contains(.byteOrder32Big) {
-            var image = Image<UInt32>(cgImage: cgImage)
-            let channelRange = 0..<(image?.channelCount ?? 0)
-            image?.apply(channelRange: channelRange) { $0.littleEndian }
-            return try image?.converted(to: format)
+            return try Image<Float>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
+        } else if cgImage.bitsPerComponent == 16 {
+            return try Image<UInt16>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
+        } else if cgImage.bitsPerComponent == 32 {
+            return try Image<UInt32>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
+        } else if cgImage.bitsPerComponent == 8 {
+            return try Image<UInt8>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
         } else {
-            return try Image<UInt8>(cgImage: cgImage)?.converted(to: format)
+            throw ImageLoadingError.invalidData
         }
     }
     
     @inline(__always)
-    func makeImage<T: SIMDScalar>(format: T.Type = T.self, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, loadingDelegate: ImageLoadingDelegate? = nil) throws -> Image<T> {
+    func makeImage<T: SIMDScalar>(format: T.Type = T.self, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws -> Image<T> {
         if let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil),
-            let image = try self.makeImageFromCGImage(cgImage: cgImage, format: format) {
+           let image = try? self.makeImageFromCGImage(cgImage: cgImage, format: format, fileInfo: fileInfo, loadingDelegate: loadingDelegate) {
            return image
         }
         

@@ -75,6 +75,10 @@ public struct ImageFileFormat: Hashable, Codable {
         return lhs == rhs
     }
     
+    public static var genericImage: ImageFileFormat {
+        return .init(typeIdentifier: "public.image")
+    }
+    
     public static var png: ImageFileFormat {
         return .init(typeIdentifier: "public.png")
     }
