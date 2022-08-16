@@ -335,9 +335,16 @@ extension Texture {
         return try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
     }
 
-    private static func processSourceImage(_ textureData: inout Image<UInt8>, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
+    private static func processSourceImage(_ textureData: inout Image<UInt8>, sourceChannelCount: Int, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
         if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
             textureData.reinterpretColor(as: .sRGB)
+        }
+        
+        if sourceChannelCount < textureData.channelCount {
+            // Set the alpha channel to 1.0 by default.
+            textureData.apply(channelRange: (textureData.channelCount - 1)..<textureData.channelCount) { _ in
+                UInt8.max
+            }
         }
         
         if textureData.alphaMode != .none {
@@ -370,7 +377,7 @@ extension Texture {
         }
     }
     
-    private static func processSourceImage(_ textureData: inout Image<UInt16>, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
+    private static func processSourceImage(_ textureData: inout Image<UInt16>, sourceChannelCount: Int, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
         if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
             textureData.reinterpretColor(as: .sRGB)
         }
@@ -378,6 +385,13 @@ extension Texture {
         let pixelFormat = textureData.preferredPixelFormat
         guard pixelFormat != .invalid else {
             throw TextureLoadingError.noSupportedPixelFormat
+        }
+        
+        if sourceChannelCount < textureData.channelCount {
+            // Set the alpha channel to 1.0 by default.
+            textureData.apply(channelRange: (textureData.channelCount - 1)..<textureData.channelCount) { _ in
+                UInt16.max
+            }
         }
         
         if textureData.alphaMode != .none {
@@ -400,7 +414,7 @@ extension Texture {
         }
     }
     
-    private static func processSourceImage(_ textureData: inout Image<Float>, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
+    private static func processSourceImage(_ textureData: inout Image<Float>, sourceChannelCount: Int, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
         if colorSpace != .undefined {
             textureData.reinterpretColor(as: colorSpace)
         } else if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
@@ -410,6 +424,13 @@ extension Texture {
         let pixelFormat = textureData.preferredPixelFormat
         guard pixelFormat != .invalid else {
             throw TextureLoadingError.noSupportedPixelFormat
+        }
+        
+        if sourceChannelCount < textureData.channelCount {
+            // Set the alpha channel to 1.0 by default.
+            textureData.apply(channelRange: (textureData.channelCount - 1)..<textureData.channelCount) { _ in
+                1.0
+            }
         }
         
         if options.contains(.autoConvertColorSpace) {
@@ -433,30 +454,30 @@ extension Texture {
     }
     
     public static func loadSourceImage(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions, loadingDelegate: ImageLoadingDelegate? = nil) throws -> AnyImage {
-        if url.pathExtension.lowercased() == "exr" {
+        let fileInfo = try ImageFileInfo(url: url)
+        
+        if fileInfo.format == .exr || fileInfo.format == nil, url.pathExtension.lowercased() == "exr" {
             var textureData = try Image<Float>(exrAt: url, loadingDelegate: loadingDelegate)
-            try self.processSourceImage(&textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            try self.processSourceImage(&textureData, sourceChannelCount: fileInfo.channelCount, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
             return textureData
         }
-        
-        let fileInfo = try ImageFileInfo(url: url)
         
         let is16Bit = fileInfo.bitDepth == 16
         let isHDR = fileInfo.isFloatingPoint
         
         if isHDR {
             var textureData = try Image<Float>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
-            try self.processSourceImage(&textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            try self.processSourceImage(&textureData, sourceChannelCount: fileInfo.channelCount, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
             return textureData
             
         } else if is16Bit {
             var textureData = try Image<UInt16>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
-            try self.processSourceImage(&textureData, gpuAlphaMode: gpuAlphaMode, options: options)
+            try self.processSourceImage(&textureData, sourceChannelCount: fileInfo.channelCount, gpuAlphaMode: gpuAlphaMode, options: options)
             return textureData
             
         } else {
             var textureData = try Image<UInt8>(fileAt: url, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
-            try self.processSourceImage(&textureData, gpuAlphaMode: gpuAlphaMode, options: options)
+            try self.processSourceImage(&textureData, sourceChannelCount: fileInfo.channelCount, gpuAlphaMode: gpuAlphaMode, options: options)
             return textureData
         }
     }
@@ -466,7 +487,7 @@ extension Texture {
         let fileInfo = try ImageFileInfo(data: imageData)
         if fileInfo.format == .exr {
             var textureData = try Image<Float>(exrData: imageData, loadingDelegate: loadingDelegate)
-            try self.processSourceImage(&textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            try self.processSourceImage(&textureData, sourceChannelCount: fileInfo.channelCount, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
             return textureData
         }
         
@@ -475,17 +496,17 @@ extension Texture {
         
         if isHDR {
             var textureData = try Image<Float>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
-            try self.processSourceImage(&textureData, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
+            try self.processSourceImage(&textureData, sourceChannelCount: fileInfo.channelCount, colorSpace: colorSpace, gpuAlphaMode: gpuAlphaMode, options: options)
             return textureData
             
         } else if is16Bit {
             var textureData = try Image<UInt16>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
-            try self.processSourceImage(&textureData, gpuAlphaMode: gpuAlphaMode, options: options)
+            try self.processSourceImage(&textureData, sourceChannelCount: fileInfo.channelCount, gpuAlphaMode: gpuAlphaMode, options: options)
             return textureData
             
         } else {
             var textureData = try Image<UInt8>(data: imageData, colorSpace: colorSpace, alphaMode: sourceAlphaMode, loadingDelegate: loadingDelegate)
-            try self.processSourceImage(&textureData, gpuAlphaMode: gpuAlphaMode, options: options)
+            try self.processSourceImage(&textureData, sourceChannelCount: fileInfo.channelCount, gpuAlphaMode: gpuAlphaMode, options: options)
             return textureData
         }
     }
