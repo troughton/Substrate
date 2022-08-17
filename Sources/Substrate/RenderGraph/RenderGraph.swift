@@ -47,7 +47,7 @@ public protocol RenderPass : AnyObject {
     /// even if no other pass reads from them within the same render graph.
     ///
     /// FIXME:  this documentation is out of date.
-    var usedResources : [ExplicitResourceUsage] { get }
+    var resources : [ExplicitResourceUsage] { get }
 }
 
 extension RenderPass {
@@ -111,6 +111,45 @@ extension DrawRenderPass {
     @inlinable
     public var stencilClearOperation : StencilClearOperation {
         return .keep
+    }
+    
+    public var inferredResources: [ExplicitResourceUsage] {
+        let declaredResources = self.resources.lazy.compactMap { resource in
+            (resource.resource, resource)
+        }
+        let resources = [Resource: ExplicitResourceUsage](declaredResources, uniquingKeysWith: { a, b in
+            var result = a
+            result.access.formUnion(b.access)
+            result.subresources.append(contentsOf: b.subresources)
+            return result
+        })
+        
+        var inferredResources = resources
+        
+        let renderTarget = self.renderTargetDescriptor
+        for attachment in renderTarget.colorAttachments {
+            if let attachment = attachment, resources[Resource(attachment.texture)] == nil {
+                let subresource = TextureSubresourceRange(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)
+                
+                inferredResources[Resource(attachment.texture), default: .texture(attachment.texture, access: .colorAttachment)]
+                    .subresources.append(.textureSlices(subresource))
+            }
+        }
+        
+        if let attachment = renderTarget.depthAttachment, resources[Resource(attachment.texture)] == nil {
+            let subresource = TextureSubresourceRange(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)
+            
+            inferredResources[Resource(attachment.texture), default: .texture(attachment.texture, access: .depthStencilAttachment)]
+                .subresources.append(.textureSlices(subresource))
+        }
+        
+        if let attachment = renderTarget.stencilAttachment, resources[Resource(attachment.texture)] == nil {
+            let subresource = TextureSubresourceRange(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)
+            
+            inferredResources[Resource(attachment.texture), default: .texture(attachment.texture, access: .depthStencilAttachment)]
+                .subresources.append(.textureSlices(subresource))
+        }
+        return Array(inferredResources.values)
     }
     
     var renderTargetDescriptorForActiveAttachments: RenderTargetDescriptor {
@@ -275,18 +314,22 @@ final class CallbackDrawRenderPass : DrawRenderPass {
     public let colorClearOperations: [ColorClearOperation]
     public let depthClearOperation: DepthClearOperation
     public let stencilClearOperation: StencilClearOperation
+    public let resources: [ExplicitResourceUsage]
     public let executeFunc : (RenderCommandEncoder) async -> Void
     
-    public init(name: String, renderTarget: RenderTargetDescriptor,
+    public init(name: String,
+                renderTarget: RenderTargetDescriptor,
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
+                resources: [ExplicitResourceUsage] = [],
                 execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
         self.name = name
         self.renderTargetDescriptor = renderTarget
         self.colorClearOperations = colorClearOperations
         self.depthClearOperation = depthClearOperation
         self.stencilClearOperation = stencilClearOperation
+        self.resources = resources
         self.executeFunc = execute
     }
     
@@ -309,18 +352,21 @@ final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : Reflec
     public let colorClearOperations: [ColorClearOperation]
     public let depthClearOperation: DepthClearOperation
     public let stencilClearOperation: StencilClearOperation
+    public let resources: [ExplicitResourceUsage]
     public let executeFunc : (TypedRenderCommandEncoder<R>) async -> Void
     
     public init(name: String, renderTarget: RenderTargetDescriptor,
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
+                resources: [ExplicitResourceUsage] = [],
                 reflection: R.Type, execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
         self.name = name
         self.renderTargetDescriptor = renderTarget
         self.colorClearOperations = colorClearOperations
         self.depthClearOperation = depthClearOperation
         self.stencilClearOperation = stencilClearOperation
+        self.resources = resources
         self.executeFunc = execute
     }
     
@@ -339,10 +385,14 @@ final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : Reflec
 @usableFromInline
 final class CallbackComputeRenderPass : ComputeRenderPass {
     public let name : String
+    public let resources: [ExplicitResourceUsage]
     public let executeFunc : (ComputeCommandEncoder) async -> Void
     
-    public init(name: String, execute: @escaping @Sendable (ComputeCommandEncoder) async -> Void) {
+    public init(name: String,
+                resources: [ExplicitResourceUsage],
+                execute: @escaping @Sendable (ComputeCommandEncoder) async -> Void) {
         self.name = name
+        self.resources = resources
         self.executeFunc = execute
     }
     
@@ -354,10 +404,14 @@ final class CallbackComputeRenderPass : ComputeRenderPass {
 @usableFromInline
 final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : ReflectableComputeRenderPass {
     public let name : String
+    public let resources: [ExplicitResourceUsage]
     public let executeFunc : (TypedComputeCommandEncoder<R>) async -> Void
     
-    public init(name: String, reflection: R.Type, execute: @escaping @Sendable (TypedComputeCommandEncoder<R>) async -> Void) {
+    public init(name: String, reflection: R.Type,
+                resources: [ExplicitResourceUsage],
+                execute: @escaping @Sendable (TypedComputeCommandEncoder<R>) async -> Void) {
         self.name = name
+        self.resources = resources
         self.executeFunc = execute
     }
     
@@ -369,10 +423,14 @@ final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : Ref
 @usableFromInline
 final class CallbackCPURenderPass : CPURenderPass {
     public let name : String
+    public let resources: [ExplicitResourceUsage]
     public let executeFunc : @Sendable () async -> Void
     
-    public init(name: String, execute: @escaping @Sendable () async -> Void) {
+    public init(name: String,
+                resources: [ExplicitResourceUsage],
+                execute: @escaping @Sendable () async -> Void) {
         self.name = name
+        self.resources = resources
         self.executeFunc = execute
     }
     
@@ -384,9 +442,12 @@ final class CallbackCPURenderPass : CPURenderPass {
 @usableFromInline
 final class CallbackBlitRenderPass : BlitRenderPass {
     public let name : String
+    public let resources: [ExplicitResourceUsage]
     public let executeFunc : (BlitCommandEncoder) async -> Void
     
-    public init(name: String, execute: @escaping @Sendable (BlitCommandEncoder) async -> Void) {
+    public init(name: String,
+                resources: [ExplicitResourceUsage],
+                execute: @escaping @Sendable (BlitCommandEncoder) async -> Void) {
         self.name = name
         self.executeFunc = execute
     }
@@ -399,9 +460,12 @@ final class CallbackBlitRenderPass : BlitRenderPass {
 @usableFromInline
 final class CallbackExternalRenderPass : ExternalRenderPass {
     public let name : String
+    public let resources: [ExplicitResourceUsage]
     public let executeFunc : (ExternalCommandEncoder) async -> Void
     
-    public init(name: String, execute: @escaping @Sendable (ExternalCommandEncoder) async -> Void) {
+    public init(name: String,
+                resources: [ExplicitResourceUsage],
+                execute: @escaping @Sendable (ExternalCommandEncoder) async -> Void) {
         self.name = name
         self.executeFunc = execute
     }
@@ -414,44 +478,19 @@ final class CallbackExternalRenderPass : ExternalRenderPass {
 @available(macOS 11.0, iOS 14.0, *)
 final class CallbackAccelerationStructureRenderPass : AccelerationStructureRenderPass {
     public let name : String
+    public let resources: [ExplicitResourceUsage]
     public let executeFunc : (AccelerationStructureCommandEncoder) -> Void
     
-    public init(name: String, execute: @escaping @Sendable (AccelerationStructureCommandEncoder) -> Void) {
+    public init(name: String,
+                resources: [ExplicitResourceUsage],
+                execute: @escaping @Sendable (AccelerationStructureCommandEncoder) -> Void) {
         self.name = name
+        self.resources = resources
         self.executeFunc = execute
     }
     
     public func execute(accelerationStructureCommandEncoder: AccelerationStructureCommandEncoder) {
         self.executeFunc(accelerationStructureCommandEncoder)
-    }
-}
-
-// A draw render pass that caches the properties of an actual DrawRenderPass
-// but that doesn't retain any of the member variables.
-@usableFromInline
-final class ProxyDrawRenderPass: DrawRenderPass {
-    @usableFromInline let name: String
-    @usableFromInline let renderTargetDescriptor: RenderTargetDescriptor
-    @usableFromInline let colorClearOperations: ColorAttachmentArray<ColorClearOperation>
-    @usableFromInline let depthClearOperation: DepthClearOperation
-    @usableFromInline let stencilClearOperation: StencilClearOperation
-    
-    init(_ renderPass: DrawRenderPass) {
-        self.name = renderPass.name
-        self.renderTargetDescriptor = renderPass.renderTargetDescriptor
-        self.depthClearOperation = renderPass.depthClearOperation
-        self.stencilClearOperation = renderPass.stencilClearOperation
-        self.colorClearOperations = ColorAttachmentArray { i in
-            renderPass.colorClearOperation(attachmentIndex: i)
-        }
-    }
-    
-    @usableFromInline func colorClearOperation(attachmentIndex: Int) -> ColorClearOperation {
-        return self.colorClearOperations.dropFirst(attachmentIndex).first ?? .keep
-    }
-    
-    @usableFromInline func execute(renderCommandEncoder: RenderCommandEncoder) {
-        fatalError()
     }
 }
 
@@ -862,8 +901,9 @@ public final class RenderGraph {
     /// encoder to encode GPU blit commands.
     @inlinable
     public func addBlitCallbackPass(file: String = #fileID, line: Int = #line,
+                                    resources: [ExplicitResourceUsage],
                                     _ execute: @escaping @Sendable (BlitCommandEncoder) async -> Void) {
-        self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", execute: execute))
+        self.addPass(CallbackBlitRenderPass(name: "Anonymous Blit Pass at \(file):\(line)", resources: resources, execute: execute))
     }
     
     /// Enqueue the blit operations performed in `execute` for execution at the next `RenderGraph.execute` call on this render graph.
@@ -873,8 +913,9 @@ public final class RenderGraph {
     /// - Parameter execute: A closure to execute that will be passed a blit command encoder, where the caller can use the command
     /// encoder to encode GPU blit commands.
     public func addBlitCallbackPass(name: String,
+                                    resources: [ExplicitResourceUsage],
                                     _ execute: @escaping @Sendable (BlitCommandEncoder) async -> Void) {
-        self.addPass(CallbackBlitRenderPass(name: name, execute: execute))
+        self.addPass(CallbackBlitRenderPass(name: name, resources: resources, execute: execute))
     }
     
     /// Enqueue a draw render pass that does nothing other than clear the passed-in render target according to the specified operations.
@@ -889,8 +930,36 @@ public final class RenderGraph {
                              colorClearOperations: [ColorClearOperation] = [],
                              depthClearOperation: DepthClearOperation = .keep,
                              stencilClearOperation: StencilClearOperation = .keep) {
+        var resources = [ExplicitResourceUsage]()
+        for clearOperation in colorClearOperations {
+            if case .clear = clearOperation, let attachment = renderTarget.colorAttachments[0] {
+                resources.append(
+                    .texture(attachment.texture,
+                             access: .colorAttachmentWrite,
+                             subresources: [.init(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)])
+                )
+            }
+        }
+        
+        if case .clear = depthClearOperation, let attachment = renderTarget.depthAttachment {
+            resources.append(
+                .texture(attachment.texture,
+                         access: .depthStencilAttachmentWrite,
+                         subresources: [.init(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)])
+            )
+        }
+        
+        if case .clear = stencilClearOperation, let attachment = renderTarget.stencilAttachment {
+            resources.append(
+                .texture(attachment.texture,
+                         access: .depthStencilAttachmentWrite,
+                         subresources: [.init(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)])
+            )
+        }
+        
         self.addPass(CallbackDrawRenderPass(name: "Clear Pass at \(file):\(line)", renderTarget: renderTarget,
                                             colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                            resources: resources,
                                             execute: { _ in }))
     }
     
@@ -916,16 +985,6 @@ public final class RenderGraph {
                                             execute: execute))
     }
     
-    @available(*, deprecated, renamed:"addDrawCallbackPass(file:line:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:execute:)")
-    public func addDrawCallbackPass(file: String = #fileID, line: Int = #line,
-                                    descriptor: RenderTargetDescriptor,
-                                    colorClearOperations: [ColorClearOperation] = [],
-                                    depthClearOperation: DepthClearOperation = .keep,
-                                    stencilClearOperation: StencilClearOperation = .keep,
-                                    _ execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
-        self.addDrawCallbackPass(file: file, line: line, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, execute)
-    }
-    
     /// Enqueue a draw render pass comprised of the specified render operations in `execute` and the provided clear operations.
     ///
     /// - Parameter name: The name of the pass.
@@ -948,16 +1007,6 @@ public final class RenderGraph {
                                             execute: execute))
     }
     
-    @available(*, deprecated, renamed:"addDrawCallbackPass(name:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:execute:)")
-    public func addDrawCallbackPass(name: String,
-                                    descriptor: RenderTargetDescriptor,
-                                    colorClearOperations: [ColorClearOperation] = [],
-                                    depthClearOperation: DepthClearOperation = .keep,
-                                    stencilClearOperation: StencilClearOperation = .keep,
-                                    _ execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
-        self.addDrawCallbackPass(name: name, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, execute)
-    }
-    
     
     /// Enqueue a draw render pass comprised of the specified render operations in `execute` and the provided clear operations.
     ///
@@ -978,17 +1027,6 @@ public final class RenderGraph {
         self.addPass(ReflectableCallbackDrawRenderPass(name: "Anonymous Draw Pass at \(file):\(line)", renderTarget: renderTarget,
                                                        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                                        reflection: reflection, execute: execute))
-    }
-    
-    @available(*, deprecated, renamed:"addDrawCallbackPass(file:line:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:reflection:execute:)")
-    public func addDrawCallbackPass<R>(file: String = #fileID, line: Int = #line,
-                                       descriptor: RenderTargetDescriptor,
-                                       colorClearOperations: [ColorClearOperation] = [],
-                                       depthClearOperation: DepthClearOperation = .keep,
-                                       stencilClearOperation: StencilClearOperation = .keep,
-                                       reflection: R.Type,
-                                       _ execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
-        self.addDrawCallbackPass(file: file, line: line, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, reflection: reflection, execute)
     }
     
     /// Enqueue a draw render pass comprised of the specified render operations in `execute` and the provided clear operations, using the render pass reflection specified in `reflection`.
@@ -1014,17 +1052,6 @@ public final class RenderGraph {
                                                        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
                                                        reflection: reflection, execute: execute))
     }
-    
-    @available(*, deprecated, renamed:"addDrawCallbackPass(name:renderTarget:colorClearOperations:depthClearOperation:stencilClearOperation:reflection:execute:)")
-    public func addDrawCallbackPass<R>(name: String,
-                                       descriptor: RenderTargetDescriptor,
-                                       colorClearOperations: [ColorClearOperation] = [],
-                                       depthClearOperation: DepthClearOperation = .keep,
-                                       stencilClearOperation: StencilClearOperation = .keep,
-                                       reflection: R.Type,
-                                       _ execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
-        self.addDrawCallbackPass(name: name, renderTarget: descriptor, colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation, reflection: reflection, execute)
-    }
 
     /// Enqueue a compute render pass comprised of the specified compute/dispatch operations in `execute`.
     ///
@@ -1034,6 +1061,7 @@ public final class RenderGraph {
     /// - SeeAlso: `addComputeCallbackPass(reflection:_:)`
     @inlinable
     public func addComputeCallbackPass(file: String = #fileID, line: Int = #line,
+                                       resources: [ExplicitResourceUsage],
                                        _ execute: @escaping @Sendable (ComputeCommandEncoder) async -> Void) {
         self.addPass(CallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", execute: execute))
     }
