@@ -10,7 +10,7 @@ import SPIRV_Cross
 
 enum ReflectionError : Error {
     case reflectionFailed(SPIRVFile)
-    case mismatchingSourceFiles(DXCSourceFile, DXCSourceFile)
+    case mismatchingSourceFiles(DXCSourceFile?, DXCSourceFile)
 }
 
 final class ReflectionContext {
@@ -182,7 +182,7 @@ final class ReflectionContext {
     
     func mergeExternalEntryPoints() {
         for pass in self.renderPasses.values {
-            for entryPointName in pass.sourceFile.externalEntryPoints {
+            for entryPointName in pass.sourceFile?.externalEntryPoints ?? [] {
                 guard let entryPoint = self.entryPoints[entryPointName] else {
                     print("Warning: pass \(pass.name) uses missing entry point \(entryPointName)")
                     continue
@@ -340,7 +340,7 @@ final class TypeLookup {
 
 final class RenderPass {
     let name : String
-    let sourceFile: DXCSourceFile
+    let sourceFile: DXCSourceFile?
     
     var entryPoints : [EntryPoint] = []
     var functionConstants : [FunctionConstant] = [] // Sorted by construction
@@ -358,6 +358,38 @@ final class RenderPass {
         self.sourceFile = sourceFile
     }
     
+    init(name: String) {
+        self.name = name
+        self.sourceFile = nil
+    }
+    
+    
+    func addFunctionConstant(_ constant: FunctionConstant) {
+        let insertionPoint = self.functionConstants.firstIndex(where: { $0.index >= constant.index }) ?? self.functionConstants.count
+        if insertionPoint < self.functionConstants.count && self.functionConstants[insertionPoint] == constant { return }
+        
+        guard insertionPoint >= self.functionConstants.count || self.functionConstants[insertionPoint].index != constant.index else {
+            print("Warning: function constants \(self.functionConstants[insertionPoint]) and \(constant) share the same index but are not identical.")
+            return
+        }
+        self.functionConstants.insert(constant, at: insertionPoint)
+    }
+    
+    func addBoundResource(_ resource: Resource) {
+        let insertionPoint = self.boundResources.firstIndex(where: { $0.binding >= resource.binding }) ?? self.boundResources.count
+        if insertionPoint < self.boundResources.count && self.boundResources[insertionPoint] == resource {
+            self.boundResources[insertionPoint].stages.formUnion(resource.stages)
+            self.boundResources[insertionPoint].platformBindings.formUnion(resource.platformBindings)
+            return
+        }
+        
+        guard insertionPoint >= self.boundResources.count || self.boundResources[insertionPoint].binding != resource.binding else {
+            print("Warning: resources \(self.boundResources[insertionPoint]) and \(resource) share the same binding \(resource.binding) but are not identical.")
+            return
+        }
+        self.boundResources.insert(resource, at: insertionPoint)
+    }
+    
     func addEntryPoint(_ entryPoint: EntryPoint, compiler: SPIRVCompiler) -> Bool {
         guard compiler.setEntryPoint(entryPoint) else { return false }
         
@@ -366,14 +398,7 @@ final class RenderPass {
         }
         
         for constant in compiler.functionConstants {
-            let insertionPoint = self.functionConstants.firstIndex(where: { $0.index >= constant.index }) ?? self.functionConstants.count
-            if insertionPoint < self.functionConstants.count && self.functionConstants[insertionPoint] == constant { continue }
-            
-            guard insertionPoint >= self.functionConstants.count || self.functionConstants[insertionPoint].index != constant.index else {
-                print("Warning: function constants \(self.functionConstants[insertionPoint]) and \(constant) share the same index but are not identical.")
-                continue
-            }
-            self.functionConstants.insert(constant, at: insertionPoint)
+            self.addFunctionConstant(constant)
         }
         
         for constant in compiler.pushConstants {
@@ -387,18 +412,7 @@ final class RenderPass {
                 continue // No explicit bindings for input attachments on iOS Metal.
             }
             
-            let insertionPoint = self.boundResources.firstIndex(where: { $0.binding >= resource.binding }) ?? self.boundResources.count
-            if insertionPoint < self.boundResources.count && self.boundResources[insertionPoint] == resource {
-                self.boundResources[insertionPoint].stages.formUnion(resource.stages)
-                self.boundResources[insertionPoint].platformBindings.formUnion(resource.platformBindings)
-                continue
-            }
-            
-            guard insertionPoint >= self.boundResources.count || self.boundResources[insertionPoint].binding != resource.binding else {
-                print("Warning: resources \(self.boundResources[insertionPoint]) and \(resource) share the same binding \(resource.binding) but are not identical.")
-                continue
-            }
-            self.boundResources.insert(resource, at: insertionPoint)
+            self.addBoundResource(resource)
         }
         
         self.attachmentCount = max(self.attachmentCount, compiler.attachments.max(by: { $0.index < $1.index }).map { $0.index + 1 } ?? 0)

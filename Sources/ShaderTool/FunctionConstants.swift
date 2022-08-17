@@ -31,8 +31,15 @@ enum FunctionConstantValue : Hashable, CustomStringConvertible {
 struct FunctionConstant : Hashable {
     let name : String
     let type : SPIRVType
-    let value : FunctionConstantValue
+    let value : FunctionConstantValue?
     let index : Int
+    
+    init(name: String, type: SPIRVType, value: FunctionConstantValue?, index: Int) {
+        self.name = name
+        self.type = type
+        self.value = value
+        self.index = index
+    }
     
     init(constant: spvc_specialization_constant, compiler: SPIRVCompiler) {
         self.name = String(cString: spvc_compiler_get_name(compiler.compiler, constant.id))
