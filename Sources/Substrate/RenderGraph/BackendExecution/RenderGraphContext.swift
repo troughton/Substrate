@@ -170,7 +170,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                         } else {
                             self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, onCompletion))
                         }
-                        return
+                        return RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: 0)
                     }
                     
                     var frameCommandInfo = FrameCommandInfo<Backend.RenderTargetDescriptor>(passes: passes, initialCommandBufferGlobalIndex: self.queueCommandBufferIndex + 1)
@@ -239,9 +239,8 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     for (i, commandBuffer) in commandBuffers.enumerated() {
                         await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, syncEvent: syncEvent, executionResult: executionResult, onCompletion: onCompletion)
                     }
+                    return RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: self.queueCommandBufferIndex)
                 }
-                
-                return RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: self.queueCommandBufferIndex)
             }
         }
     }
