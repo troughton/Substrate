@@ -134,14 +134,7 @@ final class MetalPipelineReflection : PipelineReflection {
             
             reflection.activeStages.formUnion(existingReflection.activeStages)
             reflection.bindingPath = rootPath
-            switch existingReflection.usageType {
-            case .readWrite:
-                reflection.usageType = existingReflection.usageType
-            case .write:
-                reflection.usageType = reflection.usageType == .read ? .readWrite : existingReflection.usageType
-            default:
-                break
-            }
+            reflection.usageType.formUnion(existingReflection.usageType)
         }
         bindingPathCache[cacheKey] = rootPath
         reflectionCache[rootPath] = reflection

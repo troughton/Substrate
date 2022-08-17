@@ -63,8 +63,8 @@ extension SpecificRenderBackend {
 protocol BackendRenderTargetDescriptor: AnyObject {
     init(renderPass: RenderPassRecord)
     var descriptor: RenderTargetsDescriptor { get }
-    func descriptorMergedWithPass(_ pass: RenderPassRecord, storedTextures: inout [Texture]) -> Self
-    func finalise(storedTextures: inout [Texture])
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, allRenderPasses: [RenderPassRecord], storedTextures: inout [Texture]) -> Self
+    func finalise(allRenderPasses: [RenderPassRecord], storedTextures: inout [Texture])
 }
 
 protocol BackendQueue: AnyObject {

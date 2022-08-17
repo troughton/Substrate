@@ -84,75 +84,11 @@ extension CommandEncoder {
  A requirement for resource binding is that subsequently bound pipeline states are compatible with the pipeline state bound at the time of the first draw call.
  */
 
-struct ResourceUsagePointerList: Collection, Equatable {
-    let pointer: UnsafeMutableRawPointer?
-    let count: Int
-    
-    public init(usagePointer: ResourceUsagePointer?) {
-        self.pointer = UnsafeMutableRawPointer(usagePointer)
-        self.count = usagePointer == nil ? 0 : 1
-    }
-    
-    public init(usagePointers: UnsafeMutableBufferPointer<ResourceUsagePointer>) {
-        self.pointer = UnsafeMutableRawPointer(usagePointers.baseAddress)
-        self.count = usagePointers.count
-    }
-    
-    public var isEmpty: Bool {
-        return self.count == 0
-    }
-    
-    public var startIndex: Int {
-        return 0
-    }
-    
-    public var endIndex: Int {
-        return self.count
-    }
-    
-    public func index(after i: Int) -> Int {
-        return i + 1
-    }
-    
-    public subscript(index: Int) -> ResourceUsagePointer {
-        assert(index >= 0 && index < self.count)
-        if self.count == 1 {
-            return self.pointer!.assumingMemoryBound(to: ResourceUsage.self)
-        } else {
-            return self.pointer!.assumingMemoryBound(to: ResourceUsagePointer.self)[index]
-        }
-    }
-    
-    public var first: ResourceUsagePointer? {
-        if self.isEmpty {
-            return nil
-        }
-        return self[0]
-    }
-}
-
 /// `ResourceBindingEncoder` is the common superclass `CommandEncoder` for all command encoders that can bind resources.
 /// You never instantiate a `ResourceBindingEncoder` directly; instead, you are provided with one of its concrete subclasses in a render pass' `execute` method.
 public class ResourceBindingEncoder : CommandEncoder {
-    
-    @usableFromInline
-    struct BoundResource {
-        public var resource : Resource
-        public var bindingCommand : UnsafeMutableRawPointer?
-        public var usagePointers : ResourceUsagePointerList // where the first element is the usage pointer for this resource and subsequent elements, if present, are for its subresources
-        public var isIndirectlyBound : Bool
-        /// Whether the resource is assumed to be used in the same way for the entire time it's bound.
-        public var consistentUsageAssumed : Bool
-        
-//        public var usagePointer: ResourceUsagePointer? {
-//            self.usagePointers.first
-//        }
-    }
-    
     @usableFromInline let passRecord: RenderPassRecord
     
-    @usableFromInline
-    var needsUpdateBindings = false
     @usableFromInline
     var pipelineStateChanged = false
     @usableFromInline
@@ -387,7 +323,6 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         self.currentPipelineReflection = await RenderBackend.renderPipelineReflection(descriptor: descriptor, renderTarget: self.drawRenderPass.renderTargetsDescriptor)
         
         self.pipelineStateChanged = true
-        self.needsUpdateBindings = true
     }
     
     public func setRenderPipelineState(_ pipelineState: RenderPipelineState) {
@@ -509,7 +444,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func useResource(_ resource: Resource, access: ResourceAccessFlags, stages: RenderStages) {
+    public func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
@@ -575,7 +510,6 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         self.currentPipelineReflection = await RenderBackend.computePipelineReflection(descriptor: descriptor)
         
         self.pipelineStateChanged = true
-        self.needsUpdateBindings = true
 
         let pipelineBox = ComputePipelineDescriptorBox(descriptor)
         self.currentComputePipeline = pipelineBox
@@ -612,8 +546,6 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         }
         precondition(threadsPerGrid.width > 0 && threadsPerGrid.height > 0 && threadsPerGrid.depth > 0)
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
-        
-        self.needsUpdateBindings = true // to track barriers between resources bound for the compute command
 
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
     }
@@ -626,8 +558,6 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         precondition(threadgroupsPerGrid.width > 0 && threadgroupsPerGrid.height > 0 && threadgroupsPerGrid.depth > 0)
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
         
-        self.needsUpdateBindings = true // to track barriers between resources bound for the compute command
-        
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
     }
     
@@ -638,8 +568,6 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         }
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
         
-        self.needsUpdateBindings = true // to track barriers between resources bound for the compute command
-        
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
     }
     
@@ -647,7 +575,7 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     
-    public func useResource(_ resource: Resource, access: ResourceAccessFlags) {
+    public func useResource(_ resource: Resource, usage: ResourceUsageType) {
         preconditionFailure("\(#function) needs concrete implementation")
     }
     

@@ -7,49 +7,6 @@
 
 import SubstrateUtilities
 
-public enum ResourceUsageType {
-    case read
-    case write
-    case readWrite
-
-    /// A render target attachment that is unused.
-    case unusedRenderTarget
-    /// A render target that is only written to (e.g. a color attachment with blending disabled)
-    case writeOnlyRenderTarget
-    /// A render target that is also read from, whether by blending or by depth/stencil operations
-    case readWriteRenderTarget
-    /// A render target that is simultaneously used as an input attachment (including read or sample operations).
-    case inputAttachmentRenderTarget
-
-    case sampler
-    case inputAttachment
-    case constantBuffer
-
-    case blitSource
-    case blitDestination
-    case blitSynchronisation
-    case mipGeneration
-    
-    case vertexBuffer
-    case indexBuffer
-    case indirectBuffer
-    
-    // Present in an argument buffer, but not actually used until later on.
-    case unusedArgumentBuffer
-
-    // Used in a previous frame
-    case frameStartLayoutTransitionCheck
-
-    public var isRenderTarget : Bool {
-        switch self {
-        case .unusedRenderTarget, .writeOnlyRenderTarget, .readWriteRenderTarget, .inputAttachmentRenderTarget:
-            return true
-        default:
-            return false
-        }
-    }
-}
-
 /// A generic resource binding path.
 /// Can be customised by the backends to any size-compatible POD type,
 /// and then converted into a ResourceBindingPath for use of the RenderGraph.

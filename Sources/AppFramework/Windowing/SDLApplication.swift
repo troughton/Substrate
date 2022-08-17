@@ -95,7 +95,7 @@ public class SDLMetalWindow : SDLWindow {
 
 extension CAMetalLayer : SwapChain {
     public var format : PixelFormat {
-        return PixelFormat(rawValue: self.pixelFormat.rawValue)!
+        return PixelFormat(self.pixelFormat)
     }
 }
 

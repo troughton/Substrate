@@ -249,7 +249,7 @@ final class MetalBackend : SpecificRenderBackend {
              .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
             
             #if os(macOS)
-            if usage.intersection([.shaderWrite, .renderTarget]) != [] {
+            if usage.intersection([.shaderWrite, .colorAttachment]) != [] {
                 return false
             }
             if #available(macOS 11.0, *) {
@@ -634,7 +634,7 @@ final class MetalBackend : SpecificRenderBackend {
                 addBarrier(&compactedResourceCommands)
             }
             
-            while !currentEncoder.commandRange.contains(command.index) {
+            while !currentEncoder.passRange.contains(command.index) {
                 currentEncoderIndex += 1
                 currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
                 
@@ -651,17 +651,17 @@ final class MetalBackend : SpecificRenderBackend {
             case .useResource(let resource, let usage, let stages, let allowReordering):
                 
                 var computedUsageType: MTLResourceUsage = []
-                if usage == .inputAttachmentRenderTarget || usage == .inputAttachment {
+                if usage.contains(.inputAttachment) {
                     assert(resource.type == .texture || resource.type == .hazardTrackingGroup)
                     computedUsageType.formUnion(.read)
                 } else {
-                    if resource.type == .texture || HazardTrackingGroup<Texture>(resource) != nil, usage == .read {
+                    if resource.type == .texture || HazardTrackingGroup<Texture>(resource) != nil, usage.contains(.shaderRead) {
                         computedUsageType.formUnion(.sample)
                     }
-                    if usage.isRead {
+                    if usage.contains(.shaderRead) {
                         computedUsageType.formUnion(.read)
                     }
-                    if usage.isWrite {
+                    if usage.contains(.shaderWrite) {
                         computedUsageType.formUnion(.write)
                     }
                 }

@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct ResourceAccessFlags: OptionSet {
+public struct ResourceUsageType: OptionSet, Hashable, Sendable {
     public let rawValue: Int
     
     @inlinable
@@ -16,63 +16,66 @@ public struct ResourceAccessFlags: OptionSet {
     }
     
     @inlinable
-    public static var shaderRead: ResourceAccessFlags { .init(rawValue: 1 << 0) }
+    public static var shaderRead: ResourceUsageType { .init(rawValue: 1 << 0) }
     
     @inlinable
-    public static var shaderWrite: ResourceAccessFlags { .init(rawValue: 1 << 1) }
+    public static var shaderWrite: ResourceUsageType { .init(rawValue: 1 << 1) }
     
     @inlinable
-    public static var colorAttachmentRead: ResourceAccessFlags { .init(rawValue: 1 << 2) }
+    public static var colorAttachmentRead: ResourceUsageType { .init(rawValue: 1 << 2) }
     
     @inlinable
-    public static var colorAttachmentWrite: ResourceAccessFlags { .init(rawValue: 1 << 3) }
+    public static var colorAttachmentWrite: ResourceUsageType { .init(rawValue: 1 << 3) }
     
     @inlinable
-    public static var depthStencilAttachmentRead: ResourceAccessFlags { .init(rawValue: 1 << 4) }
+    public static var depthStencilAttachmentRead: ResourceUsageType { .init(rawValue: 1 << 4) }
     
     @inlinable
-    public static var depthStencilAttachmentWrite: ResourceAccessFlags { .init(rawValue: 1 << 5) }
+    public static var depthStencilAttachmentWrite: ResourceUsageType { .init(rawValue: 1 << 5) }
     
     @inlinable
-    public static var inputAttachment: ResourceAccessFlags { .init(rawValue: 1 << 6) }
+    public static var inputAttachment: ResourceUsageType { .init(rawValue: 1 << 6) }
     
     @inlinable
-    public static var vertexBuffer: ResourceAccessFlags { .init(rawValue: 1 << 7) }
+    public static var vertexBuffer: ResourceUsageType { .init(rawValue: 1 << 7) }
     
     @inlinable
-    public static var indexBuffer: ResourceAccessFlags { .init(rawValue: 1 << 8) }
+    public static var indexBuffer: ResourceUsageType { .init(rawValue: 1 << 8) }
     
     @inlinable
-    public static var constantBuffer: ResourceAccessFlags { .init(rawValue: 1 << 9) }
+    public static var constantBuffer: ResourceUsageType { .init(rawValue: 1 << 9) }
     
     @inlinable
-    public static var indirectBuffer: ResourceAccessFlags { .init(rawValue: 1 << 10) }
+    public static var indirectBuffer: ResourceUsageType { .init(rawValue: 1 << 10) }
     
     @inlinable
-    public static var blitSource: ResourceAccessFlags { .init(rawValue: 1 << 11) }
+    public static var blitSource: ResourceUsageType { .init(rawValue: 1 << 11) }
     
     @inlinable
-    public static var blitDestination: ResourceAccessFlags { .init(rawValue: 1 << 12) }
+    public static var blitDestination: ResourceUsageType { .init(rawValue: 1 << 12) }
     
     @inlinable
-    public static var cpuRead: ResourceAccessFlags { .init(rawValue: 1 << 13) }
+    public static var cpuRead: ResourceUsageType { .init(rawValue: 1 << 13) }
     
     @inlinable
-    public static var cpuWrite: ResourceAccessFlags { .init(rawValue: 1 << 14) }
+    public static var cpuWrite: ResourceUsageType { .init(rawValue: 1 << 14) }
+    
+    @inlinable
+    public static var textureView: ResourceUsageType { .init(rawValue: 1 << 15) }
     
     // MARK: - Convenience Accessors
     
     @inlinable
-    public static var shaderReadWrite: ResourceAccessFlags { [.shaderRead, .shaderWrite] }
+    public static var shaderReadWrite: ResourceUsageType { [.shaderRead, .shaderWrite] }
     
     @inlinable
-    public static var colorAttachment: ResourceAccessFlags { [.colorAttachmentRead, .colorAttachmentWrite] }
+    public static var colorAttachment: ResourceUsageType { [.colorAttachmentRead, .colorAttachmentWrite] }
     
     @inlinable
-    public static var depthStencilAttachment: ResourceAccessFlags { [.depthStencilAttachmentRead, .depthStencilAttachmentWrite] }
+    public static var depthStencilAttachment: ResourceUsageType { [.depthStencilAttachmentRead, .depthStencilAttachmentWrite] }
     
     @inlinable
-    public static var cpuReadWrite: ResourceAccessFlags { [.cpuRead, .cpuWrite] }
+    public static var cpuReadWrite: ResourceUsageType { [.cpuRead, .cpuWrite] }
     
     @inlinable
     public var isRead: Bool {
@@ -84,12 +87,13 @@ public struct ResourceAccessFlags: OptionSet {
         return !self.isDisjoint(with: [.shaderWrite, .colorAttachmentWrite, .depthStencilAttachmentWrite, .blitDestination, .cpuWrite])
     }
     
+    @inlinable
     public var isRenderTarget : Bool {
         return !self.isDisjoint(with: [.colorAttachment, .depthStencilAttachment, .inputAttachment])
     }
 }
 
-public struct BufferAccessFlags: OptionSet {
+public struct BufferUsage: OptionSet, Hashable, Sendable {
     public let rawValue: Int
     
     @inlinable
@@ -98,45 +102,48 @@ public struct BufferAccessFlags: OptionSet {
     }
     
     @inlinable
-    public static var shaderRead: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.shaderRead.rawValue) }
+    public static var shaderRead: BufferUsage { .init(rawValue: ResourceUsageType.shaderRead.rawValue) }
     
     @inlinable
-    public static var shaderWrite: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.shaderWrite.rawValue) }
+    public static var shaderWrite: BufferUsage { .init(rawValue: ResourceUsageType.shaderWrite.rawValue) }
     
     @inlinable
-    public static var vertexBuffer: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.vertexBuffer.rawValue) }
+    public static var vertexBuffer: BufferUsage { .init(rawValue: ResourceUsageType.vertexBuffer.rawValue) }
     
     @inlinable
-    public static var indexBuffer: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.indexBuffer.rawValue) }
+    public static var indexBuffer: BufferUsage { .init(rawValue: ResourceUsageType.indexBuffer.rawValue) }
     
     @inlinable
-    public static var constantBuffer: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.constantBuffer.rawValue) }
+    public static var constantBuffer: BufferUsage { .init(rawValue: ResourceUsageType.constantBuffer.rawValue) }
     
     @inlinable
-    public static var indirectBuffer: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.indirectBuffer.rawValue) }
+    public static var indirectBuffer: BufferUsage { .init(rawValue: ResourceUsageType.indirectBuffer.rawValue) }
     
     @inlinable
-    public static var blitSource: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.blitSource.rawValue) }
+    public static var blitSource: BufferUsage { .init(rawValue: ResourceUsageType.blitSource.rawValue) }
     
     @inlinable
-    public static var blitDestination: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.blitDestination.rawValue) }
+    public static var blitDestination: BufferUsage { .init(rawValue: ResourceUsageType.blitDestination.rawValue) }
     
     @inlinable
-    public static var cpuRead: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.cpuRead.rawValue) }
+    public static var cpuRead: BufferUsage { .init(rawValue: ResourceUsageType.cpuRead.rawValue) }
     
     @inlinable
-    public static var cpuWrite: BufferAccessFlags { .init(rawValue: ResourceAccessFlags.cpuWrite.rawValue) }
+    public static var cpuWrite: BufferUsage { .init(rawValue: ResourceUsageType.cpuWrite.rawValue) }
+    
+    @inlinable
+    public static var textureView: BufferUsage { .init(rawValue: ResourceUsageType.textureView.rawValue) }
     
     // MARK: - Convenience Accessors
     
     @inlinable
-    public static var shaderReadWrite: BufferAccessFlags { [.shaderRead, .shaderWrite] }
+    public static var shaderReadWrite: BufferUsage { [.shaderRead, .shaderWrite] }
     
     @inlinable
-    public static var cpuReadWrite: BufferAccessFlags { [.cpuRead, .cpuWrite] }
+    public static var cpuReadWrite: BufferUsage { [.cpuRead, .cpuWrite] }
 }
 
-public struct TextureAccessFlags: OptionSet {
+public struct TextureUsage: OptionSet, Hashable, Sendable {
     public let rawValue: Int
     
     @inlinable
@@ -145,62 +152,65 @@ public struct TextureAccessFlags: OptionSet {
     }
     
     @inlinable
-    public static var shaderRead: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.shaderRead.rawValue) }
+    public static var shaderRead: TextureUsage { .init(rawValue: ResourceUsageType.shaderRead.rawValue) }
     
     @inlinable
-    public static var shaderWrite: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.shaderWrite.rawValue) }
+    public static var shaderWrite: TextureUsage { .init(rawValue: ResourceUsageType.shaderWrite.rawValue) }
     
     @inlinable
-    public static var colorAttachmentRead: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.colorAttachmentRead.rawValue) }
+    public static var colorAttachmentRead: TextureUsage { .init(rawValue: ResourceUsageType.colorAttachmentRead.rawValue) }
     
     @inlinable
-    public static var colorAttachmentWrite: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.colorAttachmentWrite.rawValue) }
+    public static var colorAttachmentWrite: TextureUsage { .init(rawValue: ResourceUsageType.colorAttachmentWrite.rawValue) }
     
     @inlinable
-    public static var depthStencilAttachmentRead: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.depthStencilAttachmentRead.rawValue) }
+    public static var depthStencilAttachmentRead: TextureUsage { .init(rawValue: ResourceUsageType.depthStencilAttachmentRead.rawValue) }
     
     @inlinable
-    public static var depthStencilAttachmentWrite: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.depthStencilAttachmentWrite.rawValue) }
+    public static var depthStencilAttachmentWrite: TextureUsage { .init(rawValue: ResourceUsageType.depthStencilAttachmentWrite.rawValue) }
     
     @inlinable
-    public static var inputAttachment: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.inputAttachment.rawValue) }
+    public static var inputAttachment: TextureUsage { .init(rawValue: ResourceUsageType.inputAttachment.rawValue) }
     
     @inlinable
-    public static var blitSource: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.blitSource.rawValue) }
+    public static var blitSource: TextureUsage { .init(rawValue: ResourceUsageType.blitSource.rawValue) }
     
     @inlinable
-    public static var blitDestination: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.blitDestination.rawValue) }
+    public static var blitDestination: TextureUsage { .init(rawValue: ResourceUsageType.blitDestination.rawValue) }
     
     @inlinable
-    public static var cpuRead: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.cpuRead.rawValue) }
+    public static var cpuRead: TextureUsage { .init(rawValue: ResourceUsageType.cpuRead.rawValue) }
     
     @inlinable
-    public static var cpuWrite: TextureAccessFlags { .init(rawValue: ResourceAccessFlags.cpuWrite.rawValue) }
+    public static var cpuWrite: TextureUsage { .init(rawValue: ResourceUsageType.cpuWrite.rawValue) }
+    
+    @inlinable
+    public static var pixelFormatView: TextureUsage { .init(rawValue: ResourceUsageType.textureView.rawValue) }
     
     // MARK: - Convenience Accessors
     
     @inlinable
-    public static var shaderReadWrite: TextureAccessFlags { [.shaderRead, .shaderWrite] }
+    public static var shaderReadWrite: TextureUsage { [.shaderRead, .shaderWrite] }
     
     @inlinable
-    public static var colorAttachment: TextureAccessFlags { [.colorAttachmentRead, .colorAttachmentWrite] }
+    public static var colorAttachment: TextureUsage { [.colorAttachmentRead, .colorAttachmentWrite] }
     
     @inlinable
-    public static var depthStencilAttachment: TextureAccessFlags { [.depthStencilAttachmentRead, .depthStencilAttachmentWrite] }
+    public static var depthStencilAttachment: TextureUsage { [.depthStencilAttachmentRead, .depthStencilAttachmentWrite] }
     
     @inlinable
-    public static var cpuReadWrite: TextureAccessFlags { [.cpuRead, .cpuWrite] }
+    public static var cpuReadWrite: TextureUsage { [.cpuRead, .cpuWrite] }
 }
 
 
-extension ResourceAccessFlags {
+extension ResourceUsageType {
     @inlinable
-    public init(_ bufferFlags: BufferAccessFlags) {
-        self.init(rawValue: bufferFlags.rawValue)
+    public init(_ bufferUsage: BufferUsage) {
+        self.init(rawValue: bufferUsage.rawValue)
     }
     
     @inlinable
-    public init(_ textureFlags: TextureAccessFlags) {
-        self.init(rawValue: textureFlags.rawValue)
+    public init(_ textureUsage: TextureUsage) {
+        self.init(rawValue: textureUsage.rawValue)
     }
 }

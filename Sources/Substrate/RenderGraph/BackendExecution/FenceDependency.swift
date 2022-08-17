@@ -9,8 +9,8 @@ import Foundation
 
 protocol Dependency {
     init(resource: Resource,
-         producingUsage: ResourceUsage, producingEncoder: Int,
-         consumingUsage: ResourceUsage, consumingEncoder: Int)
+         producingUsage: RecordedResourceUsage, producingEncoder: Int,
+         consumingUsage: RecordedResourceUsage, consumingEncoder: Int)
     init(signal: FenceDependency, wait: FenceDependency)
     
     var signal: FenceDependency { get }
@@ -31,11 +31,11 @@ struct CoarseDependency: Dependency {
     var wait : FenceDependency
     
     init(resource: Resource,
-         producingUsage: ResourceUsage, producingEncoder: Int,
-         consumingUsage: ResourceUsage, consumingEncoder: Int) {
+         producingUsage: RecordedResourceUsage, producingEncoder: Int,
+         consumingUsage: RecordedResourceUsage, consumingEncoder: Int) {
         precondition(consumingEncoder > producingEncoder)
-        self.signal = FenceDependency(encoderIndex: producingEncoder, index: producingUsage.commandRange.last!, stages: producingUsage.stages)
-        self.wait = FenceDependency(encoderIndex: consumingEncoder, index: consumingUsage.commandRange.lowerBound, stages: consumingUsage.stages)
+        self.signal = FenceDependency(encoderIndex: producingEncoder, index: producingUsage.passIndex, stages: producingUsage.stages)
+        self.wait = FenceDependency(encoderIndex: consumingEncoder, index: consumingUsage.passIndex, stages: consumingUsage.stages)
     }
     
     init(signal: FenceDependency, wait: FenceDependency) {
@@ -60,13 +60,13 @@ struct FineDependency: Dependency {
     var signal : FenceDependency
     var wait : FenceDependency
     
-    var resources: [(Resource, producingUsage: ResourceUsage, consumingUsage: ResourceUsage)]
+    var resources: [(Resource, producingUsage: RecordedResourceUsage, consumingUsage: RecordedResourceUsage)]
     
     init(resource: Resource,
-         producingUsage: ResourceUsage, producingEncoder: Int, consumingUsage: ResourceUsage, consumingEncoder: Int) {
+         producingUsage: RecordedResourceUsage, producingEncoder: Int, consumingUsage: RecordedResourceUsage, consumingEncoder: Int) {
         precondition(consumingEncoder > producingEncoder)
-        self.signal = FenceDependency(encoderIndex: producingEncoder, index: producingUsage.commandRange.last!, stages: producingUsage.stages)
-        self.wait = FenceDependency(encoderIndex: consumingEncoder, index: consumingUsage.commandRange.lowerBound, stages: consumingUsage.stages)
+        self.signal = FenceDependency(encoderIndex: producingEncoder, index: producingUsage.passIndex, stages: producingUsage.stages)
+        self.wait = FenceDependency(encoderIndex: consumingEncoder, index: consumingUsage.passIndex, stages: consumingUsage.stages)
         
         self.resources = [(resource, producingUsage, consumingUsage)]
     }

@@ -122,7 +122,7 @@ extension TextureUsage {
             self.formUnion(.shaderWrite)
         }
         if usage.contains(.renderTarget) {
-            self.formUnion(.renderTarget)
+            self.formUnion([.colorAttachment, .depthStencilAttachment])
         }
         if usage.contains(.pixelFormatView) {
             self.formUnion(.pixelFormatView)
@@ -163,11 +163,11 @@ extension ResourceUsageType {
     public init(_ access: MTLArgumentAccess) {
         switch access {
         case .readOnly:
-            self = .read
+            self = .shaderRead
         case .readWrite:
-            self = .readWrite
+            self = .shaderReadWrite
         case .writeOnly:
-            self = .write
+            self = .shaderWrite
         @unknown default:
             fatalError()
         }
@@ -218,7 +218,7 @@ extension ArgumentReflection {
             usageType = ResourceUsageType(member.textureReferenceType()!.access)
         case .sampler:
             type = .sampler
-            usageType = .sampler
+            usageType = []
         default:
             type = .buffer
             if let arrayType = member.arrayType() {
@@ -245,7 +245,7 @@ extension ArgumentReflection {
             usageType = ResourceUsageType(textureReferenceType.access)
         case .sampler:
             type = .sampler
-            usageType = .sampler
+            usageType = []
         default:
             type = .buffer
             guard let elementPointerType = array.elementPointerType() else { return nil }
@@ -534,16 +534,16 @@ extension MTLResourceOptions {
 }
 
 extension MTLResourceUsage {
-    public init(_ access: ResourceAccessFlags, isAppleSiliconGPU: Bool) {
+    public init(_ usage: ResourceUsageType, isAppleSiliconGPU: Bool) {
         self.init(rawValue: 0)
         
-        if !access.intersection([.shaderRead, .vertexBuffer, .indexBuffer, .constantBuffer, .blitSource]).isEmpty {
+        if !usage.intersection([.shaderRead, .vertexBuffer, .indexBuffer, .constantBuffer, .blitSource]).isEmpty {
             self.formUnion(.read)
         }
-        if access.contains(.inputAttachment), !isAppleSiliconGPU {
+        if usage.contains(.inputAttachment), !isAppleSiliconGPU {
             self.formUnion(.read)
         }
-        if access.contains(.shaderWrite) {
+        if usage.contains(.shaderWrite) {
             self.formUnion(.write)
         }
     }
@@ -622,7 +622,19 @@ extension MTLTextureType {
 
 extension MTLTextureUsage {
     public init(_ usage: TextureUsage) {
-        self.init(rawValue: usage.rawValue & 0b11111) // Mask to only the bits Metal knows about.
+        self.init(rawValue: 0)
+        if usage.contains(.shaderRead) {
+            self.formUnion(.shaderRead)
+        }
+        if usage.contains(.shaderWrite) {
+            self.formUnion(.shaderWrite)
+        }
+        if !usage.intersection([.colorAttachment, .depthStencilAttachment]).isEmpty {
+            self.formUnion(.renderTarget)
+        }
+        if usage.contains(.pixelFormatView) {
+            self.formUnion(.pixelFormatView)
+        }
     }
 }
 

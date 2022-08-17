@@ -153,19 +153,19 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
         for (i, passRecord) in passes.enumerated() {
             if passRecord.type == .draw {
                 if let descriptor = currentDescriptor {
-                    currentDescriptor = descriptor.descriptorMergedWithPass(passRecord, storedTextures: &storedTextures)
+                    currentDescriptor = descriptor.descriptorMergedWithPass(passRecord, allRenderPasses: passes, storedTextures: &storedTextures)
                 } else {
                     currentDescriptor = RenderTarget(renderPass: passRecord)
                 }
             } else {
-                currentDescriptor?.finalise(storedTextures: &storedTextures)
+                currentDescriptor?.finalise(allRenderPasses: passes, storedTextures: &storedTextures)
                 currentDescriptor = nil
             }
             
             descriptors[i] = currentDescriptor
         }
         
-        currentDescriptor?.finalise(storedTextures: &storedTextures)
+        currentDescriptor?.finalise(allRenderPasses: passes, storedTextures: &storedTextures)
         
         return descriptors
     }

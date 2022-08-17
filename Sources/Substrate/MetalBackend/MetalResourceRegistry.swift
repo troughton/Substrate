@@ -802,22 +802,21 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         var textureUsage : MTLTextureUsage = []
         
         for usage in texture.usages {
-            switch usage.type {
-            case .read:
+            if usage.type.contains(.shaderRead) {
                 textureUsage.formUnion(.shaderRead)
-            case .write:
+            }
+            if usage.type.contains(.shaderWrite) {
                 textureUsage.formUnion(.shaderWrite)
-            case .readWrite:
-                textureUsage.formUnion([.shaderRead, .shaderWrite])
-            case  .inputAttachmentRenderTarget:
+            }
+            if !usage.type.intersection([.colorAttachment, .depthStencilAttachment]).isEmpty {
                 textureUsage.formUnion(.renderTarget)
+            }
+            if usage.type.contains(.inputAttachment) {
                 if RenderBackend.requiresEmulatedInputAttachments {
                     textureUsage.formUnion(.shaderRead)
+                } else {
+                    textureUsage.formUnion(.renderTarget)
                 }
-            case .readWriteRenderTarget, .writeOnlyRenderTarget, .unusedRenderTarget:
-                textureUsage.formUnion(.renderTarget)
-            default:
-                break
             }
         }
         
@@ -826,12 +825,12 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         
         let canBeMemoryless = self.device.isAppleSiliconGPU &&
-            (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint == .renderTarget)) &&
+        (texture.flags.intersection([.persistent, .historyBuffer]) == [] || (texture.flags.contains(.persistent) && texture.descriptor.usageHint.isSubset(of: [.colorAttachment, .depthStencilAttachment, .inputAttachment]))) &&
             textureUsage == .renderTarget &&
             !isStoredThisFrame
         let properties = MTLTextureUsageProperties(usage: textureUsage, canBeMemoryless: canBeMemoryless)
         
-        assert(properties.usage != .unknown)
+        assert(properties.usage != [])
         
         return properties
     }

@@ -173,7 +173,7 @@ public struct RenderBackend {
     
     @inlinable
     public static var isDepth24Stencil8PixelFormatSupported : Bool {
-        return self.supportsPixelFormat(.depth24Unorm_stencil8, usage: .renderTarget)
+        return self.supportsPixelFormat(.depth24Unorm_stencil8, usage: .depthStencilAttachment)
     }
     
     @inlinable

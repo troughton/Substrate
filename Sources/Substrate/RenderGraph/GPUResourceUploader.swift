@@ -80,7 +80,7 @@ public final actor GPUResourceUploader {
     
     @discardableResult
     @GPUResourceUploader
-    public static func runBlitPass(name: String = "GPUResourceUploader Blit Pass at \(#file):\(#line)", accessing resources: [ExplicitResourceUsage], _ pass: @escaping @Sendable (_ bce: BlitCommandEncoder) -> Void) async -> RenderGraphExecutionWaitToken {
+    public static func runBlitPass(name: String = "GPUResourceUploader Blit Pass at \(#file):\(#line)", accessing resources: [ResourceUsage], _ pass: @escaping @Sendable (_ bce: BlitCommandEncoder) -> Void) async -> RenderGraphExecutionWaitToken {
         precondition(self.renderGraph != nil, "GPUResourceLoader.initialise() has not been called.")
         
         self.renderGraph.addPass(CallbackBlitRenderPass(name: name, resources: resources, execute: pass))
@@ -90,7 +90,7 @@ public final actor GPUResourceUploader {
     @GPUResourceUploader
     @discardableResult
     public static func generateMipmaps(for texture: Texture) async -> RenderGraphExecutionWaitToken {
-        self.renderGraph.addPass(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")", resources: [.texture(texture, access: [.blitSource, .blitDestination])]) { bce in
+        self.renderGraph.addPass(CallbackBlitRenderPass(name: "Generate Mipmaps for \(texture.label ?? "Texture(handle: \(texture.handle))")", resources: [.texture(texture, type: [.blitSource, .blitDestination])]) { bce in
             bce.generateMipmaps(for: texture)
         })
         
@@ -172,7 +172,7 @@ public final actor GPUResourceUploader {
     
     @GPUResourceUploader
     @discardableResult
-    public static func withUploadBuffer(length: Int, cacheMode: CPUCacheMode = .writeCombined, accessing resources: [ExplicitResourceUsage], fillBuffer:  @Sendable (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void, copyFromBuffer: @escaping @Sendable (_ buffer: Buffer, _ offset: Int, _ blitEncoder: BlitCommandEncoder) -> Void) async rethrows -> RenderGraphExecutionWaitToken {
+    public static func withUploadBuffer(length: Int, cacheMode: CPUCacheMode = .writeCombined, accessing resources: [ResourceUsage], fillBuffer:  @Sendable (UnsafeMutableRawBufferPointer, inout Range<Int>) throws -> Void, copyFromBuffer: @escaping @Sendable (_ buffer: Buffer, _ offset: Int, _ blitEncoder: BlitCommandEncoder) -> Void) async rethrows -> RenderGraphExecutionWaitToken {
         if GPUResourceUploader.skipUpload {
             return RenderGraphExecutionWaitToken(queue: self.renderGraph.queue, executionIndex: 0)
         }
@@ -183,7 +183,7 @@ public final actor GPUResourceUploader {
         }
         
         self.renderGraph.addBlitCallbackPass(name: "uploadBytes(length: \(length), cacheMode: \(cacheMode))", resources: resources + [
-            .buffer(stagingBuffer, byteRange: stagingBufferOffset..<(stagingBufferOffset + length), access: .blitSource)
+            .buffer(stagingBuffer, byteRange: stagingBufferOffset..<(stagingBufferOffset + length), type: .blitSource)
         ]) { bce in
             copyFromBuffer(stagingBuffer, stagingBufferOffset, bce)
         }
@@ -222,8 +222,8 @@ public final actor GPUResourceUploader {
             }
             
             self.renderGraph.addBlitCallbackPass(name: "uploadBytes(count: \(count), to: \(buffer), offset: \(offset))", resources: [
-                .buffer(stagingBuffer, byteRange: stagingBufferOffset..<(stagingBufferOffset + count), access: .blitSource),
-                .buffer(buffer, byteRange: offset..<(offset + count), access: .blitDestination)
+                .buffer(stagingBuffer, byteRange: stagingBufferOffset..<(stagingBufferOffset + count), type: .blitSource),
+                .buffer(buffer, byteRange: offset..<(offset + count), type: .blitDestination)
             ]) { bce in
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, to: buffer, destinationOffset: offset, size: count)
             }
@@ -260,8 +260,8 @@ public final actor GPUResourceUploader {
             
             self.renderGraph.addBlitCallbackPass(name: "replaceTextureRegion(\(region), mipmapLevel: \(mipmapLevel), slice: \(slice), in: \(texture), withBytes: \(bytes), bytesPerRow: \(bytesPerRow), bytesPerImage: \(bytesPerImage))",
             resources: [
-                .buffer(stagingBuffer, byteRange: stagingBufferOffset..<(stagingBufferOffset + bytesPerImage), access: .blitSource),
-                .texture(texture, subresources: [.init(mipLevel: mipmapLevel, slice: slice, depthPlane: 0)], access: .blitDestination)
+                .buffer(stagingBuffer, byteRange: stagingBufferOffset..<(stagingBufferOffset + bytesPerImage), type: .blitSource),
+                .texture(texture, subresources: [.init(mipLevel: mipmapLevel, slice: slice, depthPlane: 0)], type: .blitDestination)
             ]
             ) { bce in
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, sourceBytesPerRow: bytesPerRow, sourceBytesPerImage: bytesPerImage, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: region.origin)

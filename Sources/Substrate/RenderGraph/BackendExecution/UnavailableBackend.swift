@@ -49,11 +49,11 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        func descriptorMergedWithPass(_ pass: RenderPassRecord, storedTextures: inout [Texture]) -> Self {
+        func descriptorMergedWithPass(_ pass: RenderPassRecord, allRenderPasses: [RenderPassRecord], storedTextures: inout [Texture]) -> Self {
             preconditionFailure()
         }
         
-        func finalise(storedTextures: inout [Texture]) {
+        func finalise(allRenderPasses: [RenderPassRecord], storedTextures: inout [Texture]) {
             preconditionFailure()
         }
         
@@ -61,6 +61,10 @@ final class UnavailableBackend : SpecificRenderBackend {
     }
     
     final class PersistentResourceRegistryImpl: BackendPersistentResourceRegistry {
+        subscript(resource: Resource) -> Void? {
+            preconditionFailure()
+        }
+        
         subscript(sampler: SamplerDescriptor) -> Backend.SamplerReference {
             get async {
                 preconditionFailure()
@@ -208,6 +212,10 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
+        subscript(resource: Resource) -> Void? {
+            preconditionFailure()
+        }
+        
         subscript(buffer: Buffer) -> Backend.BufferReference? {
             preconditionFailure()
         }
@@ -249,6 +257,7 @@ final class UnavailableBackend : SpecificRenderBackend {
     
     typealias CompactedResourceCommandType = Void
     typealias InterEncoderDependencyType = CoarseDependency
+    typealias ResourceReference = Void
     typealias BufferReference = Void
     typealias TextureReference = Void
     typealias SamplerReference = Void

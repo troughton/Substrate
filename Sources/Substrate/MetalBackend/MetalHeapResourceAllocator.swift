@@ -159,7 +159,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
         let availableSize = self.heap?.maxAvailableSize(alignment: sizeAndAlign.align) ?? 0
         var textureOpt : MTLTextureReference? = nil
         if availableSize >= sizeAndAlign.size {
-            assert(descriptor.usage != .unknown)
+            assert(descriptor.usage != [])
             textureOpt = MTLTextureReference(texture: Unmanaged.passRetained(self.heap!.makeTexture(descriptor: descriptor)!))
         }
         guard let texture = textureOpt else {

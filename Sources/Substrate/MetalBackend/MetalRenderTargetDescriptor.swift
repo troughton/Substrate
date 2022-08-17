@@ -11,7 +11,7 @@
 
 final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var descriptor : RenderTargetsDescriptor
-    var renderPasses = [DrawRenderPass]()
+    var renderPasses = [(pass: DrawRenderPass, passIndex: Int)]()
     
     var colorActions : [(MTLLoadAction, MTLStoreAction)] = []
     var depthActions : (MTLLoadAction, MTLStoreAction) = (.dontCare, .dontCare)
@@ -25,11 +25,11 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         self.descriptor = renderPass.renderTargetsDescriptorForActiveAttachments(passIndex: passIndex)
         self.colorActions = .init(repeating: (.dontCare, .dontCare), count: self.descriptor.colorAttachments.count)
         self.updateClearValues(pass: renderPass, descriptor: self.descriptor)
-        self.renderPasses.append(renderPass)
+        self.renderPasses.append((renderPass, passIndex))
     }
     
     convenience init(renderPass: RenderPassRecord) {
-        self.init(renderPass: renderPass.pass as! DrawRenderPass)
+        self.init(renderPass: renderPass.pass as! DrawRenderPass, passIndex: renderPass.passIndex)
     }
     
     func tryUpdateDescriptor<D : RenderTargetAttachmentDescriptor>(_ desc: inout D?, with new: D?, clearOperation: ClearOperation) -> Bool {
@@ -54,7 +54,7 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
                 descriptor.depthPlane  == new.depthPlane
     }
     
-    func updateClearValues(pass: DrawRenderPass, descriptor: RenderTargetDescriptor) {
+    func updateClearValues(pass: DrawRenderPass, descriptor: RenderTargetsDescriptor) {
         // Update the clear values.
         self.clearColors.append(contentsOf: repeatElement(.init(), count: max(descriptor.colorAttachments.count - clearColors.count, 0)))
         self.colorActions.append(contentsOf: repeatElement((.dontCare, .dontCare), count: max(descriptor.colorAttachments.count - colorActions.count, 0)))
@@ -98,12 +98,12 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         }
     }
     
-    func tryMerge(withPass pass: DrawRenderPass) -> Bool {
+    func tryMerge(withPass pass: DrawRenderPass, passIndex: Int) -> Bool {
         if pass.renderTargetsDescriptor.size != self.descriptor.size {
             return false // The render targets must be the same size.
         }
         
-        let passDescriptor = pass.renderTargetsDescriptorForActiveAttachments
+        let passDescriptor = pass.renderTargetsDescriptorForActiveAttachments(passIndex: passIndex)
         
         var newDescriptor = descriptor
         
@@ -132,25 +132,25 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         newDescriptor.renderTargetArrayLength = max(newDescriptor.renderTargetArrayLength, passDescriptor.renderTargetArrayLength)
         
         self.descriptor = newDescriptor
-        self.renderPasses.append(pass)
+        self.renderPasses.append((pass, passIndex))
         
         return true
     }
     
-    func descriptorMergedWithPass(_ pass: RenderPassRecord, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
-        return self.descriptorMergedWithPass(pass.pass as! DrawRenderPass, storedTextures: &storedTextures)
+    func descriptorMergedWithPass(_ pass: RenderPassRecord, allRenderPasses: [RenderPassRecord], storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
+        return self.descriptorMergedWithPass(pass.pass as! DrawRenderPass, passIndex: pass.passIndex, allRenderPasses: allRenderPasses, storedTextures: &storedTextures)
      }
     
-    func descriptorMergedWithPass(_ pass: DrawRenderPass, storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
-        if self.tryMerge(withPass: pass) {
+    func descriptorMergedWithPass(_ pass: DrawRenderPass, passIndex: Int, allRenderPasses: [RenderPassRecord], storedTextures: inout [Texture]) -> MetalRenderTargetDescriptor {
+        if self.tryMerge(withPass: pass, passIndex: passIndex) {
             return self
         } else {
-            self.finalise(storedTextures: &storedTextures)
-            return MetalRenderTargetDescriptor(renderPass: pass)
+            self.finalise(allRenderPasses: allRenderPasses, storedTextures: &storedTextures)
+            return MetalRenderTargetDescriptor(renderPass: pass, passIndex: passIndex)
         }
     }
     
-    private func loadAndStoreActions<Attachment: RenderTargetAttachmentDescriptor>(for attachment: Attachment, loadAction: MTLLoadAction, storedTextures: inout [Texture]) -> (MTLLoadAction, MTLStoreAction) {
+    private func loadAndStoreActions<Attachment: RenderTargetAttachmentDescriptor>(for attachment: Attachment, loadAction: MTLLoadAction, allRenderPasses: [RenderPassRecord], storedTextures: inout [Texture]) -> (MTLLoadAction, MTLStoreAction) {
         let usages = attachment.texture.usages
         
         var isFirstUsage: Bool? = nil
@@ -158,9 +158,9 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         var isProcessingUsagesAfterEncoder = false
         
         for usage in usages {
-            if !usage.affectsGPUBarriers || !usage.activeRange.intersects(textureSlice: attachment.slice, level: attachment.level, descriptor: attachment.texture.descriptor) { continue }
+            if usage.gpuType.isEmpty || !usage.activeRange.intersects(textureSlice: attachment.slice, level: attachment.level, descriptor: attachment.texture.descriptor) { continue }
             
-            let isUsageInEncoder = usage.type.isRenderTarget && self.renderPasses.contains(where: { $0 === usage.renderPassRecord.pass })
+            let isUsageInEncoder = usage.type.isRenderTarget && self.renderPasses.contains(where: { $0.passIndex == usage.passIndex })
             
             if isFirstUsage == nil {
                 if !attachment.texture.stateFlags.contains(.initialised), isUsageInEncoder {
@@ -174,11 +174,11 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
             
             if isUsageInEncoder || !isProcessingUsagesAfterEncoder { continue }
             
-            switch usage.type {
-            case .unusedArgumentBuffer, .unusedRenderTarget:
+            switch usage.gpuType {
+            case []:
                 continue
-            case _ where usage.type.isRenderTarget:
-                guard let renderPass = usage.renderPassRecord.pass as? DrawRenderPass else { fatalError() }
+            case _ where !usage.gpuType.intersection([.colorAttachment, .depthStencilAttachment]).isEmpty:
+                guard let renderPass = allRenderPasses[usage.passIndex] as? DrawRenderPass else { fatalError() }
                 let descriptor = renderPass.renderTargetsDescriptor
                 if let depthAttachment = descriptor.depthAttachment,
                     depthAttachment.texture == attachment.texture,
@@ -208,9 +208,9 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
                         
                     }
                 }
-            case _ where usage.isRead:
+            case _ where usage.type.isRead:
                 isReadAfterPass = true
-            case _ where usage.isWrite:
+            case _ where usage.type.isWrite:
                 continue // We need to be conservative here; it's possible something else may write to the texture but only partially overwrite our data.
             default:
                 fatalError()
@@ -242,24 +242,24 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         return (loadAction, storeAction)
     }
     
-    func finalise(storedTextures: inout [Texture]) {
+    func finalise(allRenderPasses: [RenderPassRecord], storedTextures: inout [Texture]) {
         // Compute load and store actions for all attachments.
         for (i, attachment) in self.descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else {
                 self.colorActions[i] = (.dontCare, .dontCare)
                 continue
             }
-            self.colorActions[i] = self.loadAndStoreActions(for: attachment, loadAction: self.colorActions[i].0, storedTextures: &storedTextures)
+            self.colorActions[i] = self.loadAndStoreActions(for: attachment, loadAction: self.colorActions[i].0, allRenderPasses: allRenderPasses, storedTextures: &storedTextures)
         }
         
         if let depthAttachment = self.descriptor.depthAttachment {
-            self.depthActions = self.loadAndStoreActions(for: depthAttachment, loadAction: self.depthActions.0, storedTextures: &storedTextures)
+            self.depthActions = self.loadAndStoreActions(for: depthAttachment, loadAction: self.depthActions.0, allRenderPasses: allRenderPasses, storedTextures: &storedTextures)
         } else {
             self.depthActions = (.dontCare, .dontCare)
         }
         
         if let stencilAttachment = self.descriptor.stencilAttachment {
-            self.stencilActions = self.loadAndStoreActions(for: stencilAttachment, loadAction: self.stencilActions.0, storedTextures: &storedTextures)
+            self.stencilActions = self.loadAndStoreActions(for: stencilAttachment, loadAction: self.stencilActions.0, allRenderPasses: allRenderPasses, storedTextures: &storedTextures)
         } else {
             self.stencilActions = (.dontCare, .dontCare)
         }

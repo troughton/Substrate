@@ -23,57 +23,6 @@ public enum TextureType : UInt, Hashable, Sendable {
     case typeTextureBuffer
 }
 
-public struct TextureUsage : OptionSet, Hashable, Sendable {
-    public let rawValue : UInt
-    
-    @inlinable
-    public init(rawValue: UInt) {
-        self.rawValue = rawValue
-    }
-    
-    
-    public static let unknown: TextureUsage = TextureUsage(rawValue: 0)
-    
-    public static let shaderRead: TextureUsage = TextureUsage(rawValue: 1)
-    
-    public static let shaderWrite: TextureUsage = TextureUsage(rawValue: 2)
-    
-    public static let renderTarget: TextureUsage = TextureUsage(rawValue: 4)
-    
-    public static let pixelFormatView: TextureUsage = TextureUsage(rawValue: 0x0010)
-    
-    public static let blitSource: TextureUsage = TextureUsage(rawValue: 32)
-    
-    public static let blitDestination: TextureUsage = TextureUsage(rawValue: 64)
-}
-
-public struct BufferUsage : OptionSet, Hashable, Sendable {
-    public let rawValue : UInt
-    
-    @inlinable
-    public init(rawValue: UInt) {
-        self.rawValue = rawValue
-    }
-    
-    public static let unknown : BufferUsage = []
-    
-    public static let shaderRead = BufferUsage(rawValue: 1)
-    
-    public static let shaderWrite = BufferUsage(rawValue: 2)
-    
-    public static let blitSource = BufferUsage(rawValue: 4)
-    
-    public static let blitDestination = BufferUsage(rawValue: 8)
-    
-    public static let indexBuffer = BufferUsage(rawValue: 16)
-    
-    public static let vertexBuffer = BufferUsage(rawValue: 32)
-    
-    public static let indirectBuffer = BufferUsage(rawValue: 64)
-    
-    public static let textureView = BufferUsage(rawValue: 128)
-}
-
 public struct TextureDescriptor: Hashable, Sendable {
     
     public init() {
@@ -91,32 +40,6 @@ public struct TextureDescriptor: Hashable, Sendable {
         self.mipmapLevelCount = mipmapped ? 1 + Int(floor(log2(Double(max(width, height))))) : 1
         self.storageMode = storageMode
         self.usageHint = usage
-    }
-    
-    @available(*, deprecated, message: "Use TextureDescriptor(type:) instead.")
-    public init(texture2DWithFormat pixelFormat: PixelFormat, width: Int, height: Int, mipmapped: Bool, storageMode: StorageMode = .private, usageHint: TextureUsage = []) {
-        var descriptor = TextureDescriptor()
-        descriptor.pixelFormat = pixelFormat
-        descriptor.textureType = .type2D
-        descriptor.width = width
-        descriptor.height = height
-        descriptor.mipmapLevelCount = mipmapped ? 1 + Int(floor(log2(Double(max(width, height))))) : 1
-        descriptor.storageMode = storageMode
-        descriptor.usageHint = usageHint
-        self = descriptor
-    }
-    
-    @available(*, deprecated, message: "Use TextureDescriptor(type:) instead.")
-    public init(textureCubeWithFormat pixelFormat: PixelFormat, size: Int, mipmapped: Bool, storageMode: StorageMode = .private, usageHint: TextureUsage = []) {
-        var descriptor = TextureDescriptor()
-        descriptor.pixelFormat = pixelFormat
-        descriptor.textureType = .typeCube
-        descriptor.width = size
-        descriptor.height = size
-        descriptor.mipmapLevelCount = mipmapped ? 1 + Int(floor(log2(Double(size)))) : 1
-        descriptor.storageMode = storageMode
-        descriptor.usageHint = usageHint
-        self = descriptor
     }
     
     public var textureType: TextureType = .type2D
@@ -140,7 +63,7 @@ public struct TextureDescriptor: Hashable, Sendable {
     public var cacheMode: CPUCacheMode = .defaultCache
     
     /// This usage hint is only needed for persistent resources.
-    public var usageHint: TextureUsage = .unknown
+    public var usageHint: TextureUsage = []
 
     public var size : Size {
         get {
@@ -196,7 +119,7 @@ public struct BufferDescriptor: Hashable, Sendable {
     /// - Parameter storageMode: The storage mode for the buffer, representing the pool of memory from which the buffer should be allocated.
     /// - Parameter cacheMode: The CPU cache mode for the created buffer, if it is CPU-visible. Write-combined buffers _may_ have better write performance from the CPU but will have considerable overhead when being read by the CPU.
     /// - Parameter usage: The ways in which the created buffer will be used by the GPU. Only required for persistent or history buffers; transient buffers will infer their usage.
-    public init(length: Int, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache, usage: BufferUsage = .unknown) {
+    public init(length: Int, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache, usage: BufferUsage = []) {
         self.length = length
         self.storageMode = storageMode
         self.cacheMode = cacheMode

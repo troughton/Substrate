@@ -14,13 +14,36 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     let resourceMap: FrameResourceMap<MetalBackend>
     let isAppleSiliconGPU: Bool
     
+    let inputAttachmentUsages: [(texture: MTLTexture, afterStages: MTLRenderStages)]
+    
     private var baseBufferOffsets = [Int](repeating: 0, count: 31 * 5) // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     
     init(passRecord: RenderPassRecord, encoder: MTLRenderCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.resourceMap = resourceMap
         self.isAppleSiliconGPU = isAppleSiliconGPU
+        
+        if isAppleSiliconGPU {
+            self.inputAttachmentUsages = []
+        } else {
+            self.inputAttachmentUsages = passRecord.pass.resources.compactMap { (usage: ResourceUsage) -> (texture: MTLTexture, afterStages: MTLRenderStages)? in
+                guard usage.type.contains(.inputAttachment),
+                        let texture = Texture(usage.resource),
+                let mtlTexture = resourceMap[texture]?.texture else {
+                    return nil
+                }
+                let stages: MTLRenderStages = usage.type.contains(.depthStencilAttachmentWrite) ? .vertex : .fragment
+                return (texture: mtlTexture, afterStages: stages)
+            }
+        }
+        
         super.init(renderPass: passRecord.pass as! DrawRenderPass, passRecord: passRecord)
+    }
+    
+    func processInputAttachmentUsages() {
+        for usage in self.inputAttachmentUsages {
+            encoder.memoryBarrier(resources: [usage.texture], after: usage.afterStages, before: .fragment)
+        }
     }
     
     override func pushDebugGroup(_ string: String) {
@@ -269,11 +292,16 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     
     override func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
         super.drawPrimitives(type: primitiveType, vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
+        
+        self.processInputAttachmentUsages()
+        
         encoder.drawPrimitives(type: MTLPrimitiveType(primitiveType), vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
     }
     
     override func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int) {
         super.drawPrimitives(type: primitiveType, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
+        
+        self.processInputAttachmentUsages()
         
         let mtlBuffer = resourceMap[indirectBuffer]!
         
@@ -283,6 +311,8 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     override func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int = 1, baseVertex: Int = 0, baseInstance: Int = 0) {
         super.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
         
+        self.processInputAttachmentUsages()
+        
         let mtlBuffer = resourceMap[indexBuffer]!
         
         encoder.drawIndexedPrimitives(type: MTLPrimitiveType(primitiveType), indexCount: indexCount, indexType: MTLIndexType(indexType), indexBuffer: mtlBuffer.buffer, indexBufferOffset: mtlBuffer.offset + indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
@@ -291,6 +321,8 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     
     override func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, indirectBuffer: Buffer, indirectBufferOffset: Int) {
         super.drawIndexedPrimitives(type: primitiveType, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
+        
+        self.processInputAttachmentUsages()
         
         let mtlIndexBuffer = resourceMap[indexBuffer]!
         let mtlIndirectBuffer = resourceMap[indirectBuffer]!
@@ -319,11 +351,11 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         encoder.dispatchThreadsPerTile(MTLSize(threadsPerTile))
     }
     
-    override func useResource(_ resource: Resource, access: ResourceAccessFlags, stages: RenderStages) {
+    override func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
         guard let mtlResource = resourceMap[resource] else {
             return
         }
-        encoder.useResource(mtlResource, usage: MTLResourceUsage(access, isAppleSiliconGPU: self.isAppleSiliconGPU), stages: MTLRenderStages(stages))
+        encoder.useResource(mtlResource, usage: MTLResourceUsage(usage, isAppleSiliconGPU: self.isAppleSiliconGPU), stages: MTLRenderStages(stages))
     }
     
     override func useHeap(_ heap: Heap, stages: RenderStages) {
