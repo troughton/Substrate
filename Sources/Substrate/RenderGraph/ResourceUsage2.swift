@@ -9,20 +9,17 @@ import Foundation
 import SubstrateUtilities
 
 public struct TextureSubresourceRange {
-    public var mipLevels: Range<Int>
     public var slices: Range<Int>
-    public var depthPlanes: Range<Int>
+    public var mipLevels: Range<Int>
     
-    public init(mipLevels: Range<Int>, slices: Range<Int>, depthPlanes: Range<Int>) {
-        self.mipLevels = mipLevels
+    public init(slices: Range<Int>, mipLevels: Range<Int>) {
         self.slices = slices
-        self.depthPlanes = depthPlanes
+        self.mipLevels = mipLevels
     }
     
-    public init(mipLevel: Int, slice: Int, depthPlane: Int) {
+    public init(slice: Int, mipLevel: Int) {
         self.mipLevels = mipLevel..<(mipLevel + 1)
         self.slices = slice..<(slice + 1)
-        self.depthPlanes = depthPlane..<(depthPlane + 1)
     }
 }
 
@@ -34,48 +31,29 @@ public struct ResourceUsage {
     }
     
     public var resource: Resource
-    public var subresources: [Subresource]
     public var type: ResourceUsageType
     public var stages: RenderStages // empty means the default for the pass.
+    public var subresources: [Subresource]
     
-    public static func buffer(_ buffer: Buffer, byteRange: Range<Int>? = nil, type: BufferUsage, stages: RenderStages = []) -> ResourceUsage {
-        return .init(resource: Resource(buffer), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], type: ResourceUsageType(type), stages: stages)
+    public init(resource: Resource, type: ResourceUsageType, stages: RenderStages = [], subresources: [Subresource] = [.wholeResource]) {
+        self.resource = resource
+        self.subresources = subresources
+        self.stages = stages
+        self.type = type
     }
     
-    public static func texture(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, type: TextureUsage, stages: RenderStages = []) -> ResourceUsage {
-        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], type: ResourceUsageType(type), stages: stages)
+    public init(_ buffer: Buffer, _ type: BufferUsage, stages: RenderStages = [], byteRange: Range<Int>? = nil) {
+        self.init(resource: Resource(buffer), type: ResourceUsageType(type), stages: stages, subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource])
     }
     
-    // MARK: -
-    
-    public static func read(_ buffer: Buffer, byteRange: Range<Int>? = nil, stages: RenderStages = []) -> ResourceUsage {
-        return .init(resource: Resource(buffer), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], type: .shaderRead, stages: stages)
+    public init(_ texture: Texture, _ type: TextureUsage, stages: RenderStages = [], subresources: [TextureSubresourceRange]? = nil) {
+        self.init(resource: Resource(texture), type: ResourceUsageType(type), stages: stages, subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource])
     }
     
-    public static func readWrite(_ buffer: Buffer, byteRange: Range<Int>? = nil, stages: RenderStages = []) -> ResourceUsage {
-        return .init(resource: Resource(buffer), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], type: .shaderReadWrite, stages: stages)
+    public init(_ texture: Texture, _ type: TextureUsage, stages: RenderStages = [], slice: Int, mipLevel: Int) {
+        self.init(resource: Resource(texture), type: ResourceUsageType(type), stages: stages, subresources: [.textureSlices(.init(slice: slice, mipLevel: mipLevel))])
     }
-    
-    public static func write(_ buffer: Buffer, byteRange: Range<Int>? = nil, stages: RenderStages = []) -> ResourceUsage {
-        return .init(resource: Resource(buffer), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], type: .shaderWrite, stages: stages)
-    }
-    
-    public static func read(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ResourceUsage {
-        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], type: .shaderRead, stages: stages)
-    }
-    
-    public static func readWrite(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ResourceUsage {
-        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], type: .shaderReadWrite, stages: stages)
-    }
-    
-    public static func write(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ResourceUsage {
-        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], type: .shaderWrite, stages: stages)
-    }
-    
-    public static func inputAttachment(_ texture: Texture, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ResourceUsage {
-        return .init(resource: Resource(texture), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], type: .inputAttachment, stages: stages)
-    }
-    
+
     // Render target usages can be inferred from load actions and render target descriptors.
     // We _do_ need to know whether render targets are written to or not.
 }
@@ -110,10 +88,7 @@ public struct RecordedResourceUsage {
                     guard let texture = Texture(usage.resource) else { break }
                     for mipLevel in textureRange.mipLevels {
                         for slice in textureRange.slices {
-                            for depthPlane in textureRange.depthPlanes {
-                                let indexSlice = slice * texture.descriptor.depth + depthPlane
-                                textureMask[slice: indexSlice, level: mipLevel, descriptor: texture.descriptor, allocator: allocator] = true
-                            }
+                            textureMask[slice: slice, level: mipLevel, descriptor: texture.descriptor, allocator: allocator] = true
                         }
                     }
                 }

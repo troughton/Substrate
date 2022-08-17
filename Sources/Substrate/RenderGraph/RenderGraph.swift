@@ -133,24 +133,24 @@ extension DrawRenderPass {
         let renderTargets = self.renderTargetsDescriptor
         for attachment in renderTargets.colorAttachments {
             if let attachment = attachment, resources[Resource(attachment.texture)] == nil {
-                let subresource = TextureSubresourceRange(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)
+                let subresource = TextureSubresourceRange(slice: attachment.slice, mipLevel: attachment.level)
                 
-                inferredResources[Resource(attachment.texture), default: .texture(attachment.texture, type: .colorAttachment)]
+                inferredResources[Resource(attachment.texture), default: .init(attachment.texture, .colorAttachment, stages: .fragment, subresources: [])]
                     .subresources.append(.textureSlices(subresource))
             }
         }
         
         if let attachment = renderTargets.depthAttachment, resources[Resource(attachment.texture)] == nil {
-            let subresource = TextureSubresourceRange(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)
+            let subresource = TextureSubresourceRange(slice: attachment.slice, mipLevel: attachment.level)
             
-            inferredResources[Resource(attachment.texture), default: .texture(attachment.texture, type: .depthStencilAttachment)]
+            inferredResources[Resource(attachment.texture), default: .init(attachment.texture, .depthStencilAttachment, stages: [.vertex, .fragment], subresources: [])]
                 .subresources.append(.textureSlices(subresource))
         }
         
         if let attachment = renderTargets.stencilAttachment, resources[Resource(attachment.texture)] == nil {
-            let subresource = TextureSubresourceRange(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)
+            let subresource = TextureSubresourceRange(slice: attachment.slice, mipLevel: attachment.level)
             
-            inferredResources[Resource(attachment.texture), default: .texture(attachment.texture, type: .depthStencilAttachment)]
+            inferredResources[Resource(attachment.texture), default: .init(attachment.texture, .depthStencilAttachment, stages: [.vertex, .fragment], subresources: [])]
                 .subresources.append(.textureSlices(subresource))
         }
         return Array(inferredResources.values)
@@ -896,23 +896,29 @@ public final class RenderGraph {
         for clearOperation in colorClearOperations {
             if case .clear = clearOperation, let attachment = renderTargets.colorAttachments[0] {
                 resources.append(
-                    .texture(attachment.texture,
-                             subresources: [.init(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)], type: .colorAttachmentWrite, stages: .fragment)
+                    .init(attachment.texture,
+                          .colorAttachmentWrite,
+                          stages: .fragment,
+                          slice: attachment.slice, mipLevel: attachment.level)
                 )
             }
         }
         
         if case .clear = depthClearOperation, let attachment = renderTargets.depthAttachment {
             resources.append(
-                .texture(attachment.texture,
-                         subresources: [.init(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)], type: .depthStencilAttachmentWrite, stages: .fragment)
+                .init(attachment.texture,
+                      .depthStencilAttachmentWrite,
+                      stages: .fragment,
+                      slice: attachment.slice, mipLevel: attachment.level)
             )
         }
         
         if case .clear = stencilClearOperation, let attachment = renderTargets.stencilAttachment {
             resources.append(
-                .texture(attachment.texture,
-                         subresources: [.init(mipLevel: attachment.level, slice: attachment.slice, depthPlane: attachment.depthPlane)], type: .depthStencilAttachmentWrite, stages: .fragment)
+                .init(attachment.texture,
+                      .depthStencilAttachmentWrite,
+                      stages: .fragment,
+                      slice: attachment.slice, mipLevel: attachment.level)
             )
         }
         
