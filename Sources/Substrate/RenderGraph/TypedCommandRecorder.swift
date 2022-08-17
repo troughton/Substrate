@@ -11,7 +11,7 @@ public protocol NoArgConstructable {
     init()
 }
 
-public protocol ShaderDescriptorSet : NoArgConstructable & ArgumentBufferEncodable {}
+public protocol ShaderResourceSet : NoArgConstructable & ArgumentBufferEncodable {}
 
 public struct NilFunctions : RawRepresentable {
     public typealias RawValue = String
@@ -25,7 +25,7 @@ public struct NilFunctions : RawRepresentable {
     }
 }
 
-public struct NilSet : ShaderDescriptorSet {
+public struct NilSet : ShaderResourceSet {
     public static var activeStages: RenderStages = []
     
     public static var bindingIndex: Int {

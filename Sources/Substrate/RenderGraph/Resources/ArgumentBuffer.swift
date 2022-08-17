@@ -116,7 +116,7 @@ public struct ArgumentBuffer : ResourceProtocol {
         case accelerationStructure(AccelerationStructure)
         case visibleFunctionTable(VisibleFunctionTable)
         case intersectionFunctionTable(IntersectionFunctionTable)
-        case sampler(SamplerDescriptor)
+        case sampler(SamplerState)
         // Where offset is the source offset in the source Data.
         case bytes(offset: Int, length: Int)
         
@@ -220,9 +220,10 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     public var stateFlags: ResourceStateFlags {
         get {
-            return []
+            return self.pointer(for: \.stateFlags).pointee
         }
         nonmutating set {
+            self.pointer(for: \.stateFlags).pointee = newValue
         }
     }
     
@@ -263,7 +264,7 @@ public struct ArgumentBuffer : ResourceProtocol {
             yield self.pointer(for: \.bindings).pointee
         }
     }
-    
+     
     public var storageMode: StorageMode {
         return .shared
     }
@@ -336,6 +337,11 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     @inlinable
     public func setSampler(_ sampler: SamplerDescriptor, at path: ResourceBindingPath) {
+        preconditionFailure("\(#function) needs concrete implementation.")
+    }
+    
+    @inlinable
+    public func setSampler(_ sampler: SamplerState, at path: ResourceBindingPath) {
         self.bindings.append(
             (path, .sampler(sampler))
         )
@@ -497,6 +503,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     let descriptors: UnsafeMutablePointer<ArgumentBufferDescriptor>
     let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
+    let stateFlags: UnsafeMutablePointer<ResourceStateFlags>
     let maxAllocationLengths: UnsafeMutablePointer<Int>
     let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
     let sourceArrays : UnsafeMutablePointer<ArgumentBufferArray?>
@@ -507,6 +514,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.usages = .allocate(capacity: capacity)
         self.descriptors = .allocate(capacity: capacity)
         self.encoders = .allocate(capacity: capacity)
+        self.stateFlags = .allocate(capacity: capacity)
         self.maxAllocationLengths = .allocate(capacity: capacity)
         self.bindings = .allocate(capacity: capacity)
         self.sourceArrays = .allocate(capacity: capacity)
@@ -516,6 +524,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.usages.deallocate()
         self.descriptors.deallocate()
         self.encoders.deallocate()
+        self.stateFlags.deallocate()
         self.maxAllocationLengths.deallocate()
         self.bindings.deallocate()
         self.sourceArrays.deallocate()
@@ -525,6 +534,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
         self.descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
         self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
+        self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.sourceArrays.advanced(by: indexInChunk).initialize(to: nil)
@@ -534,6 +544,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
         self.descriptors.advanced(by: indexInChunk).initialize(to: sourceArray.descriptor)
         self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
+        self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
         self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
         self.sourceArrays.advanced(by: indexInChunk).initialize(to: sourceArray)
@@ -543,6 +554,7 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         self.usages.advanced(by: index).deinitialize(count: count)
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.encoders.advanced(by: index).deinitialize(count: count)
+        self.stateFlags.advanced(by: index).deinitialize(count: count)
         self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
         self.bindings.advanced(by: index).deinitialize(count: count)
         self.sourceArrays.advanced(by: index).deinitialize(count: count)

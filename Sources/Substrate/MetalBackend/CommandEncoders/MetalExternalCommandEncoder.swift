@@ -9,15 +9,31 @@
 import Foundation
 import Metal
 
-final class MetalExternalCommandEncoder: ExternalCommandEncoder {
+final class MetalExternalCommandEncoder: ExternalCommandEncoderImpl {
     let commandBuffer: MTLCommandBuffer
     
-    init(commandBuffer: MTLCommandBuffer, passRecord: RenderPassRecord) {
+    init(commandBuffer: MTLCommandBuffer) {
         self.commandBuffer = commandBuffer
-        super.init(renderPass: passRecord.pass as! ExternalRenderPass, passRecord: passRecord)
     }
     
-    override func encodeCommand(_ command: (UnsafeRawPointer) -> Void) {
+    func setLabel(_ label: String) {
+        commandBuffer.label = label
+    }
+    
+    func pushDebugGroup(_ groupName: String) {
+        commandBuffer.pushDebugGroup(groupName)
+    }
+    
+    func popDebugGroup() {
+        commandBuffer.popDebugGroup()
+    }
+    
+    func insertDebugSignpost(_ string: String) {
+        commandBuffer.pushDebugGroup(string)
+        commandBuffer.popDebugGroup()
+    }
+    
+    func encodeCommand(_ command: (UnsafeRawPointer) -> Void) {
         command(Unmanaged.passUnretained(self.commandBuffer).toOpaque())
     }
 }

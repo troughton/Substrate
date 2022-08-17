@@ -89,7 +89,9 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                 renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                await (passRecord.pass as! DrawRenderPass).execute(renderCommandEncoder: MetalRenderCommandEncoder(passRecord: passRecord, encoder: renderEncoder, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU))
+                let encoderImpl = MetalRenderCommandEncoder(passRecord: passRecord, encoder: renderEncoder, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                let encoder = RenderCommandEncoder(renderPass: (passRecord.pass as! DrawRenderPass), passRecord: passRecord, impl: encoderImpl)
+                await (passRecord.pass as! DrawRenderPass).execute(renderCommandEncoder: encoder)
                 
                 renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
             }
@@ -106,7 +108,9 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                 computeEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                await (passRecord.pass as! ComputeRenderPass).execute(computeCommandEncoder: MetalComputeCommandEncoder(passRecord: passRecord, encoder: computeEncoder, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU))
+                let encoderImpl = MetalComputeCommandEncoder(encoder: computeEncoder, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                let encoder = ComputeCommandEncoder(renderPass: (passRecord.pass as! ComputeRenderPass), passRecord: passRecord, impl: encoderImpl)
+                await (passRecord.pass as! ComputeRenderPass).execute(computeCommandEncoder: encoder)
                 
                 
                 computeEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
@@ -123,7 +127,9 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                 blitEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                await (passRecord.pass as! BlitRenderPass).execute(blitCommandEncoder: MetalBlitCommandEncoder(passRecord: passRecord, encoder: blitEncoder, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU))
+                let encoderImpl = MetalBlitCommandEncoder(encoder: blitEncoder, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                let encoder = BlitCommandEncoder(renderPass: (passRecord.pass as! BlitRenderPass), passRecord: passRecord, impl: encoderImpl)
+                await (passRecord.pass as! BlitRenderPass).execute(blitCommandEncoder: encoder)
                 
                 
                 blitEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
@@ -132,7 +138,9 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             
         case .external:
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                await (passRecord.pass as! ExternalRenderPass).execute(externalCommandEncoder: MetalExternalCommandEncoder(commandBuffer: self.commandBuffer, passRecord: passRecord))
+                let encoderImpl = MetalExternalCommandEncoder(commandBuffer: self.commandBuffer)
+                let encoder = ExternalCommandEncoder(renderPass: (passRecord.pass as! ExternalRenderPass), passRecord: passRecord, impl: encoderImpl)
+                await (passRecord.pass as! ExternalRenderPass).execute(externalCommandEncoder: encoder)
             }
             
         case .accelerationStructure:
@@ -146,7 +154,9 @@ final class MetalCommandBuffer: BackendCommandBuffer {
                 for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                     accelerationStructureEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                     
-                    (passRecord.pass as! AccelerationStructureRenderPass).execute(accelerationStructureCommandEncoder: MetalAccelerationStructureCommandEncoder(passRecord: passRecord, encoder: accelerationStructureEncoder, resourceMap: self.resourceMap))
+                    let encoderImpl = MetalAccelerationStructureCommandEncoder(encoder: accelerationStructureEncoder, resourceMap: self.resourceMap)
+                    let encoder = AccelerationStructureCommandEncoder(accelerationStructureRenderPass: (passRecord.pass as! AccelerationStructureRenderPass), passRecord: passRecord, impl: encoderImpl)
+                    (passRecord.pass as! AccelerationStructureRenderPass).execute(accelerationStructureCommandEncoder: encoder)
                     
                     accelerationStructureEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 }

@@ -84,10 +84,49 @@ extension CommandEncoder {
  A requirement for resource binding is that subsequently bound pipeline states are compatible with the pipeline state bound at the time of the first draw call.
  */
 
+
+protocol CommandEncoderImpl {
+    func setLabel(_ label: String)
+    func pushDebugGroup(_ groupName: String)
+    func popDebugGroup()
+    func insertDebugSignpost(_ string: String)
+}
+
+protocol ResourceBindingEncoderImpl: CommandEncoderImpl {
+    func setLabel(_ label: String)
+    func pushDebugGroup(_ groupName: String)
+    func popDebugGroup()
+    func insertDebugSignpost(_ string: String)
+    
+    func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath)
+    func setBuffer(_ buffer: Buffer, offset: Int, at path: ResourceBindingPath)
+    func setBufferOffset(_ offset: Int, at path: ResourceBindingPath)
+    func setTexture(_ texture: Texture, at path: ResourceBindingPath)
+    func setSampler(_ state: SamplerState, at path: ResourceBindingPath)
+    
+    @available(macOS 12.0, iOS 15.0, *)
+    func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath)
+    
+    @available(macOS 12.0, iOS 15.0, *)
+    func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath)
+    
+    @available(macOS 12.0, iOS 15.0, *)
+    func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath)
+    
+    /// Bind `argumentBuffer` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
+    /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
+    func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer, at index: Int, stages: RenderStages)
+    
+    /// Bind `argumentBufferArray` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
+    /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
+    func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, at index: Int, stages: RenderStages)
+}
+
 /// `ResourceBindingEncoder` is the common superclass `CommandEncoder` for all command encoders that can bind resources.
 /// You never instantiate a `ResourceBindingEncoder` directly; instead, you are provided with one of its concrete subclasses in a render pass' `execute` method.
 public class ResourceBindingEncoder : CommandEncoder {
     @usableFromInline let passRecord: RenderPassRecord
+    let bindingEncoderImpl: ResourceBindingEncoderImpl
     
     @usableFromInline
     var pipelineStateChanged = false
@@ -97,43 +136,48 @@ public class ResourceBindingEncoder : CommandEncoder {
     @usableFromInline
     var currentPipelineReflection : PipelineReflection! = nil
     
-    init(passRecord: RenderPassRecord) {
+    init(passRecord: RenderPassRecord, impl: ResourceBindingEncoderImpl) {
         self.passRecord = passRecord
+        self.bindingEncoderImpl = impl
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         self.pushDebugGroup(passRecord.name)
 #endif
     }
     
+    public var label: String = "" {
+        didSet {
+            bindingEncoderImpl.setLabel(label)
+        }
+    }
+    
     public func pushDebugGroup(_ groupName: String) {
-        
+        bindingEncoderImpl.pushDebugGroup(groupName)
     }
     
     public func popDebugGroup() {
-        
-    }
-    
-    func setLabel(_ label: String) {
-        
+        bindingEncoderImpl.popDebugGroup()
     }
     
     public func insertDebugSignpost(_ string: String) {
-        
+        bindingEncoderImpl.insertDebugSignpost(string)
     }
     
     public func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        bindingEncoderImpl.setBytes(bytes, length: length, at: path)
     }
     
     public func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        guard let buffer = buffer else { return }
+        bindingEncoderImpl.setBuffer(buffer, offset: offset, at: path)
     }
     
     public func setBufferOffset(_ offset: Int, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        bindingEncoderImpl.setBufferOffset(offset, at: path)
     }
     
     public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        guard let texture = texture else { return }
+        bindingEncoderImpl.setTexture(texture, at: path)
     }
     
     public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) async {
@@ -141,22 +185,26 @@ public class ResourceBindingEncoder : CommandEncoder {
     }
     
     public func setSampler(_ state: SamplerState?, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        guard let state = state else { return }
+        bindingEncoderImpl.setSampler(state, at: path)
     }
     
     @available(macOS 12.0, iOS 15.0, *)
     public func setVisibleFunctionTable(_ table: VisibleFunctionTable?, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        guard let table = table else { return }
+        bindingEncoderImpl.setVisibleFunctionTable(table, at: path)
     }
     
     @available(macOS 12.0, iOS 15.0, *)
     public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        guard let table = table else { return }
+        bindingEncoderImpl.setIntersectionFunctionTable(table, at: path)
     }
     
     @available(macOS 12.0, iOS 15.0, *)
     public func setAccelerationStructure(_ structure: AccelerationStructure?, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        guard let structure = structure else { return }
+        bindingEncoderImpl.setAccelerationStructure(structure, at: path)
     }
     
     /// Construct an `ArgumentBuffer` specified by the `ArgumentBufferEncodable` value `arguments`
@@ -166,8 +214,6 @@ public class ResourceBindingEncoder : CommandEncoder {
         if A.self == NilSet.self {
             return
         }
-        
-        let bindingPath = RenderBackend.argumentBufferPath(at: setIndex, stages: A.activeStages)
         
         let argumentBuffer = ArgumentBuffer(descriptor: A.argumentBufferDescriptor)
         assert(argumentBuffer.bindings.isEmpty)
@@ -197,13 +243,23 @@ public class ResourceBindingEncoder : CommandEncoder {
     /// Bind `argumentBuffer` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
     /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
     public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        guard let argumentBuffer = argumentBuffer else { return }
+        
+        let bindingPath = RenderBackend.argumentBufferPath(at: index, stages: stages)
+        argumentBuffer.updateEncoder(pipelineReflection: self.currentPipelineReflection, bindingPath: bindingPath)
+        bindingEncoderImpl.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
     }
     
     /// Bind `argumentBufferArray` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
     /// descriptor set at `setIndex` for Vulkan, and mark it as active in render stages `stages`.
     public func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray?, at index: Int, stages: RenderStages) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        guard let argumentBufferArray = argumentBufferArray else { return }
+        let bindingPath = RenderBackend.argumentBufferPath(at: index, stages: stages)
+        for argumentBuffer in argumentBufferArray._bindings {
+            argumentBuffer?.updateEncoder(pipelineReflection: self.currentPipelineReflection, bindingPath: bindingPath)
+        }
+        
+        bindingEncoderImpl.setArgumentBufferArray(argumentBufferArray, at: index, stages: stages)
     }
     
     @usableFromInline func endEncoding() {
@@ -259,6 +315,46 @@ public protocol AnyRenderCommandEncoder {
     func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int, baseVertex: Int, baseInstance: Int)  async
 }
 
+protocol RenderCommandEncoderImpl: ResourceBindingEncoderImpl {
+    func setVertexBuffer(_ buffer: Buffer, offset: Int, index: Int)
+    func setVertexBufferOffset(_ offset: Int, index: Int)
+    
+    func setViewport(_ viewport: Viewport)
+    func setFrontFacing(_ winding: Winding)
+    func setCullMode(_ cullMode: CullMode)
+    func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float)
+    func setScissorRect(_ rect: ScissorRect)
+    func setRenderPipelineState(_ pipelineState: RenderPipelineState)
+    func setDepthStencilState(_ depthStencilState: DepthStencilState)
+    func setStencilReferenceValue(_ referenceValue: UInt32)
+    func setStencilReferenceValues(front frontReferenceValue: UInt32, back backReferenceValue: UInt32)
+    
+    @available(macOS 12.0, iOS 15.0, *)
+    func setThreadgroupMemoryLength(_ length: Int, at path: ResourceBindingPath)
+    
+    func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int , baseInstance: Int)
+    func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int)
+    func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int, baseVertex: Int, baseInstance: Int)
+    func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, indirectBuffer: Buffer, indirectBufferOffset: Int)
+    
+    @available(macOS 13.0, iOS 16.0, *)
+    func drawMeshThreadgroups(_ threadgroupsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size)
+    
+    @available(macOS 13.0, iOS 16.0, *)
+    func drawMeshThreads(_ threadsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size)
+    
+    @available(macOS 13.0, iOS 16.0, *)
+    func drawMeshThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size)
+    
+    func dispatchThreadsPerTile(_ threadsPerTile: Size)
+    
+    func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages)
+    func useHeap(_ heap: Heap, stages: RenderStages)
+    
+    func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages)
+    func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages)
+}
+
 /// `RenderCommandEncoder` allows you to encode rendering commands to be executed by the GPU within a single `DrawRenderPass`.
 public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEncoder {
     
@@ -297,25 +393,19 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     }
     
     let drawRenderPass : DrawRenderPass
+    let impl: RenderCommandEncoderImpl
     
     var renderPipelineDescriptor : RenderPipelineDescriptor? = nil
     var depthStencilDescriptor : DepthStencilDescriptor? = nil
     
     var nonDefaultDynamicState: DrawDynamicState = []
 
-    init(renderPass: DrawRenderPass, passRecord: RenderPassRecord) {
+    init(renderPass: DrawRenderPass, passRecord: RenderPassRecord, impl: RenderCommandEncoderImpl) {
         self.drawRenderPass = renderPass
-        
-        super.init(passRecord: passRecord)
+        self.impl = impl
+        super.init(passRecord: passRecord, impl: impl)
         
         assert(passRecord.pass === renderPass)
-    }
-    
-    /// The debug label for this render command encoder. Inferred from the render pass' name by default.
-    public var label : String = "" {
-        didSet {
-            self.setLabel(label)
-        }
     }
     
     public func setRenderPipelineDescriptor(_ descriptor: RenderPipelineDescriptor, retainExistingBindings: Bool = true) async {
@@ -326,27 +416,31 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     }
     
     public func setRenderPipelineState(_ pipelineState: RenderPipelineState) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.setRenderPipelineState(pipelineState)
     }
     
     public func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        guard let buffer = buffer else { return }
+        impl.setVertexBuffer(buffer, offset: offset, index: index)
     }
     
     public func setVertexBufferOffset(_ offset: Int, index: Int) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.setVertexBufferOffset(offset, index: index)
     }
 
     public func setViewport(_ viewport: Viewport) {
         self.nonDefaultDynamicState.formUnion(.viewport)
+        impl.setViewport(viewport)
     }
     
     public func setFrontFacing(_ frontFacingWinding: Winding) {
         self.nonDefaultDynamicState.formUnion(.frontFacing)
+        impl.setFrontFacing(frontFacingWinding)
     }
     
     public func setCullMode(_ cullMode: CullMode) {
         self.nonDefaultDynamicState.formUnion(.cullMode)
+        impl.setCullMode(cullMode)
     }
     
     public func setDepthStencilDescriptor(_ descriptor: DepthStencilDescriptor?) {
@@ -370,29 +464,33 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     }
     
     public func setDepthStencilState(_ depthStencilState: DepthStencilState) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.setDepthStencilState(depthStencilState)
     }
     
 //    @inlinable
     public func setScissorRect(_ rect: ScissorRect) {
         self.nonDefaultDynamicState.formUnion(.scissorRect)
+        impl.setScissorRect(rect)
     }
     
     public func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float) {
         self.nonDefaultDynamicState.formUnion(.depthBias)
+        impl.setDepthBias(depthBias, slopeScale: slopeScale, clamp: clamp)
     }
     
     public func setStencilReferenceValue(_ referenceValue: UInt32) {
         self.nonDefaultDynamicState.formUnion(.stencilReferenceValue)
+        impl.setStencilReferenceValue(referenceValue)
     }
     
     public func setStencilReferenceValues(front frontReferenceValue: UInt32, back backReferenceValue: UInt32) {
         self.nonDefaultDynamicState.formUnion(.stencilReferenceValue)
+        impl.setStencilReferenceValues(front: frontReferenceValue, back: backReferenceValue)
     }
     
     @available(macOS 12.0, iOS 15.0, *)
     public func setThreadgroupMemoryLength(_ length: Int, at path: ResourceBindingPath) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.setThreadgroupMemoryLength(length, at: path)
     }
     
     public func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
@@ -402,6 +500,8 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
             assert(self.renderPipelineDescriptor != nil, "No render or compute pipeline is set for pass \(renderPass.name).")
             return
         }
+        
+        impl.drawPrimitives(type: primitiveType, vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
     }
     
     public func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int) {
@@ -409,6 +509,8 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
             assert(self.renderPipelineDescriptor != nil, "No render or compute pipeline is set for pass \(renderPass.name).")
             return
         }
+        
+        impl.drawPrimitives(type: primitiveType, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
     }
     
     public func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int = 1, baseVertex: Int = 0, baseInstance: Int = 0) {
@@ -418,46 +520,48 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
             assert(self.renderPipelineDescriptor != nil, "No render or compute pipeline is set for pass \(renderPass.name).")
             return
         }
+        
+        impl.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
     }
     
     public func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, indirectBuffer: Buffer, indirectBufferOffset: Int) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.drawIndexedPrimitives(type: primitiveType, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
     }
     
     
     @available(macOS 13.0, iOS 16.0, *)
     public func drawMeshThreadgroups(_ threadgroupsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.drawMeshThreadgroups(threadgroupsPerGrid, threadsPerObjectThreadgroup: threadsPerObjectThreadgroup, threadsPerMeshThreadgroup: threadsPerMeshThreadgroup)
     }
     
     @available(macOS 13.0, iOS 16.0, *)
     public func drawMeshThreads(_ threadsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.drawMeshThreads(threadsPerGrid, threadsPerObjectThreadgroup: threadsPerObjectThreadgroup, threadsPerMeshThreadgroup: threadsPerMeshThreadgroup)
     }
     
     @available(macOS 13.0, iOS 16.0, *)
     public func drawMeshThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.drawMeshThreadgroups(indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset, threadsPerObjectThreadgroup: threadsPerObjectThreadgroup, threadsPerMeshThreadgroup: threadsPerMeshThreadgroup)
     }
     
     public func dispatchThreadsPerTile(_ threadsPerTile: Size) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.dispatchThreadsPerTile(threadsPerTile)
     }
     
     public func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.useResource(resource, usage: usage, stages: stages)
     }
     
     public func useHeap(_ heap: Heap, stages: RenderStages) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.useHeap(heap, stages: stages)
     }
     
     public func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.memoryBarrier(scope: scope, after: after, before: before)
     }
     
     public func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.memoryBarrier(resources: resources, after: after, before: before)
     }
     
     @usableFromInline override func endEncoding() {
@@ -486,24 +590,46 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     }
 }
 
+protocol ComputeCommandEncoderImpl: ResourceBindingEncoderImpl {
+    @available(macOS 11.0, iOS 14.0, *)
+    func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath)
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath)
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath)
+    
+    func setComputePipelineState(_ pipelineState: ComputePipelineState)
+    
+    func setStageInRegion(_ region: Region)
+    func setThreadgroupMemoryLength(_ length: Int, at index: Int)
+    
+    func dispatchThreadgroups(_ threadgroupsPerGrid: Size, threadsPerThreadgroup: Size)
+    func dispatchThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size)
+    func dispatchThreads(_ threadsPerGrid: Size, threadsPerThreadgroup: Size)
+    func drawMeshThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size)
+    
+    func useResource(_ resource: Resource, usage: ResourceUsageType)
+    func useHeap(_ heap: Heap)
+    
+    func memoryBarrier(scope: BarrierScope)
+    func memoryBarrier(resources: [Resource])
+}
 
 public class ComputeCommandEncoder : ResourceBindingEncoder {
     
     let computeRenderPass : ComputeRenderPass
+    let impl: ComputeCommandEncoderImpl
     
     private var currentComputePipeline : ComputePipelineDescriptorBox? = nil
     
-    init(renderPass: ComputeRenderPass, passRecord: RenderPassRecord) {
+    init(renderPass: ComputeRenderPass, passRecord: RenderPassRecord, impl: ComputeCommandEncoderImpl) {
         self.computeRenderPass = renderPass
-        super.init(passRecord: passRecord)
+        self.impl = impl
+        super.init(passRecord: passRecord, impl: impl)
         
         assert(passRecord.pass === renderPass)
-    }
-    
-    public var label : String = "" {
-        didSet {
-            self.setLabel(label)
-        }
     }
     
     public func setComputePipelineDescriptor(_ descriptor: ComputePipelineDescriptor, retainExistingBindings: Bool = true) async {
@@ -516,7 +642,7 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     }
     
     public func setComputePipelineState(_ pipelineState: ComputePipelineState) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.setComputePipelineState(pipelineState)
     }
     
     /// The number of threads in a SIMD group/wave for the current pipeline state.
@@ -525,11 +651,11 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     }
     
     public func setStageInRegion(_ region: Region) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.setStageInRegion(region)
     }
     
     public func setThreadgroupMemoryLength(_ length: Int, at index: Int) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.setThreadgroupMemoryLength(length, at: index)
     }
     
     @usableFromInline
@@ -548,6 +674,8 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
 
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
+        
+        impl.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
     
     public func dispatchThreadgroups(_ threadgroupsPerGrid: Size, threadsPerThreadgroup: Size) {
@@ -559,6 +687,8 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
         
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
+        
+        impl.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
     }
     
     public func dispatchThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size) {
@@ -569,37 +699,59 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
         
         self.updateThreadgroupExecutionWidth(threadsPerThreadgroup: threadsPerThreadgroup)
+        
+        impl.dispatchThreadgroups(indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset, threadsPerThreadgroup: threadsPerThreadgroup)
     }
     
     public func drawMeshThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.drawMeshThreadgroups(indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset, threadsPerThreadgroup: threadsPerThreadgroup)
     }
     
     public func useResource(_ resource: Resource, usage: ResourceUsageType) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.useResource(resource, usage: usage)
     }
     
     public func useHeap(_ heap: Heap) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.useHeap(heap)
     }
     
     public func memoryBarrier(scope: BarrierScope) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.memoryBarrier(scope: scope)
     }
     
     public func memoryBarrier(resources: [Resource]) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.memoryBarrier(resources: resources)
     }
+}
+
+protocol BlitCommandEncoderImpl: CommandEncoderImpl {
+    func copy(from sourceBuffer: Buffer, sourceOffset: Int, sourceBytesPerRow: Int, sourceBytesPerImage: Int, sourceSize: Size, to destinationTexture: Texture, destinationSlice: Int, destinationLevel: Int, destinationOrigin: Origin, options: BlitOption)
+    
+    func copy(from sourceBuffer: Buffer, sourceOffset: Int, to destinationBuffer: Buffer, destinationOffset: Int, size: Int)
+    
+    func copy(from sourceTexture: Texture, sourceSlice: Int, sourceLevel: Int, sourceOrigin: Origin, sourceSize: Size, to destinationBuffer: Buffer, destinationOffset: Int, destinationBytesPerRow: Int, destinationBytesPerImage: Int, options: BlitOption)
+    
+    func copy(from sourceTexture: Texture, sourceSlice: Int, sourceLevel: Int, sourceOrigin: Origin, sourceSize: Size, to destinationTexture: Texture, destinationSlice: Int, destinationLevel: Int, destinationOrigin: Origin)
+    
+    func fill(buffer: Buffer, range: Range<Int>, value: UInt8)
+    
+    func generateMipmaps(for texture: Texture)
+    
+    func synchronize(buffer: Buffer)
+    func synchronize(texture: Texture)
+    func synchronize(texture: Texture, slice: Int, level: Int)
 }
 
 public class BlitCommandEncoder : CommandEncoder {
 
     @usableFromInline let passRecord: RenderPassRecord
     let blitRenderPass : BlitRenderPass
+    let impl: BlitCommandEncoderImpl
     
-    init(renderPass: BlitRenderPass, passRecord: RenderPassRecord) {
+    init(renderPass: BlitRenderPass, passRecord: RenderPassRecord, impl: BlitCommandEncoderImpl) {
         self.blitRenderPass = renderPass
         self.passRecord = passRecord
+        self.impl = impl
         
         assert(passRecord.pass === renderPass)
         
@@ -616,70 +768,72 @@ public class BlitCommandEncoder : CommandEncoder {
     
     public var label : String = "" {
         didSet {
-            self.setLabel(label)
+            impl.setLabel(label)
         }
     }
     
     public func pushDebugGroup(_ groupName: String) {
-        
+        impl.pushDebugGroup(groupName)
     }
     
     public func popDebugGroup() {
-        
-    }
-    
-    func setLabel(_ label: String) {
-        
+        impl.popDebugGroup()
     }
     
     public func insertDebugSignpost(_ string: String) {
-        
+        impl.insertDebugSignpost(string)
     }
     
     public func copy(from sourceBuffer: Buffer, sourceOffset: Int, sourceBytesPerRow: Int, sourceBytesPerImage: Int, sourceSize: Size, to destinationTexture: Texture, destinationSlice: Int, destinationLevel: Int, destinationOrigin: Origin, options: BlitOption = []) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.copy(from: sourceBuffer, sourceOffset: sourceOffset, sourceBytesPerRow: sourceBytesPerRow, sourceBytesPerImage: sourceBytesPerImage, sourceSize: sourceSize, to: destinationTexture, destinationSlice: destinationSlice, destinationLevel: destinationLevel, destinationOrigin: destinationOrigin, options: options)
     }
     
     public func copy(from sourceBuffer: Buffer, sourceOffset: Int, to destinationBuffer: Buffer, destinationOffset: Int, size: Int) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.copy(from: sourceBuffer, sourceOffset: sourceOffset, to: destinationBuffer, destinationOffset: destinationOffset, size: size)
     }
     
     public func copy(from sourceTexture: Texture, sourceSlice: Int, sourceLevel: Int, sourceOrigin: Origin, sourceSize: Size, to destinationBuffer: Buffer, destinationOffset: Int, destinationBytesPerRow: Int, destinationBytesPerImage: Int, options: BlitOption = []) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.copy(from: sourceTexture, sourceSlice: sourceSlice, sourceLevel: sourceLevel, sourceOrigin: sourceOrigin, sourceSize: sourceSize, to: destinationBuffer, destinationOffset: destinationOffset, destinationBytesPerRow: destinationBytesPerRow, destinationBytesPerImage: destinationBytesPerImage, options: options)
     }
     
     public func copy(from sourceTexture: Texture, sourceSlice: Int, sourceLevel: Int, sourceOrigin: Origin, sourceSize: Size, to destinationTexture: Texture, destinationSlice: Int, destinationLevel: Int, destinationOrigin: Origin) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.copy(from: sourceTexture, sourceSlice: sourceSlice, sourceLevel: sourceLevel, sourceOrigin: sourceOrigin, sourceSize: sourceSize, to: destinationTexture, destinationSlice: destinationSlice, destinationLevel: destinationLevel, destinationOrigin: destinationOrigin)
     }
     
     public func fill(buffer: Buffer, range: Range<Int>, value: UInt8) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.fill(buffer: buffer, range: range, value: value)
     }
     
     public func generateMipmaps(for texture: Texture) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.generateMipmaps(for: texture)
     }
     
     public func synchronize(buffer: Buffer) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.synchronize(buffer: buffer)
     }
     
     public func synchronize(texture: Texture) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.synchronize(texture: texture)
     }
     
     public func synchronize(texture: Texture, slice: Int, level: Int) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.synchronize(texture: texture, slice: slice, level: level)
     }
+}
+
+protocol ExternalCommandEncoderImpl: CommandEncoderImpl {
+    func encodeCommand(_ command: (_ commandBuffer: UnsafeRawPointer) -> Void)
 }
 
 public class ExternalCommandEncoder : CommandEncoder {
     @usableFromInline let passRecord: RenderPassRecord
+    let impl: ExternalCommandEncoderImpl
     let externalRenderPass : ExternalRenderPass
     
-    init(renderPass: ExternalRenderPass, passRecord: RenderPassRecord) {
+    init(renderPass: ExternalRenderPass, passRecord: RenderPassRecord, impl: ExternalCommandEncoderImpl) {
         self.externalRenderPass = renderPass
         self.passRecord = passRecord
+        self.impl = impl
         
         assert(passRecord.pass === renderPass)
         
@@ -696,35 +850,31 @@ public class ExternalCommandEncoder : CommandEncoder {
     
     public var label : String = "" {
         didSet {
-            self.setLabel(label)
+            impl.setLabel(label)
         }
     }
     
     public func pushDebugGroup(_ groupName: String) {
-        
+        impl.pushDebugGroup(groupName)
     }
     
     public func popDebugGroup() {
-        
-    }
-    
-    func setLabel(_ label: String) {
-        
+        impl.popDebugGroup()
     }
     
     public func insertDebugSignpost(_ string: String) {
-        
+        impl.insertDebugSignpost(string)
     }
     
     func encodeCommand(_ command: (_ commandBuffer: UnsafeRawPointer) -> Void) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.encodeCommand(command)
     }
     
     #if canImport(Metal)
     
     public func encodeToMetalCommandBuffer(_ command: @escaping (_ commandBuffer: MTLCommandBuffer) -> Void) {
         self.encodeCommand({ (cmdBuffer) in
-            command(Unmanaged<MTLCommandBuffer>.fromOpaque(cmdBuffer).takeUnretainedValue())
+            Unmanaged<MTLCommandBuffer>.fromOpaque(cmdBuffer)._withUnsafeGuaranteedRef { command($0) }
         })
     }
     
@@ -745,15 +895,31 @@ public class ExternalCommandEncoder : CommandEncoder {
     #endif
 }
 
+protocol AccelerationStructureCommandEncoderImpl: CommandEncoderImpl {
+    func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int)
+    
+    func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int)
+    
+    func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?)
+    
+    func copy(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure)
+
+    func writeCompactedSize(of accelerationStructure: AccelerationStructure, to buffer: Buffer, offset: Int)
+    
+    func copyAndCompact(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure)
+}
+
 @available(macOS 11.0, iOS 14.0, *)
 public class AccelerationStructureCommandEncoder : CommandEncoder {
     
     @usableFromInline let passRecord: RenderPassRecord
     let accelerationStructureRenderPass : AccelerationStructureRenderPass
+    let impl: AccelerationStructureCommandEncoderImpl
     
-    init(accelerationStructureRenderPass: AccelerationStructureRenderPass, passRecord: RenderPassRecord) {
+    init(accelerationStructureRenderPass: AccelerationStructureRenderPass, passRecord: RenderPassRecord, impl: AccelerationStructureCommandEncoderImpl) {
         self.accelerationStructureRenderPass = accelerationStructureRenderPass
         self.passRecord = passRecord
+        self.impl = impl
         
         assert(passRecord.pass === renderPass)
         
@@ -766,30 +932,28 @@ public class AccelerationStructureCommandEncoder : CommandEncoder {
     
     public var label : String = "" {
         didSet {
-            self.setLabel(label)
+            impl.setLabel(label)
         }
     }
     
     public func pushDebugGroup(_ groupName: String) {
-        
+        impl.pushDebugGroup(groupName)
     }
     
     public func popDebugGroup() {
-        
-    }
-    
-    func setLabel(_ label: String) {
-        
+        impl.popDebugGroup()
     }
     
     public func insertDebugSignpost(_ string: String) {
-        
+        impl.insertDebugSignpost(string)
     }
     
     public func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int) {
+        
+        impl.build(accelerationStructure: accelerationStructure, descriptor: descriptor, scratchBuffer: scratchBuffer, scratchBufferOffset: scratchBufferOffset)
+        
         accelerationStructure.descriptor = descriptor
     }
-    
     
     public func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor) {
         let scratchBuffer = Buffer(length: descriptor.sizes.buildScratchBufferSize, storageMode: .private)
@@ -797,6 +961,8 @@ public class AccelerationStructureCommandEncoder : CommandEncoder {
     }
 
     public func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int) {
+        
+        impl.refit(sourceAccelerationStructure: sourceAccelerationStructure, descriptor: descriptor, destinationAccelerationStructure: destinationAccelerationStructure, scratchBuffer: scratchBuffer, scratchBufferOffset: scratchBufferOffset)
         
         if let destinationStructure = destinationAccelerationStructure {
             sourceAccelerationStructure.descriptor = nil
@@ -812,17 +978,17 @@ public class AccelerationStructureCommandEncoder : CommandEncoder {
     }
     
     public func copy(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure) {
+        impl.copy(sourceAccelerationStructure: sourceAccelerationStructure, destinationAccelerationStructure: destinationAccelerationStructure)
         destinationAccelerationStructure.descriptor = sourceAccelerationStructure.descriptor
     }
 
-        // vkCmdWriteAccelerationStructuresPropertiesKHR
+    // vkCmdWriteAccelerationStructuresPropertiesKHR
     public func writeCompactedSize(of accelerationStructure: AccelerationStructure, to buffer: Buffer, offset: Int) {
-        preconditionFailure("\(#function) needs concrete implementation")
+        impl.writeCompactedSize(of: accelerationStructure, to: buffer, offset: offset)
     }
-
-        
+    
     public func copyAndCompact(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure) {
+        impl.copyAndCompact(sourceAccelerationStructure: sourceAccelerationStructure, destinationAccelerationStructure: destinationAccelerationStructure)
         destinationAccelerationStructure.descriptor = sourceAccelerationStructure.descriptor
     }
-
 }

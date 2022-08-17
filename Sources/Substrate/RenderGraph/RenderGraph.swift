@@ -722,7 +722,7 @@ public struct RenderGraphExecutionWaitToken: Sendable {
 protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var renderGraphQueue: Queue { get }
-    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken
+    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
 }
 
@@ -1148,7 +1148,9 @@ public final class RenderGraph {
         passRecord.readResources = .init(allocator: .tag(resourceUsageAllocator))
         passRecord.writtenResources = .init(allocator: .tag(resourceUsageAllocator))
         
-        for resourceUsage in passRecord.pass.resources {
+        let resources = (passRecord.pass as? DrawRenderPass)?.inferredResources ?? passRecord.pass.resources
+        
+        for resourceUsage in resources {
             let resource = resourceUsage.resource
             resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
             if resourceUsage.type.isWrite {
@@ -1444,16 +1446,13 @@ public final class RenderGraph {
             
             
             let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
-            let waitToken = await self.context.executeRenderGraph {
-                return await Self.$activeRenderGraph.withValue(self) {
-                    let (passes, _, usedResources) = await self.compile(renderPasses: renderPasses)
-                    return (passes, usedResources)
-                }
-            } onCompletion: { executionResult in
-                await self.didCompleteRender(executionResult)
-                for item in completionNotifyQueue {
-                    await item()
-                }
+            let waitToken = await Self.$activeRenderGraph.withValue(self) {
+                return await self.context.executeRenderGraph(self, renderPasses: renderPasses, onCompletion: { executionResult in
+                    await self.didCompleteRender(executionResult)
+                    for item in completionNotifyQueue {
+                        await item()
+                    }
+                })
             }
             Self.signposter.endInterval("Execute RenderGraph on Context", signpostState)
             

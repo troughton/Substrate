@@ -317,7 +317,7 @@ final class DescriptorSet {
             return
         }
         
-        stream.print("public struct \(self.name ?? "Set\(setIndex)") : ShaderDescriptorSet {")
+        stream.print("public struct \(self.name ?? "Set\(setIndex)") : ShaderResourceSet {")
                 
         stream.print("public static let activeStages : RenderStages = \(self.stages)")
         stream.newLine()

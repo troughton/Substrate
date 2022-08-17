@@ -9,7 +9,7 @@
 import Foundation
 import Metal
 
-final class MetalRenderCommandEncoder: RenderCommandEncoder {
+final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     let encoder: MTLRenderCommandEncoder
     let resourceMap: FrameResourceMap<MetalBackend>
     let isAppleSiliconGPU: Bool
@@ -36,8 +36,6 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
                 return (texture: mtlTexture, afterStages: stages)
             }
         }
-        
-        super.init(renderPass: passRecord.pass as! DrawRenderPass, passRecord: passRecord)
     }
     
     func processInputAttachmentUsages() {
@@ -46,23 +44,23 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func pushDebugGroup(_ string: String) {
+    func pushDebugGroup(_ string: String) {
         encoder.pushDebugGroup(string)
     }
     
-    override func popDebugGroup() {
+    func popDebugGroup() {
         encoder.popDebugGroup()
     }
     
-    override func insertDebugSignpost(_ string: String) {
+    func insertDebugSignpost(_ string: String) {
         encoder.insertDebugSignpost(string)
     }
     
-    override func setLabel(_ label: String) {
+    func setLabel(_ label: String) {
         encoder.label = label
     }
     
-    override func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
+    func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
         let index = path.index
         if path.stages.contains(.vertex) {
             encoder.setVertexBytes(bytes, length: length, index: index)
@@ -72,43 +70,66 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func setVertexBuffer(_ buffer: Buffer?, offset: Int, index: Int) {
-        guard let buffer = buffer,
-              let mtlBufferRef = resourceMap[buffer] else { return }
+    func setVertexBuffer(_ buffer: Buffer, offset: Int, index: Int) {
+        guard let mtlBufferRef = resourceMap[buffer] else { return }
         encoder.setVertexBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: index)
     }
     
-    override func setVertexBufferOffset(_ offset: Int, index: Int) {
+    func setVertexBufferOffset(_ offset: Int, index: Int) {
         encoder.setVertexBufferOffset(offset, index: index)
     }
     
-    override func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
-        guard let buffer = buffer,
-              let mtlBufferRef = resourceMap[buffer] else { return }
-        let index = path.index
-        if path.stages.contains(.vertex) {
+    func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer, at index: Int, stages: RenderStages) {
+        let bufferStorage = resourceMap[argumentBuffer]
+        if !argumentBuffer.stateFlags.contains(.initialised) {
+            argumentBuffer.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
+        }
+        
+        let bindIndex = index + 1 // since buffer 0 is push constants
+        self.setBuffer(bufferStorage, offset: 0, at: bindIndex, stages: MTLRenderStages(stages))
+    }
+    
+    func setArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray, at index: Int, stages: RenderStages) {
+        let bufferStorage = resourceMap[argumentBufferArray]
+        if !argumentBufferArray._bindings.contains(where: { !($0?.stateFlags ?? .initialised).contains(.initialised) }) {
+            argumentBufferArray.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
+        }
+        
+        let bindIndex = index + 1 // since buffer 0 is push constants
+        self.setBuffer(bufferStorage, offset: 0, at: bindIndex, stages: MTLRenderStages(stages))
+    }
+    
+    func setBuffer(_ mtlBufferRef: MTLBufferReference, offset: Int, at index: Int, stages: MTLRenderStages) {
+        if stages.contains(.vertex) {
             encoder.setVertexBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: index)
             self.baseBufferOffsets[index] = mtlBufferRef.offset
         }
-        if path.stages.contains(.fragment) {
+        if stages.contains(.fragment) {
             encoder.setFragmentBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: index)
             self.baseBufferOffsets[index + 31] = mtlBufferRef.offset
         }
-        if #available(macOS 12.0, iOS 15.0, *), path.stages.contains(.tile) {
+        if #available(macOS 12.0, iOS 15.0, *), stages.contains(.tile) {
             encoder.setTileBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: index)
             self.baseBufferOffsets[index + 2 * 31] = mtlBufferRef.offset
         }
-        if #available(macOS 13.0, iOS 16.0, *), path.stages.contains(.object) {
+        if #available(macOS 13.0, iOS 16.0, *), stages.contains(.object) {
             encoder.setObjectBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: index)
             self.baseBufferOffsets[index + 3 * 31] = mtlBufferRef.offset
         }
-        if #available(macOS 13.0, iOS 16.0, *), path.stages.contains(.mesh) {
+        if #available(macOS 13.0, iOS 16.0, *), stages.contains(.mesh) {
             encoder.setMeshBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: index)
             self.baseBufferOffsets[index + 3 * 31] = mtlBufferRef.offset
         }
     }
     
-    override func setBufferOffset(_ offset: Int, at path: ResourceBindingPath) {
+    func setBuffer(_ buffer: Buffer, offset: Int, at path: ResourceBindingPath) {
+        guard let mtlBufferRef = resourceMap[buffer] else { return }
+        let index = path.index
+        
+        self.setBuffer(mtlBufferRef, offset: offset, at: index, stages: path.stages)
+    }
+    
+    func setBufferOffset(_ offset: Int, at path: ResourceBindingPath) {
         let index = path.index
         if path.stages.contains(.vertex) {
             encoder.setVertexBufferOffset(self.baseBufferOffsets[index] + offset, index: index)
@@ -127,9 +148,8 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
-        guard let texture = texture,
-              let mtlTexture = self.resourceMap[texture] else { return }
+    func setTexture(_ texture: Texture, at path: ResourceBindingPath) {
+        guard let mtlTexture = self.resourceMap[texture] else { return }
         let index = path.index
         if path.stages.contains(.vertex) {
             encoder.setVertexTexture(mtlTexture.texture, index: index)
@@ -148,15 +168,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) async {
-        guard let descriptor = descriptor else { return }
-        let sampler = await self.resourceMap.persistentRegistry[descriptor]
-        self.setSampler(SamplerState(descriptor: descriptor, state: OpaquePointer(Unmanaged.passUnretained(sampler).toOpaque())), at: path)
-    }
-    
-    override func setSampler(_ state: SamplerState?, at path: ResourceBindingPath) {
-        guard let state = state else { return }
-        
+    func setSampler(_ state: SamplerState, at path: ResourceBindingPath) {
         let index = path.index
         Unmanaged<MTLSamplerState>.fromOpaque(UnsafeRawPointer(state.state))._withUnsafeGuaranteedRef { state in
             if path.stages.contains(.vertex) {
@@ -178,9 +190,8 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    override func setVisibleFunctionTable(_ table: VisibleFunctionTable?, at path: ResourceBindingPath) {
-        guard let table = table,
-              let mtlTable = self.resourceMap[table] else { return }
+    func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath) {
+        guard let mtlTable = self.resourceMap[table] else { return }
         let index = path.index
         if path.stages.contains(.vertex) {
             encoder.setVertexVisibleFunctionTable(mtlTable.table, bufferIndex: index)
@@ -194,9 +205,8 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    override func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, at path: ResourceBindingPath) {
-        guard let table = table,
-              let mtlTable = self.resourceMap[table] else { return }
+    func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath) {
+        guard let mtlTable = self.resourceMap[table] else { return }
         let index = path.index
         if path.stages.contains(.vertex) {
             encoder.setVertexIntersectionFunctionTable(mtlTable.table, bufferIndex: index)
@@ -210,9 +220,8 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    override func setAccelerationStructure(_ structure: AccelerationStructure?, at path: ResourceBindingPath) {
-        guard let structure = structure,
-              let mtlStructure = self.resourceMap[structure] as! MTLAccelerationStructure? else { return }
+    func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath) {
+        guard let mtlStructure = self.resourceMap[structure] as! MTLAccelerationStructure? else { return }
         let index = path.index
         if path.stages.contains(.vertex) {
             encoder.setVertexAccelerationStructure(mtlStructure, bufferIndex: index)
@@ -225,36 +234,31 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func setViewport(_ viewport: Viewport) {
-        super.setViewport(viewport)
+    func setViewport(_ viewport: Viewport) {
         encoder.setViewport(MTLViewport(viewport))
     }
     
-    override func setFrontFacing(_ winding: Winding) {
-        super.setFrontFacing(winding)
+    func setFrontFacing(_ winding: Winding) {
         encoder.setFrontFacing(MTLWinding(winding))
     }
     
-    override func setCullMode(_ cullMode: CullMode) {
-        super.setCullMode(cullMode)
+    func setCullMode(_ cullMode: CullMode) {
         encoder.setCullMode(MTLCullMode(cullMode))
     }
     
-    override func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float) {
-        super.setDepthBias(depthBias, slopeScale: slopeScale, clamp: clamp)
+    func setDepthBias(_ depthBias: Float, slopeScale: Float, clamp: Float) {
         encoder.setDepthBias(depthBias, slopeScale: slopeScale, clamp: clamp)
     }
     
-    override func setScissorRect(_ rect: ScissorRect) {
-        super.setScissorRect(rect)
+    func setScissorRect(_ rect: ScissorRect) {
         encoder.setScissorRect(MTLScissorRect(rect))
     }
     
-//    override func setBlendColor(red: Float, green: Float, blue: Float, alpha: Float) {
+//    func setBlendColor(red: Float, green: Float, blue: Float, alpha: Float) {
 //        encoder.setBlendColor(red: red, green: green, blue: blue, alpha: alpha)
 //    }
     
-    override func setRenderPipelineState(_ pipelineState: RenderPipelineState) {
+    func setRenderPipelineState(_ pipelineState: RenderPipelineState) {
         Unmanaged<MTLRenderPipelineState>.fromOpaque(UnsafeRawPointer(pipelineState.state))._withUnsafeGuaranteedRef {
             encoder.setRenderPipelineState($0)
         }
@@ -262,25 +266,23 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         encoder.setTriangleFillMode(MTLTriangleFillMode(pipelineState.descriptor.fillMode))
     }
     
-    override func setDepthStencilState(_ depthStencilState: DepthStencilState) {
+    func setDepthStencilState(_ depthStencilState: DepthStencilState) {
         Unmanaged<MTLDepthStencilState>.fromOpaque(UnsafeRawPointer(depthStencilState.state))._withUnsafeGuaranteedRef {
             encoder.setDepthStencilState($0)
         }
         encoder.setDepthClipMode(MTLDepthClipMode(depthStencilState.descriptor.depthClipMode))
     }
     
-    override func setStencilReferenceValue(_ referenceValue: UInt32) {
-        super.setStencilReferenceValue(referenceValue)
+    func setStencilReferenceValue(_ referenceValue: UInt32) {
         encoder.setStencilReferenceValue(referenceValue)
     }
     
-    override func setStencilReferenceValues(front frontReferenceValue: UInt32, back backReferenceValue: UInt32) {
-        super.setStencilReferenceValues(front: frontReferenceValue, back: backReferenceValue)
+    func setStencilReferenceValues(front frontReferenceValue: UInt32, back backReferenceValue: UInt32) {
         encoder.setStencilReferenceValues(front: frontReferenceValue, back: backReferenceValue)
     }
     
     @available(macOS 12.0, iOS 15.0, *)
-    override func setThreadgroupMemoryLength(_ length: Int, at path: ResourceBindingPath) {
+    func setThreadgroupMemoryLength(_ length: Int, at path: ResourceBindingPath) {
         let index = path.index
         if path.stages.contains(.tile) {
             encoder.setThreadgroupMemoryLength(length, offset: 0, index: index)
@@ -290,17 +292,13 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         }
     }
     
-    override func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
-        super.drawPrimitives(type: primitiveType, vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
-        
+    func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
         self.processInputAttachmentUsages()
         
         encoder.drawPrimitives(type: MTLPrimitiveType(primitiveType), vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
     }
     
-    override func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int) {
-        super.drawPrimitives(type: primitiveType, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
-        
+    func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int) {
         self.processInputAttachmentUsages()
         
         let mtlBuffer = resourceMap[indirectBuffer]!
@@ -308,9 +306,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
         encoder.drawPrimitives(type: MTLPrimitiveType(primitiveType), indirectBuffer: mtlBuffer.buffer, indirectBufferOffset: mtlBuffer.offset + indirectBufferOffset)
     }
     
-    override func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int = 1, baseVertex: Int = 0, baseInstance: Int = 0) {
-        super.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
-        
+    func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int = 1, baseVertex: Int = 0, baseInstance: Int = 0) {
         self.processInputAttachmentUsages()
         
         let mtlBuffer = resourceMap[indexBuffer]!
@@ -319,9 +315,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     }
     
     
-    override func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, indirectBuffer: Buffer, indirectBufferOffset: Int) {
-        super.drawIndexedPrimitives(type: primitiveType, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
-        
+    func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, indirectBuffer: Buffer, indirectBufferOffset: Int) {
         self.processInputAttachmentUsages()
         
         let mtlIndexBuffer = resourceMap[indexBuffer]!
@@ -332,41 +326,41 @@ final class MetalRenderCommandEncoder: RenderCommandEncoder {
     
     
     @available(macOS 13.0, iOS 16.0, *)
-    override func drawMeshThreadgroups(_ threadgroupsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
+    func drawMeshThreadgroups(_ threadgroupsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
         encoder.drawMeshThreadgroups(MTLSize(threadgroupsPerGrid), threadsPerObjectThreadgroup: MTLSize(threadsPerObjectThreadgroup), threadsPerMeshThreadgroup: MTLSize(threadsPerMeshThreadgroup))
     }
     
     @available(macOS 13.0, iOS 16.0, *)
-    override func drawMeshThreads(_ threadsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
+    func drawMeshThreads(_ threadsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
         encoder.drawMeshThreadgroups(MTLSize(threadsPerGrid), threadsPerObjectThreadgroup: MTLSize(threadsPerObjectThreadgroup), threadsPerMeshThreadgroup: MTLSize(threadsPerMeshThreadgroup))
     }
     
     @available(macOS 13.0, iOS 16.0, *)
-    override func drawMeshThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
+    func drawMeshThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
         let mtlBuffer = resourceMap[indirectBuffer]!
         encoder.drawMeshThreadgroups(indirectBuffer: mtlBuffer.buffer, indirectBufferOffset: mtlBuffer.offset + indirectBufferOffset, threadsPerObjectThreadgroup: MTLSize(threadsPerObjectThreadgroup), threadsPerMeshThreadgroup: MTLSize(threadsPerMeshThreadgroup))
     }
     
-    override func dispatchThreadsPerTile(_ threadsPerTile: Size) {
+    func dispatchThreadsPerTile(_ threadsPerTile: Size) {
         encoder.dispatchThreadsPerTile(MTLSize(threadsPerTile))
     }
     
-    override func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
+    func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
         guard let mtlResource = resourceMap[resource] else {
             return
         }
         encoder.useResource(mtlResource, usage: MTLResourceUsage(usage, isAppleSiliconGPU: self.isAppleSiliconGPU), stages: MTLRenderStages(stages))
     }
     
-    override func useHeap(_ heap: Heap, stages: RenderStages) {
+    func useHeap(_ heap: Heap, stages: RenderStages) {
         encoder.useHeap(resourceMap.persistentRegistry[heap]!, stages: MTLRenderStages(stages))
     }
     
-    override func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages) {
+    func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages) {
         encoder.memoryBarrier(scope: MTLBarrierScope(scope, isAppleSiliconGPU: self.isAppleSiliconGPU), after: MTLRenderStages(after), before: MTLRenderStages(before))
     }
     
-    override func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages) {
+    func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages) {
         let mtlResources = resources.map { resourceMap[$0]! }
         encoder.memoryBarrier(resources: mtlResources, after: MTLRenderStages(after), before: MTLRenderStages(before))
     }
