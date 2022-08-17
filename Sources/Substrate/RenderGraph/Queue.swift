@@ -119,7 +119,7 @@ public final class QueueRegistry {
     public static var lastSubmittedCommands: QueueCommandIndices {
         var commands = QueueCommandIndices(repeating: 0)
         for i in 0..<Self.maxQueues {
-            commands[i] = UInt64.AtomicRepresentation.atomicLoad(at: self.shared.lastSubmittedCommands, ordering: .relaxed)
+            commands[i] = UInt64.AtomicRepresentation.atomicLoad(at: self.shared.lastSubmittedCommands.advanced(by: i), ordering: .relaxed)
         }
         return commands
     }
@@ -127,7 +127,7 @@ public final class QueueRegistry {
     public static var lastCompletedCommands: QueueCommandIndices {
         var commands = QueueCommandIndices(repeating: 0)
         for i in 0..<Self.maxQueues {
-            commands[i] = UInt64.AtomicRepresentation.atomicLoad(at: self.shared.lastCompletedCommands, ordering: .relaxed)
+            commands[i] = UInt64.AtomicRepresentation.atomicLoad(at: self.shared.lastCompletedCommands.advanced(by: i), ordering: .relaxed)
         }
         return commands
     }
