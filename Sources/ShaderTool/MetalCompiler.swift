@@ -202,6 +202,7 @@ extension RenderPass {
         
         for fragmentFunctionName in request.fragmentFunctions {
             guard let fragmentFunction = functions[fragmentFunctionName] else { continue }
+            
             pipelineDescriptor.fragmentFunction = fragmentFunction
             
             do {
@@ -209,11 +210,17 @@ extension RenderPass {
                 let _ = try library.device.makeRenderPipelineState(descriptor: pipelineDescriptor, options: .bufferTypeInfo, reflection: &pipelineReflection)
                 
                 if let pipelineReflection = pipelineReflection {
-                    print(pipelineReflection)
+                    self.addBoundResources(from: pipelineReflection)
                 }
             } catch {
                 print(error)
             }
+        }
+    }
+    
+    func addBoundResources(from reflection: MTLRenderPipelineReflection) {
+        for argument in reflection.vertexArguments ?? [] {
+            argument.bufferPointerType?.elementStructType()
         }
     }
     
@@ -303,7 +310,7 @@ extension RenderPass {
 }
 
 extension SPIRVType {
-    init?(_ type: MTLDataType) {
+    init?(_ type: MTLDataType, structMember: MTLStructMember? = nil) {
         switch type {
         case .none:
             return nil
@@ -435,15 +442,47 @@ extension SPIRVType {
             self = .vector(element: .uint64, length: 3)
         case .ulong4:
             self = .vector(element: .uint64, length: 4)
-        case .struct, .array, .pointer, .renderPipeline, .computePipeline, .indirectCommandBuffer,
+        case .struct:
+            guard let structMember = structMember, let structType = structMember.structType() else {
+                print("Unhandled type \(type)")
+                return nil
+            }
+            
+            print(structType)
+            preconditionFailure()
+            
+        case .array, .pointer, .renderPipeline, .computePipeline, .indirectCommandBuffer,
                 .visibleFunctionTable, .intersectionFunctionTable, .primitiveAccelerationStructure, .instanceAccelerationStructure:
             print("Unhandled type \(type)")
             return nil
         @unknown default:
-            
             print("Unhandled type \(type)")
             return nil
         }
+    }
+    
+    init(name: String, type: MTLStructType) {
+        var size = 0
+        var offset = 0
+        let members = type.members.compactMap { member -> SPIRVStructMember? in
+            guard let sprivType = SPIRVType(structMember: member) else {
+                print("Warning: skipped struct member \(member)")
+                return nil
+            }
+            offset = offset.roundedUpToMultiple(of: sprivType.alignment)
+            
+            let spirvMember = SPIRVStructMember(name: member.name, type: sprivType, offset: offset)
+            
+            size = offset + spirvMember.type.size
+            offset += spirvMember.type.stride
+            
+            return spirvMember
+        }
+        self = .struct(name: name, members: members, size: size)
+    }
+    
+    init?(structMember: MTLStructMember) {
+        self.init(structMember.dataType, structMember: structMember)
     }
 }
 
