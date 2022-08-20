@@ -122,7 +122,7 @@ final class MetalPipelineReflection : PipelineReflection {
         
         let cacheKey = BindingPathCacheKey(argumentName: argument.name, argumentBufferIndex: nil)
         
-        var rootPath = ResourceBindingPath(stages: mtlStages, type: argument.type, argumentBufferIndex: nil, index: argument.index)
+        var rootPath = ResourceBindingPath(type: argument.type, index: argument.index, argumentBufferIndex: nil, stages: mtlStages)
         var reflection = ArgumentReflection(argument, bindingPath: rootPath, stages: stages)
         
         if let existingMatch = bindingPathCache[BindingPathCacheKey(argumentName: argument.name, argumentBufferIndex: nil)] {
@@ -160,7 +160,7 @@ final class MetalPipelineReflection : PipelineReflection {
                     dataType = member.dataType
                 }
                 
-                let subPath = ResourceBindingPath(stages: [], type: dataType, argumentBufferIndex: metalArgBufferPath.index, index: member.argumentIndex)
+                let subPath = ResourceBindingPath(type: dataType, index: member.argumentIndex, argumentBufferIndex: metalArgBufferPath.index, stages: [])
                 
                 let memberReflection : ArgumentReflection?
                 if let arrayType = member.arrayType() {

@@ -41,11 +41,6 @@ final class MetalAccelerationStructureCommandEncoder: AccelerationStructureComma
         let scratchBufferOffset = scratchBufferOffset
         encoder.build(accelerationStructure: structure, descriptor: descriptor, scratchBuffer: scratchBuffer.buffer, scratchBufferOffset: scratchBuffer.offset + scratchBufferOffset)
     }
-    
-    func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor) {
-        let scratchBuffer = Buffer(length: descriptor.sizes.buildScratchBufferSize, storageMode: .private)
-        self.build(accelerationStructure: accelerationStructure, descriptor: descriptor, scratchBuffer: scratchBuffer, scratchBufferOffset: 0)
-    }
 
     func refit(sourceAccelerationStructure source: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure destination: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int) {
         let source = resourceMap[source]! as! MTLAccelerationStructure
@@ -55,11 +50,6 @@ final class MetalAccelerationStructureCommandEncoder: AccelerationStructureComma
         let scratchBufferOffset = scratchBufferOffset
         
         encoder.refit(sourceAccelerationStructure: source, descriptor: descriptor, destinationAccelerationStructure: destination, scratchBuffer: scratchBuffer.buffer, scratchBufferOffset: scratchBuffer.offset + scratchBufferOffset)
-    }
-    
-    func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?) {
-        let scratchBuffer = Buffer(length: descriptor.sizes.refitScratchBufferSize, storageMode: .private)
-        self.refit(sourceAccelerationStructure: sourceAccelerationStructure, descriptor: descriptor, destinationAccelerationStructure: destinationAccelerationStructure, scratchBuffer: scratchBuffer, scratchBufferOffset: 0)
     }
     
     func copy(sourceAccelerationStructure source: AccelerationStructure, destinationAccelerationStructure destination: AccelerationStructure) {

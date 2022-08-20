@@ -35,23 +35,11 @@ public struct ResourceUsage {
     public var stages: RenderStages // empty means the default for the pass.
     public var subresources: [Subresource]
     
-    public init(resource: Resource, type: ResourceUsageType, stages: RenderStages = [], subresources: [Subresource] = [.wholeResource]) {
+    public init(resource: Resource, usage type: ResourceUsageType, subresources: [Subresource] = [.wholeResource], stages: RenderStages = []) {
         self.resource = resource
         self.subresources = subresources
         self.stages = stages
         self.type = type
-    }
-    
-    public init(_ buffer: Buffer, usage type: BufferUsage, stages: RenderStages = [], byteRange: Range<Int>? = nil) {
-        self.init(resource: Resource(buffer), type: ResourceUsageType(type), stages: stages, subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource])
-    }
-    
-    public init(_ texture: Texture, usage type: TextureUsage, stages: RenderStages = [], subresources: [TextureSubresourceRange]? = nil) {
-        self.init(resource: Resource(texture), type: ResourceUsageType(type), stages: stages, subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource])
-    }
-    
-    public init(_ texture: Texture, usage type: TextureUsage, stages: RenderStages = [], slice: Int, mipLevel: Int) {
-        self.init(resource: Resource(texture), type: ResourceUsageType(type), stages: stages, subresources: [.textureSlices(.init(slice: slice, mipLevel: mipLevel))])
     }
 
     // Render target usages can be inferred from load actions and render target descriptors.
@@ -61,6 +49,28 @@ public struct ResourceUsage {
 extension ResourceUsage : CustomStringConvertible {
     public var description: String {
         return "ResourceUsage(resource: \(self.resource), subresources: \(self.subresources), type: \(self.type), stages: \(self.stages))"
+    }
+}
+
+extension ResourceProtocol {
+    public func `as`(_ type: ResourceUsageType, subresources: [ResourceUsage.Subresource] = [.wholeResource], stages: RenderStages = []) -> ResourceUsage {
+        return ResourceUsage(resource: Resource(self), usage: type, subresources: subresources, stages: stages)
+    }
+}
+
+extension Buffer {
+    public func `as`(_ type: BufferUsage, byteRange: Range<Int>? = nil, stages: RenderStages = []) -> ResourceUsage {
+        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], stages: stages)
+    }
+}
+
+extension Texture {
+    public func `as`(_ type: TextureUsage, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ResourceUsage {
+        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], stages: stages)
+    }
+    
+    public func `as`(_ type: TextureUsage, slice: Int, mipLevel: Int, stages: RenderStages = []) -> ResourceUsage {
+        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: [.textureSlices(.init(slice: slice, mipLevel: mipLevel))], stages: stages)
     }
 }
 

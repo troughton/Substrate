@@ -439,7 +439,7 @@ final class VulkanDescriptorSetLayout {
     let set : UInt32
     let bindingCount: Int
     
-    init(set: UInt32, pipelineReflection: VulkanPipelineReflection, resources: [ShaderResource], stages: VkShaderStageFlagBits) {
+    init(set: UInt32, pipelineReflection: VulkanPipelineReflection, using: [ShaderResource], stages: VkShaderStageFlagBits) {
         self.pipelineReflection = pipelineReflection
         self.set = set
         

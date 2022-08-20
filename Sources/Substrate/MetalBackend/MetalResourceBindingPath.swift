@@ -26,7 +26,7 @@ extension ResourceBindingPath {
     fileprivate static let arrayIndexRange = 0..<32
     fileprivate static let arrayIndexClearMask = UInt64.maskForClearingBits(in: arrayIndexRange)
 
-    public init(stages: MTLRenderStages, type: MTLDataType, argumentBufferIndex: Int?, index: Int) {
+    public init(type: ResourceType, index: Int, argumentBufferIndex: Int? = nil, stages: RenderStages) {
         let argType : MTLArgumentType
         switch type {
         case .texture:
@@ -36,10 +36,25 @@ extension ResourceBindingPath {
         default:
             argType = .buffer
         }
-        self.init(stages: stages, type: argType, argumentBufferIndex: argumentBufferIndex, index: index)
+        self.init(type: argType, index: index, argumentBufferIndex: argumentBufferIndex, stages: MTLRenderStages(stages))
     }
     
-    public init(stages: MTLRenderStages, type: MTLArgumentType, argumentBufferIndex: Int?, index: Int) {
+    @_disfavoredOverload
+    public init(type: MTLDataType, index: Int, argumentBufferIndex: Int?, stages: MTLRenderStages) {
+        let argType : MTLArgumentType
+        switch type {
+        case .texture:
+            argType = .texture
+        case .sampler:
+            argType = .sampler
+        default:
+            argType = .buffer
+        }
+        self.init(type: argType, index: index, argumentBufferIndex: argumentBufferIndex, stages: stages)
+    }
+    
+    @_disfavoredOverload
+    public init(type: MTLArgumentType, index: Int, argumentBufferIndex: Int? = nil, stages: MTLRenderStages) {
         self = ResourceBindingPath(value: 0)
         
         self.value.setBits(in: ResourceBindingPath.indexRange, to: UInt64(index), clearMask: ResourceBindingPath.indexClearMask)
@@ -140,7 +155,7 @@ extension ResourceBindingPath {
 extension ResourceBindingPath {
     @inlinable
     public init(descriptorSet: Int, index: Int, type: MTLArgumentType) {
-        self.init(stages: [], type: type, argumentBufferIndex: descriptorSet + 1, index: index) // Push constants go at index 0.
+        self.init(type: type, index: index, argumentBufferIndex: descriptorSet + 1, stages: []) // Push constants go at index 0.
     }
 }
 

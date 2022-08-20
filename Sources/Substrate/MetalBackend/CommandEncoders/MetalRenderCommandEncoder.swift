@@ -41,8 +41,11 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     }
     
     func processInputAttachmentUsages() {
-        for usage in self.inputAttachmentUsages {
-            encoder.memoryBarrier(resources: [usage.texture], after: usage.afterStages, before: .fragment)
+        guard !self.isAppleSiliconGPU else { return }
+        if #available(iOS 16.0, *) {
+            for usage in self.inputAttachmentUsages {
+                encoder.memoryBarrier(resources: [usage.texture], after: usage.afterStages, before: .fragment)
+            }
         }
     }
     
@@ -364,12 +367,20 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     }
     
     func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages) {
-        encoder.memoryBarrier(scope: MTLBarrierScope(scope, isAppleSiliconGPU: self.isAppleSiliconGPU), after: MTLRenderStages(after), before: MTLRenderStages(before))
+        if #available(iOS 16.0, *) {
+            encoder.memoryBarrier(scope: MTLBarrierScope(scope, isAppleSiliconGPU: self.isAppleSiliconGPU), after: MTLRenderStages(after), before: MTLRenderStages(before))
+        } else {
+            assertionFailure()
+        }
     }
     
     func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages) {
-        let mtlResources = resources.map { resourceMap[$0]! }
-        encoder.memoryBarrier(resources: mtlResources, after: MTLRenderStages(after), before: MTLRenderStages(before))
+        if #available(iOS 16.0, *) {
+            let mtlResources = resources.map { resourceMap[$0]! }
+            encoder.memoryBarrier(resources: mtlResources, after: MTLRenderStages(after), before: MTLRenderStages(before))
+        } else {
+            assertionFailure()
+        }
     }
 }
 

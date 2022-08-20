@@ -857,8 +857,6 @@ protocol AccelerationStructureCommandEncoderImpl: CommandEncoderImpl {
     
     func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int)
     
-    func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?)
-    
     func copy(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure)
 
     func writeCompactedSize(of accelerationStructure: AccelerationStructure, to buffer: Buffer, offset: Int)
@@ -905,19 +903,14 @@ public class AccelerationStructureCommandEncoder : CommandEncoder {
         impl.insertDebugSignpost(string)
     }
     
-    public func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int) {
+    public func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int = 0) {
         
         impl.build(accelerationStructure: accelerationStructure, descriptor: descriptor, scratchBuffer: scratchBuffer, scratchBufferOffset: scratchBufferOffset)
         
         accelerationStructure.descriptor = descriptor
     }
-    
-    public func build(accelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor) {
-        let scratchBuffer = Buffer(length: descriptor.sizes.buildScratchBufferSize, storageMode: .private)
-        self.build(accelerationStructure: accelerationStructure, descriptor: descriptor, scratchBuffer: scratchBuffer, scratchBufferOffset: 0)
-    }
 
-    public func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int) {
+    public func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int = 0) {
         
         impl.refit(sourceAccelerationStructure: sourceAccelerationStructure, descriptor: descriptor, destinationAccelerationStructure: destinationAccelerationStructure, scratchBuffer: scratchBuffer, scratchBufferOffset: scratchBufferOffset)
         
@@ -927,11 +920,6 @@ public class AccelerationStructureCommandEncoder : CommandEncoder {
         } else {
             sourceAccelerationStructure.descriptor = descriptor
         }
-    }
-    
-    public func refit(sourceAccelerationStructure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure: AccelerationStructure?) {
-        let scratchBuffer = Buffer(length: descriptor.sizes.refitScratchBufferSize, storageMode: .private)
-        self.refit(sourceAccelerationStructure: sourceAccelerationStructure, descriptor: descriptor, destinationAccelerationStructure: destinationAccelerationStructure, scratchBuffer: scratchBuffer, scratchBufferOffset: 0)
     }
     
     public func copy(sourceAccelerationStructure: AccelerationStructure, destinationAccelerationStructure: AccelerationStructure) {

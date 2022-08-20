@@ -9,30 +9,6 @@ import Foundation
 import SubstrateUtilities
 import Atomics
 
-#if canImport(Metal)
-@preconcurrency import Metal
-
-public struct MetalIndexedFunctionArgument {
-    public var type: MTLArgumentType
-    public var index : Int
-    public var stages : RenderStages
-    
-    public init(type: MTLArgumentType, index: Int, stages: RenderStages) {
-        self.type = type
-        self.index = index
-        self.stages = stages
-    }
-    
-    public var stringValue : String {
-        return "\(type)_arg\(index)"
-    }
-    
-    public func bindingPath(arrayIndex: Int, argumentBufferPath: ResourceBindingPath?) -> ResourceBindingPath? {
-        return ResourceBindingPath(stages: MTLRenderStages(self.stages), type: self.type, argumentBufferIndex: nil, index: self.index + arrayIndex)
-    }
-}
-#endif
-
 public protocol ArgumentBufferEncodable {
     static var activeStages : RenderStages { get }
     

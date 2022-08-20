@@ -111,7 +111,7 @@ public class CocoaWindow : Window, MTKWindow {
     }
     
     public var textureDescriptor : TextureDescriptor {
-        return TextureDescriptor(type: .type2D, format: PixelFormat(rawValue: mtkView.colorPixelFormat.rawValue)!, width: Int(exactly: self.drawableSize.width)!, height: Int(exactly: self.drawableSize.height)!, mipmapped: false)
+        return TextureDescriptor(type: .type2D, format: PixelFormat(rawValue: PixelFormat.RawValue(mtkView.colorPixelFormat.rawValue))!, width: Int(exactly: self.drawableSize.width)!, height: Int(exactly: self.drawableSize.height)!, mipmapped: false)
     }
     
     public var drawableSize: WindowSize {
@@ -153,7 +153,7 @@ public class CocoaWindow : Window, MTKWindow {
     public func displayOpenDialog(allowedFileTypes: [String]?, options: FileChooserOptions) -> [URL]? {
         let pickerDelegate = DocumentPickerDelegate()
         DispatchQueue.main.async {
-            let importPicker = UIDocumentPickerViewController(documentTypes: allowedFileTypes, in: .import)
+            let importPicker = UIDocumentPickerViewController(documentTypes: allowedFileTypes ?? [], in: .import)
             importPicker.delegate = pickerDelegate
             self.viewController.present(importPicker, animated: true, completion: nil)
         }

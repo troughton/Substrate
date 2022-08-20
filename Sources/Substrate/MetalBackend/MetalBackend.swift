@@ -372,12 +372,12 @@ final class MetalBackend : SpecificRenderBackend {
     }
 
     @usableFromInline var pushConstantPath: ResourceBindingPath {
-        return ResourceBindingPath(stages: [.vertex, .fragment], type: .buffer, argumentBufferIndex: nil, index: 0) // Push constants go at index 0
+        return ResourceBindingPath(type: .buffer, index: 0, argumentBufferIndex: nil, stages: [.vertex, .fragment]) // Push constants go at index 0
     }
     
     @usableFromInline func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath {
         let stages = MTLRenderStages(stages)
-        return ResourceBindingPath(stages: stages, type: .buffer, argumentBufferIndex: nil, index: index + 1) // Push constants go at index 0
+        return ResourceBindingPath(type: .buffer, index: index + 1, argumentBufferIndex: nil, stages: stages) // Push constants go at index 0
     }
     
     // MARK: - SpecificRenderBackend conformance

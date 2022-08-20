@@ -25,9 +25,9 @@ extension Heap {
                 let newBuffer = Buffer(descriptor: oldBuffer.descriptor, heap: newHeap, flags: .persistent)!
                 
                 if purgeableState != .discarded, oldBuffer.descriptor.usageHint.contains(.blitSource), newBuffer.descriptor.usageHint.contains(.blitDestination) {
-                    await GPUResourceUploader.runBlitPass(accessing: [
-                        .init(oldBuffer, usage: .blitSource),
-                        .init(newBuffer, usage: .blitDestination)
+                    await GPUResourceUploader.runBlitPass(using: [
+                        oldBuffer.as(.blitSource),
+                        newBuffer.as(.blitDestination)
                     ]) { bce in
                         bce.copy(from: oldBuffer, sourceOffset: 0, to: newBuffer, destinationOffset: 0, size: oldBuffer.length)
                     }
@@ -38,9 +38,9 @@ extension Heap {
                 let newTexture = Texture(descriptor: oldTexture.descriptor, heap: newHeap, flags: .persistent)!
                 
                 if purgeableState != .discarded, oldTexture.descriptor.usageHint.contains(.blitSource), newTexture.descriptor.usageHint.contains(.blitDestination) {
-                    await GPUResourceUploader.runBlitPass(accessing: [
-                        .init(oldTexture, usage: .blitSource),
-                        .init(newTexture, usage: .blitDestination)
+                    await GPUResourceUploader.runBlitPass(using: [
+                        oldTexture.as(.blitSource),
+                        newTexture.as(.blitDestination)
                     ]) { bce in
                         for slice in 0..<oldTexture.descriptor.depth * oldTexture.descriptor.arrayLength {
                             for level in 0..<oldTexture.descriptor.mipmapLevelCount {
