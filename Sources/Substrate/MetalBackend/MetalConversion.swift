@@ -498,6 +498,15 @@ extension MTLRenderStages {
         if renderStages.contains(.fragment) {
             self.formUnion(.fragment)
         }
+        if renderStages.contains(.tile), #available(macOS 12.0, iOS 15.0, *) {
+            self.formUnion(.tile)
+        }
+        if renderStages.contains(.mesh), #available(macOS 13.0, iOS 16.0, *) {
+            self.formUnion(.mesh)
+        }
+        if renderStages.contains(.object), #available(macOS 13.0, iOS 16.0, *) {
+            self.formUnion(.object)
+        }
     }
 }
 

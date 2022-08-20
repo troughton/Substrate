@@ -273,7 +273,11 @@ public struct RenderPipelineDescriptor : Hashable {
     }
 }
 
-public class RenderPipelineState {
+public protocol PipelineState {
+    var state: OpaquePointer { get }
+}
+
+public class RenderPipelineState: PipelineState {
     public let descriptor: RenderPipelineDescriptor
     public let state: OpaquePointer
     let reflection: PipelineReflection
@@ -374,7 +378,7 @@ public struct ComputePipelineDescriptor : Hashable, Sendable {
     }
 }
 
-public class ComputePipelineState {
+public class ComputePipelineState: PipelineState {
     public let descriptor: ComputePipelineDescriptor
     public let state: OpaquePointer
     let reflection: PipelineReflection

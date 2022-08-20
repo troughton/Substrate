@@ -162,10 +162,16 @@ public struct VisibleFunctionTable : ResourceProtocol {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public init(functionCount: Int) {
+    init(functionCount: Int, pipelineState: OpaquePointer) {
         let flags : ResourceFlags = .persistent
         
         self = VisibleFunctionTableRegistry.instance.allocate(descriptor: functionCount, heap: nil, flags: flags)
+        self.pipelineState = UnsafeRawPointer(pipelineState)
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public init(functionCount: Int, pipelineState: PipelineState) {
+        self.init(functionCount: functionCount, pipelineState: pipelineState.state)
     }
    
     public var stateFlags: ResourceStateFlags {
@@ -190,15 +196,13 @@ public struct VisibleFunctionTable : ResourceProtocol {
         }
     }
     
-    public var pipelineState : UnsafeRawPointer? {
+    var pipelineState : UnsafeRawPointer? {
         get {
-            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: self.pointer(for: \.pipelineStates), ordering: .relaxed)
+            return self.pointer(for: \.pipelineStates).pointee
         }
-    }
-    
-    /// Allows us to perform a compare-and-swap on the argument buffer encoder.
-    func replacePipelineState(with newPipelineState: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
-        return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newPipelineState, at: self.pointer(for: \.pipelineStates), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
+        set {
+            self.pointer(for: \.pipelineStates).pointee = newValue
+        }
     }
     
     public var storageMode: StorageMode {
@@ -272,7 +276,7 @@ struct VisibleFunctionTableProperties: SharedResourceProperties {
     
     let functions : UnsafeMutablePointer<[FunctionDescriptor?]>
     let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
-    let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
+    let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer?>
     
     init(capacity: Int) {
         self.functions = .allocate(capacity: capacity)
@@ -310,7 +314,7 @@ final class VisibleFunctionTableRegistry: PersistentRegistry<VisibleFunctionTabl
             let chunkItemCount = min(self.nextFreeIndex - baseItem, VisibleFunctionTable.itemsPerChunk)
             for i in 0..<chunkItemCount {
                 self.persistentChunks![chunkIndex].stateFlags[i].remove(.initialised)
-                UnsafeRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.sharedChunks![chunkIndex].pipelineStates.advanced(by: i), ordering: .relaxed)
+                self.sharedChunks![chunkIndex].pipelineStates[i] = nil
             }
         }
     }
@@ -329,17 +333,19 @@ public struct IntersectionFunctionTable : ResourceProtocol {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public init() {
+    public init(pipelineState: PipelineState) {
         let flags : ResourceFlags = .persistent
         
         self = IntersectionFunctionTableRegistry.instance.allocate(descriptor: .init(functions: [], buffers: []), heap: nil, flags: flags)
+        self.pipelineState = UnsafeRawPointer(pipelineState.state)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public init(descriptor: IntersectionFunctionTableDescriptor) {
+    public init(descriptor: IntersectionFunctionTableDescriptor, pipelineState: PipelineState) {
         let flags : ResourceFlags = .persistent
         
         self = IntersectionFunctionTableRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+        self.pipelineState = UnsafeRawPointer(pipelineState.state)
     }
     
     public internal(set) var descriptor : IntersectionFunctionTableDescriptor {
@@ -354,15 +360,14 @@ public struct IntersectionFunctionTable : ResourceProtocol {
         }
     }
     
-    public var pipelineState : UnsafeRawPointer? {
-        get {
-            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: self.pointer(for: \.pipelineStates), ordering: .relaxed)
-        }
-    }
     
-    /// Allows us to perform a compare-and-swap on the argument buffer encoder.
-    func replacePipelineState(with newPipelineState: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
-        return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newPipelineState, at: self.pointer(for: \.pipelineStates), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
+    var pipelineState : UnsafeRawPointer? {
+        get {
+            return self.pointer(for: \.pipelineStates).pointee
+        }
+        set {
+            self.pointer(for: \.pipelineStates).pointee = newValue
+        }
     }
     
     public var storageMode: StorageMode {
@@ -437,7 +442,7 @@ struct IntersectionFunctionTableProperties: SharedResourceProperties {
     
     let descriptors : UnsafeMutablePointer<IntersectionFunctionTableDescriptor>
     let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
-    let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation>
+    let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer?>
     
     init(capacity: Int) {
         self.descriptors = .allocate(capacity: capacity)
@@ -475,7 +480,7 @@ final class IntersectionFunctionTableRegistry: PersistentRegistry<IntersectionFu
             let chunkItemCount = min(self.nextFreeIndex - baseItem, IntersectionFunctionTable.itemsPerChunk)
             for i in 0..<chunkItemCount {
                 self.persistentChunks![chunkIndex].stateFlags[i].remove(.initialised)
-                UnsafeRawPointer.AtomicOptionalRepresentation.atomicStore(nil, at: self.sharedChunks![chunkIndex].pipelineStates.advanced(by: i), ordering: .relaxed)
+                self.sharedChunks![chunkIndex].pipelineStates[i] = nil
             }
         }
     }

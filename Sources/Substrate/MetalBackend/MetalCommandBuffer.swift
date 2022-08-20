@@ -68,7 +68,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
         var encoderUsedResources = Set<UnsafeMutableRawPointer>()
         
-        var resourceCommandIndex = 0
+        var resourceCommandIndex = self.compactedResourceCommands.binarySearch(predicate: { $0.index < encoderInfo.passRange.lowerBound })
         
         switch encoderInfo.type {
         case .draw:

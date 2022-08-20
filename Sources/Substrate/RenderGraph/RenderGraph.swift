@@ -529,6 +529,23 @@ final class CallbackAccelerationStructureRenderPass : AccelerationStructureRende
             }
         }
     }
+    
+    var allStages: RenderStages {
+        switch self {
+        case .cpu:
+            return .cpuBeforeRender
+        case .draw:
+            return [.vertex, .fragment, .mesh, .tile, .object]
+        case .compute:
+            return .compute
+        case .blit:
+            return .blit
+        case .accelerationStructure:
+            return .compute
+        case .external:
+            return []
+        }
+    }
 }
 
 @usableFromInline
@@ -1338,11 +1355,12 @@ public final class RenderGraph {
             
             passRecord.passIndex = i
             
-            for resourceUsage in passRecord.pass.resources where resourceUsage.stages != .cpuBeforeRender {
+            let resources = (passRecord.pass as? DrawRenderPass)?.inferredResources ?? passRecord.pass.resources
+            for resourceUsage in resources where resourceUsage.stages != .cpuBeforeRender {
                 assert(resourceUsage.resource.isValid)
                 self.usedResources.insert(resourceUsage.resource)
                 
-                let recordedUsage = RecordedResourceUsage(passIndex: i, usage: resourceUsage, allocator: .tag(allocator))
+                let recordedUsage = RecordedResourceUsage(passIndex: i, usage: resourceUsage, allocator: .tag(allocator), defaultStages: passRecord.type.allStages)
                 resourceUsage.resource.usages.append(recordedUsage, allocator: AllocatorType(allocator))
             }
         }

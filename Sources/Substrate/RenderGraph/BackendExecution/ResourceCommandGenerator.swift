@@ -268,6 +268,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
             if previousEncoderIndex >= 0, usageEncoderIndex > previousEncoderIndex {
                 if pendingUsageIndex < .max {
+                    assert(!pendingUsageStages.intersection(frameCommandInfo.commandEncoders[usageEncoderIndex].type.allStages).isEmpty)
                     self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: pendingUsageType, stages: pendingUsageStages, allowReordering: !resourceIsRenderTarget), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
                                                               index: pendingUsageIndex))
                 }
@@ -288,6 +289,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             if isEmulatedInputAttachment ||
                 usage.type.isRenderTarget != previousUsageType.isRenderTarget ||
                 usage.stages != previousUsageStages {
+                
                 self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: usage.type, stages: usage.stages, allowReordering: !resourceIsRenderTarget && usageEncoderIndex != previousEncoderIndex), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
                                                           index: usage.passIndex))
             } else {
@@ -302,6 +304,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         }
         
         if pendingUsageIndex < .max {
+            assert(!pendingUsageStages.intersection(frameCommandInfo.commandEncoders[previousEncoderIndex].type.allStages).isEmpty)
             self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: pendingUsageType, stages: pendingUsageStages, allowReordering: !resourceIsRenderTarget), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
                                                       index: pendingUsageIndex))
         }

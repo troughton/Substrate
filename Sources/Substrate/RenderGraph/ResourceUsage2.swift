@@ -79,7 +79,12 @@ public struct RecordedResourceUsage {
     @usableFromInline var usage: ResourceUsage
     @usableFromInline var activeRange: ActiveResourceRange
     
-    init(passIndex: Int, usage: ResourceUsage, allocator: AllocatorType) {
+    init(passIndex: Int, usage: ResourceUsage, allocator: AllocatorType, defaultStages: RenderStages) {
+        var usage = usage
+        if usage.stages.isEmpty {
+            usage.stages = defaultStages
+        }
+        
         self.passIndex = passIndex
         self.usage = usage
         
