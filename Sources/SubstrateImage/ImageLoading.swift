@@ -1206,7 +1206,7 @@ extension Image where ComponentType: SIMDScalar {
     @_specialize(kind: full, where ComponentType == UInt8)
     @_specialize(kind: full, where ComponentType == UInt16)
     @_specialize(kind: full, where ComponentType == Float)
-    public init(cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
+    init(_cgImage cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         var cgImage = cgImage
         
         let cgColorSpace = cgImage.colorSpace
@@ -1336,6 +1336,41 @@ extension Image where ComponentType: SIMDScalar {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+extension Image where ComponentType: SIMDScalar & UnsignedInteger & FixedWidthInteger {
+    @_specialize(kind: full, where ComponentType == UInt8)
+    @_specialize(kind: full, where ComponentType == UInt16)
+    public init(cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
+        try self.init(_cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+        
+        if fileInfo.channelCount < self.channelCount {
+            let alphaChannelIndex = self.channelCount - 1
+            self.apply(channelRange: alphaChannelIndex..<self.channelCount) { _ in
+                ComponentType.max
+            }
+        }
+    }
+}
+
+extension Image where ComponentType: SIMDScalar & SignedInteger & FixedWidthInteger {
+    public init(cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
+        try self.init(_cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+    }
+}
+
+extension Image where ComponentType: SIMDScalar & BinaryFloatingPoint {
+    @_specialize(kind: full, where ComponentType == Float)
+    public init(cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
+        try self.init(_cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+        
+        if fileInfo.channelCount < self.channelCount {
+            let alphaChannelIndex = self.channelCount - 1
+            self.apply(channelRange: alphaChannelIndex..<self.channelCount) { _ in
+                1.0
             }
         }
     }
