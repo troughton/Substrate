@@ -100,7 +100,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     
     public var depthStencil : DepthStencilDescriptor {
         get {
-            return self.encoder.depthStencilDescriptor.unsafelyUnwrapped
+            return self.encoder.depthStencilDescriptor
         }
         set {
             self.encoder.depthStencilDescriptor = newValue

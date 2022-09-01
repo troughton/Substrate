@@ -237,7 +237,7 @@ public class ResourceBindingEncoder : CommandEncoder {
     @usableFromInline
     var pipelineStateChanged = false
     @usableFromInline
-    var depthStencilStateChanged = false
+    var depthStencilStateChanged = true
     
     @usableFromInline
     var currentPipelineReflection : PipelineReflection! = nil
@@ -1050,7 +1050,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
     var renderTargetAttachmentUsages : HashMap<Attachment, ResourceUsagePointer>
     
     var renderPipelineDescriptor : RenderPipelineDescriptor? = nil
-    var depthStencilDescriptor : DepthStencilDescriptor? = nil
+    var depthStencilDescriptor : DepthStencilDescriptor = .init(depthWriteEnabled: false)
     
     @usableFromInline
     var gpuCommandsStartIndexColor : Int? = nil
@@ -1169,10 +1169,6 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
             return
         }
         self.gpuCommandsStartIndexDepthStencil = nil
-        
-        guard let depthStencilDescriptor = self.depthStencilDescriptor else {
-            return // No depth writes enabled, depth test always passes, no stencil tests.
-        }
         
         depthCheck: if let depthAttachment = drawRenderPass.renderTargetDescriptor.depthAttachment {
             let type : ResourceUsageType
@@ -1400,7 +1396,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         if !endingEncoding {
             // Set the depth-stencil and pipeline states here to filter out unused states.
             if self.depthStencilStateChanged {
-                let box = Unmanaged.passRetained(ReferenceBox(self.depthStencilDescriptor!))
+                let box = Unmanaged.passRetained(ReferenceBox(self.depthStencilDescriptor))
                 commandRecorder.addUnmanagedReference(box)
                 commandRecorder.record(RenderGraphCommand.setDepthStencilDescriptor(box))
                 self.depthStencilStateChanged = false
