@@ -769,10 +769,12 @@ public final class RenderGraph {
     @TaskLocal public static var activeRenderGraph : RenderGraph? = nil
     
     private var renderPasses : [RenderPassRecord] = []
-    private var renderPassLock = SpinLock()
+    private let renderPassLock = SpinLock()
     private var usedResources : Set<Resource> = []
     
     public static private(set) var globalSubmissionIndex : ManagedAtomic<UInt64> = .init(0)
+    
+    private let frameTimingLock = SpinLock()
     private var previousFrameCompletionTime : UInt64 = 0
     private var _lastGraphCPUTime = 1000.0 / 60.0
     private var _lastGraphGPUTime = 1000.0 / 60.0
@@ -837,6 +839,7 @@ public final class RenderGraph {
             TransientRegistryManager.free(self.transientRegistryIndex)
         }
         self.renderPassLock.deinit()
+        self.frameTimingLock.deinit()
     }
     
     /// The logical command queue corresponding to this render graph.
@@ -853,8 +856,8 @@ public final class RenderGraph {
         return !self.renderPasses.isEmpty
     }
     
-    public func lastGraphDurations() async -> (cpuTime: Double, gpuTime: Double) {
-        return (self._lastGraphCPUTime, self._lastGraphGPUTime)
+    public func lastGraphDurations() -> (cpuTime: Double, gpuTime: Double) {
+        return self.frameTimingLock.withLock { (self._lastGraphCPUTime, self._lastGraphGPUTime) }
     }
     
     /// Enqueue `renderPass` for execution at the next `RenderGraph.execute` call on this render graph.
@@ -1498,14 +1501,17 @@ public final class RenderGraph {
         return self.currentInflightFrameCount.load(ordering: .relaxed) >= self.inflightFrameCount
     }
     
-    private func didCompleteRender(_ result: RenderGraphExecutionResult) async {
+    private func didCompleteRender(_ result: RenderGraphExecutionResult) {
         self.currentInflightFrameCount.wrappingDecrement(ordering: .relaxed)
-        self._lastGraphGPUTime = result.gpuTime
         
-        let completionTime = DispatchTime.now().uptimeNanoseconds
-        let elapsed = completionTime - min(self.previousFrameCompletionTime, completionTime)
-        self.previousFrameCompletionTime = completionTime
-        self._lastGraphCPUTime = Double(elapsed) * 1e-6
+        self.frameTimingLock.withLock {
+            self._lastGraphGPUTime = result.gpuTime
+            
+            let completionTime = DispatchTime.now().uptimeNanoseconds
+            let elapsed = completionTime - min(self.previousFrameCompletionTime, completionTime)
+            self.previousFrameCompletionTime = completionTime
+            self._lastGraphCPUTime = Double(elapsed) * 1e-6
+        }
     }
     
     /// Process the render passes that have been enqueued on this render graph through calls to `addPass()` or similar by culling passes that don't produce
