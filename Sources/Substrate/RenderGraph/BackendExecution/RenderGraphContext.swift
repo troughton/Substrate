@@ -143,20 +143,19 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 print("Error executing command buffer \(queueCBIndex): \(error)")
             }
             
+            await self.renderGraphQueue.didCompleteCommand(queueCBIndex)
+            
             if isFirst {
                 executionResult.setGPUStartTime(to: commandBuffer.gpuStartTime)
             }
-            if isLast { // Only call completion for the last command buffer.
-                executionResult.setGPUEndTime(to: commandBuffer.gpuEndTime)
-                await onCompletion(executionResult)
-            }
-            
-            await self.renderGraphQueue.didCompleteCommand(queueCBIndex)
             
             if isLast {
                 CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
                 self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
                 self.accessStreamContinuation?.yield()
+                
+                executionResult.setGPUEndTime(to: commandBuffer.gpuEndTime)
+                await onCompletion(executionResult)
             }
         }
     }
