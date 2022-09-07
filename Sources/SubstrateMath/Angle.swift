@@ -76,7 +76,8 @@ public struct Angle<Scalar: BinaryFloatingPoint & Real> : Hashable {
     @inlinable public static var pi2   : Angle { return  Angle(radians: Scalar.pi * 2) }
 }
 
-extension Angle : Codable where Scalar : Codable {}
+extension Angle : Decodable where Scalar : Decodable {}
+extension Angle : Encodable where Scalar : Encodable {}
 extension Angle: @unchecked Sendable where Scalar: Sendable {}
 
 extension Angle {
