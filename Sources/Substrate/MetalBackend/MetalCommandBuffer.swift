@@ -151,15 +151,29 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         self.commandBuffer.encodeSignalEvent(event, value: value)
     }
     
-    func presentSwapchains(resourceRegistry: MetalTransientResourceRegistry) {
+    func presentSwapchains(resourceRegistry: MetalTransientResourceRegistry, onPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?) {
         // Only contains drawables applicable to the render passes in the command buffer...
-        for drawable in resourceRegistry.frameDrawables {
-            if drawable.layer.presentsWithTransaction {
-                self.drawablesToPresentOnScheduled.append(drawable)
+        for (texture, result) in resourceRegistry.frameDrawables {
+            switch result {
+            case .failure(let error):
+                onPresented?(texture, .failure(error))
                 continue
+            case .success(let drawable):
+                if let onPresented = onPresented {
+                    drawable.addPresentedHandler { drawable in
+                        withExtendedLifetime(drawable) {
+                            onPresented(texture, .success(OpaquePointer(Unmanaged.passUnretained(drawable).toOpaque())))
+                        }
+                    }
+                }
+                
+                if drawable.layer.presentsWithTransaction {
+                    self.drawablesToPresentOnScheduled.append(drawable)
+                    continue
+                }
+                
+                self.commandBuffer.present(drawable)
             }
-            
-            self.commandBuffer.present(drawable)
         }
         // because we reset the list after each command buffer submission.
         resourceRegistry.clearDrawables()

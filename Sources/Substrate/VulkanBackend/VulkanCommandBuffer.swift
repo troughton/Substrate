@@ -117,7 +117,11 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
         self.signalSemaphoreSignalValues.append(value)
     }
     
-    func presentSwapchains(resourceRegistry: VulkanTransientResourceRegistry) {
+    func presentSwapchains(resourceRegistry: VulkanTransientResourceRegistry, onPresented: @Sendable ((Texture, OpaquePointer?) -> Void)?) {
+        if onPresented != nil {
+            assertionFailure("onPresented is not implemented for Vulkan.")
+        }
+        
         // Only contains drawables applicable to the render passes in the command buffer...
         self.presentSwapchains.append(contentsOf: resourceRegistry.frameSwapChains)
         // because we reset the list after each command buffer submission.
@@ -177,7 +181,7 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
         
         if !self.presentSwapchains.isEmpty {
             for drawable in self.presentSwapchains {
-                drawable.submit()
+                drawable.submit() // TODO: implement onPresented.
             }
         }
 

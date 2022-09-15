@@ -612,7 +612,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     private let depthRenderTargetAllocator : MetalHeapResourceAllocator
     
     var windowReferences = [Texture : CAMetalLayer]()
-    public private(set) var frameDrawables : [CAMetalDrawable] = []
+    public private(set) var frameDrawables : [(Texture, Result<CAMetalDrawable, RenderTargetTextureError>)] = []
     
     var isExecutingFrame: Bool = false
     
@@ -900,28 +900,29 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     public func allocateWindowHandleTexture(_ texture: Texture) async throws -> MTLTextureReference {
         precondition(texture.flags.contains(.windowHandle))
         
-        // Retrieving the drawable needs to be done on the main thread.
-        // Also update and check the MTLTextureReference on the same thread so that subsequent render passes
-        // retrieving the same texture always see the same result (and so nextDrawable() only gets called once).
-        
         // The texture reference should always be present but the texture itself might not be.
         if self.textureReferences[texture]!._texture == nil {
-            guard let windowReference = self.windowReferences.removeValue(forKey: texture),
-                  let mtlDrawable = windowReference.nextDrawable() else {
-                throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
-            }
-            
-            let drawableTexture = mtlDrawable.texture
-            if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
-                self.frameDrawables.append(mtlDrawable)
-                self.textureReferences[texture]!._texture = Unmanaged.passRetained(drawableTexture)
-                if let queue = self.textureReferences[texture]!.disposeWaitQueue {
-                    CommandEndActionManager.enqueue(action: .release(.fromOpaque(self.textureReferences[texture]!._texture.toOpaque())), after: self.textureReferences[texture]!.disposeWaitValue, on: queue)
+            do {
+                guard let windowReference = self.windowReferences.removeValue(forKey: texture),
+                      let mtlDrawable = windowReference.nextDrawable() else {
+                    throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
                 }
-            } else {
-                // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
-                // throw an error.
-                throw RenderTargetTextureError.invalidSizeDrawable(texture, requestedSize: Size(width: texture.descriptor.width, height: texture.descriptor.height), drawableSize: Size(width: drawableTexture.width, height: drawableTexture.height))
+                
+                let drawableTexture = mtlDrawable.texture
+                if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
+                    self.frameDrawables.append((texture, .success(mtlDrawable)))
+                    self.textureReferences[texture]!._texture = Unmanaged.passRetained(drawableTexture)
+                    if let queue = self.textureReferences[texture]!.disposeWaitQueue {
+                        CommandEndActionManager.enqueue(action: .release(.fromOpaque(self.textureReferences[texture]!._texture.toOpaque())), after: self.textureReferences[texture]!.disposeWaitValue, on: queue)
+                    }
+                } else {
+                    // The window was resized to be smaller than the texture size. We can't render directly to that, so instead
+                    // throw an error.
+                    throw RenderTargetTextureError.invalidSizeDrawable(texture, requestedSize: Size(width: texture.descriptor.width, height: texture.descriptor.height), drawableSize: Size(width: drawableTexture.width, height: drawableTexture.height))
+                }
+            } catch let error as RenderTargetTextureError {
+                self.frameDrawables.append((texture, .failure(error)))
+                throw error
             }
         }
         

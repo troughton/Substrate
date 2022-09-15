@@ -162,7 +162,10 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     
 //    @_specialize(kind: full, where Backend == MetalBackend)
 //    @_specialize(kind: full, where Backend == VulkanBackend)
-    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken {
+    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord],
+                                                                  usedResources: Set<Resource>),
+                            onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil,
+                            onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken {
         if self.accessStream != nil {
             // Wait until we have a frame's ring buffers available.
             for await completedFrame in self.accessStream! {
@@ -212,7 +215,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     let commandBufferIndex = encoderInfo.commandBufferIndex
                     if commandBufferIndex != commandBuffers.endIndex - 1 {
                         if let transientRegistry = resourceMap.transientRegistry {
-                            commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
+                            commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry, onPresented: onSwapchainPresented)
                         }
                         commandBuffers.append(self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
                                                                                   resourceMap: resourceMap,
@@ -239,7 +242,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 }
                 
                 if let transientRegistry = resourceMap.transientRegistry {
-                    commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
+                    commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry, onPresented: onSwapchainPresented)
                 }
                 
                 for passRecord in passes {
