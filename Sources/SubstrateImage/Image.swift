@@ -592,7 +592,10 @@ public struct Image<ComponentType> : AnyImage {
     }
     
     public var data: Data {
-        return Data(buffer: self.truncatedStorageData)
+        let data = self.truncatedStorageData
+        return Data(bytesNoCopy: UnsafeMutableRawPointer(data.baseAddress!), count: data.count, deallocator: .custom({ [self] _, _ in
+            _ = self
+        }))
     }
     
     @available(*, deprecated, renamed: "alphaMode")
