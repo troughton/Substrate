@@ -304,7 +304,7 @@ public typealias RenderTargetStencilAttachmentDescriptor = StencilAttachmentDesc
 
 public typealias ColorAttachmentArray<T> = Array8<T>
 
-public struct RenderTargetDescriptor : Hashable, Sendable {
+public struct RenderTargetsDescriptor : Hashable, Sendable {
     public var colorAttachments: ColorAttachmentArray<ColorAttachmentDescriptor?>
     
     public var depthAttachment : DepthAttachmentDescriptor? = nil
@@ -421,3 +421,6 @@ public struct RenderTargetDescriptor : Hashable, Sendable {
         return true
     }
 }
+
+@available(*, deprecated, renamed: "RenderTargetsDescriptor")
+public typealias RenderTargetDescriptor = RenderTargetsDescriptor
