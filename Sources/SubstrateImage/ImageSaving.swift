@@ -7,21 +7,36 @@ import LodePNG
 import zlib
 #endif
 
+#if canImport(UniformTypeIdentifiers)
+import UniformTypeIdentifiers
+#endif
+
+#if canImport(AppKit)
+import AppKit
+#endif
+
 @available(*, deprecated, renamed: "ImageFileFormat")
 public typealias TextureFileFormat = ImageFileFormat
 
-public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
-    case png
-    case bmp
-    case gif
-    case psd
-    case tga
-    case hdr
-    case jpg
-    case exr
+public struct ImageFileFormat: Hashable, Codable {
+    public var typeIdentifier: String
     
+    public init(typeIdentifier: String) {
+        self.typeIdentifier = typeIdentifier
+    }
+    
+    @available(*, deprecated, renamed: "init(typeIdentifier:)")
+    public init?(uti: String) {
+        self.init(typeIdentifier: uti)
+    }
+    
+    @available(*, deprecated, renamed: "init(fileExtension:)")
     public init?(extension: String) {
-        switch `extension`.lowercased() {
+        self.init(fileExtension: `extension`)
+    }
+    
+    public init?(fileExtension: String) {
+        switch fileExtension.lowercased() {
         case "png":
             self = .png
         case "bmp":
@@ -39,31 +54,110 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
         case "exr":
             self = .exr
         default:
+#if canImport(UniformTypeIdentifiers)
+            if let type = UTType(filenameExtension: fileExtension, conformingTo: .image) {
+                self.init(typeIdentifier: type.identifier)
+            } else {
+                return nil
+            }
+#else
             return nil
+#endif
         }
     }
     
-    public init?(uti: String) {
-        switch uti {
-        case "public.png":
-            self = .png
-        case "com.microsoft.bmp":
-            self = .bmp
-        case "com.compuserve.gif":
-            self = .gif
-        case "com.adobe.photoshopimage.psd":
-            self = .psd
-        case "com.truevision.tga-image":
-            self = .tga
-        case "public.radiance":
-            self = .hdr
-        case "public.jpeg":
-            self = .jpg
-        case "com.ilm.openexr-image":
-            self = .exr
+    @available(*, deprecated, renamed: "typeIdentifier")
+    public var uti: String {
+        return self.typeIdentifier
+    }
+    
+    public static func ~=(lhs: ImageFileFormat, rhs: ImageFileFormat) -> Bool {
+        return lhs == rhs
+    }
+    
+    public static var genericImage: ImageFileFormat {
+        return .init(typeIdentifier: "public.image")
+    }
+    
+    public static var png: ImageFileFormat {
+        return .init(typeIdentifier: "public.png")
+    }
+    
+    public static var bmp: ImageFileFormat {
+        return .init(typeIdentifier: "com.microsoft.bmp")
+    }
+    
+    public static var gif: ImageFileFormat {
+        return .init(typeIdentifier: "com.compuserve.gif")
+    }
+    
+    public static var psd: ImageFileFormat {
+        return .init(typeIdentifier: "com.adobe.photoshopimage.psd")
+    }
+    
+    public static var tga: ImageFileFormat {
+        return .init(typeIdentifier: "com.truevision.tga-image")
+    }
+    
+    public static var hdr: ImageFileFormat {
+        return .init(typeIdentifier: "public.radiance")
+    }
+    
+    public static var jpg: ImageFileFormat {
+        return .init(typeIdentifier: "public.jpeg")
+    }
+    
+    public static var exr: ImageFileFormat {
+        return .init(typeIdentifier: "com.ilm.openexr-image")
+    }
+
+    static var nativeFormats: [ImageFileFormat] {
+        return [.png, .bmp, .gif, .psd, .tga, .hdr, .jpg, .exr]
+    }
+    
+    public static var supportedFormats: [ImageFileFormat] {
+#if canImport(AppKit)
+        return self.nativeFormats + NSBitmapImageRep.imageTypes.map { ImageFileFormat(typeIdentifier: $0) }
+#else
+        return self.nativeFormats
+#endif
+    }
+    
+    public var preferredFileExtension: String? {
+        switch self {
+        case .png:
+            return "png"
+        case .bmp:
+            return "bmp"
+        case .gif:
+            return "gif"
+        case .psd:
+            return "psd"
+        case .tga:
+            return "tga"
+        case .hdr:
+            return "hdr"
+        case .jpg:
+            return "jpg"
+        case .exr:
+            return "exr"
         default:
+#if canImport(UniformTypeIdentifiers)
+            return UTType(self.typeIdentifier)?.preferredFilenameExtension
+#else
             return nil
+#endif
         }
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self.init(typeIdentifier: try container.decode(String.self))
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.typeIdentifier)
     }
     
     public var isLinearHDR : Bool {
@@ -73,31 +167,6 @@ public enum ImageFileFormat: String, CaseIterable, Hashable, Codable {
         default:
             return false
         }
-    }
-    
-    public var uti: String {
-        switch self {
-        case .png:
-            return "public.png"
-        case .bmp:
-            return "com.microsoft.bmp"
-        case .gif:
-            return "com.compuserve.gif"
-        case .psd:
-            return "com.adobe.photoshopimage.psd"
-        case .tga:
-            return "com.truevision.tga-image"
-        case .hdr:
-            return "public.radiance"
-        case .jpg:
-            return "public.jpeg"
-        case .exr:
-            return "com.ilm.openexr-image"
-        }
-    }
-    
-    public var fileExtension : String {
-        return self.rawValue
     }
 }
 
@@ -307,7 +376,7 @@ extension Image {
     public typealias SaveFormat = ImageFileFormat
     
     public func write(to url: URL) throws {
-        guard let saveFormat = ImageFileFormat(extension: url.pathExtension) else {
+        guard let saveFormat = ImageFileFormat(fileExtension: url.pathExtension) else {
             throw TextureSaveError.unknownFormat(url.pathExtension)
         }
         

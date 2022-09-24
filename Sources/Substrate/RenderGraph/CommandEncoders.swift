@@ -504,7 +504,6 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         impl.drawIndexedPrimitives(type: primitiveType, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
     }
     
-    
     @available(macOS 13.0, iOS 16.0, *)
     public func drawMeshThreadgroups(_ threadgroupsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
         impl.drawMeshThreadgroups(threadgroupsPerGrid, threadsPerObjectThreadgroup: threadsPerObjectThreadgroup, threadsPerMeshThreadgroup: threadsPerMeshThreadgroup)

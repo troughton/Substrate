@@ -403,6 +403,7 @@ final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
         let resource = self.allocateHandle(flags: flags)
         self.sharedStorage.initialize(index: resource.index, descriptor: descriptor, baseResource: baseResource)
         self.transientStorage.initialize(index: resource.index, descriptor: descriptor, baseResource: baseResource)
+        self.labels.advanced(by: resource.index).initialize(to: nil)
         baseResource.descriptor.usageHint.formUnion(.textureView)
         
         return resource
@@ -412,6 +413,7 @@ final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
         let resource = self.allocateHandle(flags: flags)
         self.sharedStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)
         self.transientStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)
+        self.labels.advanced(by: resource.index).initialize(to: nil)
         
         if baseResource.descriptor.pixelFormat.channelCount != viewDescriptor.pixelFormat.channelCount || baseResource.descriptor.pixelFormat.bytesPerPixel != viewDescriptor.pixelFormat.bytesPerPixel {
             baseResource.descriptor.usageHint.formUnion(.pixelFormatView)

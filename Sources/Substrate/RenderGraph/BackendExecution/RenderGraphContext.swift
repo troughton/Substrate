@@ -124,27 +124,28 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 print("Error executing command buffer \(queueCBIndex): \(error)")
             }
             
+            await self.renderGraphQueue.didCompleteCommand(queueCBIndex)
+            
             if isFirst {
                 executionResult.setGPUStartTime(to: commandBuffer.gpuStartTime)
             }
-            if isLast { // Only call completion for the last command buffer.
-                executionResult.setGPUEndTime(to: commandBuffer.gpuEndTime)
-                await onCompletion(executionResult)
-            }
-            
-            await self.renderGraphQueue.didCompleteCommand(queueCBIndex)
             
             if isLast {
                 CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
                 self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
                 self.accessStreamContinuation?.yield()
+                
+                executionResult.setGPUEndTime(to: commandBuffer.gpuEndTime)
+                await onCompletion(executionResult)
             }
         }
     }
     
 //    @_specialize(kind: full, where Backend == MetalBackend)
 //    @_specialize(kind: full, where Backend == VulkanBackend)
-    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken {
+    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], 
+                            onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil,
+                            onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken {
         if self.accessStream != nil {
             // Wait until we have a frame's ring buffers available.
             for await completedFrame in self.accessStream! {
@@ -193,7 +194,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                         let commandBufferIndex = encoderInfo.commandBufferIndex
                         if commandBufferIndex != commandBuffers.endIndex - 1 {
                             if let transientRegistry = resourceMap.transientRegistry {
-                                commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
+                                commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry, onPresented: onSwapchainPresented)
                             }
                             commandBuffers.append(self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
                                                                                       resourceMap: resourceMap,
@@ -220,7 +221,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     }
                     
                     if let transientRegistry = resourceMap.transientRegistry {
-                        commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry)
+                        commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry, onPresented: onSwapchainPresented)
                     }
                     
                     for passRecord in passes {

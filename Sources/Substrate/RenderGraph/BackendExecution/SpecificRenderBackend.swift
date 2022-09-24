@@ -80,7 +80,7 @@ protocol BackendCommandBuffer: AnyObject {
     
     func waitForEvent(_ event: Backend.Event, value: UInt64)
     func signalEvent(_ event: Backend.Event, value: UInt64)
-    func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry)
+    func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry, onPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?)
     func commit(onCompletion: @escaping (Self) -> Void)
     
     var gpuStartTime: Double { get }

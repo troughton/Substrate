@@ -23,7 +23,7 @@ final class UnavailableBackend : SpecificRenderBackend {
         
         func waitForEvent(_ event: Backend.Event, value: UInt64) { preconditionFailure() }
         func signalEvent(_ event: Backend.Event, value: UInt64) { preconditionFailure() }
-        func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry) { preconditionFailure() }
+        func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry, onPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil) { preconditionFailure() }
         func commit(onCompletion: @escaping (CommandBufferImpl) -> Void) { preconditionFailure() }
         
         var gpuStartTime: Double { preconditionFailure() }
