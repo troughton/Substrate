@@ -290,7 +290,7 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
     }
     
     public var textureDescriptor : TextureDescriptor {
-        return TextureDescriptor(type: .type2D, format: PixelFormat(rawValue: mtkView.colorPixelFormat.rawValue)!, width: Int(exactly: self.drawableSize.width)!, height: Int(exactly: self.drawableSize.height)!, mipmapped: false)
+        return TextureDescriptor(type: .type2D, format: PixelFormat(mtkView.colorPixelFormat), width: Int(exactly: self.drawableSize.width)!, height: Int(exactly: self.drawableSize.height)!, mipmapped: false)
     }
     
     public func cycleFrames() {
