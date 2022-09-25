@@ -145,7 +145,7 @@ extension ReflectionPrinter {
                 print("#if canImport(Metal)")
                 print("if RenderBackend.api == .metal {")
                 
-                print("return ResourceBindingPath(stages: [.vertex, .fragment], type: .buffer, argumentBufferIndex: nil, index: \(setCount))")
+                print("return ResourceBindingPath(type: .buffer, index: \(setCount), argumentBufferIndex: nil, stages: [.vertex, .fragment])")
 
                 print("}")
                 print("#endif // canImport(Metal)")

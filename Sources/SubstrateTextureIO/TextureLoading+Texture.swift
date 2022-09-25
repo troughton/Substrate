@@ -186,9 +186,9 @@ extension Image {
                     guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: allocatedSize, options: .storageModeShared, deallocator: nil) else { return nil }
                     let substrateBuffer = Buffer(descriptor: BufferDescriptor(length: allocatedSize, storageMode: .shared, cacheMode: .defaultCache, usage: .blitSource), externalResource: mtlBuffer)
 
-                    let token = await GPUResourceUploader.runBlitPass(accessing: [
-                        .init(substrateBuffer, .shaderRead),
-                        .init(texture, .blitDestination, slice: slice, mipLevel: mipmapLevel),
+                    let token = await GPUResourceUploader.runBlitPass(using: [
+                        substrateBuffer.as(.shaderRead),
+                        texture.as(.blitDestination, slice: slice, mipLevel: mipmapLevel),
                     ]) { bce in
                         bce.copy(from: substrateBuffer, sourceOffset: 0, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
                     }
@@ -211,9 +211,9 @@ extension Image {
                 }
                 uploadBufferToken.didModifyBuffer()
                 
-                let executionToken = await GPUResourceUploader.runBlitPass(accessing: [
-                    .init(buffer, .shaderRead),
-                    .init(texture, .blitDestination, slice: slice, mipLevel: mipmapLevel),
+                let executionToken = await GPUResourceUploader.runBlitPass(using: [
+                    buffer.as(.shaderRead),
+                    texture.as(.blitDestination, slice: slice, mipLevel: mipmapLevel),
                 ]) { bce in
                     bce.copy(from: buffer, sourceOffset: sourceOffset, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
                 }
