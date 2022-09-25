@@ -104,7 +104,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         }
     }
     
-    var descriptorSetChangeMask : UInt8 = 0
+    var resourceSetChangeMask : UInt8 = 0
     
     @usableFromInline var _pushConstants : R.PushConstants
     
@@ -129,49 +129,49 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     
     public var set0 : R.Set0 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 0
+            self.resourceSetChangeMask |= 1 << 0
         }
     }
     
     public var set1 : R.Set1 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 1
+            self.resourceSetChangeMask |= 1 << 1
         }
     }
     
     public var set2 : R.Set2 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 2
+            self.resourceSetChangeMask |= 1 << 2
         }
     }
     
     public var set3 : R.Set3 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 3
+            self.resourceSetChangeMask |= 1 << 3
         }
     }
     
     public var set4 : R.Set4 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 4
+            self.resourceSetChangeMask |= 1 << 4
         }
     }
     
     public var set5 : R.Set5 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 5
+            self.resourceSetChangeMask |= 1 << 5
         }
     }
     
     public var set6 : R.Set6 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 6
+            self.resourceSetChangeMask |= 1 << 6
         }
     }
     
     public var set7 : R.Set7 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 7
+            self.resourceSetChangeMask |= 1 << 7
         }
     }
     
@@ -197,7 +197,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         defer {
             self.pipelineDescriptorChanged = false
             self.depthStencilDescriptorChanged = false
-            self.descriptorSetChangeMask = 0
+            self.resourceSetChangeMask = 0
         }
         
         if self.depthStencilDescriptorChanged {
@@ -209,29 +209,29 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
             self.encoder.setRenderPipelineState(await self.$pipeline.state)
         }
         
-        if self.descriptorSetChangeMask != 0 {
-            if (self.descriptorSetChangeMask & (1 << 0)) != 0 {
+        if self.resourceSetChangeMask != 0 {
+            if (self.resourceSetChangeMask & (1 << 0)) != 0 {
                 await self.encoder.setArguments(&self.set0, at: 0)
             }
-            if (self.descriptorSetChangeMask & (1 << 1)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 1)) != 0 {
                 await self.encoder.setArguments(&self.set1, at: 1)
             }
-            if (self.descriptorSetChangeMask & (1 << 2)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 2)) != 0 {
                 await self.encoder.setArguments(&self.set2, at: 2)
             }
-            if (self.descriptorSetChangeMask & (1 << 3)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 3)) != 0 {
                 await self.encoder.setArguments(&self.set3, at: 3)
             }
-            if (self.descriptorSetChangeMask & (1 << 4)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 4)) != 0 {
                 await self.encoder.setArguments(&self.set4, at: 4)
             }
-            if (self.descriptorSetChangeMask & (1 << 5)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 5)) != 0 {
                 await self.encoder.setArguments(&self.set5, at: 5)
             }
-            if (self.descriptorSetChangeMask & (1 << 6)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 6)) != 0 {
                 await self.encoder.setArguments(&self.set6, at: 6)
             }
-            if (self.descriptorSetChangeMask & (1 << 7)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 7)) != 0 {
                 await self.encoder.setArguments(&self.set7, at: 7)
             }
         }
@@ -354,7 +354,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     var pipelineDescriptorChanged : Bool = false
     var hasSetPushConstants : Bool = false
     
-    var descriptorSetChangeMask : UInt8 = 0
+    var resourceSetChangeMask : UInt8 = 0
     
     @StateBacked
     public var pipeline : TypedComputePipelineDescriptor<R> {
@@ -378,49 +378,49 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     
     public var set0 : R.Set0 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 0
+            self.resourceSetChangeMask |= 1 << 0
         }
     }
     
     public var set1 : R.Set1 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 1
+            self.resourceSetChangeMask |= 1 << 1
         }
     }
     
     public var set2 : R.Set2 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 2
+            self.resourceSetChangeMask |= 1 << 2
         }
     }
     
     public var set3 : R.Set3 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 3
+            self.resourceSetChangeMask |= 1 << 3
         }
     }
     
     public var set4 : R.Set4 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 4
+            self.resourceSetChangeMask |= 1 << 4
         }
     }
     
     public var set5 : R.Set5 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 5
+            self.resourceSetChangeMask |= 1 << 5
         }
     }
     
     public var set6 : R.Set6 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 6
+            self.resourceSetChangeMask |= 1 << 6
         }
     }
     
     public var set7 : R.Set7 {
         didSet {
-            self.descriptorSetChangeMask |= 1 << 7
+            self.resourceSetChangeMask |= 1 << 7
         }
     }
     
@@ -460,34 +460,34 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     
     func updateEncoderState() async {
         defer {
-            self.descriptorSetChangeMask = 0
+            self.resourceSetChangeMask = 0
         }
         
         await self.updatePipelineState()
         
-        if self.descriptorSetChangeMask != 0 {
-            if (self.descriptorSetChangeMask & (1 << 0)) != 0 {
+        if self.resourceSetChangeMask != 0 {
+            if (self.resourceSetChangeMask & (1 << 0)) != 0 {
                 await self.encoder.setArguments(&self.set0, at: 0)
             }
-            if (self.descriptorSetChangeMask & (1 << 1)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 1)) != 0 {
                 await self.encoder.setArguments(&self.set1, at: 1)
             }
-            if (self.descriptorSetChangeMask & (1 << 2)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 2)) != 0 {
                 await self.encoder.setArguments(&self.set2, at: 2)
             }
-            if (self.descriptorSetChangeMask & (1 << 3)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 3)) != 0 {
                 await self.encoder.setArguments(&self.set3, at: 3)
             }
-            if (self.descriptorSetChangeMask & (1 << 4)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 4)) != 0 {
                 await self.encoder.setArguments(&self.set4, at: 4)
             }
-            if (self.descriptorSetChangeMask & (1 << 5)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 5)) != 0 {
                 await self.encoder.setArguments(&self.set5, at: 5)
             }
-            if (self.descriptorSetChangeMask & (1 << 6)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 6)) != 0 {
                 await self.encoder.setArguments(&self.set6, at: 6)
             }
-            if (self.descriptorSetChangeMask & (1 << 7)) != 0 {
+            if (self.resourceSetChangeMask & (1 << 7)) != 0 {
                 await self.encoder.setArguments(&self.set7, at: 7)
             }
         }

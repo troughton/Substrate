@@ -301,7 +301,7 @@ final class ShaderCompiler {
         }
         
         self.reflectionContext.mergeExternalEntryPoints()
-        self.reflectionContext.generateDescriptorSets()
+        self.reflectionContext.generateResourceSets()
         self.reflectionContext.fillTypeLookup()
         
         do {

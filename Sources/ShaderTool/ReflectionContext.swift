@@ -18,7 +18,7 @@ final class ReflectionContext {
     
     var entryPoints : [String : EntryPoint] = [:]
     var renderPasses : [String : RenderPass] = [:]
-    var descriptorSets : [DescriptorSet] = []
+    var resourceSets : [ResourceSet] = []
     
     public func reflect(compiler: SPIRVCompiler) throws {
         let file = compiler.file
@@ -55,13 +55,13 @@ final class ReflectionContext {
         }
     }
     
-    func generateDescriptorSets() {
-        var allSets = [DescriptorSet]()
+    func generateResourceSets() {
+        var allSets = [ResourceSet]()
         
         for pass in self.renderPasses.values.sorted(by: { $0.name < $1.name }) {
             let resources = pass.boundResources
             var startIndex = 0
-            setLoop: for setIndex in 0..<DescriptorSet.setCount {
+            setLoop: for setIndex in 0..<ResourceSet.setCount {
                 let endIndex = resources[startIndex...].firstIndex(where: { $0.binding.set != setIndex }) ?? resources.count
                 defer { startIndex = endIndex }
                 
@@ -77,7 +77,7 @@ final class ReflectionContext {
                     }
                 }
                 
-                let newSet = DescriptorSet()
+                let newSet = ResourceSet()
                 newSet.addResources(resources[indexRange])
                 pass.sets[setIndex] = newSet
                 newSet.passes.append(pass)
@@ -85,7 +85,7 @@ final class ReflectionContext {
             }
         }
         
-        self.descriptorSets = allSets
+        self.resourceSets = allSets
     }
     
     func mergePasses(_ pass: RenderPass, sourcePass: RenderPass) -> Bool {
@@ -225,11 +225,11 @@ final class ReflectionContext {
         printer.print("// MARK: - Shared Descriptor Sets")
         printer.newLine()
         
-        for set in self.descriptorSets where set.passes.count > 1 {
+        for set in self.resourceSets where set.passes.count > 1 {
             set.name = set.passes.map { $0.name }.sorted().joined() + "Set\( String(set.resources[0].binding.set))" // FIXME: what if the resources are in different sets for each pass?
         }
         
-        for set in self.descriptorSets.lazy.filter({ $0.passes.count > 1 }).sorted(by: { $0.name! < $1.name! }) {
+        for set in self.resourceSets.lazy.filter({ $0.passes.count > 1 }).sorted(by: { $0.name! < $1.name! }) {
             set.printStruct(to: &printer, typeLookup: typeLookup, setIndex: -1)
         }
         
@@ -247,14 +247,14 @@ final class ReflectionContext {
 
 final class TypeLookup {
     enum DeclarationContext {
-        case descriptorSet(DescriptorSet)
+        case resourceSet(ResourceSet)
         case renderPass(RenderPass)
         case topLevel
     }
     
     var typeContexts = [SPIRVType : DeclarationContext]()
     
-    func registerType(_ type: SPIRVType, set: DescriptorSet?, pass: RenderPass) {
+    func registerType(_ type: SPIRVType, set: ResourceSet?, pass: RenderPass) {
         if type.isKnownSwiftType { return }
         if case .array(let nestedType, _) = type {
             registerType(nestedType, set: set, pass: pass)
@@ -271,7 +271,7 @@ final class TypeLookup {
         var context = self.typeContexts[type]
         
         switch context {
-        case .descriptorSet(let currentSet):
+        case .resourceSet(let currentSet):
             if let set = set {
                 assert(set.passes.contains(where: { $0 === pass }))
                 if currentSet === set {
@@ -292,7 +292,7 @@ final class TypeLookup {
             if currentPass === pass {
                 break
             } else if let set = set, set.passes.count > 1, set.passes.contains(where: { $0 === currentPass }) {
-                context = .descriptorSet(set)
+                context = .resourceSet(set)
             } else {
                 context = .topLevel
             }
@@ -300,7 +300,7 @@ final class TypeLookup {
             break
         case .none:
             if let set = set {
-                context = .descriptorSet(set)
+                context = .resourceSet(set)
             } else {
                 context = .renderPass(pass)
             }
@@ -347,7 +347,7 @@ final class RenderPass {
     var pushConstants : [PushConstant] = [] // Sorted by construction
     var boundResources : [Resource] = [] // Sorted by construction
     
-    var sets = [DescriptorSet?](repeating: nil, count: 8)
+    var sets = [ResourceSet?](repeating: nil, count: 8)
     
     var types = Set<SPIRVType>()
     

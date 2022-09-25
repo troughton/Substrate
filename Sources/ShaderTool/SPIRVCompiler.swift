@@ -82,7 +82,7 @@ final class SPIRVCompiler {
             binding.msl_buffer = 0
             spvc_compiler_msl_add_resource_binding(self.compiler, &binding)
             
-            for i in 0..<DescriptorSet.setCount {
+            for i in 0..<ResourceSet.setCount {
                 binding.desc_set = UInt32(i)
                 binding.binding = ~3 // kArgumentBufferBinding
                 binding.msl_buffer = UInt32(i + 1)

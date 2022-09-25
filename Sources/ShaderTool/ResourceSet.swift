@@ -1,5 +1,5 @@
 //
-//  DescriptorSet.swift
+//  ResourceSet.swift
 //  
 //
 //  Created by Thomas Roughton on 7/12/19.
@@ -177,7 +177,7 @@ extension DataType {
     }
 }
 
-final class DescriptorSet {
+final class ResourceSet {
     static let setCount : Int = 8
     
     var passes : [RenderPass] = []
@@ -330,7 +330,7 @@ final class DescriptorSet {
         
         // Print struct definitions
         let structDefs = typeLookup.typeContexts.compactMap { (type, context) -> SPIRVType? in
-            guard case .descriptorSet(let set) = context, set === self else { return nil }
+            guard case .resourceSet(let set) = context, set === self else { return nil }
             return type
         }.sorted(by: { $0.name < $1.name })
         
@@ -384,7 +384,7 @@ final class DescriptorSet {
 
             for resource in self.resources {
                 if resource.viewType == .inlineUniformBlock {
-                    stream.print("argBuffer.setValue(self.\(resource.name), key: ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index), type: .buffer))")
+                    stream.print("argBuffer.setValue(self.\(resource.name), key: ResourceBindingPath(resourceSetIndex: setIndex, index: \(resource.binding.index), type: .buffer))")
                     continue
                 } else if resource.viewType == .uniformBuffer {
                     // @BufferBacked property
@@ -392,7 +392,7 @@ final class DescriptorSet {
                     stream.print("if let resource = self.$\(resource.name).buffer {")
                                     
                     stream.print("argBuffer.bindings.append(")
-                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index), type: .buffer), .buffer(resource.wrappedValue, offset: resource.offset))")
+                    stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(resource.binding.index), type: .buffer), .buffer(resource.wrappedValue, offset: resource.offset))")
                     
                     stream.print(")")
                     stream.print("}")
@@ -401,7 +401,7 @@ final class DescriptorSet {
                 } else if resource.viewType == .sampler {
                     // @BufferBacked property
                     stream.print("argBuffer.bindings.append(")
-                    stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(resource.binding.index), type: .buffer), .sampler(await self.$\(resource.name).state))")
+                    stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(resource.binding.index), type: .buffer), .sampler(await self.$\(resource.name).state))")
                     
                     stream.print(")")
                     
@@ -434,11 +434,11 @@ final class DescriptorSet {
                     
                     switch type {
                     case .texture:
-                        stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(index)\(arrayIndexString), type: .texture), .texture(resource))")
+                        stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(index)\(arrayIndexString), type: .texture), .texture(resource))")
                     case .sampler:
-                        stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(index)\(arrayIndexString), type: .sampler), .sampler(resource))")
+                        stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(index)\(arrayIndexString), type: .sampler), .sampler(resource))")
                     default:
-                        stream.print("(ResourceBindingPath(descriptorSet: setIndex, index: \(index)\(arrayIndexString), type: .buffer), .buffer(resource, offset: self.$\(resource.name).offset))")
+                        stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(index)\(arrayIndexString), type: .buffer), .buffer(resource, offset: self.$\(resource.name).offset))")
                     }
                     
                     stream.print(")")
