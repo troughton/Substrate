@@ -130,13 +130,19 @@ extension DrawRenderPass {
     }
     
     @inlinable
+    public var renderTargetsDescriptor : RenderTargetDescriptor {
+        return self.renderTargetDescriptor
+    }
+    
+    @available(*, deprecated, renamed: "renderTargetsDescriptor")
+    @inlinable
     public var renderTargetDescriptor : RenderTargetDescriptor {
         return self.renderTargetsDescriptor
     }
     
-    var renderTargetDescriptorForActiveAttachments: RenderTargetDescriptor {
+    var renderTargetDescriptorForActiveAttachments: RenderTargetsDescriptor {
         // Filter out any unused attachments.
-        var descriptor = self.renderTargetDescriptor
+        var descriptor = self.renderTargetsDescriptor
         
         let isUsedAttachment: (Texture) -> Bool = { attachment in
             return attachment.usages.contains(where: {
