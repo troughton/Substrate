@@ -117,6 +117,12 @@ extension DrawRenderPass {
     }
     
     @inlinable
+    public var renderTargetsDescriptor : RenderTargetDescriptor {
+        return self.renderTargetDescriptor
+    }
+    
+    @available(*, deprecated, renamed: "renderTargetsDescriptor")
+    @inlinable
     public var renderTargetDescriptor : RenderTargetDescriptor {
         return self.renderTargetsDescriptor
     }
