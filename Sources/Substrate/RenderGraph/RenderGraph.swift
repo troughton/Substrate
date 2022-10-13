@@ -1585,7 +1585,7 @@ public final class RenderGraph {
             let completionTime = DispatchTime.now().uptimeNanoseconds
             let elapsed = completionTime - min(self.previousFrameCompletionTime, completionTime)
             self.previousFrameCompletionTime = completionTime
-            self._lastGraphCPUTime = Double(elapsed) * 1e-6
+            self._lastGraphCPUTime = Double(elapsed) * 1e-9
         }
     }
     
