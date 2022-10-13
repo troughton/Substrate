@@ -114,8 +114,8 @@ public func unormToFloat<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>
 }
 
 public enum ImageLoadingError : Error {
-    case invalidFile(URL)
-    case invalidData
+    case invalidFile(URL, message: String? = nil)
+    case invalidData(message: String? = nil)
     case unsupportedComponentFormat(Any.Type)
     case pngDecodingError(String)
     case exrParseError(String)
