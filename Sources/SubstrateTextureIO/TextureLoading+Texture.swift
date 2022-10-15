@@ -291,8 +291,8 @@ public struct DirectToTextureImageLoadingDelegate: ImageLoadingDelegate {
     }
     
     public func channelCount(for imageInfo: ImageFileInfo) -> Int {
-        let isSRGB = imageInfo.colorSpace == .sRGB || (imageInfo.colorSpace == .undefined && options.contains(.mapUndefinedColorSpaceToSRGB))
-        if (options.contains(.autoExpandSRGBToRGBA) && isSRGB && imageInfo.channelCount < 4) || imageInfo.channelCount == 3 {
+        let is8BitSRGB = (imageInfo.colorSpace == .sRGB || (imageInfo.colorSpace == .undefined && options.contains(.mapUndefinedColorSpaceToSRGB))) && imageInfo.bitDepth == 8
+        if (options.contains(.autoExpandSRGBToRGBA) && is8BitSRGB && imageInfo.channelCount < 4) || imageInfo.channelCount == 3 {
             var needsChannelExpansion = true
             if (imageInfo.channelCount == 1 && RenderBackend.supportsPixelFormat(.r8Unorm_sRGB)) ||
                 (imageInfo.channelCount == 2 && RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB)) {

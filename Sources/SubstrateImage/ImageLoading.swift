@@ -87,7 +87,7 @@ fileprivate func inspectPNGChunkByName(state: inout LodePNGState, data: UnsafePo
         return
     }
     if lodepng_inspect_chunk(&state, data.distance(to: p), data, data.distance(to: end)) != 0 {
-        throw ImageLoadingError.invalidData
+        throw ImageLoadingError.invalidData(message: "No chunk with name \(type)")
     }
 }
 
@@ -168,7 +168,7 @@ public struct ImageFileInfo: Hashable, Codable {
                     return
                 }
 #endif
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: "No valid format found.")
             }
         }
         
@@ -223,10 +223,10 @@ public struct ImageFileInfo: Hashable, Codable {
             
             try data.withUnsafeBytes { data in
                 guard let baseAddress = data.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-                    throw ImageLoadingError.invalidData
+                    throw ImageLoadingError.invalidData(message: "Data is empty")
                 }
                 if lodepng_inspect(&width, &height, &state, baseAddress, data.count) != 0 {
-                    throw ImageLoadingError.invalidData
+                    throw ImageLoadingError.invalidData(message: "PNG header inspection failed")
                 }
                 
                 // end before first IDAT chunk: do not parse more than first part of file for all this.
@@ -275,7 +275,7 @@ public struct ImageFileInfo: Hashable, Codable {
             var height : Int32 = 0
             var componentsPerPixel : Int32 = 0
             guard data.withUnsafeBytes({ stbi_info_from_memory($0.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32($0.count), &width, &height, &componentsPerPixel) }) != 0 else {
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: stbi_failure_reason().flatMap { String(cString: $0) })
             }
             
             self.format = ImageFileFormat(typeOf: data)
@@ -312,7 +312,7 @@ public struct ImageFileInfo: Hashable, Codable {
                     dataPrefixCount += 2048
                 case NSBitmapImageRep.LoadStatus.invalidData.rawValue,
                     NSBitmapImageRep.LoadStatus.unexpectedEOF.rawValue:
-                    throw ImageLoadingError.invalidData
+                    throw ImageLoadingError.invalidData(message: "Invalid data or unexpected end of file")
                 case NSBitmapImageRep.LoadStatus.willNeedAllData.rawValue:
                     dataPrefixCount = data.count
                 case NSBitmapImageRep.LoadStatus.completed.rawValue,
@@ -320,7 +320,7 @@ public struct ImageFileInfo: Hashable, Codable {
                     loadingComplete = status == NSBitmapImageRep.LoadStatus.completed.rawValue
                     break loadLoop
                 default:
-                    throw ImageLoadingError.invalidData
+                    throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
                 }
             } while true
             
@@ -663,7 +663,7 @@ extension Image where ComponentType == UInt8 {
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
         guard let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
-            throw ImageLoadingError.invalidImageDataFormat(url, T.self)
+            throw ImageLoadingError.invalidFile(url, message: stbi_failure_reason().flatMap { String(cString: $0) })
         }
         
         self.init(width: Int(width), height: Int(height), channelCount: Int(channels),
@@ -694,7 +694,7 @@ extension Image where ComponentType == UInt8 {
 #if canImport(AppKit)
         if fileInfo.requiresNSBitmapImageRepDecode {
             guard let bitmapImage = NSBitmapImageRep(data: data) else {
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
             }
             self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
@@ -712,7 +712,7 @@ extension Image where ComponentType == UInt8 {
             var height : Int32 = 0
             var componentsPerPixel : Int32 = 0
             guard let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels)) else {
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: stbi_failure_reason().flatMap { String(cString: $0) })
             }
             
             return Image(width: Int(width),
@@ -759,7 +759,7 @@ extension Image where ComponentType == Int8 {
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
         guard let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
-            throw ImageLoadingError.invalidImageDataFormat(url, T.self)
+            throw ImageLoadingError.invalidFile(url, message: stbi_failure_reason().flatMap { String(cString: $0) })
         }
         
         self.init(width: Int(width),
@@ -787,7 +787,7 @@ extension Image where ComponentType == Int8 {
 #if canImport(AppKit)
         if fileInfo.requiresNSBitmapImageRepDecode {
             guard let bitmapImage = NSBitmapImageRep(data: data) else {
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
             }
             self = try bitmapImage.makeImage(fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
@@ -804,7 +804,7 @@ extension Image where ComponentType == Int8 {
             var height : Int32 = 0
             var componentsPerPixel : Int32 = 0
             guard let data = stbi_load_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels)) else {
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: stbi_failure_reason().flatMap { String(cString: $0) })
             }
             
             return Image(width: Int(width),
@@ -855,7 +855,7 @@ extension Image where ComponentType == UInt16 {
         var componentsPerPixel : Int32 = 0
         
         guard let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
-            throw ImageLoadingError.invalidImageDataFormat(url, T.self)
+            throw ImageLoadingError.invalidFile(url, message: stbi_failure_reason().flatMap { String(cString: $0) })
         }
         
         self.init(width: Int(width),
@@ -885,7 +885,7 @@ extension Image where ComponentType == UInt16 {
 #if canImport(AppKit)
         if fileInfo.requiresNSBitmapImageRepDecode {
             guard let bitmapImage = NSBitmapImageRep(data: data) else {
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
             }
             self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
@@ -902,7 +902,7 @@ extension Image where ComponentType == UInt16 {
             var height : Int32 = 0
             var componentsPerPixel : Int32 = 0
             guard let data = stbi_load_16_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels)) else {
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: stbi_failure_reason().flatMap { String(cString: $0) })
             }
             
             return Image(width: Int(width),
@@ -962,7 +962,7 @@ extension Image where ComponentType == Float {
             defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
             
             guard let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: stbi_failure_reason().flatMap { String(cString: $0) })
             }
             self.init(width: Int(width),
                       height: Int(height),
@@ -995,7 +995,7 @@ extension Image where ComponentType == Float {
 #if canImport(AppKit)
         if fileInfo.requiresNSBitmapImageRepDecode {
             guard let bitmapImage = NSBitmapImageRep(data: data) else {
-                throw ImageLoadingError.invalidData
+                throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
             }
             self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
@@ -1019,7 +1019,7 @@ extension Image where ComponentType == Float {
                 defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
                 
                 guard let data = stbi_loadf_from_memory(data.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32(data.count), &width, &height, &componentsPerPixel, Int32(channels)) else {
-                    throw ImageLoadingError.invalidData
+                    throw ImageLoadingError.invalidData(message: stbi_failure_reason().flatMap { String(cString: $0) })
                 }
                 return Image(width: Int(width),
                              height: Int(height),
@@ -1229,7 +1229,7 @@ extension Image where ComponentType: SIMDScalar {
         }
         
         guard let data = cgImage.dataProvider?.data as NSData? else {
-            throw ImageLoadingError.invalidData
+            throw ImageLoadingError.invalidData(message: "Unable to retrieve CGImage data provider")
         }
         
         let alphaMode: ImageAlphaMode
@@ -1434,7 +1434,7 @@ extension NSBitmapImageRep {
         } else if cgImage.bitsPerComponent == 8 {
             return try Image<UInt8>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
         } else {
-            throw ImageLoadingError.invalidData
+            throw ImageLoadingError.invalidData(message: "Unsupported bits per component \(cgImage.bitsPerComponent)")
         }
     }
     
