@@ -147,7 +147,14 @@ final class MetalPipelineReflection : PipelineReflection {
         reflectionCache[rootPath] = reflection
         
         if let elementStruct = argument.bufferPointerType?.elementStructType() {
-            let isArgumentBuffer = elementStruct.members.contains(where: { $0.offset < 0 })
+            let isArgumentBuffer = elementStruct.members.contains(where: {
+                switch $0.dataType {
+                case .pointer, .texture, .sampler, .renderPipeline, .computePipeline, .indirectCommandBuffer, .primitiveAccelerationStructure, .instanceAccelerationStructure, .visibleFunctionTable, .intersectionFunctionTable:
+                    return true
+                default:
+                    return false
+                }
+            })
             var argumentBufferBindingCount = 0
             var argumentBufferMaxBinding = 0
             
