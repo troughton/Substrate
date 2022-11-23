@@ -95,6 +95,15 @@ public struct Heap : ResourceProtocol {
     public static var resourceType: ResourceType {
         return .heap
     }
+    
+    
+    public func dispose() {
+        guard self._usesPersistentRegistry, self.isValid else {
+            return
+        }
+        assert(self.childResources.isEmpty)
+        Self.persistentRegistry.dispose(self)
+    }
 }
 
 extension Heap: CustomStringConvertible {
