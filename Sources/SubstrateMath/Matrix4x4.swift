@@ -38,6 +38,14 @@ public struct Matrix4x4<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable {
         self.c3 = c3
     }
     
+    @inlinable
+    public init<Other>(_ other: Matrix4x4<Other>) {
+        self.c0 = SIMD4(other.c0)
+        self.c1 = SIMD4(other.c1)
+        self.c2 = SIMD4(other.c2)
+        self.c3 = SIMD4(other.c3)
+    }
+    
     /// Access the `col`th column vector
     @inlinable @inline(__always)
     public subscript(col: Int) -> SIMD4<Scalar> {
@@ -366,10 +374,10 @@ extension Matrix4x4: CustomStringConvertible {
     /// Displays the matrix in row-major order
     public var description: String {
         return "Matrix4x4(\n" +
-            "m00: \(self[0,0]), m01: \(self[1,0]), m02: \(self[2,0]), m03: \(self[3,0]),\n" +
-            "m10: \(self[0,1]), m11: \(self[1,1]), m12: \(self[2,1]), m13: \(self[3,1]),\n" +
-            "m20: \(self[0,2]), m21: \(self[1,2]), m22: \(self[2,2]), m23: \(self[3,2]),\n" +
-            "m30: \(self[0,3]), m31: \(self[1,3]), m32: \(self[2,3]), m33: \(self[3,3]),\n" +
+            "\(self[0,0]), \(self[0,1]), \(self[0,2]), \(self[0,3])\n" +
+            "\(self[1,0]), \(self[1,1]), \(self[1,2]), \(self[1,3])\n" +
+            "\(self[2,0]), \(self[2,1]), \(self[2,2]), \(self[2,3])\n" +
+            "\(self[3,0]), \(self[3,1]), \(self[3,2]), \(self[3,3])\n" +
         ")"
     }
 }

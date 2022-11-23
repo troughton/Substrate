@@ -35,6 +35,13 @@ public struct Matrix3x3<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
         self.c2 = c2
     }
     
+    @inlinable
+    public init<Other>(_ other: Matrix3x3<Other>) {
+        self.c0 = SIMD3(other.c0)
+        self.c1 = SIMD3(other.c1)
+        self.c2 = SIMD3(other.c2)
+    }
+    
     /// Access the `col`th column vector
     @inlinable @inline(__always)
     public subscript(col: Int) -> SIMD3<Scalar> {
@@ -221,9 +228,13 @@ extension Matrix3x3 where Scalar : Real {
 
 extension Matrix3x3: CustomStringConvertible {
     
-    /// Displays the matrix in column-major order
+    /// Displays the matrix in row-major order
     public var description: String {
-        return "Matrix3x3(\n\(self[0]), \(self[1]), \(self[2]))\n)"
+        return "Matrix3x3(\n" +
+            "\(self[0,0]), \(self[0,1]), \(self[0,2]) \n" +
+            "\(self[1,0]), \(self[1,1]), \(self[1,2]) \n" +
+            "\(self[2,0]), \(self[2,1]), \(self[2,2]) \n" +
+        ")"
     }
 }
 
