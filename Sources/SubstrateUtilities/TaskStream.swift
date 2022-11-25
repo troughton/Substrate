@@ -50,7 +50,7 @@ public final class TaskStream {
                     continuation.resume(returning: result)
                 }
             }
-            _fixLifetime(task)
+            withExtendedLifetime(task) {}
             return result
         }
     }
@@ -70,7 +70,7 @@ public final class TaskStream {
                     }
                 }
             }
-            _fixLifetime(task)
+            withExtendedLifetime(task) {}
             return result
         }
     }
