@@ -655,9 +655,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             self.memorylessTextureAllocator = nil
         }
         
-        self.privateAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
-        self.depthRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
-        self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue)
+        self.privateAllocator = MetalHeapResourceAllocator(device: device, queue: queue, label: "Private Allocator for Queue \(queue.index)")
+        self.depthRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue, label: "Depth RT Allocator for Queue \(queue.index)")
+        self.colorRenderTargetAllocator = MetalHeapResourceAllocator(device: device, queue: queue, label: "Color RT Allocator for Queue \(queue.index)")
     }
     
     deinit {

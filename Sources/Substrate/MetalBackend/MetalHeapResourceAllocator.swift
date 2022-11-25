@@ -41,10 +41,12 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
     private var isPurgeable = false
     
     let device : MTLDevice
+    let label: String
     
-    public init(device: MTLDevice, queue: Queue) {
+    public init(device: MTLDevice, queue: Queue, label: String) {
         self.device = device
         self.queue = queue
+        self.label = label
     }
     
     func resetHeap() {
@@ -72,7 +74,7 @@ class MetalHeapResourceAllocator : MetalBufferAllocator, MetalTextureAllocator {
             }
             self.heap = self.device.makeHeap(descriptor: descriptor)!
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
-            self.heap!.label = "Heap for MetalHeapResourceAllocator \(ObjectIdentifier(self))"
+            self.heap!.label = "Heap for MetalHeapResourceAllocator \(self.label)"
 #endif
             self.resetHeap()
         }
