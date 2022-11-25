@@ -32,7 +32,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     
     var compactedResourceCommands = [CompactedResourceCommand<Backend.CompactedResourceCommandType>]()
     
-    var enqueuedEmptyFrameCompletionHandlers = [(UInt64, @Sendable (RenderGraphExecutionResult) async -> Void)]()
+    var enqueuedEmptyFrameCompletionHandlers = [(UInt64, @Sendable (_ queueCommandRange: Range<UInt64>) async -> Void)]()
     
     let accessSemaphore: AsyncSemaphore?
     
@@ -82,13 +82,13 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         // Notify any completion handlers that were enqueued for frames with no work.
         while let (afterCBIndex, completionHandler) = self.enqueuedEmptyFrameCompletionHandlers.first {
             if afterCBIndex > afterSubmissionIndex { break }
-            await completionHandler(.init())
+            await completionHandler(afterCBIndex..<afterCBIndex)
             self.accessSemaphore?.signal()
             self.enqueuedEmptyFrameCompletionHandlers.removeFirst()
         }
     }
     
-    func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, commandBufferIndex: Int, lastCommandBufferIndex: Int, syncEvent: Backend.Event, executionResult: RenderGraphExecutionResult, onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async {
+    func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, commandBufferIndex: Int, lastCommandBufferIndex: Int, syncEvent: Backend.Event, onCompletion: @Sendable @escaping () async -> Void) async {
         // Make sure that the sync event value is what we expect, so we don't update it past
         // the signal for another buffer before that buffer has completed.
         // We only need to do this if we haven't already waited in this command buffer for it.
@@ -111,23 +111,18 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 print("Error executing command buffer \(queueCBIndex): \(error)")
             }
             
-            if isFirst {
-                executionResult.setGPUStartTime(to: commandBuffer.gpuStartTime)
-            }
-            
-            if isLast {
-                executionResult.setGPUEndTime(to: commandBuffer.gpuEndTime)
-            }
+            self.renderGraphQueue.setGPUStartTime(commandBuffer.gpuStartTime, for: queueCBIndex)
+            self.renderGraphQueue.setGPUEndTime(commandBuffer.gpuEndTime, for: queueCBIndex)
             
             self.renderGraphQueue.didCompleteCommand(queueCBIndex)
-            
+            self.renderGraphQueue.setCompletionTime(.now(), for: queueCBIndex)
             
             if isLast {
                 CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
                 self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
                 self.accessSemaphore?.signal()
                 
-                Task { await onCompletion(executionResult) }
+                Task { await onCompletion() }
             }
         }
     }
@@ -137,7 +132,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord],
                                                                   usedResources: Set<Resource>),
                             onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil,
-                            onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken {
+                            onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken {
         await self.accessSemaphore?.wait()
         
         await self.backend.reloadShaderLibraryIfNeeded()
@@ -152,7 +147,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 if passes.isEmpty {
                     if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
                         self.accessSemaphore?.signal()
-                        await onCompletion(RenderGraphExecutionResult())
+                        await onCompletion(self.queueCommandBufferIndex..<self.queueCommandBufferIndex)
                     } else {
                         self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, onCompletion))
                     }
@@ -221,11 +216,13 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 self.commandGenerator.reset()
                 self.compactedResourceCommands.removeAll(keepingCapacity: true)
                 
-                let executionResult = RenderGraphExecutionResult()
-                
                 let syncEvent = backend.syncEvent(for: self.renderGraphQueue)!
+                let commandBufferRange = frameCommandInfo.baseCommandBufferGlobalIndex..<(frameCommandInfo.baseCommandBufferGlobalIndex + UInt64(frameCommandInfo.commandBufferCount))
+                
                 for (i, commandBuffer) in commandBuffers.enumerated() {
-                    await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, syncEvent: syncEvent, executionResult: executionResult, onCompletion: onCompletion)
+                    await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, syncEvent: syncEvent, onCompletion: {
+                        await onCompletion(commandBufferRange)
+                    })
                 }
                 
                 return RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: self.queueCommandBufferIndex)

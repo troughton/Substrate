@@ -22,12 +22,14 @@ public final class QueueRegistry {
     
     public static let maxQueues = UInt8.bitWidth
     
-    public static let bufferedSubmissionCount = 16
+    public static let bufferedSubmissionCount = 32
     
     public let lastSubmittedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     public let lastCompletedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     let commandSubmissionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
-    let commandCompletionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation> // TODO: also include GPU start/end times.
+    let commandCompletionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
+    let commandGPUStartTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
+    let commandGPUEndTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     let commandWaiters: UnsafeMutablePointer<[UnsafeContinuation<Void, Never>]>
     let queueLocks: UnsafeMutablePointer<UInt32.AtomicRepresentation>
     
@@ -47,6 +49,12 @@ public final class QueueRegistry {
         self.commandCompletionTimes = .allocate(capacity: Self.maxQueues * Self.bufferedSubmissionCount)
         self.commandCompletionTimes.initialize(repeating: .init(0), count: Self.maxQueues * Self.bufferedSubmissionCount)
         
+        self.commandGPUStartTimes = .allocate(capacity: Self.maxQueues * Self.bufferedSubmissionCount)
+        self.commandGPUStartTimes.initialize(repeating: .init(0), count: Self.maxQueues * Self.bufferedSubmissionCount)
+        
+        self.commandGPUEndTimes = .allocate(capacity: Self.maxQueues * Self.bufferedSubmissionCount)
+        self.commandGPUEndTimes.initialize(repeating: .init(0), count: Self.maxQueues * Self.bufferedSubmissionCount)
+        
         self.commandWaiters = .allocate(capacity: Self.maxQueues * Self.bufferedSubmissionCount)
         self.commandWaiters.initialize(repeating: [], count: Self.maxQueues * Self.bufferedSubmissionCount)
         
@@ -61,6 +69,9 @@ public final class QueueRegistry {
         self.lastCompletedCommands.deallocate()
         self.commandSubmissionTimes.deallocate()
         self.commandCompletionTimes.deallocate()
+        
+        self.commandGPUStartTimes.deallocate()
+        self.commandGPUEndTimes.deallocate()
         
         self.commandWaiters.deinitialize(count: Self.maxQueues * Self.bufferedSubmissionCount)
         self.commandWaiters.deallocate()
@@ -239,6 +250,49 @@ public struct Queue : Equatable, Sendable {
         let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex)!
         
         UInt64.AtomicRepresentation.atomicStore(time.uptimeNanoseconds, at: QueueRegistry.shared.commandCompletionTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
+    }
+    
+    public func gpuStartTime(for commandIndex: UInt64) -> Double? {
+        guard let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex) else { return nil }
+        
+        let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.commandGPUStartTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
+        
+        guard self.hasBufferedData(for: commandIndex) else { return nil }
+        
+        return Double(bitPattern: time)
+    }
+    
+    func setGPUStartTime(_ time: Double, for commandIndex: UInt64) {
+        let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex)!
+        
+        UInt64.AtomicRepresentation.atomicStore(time.bitPattern, at: QueueRegistry.shared.commandGPUStartTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
+    }
+    
+    public func gpuEndTime(for commandIndex: UInt64) -> Double? {
+        guard let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex) else { return nil }
+        
+        let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.commandGPUEndTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
+        
+        guard self.hasBufferedData(for: commandIndex) else { return nil } // Make sure the data we retrieved was valid
+        
+        return Double(bitPattern: time)
+    }
+    
+    func setGPUEndTime(_ time: Double, for commandIndex: UInt64) {
+        let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex)!
+        
+        UInt64.AtomicRepresentation.atomicStore(time.bitPattern, at: QueueRegistry.shared.commandGPUEndTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
+    }
+    
+    public func gpuDuration(for commandIndex: UInt64) -> Double? {
+        guard let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex) else { return nil }
+        
+        let startTime = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.commandGPUStartTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
+        let endTime = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.commandGPUEndTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
+        
+        guard self.hasBufferedData(for: commandIndex) else { return nil } // Make sure the data we retrieved was valid
+        
+        return Double(bitPattern: endTime) - Double(bitPattern: startTime)
     }
     
     public var lastCompletedCommand : UInt64 {
