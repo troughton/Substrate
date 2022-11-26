@@ -363,6 +363,30 @@ extension Texture {
             }
         }
         
+        if (textureData.colorSpace == .sRGB && options.contains(.autoExpandSRGBToRGBA) && textureData.channelCount < 4) || textureData.channelCount == 3 {
+            var needsChannelExpansion = true
+            if (textureData.channelCount == 1 && RenderBackend.supportsPixelFormat(.r8Unorm_sRGB)) ||
+                (textureData.channelCount == 2 && RenderBackend.supportsPixelFormat(.rg8Unorm_sRGB)) {
+                needsChannelExpansion = false
+            }
+            
+            if needsChannelExpansion {
+                var newImage = Image<UInt8>(width: textureData.width, height: textureData.height, channelCount: 4, colorSpace: textureData.colorSpace, alphaMode: .none)
+                newImage.apply(channelRange: 0..<3) { (x, y, _, _) in
+                    return textureData[x, y, channel: 0]
+                }
+                if textureData.channelCount == 2 {
+                    newImage.apply(channelRange: 3..<4) { (x, y, _, _) in
+                        return textureData[x, y, channel: 1]
+                    }
+                } else {
+                    newImage.apply(channelRange: 3..<4, { _ in .max })
+                }
+                
+                textureData = newImage
+            }
+        }
+        
         let pixelFormat = textureData.preferredPixelFormat
         guard pixelFormat != .invalid else {
             throw TextureLoadingError.noSupportedPixelFormat

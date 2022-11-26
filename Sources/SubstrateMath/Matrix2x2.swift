@@ -35,6 +35,11 @@ public struct Matrix2x2<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
         self.columns = columns
     }
     
+    @inlinable
+    public init<Other>(_ other: Matrix2x2<Other>) {
+        self.columns = SIMD4(other.columns)
+    }
+    
     /// Access the `col`th column vector
     @inlinable @inline(__always)
     public subscript(col: Int) -> SIMD2<Scalar> {
@@ -207,7 +212,10 @@ extension Matrix2x2: CustomStringConvertible {
     
     /// Displays the matrix in column-major order
     public var description: String {
-        return "Matrix2x2(\n\(self[0]), \(self[1]))\n)"
+        return "Matrix3x3(\n" +
+            "\(self[0,0]), \(self[0,1])\n" +
+            "\(self[1,0]), \(self[1,1])\n" +
+        ")"
     }
 }
 

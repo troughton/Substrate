@@ -140,7 +140,10 @@ final class MetalPipelineReflection : PipelineReflection {
         reflectionCache[rootPath] = reflection
         
         if let elementStruct = argument.bufferPointerType?.elementStructType() {
-            let isArgumentBuffer = elementStruct.members.contains(where: { $0.offset < 0 })
+            let isArgumentBuffer = elementStruct.members.contains(where: { member in
+                if member.offset < 0 { return true } // Only applies for macOS versions earlier than 13.0 (Ventura)
+                return member.isNonPODMember
+            })
             var argumentBufferBindingCount = 0
             var argumentBufferMaxBinding = 0
             
@@ -360,6 +363,29 @@ final class MetalPipelineReflection : PipelineReflection {
             return UnsafeRawPointer(Unmanaged.passUnretained(newEncoder).toOpaque())
         } else {
             return currentEncoderOpaque
+        }
+    }
+}
+
+
+extension MTLStructMember {
+    var isNonPODMember: Bool {
+        switch self.dataType {
+        case .pointer, .texture, .sampler, .renderPipeline, .computePipeline, .indirectCommandBuffer, .primitiveAccelerationStructure, .instanceAccelerationStructure, .visibleFunctionTable, .intersectionFunctionTable:
+            return true
+        case .array:
+            var array = self.arrayType()!
+            repeat {
+                if let structType = array.elementStructType() {
+                    return structType.members.contains(where: { $0.isNonPODMember })
+                } else if let arrayType = array.element() {
+                    array = arrayType
+                } else {
+                    return true
+                }
+            } while true
+        default:
+            return false
         }
     }
 }

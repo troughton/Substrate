@@ -771,8 +771,8 @@ final class MetalBackend : SpecificRenderBackend {
     func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<MetalBackend>) {
         if index >= queue.lastSubmittedCommand, let contextRegistry = context.resourceRegistry {
             Task {
-                try await Task.sleep(nanoseconds: 5_000_000_000) // wait for five seconds.
-                context.taskStream.enqueue {
+                try await Task.sleep(nanoseconds: 1_000_000_000) // wait for one second.
+                await context.withContext {
                     if index >= queue.lastSubmittedCommand {
                         // If there are no more pending commands on the queue and there haven't been for a number of seconds, we can make all of the transient allocators purgeable.
                         contextRegistry.makeTransientAllocatorsPurgeable()

@@ -686,44 +686,6 @@ struct RenderPassRecord: Equatable, @unchecked Sendable {
     //    case transitive
 }
 
-final class RenderGraphExecutionResult {
-    let lock: SpinLock
-    public internal(set) var gpuStartTime: Double
-    public internal(set) var gpuEndTime: Double
-
-    public init() {
-        self.lock = SpinLock()
-        self.gpuStartTime = 0.0
-        self.gpuEndTime = 0.0
-    }
-    
-    public init(gpuStartTime: Double, gpuEndTime: Double) {
-        self.lock = SpinLock()
-        self.gpuStartTime = gpuStartTime
-        self.gpuEndTime = gpuEndTime
-    }
-    
-    deinit {
-        self.lock.deinit()
-    }
-    
-    public var gpuTime: Double {
-        return self.gpuEndTime - self.gpuStartTime
-    }
-    
-    func setGPUStartTime(to startTime: Double) {
-        self.lock.withLock {
-            self.gpuStartTime = startTime
-        }
-    }
-    
-    func setGPUEndTime(to endTime: Double) {
-        self.lock.withLock {
-            self.gpuEndTime = endTime
-        }
-    }
-}
-
 public struct RenderGraphSubmissionWaitToken: Sendable {
     public let queue: Queue
     public let submissionIndex: UInt64
@@ -754,7 +716,7 @@ public struct RenderGraphExecutionWaitToken: Sendable {
 protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var renderGraphQueue: Queue { get }
-    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?, onCompletion: @Sendable @escaping (RenderGraphExecutionResult) async -> Void) async -> RenderGraphExecutionWaitToken
+    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
 }
 
@@ -786,7 +748,8 @@ public final class RenderGraph {
     private let frameTimingLock = SpinLock()
     private var previousFrameCompletionTime : UInt64 = 0
     private var _lastGraphCPUTime = 1000.0 / 60.0
-    private var _lastGraphGPUTime = 1000.0 / 60.0
+    private var lastGraphFirstCommand: UInt64 = 0
+    private var lastGraphLastCommand: UInt64 = 0
     
     var submissionNotifyQueue = [@Sendable () async -> Void]()
     var completionNotifyQueue = [@Sendable () async -> Void]()
@@ -821,6 +784,7 @@ public final class RenderGraph {
         // If inflightFrameCount is 0, no transient resources are allowed.
         self.transientRegistryIndex = inflightFrameCount > 0 ? TransientRegistryManager.allocate() : -1
         self.inflightFrameCount = max(inflightFrameCount, 1)
+        precondition(inflightFrameCount <= QueueRegistry.bufferedSubmissionCount)
         
         if self.transientRegistryIndex >= 0 {
             TransientBufferRegistry.instances[self.transientRegistryIndex].initialise(capacity: transientBufferCapacity)
@@ -865,7 +829,11 @@ public final class RenderGraph {
     }
     
     public func lastGraphDurations() -> (cpuTime: Double, gpuTime: Double) {
-        return self.frameTimingLock.withLock { (self._lastGraphCPUTime, self._lastGraphGPUTime) }
+        return self.frameTimingLock.withLock {
+            let gpuStartTime = self.queue.gpuStartTime(for: self.lastGraphFirstCommand) ?? 0.0
+            let gpuEndTime = self.queue.gpuEndTime(for: self.lastGraphLastCommand) ?? gpuStartTime
+            return (self._lastGraphCPUTime, gpuEndTime - gpuStartTime)
+        }
     }
     
     /// Enqueue `renderPass` for execution at the next `RenderGraph.execute` call on this render graph.
@@ -1420,16 +1388,23 @@ public final class RenderGraph {
         return self.currentInflightFrameCount.load(ordering: .relaxed) >= self.inflightFrameCount
     }
     
-    private func didCompleteRender(_ result: RenderGraphExecutionResult) {
+    public var frameCountInFlight: Int {
+        return self.currentInflightFrameCount.load(ordering: .relaxed)
+    }
+    
+    private func didCompleteRender(queueCommandRange: Range<UInt64>) {
         self.currentInflightFrameCount.wrappingDecrement(ordering: .relaxed)
         
         self.frameTimingLock.withLock {
-            self._lastGraphGPUTime = result.gpuTime
-            
             let completionTime = DispatchTime.now().uptimeNanoseconds
             let elapsed = completionTime - min(self.previousFrameCompletionTime, completionTime)
             self.previousFrameCompletionTime = completionTime
             self._lastGraphCPUTime = Double(elapsed) * 1e-9
+            
+            if !queueCommandRange.isEmpty {
+                self.lastGraphFirstCommand = queueCommandRange.first!
+                self.lastGraphLastCommand = queueCommandRange.last!
+            }
         }
     }
     
@@ -1496,8 +1471,8 @@ public final class RenderGraph {
             
             let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
             let waitToken = await Self.$activeRenderGraph.withValue(self) {
-                return await self.context.executeRenderGraph(self, renderPasses: renderPasses, onSwapchainPresented: onSwapchainPresented, onCompletion: { executionResult in
-                    await self.didCompleteRender(executionResult)
+                return await self.context.executeRenderGraph(self, renderPasses: renderPasses, onSwapchainPresented: onSwapchainPresented, onCompletion: { queueCommandRange in
+                    await self.didCompleteRender(queueCommandRange: queueCommandRange)
                     for item in completionNotifyQueue {
                         await item()
                     }

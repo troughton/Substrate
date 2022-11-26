@@ -30,7 +30,7 @@ func yieldCPU() {
 /// An implementation of a spin-lock using test-and-swap
 public struct SpinLock {
     @usableFromInline let value : UnsafeMutablePointer<UInt32.AtomicRepresentation>
-
+    
     @inlinable
     public init() {
         self.value = UnsafeMutableRawPointer.allocate(byteCount: MemoryLayout<UInt32.AtomicRepresentation>.size, alignment: 64).assumingMemoryBound(to: UInt32.AtomicRepresentation.self)
@@ -41,6 +41,11 @@ public struct SpinLock {
     public init(at location: UnsafeMutablePointer<UInt32.AtomicRepresentation>) {
         self.value = location
         UInt32.AtomicRepresentation.atomicStore(SpinLockState.free.rawValue, at: self.value, ordering: .relaxed)
+    }
+    
+    @inlinable
+    public init(initializedLockAt location: UnsafeMutablePointer<UInt32.AtomicRepresentation>) {
+        self.value = location
     }
     
     @inlinable

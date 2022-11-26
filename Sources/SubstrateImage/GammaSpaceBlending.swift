@@ -103,7 +103,7 @@ extension Image where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
     @_specialize(kind: full, where ComponentType == UInt32)
     public mutating func convertPremultGammaBlendedToPremultLinearBlended() {
         precondition(self.alphaMode == .premultiplied)
-        if self.colorSpace == .linearSRGB { return }
+        if self.colorSpace == .linearSRGB || self.colorSpace == .undefined { return }
         
         self.ensureUniqueness()
         
@@ -114,7 +114,7 @@ extension Image where T: BinaryInteger & FixedWidthInteger & UnsignedInteger {
         
         let sourceColorSpace = self.colorSpace
         
-        let alphaChannel = self.channelCount - 1
+        guard let alphaChannel = self.alphaChannelIndex else { return }
         for y in 0..<self.height {
             for x in 0..<self.width {
                 let alpha = unormToFloat(self[x, y, channel: alphaChannel])

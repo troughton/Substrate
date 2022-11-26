@@ -28,6 +28,13 @@ public struct AffineMatrix<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, 
         self.r2 = SIMD4(0, 0, diagonal.z, 0)
     }
     
+    @inlinable
+    public init<Other>(_ other: AffineMatrix<Other>) {
+        self.r0 = SIMD4(other.r0)
+        self.r1 = SIMD4(other.r1)
+        self.r2 = SIMD4(other.r2)
+    }
+    
     /// Creates an instance with the specified columns
     ///
     /// - parameter c0: a vector representing column 0

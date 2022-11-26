@@ -41,6 +41,13 @@ extension Quaternion {
         return Quaternion(SIMD4(q.storage.xyz * (sinTheta / theta), cosTheta))
     }
     
+    @_specialize(kind: full, where Scalar == Float)
+    @_specialize(kind: full, where Scalar == Double)
+    public static func pow(_ q: Quaternion, power: Scalar) -> Quaternion {
+        let logQ = Quaternion.log(q)
+        return Quaternion.exp(Quaternion(power * logQ.storage))
+    }
+    
     static func slerpNoInvert(from: Quaternion, to: Quaternion, factor: Scalar) -> Quaternion {
         let dotProduct = dot(from, to)
         
@@ -89,7 +96,7 @@ extension Quaternion {
 
     /// Tries to compute sensible tangent values for the quaternion
     static func intermediate(_ q0: Quaternion, _ q1: Quaternion, _ q2: Quaternion) -> Quaternion {
-        let expQ1 = q1.inverse // Quaternion.exp(q1)
+        let expQ1 = Quaternion.exp(q1)
         
         let q0Part = Quaternion.log(expQ1 * q0)
         let q2Part = Quaternion.log(expQ1 * q2)

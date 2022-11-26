@@ -92,7 +92,7 @@ public struct ImageFileFormat: Hashable, Codable {
     }
     
     public static var psd: ImageFileFormat {
-        return .init(typeIdentifier: "com.adobe.photoshopimage.psd")
+        return .init(typeIdentifier: "com.adobe.photoshop-image")
     }
     
     public static var tga: ImageFileFormat {

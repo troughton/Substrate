@@ -32,14 +32,9 @@ public struct CubicPolynomial<V: BinaryFloatingPoint> {
         let c0 = pointA
         let c1 = tangentA
 
-        var c2 : V = -3 * pointA
-        c2 += 3 * pointB
-        c2 += -2 * tangentA
-        c2 -= tangentB
-        var c3 : V = 2 * pointA
-        c3 -= (2 * pointB)
-        c3 += tangentA + tangentB
-
+        let c3: V = 2.0 * (pointA - pointB) + tangentA + tangentB
+        let c2: V = -3.0 * (pointA - pointB) - tangentA - tangentA - tangentB
+        
         self.init(c3, c2, c1, c0)
     }
 
@@ -58,20 +53,24 @@ public struct CubicPolynomial<V: BinaryFloatingPoint> {
 
     @inlinable
     public init(centripetalCatmullRomWithPoints p0: V, _ p1: V, _ p2: V, _ p3: V) {
+        var p0 = p0
+        var p3 = p3
         var dt0 = abs(p1 - p0).squareRoot()
         var dt1 = abs(p2 - p1).squareRoot()
         var dt2 = abs(p3 - p2).squareRoot()
 
-        if dt1 < 1e-4 {
+        if dt1 < .ulpOfOne {
             dt1 = 1.0
         }
 
-        if dt0 < 1e-4 {
+        if dt0 < dt1.ulp {
             dt0 = dt1
+            p0 += p1 - p2
         }
 
-        if dt2 < 1e-4 {
+        if dt2 < dt1.ulp {
             dt2 = dt1
+            p3 += p2 - p1
         }
 
         self.init(nonUniformWithP0: p0, p1: p1, p2: p2, p3: p3, dt0: dt0, dt1: dt1, dt2: dt2)
@@ -187,20 +186,24 @@ public struct SIMDCubicPolynomial<V: SIMD> where V.Scalar: BinaryFloatingPoint &
 
     @inlinable
     public init(centripetalCatmullRomWithPoints p0: V, _ p1: V, _ p2: V, _ p3: V) {
+        var p0 = p0
+        var p3 = p3
         var dt0 = V.Scalar.pow((p1 - p0).lengthSquared, 0.25)
         var dt1 = V.Scalar.pow((p2 - p1).lengthSquared, 0.25)
         var dt2 = V.Scalar.pow((p3 - p2).lengthSquared, 0.25)
 
-        if dt1 < 1e-4 {
+        if dt1 < .ulpOfOne {
             dt1 = 1.0
         }
 
-        if dt0 < 1e-4 {
+        if dt0 < dt1.ulp {
             dt0 = dt1
+            p0 += p1 - p2
         }
 
-        if dt2 < 1e-4 {
+        if dt2 < dt1.ulp {
             dt2 = dt1
+            p3 += p2 - p1
         }
 
         self.init(nonUniformWithP0: p0, p1: p1, p2: p2, p3: p3, dt0: dt0, dt1: dt1, dt2: dt2)
