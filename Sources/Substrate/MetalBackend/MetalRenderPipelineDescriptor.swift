@@ -29,6 +29,10 @@ struct MetalRenderPipelineDescriptor : Hashable {
         self.depthSampleCount = renderTargetDescriptor.depthAttachment?.texture.descriptor.sampleCount
         self.stencilSampleCount = renderTargetDescriptor.stencilAttachment?.texture.descriptor.sampleCount
     }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(self.descriptor.vertexFunction.name)
+        hasher.combine(self.descriptor.fragmentFunction.name)
+    }
 }
-
 #endif // canImport(Metal)

@@ -13,6 +13,7 @@ import SubstrateUtilities
 final actor MetalFunctionCache {
     let library: MTLLibrary
     private var functionCache = [FunctionDescriptor : MTLFunction]()
+    private var functionTasks = [FunctionDescriptor : Task<Void, Error>]()
     
     init(library: MTLLibrary) {
         self.library = library
@@ -23,11 +24,14 @@ final actor MetalFunctionCache {
             return function
         }
         
-        do {
+        self.functionTasks[functionDescriptor] = Task {
             let function = try await self.library.makeFunction(name: functionDescriptor.name, constantValues: functionDescriptor.constants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
-                       
             self.functionCache[functionDescriptor] = function
-            return function
+        }
+        
+        do {
+            _ = try await self.functionTasks[functionDescriptor]!.value
+            return self.functionCache[functionDescriptor]!
         } catch {
             print("MetalRenderGraph: Error creating function named \(functionDescriptor.name)\(functionDescriptor.constants.map { " with constants \($0)" } ?? ""): \(error)")
             return nil
@@ -43,7 +47,9 @@ final actor MetalRenderPipelineCache {
     
     let device: MTLDevice
     let functionCache: MetalFunctionCache
-    private var renderStates = [RenderPipelineFunctionNames : [(MetalRenderPipelineDescriptor, MTLRenderPipelineState, MetalPipelineReflection)]]()
+    private var renderStates = [MetalRenderPipelineDescriptor : MTLRenderPipelineState]()
+    private var renderReflection = [RenderPipelineDescriptor: MetalPipelineReflection]()
+    private var renderStateTasks = [MetalRenderPipelineDescriptor : Task<Void, Error>]()
     
     init(device: MTLDevice, functionCache: MetalFunctionCache) {
         self.device = device
@@ -54,29 +60,29 @@ final actor MetalRenderPipelineCache {
         get async {
             let metalDescriptor = MetalRenderPipelineDescriptor(descriptor, renderTargetDescriptor: renderTarget)
             
-            let lookupKey = RenderPipelineFunctionNames(vertexFunction: descriptor.vertexFunction.name, fragmentFunction: descriptor.fragmentFunction.name)
+            if let state = self.renderStates[metalDescriptor] {
+                return state
+            }
             
-            if let possibleMatches = self.renderStates[lookupKey] {
-                for (testDescriptor, state, _) in possibleMatches {
-                    if testDescriptor == metalDescriptor {
-                        return state
-                    }
+            self.renderStateTasks[metalDescriptor] = Task {
+                guard let mtlDescriptor = await MTLRenderPipelineDescriptor(metalDescriptor, functionCache: self.functionCache) else {
+                    return
                 }
-            }
-            
-            guard let mtlDescriptor = await MTLRenderPipelineDescriptor(metalDescriptor, functionCache: self.functionCache) else {
-                return nil
-            }
-            
-            do {
+                
                 let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
                 
                 // TODO: can we retrieve the thread execution width for render pipelines?
                 let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
                 
-                self.renderStates[lookupKey, default: []].append((metalDescriptor, state, pipelineReflection))
-                
-                return state
+                self.renderStates[metalDescriptor] = state
+                if self.renderReflection[descriptor] == nil {
+                    self.renderReflection[descriptor] = pipelineReflection
+                }
+            }
+            
+            do {
+                _ = try await self.renderStateTasks[metalDescriptor]!.value
+                return self.renderStates[metalDescriptor]
             } catch {
                 print("MetalRenderGraph: Error creating render pipeline state for descriptor \(descriptor): \(error)")
                 return nil
@@ -85,14 +91,8 @@ final actor MetalRenderPipelineCache {
     }
     
     public func reflection(descriptor pipelineDescriptor: RenderPipelineDescriptor, renderTarget: RenderTargetDescriptor) async -> MetalPipelineReflection? {
-        let lookupKey = RenderPipelineFunctionNames(vertexFunction: pipelineDescriptor.vertexFunction.name, fragmentFunction: pipelineDescriptor.fragmentFunction.name)
-        
-        if let possibleMatches = self.renderStates[lookupKey] {
-            for (testDescriptor, _, reflection) in possibleMatches {
-                if testDescriptor.descriptor == pipelineDescriptor {
-                    return reflection
-                }
-            }
+        if let reflection = self.renderReflection[pipelineDescriptor] {
+            return reflection
         }
         
         guard await self[pipelineDescriptor, renderTarget: renderTarget] != nil else {
@@ -105,10 +105,16 @@ final actor MetalRenderPipelineCache {
 }
 
 final actor MetalComputePipelineCache {
+    struct CacheKey: Hashable {
+        var descriptor: ComputePipelineDescriptor
+        var threadgroupSizeIsMultipleOfThreadExecutionWidth: Bool
+    }
     
     let device: MTLDevice
     let functionCache: MetalFunctionCache
-    private var computeStates = [String : [(ComputePipelineDescriptor, Bool, MTLComputePipelineState, MetalPipelineReflection)]]() // Bool meaning threadgroupSizeIsMultipleOfThreadExecutionWidth
+    private var computeStates = [CacheKey: MTLComputePipelineState]()
+    private var computeReflection = [ComputePipelineDescriptor: (MetalPipelineReflection, Int)]()
+    private var computeStateTasks = [CacheKey : Task<Void, Error>]()
     
     init(device: MTLDevice, functionCache: MetalFunctionCache) {
         self.device = device
@@ -118,43 +124,46 @@ final actor MetalComputePipelineCache {
     public subscript(descriptor: ComputePipelineDescriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth: Bool) -> MTLComputePipelineState? {
         get async {
             // Figure out whether the thread group size is always a multiple of the thread execution width and set the optimisation hint appropriately.
+            let cacheKey = CacheKey(descriptor: descriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth: threadgroupSizeIsMultipleOfThreadExecutionWidth)
             
-            if let possibleMatches = self.computeStates[descriptor.function.name] {
-                for (testDescriptor, testThreadgroupMultiple, state, _) in possibleMatches {
-                    if testThreadgroupMultiple == threadgroupSizeIsMultipleOfThreadExecutionWidth && testDescriptor == descriptor {
-                        return state
-                    }
+            if let state = self.computeStates[cacheKey] {
+                return state
+            }
+            
+            self.computeStateTasks[cacheKey] = Task {
+                guard let function = await self.functionCache.function(for: descriptor.function) else {
+                    return
                 }
-            }
-            
-            guard let function = await self.functionCache.function(for: descriptor.function) else {
-                return nil
-            }
-            
-            let mtlDescriptor = MTLComputePipelineDescriptor()
-            mtlDescriptor.computeFunction = function
-            mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
-            
-            if !descriptor.linkedFunctions.isEmpty, #available(iOS 14.0, macOS 11.0, *) {
-                var functions = [MTLFunction]()
-                for functionDescriptor in descriptor.linkedFunctions {
-                    if let function = await self.functionCache.function(for: functionDescriptor) {
-                        functions.append(function)
+                
+                let mtlDescriptor = MTLComputePipelineDescriptor()
+                mtlDescriptor.computeFunction = function
+                mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
+                
+                if !descriptor.linkedFunctions.isEmpty, #available(iOS 14.0, macOS 11.0, *) {
+                    var functions = [MTLFunction]()
+                    for functionDescriptor in descriptor.linkedFunctions {
+                        if let function = await self.functionCache.function(for: functionDescriptor) {
+                            functions.append(function)
+                        }
                     }
+                    let linkedFunctions = MTLLinkedFunctions()
+                    linkedFunctions.functions = functions
+                    mtlDescriptor.linkedFunctions = linkedFunctions
                 }
-                let linkedFunctions = MTLLinkedFunctions()
-                linkedFunctions.functions = functions
-                mtlDescriptor.linkedFunctions = linkedFunctions
-            }
-            
-            do {
+                
                 let (state, reflection) = try await self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
                 
                 let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeState: state, computeReflection: reflection!)
                 
-                self.computeStates[descriptor.function.name, default: []].append((descriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth, state, pipelineReflection))
-                
-                return state
+                self.computeStates[cacheKey] = state
+                if self.computeReflection[descriptor] == nil {
+                    self.computeReflection[descriptor] = (pipelineReflection, pipelineReflection.threadExecutionWidth)
+                }
+            }
+            
+            do {
+                _ = try await self.computeStateTasks[cacheKey]!.value
+                return self.computeStates[cacheKey]
             } catch {
                 print("MetalRenderGraph: Error creating compute pipeline state for descriptor \(descriptor): \(error)")
                 return nil
@@ -163,12 +172,8 @@ final actor MetalComputePipelineCache {
     }
     
     public func reflection(for pipelineDescriptor: ComputePipelineDescriptor) async -> (MetalPipelineReflection, Int)? {
-        if let possibleMatches = self.computeStates[pipelineDescriptor.function.name] {
-            for (testDescriptor, _, state, reflection) in possibleMatches {
-                if testDescriptor == pipelineDescriptor {
-                    return (reflection, state.threadExecutionWidth)
-                }
-            }
+        if let reflection = self.computeReflection[pipelineDescriptor] {
+            return reflection
         }
         
         guard await self[pipelineDescriptor, false] != nil else {
