@@ -24,13 +24,19 @@ final actor MetalFunctionCache {
             return function
         }
         
-        self.functionTasks[functionDescriptor] = Task {
-            let function = try await self.library.makeFunction(name: functionDescriptor.name, constantValues: functionDescriptor.constants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
-            self.functionCache[functionDescriptor] = function
+        let functionTask: Task<Void, Error>
+        if let task = self.functionTasks[functionDescriptor] {
+            functionTask = task
+        } else {
+            functionTask = Task {
+                let function = try await self.library.makeFunction(name: functionDescriptor.name, constantValues: functionDescriptor.constants.map { MTLFunctionConstantValues($0) } ?? MTLFunctionConstantValues())
+                self.functionCache[functionDescriptor] = function
+            }
+            self.functionTasks[functionDescriptor] = functionTask
         }
         
         do {
-            _ = try await self.functionTasks[functionDescriptor]!.value
+            _ = try await functionTask.value
             return self.functionCache[functionDescriptor]!
         } catch {
             print("MetalRenderGraph: Error creating function named \(functionDescriptor.name)\(functionDescriptor.constants.map { " with constants \($0)" } ?? ""): \(error)")
@@ -64,24 +70,31 @@ final actor MetalRenderPipelineCache {
                 return state
             }
             
-            self.renderStateTasks[metalDescriptor] = Task {
-                guard let mtlDescriptor = await MTLRenderPipelineDescriptor(metalDescriptor, functionCache: self.functionCache) else {
-                    return
+            let renderStateTask: Task<Void, Error>
+            if let task = self.renderStateTasks[metalDescriptor] {
+                renderStateTask = task
+            } else {
+                renderStateTask = Task {
+                    guard let mtlDescriptor = await MTLRenderPipelineDescriptor(metalDescriptor, functionCache: self.functionCache) else {
+                        return
+                    }
+                    
+                    let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
+                    
+                    // TODO: can we retrieve the thread execution width for render pipelines?
+                    let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
+                    
+                    self.renderStates[metalDescriptor] = state
+                    if self.renderReflection[descriptor] == nil {
+                        self.renderReflection[descriptor] = pipelineReflection
+                    }
                 }
                 
-                let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
-                
-                // TODO: can we retrieve the thread execution width for render pipelines?
-                let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
-                
-                self.renderStates[metalDescriptor] = state
-                if self.renderReflection[descriptor] == nil {
-                    self.renderReflection[descriptor] = pipelineReflection
-                }
+                self.renderStateTasks[metalDescriptor] = renderStateTask
             }
             
             do {
-                _ = try await self.renderStateTasks[metalDescriptor]!.value
+                _ = try await renderStateTask.value
                 return self.renderStates[metalDescriptor]
             } catch {
                 print("MetalRenderGraph: Error creating render pipeline state for descriptor \(descriptor): \(error)")
@@ -130,39 +143,45 @@ final actor MetalComputePipelineCache {
                 return state
             }
             
-            self.computeStateTasks[cacheKey] = Task {
-                guard let function = await self.functionCache.function(for: descriptor.function) else {
-                    return
-                }
-                
-                let mtlDescriptor = MTLComputePipelineDescriptor()
-                mtlDescriptor.computeFunction = function
-                mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
-                
-                if !descriptor.linkedFunctions.isEmpty, #available(iOS 14.0, macOS 11.0, *) {
-                    var functions = [MTLFunction]()
-                    for functionDescriptor in descriptor.linkedFunctions {
-                        if let function = await self.functionCache.function(for: functionDescriptor) {
-                            functions.append(function)
-                        }
+            let computeStateTask: Task<Void, Error>
+            if let task = self.computeStateTasks[cacheKey] {
+                computeStateTask = task
+            } else {
+                computeStateTask = Task {
+                    guard let function = await self.functionCache.function(for: descriptor.function) else {
+                        return
                     }
-                    let linkedFunctions = MTLLinkedFunctions()
-                    linkedFunctions.functions = functions
-                    mtlDescriptor.linkedFunctions = linkedFunctions
+                    
+                    let mtlDescriptor = MTLComputePipelineDescriptor()
+                    mtlDescriptor.computeFunction = function
+                    mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
+                    
+                    if !descriptor.linkedFunctions.isEmpty, #available(iOS 14.0, macOS 11.0, *) {
+                        var functions = [MTLFunction]()
+                        for functionDescriptor in descriptor.linkedFunctions {
+                            if let function = await self.functionCache.function(for: functionDescriptor) {
+                                functions.append(function)
+                            }
+                        }
+                        let linkedFunctions = MTLLinkedFunctions()
+                        linkedFunctions.functions = functions
+                        mtlDescriptor.linkedFunctions = linkedFunctions
+                    }
+                    
+                    let (state, reflection) = try await self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
+                    
+                    let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeState: state, computeReflection: reflection!)
+                    
+                    self.computeStates[cacheKey] = state
+                    if self.computeReflection[descriptor] == nil {
+                        self.computeReflection[descriptor] = (pipelineReflection, pipelineReflection.threadExecutionWidth)
+                    }
                 }
-                
-                let (state, reflection) = try await self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
-                
-                let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeState: state, computeReflection: reflection!)
-                
-                self.computeStates[cacheKey] = state
-                if self.computeReflection[descriptor] == nil {
-                    self.computeReflection[descriptor] = (pipelineReflection, pipelineReflection.threadExecutionWidth)
-                }
+                self.computeStateTasks[cacheKey] = computeStateTask
             }
             
             do {
-                _ = try await self.computeStateTasks[cacheKey]!.value
+                _ = try await computeStateTask.value
                 return self.computeStates[cacheKey]
             } catch {
                 print("MetalRenderGraph: Error creating compute pipeline state for descriptor \(descriptor): \(error)")
