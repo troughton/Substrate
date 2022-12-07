@@ -96,10 +96,10 @@ extension Quaternion {
 
     /// Tries to compute sensible tangent values for the quaternion
     static func intermediate(_ q0: Quaternion, _ q1: Quaternion, _ q2: Quaternion) -> Quaternion {
-        let expQ1 = Quaternion.exp(q1)
+        let q1Inv = q1.conjugate
         
-        let q0Part = Quaternion.log(expQ1 * q0)
-        let q2Part = Quaternion.log(expQ1 * q2)
+        let q0Part = Quaternion.log(q1Inv * q0)
+        let q2Part = Quaternion.log(q1Inv * q2)
         let added = Quaternion(-0.25 * (q2Part.storage + q0Part.storage))
         
         return q1 * Quaternion.exp(added)
