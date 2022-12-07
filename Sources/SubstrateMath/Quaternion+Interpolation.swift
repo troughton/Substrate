@@ -49,13 +49,15 @@ extension Quaternion {
     }
     
     static func slerpNoInvert(from: Quaternion, to: Quaternion, factor: Scalar) -> Quaternion {
-        let dotProduct = dot(from, to)
-        
-        if abs(dotProduct) > 0.9999 {
-            return from
-        }
+        let dotProduct = clamp(dot(from, to), min: -1.0, max: 1.0)
         
         let theta = Scalar.acos(dotProduct)
+        
+        // As theta goes to zero, sin(factor * theta) / sin(theta) goes to factor.
+        if abs(theta) < Scalar.ulpOfOne {
+            return Quaternion(interpolate(from: from.storage, to: to.storage, factor: factor))
+        }
+        
         let sinT = 1.0 as Scalar / Scalar.sin(theta)
         let newFactor = Scalar.sin(factor * theta) * sinT
         let invFactor = Scalar.sin((1.0 - factor) * theta) * sinT

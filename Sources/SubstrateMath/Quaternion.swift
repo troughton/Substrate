@@ -328,27 +328,19 @@ extension Quaternion {
         let halfTheta : Scalar = Scalar.acos(cosHalfTheta)
         let sinHalfTheta : Scalar = Scalar.sin(halfTheta)
         
-        var x : Scalar, y : Scalar, z : Scalar, w : Scalar
-        
-        // if theta = 180 degrees then result is not fully defined
-        // we could rotate around any axis normal to qa or qb
-        if (abs(sinHalfTheta) < 0.001){
-            w = (from.w * 0.5 + to.w * 0.5)
-            x = (from.x * 0.5 + to.x * 0.5)
-            y = (from.y * 0.5 + to.y * 0.5)
-            z = (from.z * 0.5 + to.z * 0.5)
+        if abs(halfTheta) < Scalar.ulpOfOne {
+            // As theta goes to zero, sin(factor * theta) / sin(theta) goes to factor.
+            return Quaternion(interpolate(from: from.storage, to: to.storage, factor: t))
+        } else if (abs(sinHalfTheta) < 0.001){
+            // if theta = 180 degrees then result is not fully defined
+            // we could rotate around any axis normal to qa or qb
+            return Quaternion(0.5 * (from.storage + to.storage))
         } else {
-            
             let ratioA = Scalar.sin((1 - t) * halfTheta) / sinHalfTheta
             let ratioB = Scalar.sin(t * halfTheta) / sinHalfTheta
             
-            //calculate quaternion.
-            w = (from.w * ratioA + to.w * ratioB)
-            x = (from.x * ratioA + to.x * ratioB)
-            y = (from.y * ratioA + to.y * ratioB)
-            z = (from.z * ratioA + to.z * ratioB)
+            return Quaternion(from.storage * ratioA + to.storage * ratioB)
         }
-        return Quaternion(x, y, z, w);
     }
 }
 
