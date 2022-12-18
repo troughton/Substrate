@@ -125,20 +125,17 @@ public struct ArgumentBuffer : ResourceProtocol {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
    
-    public init(bindingPath: ResourceBindingPath, pipelineReflection: PipelineReflection, renderGraph: RenderGraph? = nil) {
+    public init(bindingPath: ResourceBindingPath, pipelineState: PipelineState, renderGraph: RenderGraph? = nil) {
         
         guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
             fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
         }
-        guard let encoder = pipelineReflection.argumentBufferEncoder(at: bindingPath, currentEncoder: nil) else {
+        guard let descriptor = pipelineState.argumentBufferDescriptor(at: bindingPath) else {
             preconditionFailure("Binding path \(bindingPath) does not represent an argument buffer binding in the provided pipeline reflection.")
         }
         precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
         
-        self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: .init(arguments: []), flags: [])
-        
-        assert(self.encoder == nil)
-        self.replaceEncoder(with: encoder, expectingCurrentValue: nil)
+        self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: [])
     }
     
     public init(descriptor: ArgumentBufferDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
@@ -155,7 +152,6 @@ public struct ArgumentBuffer : ResourceProtocol {
             self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
         }
         
-        assert(self.encoder == nil)
     }
     
     public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) async {
@@ -182,27 +178,6 @@ public struct ArgumentBuffer : ResourceProtocol {
         nonmutating set {
             self.pointer(for: \.stateFlags).pointee = newValue
         }
-    }
-    
-    public var encoder : UnsafeRawPointer? {
-        get {
-            return UnsafeRawPointer.AtomicOptionalRepresentation.atomicLoad(at: self.pointer(for: \.encoders), ordering: .relaxed)
-        }
-    }
-    
-    /// Updates the encoder to also support encoding to bindingPath.
-    func updateEncoder(pipelineReflection: PipelineReflection, bindingPath: ResourceBindingPath) {
-        var hasSetEncoder = false
-        repeat {
-            let currentEncoder = self.encoder
-            let newEncoder = pipelineReflection.argumentBufferEncoder(at: bindingPath, currentEncoder: currentEncoder)!
-            hasSetEncoder = (newEncoder == currentEncoder) || self.replaceEncoder(with: newEncoder, expectingCurrentValue: currentEncoder)
-        } while !hasSetEncoder
-    }
-    
-    /// Allows us to perform a compare-and-swap on the argument buffer encoder.
-    func replaceEncoder(with newEncoder: UnsafeRawPointer, expectingCurrentValue: UnsafeRawPointer?) -> Bool {
-        return UnsafeRawPointer.AtomicOptionalRepresentation.atomicWeakCompareExchange(expected: expectingCurrentValue, desired: newEncoder, at: self.pointer(for: \.encoders), successOrdering: .relaxed, failureOrdering: .relaxed).exchanged
     }
     
     

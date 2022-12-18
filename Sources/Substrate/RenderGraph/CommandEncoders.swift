@@ -127,9 +127,6 @@ public class ResourceBindingEncoder : CommandEncoder {
     @usableFromInline
     var depthStencilStateChanged = false
     
-    @usableFromInline
-    var currentPipelineReflection : PipelineReflection! = nil
-    
     init(passRecord: RenderPassRecord, impl: ResourceBindingEncoderImpl) {
         self.passRecord = passRecord
         self.bindingEncoderImpl = impl
@@ -240,7 +237,6 @@ public class ResourceBindingEncoder : CommandEncoder {
         guard let argumentBuffer = argumentBuffer else { return }
         
         let bindingPath = RenderBackend.argumentBufferPath(at: index, stages: stages)
-        argumentBuffer.updateEncoder(pipelineReflection: self.currentPipelineReflection, bindingPath: bindingPath)
         bindingEncoderImpl.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
     }
     
@@ -392,7 +388,6 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     }
     
     public func setRenderPipelineState(_ pipelineState: RenderPipelineState) {
-        self.currentPipelineReflection = pipelineState.reflection
         impl.setRenderPipelineState(pipelineState)
     }
     
@@ -471,31 +466,16 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     
     public func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
         assert(instanceCount > 0, "instanceCount(\(instanceCount)) must be non-zero.")
-
-        guard self.currentPipelineReflection != nil else {
-            assertionFailure("No render or compute pipeline is set for pass \(renderPass.name).")
-            return
-        }
         
         impl.drawPrimitives(type: primitiveType, vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
     }
     
     public func drawPrimitives(type primitiveType: PrimitiveType, indirectBuffer: Buffer, indirectBufferOffset: Int) {
-        guard self.currentPipelineReflection != nil else {
-            assertionFailure("No render or compute pipeline is set for pass \(renderPass.name).")
-            return
-        }
-        
         impl.drawPrimitives(type: primitiveType, indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset)
     }
     
     public func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int = 1, baseVertex: Int = 0, baseInstance: Int = 0) {
         assert(instanceCount > 0, "instanceCount(\(instanceCount)) must be non-zero.")
-        
-        guard self.currentPipelineReflection != nil else {
-            assertionFailure("No render or compute pipeline is set for pass \(renderPass.name).")
-            return
-        }
         
         impl.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
     }
@@ -596,6 +576,7 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     
     let computeRenderPass : ComputeRenderPass
     let impl: ComputeCommandEncoderImpl
+    var currentPipelineState: ComputePipelineState? = nil
     
     init(renderPass: ComputeRenderPass, passRecord: RenderPassRecord, impl: ComputeCommandEncoderImpl) {
         self.computeRenderPass = renderPass
@@ -610,13 +591,13 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     }
     
     public func setComputePipelineState(_ pipelineState: ComputePipelineState) {
-        self.currentPipelineReflection = pipelineState.reflection
+        self.currentPipelineState = pipelineState
         impl.setComputePipelineState(pipelineState)
     }
     
     /// The number of threads in a SIMD group/wave for the current pipeline state.
     public var currentThreadExecutionWidth: Int {
-        return self.currentPipelineReflection?.threadExecutionWidth ?? 0
+        return self.currentPipelineState?.threadExecutionWidth ?? 0
     }
     
     public func setStageInRegion(_ region: Region) {
@@ -628,10 +609,6 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     }
 
     public func dispatchThreads(_ threadsPerGrid: Size, threadsPerThreadgroup: Size) {
-        guard self.currentPipelineReflection != nil else {
-            assertionFailure("No compute pipeline is set for pass \(renderPass.name).")
-            return
-        }
         precondition(threadsPerGrid.width > 0 && threadsPerGrid.height > 0 && threadsPerGrid.depth > 0)
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
         
@@ -639,10 +616,6 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     }
     
     public func dispatchThreadgroups(_ threadgroupsPerGrid: Size, threadsPerThreadgroup: Size) {
-        guard self.currentPipelineReflection != nil else {
-            assertionFailure("No compute pipeline is set for pass \(renderPass.name).")
-            return
-        }
         precondition(threadgroupsPerGrid.width > 0 && threadgroupsPerGrid.height > 0 && threadgroupsPerGrid.depth > 0)
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
         
@@ -650,10 +623,6 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     }
     
     public func dispatchThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size) {
-        guard self.currentPipelineReflection != nil else {
-            assertionFailure("No compute pipeline is set for pass \(renderPass.name).")
-            return
-        }
         precondition(threadsPerThreadgroup.width > 0 && threadsPerThreadgroup.height > 0 && threadsPerThreadgroup.depth > 0)
         
         impl.dispatchThreadgroups(indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset, threadsPerThreadgroup: threadsPerThreadgroup)

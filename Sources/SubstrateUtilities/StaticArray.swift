@@ -97,6 +97,18 @@ extension Adjoin: Equatable where Element: Equatable { }
 extension Adjoin: Hashable where Element: Hashable { }
 extension Adjoin: Sendable where A: Sendable, B: Sendable { }
 
+extension Adjoin: CustomStringConvertible {
+    public var description: String {
+        return "[\(self.lazy.map { String(describing: $0) }.joined(separator: ", "))]"
+    }
+}
+
+extension Adjoin: CustomDebugStringConvertible {
+    public var debugDescription: String {
+        return "[\(self.lazy.map { String(reflecting: $0) }.joined(separator: ", "))]"
+    }
+}
+
 public typealias  Array2<Element> = Adjoin<Array1<Element>, Array1<Element>>
 public typealias  Array3<Element> = Adjoin<Array2<Element>, Array1<Element>>
 public typealias  Array4<Element> = Adjoin<Array2<Element>, Array2<Element>>

@@ -23,8 +23,6 @@ public protocol PipelineReflection : AnyObject {
     func bindingPath(pathInOriginalArgumentBuffer: ResourceBindingPath, newArgumentBufferPath: ResourceBindingPath) -> ResourceBindingPath
     func argumentReflection(at path: ResourceBindingPath) -> ArgumentReflection?
     func bindingIsActive(at path: ResourceBindingPath) -> Bool
-
-    func argumentBufferEncoder(at path: ResourceBindingPath, currentEncoder: UnsafeRawPointer?) -> UnsafeRawPointer?
     
     var threadExecutionWidth: Int { get }
 }

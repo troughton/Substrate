@@ -322,7 +322,8 @@ extension AffineMatrix2D where Scalar : Real {
                 m[1] *= -1
             }
             
-            let rotation = -Scalar.atan2(y: m[1, 0] - m[0, 1], x: m[0, 0] + m[1, 1])
+            let rotated = m * SIMD2(1, 0)
+            let rotation = -Scalar.atan2(y: rotated.y, x: rotated.x)
             return (translation, Angle<Scalar>(radians: rotation), scale, Angle<Scalar>(radians: shear))
         }
         set {

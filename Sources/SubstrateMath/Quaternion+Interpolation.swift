@@ -49,13 +49,15 @@ extension Quaternion {
     }
     
     static func slerpNoInvert(from: Quaternion, to: Quaternion, factor: Scalar) -> Quaternion {
-        let dotProduct = dot(from, to)
-        
-        if abs(dotProduct) > 0.9999 {
-            return from
-        }
+        let dotProduct = clamp(dot(from, to), min: -1.0, max: 1.0)
         
         let theta = Scalar.acos(dotProduct)
+        
+        // As theta goes to zero, sin(factor * theta) / sin(theta) goes to factor.
+        if abs(theta) < Scalar.ulpOfOne {
+            return Quaternion(interpolate(from: from.storage, to: to.storage, factor: factor))
+        }
+        
         let sinT = 1.0 as Scalar / Scalar.sin(theta)
         let newFactor = Scalar.sin(factor * theta) * sinT
         let invFactor = Scalar.sin((1.0 - factor) * theta) * sinT
@@ -96,10 +98,10 @@ extension Quaternion {
 
     /// Tries to compute sensible tangent values for the quaternion
     static func intermediate(_ q0: Quaternion, _ q1: Quaternion, _ q2: Quaternion) -> Quaternion {
-        let expQ1 = Quaternion.exp(q1)
+        let q1Inv = q1.conjugate
         
-        let q0Part = Quaternion.log(expQ1 * q0)
-        let q2Part = Quaternion.log(expQ1 * q2)
+        let q0Part = Quaternion.log(q1Inv * q0)
+        let q2Part = Quaternion.log(q1Inv * q2)
         let added = Quaternion(-0.25 * (q2Part.storage + q0Part.storage))
         
         return q1 * Quaternion.exp(added)

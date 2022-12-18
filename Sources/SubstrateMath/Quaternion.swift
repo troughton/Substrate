@@ -185,12 +185,12 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     
     @inlinable
     public var normalized : Quaternion {
-        return normalize(self)
+        return Quaternion.normalize(self)
     }
     
     @inlinable
     public var lengthSquared : Scalar {
-        return dot(self, self)
+        return Quaternion.dot(self, self)
     }
     
     @inlinable
@@ -290,64 +290,73 @@ extension Quaternion {
     public static func *(lhs: Quaternion, rhs: AffineMatrix<Scalar>) -> AffineMatrix<Scalar> {
         return AffineMatrix(quaternion: lhs) * rhs
     }
+}
+
+
+extension Quaternion {
+    @inlinable
+    public static func dot(_ u: Quaternion<Scalar>, _ v: Quaternion<Scalar>) -> Scalar {
+        return SubstrateMath.dot(u.storage, v.storage)
+    }
     
+    @inlinable
+    public static func normalize(_ x: Quaternion<Scalar>) -> Quaternion<Scalar> {
+        //http://stackoverflow.com/questions/11667783/quaternion-and-normalization
+        let qmagsq = dot(x, x)
+        
+        return x * (1.0 / qmagsq.squareRoot())
+    }
+    
+    @inlinable
+    public static func slerp(from: Quaternion<Scalar>, to: Quaternion<Scalar>, factor t: Scalar) -> Quaternion<Scalar> {
+        // Calculate angle between them.
+        var cosHalfTheta : Scalar = dot(from, to)
+        var to = to
+        
+        // if this == other or this == -other then theta = 0 and we can return this
+        if (abs(cosHalfTheta) >= 1.0) {
+            return from;
+        }
+        
+        if cosHalfTheta < 0 {
+            // Ensure we take the shortest path
+            cosHalfTheta = -cosHalfTheta
+            to = Quaternion(-to.storage)
+        }
+        
+        // Calculate temporary values.
+        let halfTheta : Scalar = Scalar.acos(cosHalfTheta)
+        let sinHalfTheta : Scalar = Scalar.sin(halfTheta)
+        
+        if abs(halfTheta) < Scalar.ulpOfOne {
+            // As theta goes to zero, sin(factor * theta) / sin(theta) goes to factor.
+            return Quaternion(interpolate(from: from.storage, to: to.storage, factor: t))
+        } else if (abs(sinHalfTheta) < 0.001){
+            // if theta = 180 degrees then result is not fully defined
+            // we could rotate around any axis normal to qa or qb
+            return Quaternion(0.5 * (from.storage + to.storage))
+        } else {
+            let ratioA = Scalar.sin((1 - t) * halfTheta) / sinHalfTheta
+            let ratioB = Scalar.sin(t * halfTheta) / sinHalfTheta
+            
+            return Quaternion(from.storage * ratioA + to.storage * ratioB)
+        }
+    }
 }
 
 @inlinable
 public func normalize<Scalar>(_ x: Quaternion<Scalar>) -> Quaternion<Scalar> {
-    //http://stackoverflow.com/questions/11667783/quaternion-and-normalization
-    let qmagsq = dot(x, x)
-    
-    return x * (1.0 / qmagsq.squareRoot())
+    return Quaternion.normalize(x)
 }
 
 @inlinable
 public func dot<Scalar>(_ u: Quaternion<Scalar>, _ v: Quaternion<Scalar>) -> Scalar {
-    return dot(u.storage, v.storage)
+    return Quaternion.dot(u, v)
 }
 
 @inlinable
 public func slerp<Scalar>(from: Quaternion<Scalar>, to: Quaternion<Scalar>, factor t: Scalar) -> Quaternion<Scalar> {
-    // Calculate angle between them.
-    var cosHalfTheta : Scalar = dot(from, to)
-    var to = to
-    
-    // if this == other or this == -other then theta = 0 and we can return this
-    if (abs(cosHalfTheta) >= 1.0) {
-        return from;
-    }
-    
-    if cosHalfTheta < 0 {
-        // Ensure we take the shortest path
-        cosHalfTheta = -cosHalfTheta
-        to = Quaternion(-to.storage)
-    }
-    
-    // Calculate temporary values.
-    let halfTheta : Scalar = Scalar.acos(cosHalfTheta)
-    let sinHalfTheta : Scalar = Scalar.sin(halfTheta)
-    
-    var x : Scalar, y : Scalar, z : Scalar, w : Scalar
-    
-    // if theta = 180 degrees then result is not fully defined
-    // we could rotate around any axis normal to qa or qb
-    if (abs(sinHalfTheta) < 0.001){
-        w = (from.w * 0.5 + to.w * 0.5)
-        x = (from.x * 0.5 + to.x * 0.5)
-        y = (from.y * 0.5 + to.y * 0.5)
-        z = (from.z * 0.5 + to.z * 0.5)
-    } else {
-        
-        let ratioA = Scalar.sin((1 - t) * halfTheta) / sinHalfTheta
-        let ratioB = Scalar.sin(t * halfTheta) / sinHalfTheta
-        
-        //calculate quaternion.
-        w = (from.w * ratioA + to.w * ratioB)
-        x = (from.x * ratioA + to.x * ratioB)
-        y = (from.y * ratioA + to.y * ratioB)
-        z = (from.z * ratioA + to.z * ratioB)
-    }
-    return Quaternion(x, y, z, w);
+    return Quaternion.slerp(from: from, to: to, factor: t)
 }
 
 

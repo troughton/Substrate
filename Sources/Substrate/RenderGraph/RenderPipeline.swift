@@ -275,17 +275,17 @@ public struct RenderPipelineDescriptor : Hashable {
 
 public protocol PipelineState {
     var state: OpaquePointer { get }
+    
+    func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor?
 }
 
 public class RenderPipelineState: PipelineState {
     public let descriptor: RenderPipelineDescriptor
     public let state: OpaquePointer
-    let reflection: PipelineReflection
     
-    init(descriptor: RenderPipelineDescriptor, state: OpaquePointer, reflection: PipelineReflection) {
+    init(descriptor: RenderPipelineDescriptor, state: OpaquePointer) {
         self.descriptor = descriptor
         self.state = state
-        self.reflection = reflection
     }
 }
 
