@@ -202,6 +202,9 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         assert(self.textureReferences[texture] == nil)
         self.textureReferences[texture] = mtlTexture
         
+        texture[\.backingResources] = mtlTexture._texture.toOpaque()
+        texture[\.gpuAddresses] = mtlTexture.texture.gpuResourceID._impl
+        
         return mtlTexture
     }
     
@@ -238,6 +241,10 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         assert(self.bufferReferences[buffer] == nil)
         self.bufferReferences[buffer] = mtlBuffer
         
+        buffer[\.backingResources] = mtlBuffer._buffer.toOpaque()
+        buffer[\.mappedContents] = buffer.storageMode == .private ? nil : mtlBuffer.buffer.contents().advanced(by: mtlBuffer.offset)
+        buffer[\.gpuAddresses] = mtlBuffer.buffer.gpuAddress.advanced(by: mtlBuffer.offset)
+        
         return mtlBuffer
     }
     
@@ -254,7 +261,6 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         let descriptor = argumentBuffer.descriptor
         
         let encoder = stateCaches.argumentEncoderCache[descriptor]
-        _ = argumentBuffer.replaceEncoder(with: Unmanaged.passUnretained(encoder).toOpaque(), expectingCurrentValue: nil)
         
         if let heap = argumentBuffer.heap {
             guard let mtlHeap = self.heapReferences[heap] else {
@@ -279,6 +285,10 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         assert(self.argumentBufferReferences[argumentBuffer] == nil)
         self.argumentBufferReferences[argumentBuffer] = mtlBuffer
         
+        argumentBuffer[\.backingResources] = mtlBuffer._buffer.toOpaque()
+        argumentBuffer[\.mappedContents] = argumentBuffer.storageMode == .private ? nil : mtlBuffer.buffer.contents().advanced(by: mtlBuffer.offset)
+        argumentBuffer[\.gpuAddresses] = mtlBuffer.buffer.gpuAddress.advanced(by: mtlBuffer.offset)
+        
         return mtlBuffer
     }
     
@@ -298,10 +308,13 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             return mtlArgumentBuffer
         }
         
-        let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-        let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: min(argEncoder.encoder.encodedLength, argumentBuffer.maximumAllocationLength))
+        let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: min(argumentBuffer.descriptor.bufferLength, argumentBuffer.maximumAllocationLength))
         
         self.argumentBufferReferences[argumentBuffer] = storage
+        
+        argumentBuffer[\.backingResources] = storage._buffer.toOpaque()
+        argumentBuffer[\.mappedContents] = argumentBuffer.storageMode == .private ? nil : storage.buffer.contents().advanced(by: storage.offset)
+        argumentBuffer[\.gpuAddresses] = storage.buffer.gpuAddress + UInt64(storage.offset)
         
         return storage
     }
@@ -313,6 +326,9 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         
         assert(self.accelerationStructureReferences[structure] == nil)
         self.accelerationStructureReferences[structure] = mtlStructure
+        
+        structure[\.backingResources] = mtlStructure.map { Unmanaged.passUnretained($0).toOpaque() }
+        structure[\.gpuAddresses] = mtlStructure?.gpuResourceID._impl ?? 0
         
         return mtlStructure
     }
@@ -362,6 +378,9 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         let tableRef = MTLVisibleFunctionTableReference(table: mtlTable, functionCapacity: table.functions.count, pipelineState: pipelineState, stage: renderStage)
         self.visibleFunctionTableReferences[table] = tableRef
         
+        table[\.backingResources] = Unmanaged.passUnretained(mtlTable).toOpaque()
+        table[\.gpuAddresses] = mtlTable.gpuResourceID._impl
+        
         return tableRef
     }
     
@@ -410,14 +429,34 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         let tableRef = MTLIntersectionFunctionTableReference(table: mtlTable, functionCapacity: table.descriptor.functions.count, pipelineState: pipelineState, stage: renderStage)
         self.intersectionFunctionTableReferences[table] = tableRef
         
+        table[\.backingResources] = Unmanaged.passUnretained(mtlTable).toOpaque()
+        table[\.gpuAddresses] = mtlTable.gpuResourceID._impl
+        
         return tableRef
     }
     
     public nonisolated func importExternalResource(_ resource: Resource, backingResource: Any) {
         if let texture = Texture(resource) {
-            self.textureReferences[texture] = MTLTextureReference(texture: Unmanaged.passRetained(backingResource as! MTLTexture))
+            let mtlTexture = backingResource as! MTLTexture
+            self.textureReferences[texture] = MTLTextureReference(texture: Unmanaged.passRetained(mtlTexture))
+            
+            texture[\.backingResources] = Unmanaged.passUnretained(mtlTexture).toOpaque()
+            texture[\.gpuAddresses] = mtlTexture.gpuResourceID._impl
         } else if let buffer = Buffer(resource) {
-            self.bufferReferences[buffer] = MTLBufferReference(buffer: Unmanaged.passRetained(backingResource as! MTLBuffer), offset: 0)
+            let mtlBuffer = backingResource as! MTLBuffer
+            self.bufferReferences[buffer] = MTLBufferReference(buffer: Unmanaged.passRetained(mtlBuffer), offset: 0)
+            
+            buffer[\.backingResources] = Unmanaged.passUnretained(mtlBuffer).toOpaque()
+            buffer[\.mappedContents] = mtlBuffer.storageMode == .private ? nil : mtlBuffer.contents()
+            buffer[\.gpuAddresses] = mtlBuffer.gpuAddress
+        } else if let accelerationStructure = AccelerationStructure(resource) {
+            let mtlAccelerationStructure = backingResource as! MTLAccelerationStructure
+            self.accelerationStructureReferences[accelerationStructure] = mtlAccelerationStructure
+            
+            accelerationStructure[\.backingResources] = Unmanaged.passUnretained(mtlAccelerationStructure).toOpaque()
+            accelerationStructure[\.gpuAddresses] = mtlAccelerationStructure.gpuResourceID._impl
+        } else {
+            preconditionFailure("Unhandled resource type \(resource.type)")
         }
     }
     
@@ -815,6 +854,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             mtlTexture.texture.label = label
         }
         
+        texture[\.backingResources] = mtlTexture._texture.toOpaque()
+        texture[\.gpuAddresses] = mtlTexture.texture.gpuResourceID._impl
+        
         if texture._usesPersistentRegistry {
             precondition(texture.flags.contains(.historyBuffer))
             self.persistentRegistry.textureReferences[texture] = mtlTexture
@@ -910,6 +952,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             mtlBuffer.buffer.label = label
         }
         
+        buffer[\.backingResources] = mtlBuffer._buffer.toOpaque()
+        buffer[\.mappedContents] = buffer.storageMode == .private ? nil : mtlBuffer.buffer.contents().advanced(by: mtlBuffer.offset)
+        buffer[\.gpuAddresses] = mtlBuffer.buffer.gpuAddress.advanced(by: mtlBuffer.offset)
+        
+        
         if buffer._usesPersistentRegistry {
             precondition(buffer.flags.contains(.historyBuffer))
             self.persistentRegistry.bufferReferences[buffer] = mtlBuffer
@@ -962,9 +1009,14 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             return mtlArgumentBuffer
         }
         
-        let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: min(argumentBuffer.maximumAllocationLength, argEncoder.encoder.encodedLength))
+        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: min(argumentBuffer.maximumAllocationLength, argumentBuffer.descriptor.bufferLength))
         assert(fences.isEmpty)
+        
+        
+        argumentBuffer[\.backingResources] = storage._buffer.toOpaque()
+        argumentBuffer[\.mappedContents] = argumentBuffer.storageMode == .private ? nil : storage.buffer.contents().advanced(by: storage.offset)
+        argumentBuffer[\.gpuAddresses] = storage.buffer.gpuAddress.advanced(by: storage.offset)
+        
         
         self.argumentBufferReferences[argumentBuffer] = storage
         self.argumentBufferWaitEvents[argumentBuffer] = waitEvent

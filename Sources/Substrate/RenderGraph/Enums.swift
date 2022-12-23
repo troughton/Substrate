@@ -609,6 +609,93 @@ public enum DataType : UInt8, Hashable, Codable, Sendable {
     case bool2
     case bool3
     case bool4
+    
+    public var size: Int? {
+        switch self {
+        case .none, .struct, .array:
+            return nil
+        case .float:  return 1 * MemoryLayout<Float>.size
+        case .float2: return 2 * MemoryLayout<Float>.size
+        case .float3: return 3 * MemoryLayout<Float>.size
+        case .float4: return 4 * MemoryLayout<Float>.size
+            
+        case .float2x2: return 2 * 2 * MemoryLayout<Float>.size
+        case .float2x3: return 2 * 4 * MemoryLayout<Float>.size
+        case .float2x4: return 2 * 4 * MemoryLayout<Float>.size
+        case .float3x2: return 3 * 2 * MemoryLayout<Float>.size
+        case .float3x3: return 3 * 4 * MemoryLayout<Float>.size
+        case .float3x4: return 3 * 4 * MemoryLayout<Float>.size
+        case .float4x2: return 4 * 2 * MemoryLayout<Float>.size
+        case .float4x3: return 4 * 4 * MemoryLayout<Float>.size
+        case .float4x4: return 4 * 4 * MemoryLayout<Float>.size
+            
+        case .half:  return 1 * MemoryLayout<UInt16>.size
+        case .half2: return 2 * MemoryLayout<UInt16>.size
+        case .half3: return 3 * MemoryLayout<UInt16>.size
+        case .half4: return 4 * MemoryLayout<UInt16>.size
+        case .half2x2: return 2 * 2 * MemoryLayout<UInt16>.size
+        case .half2x3: return 2 * 4 * MemoryLayout<UInt16>.size
+        case .half2x4: return 2 * 4 * MemoryLayout<UInt16>.size
+        case .half3x2: return 3 * 2 * MemoryLayout<UInt16>.size
+        case .half3x3: return 3 * 4 * MemoryLayout<UInt16>.size
+        case .half3x4: return 3 * 4 * MemoryLayout<UInt16>.size
+        case .half4x2: return 4 * 2 * MemoryLayout<UInt16>.size
+        case .half4x3: return 4 * 4 * MemoryLayout<UInt16>.size
+        case .half4x4: return 4 * 4 * MemoryLayout<UInt16>.size
+            
+        case .int:  return 1 * MemoryLayout<Int32>.size
+        case .int2: return 2 * MemoryLayout<Int32>.size
+        case .int3: return 3 * MemoryLayout<Int32>.size
+        case .int4: return 4 * MemoryLayout<Int32>.size
+            
+        case .uint:  return 1 * MemoryLayout<UInt32>.size
+        case .uint2: return 2 * MemoryLayout<UInt32>.size
+        case .uint3: return 3 * MemoryLayout<UInt32>.size
+        case .uint4: return 4 * MemoryLayout<UInt32>.size
+            
+        case .short:  return 1 * MemoryLayout<Int16>.size
+        case .short2: return 2 * MemoryLayout<Int16>.size
+        case .short3: return 3 * MemoryLayout<Int16>.size
+        case .short4: return 4 * MemoryLayout<Int16>.size
+            
+        case .ushort:  return 1 * MemoryLayout<UInt16>.size
+        case .ushort2: return 2 * MemoryLayout<UInt16>.size
+        case .ushort3: return 3 * MemoryLayout<UInt16>.size
+        case .ushort4: return 4 * MemoryLayout<UInt16>.size
+            
+        case .char:  return 1 * MemoryLayout<Int8>.size
+        case .char2: return 2 * MemoryLayout<Int8>.size
+        case .char3: return 3 * MemoryLayout<Int8>.size
+        case .char4: return 4 * MemoryLayout<Int8>.size
+            
+        case .uchar:  return 1 * MemoryLayout<UInt8>.size
+        case .uchar2: return 2 * MemoryLayout<UInt8>.size
+        case .uchar3: return 3 * MemoryLayout<UInt8>.size
+        case .uchar4: return 4 * MemoryLayout<UInt8>.size
+            
+        case .bool:  return 1 * MemoryLayout<UInt8>.size
+        case .bool2: return 2 * MemoryLayout<UInt8>.size
+        case .bool3: return 3 * MemoryLayout<UInt8>.size
+        case .bool4: return 4 * MemoryLayout<UInt8>.size
+            
+        }
+    }
+    
+    public var alignment: Int? {
+        switch self {
+        case .float3: return 4 * MemoryLayout<Float>.size
+        case .half3: return 4 * MemoryLayout<UInt16>.size
+        case .int3: return 4 * MemoryLayout<Int32>.size
+        case .uint3: return 4 * MemoryLayout<UInt32>.size
+        case .short3: return 4 * MemoryLayout<Int16>.size
+        case .ushort3: return 4 * MemoryLayout<UInt16>.size
+        case .char2: return 4 * MemoryLayout<UInt8>.size
+        case .uchar3: return 4 * MemoryLayout<UInt8>.size
+        case .bool3: return 4 * MemoryLayout<UInt8>.size
+        default:
+            return self.size
+        }
+    }
 }
 
 public enum VertexFormat : UInt8, Hashable, Codable, Sendable {

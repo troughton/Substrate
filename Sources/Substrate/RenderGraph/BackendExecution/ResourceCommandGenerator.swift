@@ -104,7 +104,6 @@ enum PreFrameCommands {
                 argBufferReference = resourceRegistry!.allocateArgumentBufferIfNeeded(argumentBuffer)
                 waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             }
-            await Backend.fillArgumentBuffer(argumentBuffer, storage: argBufferReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
             
         case .materialiseVisibleFunctionTable(let table):
             precondition(table.flags.contains(.persistent))

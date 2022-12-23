@@ -10,18 +10,6 @@
 @preconcurrency import Metal
 import SubstrateUtilities
 
-final class MetalArgumentEncoder {
-    let encoder: MTLArgumentEncoder
-    let bindingIndexCount: Int
-    let maxBindingIndex: Int
-    
-    init(encoder: MTLArgumentEncoder, bindingIndexCount: Int, maxBindingIndex: Int) {
-        self.encoder = encoder
-        self.bindingIndexCount = bindingIndexCount
-        self.maxBindingIndex = maxBindingIndex
-    }
-}
-
 final class MetalPipelineReflection : PipelineReflection {
     
     struct BindingPathCacheKey : Hashable, CustomHashable {
@@ -41,9 +29,7 @@ final class MetalPipelineReflection : PipelineReflection {
     let reflectionCacheCount : Int
     let reflectionCacheKeys : UnsafePointer<ResourceBindingPath>
     let reflectionCacheValues : UnsafePointer<ArgumentReflection>
-    
-    let argumentEncoderCount : Int
-    let argumentEncoders : UnsafeMutablePointer<MetalArgumentEncoder?>
+    let argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor]
     
     let threadExecutionWidth: Int
     
@@ -52,12 +38,9 @@ final class MetalPipelineReflection : PipelineReflection {
         
         self.reflectionCacheKeys.deallocate()
         self.reflectionCacheValues.deallocate()
-        
-        self.argumentEncoders.deinitialize(count: self.argumentEncoderCount)
-        self.argumentEncoders.deallocate()
     }
     
-    init(pipelineState: AnyObject, threadExecutionWidth: Int, bindingPathCache: HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MetalArgumentEncoder?>, argumentEncoderCount: Int) {
+    init(pipelineState: AnyObject, threadExecutionWidth: Int, bindingPathCache: HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: [ResourceBindingPath : ArgumentReflection], argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor]) {
         self._pipelineState = pipelineState
         self.threadExecutionWidth = threadExecutionWidth
         self.bindingPathCache = bindingPathCache
@@ -77,45 +60,38 @@ final class MetalPipelineReflection : PipelineReflection {
         self.reflectionCacheKeys = UnsafePointer(reflectionCacheKeys)
         self.reflectionCacheValues = UnsafePointer(reflectionCacheValues)
         
-        self.argumentEncoders = argumentEncoders
-        self.argumentEncoderCount = argumentEncoderCount
+        self.argumentBufferDescriptors = argumentBufferDescriptors
     }
     
     public convenience init(threadExecutionWidth: Int, vertexFunction: MTLFunction, fragmentFunction: MTLFunction?, renderState: MTLRenderPipelineState, renderReflection: MTLRenderPipelineReflection) {
         var bindingPathCache = HashMap<BindingPathCacheKey, ResourceBindingPath>()
         var reflectionCache = [ResourceBindingPath : ArgumentReflection]()
-        
-        let argumentEncoderCount = fragmentFunction != nil ? 62 : 31 // maximum buffer slots per stage.
-        let argumentEncoders = UnsafeMutablePointer<MetalArgumentEncoder?>.allocate(capacity: argumentEncoderCount)
-        argumentEncoders.initialize(repeating: nil, count: argumentEncoderCount)
+        var argumentDescriptorCache = [ResourceBindingPath: ArgumentBufferDescriptor]()
         
         renderReflection.vertexArguments?.forEach { arg in
-            MetalPipelineReflection.fillCaches(function: vertexFunction, argument: arg, stages: .vertex, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentEncoders: argumentEncoders)
+            MetalPipelineReflection.fillCaches(function: vertexFunction, argument: arg, stages: .vertex, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentBufferDescriptorCache: &argumentDescriptorCache)
         }
         
         renderReflection.fragmentArguments?.forEach { arg in
-            MetalPipelineReflection.fillCaches(function: fragmentFunction!, argument: arg, stages: .fragment, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentEncoders: argumentEncoders.advanced(by: 31))
+            MetalPipelineReflection.fillCaches(function: fragmentFunction!, argument: arg, stages: .fragment, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentBufferDescriptorCache: &argumentDescriptorCache)
         }
         
-        self.init(pipelineState: renderState, threadExecutionWidth: threadExecutionWidth, bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentEncoders: argumentEncoders, argumentEncoderCount: argumentEncoderCount)
+        self.init(pipelineState: renderState, threadExecutionWidth: threadExecutionWidth, bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentBufferDescriptors: argumentDescriptorCache)
         
     }
     
     public convenience init(threadExecutionWidth: Int, function: MTLFunction, computeState: MTLComputePipelineState, computeReflection: MTLComputePipelineReflection) {
         var bindingPathCache = HashMap<BindingPathCacheKey, ResourceBindingPath>()
         var reflectionCache = [ResourceBindingPath : ArgumentReflection]()
-        
-        let argumentEncoderCount = 31 // maximum buffer slots per stage.
-        let argumentEncoders = UnsafeMutablePointer<MetalArgumentEncoder?>.allocate(capacity: argumentEncoderCount)
-        argumentEncoders.initialize(repeating: nil, count: argumentEncoderCount)
+        var argumentDescriptorCache = [ResourceBindingPath: ArgumentBufferDescriptor]()
         
         computeReflection.arguments.forEach { arg in
-            MetalPipelineReflection.fillCaches(function: function, argument: arg, stages: .compute, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentEncoders: argumentEncoders)
+            MetalPipelineReflection.fillCaches(function: function, argument: arg, stages: .compute, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentBufferDescriptorCache: &argumentDescriptorCache)
         }
-        self.init(pipelineState: computeState, threadExecutionWidth: threadExecutionWidth, bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentEncoders: argumentEncoders, argumentEncoderCount: argumentEncoderCount)
+        self.init(pipelineState: computeState, threadExecutionWidth: threadExecutionWidth, bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentBufferDescriptors: argumentDescriptorCache)
     }
     
-    static func fillCaches(function: MTLFunction, argument: MTLArgument, stages: RenderStages, bindingPathCache: inout HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: inout [ResourceBindingPath : ArgumentReflection], argumentEncoders: UnsafeMutablePointer<MetalArgumentEncoder?>) {
+    static func fillCaches(function: MTLFunction, argument: MTLArgument, stages: RenderStages, bindingPathCache: inout HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: inout [ResourceBindingPath : ArgumentReflection], argumentBufferDescriptorCache: inout [ResourceBindingPath: ArgumentBufferDescriptor]) {
         guard argument.type != .threadgroupMemory else { return }
         
         let mtlStages = MTLRenderStages(stages)
@@ -142,8 +118,9 @@ final class MetalPipelineReflection : PipelineReflection {
         if let elementStruct = argument.bufferPointerType?.elementStructType() {
             let isArgumentBuffer = elementStruct.members.contains(where: { member in
                 if member.offset < 0 { return true } // Only applies for macOS versions earlier than 13.0 (Ventura)
-                return member.isNonPODMember
+                return member.argumentIndex > 0
             })
+            var argumentBufferBindings = [ArgumentDescriptor]()
             var argumentBufferBindingCount = 0
             var argumentBufferMaxBinding = 0
             
@@ -168,8 +145,51 @@ final class MetalPipelineReflection : PipelineReflection {
                 let memberReflection : ArgumentReflection?
                 if let arrayType = member.arrayType() {
                     memberReflection = ArgumentReflection(array: arrayType, argumentBuffer: argument, bindingPath: subPath, stages: reflection.activeStages)
+                    
+                    if isArgumentBuffer {
+                        switch arrayType.elementType {
+                        case .pointer:
+                            let pointerType = arrayType.elementPointerType()!
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .storageBuffer, index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: ResourceAccessType(pointerType.access)))
+                        case .sampler:
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .sampler, index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: .read))
+                        case .texture:
+                            let textureType = arrayType.elementTextureReferenceType()!
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .texture(type: TextureType(textureType.textureType)), index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: ResourceAccessType(textureType.access)))
+                            
+                        case .primitiveAccelerationStructure, .instanceAccelerationStructure:
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .accelerationStructure, index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: .read))
+                            
+                        default:
+                            print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
+                            break
+                        }
+                    }
+                    
                 } else {
                     memberReflection = ArgumentReflection(member: member, argumentBuffer: argument, bindingPath: subPath, stages: reflection.activeStages)
+                    
+                    if isArgumentBuffer {
+                        switch dataType {
+                        case .pointer:
+                            let pointerType = member.pointerType()!
+                            let isConstantBuffer = pointerType.alignment >= 16 && pointerType.access == .readOnly
+                            
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: isConstantBuffer ? .constantBuffer(alignment: pointerType.alignment) : .storageBuffer, index: member.argumentIndex, arrayLength: 1, accessType: ResourceAccessType(pointerType.access)))
+                        case .sampler:
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .sampler, index: member.argumentIndex, arrayLength: 1, accessType: .read))
+                        case .texture:
+                            let textureType = member.textureReferenceType()!
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .texture(type: TextureType(textureType.textureType)), index: member.argumentIndex, arrayLength: 1, accessType: ResourceAccessType(textureType.access)))
+                            
+                        case .primitiveAccelerationStructure, .instanceAccelerationStructure:
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .accelerationStructure, index: member.argumentIndex, arrayLength: 1, accessType: .read))
+                            
+                        default:
+                            print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
+                            break
+                        }
+                    }
                 }
                 
                 if let memberReflection = memberReflection {
@@ -191,7 +211,7 @@ final class MetalPipelineReflection : PipelineReflection {
             }
             
             if isArgumentBuffer {
-                argumentEncoders[rootPath.index] = MetalArgumentEncoder(encoder: function.makeArgumentEncoder(bufferIndex: rootPath.index), bindingIndexCount: argumentBufferBindingCount, maxBindingIndex: argumentBufferMaxBinding)
+                argumentBufferDescriptorCache[rootPath] = ArgumentBufferDescriptor(arguments: argumentBufferBindings)
             }
         }
     }
@@ -346,24 +366,6 @@ final class MetalPipelineReflection : PipelineReflection {
         }
         
         return path
-    }
-    
-    public func argumentBufferEncoder(at path: ResourceBindingPath, currentEncoder currentEncoderOpaque: UnsafeRawPointer?) -> UnsafeRawPointer? {
-        let path = self.remapArgumentBufferPathForActiveStages(path)
-        
-        let currentEncoder = currentEncoderOpaque.map { Unmanaged<MetalArgumentEncoder>.fromOpaque($0) }
-        let newEncoder: MetalArgumentEncoder?
-        if path.stages.contains(.fragment), self.argumentEncoderCount > 31 {
-            newEncoder = self.argumentEncoders[31 + path.index]
-        } else {
-            newEncoder = self.argumentEncoders[path.index]
-        }
-        // Choose the more-specific encoder (i.e. the encoder with a higher maximum resource index).
-        if let newEncoder = newEncoder, newEncoder.bindingIndexCount > currentEncoder?._withUnsafeGuaranteedRef({ $0.bindingIndexCount }) ?? 0 {
-            return UnsafeRawPointer(Unmanaged.passUnretained(newEncoder).toOpaque())
-        } else {
-            return currentEncoderOpaque
-        }
     }
 }
 

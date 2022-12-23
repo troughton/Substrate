@@ -113,55 +113,62 @@ extension Heap: CustomStringConvertible {
 }
 
 extension Heap: ResourceProtocolImpl {
-    typealias SharedProperties = EmptyProperties<HeapDescriptor>
-    typealias TransientProperties = EmptyProperties<HeapDescriptor>
-    typealias PersistentProperties = HeapProperties
+    @usableFromInline typealias SharedProperties = EmptyProperties<HeapDescriptor>
+    @usableFromInline typealias TransientProperties = EmptyProperties<HeapDescriptor>
+    @usableFromInline typealias PersistentProperties = HeapProperties
     
-    static func transientRegistry(index: Int) -> TransientChunkRegistry<Heap>? {
+    @usableFromInline static func transientRegistry(index: Int) -> TransientChunkRegistry<Heap>? {
         return nil
     }
     
-    static var persistentRegistry: PersistentRegistry<Self> { HeapRegistry.instance }
+    @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { HeapRegistry.instance }
     
-    typealias Descriptor = HeapDescriptor
+    @usableFromInline typealias Descriptor = HeapDescriptor
 }
 
 @usableFromInline
 struct HeapProperties: PersistentResourceProperties {
     let descriptors : UnsafeMutablePointer<HeapDescriptor>
     let childResources : UnsafeMutablePointer<Set<Resource>>
+    let backingResources : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     /// The RenderGraphs that are currently using this resource.
     let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
     
-    init(capacity: Int) {
+    @usableFromInline init(capacity: Int) {
         self.descriptors = .allocate(capacity: capacity)
         self.childResources = .allocate(capacity: capacity)
+        self.backingResources = .allocate(capacity: capacity)
         self.activeRenderGraphs = .allocate(capacity: capacity)
     }
     
-    func deallocate() {
+    @usableFromInline func deallocate() {
         self.descriptors.deallocate()
         self.childResources.deallocate()
+        self.backingResources.deallocate()
         self.activeRenderGraphs.deallocate()
     }
     
-    func initialize(index: Int, descriptor: HeapDescriptor, heap: Heap?, flags: ResourceFlags) {
+    @usableFromInline func initialize(index: Int, descriptor: HeapDescriptor, heap: Heap?, flags: ResourceFlags) {
+        assert(heap == nil)
+        
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.childResources.advanced(by: index).initialize(to: [])
+        self.backingResources.advanced(by: index).initialize(to: nil)
         self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
     }
     
-    func deinitialize(from index: Int, count: Int) {
+    @usableFromInline func deinitialize(from index: Int, count: Int) {
         self.descriptors.advanced(by: index).deinitialize(count: count)
+        self.backingResources.advanced(by: index).deinitialize(count: count)
         self.childResources.advanced(by: index).deinitialize(count: count)
         self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { nil }
+    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { nil }
     
-    var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
-    var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
-    var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { activeRenderGraphs }
+    @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
+    @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
+    @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { activeRenderGraphs }
 }
 
 final class HeapRegistry: PersistentRegistry<Heap> {

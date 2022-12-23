@@ -47,9 +47,6 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoderImpl {
         }
             
         let bufferStorage = resourceMap[argumentBuffer]
-        if !argumentBuffer.stateFlags.contains(.initialised) {
-            argumentBuffer.setArguments(storage: bufferStorage, resourceMap: self.resourceMap)
-        }
         
         for resource in argumentBuffer.usedResources where !self.usedResources.contains(resource) {
             encoder.useResource(Unmanaged<MTLResource>.fromOpaque(resource).takeUnretainedValue(), usage: .read)

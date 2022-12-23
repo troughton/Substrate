@@ -78,6 +78,22 @@ struct FrameResourceMap<Backend: SpecificRenderBackend> {
         }
     }
     
+    
+    func bufferForCPUAccess(_ buffer: ArgumentBuffer, needsLock: Bool) -> Backend.ArgumentBufferReference {
+        if buffer._usesPersistentRegistry {
+            return persistentRegistry[buffer]!
+        } else {
+            if needsLock {
+                transientRegistry!.accessLock.lock()
+            }
+            let result = transientRegistry!.allocateArgumentBufferIfNeeded(buffer)
+            if needsLock {
+                transientRegistry!.accessLock.unlock()
+            }
+            return result
+        }
+    }
+    
     func textureForCPUAccess(_ texture: Texture, needsLock: Bool) async -> Backend.TextureReference {
         if texture._usesPersistentRegistry {
             return persistentRegistry[texture]!

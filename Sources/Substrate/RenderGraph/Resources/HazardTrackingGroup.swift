@@ -8,7 +8,7 @@
 import Foundation
 import SubstrateUtilities
 
-struct _HazardTrackingGroup: ResourceProtocol {
+@usableFromInline struct _HazardTrackingGroup: ResourceProtocol {
     // Idea is: you assign a hazard tracking group to a resource, and then all ResourceUsages are shared for resources within that group, meaning you only track the group and not the (potentially thousands) of individual resources.
     // Argument buffers will need to keep a list of their tracked subresources (namely, hazard tracking groups for resources with one assigned and individual resources for ones without).
     // That will work for the resource command generator/pass dependency tracking, but optimising ResourceBindingEncoder.updateResourceUsages(endingEncoding:) will be more difficult
@@ -49,7 +49,7 @@ struct _HazardTrackingGroup: ResourceProtocol {
 }
 
 public struct HazardTrackingGroup<R: ResourceProtocol> {
-    let group: _HazardTrackingGroup
+    @usableFromInline let group: _HazardTrackingGroup
     
     public init() {
         self.group = .init(resourceType: R.resourceType)
@@ -117,22 +117,22 @@ extension HazardTrackingGroup: CustomStringConvertible where R: Hashable {
 }
 
 extension _HazardTrackingGroup: ResourceProtocolImpl {
-    typealias SharedProperties = HazardTrackingGroupProperties
-    typealias TransientProperties = EmptyProperties<ResourceType>
-    typealias PersistentProperties = HazardTrackingGroupProperties.PersistentProperties
+    @usableFromInline typealias SharedProperties = HazardTrackingGroupProperties
+    @usableFromInline typealias TransientProperties = EmptyProperties<ResourceType>
+    @usableFromInline typealias PersistentProperties = HazardTrackingGroupProperties.PersistentProperties
     
-    static func transientRegistry(index: Int) -> TransientChunkRegistry<Self>? {
+    @usableFromInline static func transientRegistry(index: Int) -> TransientChunkRegistry<Self>? {
         return nil
     }
     
-    static var persistentRegistry: PersistentRegistry<Self> { HazardTrackingGroupRegistry.instance }
+    @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { HazardTrackingGroupRegistry.instance }
     
-    typealias Descriptor = ResourceType
+    @usableFromInline typealias Descriptor = ResourceType
 }
 
 @usableFromInline
 struct HazardTrackingGroupProperties: SharedResourceProperties {
-    struct PersistentProperties: PersistentResourceProperties {
+    @usableFromInline struct PersistentProperties: PersistentResourceProperties {
         /// The RenderGraphs that are currently using this resource.
         let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -140,33 +140,33 @@ struct HazardTrackingGroupProperties: SharedResourceProperties {
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
         let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
         
-        init(capacity: Int) {
+        @usableFromInline init(capacity: Int) {
             self.activeRenderGraphs = .allocate(capacity: capacity)
             self.readWaitIndices = .allocate(capacity: capacity)
             self.writeWaitIndices = .allocate(capacity: capacity)
         }
         
-        func deallocate() {
+        @usableFromInline func deallocate() {
             self.activeRenderGraphs.deallocate()
             self.readWaitIndices.deallocate()
             self.writeWaitIndices.deallocate()
         }
         
-        func initialize(index: Int, descriptor: ResourceType, heap: Heap?, flags: ResourceFlags) {
+        @usableFromInline func initialize(index: Int, descriptor: ResourceType, heap: Heap?, flags: ResourceFlags) {
             self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
             self.readWaitIndices.advanced(by: index).initialize(to: .zero)
             self.writeWaitIndices.advanced(by: index).initialize(to: .zero)
         }
         
-        func deinitialize(from index: Int, count: Int) {
+        @usableFromInline func deinitialize(from index: Int, count: Int) {
             self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
             self.readWaitIndices.advanced(by: index).deinitialize(count: count)
             self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
         }
         
-        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
-        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
         
     
@@ -174,33 +174,33 @@ struct HazardTrackingGroupProperties: SharedResourceProperties {
     let resources : UnsafeMutablePointer<Set<Resource>>
     let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     
-    init(capacity: Int) {
+    @usableFromInline init(capacity: Int) {
         self.resourceTypes = .allocate(capacity: capacity)
         self.resources = .allocate(capacity: capacity)
         self.usages = .allocate(capacity: capacity)
     }
     
-    func deallocate() {
+    @usableFromInline func deallocate() {
         self.resourceTypes.deallocate()
         self.resources.deallocate()
         self.usages.deallocate()
     }
     
-    func initialize(index: Int, descriptor: ResourceType, heap: Heap?, flags: ResourceFlags) {
+    @usableFromInline func initialize(index: Int, descriptor: ResourceType, heap: Heap?, flags: ResourceFlags) {
         self.resourceTypes.advanced(by: index).initialize(to: descriptor)
         self.resources.advanced(by: index).initialize(to: [])
         self.usages.advanced(by: index).initialize(to: ChunkArray())
     }
     
-    func deinitialize(from index: Int, count: Int) {
+    @usableFromInline func deinitialize(from index: Int, count: Int) {
         self.resourceTypes.advanced(by: index).deinitialize(count: count)
         self.resources.advanced(by: index).deinitialize(count: count)
         self.usages.deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
+    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 
-final class HazardTrackingGroupRegistry: PersistentRegistry<_HazardTrackingGroup> {
-    static let instance = HazardTrackingGroupRegistry()
+@usableFromInline final class HazardTrackingGroupRegistry: PersistentRegistry<_HazardTrackingGroup> {
+    @usableFromInline static let instance = HazardTrackingGroupRegistry()
 }

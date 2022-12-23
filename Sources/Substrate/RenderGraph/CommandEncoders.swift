@@ -207,26 +207,11 @@ public class ResourceBindingEncoder : CommandEncoder {
         }
         
         let argumentBuffer = ArgumentBuffer(descriptor: A.argumentBufferDescriptor)
-        assert(argumentBuffer.bindings.isEmpty)
         await arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
      
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
 #endif
-        
-        if _isDebugAssertConfiguration() {
-            
-            for binding in argumentBuffer.bindings {
-                switch binding.1 {
-                case .buffer(let buffer, _):
-                    assert(buffer.type == .buffer)
-                case .texture(let texture):
-                    assert(texture.type == .texture)
-                default:
-                    break
-                }
-            }
-        }
 
         self.setArgumentBuffer(argumentBuffer, at: setIndex, stages: A.activeStages)
     }
@@ -236,7 +221,6 @@ public class ResourceBindingEncoder : CommandEncoder {
     public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
         guard let argumentBuffer = argumentBuffer else { return }
         
-        let bindingPath = RenderBackend.argumentBufferPath(at: index, stages: stages)
         bindingEncoderImpl.setArgumentBuffer(argumentBuffer, at: index, stages: stages)
     }
     

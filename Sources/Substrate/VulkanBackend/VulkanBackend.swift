@@ -250,10 +250,6 @@ public final class VulkanBackend : SpecificRenderBackend {
     static var requiresResourceResidencyTracking: Bool {
         return false
     }
-
-    static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: VulkanArgumentBuffer, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) async {
-        await storage.encodeArguments(from: argumentBuffer, commandIndex: firstUseCommandIndex, resourceMap: resourceMap)
-    }
     
     func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: Void, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<VulkanBackend>) async {
         preconditionFailure()

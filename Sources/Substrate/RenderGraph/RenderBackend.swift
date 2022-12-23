@@ -70,6 +70,9 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer?
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
     
+    func bufferContents(for buffer: ArgumentBuffer, range: Range<Int>) -> UnsafeMutableRawPointer?
+    func buffer(_ buffer: ArgumentBuffer, didModifyRange range: Range<Int>)
+    
     func renderPipelineState(for descriptor: RenderPipelineDescriptor) async -> RenderPipelineState
     func computePipelineState(for descriptor: ComputePipelineDescriptor) async -> ComputePipelineState
     func depthStencilState(for descriptor: DepthStencilDescriptor) async -> DepthStencilState
@@ -96,6 +99,8 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     
     var pushConstantPath : ResourceBindingPath { get }
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
+    
+    var argumentBufferImpl: _ArgumentBufferImpl.Type { get }
 }
 
 public struct RenderBackend {
@@ -266,6 +271,28 @@ public struct RenderBackend {
         assert(index < 8)
         return _backend.argumentBufferPath(at: index, stages: stages)
     }
+}
+
+@usableFromInline
+protocol _ArgumentBufferImpl {
+    static func setBuffer(_ buffer: Buffer, offset: Int, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    
+    static func setTexture(_ texture: Texture, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    static func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    static func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    static func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    
+    static func setSampler(_ sampler: SamplerState, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    
+    static func setBytes(_ bytes: UnsafeRawBufferPointer, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    
+    static func encodedBufferSizeAndAlign(forArgument: ArgumentDescriptor) -> (size: Int, alignment: Int)
 }
 
 public enum FunctionType : UInt {

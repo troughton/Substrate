@@ -171,6 +171,7 @@ public protocol GroupHazardTrackableResource: ResourceProtocol {
     var hazardTrackingGroup: HazardTrackingGroup<Self>? { get nonmutating set }
 }
 
+@usableFromInline
 protocol ResourceProtocolImpl: GroupHazardTrackableResource, Hashable, CustomHashable {
     associatedtype Descriptor
     associatedtype SharedProperties: SharedResourceProperties where SharedProperties.Descriptor == Descriptor
@@ -187,7 +188,7 @@ protocol ResourceProtocolImpl: GroupHazardTrackableResource, Hashable, CustomHas
 }
 
 extension ResourceProtocolImpl {
-    static var itemsPerChunk: Int { 256 }
+    @inlinable static var itemsPerChunk: Int { 256 }
     
     @inlinable
     public init?(_ resource: Resource) {
@@ -209,6 +210,7 @@ extension ResourceProtocolImpl {
     }
     
     @_transparent
+    @inlinable
     func pointer<T>(for keyPath: KeyPath<SharedProperties, UnsafeMutablePointer<T>>) -> UnsafeMutablePointer<T> {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
@@ -220,6 +222,7 @@ extension ResourceProtocolImpl {
     }
     
     @_transparent
+    @inlinable
     func pointer<T>(for keyPath: KeyPath<TransientProperties, UnsafeMutablePointer<T>>) -> UnsafeMutablePointer<T>? {
         if self._usesPersistentRegistry {
             return nil
@@ -229,6 +232,7 @@ extension ResourceProtocolImpl {
     }
     
     @_transparent
+    @inlinable
     func pointer<T>(for keyPath: KeyPath<PersistentProperties, UnsafeMutablePointer<T>>) -> UnsafeMutablePointer<T>? {
         guard self._usesPersistentRegistry else { return nil }
         

@@ -186,7 +186,7 @@ public struct Buffer : ResourceProtocol {
     @inlinable
     func _withMutableContents<A>(range: Range<Int>, checkHasCPUAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
         if checkHasCPUAccess { self.checkHasCPUAccess(accessType: .readWrite) }
-        let contents = RenderBackend.bufferContents(for: self, range: range)
+        let contents = self[\.mappedContents]! + range.lowerBound
         var modifiedRange = range
         
         let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
@@ -201,7 +201,7 @@ public struct Buffer : ResourceProtocol {
     @inlinable
     func _withMutableContents<A>(range: Range<Int>, checkHasCPUAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) async throws -> A) async rethrows -> A {
         if checkHasCPUAccess { self.checkHasCPUAccess(accessType: .readWrite) }
-        let contents = RenderBackend.bufferContents(for: self, range: range)
+        let contents = self[\.mappedContents]! + range.lowerBound
         var modifiedRange = range
         
         let result = try await perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
@@ -364,23 +364,23 @@ extension Buffer: CustomStringConvertible {
 }
 
 extension Buffer: ResourceProtocolImpl {
-    typealias SharedProperties = BufferProperties
-    typealias TransientProperties = BufferProperties.TransientProperties
-    typealias PersistentProperties = BufferProperties.PersistentProperties
+    @usableFromInline typealias SharedProperties = BufferProperties
+    @usableFromInline typealias TransientProperties = BufferProperties.TransientProperties
+    @usableFromInline typealias PersistentProperties = BufferProperties.PersistentProperties
     
-    static func transientRegistry(index: Int) -> TransientBufferRegistry? {
+    @usableFromInline static func transientRegistry(index: Int) -> TransientBufferRegistry? {
         return TransientBufferRegistry.instances[index]
     }
     
-    static var persistentRegistry: PersistentRegistry<Self> { PersistentBufferRegistry.instance }
+    @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { PersistentBufferRegistry.instance }
     
-    typealias Descriptor = BufferDescriptor
+    @usableFromInline typealias Descriptor = BufferDescriptor
 }
 
 @usableFromInline
 struct BufferProperties: SharedResourceProperties {
     
-    struct TransientProperties: ResourceProperties {
+    @usableFromInline struct TransientProperties: ResourceProperties {
         var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>
         
         @usableFromInline
@@ -404,7 +404,7 @@ struct BufferProperties: SharedResourceProperties {
         }
     }
     
-    struct PersistentProperties: PersistentResourceProperties {
+    @usableFromInline struct PersistentProperties: PersistentResourceProperties {
         
         let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -451,44 +451,74 @@ struct BufferProperties: SharedResourceProperties {
             self.heaps.advanced(by: index).deinitialize(count: count)
         }
         
-        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
-        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
-    var descriptors : UnsafeMutablePointer<BufferDescriptor>
-    var usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
+    let descriptors : UnsafeMutablePointer<BufferDescriptor>
+    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
+    let backingResources : UnsafeMutablePointer<UnsafeMutableRawPointer?>
+    @usableFromInline let mappedContents : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     
-    init(capacity: Int) {
+#if canImport(Metal)
+    let gpuAddresses: UnsafeMutablePointer<UInt64>
+#endif
+    
+    @usableFromInline init(capacity: Int) {
         self.descriptors = UnsafeMutablePointer.allocate(capacity: capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: capacity)
+        self.backingResources = UnsafeMutablePointer.allocate(capacity: capacity)
+        self.mappedContents = UnsafeMutablePointer.allocate(capacity: capacity)
+        
+#if canImport(Metal)
+        self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
+#endif
     }
     
-    func deallocate() {
+    @usableFromInline func deallocate() {
         self.descriptors.deallocate()
         self.usages.deallocate()
+        self.backingResources.deallocate()
+        self.mappedContents.deallocate()
+
+#if canImport(Metal)
+        self.gpuAddresses.deallocate()
+#endif
     }
     
-    func initialize(index: Int, descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) {
+    @usableFromInline func initialize(index: Int, descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.usages.advanced(by: index).initialize(to: ChunkArray())
+        self.backingResources.advanced(by: index).initialize(to: nil)
+        self.mappedContents.advanced(by: index).initialize(to: nil)
+        
+#if canImport(Metal)
+        self.gpuAddresses.advanced(by: index).initialize(to: 0)
+#endif
     }
     
-    func deinitialize(from index: Int, count: Int) {
+    @usableFromInline func deinitialize(from index: Int, count: Int) {
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.usages.advanced(by: index).deinitialize(count: count)
+        self.backingResources.advanced(by: index).deinitialize(count: count)
+        self.mappedContents.advanced(by: index).deinitialize(count: count)
+
+#if canImport(Metal)
+        self.gpuAddresses.advanced(by: index).deinitialize(count: count)
+#endif
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
+    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 
 
-final class TransientBufferRegistry: TransientFixedSizeRegistry<Buffer> {
-    static let instances = TransientRegistryArray<TransientBufferRegistry>()
+@usableFromInline final class TransientBufferRegistry: TransientFixedSizeRegistry<Buffer> {
+    @usableFromInline static let instances = TransientRegistryArray<TransientBufferRegistry>()
 }
 
-final class PersistentBufferRegistry: PersistentRegistry<Buffer> {
-    static let instance = PersistentBufferRegistry()
+@usableFromInline final class PersistentBufferRegistry: PersistentRegistry<Buffer> {
+    @usableFromInline static let instance = PersistentBufferRegistry()
 }
 
 

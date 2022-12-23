@@ -283,9 +283,16 @@ public class RenderPipelineState: PipelineState {
     public let descriptor: RenderPipelineDescriptor
     public let state: OpaquePointer
     
-    init(descriptor: RenderPipelineDescriptor, state: OpaquePointer) {
+    private let argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor]
+    
+    init(descriptor: RenderPipelineDescriptor, state: OpaquePointer, argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor]) {
         self.descriptor = descriptor
         self.state = state
+        self.argumentBufferDescriptors = argumentBufferDescriptors
+    }
+    
+    public func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor? {
+        return self.argumentBufferDescriptors[path]
     }
 }
 
@@ -381,13 +388,17 @@ public struct ComputePipelineDescriptor : Hashable, Sendable {
 public class ComputePipelineState: PipelineState {
     public let descriptor: ComputePipelineDescriptor
     public let state: OpaquePointer
-    let reflection: PipelineReflection
+    private let argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor]
     let threadExecutionWidth: Int
     
-    init(descriptor: ComputePipelineDescriptor, state: OpaquePointer, reflection: PipelineReflection, threadExecutionWidth: Int) {
+    init(descriptor: ComputePipelineDescriptor, state: OpaquePointer, argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor], threadExecutionWidth: Int) {
         self.descriptor = descriptor
         self.state = state
-        self.reflection = reflection
+        self.argumentBufferDescriptors = argumentBufferDescriptors
         self.threadExecutionWidth = threadExecutionWidth
+    }
+    
+    public func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor? {
+        return self.argumentBufferDescriptors[path]
     }
 }

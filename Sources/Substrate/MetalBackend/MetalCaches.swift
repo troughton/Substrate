@@ -48,18 +48,18 @@ final actor MetalFunctionCache {
 final class MetalRenderPipelineState: RenderPipelineState {
     let mtlState: MTLRenderPipelineState
     
-    init(descriptor: RenderPipelineDescriptor, state: MTLRenderPipelineState, reflection: PipelineReflection) {
+    init(descriptor: RenderPipelineDescriptor, state: MTLRenderPipelineState, argumentBufferDescriptors: [ ResourceBindingPath: ArgumentBufferDescriptor]) {
         self.mtlState = state
-        super.init(descriptor: descriptor, state: OpaquePointer(Unmanaged.passUnretained(state).toOpaque()), reflection: reflection)
+        super.init(descriptor: descriptor, state: OpaquePointer(Unmanaged.passUnretained(state).toOpaque()), argumentBufferDescriptors: argumentBufferDescriptors)
     }
 }
 
 final class MetalComputePipelineState: ComputePipelineState {
     let mtlState: MTLComputePipelineState
     
-    init(descriptor: ComputePipelineDescriptor, state: MTLComputePipelineState, reflection: PipelineReflection) {
+    init(descriptor: ComputePipelineDescriptor, state: MTLComputePipelineState, argumentBufferDescriptors: [ ResourceBindingPath: ArgumentBufferDescriptor]) {
         self.mtlState = state
-        super.init(descriptor: descriptor, state: OpaquePointer(Unmanaged.passUnretained(state).toOpaque()), reflection: reflection, threadExecutionWidth: state.threadExecutionWidth)
+        super.init(descriptor: descriptor, state: OpaquePointer(Unmanaged.passUnretained(state).toOpaque()), argumentBufferDescriptors: argumentBufferDescriptors, threadExecutionWidth: state.threadExecutionWidth)
     }
 }
 
@@ -75,7 +75,7 @@ final class MetalDepthStencilState: DepthStencilState {
 final actor MetalRenderPipelineCache {
     let device: MTLDevice
     let functionCache: MetalFunctionCache
-    private var renderStates = [RenderPipelineDescriptor : RenderPipelineState]()
+    private var renderStates = [RenderPipelineDescriptor : MetalRenderPipelineState]()
     private var renderReflection = [RenderPipelineDescriptor: MetalPipelineReflection]()
     private var renderStateTasks = [RenderPipelineDescriptor : Task<Void, Error>]()
     
@@ -104,7 +104,7 @@ final actor MetalRenderPipelineCache {
                     // TODO: can we retrieve the thread execution width for render pipelines?
                     let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
                     
-                    self.renderStates[descriptor] = RenderPipelineState(descriptor: descriptor, state: OpaquePointer(Unmanaged.passUnretained(state).toOpaque()))
+                    self.renderStates[descriptor] = MetalRenderPipelineState(descriptor: descriptor, state: state, argumentBufferDescriptors: pipelineReflection.argumentBufferDescriptors)
                     if self.renderReflection[descriptor] == nil {
                         self.renderReflection[descriptor] = pipelineReflection
                     }
@@ -145,7 +145,7 @@ final actor MetalComputePipelineCache {
     
     let device: MTLDevice
     let functionCache: MetalFunctionCache
-    private var computeStates = [CacheKey: MTLComputePipelineState]()
+    private var computeStates = [CacheKey: MetalComputePipelineState]()
     private var computeReflection = [ComputePipelineDescriptor: (MetalPipelineReflection, Int)]()
     private var computeStateTasks = [CacheKey : Task<Void, Error>]()
     
@@ -157,7 +157,7 @@ final actor MetalComputePipelineCache {
     public subscript(descriptor: ComputePipelineDescriptor) -> ComputePipelineState? {
         get async {
             // Figure out whether the thread group size is always a multiple of the thread execution width and set the optimisation hint appropriately.
-            let cacheKey = CacheKey(descriptor: descriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth: threadgroupSizeIsMultipleOfThreadExecutionWidth)
+            let cacheKey = CacheKey(descriptor: descriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth: descriptor.threadgroupSizeIsMultipleOfThreadExecutionWidth)
             
             if let state = self.computeStates[cacheKey] {
                 return state
@@ -174,7 +174,7 @@ final actor MetalComputePipelineCache {
                     
                     let mtlDescriptor = MTLComputePipelineDescriptor()
                     mtlDescriptor.computeFunction = function
-                    mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = threadgroupSizeIsMultipleOfThreadExecutionWidth
+                    mtlDescriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = descriptor.threadgroupSizeIsMultipleOfThreadExecutionWidth
                     
                     if !descriptor.linkedFunctions.isEmpty, #available(iOS 14.0, macOS 11.0, *) {
                         var functions = [MTLFunction]()
@@ -192,7 +192,7 @@ final actor MetalComputePipelineCache {
                     
                     let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeState: state, computeReflection: reflection!)
                     
-                    self.computeStates[cacheKey] = state
+                    self.computeStates[cacheKey] = MetalComputePipelineState(descriptor: descriptor, state: state, argumentBufferDescriptors: pipelineReflection.argumentBufferDescriptors)
                     if self.computeReflection[descriptor] == nil {
                         self.computeReflection[descriptor] = (pipelineReflection, pipelineReflection.threadExecutionWidth)
                     }

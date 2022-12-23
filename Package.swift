@@ -1,4 +1,4 @@
-// swift-tools-version:5.5
+// swift-tools-version:5.7.1
 
 import PackageDescription
 
@@ -10,7 +10,7 @@ let vulkanDependencies: [Target.Dependency] = [.target(name: "Vulkan")]
 
 let package = Package(
     name: "Substrate",
-    platforms: [.macOS(.v11), .iOS(.v14), .tvOS(.v14)],
+    platforms: [.macOS(.v13), .iOS(.v16), .tvOS(.v14)],
     products: [
         .library(name: "SwiftFrameGraph", targets: ["Substrate", "SwiftFrameGraph"]),
         .library(name: "FrameGraphTextureIO", targets: ["SubstrateTextureIO", "FrameGraphTextureIO"]),

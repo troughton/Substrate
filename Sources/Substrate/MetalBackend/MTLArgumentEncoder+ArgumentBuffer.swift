@@ -9,86 +9,94 @@
 
 @preconcurrency import Metal
 
-extension ArgumentBuffer {
-    func setArguments(storage: MTLBufferReference, resourceMap: FrameResourceMap<MetalBackend>) {
-        if self.stateFlags.contains(.initialised) { return }
-        
-        let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(self.encoder!).takeUnretainedValue()
-        
-        // Zero out the argument buffer.
-        let destPointer = storage.buffer.contents() + storage.offset
-        destPointer.assumingMemoryBound(to: UInt8.self).assign(repeating: 0, count: min(self.maximumAllocationLength, argEncoder.encoder.encodedLength))
-        
-        argEncoder.encoder.setArgumentBuffer(storage.buffer, startOffset: storage.offset, arrayElement: 0)
-        argEncoder.encodeArguments(from: self, resourceMap: resourceMap)
-        
-        self.markAsInitialised()
+extension ArgumentBufferDescriptor {
+    func offset(forBindIndex bindIndex: Int) -> Int {
+        let argumentIndex = self.arguments.binarySearch(predicate: { $0.index <= bindIndex })
+        let argument = self.arguments[argumentIndex]
+        return argument.encodedBufferOffset + (bindIndex - argument.index) * argument.encodedBufferStride
     }
 }
 
-extension MetalArgumentEncoder {
-    func encodeArguments(from argBuffer: ArgumentBuffer, resourceMap: FrameResourceMap<MetalBackend>) {
-        for (bindingPath, binding) in argBuffer.bindings {
-            
-            let bindingIndex = bindingPath.bindIndex
-            guard bindingIndex <= self.maxBindingIndex else { continue }
-            
-            switch binding {
-            case .texture(let texture):
-                guard let mtlTexture = resourceMap[texture]?.texture else { continue }
-                self.encoder.setTexture(mtlTexture, index: bindingIndex)
-                
-                if let mtlHeap = mtlTexture.heap {
-                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
-                } else {
-                    argBuffer.usedResources.insert(Unmanaged.passUnretained(mtlTexture).toOpaque())
-                }
-                
-            case .buffer(let buffer, let offset):
-                guard let mtlBuffer = resourceMap[buffer] else { continue }
-                self.encoder.setBuffer(mtlBuffer.buffer, offset: offset + mtlBuffer.offset, index: bindingIndex)
-                
-                if let mtlHeap = mtlBuffer.buffer.heap {
-                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
-                } else {
-                    argBuffer.usedResources.insert(mtlBuffer._buffer.toOpaque())
-                }
-                
-            case .accelerationStructure(let structure):
-                guard #available(macOS 11.0, iOS 14.0, *), let mtlStructure = resourceMap[structure] as! MTLAccelerationStructure? else { continue }
-                self.encoder.setAccelerationStructure(mtlStructure, index: bindingIndex)
-                
-                if let mtlHeap = mtlStructure.heap {
-                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
-                } else {
-                    argBuffer.usedResources.insert(Unmanaged.passUnretained(mtlStructure).toOpaque())
-                }
-                
-            case .visibleFunctionTable(let table):
-                guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[table] else { continue }
-                self.encoder.setVisibleFunctionTable(mtlTable.table, index: bindingIndex)
-                
-                if let mtlHeap = mtlTable.table.heap {
-                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
-                } else {
-                    argBuffer.usedResources.insert(Unmanaged.passUnretained(mtlTable.table).toOpaque())
-                }
-            case .intersectionFunctionTable(let table):
-                guard #available(macOS 11.0, iOS 14.0, *), let mtlTable = resourceMap[table] else { continue }
-                self.encoder.setIntersectionFunctionTable(mtlTable.table, index: bindingIndex)
-                
-                if let mtlHeap = mtlTable.table.heap {
-                    argBuffer.usedHeaps.insert(Unmanaged.passUnretained(mtlHeap).toOpaque())
-                } else {
-                    argBuffer.usedResources.insert(Unmanaged.passUnretained(mtlTable.table).toOpaque())
-                }
-            case .sampler(let samplerState):
-                self.encoder.setSamplerState(Unmanaged<MTLSamplerState>.fromOpaque(UnsafeRawPointer(samplerState.state)).takeUnretainedValue(), index: bindingIndex)
-            case .bytes(let offset, let length):
-                let bytes = argBuffer._bytes(offset: offset)
-                self.encoder.constantData(at: bindingIndex).copyMemory(from: bytes, byteCount: length)
-            }
+enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
+    static func encodedBufferSizeAndAlign(forArgument argument: ArgumentDescriptor) -> (size: Int, alignment: Int) {
+        switch argument.resourceType {
+        case .inlineData(let type):
+            return (type.size!, type.alignment!)
+        default:
+            return (MemoryLayout<UInt64>.size, MemoryLayout<UInt64>.alignment)
         }
+    }
+    
+    static func setBuffer(_ buffer: Buffer, offset: Int, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer) {
+        precondition(buffer[\.gpuAddresses] != 0, "Resource \(buffer) does not have a backing resource.")
+        
+        let gpuAddress = buffer[\.gpuAddresses] + UInt64(offset)
+        
+        argBuffer[\.mappedContents]!.storeBytes(of: gpuAddress, toByteOffset: argBuffer.descriptor.offset(forBindIndex: path.bindIndex), as: UInt64.self)
+        
+        if let heap = buffer.heap, let mtlHeap = heap[\.backingResources] {
+            argBuffer.usedHeaps.insert(mtlHeap)
+        } else if let mtlResource = buffer[\.backingResources] {
+            argBuffer.usedResources.insert(mtlResource)
+        }
+    }
+    
+    static func setTexture(_ texture: Texture, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer) {
+        precondition(texture[\.gpuAddresses] != 0, "Resource \(texture) does not have a backing resource.")
+        
+        argBuffer[\.mappedContents]!.storeBytes(of: texture[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(forBindIndex: path.bindIndex), as: UInt64.self)
+        
+        if let heap = texture.heap, let mtlHeap = heap[\.backingResources] {
+            argBuffer.usedHeaps.insert(mtlHeap)
+        } else if let mtlResource = texture[\.backingResources] {
+            argBuffer.usedResources.insert(mtlResource)
+        }
+    }
+    
+    static func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer) {
+        precondition(structure[\.gpuAddresses] != 0, "Resource \(structure) does not have a backing resource.")
+        
+        argBuffer[\.mappedContents]!.storeBytes(of: structure[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(forBindIndex: path.bindIndex), as: UInt64.self)
+        
+        if let heap = structure.heap, let mtlHeap = heap[\.backingResources] {
+            argBuffer.usedHeaps.insert(mtlHeap)
+        } else if let mtlResource = structure[\.backingResources] {
+            argBuffer.usedResources.insert(mtlResource)
+        }
+    }
+    
+    static func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer) {
+        precondition(table[\.gpuAddresses] != 0, "Resource \(table) does not have a backing resource.")
+        
+        argBuffer[\.mappedContents]!.storeBytes(of: table[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(forBindIndex: path.bindIndex), as: UInt64.self)
+        
+        if let heap = table.heap, let mtlHeap = heap[\.backingResources] {
+            argBuffer.usedHeaps.insert(mtlHeap)
+        } else if let mtlResource = table[\.backingResources] {
+            argBuffer.usedResources.insert(mtlResource)
+        }
+    }
+    
+    static func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer) {
+        precondition(table[\.gpuAddresses] != 0, "Resource \(table) does not have a backing resource.")
+        
+        argBuffer[\.mappedContents]!.storeBytes(of: table[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(forBindIndex: path.bindIndex), as: UInt64.self)
+        
+        if let heap = table.heap, let mtlHeap = heap[\.backingResources] {
+            argBuffer.usedHeaps.insert(mtlHeap)
+        } else if let mtlResource = table[\.backingResources] {
+            argBuffer.usedResources.insert(mtlResource)
+        }
+    }
+    
+    static func setSampler(_ sampler: SamplerState, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer) {
+        let state = Unmanaged<MTLSamplerState>.fromOpaque(UnsafeRawPointer(sampler.state)).takeUnretainedValue()
+        argBuffer[\.mappedContents]!.storeBytes(of: state.gpuResourceID, toByteOffset: argBuffer.descriptor.offset(forBindIndex: path.bindIndex), as: MTLResourceID.self)
+    }
+    
+    static func setBytes(_ bytes: UnsafeRawBufferPointer, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer) {
+        let offset = argBuffer.descriptor.offset(forBindIndex: path.bindIndex)
+        argBuffer[\.mappedContents]!.advanced(by: offset).copyMemory(from: bytes.baseAddress!, byteCount: bytes.count)
     }
 }
 

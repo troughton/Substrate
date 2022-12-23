@@ -34,12 +34,19 @@ public struct ArgumentDescriptor: Hashable, Sendable {
     public var index: Int // VkDescriptorSetLayoutBinding.binding
     public var arrayLength: Int // VkDescriptorSetLayoutBinding.descriptorCount
     public var accessType: ResourceAccessType // VkDescriptorSetLayoutBinding.descriptorType
+    @usableFromInline var encodedBufferOffset: Int
+    @usableFromInline var encodedBufferStride: Int
     
     public init(resourceType: ArgumentResourceType, index: Int? = nil, arrayLength: Int = 1, accessType: ResourceAccessType = .read) {
         self.resourceType = resourceType
         self.index = index ?? -1
         self.arrayLength = arrayLength
         self.accessType = accessType
+        self.encodedBufferOffset = -1
+        self.encodedBufferStride = 0
+        
+        let sizeAndAlign = RenderBackend._backend!.argumentBufferImpl.encodedBufferSizeAndAlign(forArgument: self)
+        self.encodedBufferStride = sizeAndAlign.size.roundedUpToMultiple(of: sizeAndAlign.alignment)
     }
 }
 
@@ -65,17 +72,27 @@ extension ArgumentDescriptor.ArgumentResourceType: CustomStringConvertible {
 
 public struct ArgumentBufferDescriptor: Hashable, Sendable {
     public var arguments: [ArgumentDescriptor]
+    public var storageMode: StorageMode
+    @usableFromInline var bufferLength: Int
     
     @inlinable
-    public init(arguments: [ArgumentDescriptor]) {
+    public init(arguments: [ArgumentDescriptor], storageMode: StorageMode = .shared) {
         self.arguments = arguments
+        self.storageMode = storageMode
         
+        var offset = 0
         var nextIndex = 0
         for i in self.arguments.indices {
             precondition(self.arguments[i].index < 0 || self.arguments[i].index >= nextIndex, "Arguments must be in order of ascending index.")
             self.arguments[i].index = max(self.arguments[i].index, nextIndex)
-            nextIndex = self.arguments[i].index + 1
+            
+            offset = offset.roundedUpToMultiple(of: self.arguments[i].encodedBufferStride)
+            self.arguments[i].encodedBufferOffset = offset
+            nextIndex = self.arguments[i].index + self.arguments[i].arrayLength
+            offset += self.arguments[i].encodedBufferStride * self.arguments[i].arrayLength
         }
+        
+        self.bufferLength = offset
     }
 }
 
@@ -214,81 +231,40 @@ public struct ArgumentBuffer : ResourceProtocol {
             self.pointer(for: \.maxAllocationLengths).pointee = newValue
         }
     }
-    
-    public var bindings : ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)> {
-        _read {
-            yield self.pointer(for: \.bindings).pointee
-        }
-    }
      
     public var storageMode: StorageMode {
-        return .shared
-    }
-    
-    public func _bytes(offset: Int) -> UnsafeRawPointer {
-        if self._usesPersistentRegistry {
-            return self.pointer(for: \.inlineDataStorage)!.pointee.withUnsafeBytes { return $0.baseAddress! + offset }
-        } else {
-            return UnsafeRawPointer(TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].inlineDataAllocator.buffer!) + offset
-        }
-    }
-    
-    /// returns the offset in bytes into the buffer's storage
-    public func _copyBytes(_ bytes: UnsafeRawPointer, length: Int) -> Int {
-        if self._usesPersistentRegistry {
-            return PersistentArgumentBufferRegistry.instance.lock.withLock {
-                let inlineDataStorage = self.pointer(for: \.inlineDataStorage)!
-                let offset = inlineDataStorage.pointee.count
-                inlineDataStorage.pointee.append(bytes.assumingMemoryBound(to: UInt8.self), count: length)
-                return offset
-            }
-        } else {
-            return TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].lock.withLock {
-                let offset = TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].inlineDataAllocator.count
-                TransientArgumentBufferRegistry.instances[self.transientRegistryIndex].inlineDataAllocator.append(from: bytes.assumingMemoryBound(to: UInt8.self), count: length)
-                return offset
-            }
-        }
+        return self.descriptor.storageMode
     }
     
     public func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
         guard let buffer = buffer else { return }
         
         assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.bindings.append(
-            (path, .buffer(buffer, offset: offset))
-        )
+        
+        RenderBackend._backend.argumentBufferImpl.setBuffer(buffer, offset: offset, at: path, on: self)
     }
     
     public func setTexture(_ texture: Texture, at path: ResourceBindingPath) {
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.bindings.append(
-            (path, .texture(texture))
-        )
+        RenderBackend._backend.argumentBufferImpl.setTexture(texture, at: path, on: self)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath) {
         assert(!self.flags.contains(.persistent) || structure.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.bindings.append(
-            (path, .accelerationStructure(structure))
-        )
+        RenderBackend._backend.argumentBufferImpl.setAccelerationStructure(structure, at: path, on: self)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath) {
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.bindings.append(
-            (path, .visibleFunctionTable(table))
-        )
+        RenderBackend._backend.argumentBufferImpl.setVisibleFunctionTable(table, at: path, on: self)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath) {
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
-        self.bindings.append(
-            (path, .intersectionFunctionTable(table))
-        )
+        RenderBackend._backend.argumentBufferImpl.setIntersectionFunctionTable(table, at: path, on: self)
     }
     
     @inlinable
@@ -299,17 +275,15 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     @inlinable
     public func setSampler(_ sampler: SamplerState, at path: ResourceBindingPath) {
-        self.bindings.append(
-            (path, .sampler(sampler))
-        )
+        RenderBackend._backend.argumentBufferImpl.setSampler(sampler, at: path, on: self)
     }
     
+    @inlinable
     public func setValue<T>(_ value: T, at path: ResourceBindingPath) {
-        assert(_isPOD(T.self), "Only POD types should be used with setValue.")
+        precondition(_isPOD(T.self), "Only POD types should be used with setValue.")
         
-        var value = value
-        withUnsafeBytes(of: &value) { bufferPointer in
-            self.setBytes(bufferPointer.baseAddress!, length: bufferPointer.count, at: path)
+        withUnsafeBytes(of: value) { bytes in
+            self.setBytes(bytes, at: path)
         }
     }
     
@@ -317,11 +291,8 @@ public struct ArgumentBuffer : ResourceProtocol {
         preconditionFailure("setValue should not be used with resources; use setBuffer or setTexture instead.")
     }
     
-    public func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
-        let currentOffset = self._copyBytes(bytes, length: length)
-        self.bindings.append(
-            (path, .bytes(offset: currentOffset, length: length))
-        )
+    public func setBytes(_ bytes: UnsafeRawBufferPointer, at path: ResourceBindingPath) {
+        RenderBackend._backend.argumentBufferImpl.setBytes(bytes, at: path, on: self)
     }
     
     public static var resourceType: ResourceType {
@@ -358,34 +329,32 @@ extension ArgumentBuffer {
 }
 
 extension ArgumentBuffer: ResourceProtocolImpl {
-    typealias SharedProperties = ArgumentBufferProperties
-    typealias TransientProperties = EmptyProperties<ArgumentBufferDescriptor>
-    typealias PersistentProperties = ArgumentBufferProperties.PersistentArgumentBufferProperties
+    @usableFromInline typealias SharedProperties = ArgumentBufferProperties
+    @usableFromInline typealias TransientProperties = EmptyProperties<ArgumentBufferDescriptor>
+    @usableFromInline typealias PersistentProperties = ArgumentBufferProperties.PersistentArgumentBufferProperties
     
-    static func transientRegistry(index: Int) -> TransientArgumentBufferRegistry? {
+    @usableFromInline static func transientRegistry(index: Int) -> TransientArgumentBufferRegistry? {
         return TransientArgumentBufferRegistry.instances[index]
     }
     
-    static var persistentRegistry: PersistentRegistry<Self> { PersistentArgumentBufferRegistry.instance }
+    @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { PersistentArgumentBufferRegistry.instance }
     
-    typealias Descriptor = ArgumentBufferDescriptor
+    @usableFromInline typealias Descriptor = ArgumentBufferDescriptor
 }
 
 
 extension ArgumentBuffer: CustomStringConvertible {
     public var description: String {
-        return "ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "")bindings: \(self.bindings), flags: \(self.flags) }"
+        return "ArgumentBuffer(handle: \(self.handle)) { \(self.label.map { "label: \($0), "} ?? "") flags: \(self.flags) }"
     }
 }
 
 // Unlike the other transient registries, the transient argument buffer registry is chunk-based.
 // This is because the number of argument buffers used within a frame can vary dramatically, and so a pre-assigned maximum is more likely to be hit.
-final class TransientArgumentBufferRegistry: TransientChunkRegistry<ArgumentBuffer> {
-    static let instances = TransientRegistryArray<TransientArgumentBufferRegistry>()
+@usableFromInline final class TransientArgumentBufferRegistry: TransientChunkRegistry<ArgumentBuffer> {
+    @usableFromInline static let instances = TransientRegistryArray<TransientArgumentBufferRegistry>()
     
     override class var maxChunks: Int { 2048 }
-    
-    let inlineDataAllocator : ExpandingBuffer<UInt8> = .init()
 }
 
 final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer> {
@@ -394,9 +363,8 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     override class var maxChunks: Int { 256 }
 }
 
-struct ArgumentBufferProperties: SharedResourceProperties {
-    struct PersistentArgumentBufferProperties: PersistentResourceProperties {
-        let inlineDataStorage : UnsafeMutablePointer<Data>
+@usableFromInline struct ArgumentBufferProperties: SharedResourceProperties {
+    @usableFromInline struct PersistentArgumentBufferProperties: PersistentResourceProperties {
         let heaps : UnsafeMutablePointer<Heap?>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
         let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
@@ -405,46 +373,41 @@ struct ArgumentBufferProperties: SharedResourceProperties {
         /// The RenderGraphs that are currently using this resource.
         let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         
-        init(capacity: Int) {
-            self.inlineDataStorage = .allocate(capacity: capacity)
+        @usableFromInline init(capacity: Int) {
             self.heaps = .allocate(capacity: capacity)
             self.readWaitIndices = .allocate(capacity: capacity)
             self.writeWaitIndices = .allocate(capacity: capacity)
             self.activeRenderGraphs = .allocate(capacity: capacity)
         }
         
-        func deallocate() {
-            self.inlineDataStorage.deallocate()
+        @usableFromInline func deallocate() {
             self.heaps.deallocate()
             self.readWaitIndices.deallocate()
             self.writeWaitIndices.deallocate()
             self.activeRenderGraphs.deallocate()
         }
         
-        func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
-            self.inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
+        @usableFromInline func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
             self.heaps.advanced(by: indexInChunk).initialize(to: nil)
             self.readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
         }
         
-        func initialize(index indexInChunk: Int) {
-            self.inlineDataStorage.advanced(by: indexInChunk).initialize(to: Data())
+        @usableFromInline func initialize(index indexInChunk: Int) {
             self.heaps.advanced(by: indexInChunk).initialize(to: nil)
             self.readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
             self.activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
         }
         
-        func deinitialize(from indexInChunk: Int, count: Int) {
-            self.inlineDataStorage.advanced(by: indexInChunk).deinitialize(count: count)
+        @usableFromInline func deinitialize(from indexInChunk: Int, count: Int) {
             self.heaps.advanced(by: indexInChunk).deinitialize(count: count)
         }
         
-        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
-        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
     let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
@@ -452,75 +415,85 @@ struct ArgumentBufferProperties: SharedResourceProperties {
     let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
     let stateFlags: UnsafeMutablePointer<ResourceStateFlags>
     let maxAllocationLengths: UnsafeMutablePointer<Int>
-    let bindings : UnsafeMutablePointer<ExpandingBuffer<(ResourceBindingPath, ArgumentBuffer.ArgumentResource)>>
+    let backingResources: UnsafeMutablePointer<UnsafeMutableRawPointer?>
+    @usableFromInline let mappedContents : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     
     #if canImport(Metal)
+    let gpuAddresses: UnsafeMutablePointer<UInt64>
     let usedResources: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     let usedHeaps: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     #endif
     
-    typealias Descriptor = ArgumentBufferDescriptor
+    @usableFromInline typealias Descriptor = ArgumentBufferDescriptor
     
-    init(capacity: Int) {
+    @usableFromInline init(capacity: Int) {
         self.usages = .allocate(capacity: capacity)
         self.descriptors = .allocate(capacity: capacity)
         self.encoders = .allocate(capacity: capacity)
         self.stateFlags = .allocate(capacity: capacity)
         self.maxAllocationLengths = .allocate(capacity: capacity)
-        self.bindings = .allocate(capacity: capacity)
+        self.backingResources = UnsafeMutablePointer.allocate(capacity: capacity)
+        self.mappedContents = UnsafeMutablePointer.allocate(capacity: capacity)
 
 #if canImport(Metal)
+        self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
         self.usedResources = .allocate(capacity: capacity)
         self.usedHeaps = .allocate(capacity: capacity)
 #endif
     }
     
-    func deallocate() {
+    @usableFromInline func deallocate() {
         self.usages.deallocate()
         self.descriptors.deallocate()
         self.encoders.deallocate()
         self.stateFlags.deallocate()
         self.maxAllocationLengths.deallocate()
-        self.bindings.deallocate()
+        self.backingResources.deallocate()
+        self.mappedContents.deallocate()
         
 #if canImport(Metal)
         self.usedResources.deallocate()
         self.usedHeaps.deallocate()
+        self.gpuAddresses.deallocate()
 #endif
     }
     
-    func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
+    @usableFromInline func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
         self.descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
         self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
         self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
-        self.bindings.advanced(by: indexInChunk).initialize(to: ExpandingBuffer())
+        self.backingResources.advanced(by: indexInChunk).initialize(to: nil)
+        self.mappedContents.advanced(by: indexInChunk).initialize(to: nil)
         
 #if canImport(Metal)
+        self.gpuAddresses.advanced(by: indexInChunk).initialize(to: 0)
         self.usedResources.advanced(by: indexInChunk).initialize(to: .init()) // TODO: pass in the appropriate allocator.
         self.usedHeaps.advanced(by: indexInChunk).initialize(to: .init())
 #endif
     }
     
-    func deinitialize(from index: Int, count: Int) {
+    @usableFromInline func deinitialize(from index: Int, count: Int) {
         self.usages.advanced(by: index).deinitialize(count: count)
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.encoders.advanced(by: index).deinitialize(count: count)
         self.stateFlags.advanced(by: index).deinitialize(count: count)
         self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
-        self.bindings.advanced(by: index).deinitialize(count: count)
+        self.backingResources.advanced(by: index).deinitialize(count: count)
+        self.mappedContents.advanced(by: index).deinitialize(count: count)
         
 #if canImport(Metal)
         for i in 0..<count {
             self.usedResources[index + i].deinit()
             self.usedHeaps[index + i].deinit()
         }
+        self.gpuAddresses.advanced(by: index).deinitialize(count: count)
         self.usedResources.advanced(by: index).deinitialize(count: count)
         self.usedHeaps.advanced(by: index).deinitialize(count: count)
 #endif
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
+    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 

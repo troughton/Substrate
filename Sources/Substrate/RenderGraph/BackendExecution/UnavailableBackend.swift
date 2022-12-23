@@ -4,6 +4,9 @@ import SubstrateUtilities
 @available(*, unavailable)
 final class UnavailableBackend : SpecificRenderBackend {
     
+    var argumentBufferImpl: _ArgumentBufferImpl.Type { preconditionFailure() }
+    
+    
     var hasUnifiedMemory: Bool {
         preconditionFailure()
     }
@@ -288,10 +291,6 @@ final class UnavailableBackend : SpecificRenderBackend {
         preconditionFailure()
     }
     
-    static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: ArgumentBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<UnavailableBackend>) {
-        preconditionFailure()
-    }
-    
     func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: VisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<UnavailableBackend>) async {
         preconditionFailure()
     }
@@ -325,6 +324,14 @@ final class UnavailableBackend : SpecificRenderBackend {
     }
     
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {
+        preconditionFailure()
+    }
+    
+    func bufferContents(for buffer: ArgumentBuffer, range: Range<Int>) -> UnsafeMutableRawPointer? {
+        preconditionFailure()
+    }
+    
+    func buffer(_ buffer: ArgumentBuffer, didModifyRange range: Range<Int>) {
         preconditionFailure()
     }
     

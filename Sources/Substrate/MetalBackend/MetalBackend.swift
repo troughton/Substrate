@@ -114,6 +114,10 @@ final class MetalBackend : SpecificRenderBackend {
         return self.device
     }
     
+    public var argumentBufferImpl: _ArgumentBufferImpl.Type {
+        MetalArgumentBufferImpl.self
+    }
+    
     func reloadShaderLibraryIfNeeded() async {
         if self.enableShaderHotReloading {
             await self.stateCaches.checkForLibraryReload()
@@ -304,6 +308,28 @@ final class MetalBackend : SpecificRenderBackend {
         }
         #endif
     }
+    
+    @usableFromInline func bufferContents(for buffer: ArgumentBuffer, range: Range<Int>) -> UnsafeMutableRawPointer? {
+        guard let bufferReference = Self.activeContext?.resourceMap.bufferForCPUAccess(buffer, needsLock: true) ?? resourceRegistry[buffer] else {
+            return nil
+        }
+        return bufferReference.buffer.contents() + bufferReference.offset + range.lowerBound
+    }
+    
+    @usableFromInline func buffer(_ buffer: ArgumentBuffer, didModifyRange range: Range<Int>) {
+        #if os(macOS) || targetEnvironment(macCatalyst)
+        if range.isEmpty || self.isAppleSiliconGPU { return }
+        if buffer.descriptor.storageMode == .managed {
+            let mtlBuffer = Self.activeContext?.resourceMap.bufferForCPUAccess(buffer, needsLock: true) ?? resourceRegistry[buffer]!
+            let offsetRange = (range.lowerBound + mtlBuffer.offset)..<(range.upperBound + mtlBuffer.offset)
+            #if targetEnvironment(macCatalyst)
+            unsafeBitCast(mtlBuffer.buffer, to: MTLBufferShim.self).didModifyRange(NSMakeRange(offsetRange.lowerBound, offsetRange.count))
+            #else
+            mtlBuffer.buffer.didModifyRange(offsetRange)
+            #endif
+        }
+        #endif
+    }
 
     @usableFromInline func registerExternalResource(_ resource: Resource, backingResource: Any) {
         self.resourceRegistry.importExternalResource(resource, backingResource: backingResource)
@@ -311,15 +337,13 @@ final class MetalBackend : SpecificRenderBackend {
     
     public func backingResource(_ resource: Resource) -> Any? {
         if let buffer = Buffer(resource) {
-            let bufferReference = resourceRegistry[buffer]
-            assert(bufferReference == nil || bufferReference?.offset == 0)
-            return bufferReference?.buffer
+            return buffer[\.backingResources].map { Unmanaged<MTLBuffer>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         } else if let texture = Texture(resource) {
-            return resourceRegistry[texture]?.texture
+            return texture[\.backingResources].map { Unmanaged<MTLTexture>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         } else if let heap = Heap(resource) {
-            return resourceRegistry[heap]
+            return heap[\.backingResources].map { Unmanaged<MTLHeap>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         } else if let accelerationStructure = AccelerationStructure(resource), #available(macOS 11.0, iOS 14.0, *) {
-            return resourceRegistry[accelerationStructure]
+            return accelerationStructure[\.backingResources].map { Unmanaged<MTLAccelerationStructure>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         }
         return nil
     }
@@ -389,10 +413,6 @@ final class MetalBackend : SpecificRenderBackend {
     
     var requiresEmulatedInputAttachments: Bool {
         return !self.isAppleSiliconGPU
-    }
-    
-    static func fillArgumentBuffer(_ argumentBuffer: ArgumentBuffer, storage: MTLBufferReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {
-        await argumentBuffer.setArguments(storage: storage, resourceMap: resourceMap)
     }
     
     func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: MTLVisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<MetalBackend>) async {

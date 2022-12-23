@@ -249,17 +249,17 @@ extension Texture: CustomStringConvertible {
 }
 
 extension Texture: ResourceProtocolImpl {
-    typealias SharedProperties = TextureProperties
-    typealias TransientProperties = TextureProperties.TransientTextureProperties
-    typealias PersistentProperties = TextureProperties.PersistentTextureProperties
+    @usableFromInline typealias SharedProperties = TextureProperties
+    @usableFromInline typealias TransientProperties = TextureProperties.TransientTextureProperties
+    @usableFromInline typealias PersistentProperties = TextureProperties.PersistentTextureProperties
     
-    static func transientRegistry(index: Int) -> TransientTextureRegistry? {
+    @usableFromInline static func transientRegistry(index: Int) -> TransientTextureRegistry? {
         return TransientTextureRegistry.instances[index]
     }
     
-    static var persistentRegistry: PersistentRegistry<Self> { PersistentTextureRegistry.instance }
+    @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { PersistentTextureRegistry.instance }
     
-    typealias Descriptor = TextureDescriptor
+    @usableFromInline typealias Descriptor = TextureDescriptor
 }
 
 
@@ -268,42 +268,43 @@ public enum TextureViewBaseInfo {
     case texture(Texture.TextureViewDescriptor)
 }
 
-struct TextureProperties: SharedResourceProperties {
-    struct TransientTextureProperties: ResourceProperties {
+@usableFromInline struct TextureProperties: SharedResourceProperties {
+    @usableFromInline struct TransientTextureProperties: ResourceProperties {
         var baseResources : UnsafeMutablePointer<Resource?>
         var textureViewInfos : UnsafeMutablePointer<TextureViewBaseInfo?>
         
-        init(capacity: Int) {
+        @usableFromInline init(capacity: Int) {
             self.baseResources = UnsafeMutablePointer.allocate(capacity: capacity)
             self.textureViewInfos = UnsafeMutablePointer.allocate(capacity: capacity)
         }
         
-        func deallocate() {
+        @usableFromInline func deallocate() {
             self.baseResources.deallocate()
             self.textureViewInfos.deallocate()
         }
         
-        func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
+        @usableFromInline func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
             self.baseResources.advanced(by: index).initialize(to: nil)
             self.textureViewInfos.advanced(by: index).initialize(to: nil)
         }
         
-        func initialize(index: Int, descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) {
+        @usableFromInline func initialize(index: Int, descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) {
             self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
             self.textureViewInfos.advanced(by: index).initialize(to: .buffer(descriptor))
         }
         
-        func initialize(index: Int, viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) {
+        @usableFromInline func initialize(index: Int, viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) {
             self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
             self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
         }
         
-        func deinitialize(from index: Int, count: Int) {
+        @usableFromInline func deinitialize(from index: Int, count: Int) {
             self.baseResources.advanced(by: index).deinitialize(count: count)
             self.textureViewInfos.advanced(by: index).deinitialize(count: count)
         }
     }
-    struct PersistentTextureProperties: PersistentResourceProperties {
+    
+    @usableFromInline struct PersistentTextureProperties: PersistentResourceProperties {
         
         let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -314,7 +315,7 @@ struct TextureProperties: SharedResourceProperties {
         let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         let heaps : UnsafeMutablePointer<Heap?>
         
-        init(capacity: Int) {
+        @usableFromInline init(capacity: Int) {
             self.stateFlags = .allocate(capacity: capacity)
             self.readWaitIndices = .allocate(capacity: capacity)
             self.writeWaitIndices = .allocate(capacity: capacity)
@@ -322,7 +323,7 @@ struct TextureProperties: SharedResourceProperties {
             self.heaps = .allocate(capacity: capacity)
         }
         
-        func deallocate() {
+        @usableFromInline func deallocate() {
             self.stateFlags.deallocate()
             self.readWaitIndices.deallocate()
             self.writeWaitIndices.deallocate()
@@ -330,7 +331,7 @@ struct TextureProperties: SharedResourceProperties {
             self.heaps.deallocate()
         }
         
-        func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
+        @usableFromInline func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
             self.stateFlags.advanced(by: index).initialize(to: [])
             self.readWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
             self.writeWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
@@ -338,7 +339,7 @@ struct TextureProperties: SharedResourceProperties {
             self.heaps.advanced(by: index).initialize(to: heap)
         }
         
-        func deinitialize(from index: Int, count: Int) {
+        @usableFromInline func deinitialize(from index: Int, count: Int) {
             self.stateFlags.advanced(by: index).deinitialize(count: count)
             self.readWaitIndices.advanced(by: index).deinitialize(count: count)
             self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
@@ -346,35 +347,60 @@ struct TextureProperties: SharedResourceProperties {
             self.heaps.advanced(by: index).deinitialize(count: count)
         }
         
-        var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
-        var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
     }
     
-    var descriptors : UnsafeMutablePointer<TextureDescriptor>
-    var usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
+    let descriptors : UnsafeMutablePointer<TextureDescriptor>
+    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
+    let backingResources : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     
-    init(capacity: Int) {
+#if canImport(Metal)
+    let gpuAddresses: UnsafeMutablePointer<UInt64>
+#endif
+    
+    @usableFromInline init(capacity: Int) {
         self.descriptors = UnsafeMutablePointer.allocate(capacity: capacity)
         self.usages = UnsafeMutablePointer.allocate(capacity: capacity)
+        self.backingResources = UnsafeMutablePointer.allocate(capacity: capacity)
+        
+#if canImport(Metal)
+        self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
+#endif
     }
     
-    func deallocate() {
+    @usableFromInline func deallocate() {
         self.descriptors.deallocate()
         self.usages.deallocate()
+        self.backingResources.deallocate()
+        
+#if canImport(Metal)
+        self.gpuAddresses.deallocate()
+#endif
     }
     
-    func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
+    @usableFromInline func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.usages.advanced(by: index).initialize(to: ChunkArray())
+        self.backingResources.advanced(by: index).initialize(to: nil)
+        
+#if canImport(Metal)
+        self.gpuAddresses.advanced(by: index).initialize(to: 0)
+#endif
     }
     
-    func initialize(index: Int, descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) {
+    @usableFromInline func initialize(index: Int, descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) {
         self.descriptors.advanced(by: index).initialize(to: descriptor.descriptor)
         self.usages.advanced(by: index).initialize(to: ChunkArray())
+        self.backingResources.advanced(by: index).initialize(to: nil)
+        
+#if canImport(Metal)
+        self.gpuAddresses.advanced(by: index).initialize(to: 0)
+#endif
     }
     
-    func initialize(index: Int, viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) {
+    @usableFromInline func initialize(index: Int, viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) {
         var descriptor = baseResource.descriptor
         descriptor.pixelFormat = viewDescriptor.pixelFormat
         descriptor.textureType = viewDescriptor.textureType
@@ -386,20 +412,25 @@ struct TextureProperties: SharedResourceProperties {
         }
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.usages.advanced(by: index).initialize(to: ChunkArray())
+        self.backingResources.advanced(by: index).initialize(to: nil)
+        
+#if canImport(Metal)
+        self.gpuAddresses.advanced(by: index).initialize(to: 0)
+#endif
     }
     
-    func deinitialize(from index: Int, count: Int) {
+    @usableFromInline func deinitialize(from index: Int, count: Int) {
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.usages.advanced(by: index).deinitialize(count: count)
     }
     
-    var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
+    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 
-final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
-    static let instances = TransientRegistryArray<TransientTextureRegistry>()
+@usableFromInline final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
+    @usableFromInline static let instances = TransientRegistryArray<TransientTextureRegistry>()
     
-    func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer, flags: ResourceFlags) -> Texture {
+    @usableFromInline func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer, flags: ResourceFlags) -> Texture {
         let resource = self.allocateHandle(flags: flags)
         self.sharedStorage.initialize(index: resource.index, descriptor: descriptor, baseResource: baseResource)
         self.transientStorage.initialize(index: resource.index, descriptor: descriptor, baseResource: baseResource)
@@ -409,7 +440,7 @@ final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
         return resource
     }
     
-    func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture, flags: ResourceFlags) -> Texture {
+    @usableFromInline func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture, flags: ResourceFlags) -> Texture {
         let resource = self.allocateHandle(flags: flags)
         self.sharedStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)
         self.transientStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)

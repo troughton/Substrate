@@ -130,6 +130,21 @@ extension TextureUsage {
     }
 }
 
+extension ResourceAccessType {
+    public init(_ type: MTLArgumentAccess) {
+        switch type {
+        case .readOnly:
+            self = .read
+        case .readWrite:
+            self = .readWrite
+        case .writeOnly:
+            self = .write
+        @unknown default:
+            fatalError()
+        }
+    }
+}
+
 extension ResourceType {
     public init(_ type: MTLArgumentType) {
         switch type {
