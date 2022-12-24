@@ -125,7 +125,7 @@ public struct Texture : ResourceProtocol {
         }
         precondition(transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
         
-        self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base, flags: flags)
+        self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(viewDescriptor: descriptor, baseResource: base, flags: flags)
         
         if base.storageMode != .private {
             renderGraph.context.transientRegistry!.allocateTextureView(self)
@@ -140,7 +140,7 @@ public struct Texture : ResourceProtocol {
         }
         precondition(transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
         
-        self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base, flags: flags)
+        self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(viewDescriptor: descriptor, baseResource: base, flags: flags)
         
         if base.storageMode != .private {
             renderGraph.context.transientRegistry!.allocateTextureView(self)
@@ -188,15 +188,6 @@ public struct Texture : ResourceProtocol {
     
     public var storageMode: StorageMode {
         return self.descriptor.storageMode
-    }
-    
-    public internal(set) var descriptor : TextureDescriptor {
-        get {
-            return self[\.descriptors]
-        }
-        nonmutating set {
-            self[\.descriptors] = newValue
-        }
     }
     
     public var heap : Heap? {
@@ -259,7 +250,7 @@ extension Texture: CustomStringConvertible {
 }
 
 extension Texture: ResourceProtocolImpl {
-    @usableFromInline typealias SharedProperties = TextureProperties
+    @usableFromInline typealias SharedProperties = EmptyProperties<TextureDescriptor>
     @usableFromInline typealias TransientProperties = TextureProperties.TransientTextureProperties
     @usableFromInline typealias PersistentProperties = TextureProperties.PersistentTextureProperties
     
@@ -270,6 +261,8 @@ extension Texture: ResourceProtocolImpl {
     @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { PersistentTextureRegistry.instance }
     
     @usableFromInline typealias Descriptor = TextureDescriptor
+    
+    @usableFromInline static var tracksUsages: Bool { true }
 }
 
 
@@ -278,7 +271,8 @@ public enum TextureViewBaseInfo {
     case texture(Texture.TextureViewDescriptor)
 }
 
-@usableFromInline struct TextureProperties: SharedResourceProperties {
+@usableFromInline struct TextureProperties {
+    
     @usableFromInline struct TransientTextureProperties: ResourceProperties {
         var baseResources : UnsafeMutablePointer<Resource?>
         var textureViewInfos : UnsafeMutablePointer<TextureViewBaseInfo?>
@@ -361,56 +355,21 @@ public enum TextureViewBaseInfo {
         @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
         @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
     }
+}
+
+@usableFromInline final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
+    @usableFromInline static let instances = TransientRegistryArray<TransientTextureRegistry>()
     
-    let descriptors : UnsafeMutablePointer<TextureDescriptor>
-    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
-    let backingResources : UnsafeMutablePointer<UnsafeMutableRawPointer?>
-    
-#if canImport(Metal)
-    let gpuAddresses: UnsafeMutablePointer<UInt64>
-#endif
-    
-    @usableFromInline init(capacity: Int) {
-        self.descriptors = UnsafeMutablePointer.allocate(capacity: capacity)
-        self.usages = UnsafeMutablePointer.allocate(capacity: capacity)
-        self.backingResources = UnsafeMutablePointer.allocate(capacity: capacity)
+    @usableFromInline func allocate(viewDescriptor: Buffer.TextureViewDescriptor, baseResource: Buffer, flags: ResourceFlags) -> Texture {
+        baseResource.descriptor.usageHint.formUnion(.textureView)
         
-#if canImport(Metal)
-        self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
-#endif
+        let result = self.allocate(descriptor: viewDescriptor.descriptor, flags: flags)
+        self.transientStorage.baseResources.advanced(by: result.index).pointee = Substrate.Resource(baseResource)
+        return result
     }
     
-    @usableFromInline func deallocate() {
-        self.descriptors.deallocate()
-        self.usages.deallocate()
-        self.backingResources.deallocate()
+    @usableFromInline func allocate(viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture, flags: ResourceFlags) -> Texture {
         
-#if canImport(Metal)
-        self.gpuAddresses.deallocate()
-#endif
-    }
-    
-    @usableFromInline func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
-        self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.usages.advanced(by: index).initialize(to: ChunkArray())
-        self.backingResources.advanced(by: index).initialize(to: nil)
-        
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).initialize(to: 0)
-#endif
-    }
-    
-    @usableFromInline func initialize(index: Int, descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) {
-        self.descriptors.advanced(by: index).initialize(to: descriptor.descriptor)
-        self.usages.advanced(by: index).initialize(to: ChunkArray())
-        self.backingResources.advanced(by: index).initialize(to: nil)
-        
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).initialize(to: 0)
-#endif
-    }
-    
-    @usableFromInline func initialize(index: Int, viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) {
         var descriptor = baseResource.descriptor
         descriptor.pixelFormat = viewDescriptor.pixelFormat
         descriptor.textureType = viewDescriptor.textureType
@@ -420,47 +379,14 @@ public enum TextureViewBaseInfo {
         if viewDescriptor.levels.lowerBound != -1 {
             descriptor.mipmapLevelCount = viewDescriptor.levels.count
         }
-        self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.usages.advanced(by: index).initialize(to: ChunkArray())
-        self.backingResources.advanced(by: index).initialize(to: nil)
-        
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).initialize(to: 0)
-#endif
-    }
-    
-    @usableFromInline func deinitialize(from index: Int, count: Int) {
-        self.descriptors.advanced(by: index).deinitialize(count: count)
-        self.usages.advanced(by: index).deinitialize(count: count)
-    }
-    
-    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
-}
-
-@usableFromInline final class TransientTextureRegistry: TransientFixedSizeRegistry<Texture> {
-    @usableFromInline static let instances = TransientRegistryArray<TransientTextureRegistry>()
-    
-    @usableFromInline func allocate(descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer, flags: ResourceFlags) -> Texture {
-        let resource = self.allocateHandle(flags: flags)
-        self.sharedStorage.initialize(index: resource.index, descriptor: descriptor, baseResource: baseResource)
-        self.transientStorage.initialize(index: resource.index, descriptor: descriptor, baseResource: baseResource)
-        self.labels.advanced(by: resource.index).initialize(to: nil)
-        baseResource.descriptor.usageHint.formUnion(.textureView)
-        
-        return resource
-    }
-    
-    @usableFromInline func allocate(descriptor viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture, flags: ResourceFlags) -> Texture {
-        let resource = self.allocateHandle(flags: flags)
-        self.sharedStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)
-        self.transientStorage.initialize(index: resource.index, viewDescriptor: viewDescriptor, baseResource: baseResource)
-        self.labels.advanced(by: resource.index).initialize(to: nil)
         
         if baseResource.descriptor.pixelFormat.channelCount != viewDescriptor.pixelFormat.channelCount || baseResource.descriptor.pixelFormat.bytesPerPixel != viewDescriptor.pixelFormat.bytesPerPixel {
             baseResource.descriptor.usageHint.formUnion(.pixelFormatView)
         }
         
-        return resource
+        let result = self.allocate(descriptor: descriptor, flags: flags)
+        self.transientStorage.baseResources.advanced(by: result.index).pointee = Substrate.Resource(baseResource)
+        return result
     }
 }
 

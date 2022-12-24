@@ -133,7 +133,7 @@ final class MetalBackend : SpecificRenderBackend {
         case .heap:
             return self.resourceRegistry.allocateHeap(Heap(resource)!) != nil
         case .argumentBuffer:
-            return self.resourceRegistry.allocateArgumentBuffer(ArgumentBuffer(resource)!, stateCaches: self.stateCaches) != nil
+            return self.resourceRegistry.allocateArgumentBuffer(ArgumentBuffer(resource)!) != nil
         case .accelerationStructure:
             return self.resourceRegistry.allocateAccelerationStructure(AccelerationStructure(resource)!) != nil
         default:
@@ -367,21 +367,21 @@ final class MetalBackend : SpecificRenderBackend {
     @usableFromInline func copyTextureBytes(from texture: Texture, to bytes: UnsafeMutableRawPointer, bytesPerRow: Int, region: Region, mipmapLevel: Int) async {
         assert(texture.flags.contains(.persistent) || Self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
         
-        let mtlTexture = await Self.activeContext?.resourceMap.textureForCPUAccess(texture, needsLock: true) ?? resourceRegistry[texture]!
+        let mtlTexture = resourceRegistry[texture]!
         mtlTexture.texture.getBytes(bytes, bytesPerRow: bytesPerRow, from: MTLRegion(region), mipmapLevel: mipmapLevel)
     }
     
     @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int) async {
         assert(texture.flags.contains(.persistent) || Self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
         
-        let mtlTexture = await Self.activeContext?.resourceMap.textureForCPUAccess(texture, needsLock: true) ?? resourceRegistry[texture]!
+        let mtlTexture = resourceRegistry[texture]!
         mtlTexture.texture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, withBytes: bytes, bytesPerRow: bytesPerRow)
     }
     
     @usableFromInline func replaceTextureRegion(texture: Texture, region: Region, mipmapLevel: Int, slice: Int, withBytes bytes: UnsafeRawPointer, bytesPerRow: Int, bytesPerImage: Int) async {
         assert(texture.flags.contains(.persistent) || Self.activeContext != nil, "GPU memory for a transient texture may not be accessed outside of a RenderGraph RenderPass.")
                
-        let mtlTexture = await Self.activeContext?.resourceMap.textureForCPUAccess(texture, needsLock: true) ?? resourceRegistry[texture]!
+        let mtlTexture = resourceRegistry[texture]!
         mtlTexture.texture.replace(region: MTLRegion(region), mipmapLevel: mipmapLevel, slice: slice, withBytes: bytes, bytesPerRow: bytesPerRow, bytesPerImage: bytesPerImage)
     }
     

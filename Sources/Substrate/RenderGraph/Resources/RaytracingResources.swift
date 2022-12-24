@@ -66,6 +66,8 @@ extension AccelerationStructure: ResourceProtocolImpl {
     @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { AccelerationStructureRegistry.instance }
     
     @usableFromInline typealias Descriptor = Int // size
+    
+    @usableFromInline static var tracksUsages: Bool { true }
 }
 
 extension AccelerationStructure: CustomStringConvertible {
@@ -74,7 +76,7 @@ extension AccelerationStructure: CustomStringConvertible {
     }
 }
 
-@usableFromInline struct AccelerationStructureProperties: SharedResourceProperties {
+@usableFromInline struct AccelerationStructureProperties: ResourceProperties {
     @usableFromInline struct PersistentProperties: PersistentResourceProperties {
         
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -113,60 +115,23 @@ extension AccelerationStructure: CustomStringConvertible {
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { activeRenderGraphs }
     }
     
-    let sizes : UnsafeMutablePointer<Int>
-    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
-    let descriptors : UnsafeMutablePointer<AccelerationStructureDescriptor?>
-    let backingResources : UnsafeMutablePointer<UnsafeMutableRawPointer?>
-    
-#if canImport(Metal)
-    let gpuAddresses: UnsafeMutablePointer<UInt64>
-#endif
+    let descriptors : UnsafeMutablePointer<AccelerationStructureDescriptor?> // since AccelerationStructure's associated descriptor is an Int representing the size
     
     @usableFromInline init(capacity: Int) {
-        self.sizes = .allocate(capacity: capacity)
-        self.usages = .allocate(capacity: capacity)
         self.descriptors = .allocate(capacity: capacity)
-        self.backingResources = .allocate(capacity: capacity)
-        
-#if canImport(Metal)
-        self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
-#endif
     }
     
     @usableFromInline func deallocate() {
-        self.sizes.deallocate()
-        self.usages.deallocate()
         self.descriptors.deallocate()
-        self.backingResources.deallocate()
-        
-#if canImport(Metal)
-        self.gpuAddresses.deallocate()
-#endif
     }
     
     @usableFromInline func initialize(index: Int, descriptor size: Int, heap: Heap?, flags: ResourceFlags) {
-        self.sizes.advanced(by: index).initialize(to: size)
-        self.usages.advanced(by: index).initialize(to: ChunkArray())
         self.descriptors.advanced(by: index).initialize(to: nil)
-        self.backingResources.advanced(by: index).initialize(to: nil)
-        
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).initialize(to: 0)
-#endif
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
-        self.sizes.advanced(by: index).deinitialize(count: count)
-        self.usages.advanced(by: index).deinitialize(count: count)
         self.descriptors.advanced(by: index).deinitialize(count: count)
-        self.backingResources.advanced(by: index).deinitialize(count: count)
-
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).deinitialize(count: count)
-#endif
     }
-    
-    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { usages }
 }
 
 final class AccelerationStructureRegistry: PersistentRegistry<AccelerationStructure> {
@@ -248,7 +213,9 @@ extension VisibleFunctionTable: ResourceProtocolImpl {
     
     @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { VisibleFunctionTableRegistry.instance }
     
-    @usableFromInline typealias Descriptor = Int // size
+    @usableFromInline typealias Descriptor = Int // functionCount
+    
+    @usableFromInline static var tracksUsages: Bool { true }
 }
 
 extension VisibleFunctionTable: CustomStringConvertible {
@@ -257,7 +224,7 @@ extension VisibleFunctionTable: CustomStringConvertible {
     }
 }
 
-@usableFromInline struct VisibleFunctionTableProperties: SharedResourceProperties {
+@usableFromInline struct VisibleFunctionTableProperties: ResourceProperties {
     
     @usableFromInline struct PersistentProperties: PersistentResourceProperties {
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -300,59 +267,27 @@ extension VisibleFunctionTable: CustomStringConvertible {
     }
     
     let functions : UnsafeMutablePointer<[FunctionDescriptor?]>
-    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer?>
-    let backingResources : UnsafeMutablePointer<UnsafeMutableRawPointer?>
-    
-#if canImport(Metal)
-    let gpuAddresses: UnsafeMutablePointer<UInt64>
-#endif
     
     @usableFromInline init(capacity: Int) {
         self.functions = .allocate(capacity: capacity)
-        self.usages = .allocate(capacity: capacity)
         self.pipelineStates = .allocate(capacity: capacity)
-        self.backingResources = .allocate(capacity: capacity)
-        
-#if canImport(Metal)
-        self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
-#endif
     }
     
     @usableFromInline func deallocate() {
         self.functions.deallocate()
-        self.usages.deallocate()
         self.pipelineStates.deallocate()
-        self.backingResources.deallocate()
-        
-#if canImport(Metal)
-        self.gpuAddresses.deallocate()
-#endif
     }
     
     @usableFromInline func initialize(index: Int, descriptor functionCount: Int, heap: Heap?, flags: ResourceFlags) {
         self.functions.advanced(by: index).initialize(to: .init(repeating: nil, count: functionCount))
-        self.usages.advanced(by: index).initialize(to: ChunkArray<RecordedResourceUsage>())
         self.pipelineStates.advanced(by: index).initialize(to: .init(nil))
-        self.backingResources.advanced(by: index).initialize(to: nil)
-        
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).initialize(to: 0)
-#endif
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
         self.functions.advanced(by: index).deinitialize(count: count)
-        self.usages.advanced(by: index).deinitialize(count: count)
         self.pipelineStates.advanced(by: index).deinitialize(count: count)
-        self.backingResources.advanced(by: index).deinitialize(count: count)
-        
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).deinitialize(count: count)
-#endif
     }
-    
-    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 
 @usableFromInline final class VisibleFunctionTableRegistry: PersistentRegistry<VisibleFunctionTable> {
@@ -439,6 +374,8 @@ extension IntersectionFunctionTable: ResourceProtocolImpl {
     @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { IntersectionFunctionTableRegistry.instance }
     
     @usableFromInline typealias Descriptor = IntersectionFunctionTableDescriptor
+    
+    @usableFromInline static var tracksUsages: Bool { true }
 }
 
 extension IntersectionFunctionTable: CustomStringConvertible {
@@ -447,7 +384,7 @@ extension IntersectionFunctionTable: CustomStringConvertible {
     }
 }
 
-@usableFromInline struct IntersectionFunctionTableProperties: SharedResourceProperties {
+@usableFromInline struct IntersectionFunctionTableProperties: ResourceProperties {
     
     @usableFromInline struct PersistentProperties: PersistentResourceProperties {
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -490,60 +427,23 @@ extension IntersectionFunctionTable: CustomStringConvertible {
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
     }
     
-    let descriptors : UnsafeMutablePointer<IntersectionFunctionTableDescriptor>
-    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer?>
-    let backingResources : UnsafeMutablePointer<UnsafeMutableRawPointer?>
-    
-#if canImport(Metal)
-    let gpuAddresses: UnsafeMutablePointer<UInt64>
-#endif
     
     @usableFromInline init(capacity: Int) {
-        self.descriptors = .allocate(capacity: capacity)
-        self.usages = .allocate(capacity: capacity)
         self.pipelineStates = .allocate(capacity: capacity)
-        self.backingResources = .allocate(capacity: capacity)
-        
-#if canImport(Metal)
-        self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
-#endif
     }
     
     @usableFromInline func deallocate() {
-        self.descriptors.deallocate()
-        self.usages.deallocate()
         self.pipelineStates.deallocate()
-        self.backingResources.deallocate()
-        
-#if canImport(Metal)
-        self.gpuAddresses.deallocate()
-#endif
     }
     
     @usableFromInline func initialize(index: Int, descriptor: IntersectionFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
-        self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.usages.advanced(by: index).initialize(to: ChunkArray<RecordedResourceUsage>())
         self.pipelineStates.advanced(by: index).initialize(to: .init(nil))
-        self.backingResources.advanced(by: index).initialize(to: nil)
-        
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).initialize(to: 0)
-#endif
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
-        self.descriptors.advanced(by: index).deinitialize(count: count)
-        self.usages.advanced(by: index).deinitialize(count: count)
         self.pipelineStates.advanced(by: index).deinitialize(count: count)
-        self.backingResources.advanced(by: index).deinitialize(count: count)
-        
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).deinitialize(count: count)
-#endif
     }
-    
-    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { usages }
 }
 
 final class IntersectionFunctionTableRegistry: PersistentRegistry<IntersectionFunctionTable> {

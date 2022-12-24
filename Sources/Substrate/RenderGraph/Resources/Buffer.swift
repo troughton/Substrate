@@ -328,15 +328,6 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-    public internal(set) var descriptor : BufferDescriptor {
-        get {
-            return self[\.descriptors]
-        }
-        nonmutating set {
-            self[\.descriptors] = newValue
-        }
-    }
-    
     public var heap : Heap? {
         return self[\.heaps]
     }
@@ -378,10 +369,12 @@ extension Buffer: ResourceProtocolImpl {
     @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { PersistentBufferRegistry.instance }
     
     @usableFromInline typealias Descriptor = BufferDescriptor
+    
+    @usableFromInline static var tracksUsages: Bool { true }
 }
 
 @usableFromInline
-struct BufferProperties: SharedResourceProperties {
+struct BufferProperties: ResourceProperties {
     
     @usableFromInline struct TransientProperties: ResourceProperties {
         var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>
@@ -459,60 +452,23 @@ struct BufferProperties: SharedResourceProperties {
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
-    let descriptors : UnsafeMutablePointer<BufferDescriptor>
-    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
-    let backingResources : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     @usableFromInline let mappedContents : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     
-#if canImport(Metal)
-    let gpuAddresses: UnsafeMutablePointer<UInt64>
-#endif
-    
     @usableFromInline init(capacity: Int) {
-        self.descriptors = UnsafeMutablePointer.allocate(capacity: capacity)
-        self.usages = UnsafeMutablePointer.allocate(capacity: capacity)
-        self.backingResources = UnsafeMutablePointer.allocate(capacity: capacity)
         self.mappedContents = UnsafeMutablePointer.allocate(capacity: capacity)
-        
-#if canImport(Metal)
-        self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
-#endif
     }
     
     @usableFromInline func deallocate() {
-        self.descriptors.deallocate()
-        self.usages.deallocate()
-        self.backingResources.deallocate()
         self.mappedContents.deallocate()
-
-#if canImport(Metal)
-        self.gpuAddresses.deallocate()
-#endif
     }
     
     @usableFromInline func initialize(index: Int, descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) {
-        self.descriptors.advanced(by: index).initialize(to: descriptor)
-        self.usages.advanced(by: index).initialize(to: ChunkArray())
-        self.backingResources.advanced(by: index).initialize(to: nil)
         self.mappedContents.advanced(by: index).initialize(to: nil)
-        
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).initialize(to: 0)
-#endif
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
-        self.descriptors.advanced(by: index).deinitialize(count: count)
-        self.usages.advanced(by: index).deinitialize(count: count)
-        self.backingResources.advanced(by: index).deinitialize(count: count)
         self.mappedContents.advanced(by: index).deinitialize(count: count)
-
-#if canImport(Metal)
-        self.gpuAddresses.advanced(by: index).deinitialize(count: count)
-#endif
     }
-    
-    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 
 

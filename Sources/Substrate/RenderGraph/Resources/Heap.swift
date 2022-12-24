@@ -25,7 +25,7 @@ public struct Heap : ResourceProtocol {
         
         self = HeapRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
         
-        if !RenderBackend.materialiseResource(self) {
+        if !RenderBackend.materialisePersistentResource(self) {
             self.dispose()
             return nil
         }
@@ -124,27 +124,26 @@ extension Heap: ResourceProtocolImpl {
     @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { HeapRegistry.instance }
     
     @usableFromInline typealias Descriptor = HeapDescriptor
+    
+    @usableFromInline static var tracksUsages: Bool { false }
 }
 
 @usableFromInline
 struct HeapProperties: PersistentResourceProperties {
     let descriptors : UnsafeMutablePointer<HeapDescriptor>
     let childResources : UnsafeMutablePointer<Set<Resource>>
-    let backingResources : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     /// The RenderGraphs that are currently using this resource.
     let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
     
     @usableFromInline init(capacity: Int) {
         self.descriptors = .allocate(capacity: capacity)
         self.childResources = .allocate(capacity: capacity)
-        self.backingResources = .allocate(capacity: capacity)
         self.activeRenderGraphs = .allocate(capacity: capacity)
     }
     
     @usableFromInline func deallocate() {
         self.descriptors.deallocate()
         self.childResources.deallocate()
-        self.backingResources.deallocate()
         self.activeRenderGraphs.deallocate()
     }
     
@@ -163,8 +162,6 @@ struct HeapProperties: PersistentResourceProperties {
         self.childResources.advanced(by: index).deinitialize(count: count)
         self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
     }
-    
-    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { nil }
     
     @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
     @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }

@@ -380,6 +380,8 @@ extension ArgumentBuffer: ResourceProtocolImpl {
     @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { PersistentArgumentBufferRegistry.instance }
     
     @usableFromInline typealias Descriptor = ArgumentBufferDescriptor
+    
+    @usableFromInline static var tracksUsages: Bool { true }
 }
 
 
@@ -403,7 +405,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     override class var maxChunks: Int { 256 }
 }
 
-@usableFromInline struct ArgumentBufferProperties: SharedResourceProperties {
+@usableFromInline struct ArgumentBufferProperties: ResourceProperties {
     @usableFromInline struct PersistentArgumentBufferProperties: PersistentResourceProperties {
         let heaps : UnsafeMutablePointer<Heap?>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -450,12 +452,10 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
-    let usages : UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>
     let descriptors: UnsafeMutablePointer<ArgumentBufferDescriptor>
     let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
     let stateFlags: UnsafeMutablePointer<ResourceStateFlags>
     let maxAllocationLengths: UnsafeMutablePointer<Int>
-    let backingResources: UnsafeMutablePointer<UnsafeMutableRawPointer?>
     @usableFromInline let mappedContents : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     
     #if canImport(Metal)
@@ -467,12 +467,10 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     @usableFromInline typealias Descriptor = ArgumentBufferDescriptor
     
     @usableFromInline init(capacity: Int) {
-        self.usages = .allocate(capacity: capacity)
         self.descriptors = .allocate(capacity: capacity)
         self.encoders = .allocate(capacity: capacity)
         self.stateFlags = .allocate(capacity: capacity)
         self.maxAllocationLengths = .allocate(capacity: capacity)
-        self.backingResources = UnsafeMutablePointer.allocate(capacity: capacity)
         self.mappedContents = UnsafeMutablePointer.allocate(capacity: capacity)
 
 #if canImport(Metal)
@@ -483,12 +481,10 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     }
     
     @usableFromInline func deallocate() {
-        self.usages.deallocate()
         self.descriptors.deallocate()
         self.encoders.deallocate()
         self.stateFlags.deallocate()
         self.maxAllocationLengths.deallocate()
-        self.backingResources.deallocate()
         self.mappedContents.deallocate()
         
 #if canImport(Metal)
@@ -499,12 +495,10 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     }
     
     @usableFromInline func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
-        self.usages.advanced(by: indexInChunk).initialize(to: ChunkArray())
         self.descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
         self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
         self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
-        self.backingResources.advanced(by: indexInChunk).initialize(to: nil)
         self.mappedContents.advanced(by: indexInChunk).initialize(to: nil)
         
 #if canImport(Metal)
@@ -515,12 +509,10 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
-        self.usages.advanced(by: index).deinitialize(count: count)
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.encoders.advanced(by: index).deinitialize(count: count)
         self.stateFlags.advanced(by: index).deinitialize(count: count)
         self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
-        self.backingResources.advanced(by: index).deinitialize(count: count)
         self.mappedContents.advanced(by: index).deinitialize(count: count)
         
 #if canImport(Metal)
@@ -533,7 +525,5 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.usedHeaps.advanced(by: index).deinitialize(count: count)
 #endif
     }
-    
-    @usableFromInline var usagesOptional: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? { self.usages }
 }
 

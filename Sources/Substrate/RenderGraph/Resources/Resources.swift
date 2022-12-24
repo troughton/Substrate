@@ -174,7 +174,7 @@ public protocol GroupHazardTrackableResource: ResourceProtocol {
 @usableFromInline
 protocol ResourceProtocolImpl: GroupHazardTrackableResource, Hashable, CustomHashable {
     associatedtype Descriptor
-    associatedtype SharedProperties: SharedResourceProperties where SharedProperties.Descriptor == Descriptor
+    associatedtype SharedProperties: ResourceProperties where SharedProperties.Descriptor == Descriptor
     associatedtype TransientProperties: ResourceProperties where TransientProperties.Descriptor == Descriptor
     associatedtype PersistentProperties: PersistentResourceProperties where PersistentProperties.Descriptor == Descriptor
     
@@ -185,6 +185,8 @@ protocol ResourceProtocolImpl: GroupHazardTrackableResource, Hashable, CustomHas
     
     static func transientRegistry(index: Int) -> TransientRegistry?
     static var persistentRegistry: PersistentRegistry { get }
+    
+    static var tracksUsages: Bool { get }
 }
 
 extension ResourceProtocolImpl {
@@ -207,6 +209,19 @@ extension ResourceProtocolImpl {
         }
         self.heap?.childResources.remove(Resource(self))
         Self.persistentRegistry.dispose(self)
+    }
+    
+    
+    @_transparent
+    @inlinable
+    func pointer<T>(for keyPath: KeyPath<SharedResourceProperties<Descriptor>, UnsafeMutablePointer<T>>) -> UnsafeMutablePointer<T> {
+        if self._usesPersistentRegistry {
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            return Self.persistentRegistry.sharedPropertyChunks[chunkIndex][keyPath: keyPath].advanced(by: indexInChunk)
+        } else {
+            let (properties, indexInChunk) = Self.transientRegistry(index: self.transientRegistryIndex)!.sharedResourceProperties(index: self.index)
+            return properties[keyPath: keyPath].advanced(by: indexInChunk)
+        }
     }
     
     @_transparent
@@ -238,6 +253,16 @@ extension ResourceProtocolImpl {
         
         let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
         return Self.persistentRegistry.persistentChunks?[chunkIndex][keyPath: keyPath].advanced(by: indexInChunk)
+    }
+    
+    @inlinable @inline(__always)
+    subscript<T>(keyPath: KeyPath<SharedResourceProperties<Descriptor>, UnsafeMutablePointer<T>>) -> T {
+        get {
+            return self.pointer(for: keyPath).pointee
+        }
+        nonmutating set {
+            self.pointer(for: keyPath).pointee = newValue
+        }
     }
     
     @inlinable @inline(__always)
@@ -301,7 +326,7 @@ extension ResourceProtocolImpl {
             }
             
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return Self.persistentRegistry.hazardTrackingGroupChunks[chunkIndex][indexInChunk]
+            return Self.persistentRegistry.sharedPropertyChunks[chunkIndex].hazardTrackingGroups[indexInChunk].map { HazardTrackingGroup($0) }
         }
         nonmutating set {
             guard let newValue = newValue else {
@@ -312,11 +337,11 @@ extension ResourceProtocolImpl {
             
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
             newValue.resources.insert(self)
-            Self.persistentRegistry.hazardTrackingGroupChunks[chunkIndex][indexInChunk] = newValue
+            Self.persistentRegistry.sharedPropertyChunks[chunkIndex].hazardTrackingGroups[indexInChunk] = newValue
         }
     }
     
-    @inlinable
+    @usableFromInline
     var _usagesPointer: UnsafeMutablePointer<ChunkArray<RecordedResourceUsage>>? {
         if self._usesPersistentRegistry {
             if let hazardTrackingGroup = self.hazardTrackingGroup {
@@ -324,10 +349,31 @@ extension ResourceProtocolImpl {
             }
             
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return Self.persistentRegistry.sharedChunks?[chunkIndex].usagesOptional?.advanced(by: indexInChunk)
+            return Self.persistentRegistry.sharedPropertyChunks[chunkIndex].usages?.advanced(by: indexInChunk)
         } else {
-            let (properties, indexInChunk) = Self.transientRegistry(index: self.transientRegistryIndex)!.sharedProperties(index: self.index)
-            return properties.usagesOptional?.advanced(by: indexInChunk)
+            let (properties, indexInChunk) = Self.transientRegistry(index: self.transientRegistryIndex)!.sharedResourceProperties(index: self.index)
+            return properties.usages?.advanced(by: indexInChunk)
+        }
+    }
+    
+    public internal(set) var descriptor: Descriptor {
+        get {
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+                return Self.persistentRegistry.sharedPropertyChunks[chunkIndex].descriptors?[indexInChunk] ?? unsafeBitCast((), to: Descriptor.self)
+            } else {
+                let (properties, indexInChunk) = Self.transientRegistry(index: self.transientRegistryIndex)!.sharedResourceProperties(index: self.index)
+                return properties.descriptors?[indexInChunk] ?? unsafeBitCast((), to: Descriptor.self)
+            }
+        }
+        nonmutating set {
+            if self._usesPersistentRegistry {
+                let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+                Self.persistentRegistry.sharedPropertyChunks[chunkIndex].descriptors?.advanced(by: indexInChunk).pointee = newValue
+            } else {
+                let (properties, indexInChunk) = Self.transientRegistry(index: self.transientRegistryIndex)!.sharedResourceProperties(index: self.index)
+                properties.descriptors?.advanced(by: indexInChunk).pointee = newValue
+            }
         }
     }
     
