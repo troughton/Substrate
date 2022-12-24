@@ -42,11 +42,11 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     var resourceRegistry: PersistentResourceRegistry { get }
     func makeTransientRegistry(index: Int, inflightFrameCount: Int, queue: Queue) -> TransientResourceRegistry
     
-    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<Self>, commandInfo: FrameCommandInfo<RenderTargetDescriptor>, commandGenerator: ResourceCommandGenerator<Self>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>]) async
+    func compactResourceCommands(queue: Queue, commandInfo: FrameCommandInfo<RenderTargetDescriptor>, commandGenerator: ResourceCommandGenerator<Self>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>]) async
     func didCompleteCommand(_ index: UInt64, queue: Queue, context: RenderGraphContextImpl<Self>) // Called on the context's DispatchQueue.
     
-    func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: VisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>) async
-    func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, storage: IntersectionFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<Self>) async
+    func fillVisibleFunctionTable(_ table: VisibleFunctionTable, firstUseCommandIndex: Int) async
+    func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, firstUseCommandIndex: Int) async
 }
 
 extension SpecificRenderBackend {
@@ -67,7 +67,7 @@ protocol BackendQueue: AnyObject {
     
     func makeCommandBuffer(
         commandInfo: FrameCommandInfo<Backend.RenderTargetDescriptor>,
-             resourceMap: FrameResourceMap<Backend>,
+        transientRegistry: Backend.TransientResourceRegistry?,
         compactedResourceCommands: [CompactedResourceCommand<Backend.CompactedResourceCommandType>]) -> Backend.CommandBuffer
 }
 
@@ -93,11 +93,6 @@ protocol BackendTransientResourceRegistry {
     // ResourceRegistry requirements:
     associatedtype Backend: SpecificRenderBackend where Backend.TransientResourceRegistry == Self
     
-    subscript(buffer: Buffer) -> Backend.BufferReference? { get }
-    subscript(texture: Texture) -> Backend.TextureReference? { get }
-    subscript(argumentBuffer: ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
-    subscript(resource: Resource) -> Backend.ResourceReference? { get }
-    
     var accessLock: SpinLock { get }
     
     func prepareFrame()
@@ -111,7 +106,7 @@ protocol BackendTransientResourceRegistry {
     func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> Backend.BufferReference
     func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) async -> Backend.TextureReference
     func allocateWindowHandleTexture(_ texture: Texture) async throws -> Backend.TextureReference
-    func allocateTextureView(_ texture: Texture, resourceMap: FrameResourceMap<Backend>) -> Backend.TextureReference
+    func allocateTextureView(_ texture: Texture) -> Backend.TextureReference
     
     func setDisposalFences(on resource: Resource, to fences: [FenceDependency])
     func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent)
@@ -135,30 +130,18 @@ protocol BackendPersistentResourceRegistry: AnyObject {
     // ResourceRegistry requirements:
     associatedtype Backend: SpecificRenderBackend where Backend.PersistentResourceRegistry == Self
     
-    subscript(buffer: Buffer) -> Backend.BufferReference? { get }
-    subscript(texture: Texture) -> Backend.TextureReference? { get }
-    subscript(argumentBuffer: ArgumentBuffer) -> Backend.ArgumentBufferReference? { get }
-    subscript(resource: Resource) -> Backend.ResourceReference? { get }
-    
     func cycleFrames()
-    func allocateArgumentBufferIfNeeded(_ buffer: ArgumentBuffer) async -> Backend.ArgumentBufferReference
     
     // PersistentResourceRegistry requirements:
     
     subscript(sampler: SamplerDescriptor) -> SamplerState { get async }
     
-    @available(macOS 11.0, iOS 14.0, *)
-    subscript(accelerationStructure: AccelerationStructure) -> AnyObject? { get }
-    @available(macOS 11.0, iOS 14.0, *)
-    subscript(visibleFunctionTable: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference? { get }
-    @available(macOS 11.0, iOS 14.0, *)
-    subscript(intersectionFunctionTable: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference? { get }
-    
     func allocateBuffer(_ buffer: Buffer) -> Backend.BufferReference?
     func allocateTexture(_ texture: Texture) -> Backend.TextureReference?
+    func allocateArgumentBuffer(_ buffer: ArgumentBuffer) -> Backend.ArgumentBufferReference?
     
-    func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) async -> Backend.VisibleFunctionTableReference?
-    func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) async -> Backend.IntersectionFunctionTableReference?
+    func allocateVisibleFunctionTable(_ table: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference?
+    func allocateIntersectionFunctionTable(_ table: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference?
     
     func prepareMultiframeBuffer(_ buffer: Buffer, frameIndex: UInt64)
     func prepareMultiframeTexture(_ texture: Texture, frameIndex: UInt64)

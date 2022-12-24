@@ -143,7 +143,6 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
    
     public init(bindingPath: ResourceBindingPath, pipelineState: PipelineState, renderGraph: RenderGraph? = nil) {
-        
         guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
             fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
         }
@@ -155,7 +154,9 @@ public struct ArgumentBuffer : ResourceProtocol {
         self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: [])
         
         if descriptor.storageMode != .private {
-            renderGraph.context.resourceRegistry!.allocateArgumentBufferIfNeeded(self)
+            renderGraph.context.transientRegistry!.accessLock.withLock {
+                _ = renderGraph.context.transientRegistry!.allocateArgumentBufferIfNeeded(self)
+            }
         }
     }
     
@@ -174,7 +175,9 @@ public struct ArgumentBuffer : ResourceProtocol {
             self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
             
             if descriptor.storageMode != .private {
-                renderGraph.context.resourceRegistry!.allocateArgumentBufferIfNeeded(self)
+                renderGraph.context.transientRegistry!.accessLock.withLock {
+                    _ = renderGraph.context.transientRegistry!.allocateArgumentBufferIfNeeded(self)
+                }
             }
         }
         
@@ -205,12 +208,6 @@ public struct ArgumentBuffer : ResourceProtocol {
         
         var arguments = arguments
         await arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
-    }
-    
-    public var descriptor: ArgumentBufferDescriptor {
-        _read {
-            yield self.pointer(for: \.descriptors).pointee
-        }
     }
     
     public var stateFlags: ResourceStateFlags {
@@ -370,7 +367,7 @@ extension ArgumentBuffer {
 
 extension ArgumentBuffer: ResourceProtocolImpl {
     @usableFromInline typealias SharedProperties = ArgumentBufferProperties
-    @usableFromInline typealias TransientProperties = EmptyProperties<ArgumentBufferDescriptor>
+    @usableFromInline typealias TransientProperties = ArgumentBufferProperties.TransientArgumentBufferProperties
     @usableFromInline typealias PersistentProperties = ArgumentBufferProperties.PersistentArgumentBufferProperties
     
     @usableFromInline static func transientRegistry(index: Int) -> TransientArgumentBufferRegistry? {
@@ -406,6 +403,30 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
 }
 
 @usableFromInline struct ArgumentBufferProperties: ResourceProperties {
+    @usableFromInline struct TransientArgumentBufferProperties: ResourceProperties {
+        let backingBufferOffsets: UnsafeMutablePointer<Int>
+        
+        @usableFromInline
+        init(capacity: Int) {
+            self.backingBufferOffsets = UnsafeMutablePointer.allocate(capacity: capacity)
+        }
+        
+        @usableFromInline
+        func deallocate() {
+            self.backingBufferOffsets.deallocate()
+        }
+        
+        @usableFromInline
+        func initialize(index: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
+            self.backingBufferOffsets.advanced(by: index).initialize(to: 0)
+        }
+        
+        @usableFromInline
+        func deinitialize(from index: Int, count: Int) {
+            self.backingBufferOffsets.advanced(by: index).deinitialize(count: count)
+        }
+    }
+    
     @usableFromInline struct PersistentArgumentBufferProperties: PersistentResourceProperties {
         let heaps : UnsafeMutablePointer<Heap?>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -452,14 +473,12 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
-    let descriptors: UnsafeMutablePointer<ArgumentBufferDescriptor>
     let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
     let stateFlags: UnsafeMutablePointer<ResourceStateFlags>
     let maxAllocationLengths: UnsafeMutablePointer<Int>
     @usableFromInline let mappedContents : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     
     #if canImport(Metal)
-    let gpuAddresses: UnsafeMutablePointer<UInt64>
     let usedResources: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     let usedHeaps: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     #endif
@@ -467,21 +486,18 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     @usableFromInline typealias Descriptor = ArgumentBufferDescriptor
     
     @usableFromInline init(capacity: Int) {
-        self.descriptors = .allocate(capacity: capacity)
         self.encoders = .allocate(capacity: capacity)
         self.stateFlags = .allocate(capacity: capacity)
         self.maxAllocationLengths = .allocate(capacity: capacity)
         self.mappedContents = UnsafeMutablePointer.allocate(capacity: capacity)
 
 #if canImport(Metal)
-        self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
         self.usedResources = .allocate(capacity: capacity)
         self.usedHeaps = .allocate(capacity: capacity)
 #endif
     }
     
     @usableFromInline func deallocate() {
-        self.descriptors.deallocate()
         self.encoders.deallocate()
         self.stateFlags.deallocate()
         self.maxAllocationLengths.deallocate()
@@ -490,26 +506,22 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
 #if canImport(Metal)
         self.usedResources.deallocate()
         self.usedHeaps.deallocate()
-        self.gpuAddresses.deallocate()
 #endif
     }
     
     @usableFromInline func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
-        self.descriptors.advanced(by: indexInChunk).initialize(to: descriptor)
         self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
         self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
         self.mappedContents.advanced(by: indexInChunk).initialize(to: nil)
         
 #if canImport(Metal)
-        self.gpuAddresses.advanced(by: indexInChunk).initialize(to: 0)
         self.usedResources.advanced(by: indexInChunk).initialize(to: .init()) // TODO: pass in the appropriate allocator.
         self.usedHeaps.advanced(by: indexInChunk).initialize(to: .init())
 #endif
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
-        self.descriptors.advanced(by: index).deinitialize(count: count)
         self.encoders.advanced(by: index).deinitialize(count: count)
         self.stateFlags.advanced(by: index).deinitialize(count: count)
         self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
@@ -520,7 +532,6 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
             self.usedResources[index + i].deinit()
             self.usedHeaps[index + i].deinit()
         }
-        self.gpuAddresses.advanced(by: index).deinitialize(count: count)
         self.usedResources.advanced(by: index).deinitialize(count: count)
         self.usedHeaps.advanced(by: index).deinitialize(count: count)
 #endif

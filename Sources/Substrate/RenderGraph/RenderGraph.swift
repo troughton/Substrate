@@ -714,6 +714,7 @@ public struct RenderGraphExecutionWaitToken: Sendable {
 
 // _RenderGraphContext is an internal-only protocol to ensure dispatch gets optimised in whole-module optimisation mode.
 protocol _RenderGraphContext : Actor {
+    nonisolated var transientRegistry: (any BackendTransientResourceRegistry)? { get }
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var renderGraphQueue: Queue { get }
     func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken

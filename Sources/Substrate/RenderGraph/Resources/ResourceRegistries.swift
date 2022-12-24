@@ -129,13 +129,10 @@ final class TransientRegistryManager {
     
     @usableFromInline init(capacity: Int, tracksUsages: Bool) {
         self.labels = UnsafeMutablePointer.allocate(capacity: capacity)
-        self.generations = UnsafeMutablePointer.allocate(capacity: capacity)
         self.descriptors = MemoryLayout<Descriptor>.size > 0 ? UnsafeMutablePointer.allocate(capacity: capacity) : nil
         self.backingResources = UnsafeMutablePointer.allocate(capacity: capacity)
         self.hazardTrackingGroups = UnsafeMutablePointer.allocate(capacity: capacity)
         self.usages = tracksUsages ? UnsafeMutablePointer.allocate(capacity: capacity) : nil
-        
-        self.generations.initialize(repeating: 0, count: capacity)
         
 #if canImport(Metal)
         self.gpuAddresses = UnsafeMutablePointer.allocate(capacity: capacity)
@@ -144,7 +141,6 @@ final class TransientRegistryManager {
     
     @usableFromInline func deallocate() {
         self.labels.deallocate()
-        self.generations.deallocate()
         self.descriptors?.deallocate()
         self.backingResources.deallocate()
         self.hazardTrackingGroups.deallocate()
@@ -157,7 +153,7 @@ final class TransientRegistryManager {
     
     @usableFromInline func initialize(index: Int, descriptor: Descriptor, heap: Heap?, flags: ResourceFlags) {
         self.labels.advanced(by: index).initialize(to: nil)
-        self.descriptors.advanced(by: index).initialize(to: descriptor)
+        self.descriptors?.advanced(by: index).initialize(to: descriptor)
         self.backingResources.advanced(by: index).initialize(to: nil)
         self.hazardTrackingGroups.advanced(by: index).initialize(to: nil)
         self.usages?.advanced(by: index).initialize(to: ChunkArray())
@@ -173,6 +169,10 @@ final class TransientRegistryManager {
         self.backingResources.advanced(by: index).deinitialize(count: count)
         self.hazardTrackingGroups.advanced(by: index).deinitialize(count: count)
         self.usages?.advanced(by: index).deinitialize(count: count)
+        
+#if canImport(Metal)
+        self.gpuAddresses.advanced(by: index).deinitialize(count: count)
+#endif
     }
 }
 
@@ -183,7 +183,7 @@ final class TransientRegistryManager {
     
     let transientRegistryIndex : Int
     var count = 0
-    let sharedResourcePropertyChunks : UnsafeMutablePointer<SharedResourceProperties<Resource.Descriptor>>?
+    let sharedResourcePropertyChunks : UnsafeMutablePointer<SharedResourceProperties<Resource.Descriptor>>
     let sharedPropertyChunks : UnsafeMutablePointer<Resource.SharedProperties>?
     let transientPropertyChunks : UnsafeMutablePointer<Resource.TransientProperties>?
     var allocatedChunkCount = 0
@@ -209,20 +209,18 @@ final class TransientRegistryManager {
     deinit {
         self.clear()
         for i in 0..<self.chunkCount {
-            self.sharedResourcePropertyChunks?[i].deallocate()
+            self.sharedResourcePropertyChunks[i].deallocate()
+            self.sharedPropertyChunks?[i].deallocate()
             self.transientPropertyChunks?[i].deallocate()
         }
+        self.sharedResourcePropertyChunks.deallocate()
         self.sharedPropertyChunks?.deallocate()
         self.transientPropertyChunks?.deallocate()
     }
     
     @usableFromInline func sharedResourceProperties(index: Int) -> (chunk: SharedResourceProperties<Resource.Descriptor>, indexInChunk: Int) {
-        guard let sharedPropertyChunks = self.sharedResourcePropertyChunks else {
-            return (SharedResourceProperties(capacity: 0, tracksUsages: Resource.tracksUsages), 0)
-        }
-
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
-        return (sharedPropertyChunks[chunkIndex], indexInChunk)
+        return (self.sharedResourcePropertyChunks[chunkIndex], indexInChunk)
     }
     
     @usableFromInline func sharedProperties(index: Int) -> (chunk: Resource.SharedProperties, indexInChunk: Int) {
@@ -273,7 +271,6 @@ final class TransientRegistryManager {
         self.sharedResourcePropertyChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
         self.sharedPropertyChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
         self.transientPropertyChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
-        self.labelChunks[chunkIndex].advanced(by: indexInChunk).initialize(to: nil)
     }
     
     @usableFromInline func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource {
@@ -291,7 +288,7 @@ final class TransientRegistryManager {
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
         assert(index == self.allocatedChunkCount)
-        self.sharedResourcePropertyChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk, tracksUsages: Resource.tracksUsages))
+        self.sharedResourcePropertyChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk, tracksUsages: Resource.tracksUsages))
         self.sharedPropertyChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
         self.transientPropertyChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
         self.allocatedChunkCount += 1
@@ -424,7 +421,7 @@ final class TransientRegistryManager {
     
     init() {
         if MemoryLayout<Resource.SharedProperties>.size > 0 {
-            self.sharedChunks = .allocate(capacisdarnty: Self.maxChunks)
+            self.sharedChunks = .allocate(capacity: Self.maxChunks)
         } else {
             self.sharedChunks = nil
         }
@@ -434,6 +431,8 @@ final class TransientRegistryManager {
             self.persistentChunks = nil
         }
         self.sharedPropertyChunks = .allocate(capacity: Self.maxChunks)
+        
+        self.generationChunks = .allocate(capacity: Self.maxChunks)
     }
     
     func allocateHandle(flags: ResourceFlags) -> Resource {
@@ -480,7 +479,7 @@ final class TransientRegistryManager {
     
     func allocateChunk(_ index: Int) {
         assert(index < Self.maxChunks)
-        self.sharedPropertyChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
+        self.sharedPropertyChunks.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk, tracksUsages: Resource.tracksUsages))
         self.sharedChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
         self.persistentChunks?.advanced(by: index).initialize(to: .init(capacity: Resource.itemsPerChunk))
         
@@ -495,7 +494,7 @@ final class TransientRegistryManager {
         let index = resource.index
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
         
-        self.sharedPropertyChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
+        self.sharedPropertyChunks[chunkIndex].deinitialize(from: indexInChunk, count: 1)
         self.sharedChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
         self.persistentChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
         self.generationChunks[chunkIndex][indexInChunk] = self.generationChunks[chunkIndex][indexInChunk] &+ 1

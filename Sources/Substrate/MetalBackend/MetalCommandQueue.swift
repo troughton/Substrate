@@ -22,8 +22,8 @@ final class MetalCommandQueue: BackendQueue {
         self.queue = queue
     }
     
-    func makeCommandBuffer(commandInfo: FrameCommandInfo<Backend.RenderTargetDescriptor>, resourceMap: FrameResourceMap<Backend>, compactedResourceCommands: [CompactedResourceCommand<Backend.CompactedResourceCommandType>]) -> MetalCommandBuffer {
-        return MetalCommandBuffer(backend: self.backend, queue: self.queue, commandInfo: commandInfo, resourceMap: resourceMap, compactedResourceCommands: compactedResourceCommands)
+    func makeCommandBuffer(commandInfo: FrameCommandInfo<Backend.RenderTargetDescriptor>, transientRegistry: MetalTransientResourceRegistry?, compactedResourceCommands: [CompactedResourceCommand<Backend.CompactedResourceCommandType>]) -> MetalCommandBuffer {
+        return MetalCommandBuffer(backend: self.backend, queue: self.queue, transientRegistry: transientRegistry, commandInfo: commandInfo, compactedResourceCommands: compactedResourceCommands)
     }
 }
 

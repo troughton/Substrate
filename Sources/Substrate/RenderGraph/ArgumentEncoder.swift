@@ -8,24 +8,26 @@
 
 /// `OffsetView` represents a byte offset into a resource.
 @propertyWrapper
-public struct OffsetView<T> {
-    public var wrappedValue : T
+public struct OffsetView<Wrapped> {
+    public typealias T = Wrapped
+    
+    public var wrappedValue : Wrapped
     public var offset : Int
     
     @inlinable
-    public init(wrappedValue: T) {
+    public init(wrappedValue: Wrapped) {
         self.wrappedValue = wrappedValue
         self.offset = 0
     }
     
     @inlinable
-    public init(value: T, offset: Int) {
+    public init(value: Wrapped, offset: Int) {
         self.wrappedValue = value
         self.offset = offset
     }
     
     @inlinable
-    public var projectedValue : OffsetView<T> {
+    public var projectedValue : OffsetView<Wrapped> {
         get {
             return self
         }

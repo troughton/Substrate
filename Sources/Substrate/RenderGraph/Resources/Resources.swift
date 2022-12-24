@@ -326,7 +326,7 @@ extension ResourceProtocolImpl {
             }
             
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return Self.persistentRegistry.sharedPropertyChunks[chunkIndex].hazardTrackingGroups[indexInChunk].map { HazardTrackingGroup($0) }
+            return Self.persistentRegistry.sharedPropertyChunks[chunkIndex].hazardTrackingGroups[indexInChunk].map { HazardTrackingGroup($0)! }
         }
         nonmutating set {
             guard let newValue = newValue else {
@@ -337,7 +337,7 @@ extension ResourceProtocolImpl {
             
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
             newValue.resources.insert(self)
-            Self.persistentRegistry.sharedPropertyChunks[chunkIndex].hazardTrackingGroups[indexInChunk] = newValue
+            Self.persistentRegistry.sharedPropertyChunks[chunkIndex].hazardTrackingGroups[indexInChunk] = newValue.group
         }
     }
     
@@ -492,7 +492,7 @@ extension ResourceProtocolImpl {
     var _labelsPointer : UnsafeMutablePointer<String?> {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return Self.persistentRegistry.labelChunks[chunkIndex].advanced(by: indexInChunk)
+            return Self.persistentRegistry.sharedPropertyChunks[chunkIndex].labels.advanced(by: indexInChunk)
         } else {
             return Self.transientRegistry(index: self.transientRegistryIndex)!.labelPointer(index: self.index)
         }
@@ -505,6 +505,15 @@ extension ResourceProtocolImpl {
         nonmutating set {
             self._labelsPointer.pointee = newValue
             RenderBackend.updateLabel(on: self)
+        }
+    }
+    
+    var backingResourcePointer: UnsafeMutableRawPointer? {
+        get {
+            return self.pointer(for: \.backingResources).pointee
+        }
+        nonmutating set {
+            self.pointer(for: \.backingResources).pointee = newValue
         }
     }
     
@@ -572,7 +581,7 @@ extension ResourceProtocol {
 
 public struct Resource : ResourceProtocol, Hashable {
     public static var resourceType: ResourceType { fatalError() }
-
+    
     @usableFromInline let _handle : UnsafeRawPointer
     @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
     
@@ -599,7 +608,7 @@ public struct Resource : ResourceProtocol, Hashable {
     }
     
     @_transparent
-    func withUnderlyingResource<R>(_ perform: (ResourceProtocol) -> R) -> R {
+    func withUnderlyingResource<R>(_ perform: (any ResourceProtocolImpl) -> R) -> R {
         switch self.type {
         case .buffer:
             return perform(Buffer(handle: self.handle))
@@ -622,12 +631,12 @@ public struct Resource : ResourceProtocol, Hashable {
         }
     }
     
-     @inline(__always)
-     subscript<T>(_ property: KeyPath<ResourceProtocol, T>) -> T {
-         get {
-             return self.withUnderlyingResource({ $0[keyPath: property] })
-         }
-     }
+    @inline(__always)
+    subscript<T>(_ property: KeyPath<ResourceProtocol, T>) -> T {
+        get {
+            return self.withUnderlyingResource({ $0[keyPath: property] })
+        }
+    }
     
     @inline(__always)
     subscript<T>(_ property: ReferenceWritableKeyPath<ResourceProtocol, T>) -> T {
@@ -678,6 +687,18 @@ public struct Resource : ResourceProtocol, Hashable {
         }
         nonmutating set {
             self[\.usages] = newValue
+        }
+    }
+    
+    var backingResourcePointer: UnsafeMutableRawPointer? {
+        get {
+            return self.withUnderlyingResource { impl in
+                impl.backingResourcePointer
+            }
+        } set {
+            self.withUnderlyingResource { impl in
+                impl.backingResourcePointer = newValue
+            }
         }
     }
     

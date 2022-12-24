@@ -11,7 +11,7 @@
 
 extension ArgumentBufferDescriptor {
     func offset(forBindIndex bindIndex: Int) -> Int {
-        let argumentIndex = self.arguments.binarySearch(predicate: { $0.index <= bindIndex })
+        let argumentIndex = self.arguments.binarySearch(predicate: { $0.index <= bindIndex }) - 1
         let argument = self.arguments[argumentIndex]
         return argument.encodedBufferOffset + (bindIndex - argument.index) * argument.encodedBufferStride
     }

@@ -152,13 +152,11 @@ struct HeapProperties: PersistentResourceProperties {
         
         self.descriptors.advanced(by: index).initialize(to: descriptor)
         self.childResources.advanced(by: index).initialize(to: [])
-        self.backingResources.advanced(by: index).initialize(to: nil)
         self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
         self.descriptors.advanced(by: index).deinitialize(count: count)
-        self.backingResources.advanced(by: index).deinitialize(count: count)
         self.childResources.advanced(by: index).deinitialize(count: count)
         self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
     }

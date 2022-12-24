@@ -281,11 +281,11 @@ final actor VulkanPersistentResourceRegistry: BackendPersistentResourceRegistry 
         return nil
     }
 
-    func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) async -> Void? {
+    func allocateVisibleFunctionTable(_ table: VisibleFunctionTable) -> Void? {
         return nil
     }
 
-    func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) async -> Void? {
+    func allocateIntersectionFunctionTable(_ table: IntersectionFunctionTable) -> Void? {
         return nil
     }
     

@@ -92,7 +92,9 @@ public struct Buffer : ResourceProtocol {
             self = TransientBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
             
             if descriptor.storageMode != .private {
-                renderGraph.context.transientRegistry!.allocateBufferIfNeeded(self, forceGPUPrivate: false)
+                renderGraph.context.transientRegistry!.accessLock.withLock {
+                    _ = renderGraph.context.transientRegistry!.allocateBufferIfNeeded(self, forceGPUPrivate: false)
+                }
             }
         }
     }
@@ -377,25 +379,30 @@ extension Buffer: ResourceProtocolImpl {
 struct BufferProperties: ResourceProperties {
     
     @usableFromInline struct TransientProperties: ResourceProperties {
-        var deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>
+        let backingBufferOffsets: UnsafeMutablePointer<Int>
+        let deferredSliceActions : UnsafeMutablePointer<[DeferredBufferSlice]>
         
         @usableFromInline
         init(capacity: Int) {
+            self.backingBufferOffsets = UnsafeMutablePointer.allocate(capacity: capacity)
             self.deferredSliceActions = UnsafeMutablePointer.allocate(capacity: capacity)
         }
         
         @usableFromInline
         func deallocate() {
+            self.backingBufferOffsets.deallocate()
             self.deferredSliceActions.deallocate()
         }
         
         @usableFromInline
         func initialize(index: Int, descriptor: BufferDescriptor, heap: Heap?, flags: ResourceFlags) {
+            self.backingBufferOffsets.advanced(by: index).initialize(to: 0)
             self.deferredSliceActions.advanced(by: index).initialize(to: [])
         }
         
         @usableFromInline
         func deinitialize(from index: Int, count: Int) {
+            self.backingBufferOffsets.advanced(by: index).deinitialize(count: count)
             self.deferredSliceActions.advanced(by: index).deinitialize(count: count)
         }
     }

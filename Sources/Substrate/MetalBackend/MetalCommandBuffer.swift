@@ -14,19 +14,20 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     typealias Backend = MetalBackend
     
     let backend: MetalBackend
+    let transientRegistry: MetalTransientResourceRegistry?
     let commandBuffer: MTLCommandBuffer
     let commandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>
-    let resourceMap: FrameResourceMap<MetalBackend>
     let compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]
     
     var drawablesToPresentOnScheduled = [CAMetalDrawable]()
     
     init(backend: MetalBackend,
          queue: MTLCommandQueue,
+         transientRegistry: MetalTransientResourceRegistry?,
          commandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>,
-         resourceMap: FrameResourceMap<MetalBackend>,
          compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]) {
         self.backend = backend
+        self.transientRegistry = transientRegistry
     
         if backend.enableValidation, #available(OSX 10.16, iOS 14.0, *) {
             let commandBufferDescriptor = MTLCommandBufferDescriptor()
@@ -44,7 +45,6 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         }
         
         self.commandInfo = commandInfo
-        self.resourceMap = resourceMap
         self.compactedResourceCommands = compactedResourceCommands
     }
     
@@ -75,7 +75,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             let renderTargetsDescriptor = self.commandInfo.commandEncoderRenderTargets[encoderIndex]!
             let mtlDescriptor : MTLRenderPassDescriptor
             do {
-                mtlDescriptor = try await MTLRenderPassDescriptor(renderTargetsDescriptor, resourceMap: self.resourceMap)
+                mtlDescriptor = try await MTLRenderPassDescriptor(renderTargetsDescriptor, transientRegistry: self.transientRegistry)
             } catch {
                 print("Error creating pass descriptor: \(error)")
                 return
@@ -90,7 +90,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                 renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                let encoderImpl = MetalRenderCommandEncoder(passRecord: passRecord, encoder: renderEncoder, usedResources: encoderUsedResources, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                let encoderImpl = MetalRenderCommandEncoder(passRecord: passRecord, encoder: renderEncoder, usedResources: encoderUsedResources, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 let encoder = RenderCommandEncoder(renderPass: (passRecord.pass as! DrawRenderPass), passRecord: passRecord, impl: encoderImpl)
                 await (passRecord.pass as! DrawRenderPass).execute(renderCommandEncoder: encoder)
                 
@@ -109,7 +109,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                 computeEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                let encoderImpl = MetalComputeCommandEncoder(encoder: computeEncoder, usedResources: encoderUsedResources, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                let encoderImpl = MetalComputeCommandEncoder(encoder: computeEncoder, usedResources: encoderUsedResources, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 let encoder = ComputeCommandEncoder(renderPass: (passRecord.pass as! ComputeRenderPass), passRecord: passRecord, impl: encoderImpl)
                 await (passRecord.pass as! ComputeRenderPass).execute(computeCommandEncoder: encoder)
                 
@@ -128,7 +128,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                 blitEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                let encoderImpl = MetalBlitCommandEncoder(encoder: blitEncoder, resourceMap: self.resourceMap, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                let encoderImpl = MetalBlitCommandEncoder(encoder: blitEncoder, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 let encoder = BlitCommandEncoder(renderPass: (passRecord.pass as! BlitRenderPass), passRecord: passRecord, impl: encoderImpl)
                 await (passRecord.pass as! BlitRenderPass).execute(blitCommandEncoder: encoder)
                 
@@ -155,7 +155,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
                 for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                     accelerationStructureEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                     
-                    let encoderImpl = MetalAccelerationStructureCommandEncoder(encoder: accelerationStructureEncoder, resourceMap: self.resourceMap)
+                    let encoderImpl = MetalAccelerationStructureCommandEncoder(encoder: accelerationStructureEncoder)
                     let encoder = AccelerationStructureCommandEncoder(accelerationStructureRenderPass: (passRecord.pass as! AccelerationStructureRenderPass), passRecord: passRecord, impl: encoderImpl)
                     (passRecord.pass as! AccelerationStructureRenderPass).execute(accelerationStructureCommandEncoder: encoder)
                     

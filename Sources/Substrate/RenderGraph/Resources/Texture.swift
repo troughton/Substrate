@@ -47,16 +47,13 @@ public struct Texture : ResourceProtocol {
             assert(didAllocate, "Allocation failed for persistent texture \(self)")
             if !didAllocate { self.dispose() }
         } else {
-            precondition(descriptor.storageMode != .private || RenderGraph.activeRenderGraph == nil, "GPU-private transient resources cannot be created during render graph execution. Instead, create this resource in an init() method and pass in the render graph to use.")
+            precondition(RenderGraph.activeRenderGraph == nil, "Transient resources cannot be created during render graph execution. Instead, create this resource in an init() method and pass in the render graph to use.")
+            precondition(descriptor.storageMode == .private, "Transient textures must be GPU-private.")
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
             self = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
-            
-            if descriptor.storageMode != .private {
-                renderGraph.context.transientRegistry!.allocateBufferIfNeeded(self, forceGPUPrivate: false)
-            }
         }
     }
     
@@ -120,30 +117,36 @@ public struct Texture : ResourceProtocol {
     public init(viewOf base: Texture, descriptor: TextureViewDescriptor, renderGraph: RenderGraph? = nil) {
         let flags : ResourceFlags = .resourceView
         
-        guard let transientRegistryIndex = renderGraph?.transientRegistryIndex ?? RenderGraph.activeRenderGraph?.transientRegistryIndex ?? (!base._usesPersistentRegistry ? base.transientRegistryIndex : nil) else {
+        guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
             fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
         }
-        precondition(transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
         
-        self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(viewDescriptor: descriptor, baseResource: base, flags: flags)
+        precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
+        
+        self = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(viewDescriptor: descriptor, baseResource: base, flags: flags)
         
         if base.storageMode != .private {
-            renderGraph.context.transientRegistry!.allocateTextureView(self)
+            renderGraph.context.transientRegistry!.accessLock.withLock {
+                _ = renderGraph.context.transientRegistry!.allocateTextureView(self)
+            }
         }
     }
     
     public init(viewOf base: Buffer, descriptor: Buffer.TextureViewDescriptor, renderGraph: RenderGraph? = nil) {
         let flags : ResourceFlags = .resourceView
         
-        guard let transientRegistryIndex = renderGraph?.transientRegistryIndex ?? RenderGraph.activeRenderGraph?.transientRegistryIndex ?? (!base._usesPersistentRegistry ? base.transientRegistryIndex : nil) else {
+        guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
             fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
         }
-        precondition(transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
         
-        self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(viewDescriptor: descriptor, baseResource: base, flags: flags)
+        precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
+        
+        self = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(viewDescriptor: descriptor, baseResource: base, flags: flags)
         
         if base.storageMode != .private {
-            renderGraph.context.transientRegistry!.allocateTextureView(self)
+            renderGraph.context.transientRegistry!.accessLock.withLock {
+                _ = renderGraph.context.transientRegistry!.allocateTextureView(self)
+            }
         }
     }
     

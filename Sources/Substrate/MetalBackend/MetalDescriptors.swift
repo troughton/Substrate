@@ -18,16 +18,16 @@ enum RenderTargetTextureError : Error {
 
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor.TriangleGeometryDescriptor {
-    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureTriangleGeometryDescriptor {
+    func metalDescriptor() -> MTLAccelerationStructureTriangleGeometryDescriptor {
         let mtlTriangleDescriptor = MTLAccelerationStructureTriangleGeometryDescriptor()
         mtlTriangleDescriptor.triangleCount = self.triangleCount
         
-        let indexBuffer = self.indexBuffer.map { resourceMap[$0]! }
+        let indexBuffer = self.indexBuffer.map { $0.mtlBuffer! }
         mtlTriangleDescriptor.indexBuffer = indexBuffer?.buffer
         mtlTriangleDescriptor.indexBufferOffset = (indexBuffer?.offset ?? 0) + self.indexBufferOffset
         mtlTriangleDescriptor.indexType = MTLIndexType(self.indexType)
         
-        let vertexBuffer = resourceMap[self.vertexBuffer]!
+        let vertexBuffer = self.vertexBuffer.mtlBuffer!
         mtlTriangleDescriptor.vertexBuffer = vertexBuffer.buffer
         mtlTriangleDescriptor.vertexBufferOffset = vertexBuffer.offset + self.vertexBufferOffset
         mtlTriangleDescriptor.vertexStride = self.vertexStride
@@ -38,11 +38,11 @@ extension AccelerationStructureDescriptor.TriangleGeometryDescriptor {
 
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor.BoundingBoxGeometryDescriptor {
-    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureBoundingBoxGeometryDescriptor {
+    func metalDescriptor() -> MTLAccelerationStructureBoundingBoxGeometryDescriptor {
         let mtlBoundingBoxDescriptor = MTLAccelerationStructureBoundingBoxGeometryDescriptor()
         mtlBoundingBoxDescriptor.boundingBoxCount = self.boundingBoxCount
         
-        let buffer = resourceMap[self.boundingBoxBuffer]!
+        let buffer = self.boundingBoxBuffer.mtlBuffer!
         mtlBoundingBoxDescriptor.boundingBoxBuffer = buffer.buffer
         mtlBoundingBoxDescriptor.boundingBoxBufferOffset = buffer.offset + self.boundingBoxBufferOffset
         mtlBoundingBoxDescriptor.boundingBoxStride = self.boundingBoxStride
@@ -53,13 +53,13 @@ extension AccelerationStructureDescriptor.BoundingBoxGeometryDescriptor {
 
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor.GeometryDescriptor {
-    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureGeometryDescriptor {
+    func metalDescriptor() -> MTLAccelerationStructureGeometryDescriptor {
         let mtlGeometryDescriptor: MTLAccelerationStructureGeometryDescriptor
         switch self.geometry {
         case .boundingBox(let boundingBox):
-            mtlGeometryDescriptor = boundingBox.metalDescriptor(resourceMap: resourceMap)
+            mtlGeometryDescriptor = boundingBox.metalDescriptor()
         case .triangle(let triangle):
-            mtlGeometryDescriptor = triangle.metalDescriptor(resourceMap: resourceMap)
+            mtlGeometryDescriptor = triangle.metalDescriptor()
         }
         
         mtlGeometryDescriptor.intersectionFunctionTableOffset = self.intersectionFunctionTableOffset
@@ -72,10 +72,10 @@ extension AccelerationStructureDescriptor.GeometryDescriptor {
 
 @available(iOS 14.0, macOS 11.0, *)
 extension Array where Element == AccelerationStructureDescriptor.GeometryDescriptor {
-    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLPrimitiveAccelerationStructureDescriptor {
+    func metalDescriptor() -> MTLPrimitiveAccelerationStructureDescriptor {
         let mtlPrimitiveDescriptor = MTLPrimitiveAccelerationStructureDescriptor()
         mtlPrimitiveDescriptor.geometryDescriptors =
-            self.map { $0.metalDescriptor(resourceMap: resourceMap) }
+            self.map { $0.metalDescriptor() }
         
         return mtlPrimitiveDescriptor
     }
@@ -83,16 +83,16 @@ extension Array where Element == AccelerationStructureDescriptor.GeometryDescrip
 
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor.InstanceStructureDescriptor {
-    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLInstanceAccelerationStructureDescriptor {
+    func metalDescriptor() -> MTLInstanceAccelerationStructureDescriptor {
         let mtlInstanceDescriptor = MTLInstanceAccelerationStructureDescriptor()
         mtlInstanceDescriptor.instanceCount = self.instanceCount
         
-        let instanceDescriptorBuffer = resourceMap[self.instanceDescriptorBuffer]!
+        let instanceDescriptorBuffer = self.instanceDescriptorBuffer.mtlBuffer!
         mtlInstanceDescriptor.instanceDescriptorBuffer = instanceDescriptorBuffer.buffer
         mtlInstanceDescriptor.instanceDescriptorBufferOffset = instanceDescriptorBuffer.offset + self.instanceDescriptorBufferOffset
         mtlInstanceDescriptor.instanceDescriptorStride = self.instanceDescriptorStride
         
-        mtlInstanceDescriptor.instancedAccelerationStructures = self.primitiveStructures.map { resourceMap[$0]! as! MTLAccelerationStructure }
+        mtlInstanceDescriptor.instancedAccelerationStructures = self.primitiveStructures.map { $0.mtlAccelerationStructure! }
         
         return mtlInstanceDescriptor
     }
@@ -101,14 +101,14 @@ extension AccelerationStructureDescriptor.InstanceStructureDescriptor {
 @available(iOS 14.0, macOS 11.0, *)
 extension AccelerationStructureDescriptor {
     
-    func metalDescriptor(resourceMap: FrameResourceMap<MetalBackend>) -> MTLAccelerationStructureDescriptor {
+    func metalDescriptor() -> MTLAccelerationStructureDescriptor {
         let descriptor: MTLAccelerationStructureDescriptor
         switch self.type {
         case .bottomLevelPrimitive(let bottomLevelDescriptor):
-            descriptor = bottomLevelDescriptor.metalDescriptor(resourceMap: resourceMap)
+            descriptor = bottomLevelDescriptor.metalDescriptor()
             
         case .topLevelInstance(let topLevelDescriptor):
-            descriptor = topLevelDescriptor.metalDescriptor(resourceMap: resourceMap)
+            descriptor = topLevelDescriptor.metalDescriptor()
         }
         
         if self.flags.contains(.preferFastBuild) {
@@ -207,15 +207,24 @@ extension MTLSamplerDescriptor {
 
 
 extension MTLRenderPassAttachmentDescriptor {
-    func fill(from descriptor: RenderTargetAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) async throws {
+    func fill(from descriptor: RenderTargetAttachmentDescriptor, actions: (MTLLoadAction, MTLStoreAction), transientRegistry: MetalTransientResourceRegistry?) async throws {
+        
+        if descriptor.texture.flags.contains(.windowHandle) {
+            try await transientRegistry!.allocateWindowHandleTexture(descriptor.texture)
+        }
+        
+        if let resolveTexture = descriptor.resolveTexture, resolveTexture.flags.contains(.windowHandle) {
+            try await transientRegistry!.allocateWindowHandleTexture(resolveTexture)
+        }
+        
         
         let texture = descriptor.texture
-        self.texture = try await resourceMap.renderTargetTexture(texture).texture
+        self.texture = texture.mtlTexture
         self.level = descriptor.level
         self.slice = descriptor.slice
         self.depthPlane = descriptor.depthPlane
         
-        self.resolveTexture = try await descriptor.resolveTexture.map { try await resourceMap.renderTargetTexture($0).texture }
+        self.resolveTexture = descriptor.resolveTexture?.mtlTexture
         self.resolveLevel = descriptor.resolveLevel
         self.resolveSlice = descriptor.resolveSlice
         self.resolveDepthPlane = descriptor.resolveDepthPlane
@@ -226,26 +235,26 @@ extension MTLRenderPassAttachmentDescriptor {
 }
 
 extension MTLRenderPassColorAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, clearColor: MTLClearColor, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) async throws {
+    convenience init(_ descriptor: RenderTargetColorAttachmentDescriptor, clearColor: MTLClearColor, actions: (MTLLoadAction, MTLStoreAction), transientRegistry: MetalTransientResourceRegistry?) async throws {
         self.init()
-        try await self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
+        try await self.fill(from: descriptor, actions: actions, transientRegistry: transientRegistry)
         self.clearColor = clearColor
     }
 }
 
 extension MTLRenderPassDepthAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, clearDepth: Double, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) async throws {
+    convenience init(_ descriptor: RenderTargetDepthAttachmentDescriptor, clearDepth: Double, actions: (MTLLoadAction, MTLStoreAction), transientRegistry: MetalTransientResourceRegistry?) async throws {
         self.init()
-        try await self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
+        try await self.fill(from: descriptor, actions: actions, transientRegistry: transientRegistry)
         self.clearDepth = clearDepth
         
     }
 }
 
 extension MTLRenderPassStencilAttachmentDescriptor {
-    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, clearStencil: UInt32, actions: (MTLLoadAction, MTLStoreAction), resourceMap: FrameResourceMap<MetalBackend>) async throws {
+    convenience init(_ descriptor: RenderTargetStencilAttachmentDescriptor, clearStencil: UInt32, actions: (MTLLoadAction, MTLStoreAction), transientRegistry: MetalTransientResourceRegistry?) async throws {
         self.init()
-        try await self.fill(from: descriptor, actions: actions, resourceMap: resourceMap)
+        try await self.fill(from: descriptor, actions: actions, transientRegistry: transientRegistry)
         
         switch self.texture!.pixelFormat {
         case .stencil8, .x24_stencil8, .x32_stencil8, .depth24Unorm_stencil8, .depth32Float_stencil8:
@@ -258,24 +267,24 @@ extension MTLRenderPassStencilAttachmentDescriptor {
 }
 
 extension MTLRenderPassDescriptor {
-    convenience init(_ descriptorWrapper: MetalRenderTargetDescriptor, resourceMap: FrameResourceMap<MetalBackend>) async throws {
+    convenience init(_ descriptorWrapper: MetalRenderTargetDescriptor, transientRegistry: MetalTransientResourceRegistry?) async throws {
         self.init()
         let descriptor = descriptorWrapper.descriptor
         
         for (i, attachment) in descriptor.colorAttachments.enumerated() {
             guard let attachment = attachment else { continue }
-            self.colorAttachments[i] = try await MTLRenderPassColorAttachmentDescriptor(attachment, clearColor: descriptorWrapper.clearColors[i], actions: descriptorWrapper.colorActions[i], resourceMap: resourceMap)
+            self.colorAttachments[i] = try await MTLRenderPassColorAttachmentDescriptor(attachment, clearColor: descriptorWrapper.clearColors[i], actions: descriptorWrapper.colorActions[i], transientRegistry: transientRegistry)
         }
         
         if let depthAttachment = descriptor.depthAttachment {
-            self.depthAttachment = try await MTLRenderPassDepthAttachmentDescriptor(depthAttachment, clearDepth: descriptorWrapper.clearDepth, actions: descriptorWrapper.depthActions, resourceMap: resourceMap)
+            self.depthAttachment = try await MTLRenderPassDepthAttachmentDescriptor(depthAttachment, clearDepth: descriptorWrapper.clearDepth, actions: descriptorWrapper.depthActions, transientRegistry: transientRegistry)
         }
         
         if let stencilAttachment = descriptor.stencilAttachment {
-            self.stencilAttachment = try await  MTLRenderPassStencilAttachmentDescriptor(stencilAttachment, clearStencil: descriptorWrapper.clearStencil, actions: descriptorWrapper.stencilActions, resourceMap: resourceMap)
+            self.stencilAttachment = try await  MTLRenderPassStencilAttachmentDescriptor(stencilAttachment, clearStencil: descriptorWrapper.clearStencil, actions: descriptorWrapper.stencilActions, transientRegistry: transientRegistry)
         }
         
-        if let visibilityBuffer = descriptor.visibilityResultBuffer, let buffer = resourceMap[visibilityBuffer] {
+        if let visibilityBuffer = descriptor.visibilityResultBuffer, let buffer = visibilityBuffer.mtlBuffer {
             precondition(buffer.offset == 0, "TODO: Non-zero offsets need to be passed to the MTLRenderCommandEncoder via setVisibilityResultMode()")
             self.visibilityResultBuffer = buffer.buffer
         }

@@ -61,6 +61,10 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         self.renderGraphQueue.dispose()
     }
     
+    public nonisolated var transientRegistry: (any BackendTransientResourceRegistry)? {
+        self.resourceRegistry
+    }
+    
     func registerWindowTexture(for texture: Texture, swapchain: Any) async {
         guard let resourceRegistry = self.resourceRegistry else {
             print("Error: cannot associate a window texture with a no-transient-resources RenderGraph")
@@ -68,10 +72,6 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         }
 
         await resourceRegistry.registerWindowTexture(for: texture, swapchain: swapchain)
-    }
-    
-    nonisolated var resourceMap : FrameResourceMap<Backend> {
-        return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
     public nonisolated func withContext<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @escaping @Sendable () async -> T) async -> T {
@@ -163,7 +163,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                         
                         var compactedResourceCommands = self.compactedResourceCommands // Re-use its storage
                         self.compactedResourceCommands = []
-                        await backend.compactResourceCommands(queue: self.renderGraphQueue, resourceMap: self.resourceMap, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &compactedResourceCommands)
+                        await backend.compactResourceCommands(queue: self.renderGraphQueue, commandInfo: frameCommandInfo, commandGenerator: self.commandGenerator, into: &compactedResourceCommands)
                         self.compactedResourceCommands = compactedResourceCommands
                     }
                     
@@ -173,11 +173,11 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     for (i, encoderInfo) in frameCommandInfo.commandEncoders.enumerated() {
                         let commandBufferIndex = encoderInfo.commandBufferIndex
                         if commandBufferIndex != commandBuffers.endIndex - 1 {
-                            if let transientRegistry = resourceMap.transientRegistry {
+                            if let transientRegistry = self.resourceRegistry {
                                 commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry, onPresented: onSwapchainPresented)
                             }
                             commandBuffers.append(self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
-                                                                                      resourceMap: resourceMap,
+                                                                                      transientRegistry: self.resourceRegistry,
                                                                                       compactedResourceCommands: self.compactedResourceCommands))
                         }
                         
@@ -200,7 +200,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                         }
                     }
                     
-                    if let transientRegistry = resourceMap.transientRegistry {
+                    if let transientRegistry = self.resourceRegistry {
                         commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry, onPresented: onSwapchainPresented)
                     }
                     

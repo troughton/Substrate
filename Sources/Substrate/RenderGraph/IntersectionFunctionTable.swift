@@ -36,10 +36,14 @@ public struct IntersectionFunctionTableDescriptor: Hashable, Equatable {
         case functionTable(VisibleFunctionTable)
     }
     
+    public let pipelineState: PipelineState
+    public let renderStage: RenderStages
     public var functions: [FunctionType?]
     public var buffers: [BufferType?]
     
-    public init(functions: [FunctionType?] = [], buffers: [BufferType] = []) {
+    public init(pipelineState: PipelineState, renderStage: RenderStages, functions: [FunctionType?] = [], buffers: [BufferType] = []) {
+        self.pipelineState = pipelineState
+        self.renderStage = renderStage
         self.functions = functions
         self.buffers = buffers
     }

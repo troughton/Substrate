@@ -11,11 +11,9 @@ import Metal
 
 final class MetalAccelerationStructureCommandEncoder: AccelerationStructureCommandEncoderImpl {
     let encoder: MTLAccelerationStructureCommandEncoder
-    let resourceMap: FrameResourceMap<MetalBackend>
     
-    init(encoder: MTLAccelerationStructureCommandEncoder, resourceMap: FrameResourceMap<MetalBackend>) {
+    init(encoder: MTLAccelerationStructureCommandEncoder) {
         self.encoder = encoder
-        self.resourceMap = resourceMap
     }
     
     func setLabel(_ label: String) {
@@ -35,41 +33,36 @@ final class MetalAccelerationStructureCommandEncoder: AccelerationStructureComma
     }
     
     func build(accelerationStructure structure: AccelerationStructure, descriptor: AccelerationStructureDescriptor, scratchBuffer: Buffer, scratchBufferOffset: Int) {
-        let structure = resourceMap[structure]! as! MTLAccelerationStructure
-        let descriptor = descriptor.metalDescriptor(resourceMap: resourceMap)
-        let scratchBuffer = resourceMap[scratchBuffer]!
+        let structure = structure.mtlAccelerationStructure!
+        let descriptor = descriptor.metalDescriptor()
+        let scratchBuffer = scratchBuffer.mtlBuffer!
         let scratchBufferOffset = scratchBufferOffset
         encoder.build(accelerationStructure: structure, descriptor: descriptor, scratchBuffer: scratchBuffer.buffer, scratchBufferOffset: scratchBuffer.offset + scratchBufferOffset)
     }
 
     func refit(sourceAccelerationStructure source: AccelerationStructure, descriptor: AccelerationStructureDescriptor, destinationAccelerationStructure destination: AccelerationStructure?, scratchBuffer: Buffer, scratchBufferOffset: Int) {
-        let source = resourceMap[source]! as! MTLAccelerationStructure
-        let descriptor = descriptor.metalDescriptor(resourceMap: resourceMap)
-        let destination = destination.map { resourceMap[$0]! as! MTLAccelerationStructure }
-        let scratchBuffer = resourceMap[scratchBuffer]!
+        let source = source.mtlAccelerationStructure!
+        let descriptor = descriptor.metalDescriptor()
+        let destination = destination.map { $0.mtlAccelerationStructure! }
+        let scratchBuffer = scratchBuffer.mtlBuffer!
         let scratchBufferOffset = scratchBufferOffset
         
-        encoder.refit(sourceAccelerationStructure: source, descriptor: descriptor, destinationAccelerationStructure: destination, scratchBuffer: scratchBuffer.buffer, scratchBufferOffset: scratchBuffer.offset + scratchBufferOffset)
+        encoder.refit(sourceAccelerationStructure: source, descriptor: descriptor, destinationAccelerationStructure: destination, scratchBuffer: scratchBuffer.wrappedValue, scratchBufferOffset: scratchBuffer.offset + scratchBufferOffset)
     }
     
     func copy(sourceAccelerationStructure source: AccelerationStructure, destinationAccelerationStructure destination: AccelerationStructure) {
-        let source = resourceMap[source]! as! MTLAccelerationStructure
-        let destination = resourceMap[destination]! as! MTLAccelerationStructure
-        encoder.copy(sourceAccelerationStructure: source, destinationAccelerationStructure: destination)
+        encoder.copy(sourceAccelerationStructure: source.mtlAccelerationStructure!, destinationAccelerationStructure: destination.mtlAccelerationStructure!)
     }
 
     // vkCmdWriteAccelerationStructuresPropertiesKHR
     func writeCompactedSize(of structure: AccelerationStructure, to toBuffer: Buffer, offset: Int) {
-        let structure = resourceMap[structure]! as! MTLAccelerationStructure
-        let buffer = resourceMap[toBuffer]!
-        encoder.writeCompactedSize(accelerationStructure: structure, buffer: buffer.buffer, offset: buffer.offset + offset)
+        let buffer = toBuffer.mtlBuffer!
+        encoder.writeCompactedSize(accelerationStructure: structure.mtlAccelerationStructure!, buffer: buffer.buffer, offset: buffer.offset + offset)
     }
 
     func copyAndCompact(sourceAccelerationStructure source: AccelerationStructure, destinationAccelerationStructure destination: AccelerationStructure) {
         destination.descriptor = source.descriptor
-        let source = resourceMap[source]! as! MTLAccelerationStructure
-        let destination = resourceMap[destination]! as! MTLAccelerationStructure
-        encoder.copyAndCompact(sourceAccelerationStructure: source, destinationAccelerationStructure: destination)
+        encoder.copyAndCompact(sourceAccelerationStructure: source.mtlAccelerationStructure!, destinationAccelerationStructure: destination.mtlAccelerationStructure!)
     }
 }
 

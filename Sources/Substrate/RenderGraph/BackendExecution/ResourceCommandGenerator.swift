@@ -70,7 +70,6 @@ enum PreFrameCommands {
     func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, context: RenderGraphContextImpl<Backend>, textureIsStored: (Texture) -> Bool, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) async {
         let queue = context.renderGraphQueue
         let queueIndex = Int(queue.index)
-        let resourceMap = context.resourceMap
         let resourceRegistry = context.resourceRegistry // May be nil iff the render graph does not support transient resources.
         
         switch self {
@@ -93,35 +92,27 @@ enum PreFrameCommands {
             }
             
         case .materialiseTextureView(let texture):
-            _ = resourceRegistry!.allocateTextureView(texture, resourceMap: resourceMap)
+            _ = resourceRegistry!.allocateTextureView(texture)
             
         case .materialiseArgumentBuffer(let argumentBuffer):
-            let argBufferReference : Backend.ArgumentBufferReference
-            if argumentBuffer.flags.contains(.persistent) {
-                argBufferReference = await resourceMap.persistentRegistry.allocateArgumentBufferIfNeeded(argumentBuffer)
-                await argumentBuffer.waitForCPUAccess(accessType: .write)
-            } else {
-                argBufferReference = resourceRegistry!.allocateArgumentBufferIfNeeded(argumentBuffer)
-                waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
-            }
+            let argBufferReference = resourceRegistry!.allocateArgumentBufferIfNeeded(argumentBuffer)
+            waitEventValues[queueIndex] = max(resourceRegistry!.argumentBufferWaitEvents?[argumentBuffer]!.waitValue ?? 0, waitEventValues[queueIndex])
             
         case .materialiseVisibleFunctionTable(let table):
             precondition(table.flags.contains(.persistent))
             
-            guard let tableReference = await resourceMap.persistentRegistry.allocateVisibleFunctionTableIfNeeded(table) else { break }
             guard !table.stateFlags.contains(.initialised) else { break }
             
             await table.waitForCPUAccess(accessType: .write)
-            await context.backend.fillVisibleFunctionTable(table, storage: tableReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
+            await context.backend.fillVisibleFunctionTable(table, firstUseCommandIndex: commandIndex)
             
         case .materialiseIntersectionFunctionTable(let table):
             precondition(table.flags.contains(.persistent))
             
-            guard let tableReference = await  resourceMap.persistentRegistry.allocateIntersectionFunctionTableIfNeeded(table) else { break }
             guard !table.stateFlags.contains(.initialised) else { break }
             
             await table.waitForCPUAccess(accessType: .write)
-            await context.backend.fillIntersectionFunctionTable(table, storage: tableReference, firstUseCommandIndex: commandIndex, resourceMap: resourceMap)
+            await context.backend.fillIntersectionFunctionTable(table, firstUseCommandIndex: commandIndex)
             
         case .disposeResource(let resource, let afterStages):
             let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)

@@ -26,15 +26,16 @@ public struct AccelerationStructure : ResourceProtocol {
         self = AccelerationStructureRegistry.instance.allocate(descriptor: size, heap: nil, flags: flags)
         
         // vkCreateAccelerationStructureKHR
-        if !RenderBackend.materialiseResource(self) {
-            assertionFailure("Allocation failed for persistent texture \(self)")
+        if !RenderBackend.materialisePersistentResource(self) {
+            assertionFailure("Allocation failed for acceleration structure \(self)")
             self.dispose()
         }
     }
     
     public var size : Int {
         get {
-            return self[\.sizes]
+            let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
+            return Self.persistentRegistry.sharedPropertyChunks[chunkIndex].descriptors![indexInChunk]
         }
     }
     
@@ -141,6 +142,12 @@ final class AccelerationStructureRegistry: PersistentRegistry<AccelerationStruct
 
 // MARK: - VisibleFunctionTable
 
+public struct VisibleFunctionTableDescriptor {
+    public var functionCount: Int
+    public var pipelineState: PipelineState
+    public var renderStage: RenderStages
+}
+
 public struct VisibleFunctionTable : ResourceProtocol {
 
     @usableFromInline let _handle : UnsafeRawPointer
@@ -152,16 +159,25 @@ public struct VisibleFunctionTable : ResourceProtocol {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    init(functionCount: Int, pipelineState: OpaquePointer) {
+    init(functionCount: Int, pipelineState: PipelineState, stage: RenderStages) {
         let flags : ResourceFlags = .persistent
         
-        self = VisibleFunctionTableRegistry.instance.allocate(descriptor: functionCount, heap: nil, flags: flags)
-        self.pipelineState = UnsafeRawPointer(pipelineState)
+        let descriptor = VisibleFunctionTableDescriptor(functionCount: functionCount, pipelineState: pipelineState, renderStage: stage)
+        self = VisibleFunctionTableRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+        
+        if !RenderBackend.materialisePersistentResource(self) {
+            self.dispose()
+        }
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public init(functionCount: Int, pipelineState: PipelineState) {
-        self.init(functionCount: functionCount, pipelineState: pipelineState.state)
+    public init(functionCount: Int, pipelineState: RenderPipelineState, stage: RenderStages) {
+        self.init(functionCount: functionCount, pipelineState: pipelineState, stage: stage)
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public init(functionCount: Int, pipelineState: ComputePipelineState) {
+        self.init(functionCount: functionCount, pipelineState: pipelineState, stage: .compute)
     }
    
     public var stateFlags: ResourceStateFlags {
@@ -186,13 +202,8 @@ public struct VisibleFunctionTable : ResourceProtocol {
         }
     }
     
-    var pipelineState : UnsafeRawPointer? {
-        get {
-            return self.pointer(for: \.pipelineStates).pointee
-        }
-        set {
-            self.pointer(for: \.pipelineStates).pointee = newValue
-        }
+    var pipelineState : PipelineState {
+        return self.descriptor.pipelineState
     }
     
     public var storageMode: StorageMode {
@@ -204,7 +215,7 @@ public struct VisibleFunctionTable : ResourceProtocol {
 
 extension VisibleFunctionTable: ResourceProtocolImpl {
     @usableFromInline typealias SharedProperties = VisibleFunctionTableProperties
-    @usableFromInline typealias TransientProperties = EmptyProperties<Int>
+    @usableFromInline typealias TransientProperties = EmptyProperties<VisibleFunctionTableDescriptor>
     @usableFromInline typealias PersistentProperties = VisibleFunctionTableProperties.PersistentProperties
     
     @usableFromInline static func transientRegistry(index: Int) -> TransientChunkRegistry<VisibleFunctionTable>? {
@@ -213,7 +224,7 @@ extension VisibleFunctionTable: ResourceProtocolImpl {
     
     @usableFromInline static var persistentRegistry: PersistentRegistry<Self> { VisibleFunctionTableRegistry.instance }
     
-    @usableFromInline typealias Descriptor = Int // functionCount
+    @usableFromInline typealias Descriptor = VisibleFunctionTableDescriptor // functionCount
     
     @usableFromInline static var tracksUsages: Bool { true }
 }
@@ -248,7 +259,7 @@ extension VisibleFunctionTable: CustomStringConvertible {
         }
         
         @usableFromInline
-        func initialize(index: Int, descriptor functionCount: Int, heap: Heap?, flags: ResourceFlags) {
+        func initialize(index: Int, descriptor: VisibleFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
             self.readWaitIndices.advanced(by: index).initialize(to: .zero)
             self.writeWaitIndices.advanced(by: index).initialize(to: .zero)
             self.stateFlags.advanced(by: index).initialize(to: [])
@@ -267,26 +278,21 @@ extension VisibleFunctionTable: CustomStringConvertible {
     }
     
     let functions : UnsafeMutablePointer<[FunctionDescriptor?]>
-    let pipelineStates : UnsafeMutablePointer<UnsafeRawPointer?>
     
     @usableFromInline init(capacity: Int) {
         self.functions = .allocate(capacity: capacity)
-        self.pipelineStates = .allocate(capacity: capacity)
     }
     
     @usableFromInline func deallocate() {
         self.functions.deallocate()
-        self.pipelineStates.deallocate()
     }
     
-    @usableFromInline func initialize(index: Int, descriptor functionCount: Int, heap: Heap?, flags: ResourceFlags) {
-        self.functions.advanced(by: index).initialize(to: .init(repeating: nil, count: functionCount))
-        self.pipelineStates.advanced(by: index).initialize(to: .init(nil))
+    @usableFromInline func initialize(index: Int, descriptor: VisibleFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
+        self.functions.advanced(by: index).initialize(to: .init(repeating: nil, count: descriptor.functionCount))
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
         self.functions.advanced(by: index).deinitialize(count: count)
-        self.pipelineStates.advanced(by: index).deinitialize(count: count)
     }
 }
 
@@ -299,7 +305,6 @@ extension VisibleFunctionTable: CustomStringConvertible {
             let chunkItemCount = min(self.nextFreeIndex - baseItem, VisibleFunctionTable.itemsPerChunk)
             for i in 0..<chunkItemCount {
                 self.persistentChunks![chunkIndex].stateFlags[i].remove(.initialised)
-                self.sharedChunks![chunkIndex].pipelineStates[i] = nil
             }
         }
     }
@@ -318,41 +323,28 @@ public struct IntersectionFunctionTable : ResourceProtocol {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public init(pipelineState: PipelineState) {
-        let flags : ResourceFlags = .persistent
-        
-        self = IntersectionFunctionTableRegistry.instance.allocate(descriptor: .init(functions: [], buffers: []), heap: nil, flags: flags)
-        self.pipelineState = UnsafeRawPointer(pipelineState.state)
+    public init(pipelineState: RenderPipelineState, stage: RenderStages) {
+        self.init(descriptor: IntersectionFunctionTableDescriptor(pipelineState: pipelineState, renderStage: stage, functions: [], buffers: []))
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public init(descriptor: IntersectionFunctionTableDescriptor, pipelineState: PipelineState) {
+    public init(pipelineState: ComputePipelineState) {
+        self.init(descriptor: IntersectionFunctionTableDescriptor(pipelineState: pipelineState, renderStage: .compute, functions: [], buffers: []))
+    }
+    
+    @available(macOS 11.0, iOS 14.0, *)
+    public init(descriptor: IntersectionFunctionTableDescriptor) {
         let flags : ResourceFlags = .persistent
         
         self = IntersectionFunctionTableRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
-        self.pipelineState = UnsafeRawPointer(pipelineState.state)
-    }
-    
-    public internal(set) var descriptor : IntersectionFunctionTableDescriptor {
-        get {
-            self[\.descriptors]
-        }
-        nonmutating set {
-            if newValue != self.descriptor {
-                self.stateFlags.remove(.initialised)
-            }
-            self[\.descriptors] = newValue
+        
+        if !RenderBackend.materialisePersistentResource(self) {
+            self.dispose()
         }
     }
     
-    
-    var pipelineState : UnsafeRawPointer? {
-        get {
-            return self.pointer(for: \.pipelineStates).pointee
-        }
-        set {
-            self.pointer(for: \.pipelineStates).pointee = newValue
-        }
+    var pipelineState : PipelineState {
+        return self.descriptor.pipelineState
     }
     
     public var storageMode: StorageMode {

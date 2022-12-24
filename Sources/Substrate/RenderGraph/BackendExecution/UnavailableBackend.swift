@@ -36,7 +36,7 @@ final class UnavailableBackend : SpecificRenderBackend {
     }
     
     final class QueueImpl: Substrate.BackendQueue {
-        func makeCommandBuffer(commandInfo: FrameCommandInfo<RenderTargetDescriptorImpl>, resourceMap: FrameResourceMap<UnavailableBackend>, compactedResourceCommands: [CompactedResourceCommand<UnavailableBackend.CompactedResourceCommandType>]) -> CommandBufferImpl {
+        func makeCommandBuffer(commandInfo: FrameCommandInfo<RenderTargetDescriptorImpl>, transientRegistry: UnavailableBackend.TransientResourceRegistry?, compactedResourceCommands: [CompactedResourceCommand<UnavailableBackend.CompactedResourceCommandType>]) -> CommandBufferImpl {
             preconditionFailure()
         }
         
@@ -129,15 +129,15 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        func allocateArgumentBufferIfNeeded(_ buffer: ArgumentBuffer) -> Backend.ArgumentBufferReference {
+        func allocateArgumentBuffer(_ buffer: ArgumentBuffer) -> Backend.ArgumentBufferReference? {
             preconditionFailure()
         }
         
-        func allocateVisibleFunctionTableIfNeeded(_ table: VisibleFunctionTable) async -> Backend.VisibleFunctionTableReference? {
+        func allocateVisibleFunctionTable(_ table: VisibleFunctionTable) -> Backend.VisibleFunctionTableReference? {
             preconditionFailure()
         }
         
-        func allocateIntersectionFunctionTableIfNeeded(_ table: IntersectionFunctionTable) async -> Backend.IntersectionFunctionTableReference? {
+        func allocateIntersectionFunctionTable(_ table: IntersectionFunctionTable) -> Backend.IntersectionFunctionTableReference? {
             preconditionFailure()
         }
         
@@ -167,7 +167,7 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        func allocateTextureView(_ texture: Texture, resourceMap: FrameResourceMap<UnavailableBackend>) -> Backend.TextureReference {
+        func allocateTextureView(_ texture: Texture) -> Backend.TextureReference {
             preconditionFailure()
         }
         
@@ -283,7 +283,7 @@ final class UnavailableBackend : SpecificRenderBackend {
         preconditionFailure()
     }
     
-    func compactResourceCommands(queue: Queue, resourceMap: FrameResourceMap<UnavailableBackend>, commandInfo: FrameCommandInfo<RenderTargetDescriptor>, commandGenerator: ResourceCommandGenerator<UnavailableBackend>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>]) {
+    func compactResourceCommands(queue: Queue, commandInfo: FrameCommandInfo<RenderTargetDescriptor>, commandGenerator: ResourceCommandGenerator<UnavailableBackend>, into: inout [CompactedResourceCommand<CompactedResourceCommandType>]) {
         preconditionFailure()
     }
     
@@ -291,11 +291,11 @@ final class UnavailableBackend : SpecificRenderBackend {
         preconditionFailure()
     }
     
-    func fillVisibleFunctionTable(_ table: VisibleFunctionTable, storage: VisibleFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<UnavailableBackend>) async {
+    func fillVisibleFunctionTable(_ table: VisibleFunctionTable, firstUseCommandIndex: Int) async {
         preconditionFailure()
     }
     
-    func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, storage: IntersectionFunctionTableReference, firstUseCommandIndex: Int, resourceMap: FrameResourceMap<UnavailableBackend>) async {
+    func fillIntersectionFunctionTable(_ table: IntersectionFunctionTable, firstUseCommandIndex: Int) async {
         preconditionFailure()
     }
     

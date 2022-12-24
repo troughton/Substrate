@@ -273,25 +273,38 @@ public struct RenderPipelineDescriptor : Hashable {
     }
 }
 
-public protocol PipelineState {
-    var state: OpaquePointer { get }
+public class PipelineState: Hashable {
+    let state: OpaquePointer
     
-    func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor?
+    init(state: OpaquePointer) {
+        self.state = state
+    }
+    
+    func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor? {
+        preconditionFailure()
+    }
+    
+    public static func ==(lhs: PipelineState, rhs: PipelineState) -> Bool {
+        return lhs.state == rhs.state
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.state)
+    }
 }
 
 public class RenderPipelineState: PipelineState {
     public let descriptor: RenderPipelineDescriptor
-    public let state: OpaquePointer
     
     private let argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor]
     
     init(descriptor: RenderPipelineDescriptor, state: OpaquePointer, argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor]) {
         self.descriptor = descriptor
-        self.state = state
         self.argumentBufferDescriptors = argumentBufferDescriptors
+        super.init(state: state)
     }
     
-    public func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor? {
+    public override func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor? {
         return self.argumentBufferDescriptors[path]
     }
 }
@@ -387,18 +400,17 @@ public struct ComputePipelineDescriptor : Hashable, Sendable {
 
 public class ComputePipelineState: PipelineState {
     public let descriptor: ComputePipelineDescriptor
-    public let state: OpaquePointer
     private let argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor]
     let threadExecutionWidth: Int
     
     init(descriptor: ComputePipelineDescriptor, state: OpaquePointer, argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor], threadExecutionWidth: Int) {
         self.descriptor = descriptor
-        self.state = state
         self.argumentBufferDescriptors = argumentBufferDescriptors
         self.threadExecutionWidth = threadExecutionWidth
+        super.init(state: state)
     }
     
-    public func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor? {
+    public override func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor? {
         return self.argumentBufferDescriptors[path]
     }
 }
