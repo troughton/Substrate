@@ -293,7 +293,7 @@ final class MetalStateCaches {
     var renderPipelineCache: MetalRenderPipelineCache
     var computePipelineCache: MetalComputePipelineCache
     let depthStencilCache: MetalDepthStencilStateCache
-    let argumentEncoderCache: MetalArgumentEncoderCache
+//    let argumentEncoderCache: MetalArgumentEncoderCache
     
     public init(device: MTLDevice, libraryPath: String?) {
         self.device = device
@@ -321,7 +321,7 @@ final class MetalStateCaches {
         self.renderPipelineCache = .init(device: self.device, functionCache: functionCache)
         self.computePipelineCache = .init(device: self.device, functionCache: functionCache)
         self.depthStencilCache = .init(device: self.device)
-        self.argumentEncoderCache = .init(device: self.device)
+//        self.argumentEncoderCache = .init(device: self.device)
     }
     
     func checkForLibraryReload() async {

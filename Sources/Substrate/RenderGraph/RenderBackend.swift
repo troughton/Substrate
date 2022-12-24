@@ -67,10 +67,7 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func updateLabel(on resource: Resource)
     var requiresEmulatedInputAttachments : Bool { get }
     
-    func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer?
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
-    
-    func bufferContents(for buffer: ArgumentBuffer, range: Range<Int>) -> UnsafeMutableRawPointer?
     func buffer(_ buffer: ArgumentBuffer, didModifyRange range: Range<Int>)
     
     func renderPipelineState(for descriptor: RenderPipelineDescriptor) async -> RenderPipelineState
@@ -136,7 +133,7 @@ public struct RenderBackend {
     }
     
     @inlinable
-    public static func materialiseResource<R: ResourceProtocol>(_ resource: R) -> Bool {
+    public static func materialisePersistentResource<R: ResourceProtocol>(_ resource: R) -> Bool {
         return _backend.materialisePersistentResource(Resource(resource))
     }
 
@@ -192,11 +189,6 @@ public struct RenderBackend {
     @inlinable
     static var requiresEmulatedInputAttachments : Bool {
         return _backend.requiresEmulatedInputAttachments
-    }
-    
-    @inlinable
-    public static func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer? {
-        return _backend.bufferContents(for: buffer, range: range)
     }
     
     @inlinable

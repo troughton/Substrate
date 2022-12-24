@@ -137,7 +137,7 @@ final class MetalBackend : SpecificRenderBackend {
         case .accelerationStructure:
             return self.resourceRegistry.allocateAccelerationStructure(AccelerationStructure(resource)!) != nil
         default:
-            preconditionFailure("Unhandled resource type in materialisePersistentResource")
+            preconditionFailure("Unhandled resource type in materialiseResource")
         }
     }
     

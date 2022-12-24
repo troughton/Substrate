@@ -153,6 +153,10 @@ public struct ArgumentBuffer : ResourceProtocol {
         precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
         
         self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: [])
+        
+        if descriptor.storageMode != .private {
+            renderGraph.context.resourceRegistry!.allocateArgumentBufferIfNeeded(self)
+        }
     }
     
     public init(descriptor: ArgumentBufferDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
@@ -160,6 +164,7 @@ public struct ArgumentBuffer : ResourceProtocol {
         
         if flags.contains(.persistent) {
             self = PersistentArgumentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+            RenderBackend.materialisePersistentResource(self)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
@@ -167,7 +172,27 @@ public struct ArgumentBuffer : ResourceProtocol {
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
             
             self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
+            
+            if descriptor.storageMode != .private {
+                renderGraph.context.resourceRegistry!.allocateArgumentBufferIfNeeded(self)
+            }
         }
+        
+        // Transient resources:
+        // - CPU visible
+        //  - Buffers and argument buffers only
+        //  - Suballocated from an arena allocator
+        //  - Available as soon as there's a GPU frame free (so necessitates 'await')
+        //
+        // - GPU private
+        //  - Heap allocated, aliased
+        //  - Allocated on render graph execution.
+        //
+        // What changes:
+        // - Argument buffers can't be encoded until all resources to be encoded are available (so in a CPU render pass for transient resources);
+        //   that can either be managed by the API or forced onto the user.
+        // - No more transient CPU-visible textures (but that was just allocating and disposing a persistent texture anyway).
+        // - Lazy materialise only applies to GPU-private resources
         
     }
     
@@ -238,6 +263,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     public func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
         guard let buffer = buffer else { return }
+        self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         
@@ -245,36 +271,48 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     public func setTexture(_ texture: Texture, at path: ResourceBindingPath) {
+        self.checkHasCPUAccess(accessType: .write)
+        
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         RenderBackend._backend.argumentBufferImpl.setTexture(texture, at: path, on: self)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath) {
+        self.checkHasCPUAccess(accessType: .write)
+        
         assert(!self.flags.contains(.persistent) || structure.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         RenderBackend._backend.argumentBufferImpl.setAccelerationStructure(structure, at: path, on: self)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath) {
+        self.checkHasCPUAccess(accessType: .write)
+        
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         RenderBackend._backend.argumentBufferImpl.setVisibleFunctionTable(table, at: path, on: self)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath) {
+        self.checkHasCPUAccess(accessType: .write)
+        
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         RenderBackend._backend.argumentBufferImpl.setIntersectionFunctionTable(table, at: path, on: self)
     }
     
     @inlinable
     public func setSampler(_ sampler: SamplerDescriptor, at path: ResourceBindingPath) async {
+        self.checkHasCPUAccess(accessType: .write)
+        
         let samplerState = await SamplerState(descriptor: sampler)
         self.setSampler(samplerState, at: path)
     }
     
     @inlinable
     public func setSampler(_ sampler: SamplerState, at path: ResourceBindingPath) {
+        self.checkHasCPUAccess(accessType: .write)
+        
         RenderBackend._backend.argumentBufferImpl.setSampler(sampler, at: path, on: self)
     }
     
@@ -292,6 +330,8 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     public func setBytes(_ bytes: UnsafeRawBufferPointer, at path: ResourceBindingPath) {
+        self.checkHasCPUAccess(accessType: .write)
+        
         RenderBackend._backend.argumentBufferImpl.setBytes(bytes, at: path, on: self)
     }
     

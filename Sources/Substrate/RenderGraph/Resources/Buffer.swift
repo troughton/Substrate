@@ -76,6 +76,12 @@ public struct Buffer : ResourceProtocol {
         
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             self = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+            
+            assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+            let didAllocate = RenderBackend.materialisePersistentResource(self)
+            assert(didAllocate, "Allocation failed for persistent buffer \(self)")
+            if !didAllocate { self.dispose() }
+
         } else {
             precondition(descriptor.storageMode != .private || RenderGraph.activeRenderGraph == nil, "GPU-private transient resources cannot be created during render graph execution. Instead, create this resource in an init() method and pass in the render graph to use.")
             
@@ -84,13 +90,10 @@ public struct Buffer : ResourceProtocol {
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
             self = TransientBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
-        }
-        
-        if self.flags.contains(.persistent) {
-            assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
-            let didAllocate = RenderBackend.materialiseResource(self)
-            assert(didAllocate, "Allocation failed for persistent buffer \(self)")
-            if !didAllocate { self.dispose() }
+            
+            if descriptor.storageMode != .private {
+                renderGraph.context.transientRegistry!.allocateBufferIfNeeded(self, forceGPUPrivate: false)
+            }
         }
     }
     
@@ -144,7 +147,7 @@ public struct Buffer : ResourceProtocol {
         
         self = PersistentBufferRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
         
-        if !RenderBackend.materialiseResource(self) {
+        if !RenderBackend.materialisePersistentResource(self) {
             self.dispose()
             return nil
         }
@@ -179,14 +182,14 @@ public struct Buffer : ResourceProtocol {
     
     public func withContents<A>(range: Range<Int>, checkHasCPUAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) /* async */ throws -> A) /* reasync */ rethrows -> A {
         if checkHasCPUAccess { self.checkHasCPUAccess(accessType: .read) }
-        let contents = RenderBackend.bufferContents(for: self, range: range)
+        let contents = self[\.mappedContents]?.advanced(by: range.lowerBound)
         return try /* await */perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
     }
     
     @inlinable
     func _withMutableContents<A>(range: Range<Int>, checkHasCPUAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) /* async */ throws -> A) /*reasync */rethrows -> A {
         if checkHasCPUAccess { self.checkHasCPUAccess(accessType: .readWrite) }
-        let contents = self[\.mappedContents]! + range.lowerBound
+        let contents = self[\.mappedContents]?.advanced(by: range.lowerBound)
         var modifiedRange = range
         
         let result = try /* await */perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
@@ -201,7 +204,7 @@ public struct Buffer : ResourceProtocol {
     @inlinable
     func _withMutableContents<A>(range: Range<Int>, checkHasCPUAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) async throws -> A) async rethrows -> A {
         if checkHasCPUAccess { self.checkHasCPUAccess(accessType: .readWrite) }
-        let contents = self[\.mappedContents]! + range.lowerBound
+        let contents = self[\.mappedContents]?.advanced(by: range.lowerBound)
         var modifiedRange = range
         
         let result = try await perform(UnsafeMutableRawBufferPointer(start: UnsafeMutableRawPointer(contents), count: range.count), &modifiedRange)
@@ -231,7 +234,7 @@ public struct Buffer : ResourceProtocol {
     @inlinable
     public func withContents<A>(range: Range<Int>, waitForAccess: Bool = true, _ perform: (UnsafeRawBufferPointer) async throws -> A) async rethrows -> A {
         if waitForAccess { await self.waitForCPUAccess(accessType: .read) }
-        if let contents = RenderBackend.bufferContents(for: self, range: range) {
+        if let contents = self[\.mappedContents]?.advanced(by: range.lowerBound) {
             return try await perform(UnsafeRawBufferPointer(start: UnsafeRawPointer(contents), count: range.count))
         } else {
             preconditionFailure("Buffer \(self) has not been materialised at the time of the withContents call.")
@@ -246,7 +249,7 @@ public struct Buffer : ResourceProtocol {
     @inlinable
     public func withMutableContents<A>(range: Range<Int>, waitForAccess: Bool = true, _ perform: (_ buffer: UnsafeMutableRawBufferPointer, _ modifiedRange: inout Range<Int>) async throws -> A) async rethrows -> A {
         if waitForAccess { await self.waitForCPUAccess(accessType: .readWrite) }
-        if let _ = RenderBackend.bufferContents(for: self, range: range) {
+        if let _ = self[\.mappedContents] {
             return try await self._withMutableContents(range: range, checkHasCPUAccess: false, perform)
         } else {
             preconditionFailure("Buffer \(self) has not been materialised at the time of the withMutableContents call.")
@@ -255,7 +258,7 @@ public struct Buffer : ResourceProtocol {
     
     @inlinable
     public func fill(with perform: @escaping (_ buffer: UnsafeMutableRawBufferPointer, _ filledRange: inout Range<Int>) -> Void) {
-        if let _ = RenderBackend.bufferContents(for: self, range: self.range) {
+        if let _ = self[\.mappedContents] {
             self.withMutableContents(perform)
         } else {
             self._deferredSliceActions.append(DeferredBufferSlice(closure: {
@@ -269,7 +272,7 @@ public struct Buffer : ResourceProtocol {
         let requiredCapacity = source.count * MemoryLayout<C.Element>.stride
         assert(self.length >= requiredCapacity)
         
-        if let contents = RenderBackend.bufferContents(for: self, range: range) {
+        if let contents = self[\.mappedContents] {
             let range = 0..<source.count * MemoryLayout<C.Element>.stride
             _ = UnsafeMutableRawBufferPointer(start: contents, count: range.count).initializeMemory(as: C.Element.self, from: source)
             RenderBackend.buffer(self, didModifyRange: range)

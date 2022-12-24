@@ -83,15 +83,8 @@ public final class VulkanBackend : SpecificRenderBackend {
         case .buffer:
             return self.resourceRegistry.allocateBuffer(Buffer(resource)!) != nil
         default:
-            preconditionFailure("Unhandled resource type in materialisePersistentResource")
+            preconditionFailure("Unhandled resource type in materialiseResource")
         }
-    }
-    
-    public func bufferContents(for buffer: Buffer, range: Range<Int>) -> UnsafeMutableRawPointer? {
-        let bufferReference = self.activeContext?.resourceMap.bufferForCPUAccess(buffer, needsLock: true) ?? resourceRegistry[buffer]!
-        let buffer = bufferReference.buffer
-        
-        return buffer.contents(range: (range.lowerBound + bufferReference.offset)..<(range.upperBound + bufferReference.offset))
     }
     
     public func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>) {

@@ -249,7 +249,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     }
     
     @discardableResult
-    public nonisolated func allocateArgumentBuffer(_ argumentBuffer: ArgumentBuffer, stateCaches: MetalStateCaches) -> MTLBufferReference? {
+    public nonisolated func allocateArgumentBuffer(_ argumentBuffer: ArgumentBuffer) -> MTLBufferReference? {
         precondition(argumentBuffer._usesPersistentRegistry)
         
         // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
@@ -259,8 +259,6 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         let mtlBuffer : MTLBufferReference
         
         let descriptor = argumentBuffer.descriptor
-        
-        let encoder = stateCaches.argumentEncoderCache[descriptor]
         
         if let heap = argumentBuffer.heap {
             guard let mtlHeap = self.heapReferences[heap] else {
@@ -292,31 +290,13 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return mtlBuffer
     }
     
-    func allocateArgumentBufferStorage<A : ResourceProtocol>(for argumentBuffer: A, encodedLength: Int) -> MTLBufferReference {
-//        #if os(macOS)
-//        let options : MTLResourceOptions = [.storageModeManaged, .substrateTrackedHazards]
-//        #else
-        let options : MTLResourceOptions = [.storageModeShared, .substrateTrackedHazards]
-//        #endif
-        
-        return MTLBufferReference(buffer: Unmanaged.passRetained(self.device.makeBuffer(length: encodedLength, options: options)!), offset: 0)
-    }
-    
     @discardableResult
-    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) async -> MTLBufferReference {
+    func allocateArgumentBufferIfNeeded(_ argumentBuffer: ArgumentBuffer) -> MTLBufferReference {
         if let mtlArgumentBuffer = self.argumentBufferReferences[argumentBuffer] {
             return mtlArgumentBuffer
         }
         
-        let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: min(argumentBuffer.descriptor.bufferLength, argumentBuffer.maximumAllocationLength))
-        
-        self.argumentBufferReferences[argumentBuffer] = storage
-        
-        argumentBuffer[\.backingResources] = storage._buffer.toOpaque()
-        argumentBuffer[\.mappedContents] = argumentBuffer.storageMode == .private ? nil : storage.buffer.contents().advanced(by: storage.offset)
-        argumentBuffer[\.gpuAddresses] = storage.buffer.gpuAddress + UInt64(storage.offset)
-        
-        return storage
+        return self.allocateArgumentBuffer(argumentBuffer)!
     }
     
     @available(macOS 11.0, iOS 14.0, *)

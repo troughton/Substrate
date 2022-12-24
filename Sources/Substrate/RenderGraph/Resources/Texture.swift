@@ -41,6 +41,11 @@ public struct Texture : ResourceProtocol {
         
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
+            
+            assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+            let didAllocate = RenderBackend.materialisePersistentResource(self)
+            assert(didAllocate, "Allocation failed for persistent texture \(self)")
+            if !didAllocate { self.dispose() }
         } else {
             precondition(descriptor.storageMode != .private || RenderGraph.activeRenderGraph == nil, "GPU-private transient resources cannot be created during render graph execution. Instead, create this resource in an init() method and pass in the render graph to use.")
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
@@ -48,13 +53,10 @@ public struct Texture : ResourceProtocol {
             }
             precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
             self = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
-        }
-        
-        if self.flags.contains(.persistent) {
-            assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
-            let didAllocate = RenderBackend.materialiseResource(self)
-            assert(didAllocate, "Allocation failed for persistent texture \(self)")
-            if !didAllocate { self.dispose() }
+            
+            if descriptor.storageMode != .private {
+                renderGraph.context.transientRegistry!.allocateBufferIfNeeded(self, forceGPUPrivate: false)
+            }
         }
     }
     
@@ -68,7 +70,7 @@ public struct Texture : ResourceProtocol {
         PersistentTextureRegistry.instance.initialize(resource: self, descriptor: descriptor, heap: heap, flags: self.flags)
         
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
-        let didAllocate = RenderBackend.materialiseResource(self)
+        let didAllocate = RenderBackend.materialisePersistentResource(self)
         assert(didAllocate, "Allocation failed for persistent texture \(self)")
         if !didAllocate { self.dispose() }
     }
@@ -85,7 +87,7 @@ public struct Texture : ResourceProtocol {
         
         self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: heap, flags: flags)
         
-        if !RenderBackend.materialiseResource(self) {
+        if !RenderBackend.materialisePersistentResource(self) {
             self.dispose()
             return nil
         }
@@ -124,6 +126,10 @@ public struct Texture : ResourceProtocol {
         precondition(transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
         
         self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base, flags: flags)
+        
+        if base.storageMode != .private {
+            renderGraph.context.transientRegistry!.allocateTextureView(self)
+        }
     }
     
     public init(viewOf base: Buffer, descriptor: Buffer.TextureViewDescriptor, renderGraph: RenderGraph? = nil) {
@@ -135,6 +141,10 @@ public struct Texture : ResourceProtocol {
         precondition(transientRegistryIndex >= 0, "Transient resources are not supported on this RenderGraph")
         
         self = TransientTextureRegistry.instances[transientRegistryIndex].allocate(descriptor: descriptor, baseResource: base, flags: flags)
+        
+        if base.storageMode != .private {
+            renderGraph.context.transientRegistry!.allocateTextureView(self)
+        }
     }
     
     public init(descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, renderGraph: RenderGraph) async {

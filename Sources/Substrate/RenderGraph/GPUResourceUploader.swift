@@ -295,7 +295,7 @@ extension GPUResourceUploader {
             self.renderGraphQueue = renderGraphQueue
             self.capacity = stagingBufferLength
             self.buffer = Buffer(length: stagingBufferLength, storageMode: .shared, cacheMode: cacheMode, usage: .blitSource, flags: .persistent)
-            self.bufferContents = RenderBackend.bufferContents(for: self.buffer, range: self.buffer.range)!
+            self.bufferContents = self.buffer[\.mappedContents]!
         }
         
         deinit {
