@@ -384,26 +384,21 @@ final class ResourceSet {
 
             for resource in self.resources {
                 if resource.viewType == .inlineUniformBlock {
-                    stream.print("argBuffer.setValue(self.\(resource.name), key: ResourceBindingPath(resourceSetIndex: setIndex, index: \(resource.binding.index), type: .buffer))")
+                    stream.print("argBuffer.setValue(self.\(resource.name), at: ResourceBindingPath(resourceSetIndex: setIndex, index: \(resource.binding.index), type: .buffer))")
                     continue
                 } else if resource.viewType == .uniformBuffer {
                     // @BufferBacked property
                     
                     stream.print("if let resource = self.$\(resource.name).buffer {")
                                     
-                    stream.print("argBuffer.bindings.append(")
-                    stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(resource.binding.index), type: .buffer), .buffer(resource.wrappedValue, offset: resource.offset))")
+                    stream.print("argBuffer.setBuffer(resource.wrappedValue, offset: resource.offset, at: ResourceBindingPath(resourceSetIndex: setIndex, index: \(resource.binding.index), type: .buffer))")
                     
-                    stream.print(")")
                     stream.print("}")
                     
                     continue
                 } else if resource.viewType == .sampler {
                     // @BufferBacked property
-                    stream.print("argBuffer.bindings.append(")
-                    stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(resource.binding.index), type: .buffer), .sampler(await self.$\(resource.name).state))")
-                    
-                    stream.print(")")
+                    stream.print("argBuffer.setSampler(await self.$\(resource.name).state, at: ResourceBindingPath(resourceSetIndex: setIndex, index: \(resource.binding.index), type: .sampler))")
                     
                     continue
                 }
@@ -419,8 +414,6 @@ final class ResourceSet {
                 }
                 
                 let addArgBufferBinding = { (stream: inout ReflectionPrinter, index: Int) in
-                    stream.print("argBuffer.bindings.append(")
-                    
                     var type = resource.type
                     if case .array(let elementType, let length) = type {
                         switch elementType {
@@ -434,14 +427,12 @@ final class ResourceSet {
                     
                     switch type {
                     case .texture:
-                        stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(index)\(arrayIndexString), type: .texture), .texture(resource))")
+                        stream.print("argBuffer.setTexture(resource, at: ResourceBindingPath(resourceSetIndex: setIndex, index: \(index)\(arrayIndexString), type: .texture))")
                     case .sampler:
-                        stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(index)\(arrayIndexString), type: .sampler), .sampler(resource))")
+                        stream.print("argBuffer.setSampler(resource, at: ResourceBindingPath(resourceSetIndex: setIndex, index: \(index)\(arrayIndexString), type: .sampler))")
                     default:
-                        stream.print("(ResourceBindingPath(resourceSetIndex: setIndex, index: \(index)\(arrayIndexString), type: .buffer), .buffer(resource, offset: self.$\(resource.name).offset))")
+                        stream.print("argBuffer.setBuffer(resource, offset: self.$\(resource.name).offset, at: ResourceBindingPath(resourceSetIndex: setIndex, index: \(index)\(arrayIndexString), type: .buffer))")
                     }
-                    
-                    stream.print(")")
                 }
                 
                 if resource.viewType == .storageImage || resource.platformBindings.macOSMetalIndex != resource.platformBindings.appleSiliconMetalIndex {
@@ -449,7 +440,7 @@ final class ResourceSet {
                     // Storage images (i.e. read-write textures) aren't permitted in argument buffers, so we need to bind directly on the encoder.
                     if resource.viewType == .storageImage, let index = resource.platformBindings.appleSiliconMetalIndex {
                         stream.print("if let bindingEncoder = bindingEncoder {")
-                        stream.print("bindingEncoder.setTexture(resource, key: MetalIndexedFunctionArgument(type: .texture, index: \(index)\(arrayIndexString), stages: \(resource.stages)))")
+                        stream.print("bindingEncoder.setTexture(resource, at: ResourceBindingPath(type: .texture, index: \(index)\(arrayIndexString), stages: \(resource.stages)))")
                         stream.print("}")
                     } else {
                         if let index = resource.platformBindings.appleSiliconMetalIndex.map({ Int($0) }) {
