@@ -9,6 +9,10 @@ import Foundation
 import SubstrateUtilities
 import Atomics
 
+#if canImport(Metal)
+import Metal
+#endif
+
 public protocol ArgumentBufferEncodable {
     static var activeStages : RenderStages { get }
     
@@ -473,12 +477,12 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     
-    let encoders : UnsafeMutablePointer<UnsafeRawPointer.AtomicOptionalRepresentation> // Some opaque backend type that can construct the argument buffer
     let stateFlags: UnsafeMutablePointer<ResourceStateFlags>
     let maxAllocationLengths: UnsafeMutablePointer<Int>
     @usableFromInline let mappedContents : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     
     #if canImport(Metal)
+    let encoders : UnsafeMutablePointer<Unmanaged<MTLArgumentEncoder>?> // Some opaque backend type that can construct the argument buffer
     let usedResources: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     let usedHeaps: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     #endif
@@ -486,48 +490,48 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     @usableFromInline typealias Descriptor = ArgumentBufferDescriptor
     
     @usableFromInline init(capacity: Int) {
-        self.encoders = .allocate(capacity: capacity)
         self.stateFlags = .allocate(capacity: capacity)
         self.maxAllocationLengths = .allocate(capacity: capacity)
         self.mappedContents = UnsafeMutablePointer.allocate(capacity: capacity)
 
 #if canImport(Metal)
+        self.encoders = .allocate(capacity: capacity)
         self.usedResources = .allocate(capacity: capacity)
         self.usedHeaps = .allocate(capacity: capacity)
 #endif
     }
     
     @usableFromInline func deallocate() {
-        self.encoders.deallocate()
         self.stateFlags.deallocate()
         self.maxAllocationLengths.deallocate()
         self.mappedContents.deallocate()
         
 #if canImport(Metal)
+        self.encoders.deallocate()
         self.usedResources.deallocate()
         self.usedHeaps.deallocate()
 #endif
     }
     
     @usableFromInline func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
-        self.encoders.advanced(by: indexInChunk).initialize(to: UnsafeRawPointer.AtomicOptionalRepresentation(nil))
         self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
         self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
         self.mappedContents.advanced(by: indexInChunk).initialize(to: nil)
         
 #if canImport(Metal)
+        self.encoders.advanced(by: indexInChunk).initialize(to: nil)
         self.usedResources.advanced(by: indexInChunk).initialize(to: .init()) // TODO: pass in the appropriate allocator.
         self.usedHeaps.advanced(by: indexInChunk).initialize(to: .init())
 #endif
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
-        self.encoders.advanced(by: index).deinitialize(count: count)
         self.stateFlags.advanced(by: index).deinitialize(count: count)
         self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
         self.mappedContents.advanced(by: index).deinitialize(count: count)
         
 #if canImport(Metal)
+        self.encoders.advanced(by: index).deinitialize(count: count)
         for i in 0..<count {
             self.usedResources[index + i].deinit()
             self.usedHeaps[index + i].deinit()

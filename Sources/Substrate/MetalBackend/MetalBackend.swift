@@ -101,7 +101,7 @@ final class MetalBackend : SpecificRenderBackend {
     public init(device: MTLDevice?, libraryPath: String? = nil, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
         self.device = device ?? MTLCreateSystemDefaultDevice()!
         self.stateCaches = MetalStateCaches(device: self.device, libraryPath: libraryPath)
-        self.resourceRegistry = MetalPersistentResourceRegistry(device: self.device)
+        self.resourceRegistry = MetalPersistentResourceRegistry(device: self.device, stateCaches: self.stateCaches)
         self.enableValidation = enableValidation
         self.enableShaderHotReloading = enableShaderHotReloading
     }
