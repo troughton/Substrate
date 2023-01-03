@@ -169,7 +169,7 @@ public struct ArgumentBuffer : ResourceProtocol {
         
         if flags.contains(.persistent) {
             self = PersistentArgumentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
-            RenderBackend.materialisePersistentResource(self)
+            _ = RenderBackend.materialisePersistentResource(self)
         } else {
             guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
                 fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
@@ -207,7 +207,7 @@ public struct ArgumentBuffer : ResourceProtocol {
         self.init(descriptor: A.argumentBufferDescriptor, renderGraph: renderGraph, flags: flags)
 
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
-    self.label = "Descriptor Set for \(String(reflecting: A.self))"
+    self.label = "Resource Set for \(String(reflecting: A.self))"
 #endif
         
         var arguments = arguments
