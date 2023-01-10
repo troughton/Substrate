@@ -125,7 +125,7 @@ public struct Texture : ResourceProtocol {
         
         self = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(viewDescriptor: descriptor, baseResource: base, flags: flags)
         
-        if base.storageMode != .private {
+        if base.backingResourcePointer != nil {
             renderGraph.context.transientRegistry!.accessLock.withLock {
                 _ = renderGraph.context.transientRegistry!.allocateTextureView(self)
             }
@@ -143,7 +143,7 @@ public struct Texture : ResourceProtocol {
         
         self = TransientTextureRegistry.instances[renderGraph.transientRegistryIndex].allocate(viewDescriptor: descriptor, baseResource: base, flags: flags)
         
-        if base.storageMode != .private {
+        if base.backingResourcePointer != nil {
             renderGraph.context.transientRegistry!.accessLock.withLock {
                 _ = renderGraph.context.transientRegistry!.allocateTextureView(self)
             }
@@ -295,16 +295,6 @@ public enum TextureViewBaseInfo {
             self.textureViewInfos.advanced(by: index).initialize(to: nil)
         }
         
-        @usableFromInline func initialize(index: Int, descriptor: Buffer.TextureViewDescriptor, baseResource: Buffer) {
-            self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
-            self.textureViewInfos.advanced(by: index).initialize(to: .buffer(descriptor))
-        }
-        
-        @usableFromInline func initialize(index: Int, viewDescriptor: Texture.TextureViewDescriptor, baseResource: Texture) {
-            self.baseResources.advanced(by: index).initialize(to: Resource(baseResource))
-            self.textureViewInfos.advanced(by: index).initialize(to: .texture(viewDescriptor))
-        }
-        
         @usableFromInline func deinitialize(from index: Int, count: Int) {
             self.baseResources.advanced(by: index).deinitialize(count: count)
             self.textureViewInfos.advanced(by: index).deinitialize(count: count)
@@ -368,6 +358,8 @@ public enum TextureViewBaseInfo {
         
         let result = self.allocate(descriptor: viewDescriptor.descriptor, flags: flags)
         self.transientStorage.baseResources.advanced(by: result.index).pointee = Substrate.Resource(baseResource)
+        self.transientStorage.textureViewInfos.advanced(by: result.index).pointee = .buffer(viewDescriptor)
+        
         return result
     }
     
@@ -389,6 +381,8 @@ public enum TextureViewBaseInfo {
         
         let result = self.allocate(descriptor: descriptor, flags: flags)
         self.transientStorage.baseResources.advanced(by: result.index).pointee = Substrate.Resource(baseResource)
+        self.transientStorage.textureViewInfos.advanced(by: result.index).pointee = .texture(viewDescriptor)
+        
         return result
     }
 }

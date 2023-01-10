@@ -14,7 +14,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     let usedResources: Set<UnsafeMutableRawPointer>
     let isAppleSiliconGPU: Bool
     
-    let inputAttachmentUsages: [(texture: MTLTexture, afterStages: MTLRenderStages)]
+    var inputAttachmentBarrierStages: (after: MTLRenderStages, before: MTLRenderStages)?
     
     private var baseBufferOffsets = [Int](repeating: 0, count: 31 * 5) // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     
@@ -24,26 +24,36 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
         self.isAppleSiliconGPU = isAppleSiliconGPU
         
         if isAppleSiliconGPU {
-            self.inputAttachmentUsages = []
+            self.inputAttachmentBarrierStages = nil
         } else {
-            self.inputAttachmentUsages = passRecord.pass.resources.compactMap { (usage: ResourceUsage) -> (texture: MTLTexture, afterStages: MTLRenderStages)? in
+            var stages: (after: RenderStages, before: RenderStages) = ([], [])
+            
+            for usage in passRecord.pass.resources {
                 guard usage.type.contains(.inputAttachment),
-                        let texture = Texture(usage.resource),
-                      let mtlTexture = texture.mtlTexture else {
-                    return nil
+                        let texture = Texture(usage.resource) else {
+                    continue
                 }
-                let stages: MTLRenderStages = usage.type.contains(.depthStencilAttachmentWrite) ? .vertex : .fragment
-                return (texture: mtlTexture, afterStages: stages)
+                
+                if texture.descriptor.pixelFormat.isDepth || texture.descriptor.pixelFormat.isStencil {
+                    stages.after.formUnion(.vertex)
+                } else {
+                    stages.after.formUnion(.fragment)
+                }
+                
+                stages.before.formUnion(usage.stages)
+            }
+            if !stages.after.isEmpty {
+                self.inputAttachmentBarrierStages = (MTLRenderStages(stages.after.last), MTLRenderStages(stages.before.first))
+            } else {
+                self.inputAttachmentBarrierStages = nil
             }
         }
     }
     
     func processInputAttachmentUsages() {
         guard !self.isAppleSiliconGPU else { return }
-        if #available(iOS 16.0, *) {
-            for usage in self.inputAttachmentUsages {
-                encoder.memoryBarrier(resources: [usage.texture], after: usage.afterStages, before: .fragment)
-            }
+        if let inputAttachmentBarrierStages = self.inputAttachmentBarrierStages, #available(iOS 16.0, *) {
+            encoder.memoryBarrier(scope: .renderTargets, after: inputAttachmentBarrierStages.after, before: inputAttachmentBarrierStages.before)
         }
     }
     

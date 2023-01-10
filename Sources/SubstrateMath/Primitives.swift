@@ -910,6 +910,53 @@ public struct Sphere<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codabl
 
 extension Sphere: @unchecked Sendable where Scalar: Sendable {}
 
+public struct Line<Vertex> {
+    public var v0 : Vertex
+    public var v1 : Vertex
+    
+    @inlinable
+    public init(_ v0: Vertex, _ v1: Vertex) {
+        self.v0 = v0
+        self.v1 = v1
+    }
+    
+    @inlinable
+    public init(v0: Vertex, v1: Vertex) {
+        self.v0 = v0
+        self.v1 = v1
+    }
+    
+    @inlinable
+    public subscript(i: Int) -> Vertex {
+        get {
+            switch i {
+            case 0:
+                return self.v0
+            case 1:
+                return self.v1
+            default:
+                preconditionFailure("Index \(i) is out of bounds.")
+            }
+        }
+        set {
+            switch i {
+            case 0:
+                self.v0 = newValue
+            case 1:
+                self.v1 = newValue
+            default:
+                preconditionFailure("Index \(i) is out of bounds.")
+            }
+        }
+    }
+}
+
+extension Line: Equatable where Vertex: Equatable {}
+extension Line: Hashable where Vertex: Hashable {}
+extension Line: Encodable where Vertex: Encodable {}
+extension Line: Decodable where Vertex: Decodable {}
+extension Line: @unchecked Sendable where Vertex: Sendable {}
+
 public struct Triangle<Vertex> {
     public var v0 : Vertex
     public var v1 : Vertex
@@ -927,6 +974,34 @@ public struct Triangle<Vertex> {
         self.v0 = v0
         self.v1 = v1
         self.v2 = v2
+    }
+    
+    @inlinable
+    public subscript(i: Int) -> Vertex {
+        get {
+            switch i {
+            case 0:
+                return self.v0
+            case 1:
+                return self.v1
+            case 2:
+                return self.v2
+            default:
+                preconditionFailure("Index \(i) is out of bounds.")
+            }
+        }
+        set {
+            switch i {
+            case 0:
+                self.v0 = newValue
+            case 1:
+                self.v1 = newValue
+            case 2:
+                self.v2 = newValue
+            default:
+                preconditionFailure("Index \(i) is out of bounds.")
+            }
+        }
     }
 }
 

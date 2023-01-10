@@ -154,7 +154,7 @@ extension ResourceBindingPath {
 
 extension ResourceBindingPath {
     @inlinable
-    public init(resourceSetIndex: Int, index: Int, type: MTLArgumentType) {
+    public init(resourceSetIndex: Int = 0, index: Int, type: MTLArgumentType) {
         self.init(type: type, index: index, argumentBufferIndex: resourceSetIndex + 1, stages: []) // Push constants go at index 0.
     }
 }

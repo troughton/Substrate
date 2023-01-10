@@ -10,7 +10,7 @@ import SubstrateUtilities
 
 extension TextureDescriptor {
     @inlinable
-    var slicesPerLevel: Int {
+    public var slicesPerLevel: Int {
         var sliceCount = self.arrayLength * self.depth
         if self.textureType == .typeCube || self.textureType == .typeCubeArray {
             sliceCount *= 6
@@ -19,7 +19,7 @@ extension TextureDescriptor {
     }
     
     @inlinable
-    var subresourceCount: Int {
+    public var subresourceCount: Int {
         return self.slicesPerLevel * self.mipmapLevelCount
     }
 }

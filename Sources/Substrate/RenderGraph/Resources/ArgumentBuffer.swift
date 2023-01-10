@@ -18,7 +18,7 @@ public protocol ArgumentBufferEncodable {
     
     static var argumentBufferDescriptor: ArgumentBufferDescriptor { get }
     
-    mutating func encode(into argBuffer: ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?) async
+    mutating func encode(into argBuffer: ArgumentBuffer) async
 }
 
 @available(*, deprecated, renamed: "ArgumentBuffer")
@@ -75,25 +75,41 @@ extension ArgumentDescriptor.ArgumentResourceType: CustomStringConvertible {
 }
 
 public struct ArgumentBufferDescriptor: Hashable, Sendable {
-    public var arguments: [ArgumentDescriptor]
+    @usableFromInline var _arguments: [ArgumentDescriptor]
+    
+    public var arguments: [ArgumentDescriptor] {
+        get {
+            self._arguments
+        }
+        set {
+            self._arguments = newValue
+            self.calculateBufferOffsets()
+        }
+    }
     public var storageMode: StorageMode
     @usableFromInline var bufferLength: Int
     
     @inlinable
     public init(arguments: [ArgumentDescriptor], storageMode: StorageMode = .shared) {
-        self.arguments = arguments
+        self._arguments = arguments
         self.storageMode = storageMode
         
+        self.bufferLength = 0
+        self.calculateBufferOffsets()
+    }
+    
+    @inlinable
+    mutating func calculateBufferOffsets() {
         var offset = 0
         var nextIndex = 0
-        for i in self.arguments.indices {
-            precondition(self.arguments[i].index < 0 || self.arguments[i].index >= nextIndex, "Arguments must be in order of ascending index.")
-            self.arguments[i].index = max(self.arguments[i].index, nextIndex)
+        for i in self._arguments.indices {
+            precondition(self._arguments[i].index < 0 || self._arguments[i].index >= nextIndex, "Arguments must be in order of ascending index.")
+            self._arguments[i].index = max(self._arguments[i].index, nextIndex)
             
-            offset = offset.roundedUpToMultiple(of: self.arguments[i].encodedBufferStride)
-            self.arguments[i].encodedBufferOffset = offset
-            nextIndex = self.arguments[i].index + self.arguments[i].arrayLength
-            offset += self.arguments[i].encodedBufferStride * self.arguments[i].arrayLength
+            offset = offset.roundedUpToMultiple(of: self._arguments[i].encodedBufferStride)
+            self._arguments[i].encodedBufferOffset = offset
+            nextIndex = self._arguments[i].index + self._arguments[i].arrayLength
+            offset += self._arguments[i].encodedBufferStride * self._arguments[i].arrayLength
         }
         
         self.bufferLength = offset
@@ -203,7 +219,7 @@ public struct ArgumentBuffer : ResourceProtocol {
         
     }
     
-    public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) async {
+    public init<A : ArgumentBufferEncodable>(encoding arguments: A, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) async {
         self.init(descriptor: A.argumentBufferDescriptor, renderGraph: renderGraph, flags: flags)
 
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
@@ -211,7 +227,7 @@ public struct ArgumentBuffer : ResourceProtocol {
 #endif
         
         var arguments = arguments
-        await arguments.encode(into: self, setIndex: setIndex, bindingEncoder: nil)
+        await arguments.encode(into: self)
     }
     
     public var stateFlags: ResourceStateFlags {

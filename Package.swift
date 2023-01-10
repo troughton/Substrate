@@ -43,7 +43,7 @@ let package = Package(
         .target(name: "SwiftFrameGraph", dependencies: ["Substrate"]),
         
         // SubstrateMath
-        .target(name: "SubstrateMath", dependencies: [.product(name: "RealModule", package: "swift-numerics")]),
+        .target(name: "SubstrateMath", dependencies: [.product(name: "RealModule", package: "swift-numerics"), "SubstrateUtilities"]),
         .testTarget(name: "SubstrateMathTests", dependencies: ["SubstrateMath", .product(name: "RealModule", package: "swift-numerics")]),
         
         // Substrate
@@ -69,7 +69,7 @@ let package = Package(
         .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross"), .product(name: "OrderedCollections", package: "swift-collections")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"],
                 swiftSettings: [
 //                    .define("SUBSTRATE_DISABLE_AUTOMATIC_LABELS"),
-//                    .define("SUBSTRATE_USE_PLATFORM_HAZARD_TRACKING"),
+                    .define("SUBSTRATE_USE_PLATFORM_HAZARD_TRACKING"),
 //                    .unsafeFlags(["-enforce-exclusivity=unchecked"])
                 ]),
         .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"],

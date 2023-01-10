@@ -47,6 +47,7 @@ public protocol RenderPass : AnyObject {
     /// even if no other pass reads from them within the same render graph.
     ///
     /// FIXME:  this documentation is out of date.
+    @ResourceUsageListBuilder
     var resources : [ResourceUsage] { get }
 }
 
@@ -216,6 +217,13 @@ public protocol CPURenderPass : RenderPass {
     /// `execute` is called by the render graph to allow a `CPURenderPass` to perform work that accesses GPU resources.
     /// It will be called in sequence order of the submission of `CPURenderPass` instances to the render graph.
     func execute() async
+}
+
+extension CPURenderPass {
+    /// `CPURenderPass`s that don't declare any used resources are always executed.
+    public var resources: [ResourceUsage] {
+        []
+    }
 }
 
 /// A `BlitRenderPass` is a pass that uses GPU's blit/copy pipeline to copy data between GPU resources.
@@ -717,7 +725,7 @@ protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistry: (any BackendTransientResourceRegistry)? { get }
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var renderGraphQueue: Queue { get }
-    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken
+    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], waitingFor gpuQueueWaitIndices: QueueCommandIndices, onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
 }
 
@@ -1035,7 +1043,7 @@ public final class RenderGraph {
     ///
     /// - SeeAlso: `addComputeCallbackPass(name:reflection:_:)`
     public func addComputeCallbackPass(name: String,
-                                       using resources: [ResourceUsage] = [],
+                                       using resources: [ResourceUsage],
                                        execute: @escaping @Sendable (ComputeCommandEncoder) async -> Void) {
         self.addPass(CallbackComputeRenderPass(name: name, resources: resources, execute: execute))
     }
@@ -1049,7 +1057,7 @@ public final class RenderGraph {
     /// - SeeAlso: `ReflectableComputeRenderPass`
     @inlinable
     public func addComputeCallbackPass<R>(file: String = #fileID, line: Int = #line,
-                                          using resources: [ResourceUsage] = [],
+                                          using resources: [ResourceUsage],
                                           reflection: R.Type,
                                           execute: @escaping @Sendable (TypedComputeCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackComputeRenderPass(name: "Anonymous Compute Pass at \(file):\(line)", resources: resources, reflection: reflection, execute: execute))
@@ -1064,7 +1072,7 @@ public final class RenderGraph {
     ///
     /// - SeeAlso: `ReflectableComputeRenderPass`
     public func addComputeCallbackPass<R>(name: String,
-                                          using resources: [ResourceUsage] = [],
+                                          using resources: [ResourceUsage],
                                           reflection: R.Type,
                                           execute: @escaping @Sendable (TypedComputeCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackComputeRenderPass(name: name, resources: resources, reflection: reflection, execute: execute))
@@ -1099,7 +1107,7 @@ public final class RenderGraph {
     /// encoder to encode commands directly to an underlying GPU command buffer.
     @inlinable
     public func addExternalCallbackPass(file: String = #fileID, line: Int = #line,
-                                        using resources: [ResourceUsage] = [],
+                                        using resources: [ResourceUsage],
                                         execute: @escaping @Sendable (ExternalCommandEncoder) async -> Void) {
         self.addPass(CallbackExternalRenderPass(name: "Anonymous External Encoder Pass at \(file):\(line)", resources: resources, execute: execute))
     }
@@ -1111,21 +1119,21 @@ public final class RenderGraph {
     /// - Parameter execute: A closure to execute that will be passed a external command encoder, where the caller can use the command
     /// encoder to encode commands directly to an underlying GPU command buffer.
     public func addExternalCallbackPass(name: String,
-                                        using resources: [ResourceUsage] = [],
+                                        using resources: [ResourceUsage],
                                         execute: @escaping @Sendable (ExternalCommandEncoder) async -> Void) {
         self.addPass(CallbackExternalRenderPass(name: name, resources: resources, execute: execute))
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func addAccelerationStructureCallbackPass(file: String = #fileID, line: Int = #line,
-                                                     using resources: [ResourceUsage] = [],
+                                                     using resources: [ResourceUsage],
                                         execute: @escaping @Sendable (AccelerationStructureCommandEncoder) -> Void) {
         self.addPass(CallbackAccelerationStructureRenderPass(name: "Anonymous Acceleration Structure Encoder Pass at \(file):\(line)", resources: resources, execute: execute))
     }
     
     @available(macOS 11.0, iOS 14.0, *)
     public func addAccelerationStructureCallbackPass(name: String,
-                                                     using resources: [ResourceUsage] = [],
+                                                     using resources: [ResourceUsage],
                                         execute: @escaping @Sendable (AccelerationStructureCommandEncoder) -> Void) {
         self.addPass(CallbackAccelerationStructureRenderPass(name: name, resources: resources, execute: execute))
     }
@@ -1290,6 +1298,10 @@ public final class RenderGraph {
                 }
             }
             
+            if pass.type == .cpu, pass.pass.resources.isEmpty {
+                passHasSideEffects[i] = true
+            }
+            
             if pass.type == .external {
                 passHasSideEffects[i] = true
             }
@@ -1306,6 +1318,12 @@ public final class RenderGraph {
         let passRenderTargetIndices = self.computePassRenderTargetIndices(passes: renderPasses.map { $0.type == .draw ? ($0.pass! as! DrawRenderPass) : nil })
         for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
             self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, passRenderTargetIndices: passRenderTargetIndices, addedToList: &addedToList, activePasses: &activePasses, allocator: AllocatorType(allocator))
+        }
+        
+        for i in (0..<renderPasses.count) {
+            if !renderPasses[i].isActive {
+                print("Pass \(renderPasses[i].name) is inactive")
+            }
         }
         
         var i = 0
@@ -1418,7 +1436,7 @@ public final class RenderGraph {
     /// - Parameter onGPUCompletion: an optional closure to execute once the render graph has completed executing on the GPU.
     @discardableResult
     @_unsafeInheritExecutor // Don't force the RenderGraph to be executed on a global executor; submission should stay on the caller's executor. This means that execute() is effectively a synchronous method from an async context, which is what we want.
-    public func execute() async -> RenderGraphExecutionWaitToken {
+    public func execute(waitingFor gpuQueueWaitIndices: QueueCommandIndices = .zero) async -> RenderGraphExecutionWaitToken {
         precondition(Self.activeRenderGraph == nil, "Cannot call RenderGraph.execute() from within a render pass.")
         
         let signpostState = Self.signposter.beginInterval("Execute RenderGraph", id: self.signpostID)
@@ -1472,7 +1490,7 @@ public final class RenderGraph {
             
             let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
             let waitToken = await Self.$activeRenderGraph.withValue(self) {
-                return await self.context.executeRenderGraph(self, renderPasses: renderPasses, onSwapchainPresented: onSwapchainPresented, onCompletion: { queueCommandRange in
+                return await self.context.executeRenderGraph(self, renderPasses: renderPasses, waitingFor: gpuQueueWaitIndices, onSwapchainPresented: onSwapchainPresented, onCompletion: { queueCommandRange in
                     await self.didCompleteRender(queueCommandRange: queueCommandRange)
                     for item in completionNotifyQueue {
                         await item()

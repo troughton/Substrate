@@ -689,6 +689,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         
         let textureReference = MTLTextureReference(texture: Unmanaged.passRetained(mtlTexture))
         texture.backingResourcePointer = textureReference._texture.toOpaque()
+        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+            texture[\.gpuAddresses] = mtlTexture.gpuResourceID._impl
+        }
         return textureReference
     }
     
@@ -708,6 +711,10 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
                 if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
                     self.frameDrawables.append((texture, .success(mtlDrawable)))
                     texture.backingResourcePointer = Unmanaged.passRetained(drawableTexture).toOpaque()
+                    if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+                        texture[\.gpuAddresses] = drawableTexture.gpuResourceID._impl
+                    }
+                    
                     if let waitEvent = self.textureWaitEvents[texture] {
                         CommandEndActionManager.enqueue(action: .release(.fromOpaque(texture.backingResourcePointer!)), after: waitEvent.waitValue, on: self.queue)
                     }
@@ -839,7 +846,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         
         if texture._usesPersistentRegistry {
             precondition(texture.flags.contains(.historyBuffer))
-            Unmanaged<MTLTexture>.fromOpaque(texture.backingResourcePointer!).retain() // since the persistent registry releases its resources unconditionally on dispose, but we want the allocator to have ownership of it.
+            _ = Unmanaged<MTLTexture>.fromOpaque(texture.backingResourcePointer!).retain() // since the persistent registry releases its resources unconditionally on dispose, but we want the allocator to have ownership of it.
         }
         
         if let mtlTexture = texture.backingResourcePointer {

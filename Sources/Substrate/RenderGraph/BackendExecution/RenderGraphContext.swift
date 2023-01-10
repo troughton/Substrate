@@ -129,7 +129,8 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     
 //    @_specialize(kind: full, where Backend == MetalBackend)
 //    @_specialize(kind: full, where Backend == VulkanBackend)
-    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], 
+    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord],
+                            waitingFor gpuQueueWaitIndices: QueueCommandIndices,
                             onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil,
                             onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken {
         await self.accessSemaphore?.wait()
@@ -181,7 +182,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                                                                                       compactedResourceCommands: self.compactedResourceCommands))
                         }
                         
-                        let waitEventValues = encoderInfo.queueCommandWaitIndices
+                        let waitEventValues = pointwiseMax(encoderInfo.queueCommandWaitIndices, gpuQueueWaitIndices)
                         for queue in QueueRegistry.allQueues {
                             if waitedEvents[Int(queue.index)] < waitEventValues[Int(queue.index)],
                                waitEventValues[Int(queue.index)] > queue.lastCompletedCommand {

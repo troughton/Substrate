@@ -197,23 +197,38 @@ public class ResourceBindingEncoder : CommandEncoder {
         guard let structure = structure else { return }
         bindingEncoderImpl.setAccelerationStructure(structure, at: path)
     }
-    
-    /// Construct an `ArgumentBuffer` specified by the `ArgumentBufferEncodable` value `arguments`
-    /// and bind it to the binding index `setIndex`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
-    /// descriptor set at `setIndex` for Vulkan.
-    public func setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) async {
+
+    @inlinable
+    func _setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) async {
         if A.self == NilSet.self {
             return
         }
         
         let argumentBuffer = ArgumentBuffer(descriptor: A.argumentBufferDescriptor)
-        await arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
+        await arguments.encode(into: argumentBuffer)
      
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
 #endif
 
         self.setArgumentBuffer(argumentBuffer, at: setIndex, stages: A.activeStages)
+    }
+    
+    /// Construct an `ArgumentBuffer` specified by the `ArgumentBufferEncodable` value `arguments`
+    /// and bind it to the binding index `setIndex`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
+    /// descriptor set at `setIndex` for Vulkan.
+    @inlinable
+    public func setArguments<A : ArgumentBufferEncodable>(_ arguments: inout A, at setIndex: Int) async {
+        await self._setArguments(&arguments, at: setIndex)
+    }
+    
+    /// Construct an `ArgumentBuffer` specified by the `ArgumentBufferEncodable` value `arguments`
+    /// and bind it to the binding index `setIndex`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
+    /// descriptor set at `setIndex` for Vulkan.
+    @inlinable
+    public func setArguments<A : ShaderResourceSet>(_ arguments: inout A, at setIndex: Int) async {
+        await self._setArguments(&arguments, at: setIndex)
+        await arguments.bindDirectArguments(encoder: self, setIndex: setIndex)
     }
     
     /// Bind `argumentBuffer` to the binding index `index`, corresponding to a `[[buffer(setIndex + 1)]]` binding for Metal or the
@@ -354,12 +369,14 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     
     let drawRenderPass : DrawRenderPass
     let impl: RenderCommandEncoderImpl
+    let renderTargetsDescriptor: RenderTargetsDescriptor
     
     var nonDefaultDynamicState: DrawDynamicState = []
 
-    init(renderPass: DrawRenderPass, passRecord: RenderPassRecord, impl: RenderCommandEncoderImpl) {
+    init(renderPass: DrawRenderPass, passRecord: RenderPassRecord, impl: RenderCommandEncoderImpl, renderTargetsDescriptor: RenderTargetsDescriptor) {
         self.drawRenderPass = renderPass
         self.impl = impl
+        self.renderTargetsDescriptor = renderTargetsDescriptor
         super.init(passRecord: passRecord, impl: impl)
         
         assert(passRecord.pass === renderPass)
@@ -503,6 +520,11 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         impl.memoryBarrier(resources: resources, after: after, before: before)
     }
     
+    @inlinable
+    public func memoryBarrier(resources: [any ResourceProtocol], after: RenderStages, before: RenderStages) {
+        self.memoryBarrier(resources: resources.map { Resource($0) }, after: after, before: before)
+    }
+    
     @usableFromInline override func endEncoding() {
         // Reset any dynamic state to the defaults.
         let renderTargetSize = self.drawRenderPass.renderTargetsDescriptor.size
@@ -630,6 +652,11 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
     
     public func memoryBarrier(resources: [Resource]) {
         impl.memoryBarrier(resources: resources)
+    }
+    
+    @inlinable
+    public func memoryBarrier(resources: [any ResourceProtocol]) {
+        self.memoryBarrier(resources: resources.map { Resource($0) })
     }
 }
 

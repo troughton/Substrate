@@ -178,7 +178,7 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
             case []:
                 continue
             case _ where !usage.gpuType.intersection([.colorAttachment, .depthStencilAttachment]).isEmpty:
-                guard let renderPass = allRenderPasses[usage.passIndex] as? DrawRenderPass else { fatalError() }
+                guard let renderPass = allRenderPasses[usage.passIndex].pass as? DrawRenderPass else { fatalError() }
                 let descriptor = renderPass.renderTargetsDescriptor
                 if let depthAttachment = descriptor.depthAttachment,
                     depthAttachment.texture == attachment.texture,

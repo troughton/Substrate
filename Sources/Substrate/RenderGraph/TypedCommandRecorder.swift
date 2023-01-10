@@ -11,7 +11,10 @@ public protocol NoArgConstructable {
     init()
 }
 
-public protocol ShaderResourceSet : NoArgConstructable & ArgumentBufferEncodable {}
+public protocol ShaderResourceSet : NoArgConstructable & ArgumentBufferEncodable {
+    /// Used for binding any resources that must be directly bound to an encoder (e.g. UAV textures on Apple Silicon GPUs).
+    mutating func bindDirectArguments(encoder: ResourceBindingEncoder, setIndex: Int) async
+}
 
 public struct NilFunctions : RawRepresentable {
     public typealias RawValue = String
@@ -35,7 +38,10 @@ public struct NilSet : ShaderResourceSet {
     @inlinable
     public init() {}
     
-    public mutating func encode(into argBuffer: ArgumentBuffer, setIndex: Int, bindingEncoder: ResourceBindingEncoder?) {
+    public mutating func encode(into argBuffer: ArgumentBuffer) {
+    }
+    
+    public mutating func bindDirectArguments(encoder: ResourceBindingEncoder, setIndex: Int) async {
     }
     
     public static var argumentBufferDescriptor: ArgumentBufferDescriptor {
@@ -190,7 +196,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.set7 = R.Set7()
         
         self.pipeline = TypedRenderPipelineDescriptor()
-        self.pipeline.descriptor.setPixelFormatsAndSampleCount(from: encoder.drawRenderPass.renderTargetsDescriptor)
+        self.pipeline.descriptor.setPixelFormatsAndSampleCount(from: encoder.renderTargetsDescriptor)
     }
     
     func updateEncoderState() async {
@@ -344,6 +350,11 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     
     public func memoryBarrier(resources: [Resource], after: RenderStages, before: RenderStages) {
         self.encoder.memoryBarrier(resources: resources, after: after, before: before)
+    }
+    
+    @inlinable
+    public func memoryBarrier(resources: [any ResourceProtocol], after: RenderStages, before: RenderStages) {
+        self.memoryBarrier(resources: resources.map { Resource($0) }, after: after, before: before)
     }
 }
 
@@ -579,6 +590,11 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     
     public func memoryBarrier(resources: [Resource]) {
         self.encoder.memoryBarrier(resources: resources)
+    }
+    
+    @inlinable
+    public func memoryBarrier(resources: [any ResourceProtocol]) {
+        self.memoryBarrier(resources: resources.map { Resource($0) })
     }
 }
 
