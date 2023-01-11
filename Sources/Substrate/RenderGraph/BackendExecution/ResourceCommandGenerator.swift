@@ -608,7 +608,21 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                     if let argBuffer = ArgumentBuffer(readResource) {
                         frameCommandInfo.commandEncoders[i].queueCommandWaitIndices = pointwiseMax(frameCommandInfo.commandEncoders[i].queueCommandWaitIndices, argBuffer[\.contentAccessWaitIndices])
                     }
-                    
+                }
+                
+                for writtenResource in pass.writtenResources {
+                    if let writeWaitIndices = writtenResource.withUnderlyingResource({ $0._writeWaitIndicesPointer?.pointee }) {
+                        frameCommandInfo.commandEncoders[i].queueCommandWaitIndices = pointwiseMax(frameCommandInfo.commandEncoders[i].queueCommandWaitIndices, writeWaitIndices)
+                    }
+                }
+            }
+        }
+        
+        for i in frameCommandInfo.commandEncoders.indices {
+            let encoderSignalValue = frameCommandInfo.globalCommandBufferIndex(frameIndex: frameCommandInfo.commandEncoders[i].commandBufferIndex)
+            
+            for pass in frameCommandInfo.passes {
+                for readResource in pass.readResources {
                     readResource[waitIndexFor: queue, accessType: .read] = encoderSignalValue
                 }
                 
