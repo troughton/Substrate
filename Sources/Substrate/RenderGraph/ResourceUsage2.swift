@@ -58,6 +58,12 @@ extension ResourceProtocol {
     }
 }
 
+extension ArgumentBuffer {
+    public func `as`(_ type: ArgumentBufferUsage, stages: RenderStages = []) -> ResourceUsage {
+        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: [.wholeResource], stages: stages)
+    }
+}
+
 extension Buffer {
     public func `as`(_ type: BufferUsage, byteRange: Range<Int>? = nil, stages: RenderStages = []) -> ResourceUsage {
         return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], stages: stages)

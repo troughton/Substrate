@@ -262,20 +262,22 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
 #endif
-    
-    /// A limit for the maximum buffer size that may be allocated by the backend for this argument buffer.
-    /// Useful for capping the length of bindless arrays to the actually used capacity.
-    public var maximumAllocationLength : Int {
-        get {
-            return self.pointer(for: \.maxAllocationLengths).pointee
-        }
-        nonmutating set {
-            self.pointer(for: \.maxAllocationLengths).pointee = newValue
-        }
-    }
      
     public var storageMode: StorageMode {
         return self.descriptor.storageMode
+    }
+    
+    private func updateAccessWaitIndices<R: ResourceProtocolImpl>(resource: R, path: ResourceBindingPath) {
+        guard resource._usesPersistentRegistry else { return }
+        
+        let argument = self.descriptor.arguments[self.descriptor.arguments.binarySearch(predicate: { $0.index <= path.index }) - 1]
+        if argument.accessType == .read, let waitPointer = resource._readWaitIndicesPointer {
+            self[\.contentAccessWaitIndices] = pointwiseMax(waitPointer.pointee, self[\.contentAccessWaitIndices])
+        }
+        
+        if argument.accessType == .readWrite || argument.accessType == .write, let waitPointer = resource._writeWaitIndicesPointer {
+            self[\.contentAccessWaitIndices] = pointwiseMax(waitPointer.pointee, self[\.contentAccessWaitIndices])
+        }
     }
     
     public func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
@@ -284,6 +286,7 @@ public struct ArgumentBuffer : ResourceProtocol {
         
         assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         
+        self.updateAccessWaitIndices(resource: buffer, path: path)
         RenderBackend._backend.argumentBufferImpl.setBuffer(buffer, offset: offset, at: path, on: self)
     }
     
@@ -291,6 +294,8 @@ public struct ArgumentBuffer : ResourceProtocol {
         self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        
+        self.updateAccessWaitIndices(resource: texture, path: path)
         RenderBackend._backend.argumentBufferImpl.setTexture(texture, at: path, on: self)
     }
     
@@ -299,6 +304,8 @@ public struct ArgumentBuffer : ResourceProtocol {
         self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || structure.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        
+        self.updateAccessWaitIndices(resource: structure, path: path)
         RenderBackend._backend.argumentBufferImpl.setAccelerationStructure(structure, at: path, on: self)
     }
     
@@ -307,6 +314,8 @@ public struct ArgumentBuffer : ResourceProtocol {
         self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        
+        self.updateAccessWaitIndices(resource: table, path: path)
         RenderBackend._backend.argumentBufferImpl.setVisibleFunctionTable(table, at: path, on: self)
     }
     
@@ -315,6 +324,8 @@ public struct ArgumentBuffer : ResourceProtocol {
         self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        
+        self.updateAccessWaitIndices(resource: table, path: path)
         RenderBackend._backend.argumentBufferImpl.setIntersectionFunctionTable(table, at: path, on: self)
     }
     
@@ -494,7 +505,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     }
     
     let stateFlags: UnsafeMutablePointer<ResourceStateFlags>
-    let maxAllocationLengths: UnsafeMutablePointer<Int>
+    let contentAccessWaitIndices: UnsafeMutablePointer<QueueCommandIndices>
     @usableFromInline let mappedContents : UnsafeMutablePointer<UnsafeMutableRawPointer?>
     
     #if canImport(Metal)
@@ -507,7 +518,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     
     @usableFromInline init(capacity: Int) {
         self.stateFlags = .allocate(capacity: capacity)
-        self.maxAllocationLengths = .allocate(capacity: capacity)
+        self.contentAccessWaitIndices = .allocate(capacity: capacity)
         self.mappedContents = UnsafeMutablePointer.allocate(capacity: capacity)
 
 #if canImport(Metal)
@@ -519,7 +530,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     
     @usableFromInline func deallocate() {
         self.stateFlags.deallocate()
-        self.maxAllocationLengths.deallocate()
+        self.contentAccessWaitIndices.deallocate()
         self.mappedContents.deallocate()
         
 #if canImport(Metal)
@@ -531,7 +542,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     
     @usableFromInline func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
         self.stateFlags.advanced(by: indexInChunk).initialize(to: [])
-        self.maxAllocationLengths.advanced(by: indexInChunk).initialize(to: .max)
+        self.contentAccessWaitIndices.advanced(by: indexInChunk).initialize(to: .zero)
         self.mappedContents.advanced(by: indexInChunk).initialize(to: nil)
         
 #if canImport(Metal)
@@ -543,7 +554,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
         self.stateFlags.advanced(by: index).deinitialize(count: count)
-        self.maxAllocationLengths.advanced(by: index).deinitialize(count: count)
+        self.contentAccessWaitIndices.advanced(by: index).deinitialize(count: count)
         self.mappedContents.advanced(by: index).deinitialize(count: count)
         
 #if canImport(Metal)

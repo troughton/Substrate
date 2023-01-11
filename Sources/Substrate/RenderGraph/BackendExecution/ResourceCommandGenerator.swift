@@ -50,9 +50,6 @@ enum PreFrameCommands {
     
     case waitForHeapAliasingFences(resource: Resource, waitDependency: FenceDependency)
     
-    case waitForCommandBuffer(index: UInt64, queue: Queue)
-    case updateCommandBufferWaitIndex(Resource, accessType: ResourceAccessType)
-    
     var sortOrder: Int {
         // Note: must be in 0..<4 (2 bits)
         switch self {
@@ -62,7 +59,7 @@ enum PreFrameCommands {
             return 1
         case .materialiseArgumentBuffer:
             return 2
-        case .disposeResource, .waitForHeapAliasingFences, .waitForCommandBuffer, .updateCommandBufferWaitIndex:
+        case .disposeResource, .waitForHeapAliasingFences:
             return 3
         }
     }
@@ -125,12 +122,6 @@ enum PreFrameCommands {
             } else {
                 fatalError()
             }
-            
-        case .waitForCommandBuffer(let index, let waitQueue):
-            waitEventValues[Int(waitQueue.index)] = max(index, waitEventValues[Int(waitQueue.index)])
-            
-        case .updateCommandBufferWaitIndex(let resource, let accessType):
-            resource[waitIndexFor: queue, accessType: accessType] = signalEventValue
             
         case .waitForHeapAliasingFences(let resource, let waitDependency):
             resourceRegistry!.withHeapAliasingFencesIfPresent(for: resource.handle, perform: { fenceDependencies in
@@ -548,29 +539,6 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                         backend.resourceRegistry.prepareMultiframeTexture(texture, frameIndex: frameCommandInfo.globalFrameIndex)
                     }
                 }
-                
-                for queue in QueueRegistry.allQueues {
-                    // TODO: separate out the wait index for the first read from the first write.
-                    let waitIndex = resource[waitIndexFor: queue, accessType: lastWriteIndex != nil ? .readWrite : .read]
-                    self.preFrameCommands.append(PreFrameResourceCommand(command: .waitForCommandBuffer(index: waitIndex, queue: queue), index: firstUsage.passIndex, order: .before))
-                }
-
-                if !resource.stateFlags.contains(.initialised) || !resource.flags.contains(.immutableOnceInitialised) {
-                    if lastUsage.gpuType.isWrite {
-                        self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), index: lastUsage.passIndex, order: .after))
-                    } else {
-                        if let lastWrite = lastWrite {
-                            self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .readWrite), index: lastWrite.passIndex, order: .after))
-                        }
-                        // Process all the reads since the last write.
-                        for readIndex in ((lastWriteIndex ?? -1) + 1)..<usagesArray.count {
-                            let read = usagesArray[readIndex]
-                            guard read.gpuType.isRead else { continue }
-                            
-                            self.preFrameCommands.append(PreFrameResourceCommand(command: .updateCommandBufferWaitIndex(resource, accessType: .write), index: read.passIndex, order: .after))
-                        }
-                    }
-                }
             }
             
             if Backend.TransientResourceRegistry.isAliasedHeapResource(resource: resource), !canBeMemoryless {
@@ -625,6 +593,30 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         frameCommandInfo.commandEncoders[commandEncoderIndex].queueCommandWaitIndices = queueCommandWaitIndices
         
         self.preFrameCommands.removeAll(keepingCapacity: true)
+    }
+    
+    func updateQueueWaitCommandIndices(frameCommandInfo: inout FrameCommandInfo<Backend.RenderTargetDescriptor>, queue: Queue) {
+        for i in frameCommandInfo.commandEncoders.indices {
+            let encoderSignalValue = frameCommandInfo.globalCommandBufferIndex(frameIndex: frameCommandInfo.commandEncoders[i].commandBufferIndex)
+            
+            for pass in frameCommandInfo.passes {
+                for readResource in pass.readResources {
+                    if let readWaitIndices = readResource.withUnderlyingResource({ $0._readWaitIndicesPointer?.pointee }) {
+                        frameCommandInfo.commandEncoders[i].queueCommandWaitIndices = pointwiseMax(frameCommandInfo.commandEncoders[i].queueCommandWaitIndices, readWaitIndices)
+                    }
+                    
+                    if let argBuffer = ArgumentBuffer(readResource) {
+                        frameCommandInfo.commandEncoders[i].queueCommandWaitIndices = pointwiseMax(frameCommandInfo.commandEncoders[i].queueCommandWaitIndices, argBuffer[\.contentAccessWaitIndices])
+                    }
+                    
+                    readResource[waitIndexFor: queue, accessType: .read] = encoderSignalValue
+                }
+                
+                for writtenResource in pass.writtenResources {
+                    writtenResource[waitIndexFor: queue, accessType: .write] = encoderSignalValue
+                }
+            }
+        }
     }
     
     func reset() {

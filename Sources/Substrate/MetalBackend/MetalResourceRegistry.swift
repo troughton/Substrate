@@ -802,7 +802,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
             return MTLBufferReference(buffer: .fromOpaque(mtlArgumentBuffer), offset: argumentBuffer[\.backingBufferOffsets]!)
         }
         
-        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: min(argumentBuffer.maximumAllocationLength, argumentBuffer.descriptor.bufferLength))
+        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argumentBuffer.descriptor.bufferLength)
         assert(fences.isEmpty)
         
         

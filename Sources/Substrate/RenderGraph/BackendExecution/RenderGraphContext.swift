@@ -168,6 +168,8 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                         self.compactedResourceCommands = compactedResourceCommands
                     }
                     
+                    self.commandGenerator.updateQueueWaitCommandIndices(frameCommandInfo: &frameCommandInfo, queue: self.renderGraphQueue)
+                    
                     var commandBuffers = [Backend.CommandBuffer]()
                     var waitedEvents = QueueCommandIndices(repeating: 0)
                     

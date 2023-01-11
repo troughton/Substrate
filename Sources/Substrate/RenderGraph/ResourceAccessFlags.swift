@@ -93,6 +93,41 @@ public struct ResourceUsageType: OptionSet, Hashable, Sendable {
     }
 }
 
+public struct ArgumentBufferUsage: OptionSet, Hashable, Sendable {
+    public let rawValue: Int
+    
+    @inlinable
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+    
+    @inlinable
+    public static var shaderRead: ArgumentBufferUsage { .init(rawValue: ResourceUsageType.shaderRead.rawValue) }
+    
+    @inlinable
+    public static var shaderWrite: ArgumentBufferUsage { .init(rawValue: ResourceUsageType.shaderWrite.rawValue) }
+    
+    @inlinable
+    public static var blitSource: ArgumentBufferUsage { .init(rawValue: ResourceUsageType.blitSource.rawValue) }
+    
+    @inlinable
+    public static var blitDestination: ArgumentBufferUsage { .init(rawValue: ResourceUsageType.blitDestination.rawValue) }
+    
+    @inlinable
+    public static var cpuRead: ArgumentBufferUsage { .init(rawValue: ResourceUsageType.cpuRead.rawValue) }
+    
+    @inlinable
+    public static var cpuWrite: ArgumentBufferUsage { .init(rawValue: ResourceUsageType.cpuWrite.rawValue) }
+    
+    // MARK: - Convenience Accessors
+    
+    @inlinable
+    public static var shaderReadWrite: ArgumentBufferUsage { [.shaderRead, .shaderWrite] }
+    
+    @inlinable
+    public static var cpuReadWrite: ArgumentBufferUsage { [.cpuRead, .cpuWrite] }
+}
+
 public struct BufferUsage: OptionSet, Hashable, Sendable {
     public let rawValue: Int
     
@@ -204,6 +239,11 @@ public struct TextureUsage: OptionSet, Hashable, Sendable {
 
 
 extension ResourceUsageType {
+    @inlinable
+    public init(_ argumentBufferUsage: ArgumentBufferUsage) {
+        self.init(rawValue: argumentBufferUsage.rawValue)
+    }
+    
     @inlinable
     public init(_ bufferUsage: BufferUsage) {
         self.init(rawValue: bufferUsage.rawValue)
