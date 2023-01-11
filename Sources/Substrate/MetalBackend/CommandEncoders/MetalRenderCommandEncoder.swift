@@ -40,7 +40,11 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
                     stages.after.formUnion(.fragment)
                 }
                 
-                stages.before.formUnion(usage.stages)
+                if usage.stages.isEmpty {
+                    stages.before.formUnion(.vertex)
+                } else {
+                    stages.before.formUnion(usage.stages)
+                }
             }
             if !stages.after.isEmpty {
                 self.inputAttachmentBarrierStages = (MTLRenderStages(stages.after.last), MTLRenderStages(stages.before.first))
