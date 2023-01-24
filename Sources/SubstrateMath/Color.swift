@@ -315,11 +315,20 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
                 white: SIMD2(0.31400,  0.35100)) // DCI
         }
         
-        public static var aces: Primaries {
+        public static var acesAP0: Primaries {
             return Primaries(
                 red:   SIMD2(0.73470,  0.26530),
                 green: SIMD2(0.00000,  1.00000),
                 blue:  SIMD2(0.00010, -0.07700),
+                white: SIMD2(0.32168,  0.33767)) // ~D60
+        }
+        
+        
+        public static var acesAP1: Primaries {
+            return Primaries(
+                red:   SIMD2(0.71300,  0.29300),
+                green: SIMD2(0.16500,  0.83000),
+                blue:  SIMD2(0.12800,  0.04400),
                 white: SIMD2(0.32168,  0.33767)) // ~D60
         }
         
@@ -351,6 +360,8 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
     public enum EOTF {
         case linear
         case power(Scalar)
+        case acesCC
+        case acesCCT
         case sRGB
         case sonySLog3
         
@@ -360,6 +371,20 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
                 return x
             case .power(let power):
                 return Scalar.pow(x, 1.0 / power)
+            case .acesCC:
+                if x <= 0 {
+                    return (-16.0 + 9.72) / 17.52
+                } else if x < Scalar.exp2(-15.0) {
+                    return (Scalar.log2(Scalar.exp2(-16.0) + 0.5 * x) + 9.72) / 17.52
+                } else {
+                    return (Scalar.log2(x) + 9.72) / 17.52
+                }
+            case .acesCCT:
+                if x <= 0.0078125 {
+                    return 10.5402337416545 * x + 0.0729055341958355
+                } else {
+                    return (Scalar.log2(x) + 9.72) / 17.52
+                }
             case .sRGB:
                 if x <= 0.0031308 {
                     return 12.92 * x
@@ -381,6 +406,22 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
                 return x
             case .power(let power):
                 return Scalar.pow(x, power)
+            case .acesCC:
+                if x <= -0.301369863014 {
+                    return 2.0 * (Scalar.exp2(x * 17.52 - 9.72) - Scalar.exp2(-16.0))
+                } else if x < 1.46799631204 {
+                    return Scalar.exp2(x * 17.52 - 9.72)
+                } else {
+                    return 65504.0
+                }
+            case .acesCCT:
+                if x <= 0.155251141552511 {
+                    return (x - 0.0729055341958355) / 10.5402337416545
+                } else if x < 1.46799631204 {
+                    return Scalar.exp2(x * 17.52 - 9.72)
+                } else {
+                    return 65504.0
+                }
             case .sRGB:
                 if x <= 0.04045 {
                     return x / 12.92
@@ -426,7 +467,25 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
     }
     
     public static var aces: CIEXYZ1931ColorSpace {
-        return .init(primaries: .aces,
+        return .init(primaries: .acesAP0,
+                     eotf: .linear,
+                     referenceWhite: .aces)
+    }
+    
+    public static var acesCC: CIEXYZ1931ColorSpace {
+        return .init(primaries: .acesAP1,
+                     eotf: .acesCC,
+                     referenceWhite: .aces)
+    }
+    
+    public static var acesCCT: CIEXYZ1931ColorSpace {
+        return .init(primaries: .acesAP1,
+                     eotf: .acesCCT,
+                     referenceWhite: .aces)
+    }
+    
+    public static var acesCG: CIEXYZ1931ColorSpace {
+        return .init(primaries: .acesAP1,
                      eotf: .linear,
                      referenceWhite: .aces)
     }
