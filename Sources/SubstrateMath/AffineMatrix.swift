@@ -617,9 +617,9 @@ extension AffineMatrix where Scalar : Real {
             scale.x *= -1
         }
         
-        currentTransform[0] /= max(scale.x, .leastNormalMagnitude)
-        currentTransform[1] /= max(scale.y, .leastNormalMagnitude)
-        currentTransform[2] /= max(scale.z, .leastNormalMagnitude)
+        currentTransform[0] /= scale.x
+        currentTransform[1] /= scale.y
+        currentTransform[2] /= scale.z
         
         let rotation = Quaternion(currentTransform)
         return (translation, rotation, scale)
