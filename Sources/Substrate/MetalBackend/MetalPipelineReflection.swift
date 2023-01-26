@@ -388,7 +388,12 @@ extension MTLStructMember {
                 } else if let arrayType = array.element() {
                     array = arrayType
                 } else {
-                    return true
+                    switch array.elementType {
+                    case .pointer, .texture, .sampler, .renderPipeline, .computePipeline, .indirectCommandBuffer, .primitiveAccelerationStructure, .instanceAccelerationStructure, .visibleFunctionTable, .intersectionFunctionTable:
+                        return true
+                    default:
+                        return false
+                    }
                 }
             } while true
         default:
