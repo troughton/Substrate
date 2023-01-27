@@ -47,7 +47,7 @@ public struct RGBColor : Equatable, Hashable, Sendable {
     
     @inlinable
     public init(_ xyzColor: XYZColor) {
-        let x = xyzColor.x, y = xyzColor.y, z = xyzColor.z
+        let x = xyzColor.X, y = xyzColor.Y, z = xyzColor.Z
         self.r = 3.240479 * x - 1.537150 * y - 0.498535 * z
         self.g = -0.969256 * x + 1.875991 * y + 0.041556 * z
         self.b = 0.055648 * x - 0.204043 * y + 1.057311 * z
@@ -133,35 +133,43 @@ extension RGBColor: CustomStringConvertible {
 public typealias RGBColour = RGBColor
 
 public struct XYZColor : Equatable, Hashable, Sendable {
-    public var x: Float
-    public var y: Float
-    public var z: Float
+    public var X: Float
+    public var Y: Float
+    public var Z: Float
     
     @inlinable
-    public init(x: Float, y: Float, z: Float) {
-        self.x = x
-        self.y = y
-        self.z = z
+    public init(X: Float, Y: Float, Z: Float) {
+        self.X = X
+        self.Y = Y
+        self.Z = Z
+    }
+    
+    @inlinable
+    public init(chromacity: SIMD2<Float>, Y: Float = 1.0) {
+        let scaledY = Y / chromacity.y
+        self.X = scaledY * chromacity.x
+        self.Y = Y
+        self.Z = scaledY * (1.0 - chromacity.x - chromacity.y)
     }
     
     @inlinable
     public init(_ x: Float, _ y: Float, _ z: Float) {
-        self.x = x
-        self.y = y
-        self.z = z
+        self.X = x
+        self.Y = y
+        self.Z = z
     }
     
     @inlinable
-    public init(_ xyz: SIMD3<Float>) {
-        self.x = xyz.x
-        self.y = xyz.y
-        self.z = xyz.z
+    public init(_ XYZ: SIMD3<Float>) {
+        self.X = XYZ.x
+        self.Y = XYZ.y
+        self.Z = XYZ.z
     }
     
     public init(_ rgbColor: RGBColor) {
-        self.x = 0.412453 * rgbColor.r + 0.357580 * rgbColor.g + 0.180423 * rgbColor.b
-        self.y = 0.212671 * rgbColor.r + 0.715160 * rgbColor.g + 0.072169 * rgbColor.b
-        self.z = 0.019334 * rgbColor.r + 0.119193 * rgbColor.g + 0.950227 * rgbColor.b
+        self.X = 0.412453 * rgbColor.r + 0.357580 * rgbColor.g + 0.180423 * rgbColor.b
+        self.Y = 0.212671 * rgbColor.r + 0.715160 * rgbColor.g + 0.072169 * rgbColor.b
+        self.Z = 0.019334 * rgbColor.r + 0.119193 * rgbColor.g + 0.950227 * rgbColor.b
     }
     
     @inlinable
@@ -169,11 +177,11 @@ public struct XYZColor : Equatable, Hashable, Sendable {
         get {
             switch i {
             case 0:
-                return self.x
+                return self.X
             case 1:
-                return self.y
+                return self.Y
             case 2:
-                return self.z
+                return self.Z
             default:
                 preconditionFailure("Index out of bounds")
             }
@@ -181,11 +189,11 @@ public struct XYZColor : Equatable, Hashable, Sendable {
         set {
             switch i {
             case 0:
-                self.x = newValue
+                self.X = newValue
             case 1:
-                self.y = newValue
+                self.Y = newValue
             case 2:
-                self.z = newValue
+                self.Z = newValue
             default:
                 preconditionFailure("Index out of bounds")
             }
@@ -199,10 +207,330 @@ public struct XYZColor : Equatable, Hashable, Sendable {
     
     public var tuple : (Float, Float, Float) {
         return (
-            self.x, self.y, self.z
+            self.X, self.Y, self.Z
         )
     }
+    
+    public var xyChromacity: SIMD2<Float> {
+        let sum = self.X + self.Y + self.Z
+        return SIMD2(self.X / sum, self.Y / sum)
+    }
 }
+
+extension XYZColor {
+    @available(*, deprecated, renamed: "X")
+    public var x: Float {
+        get {
+            return self.X
+        }
+        set {
+            self.X = newValue
+        }
+    }
+    
+    @available(*, deprecated, renamed: "Y")
+    public var y: Float {
+        get {
+            return self.Y
+        }
+        set {
+            self.Y = newValue
+        }
+    }
+    
+    @available(*, deprecated, renamed: "Z")
+    public var z: Float {
+        get {
+            return self.Z
+        }
+        set {
+            self.Z = newValue
+        }
+    }
+}
+
+public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
+    public enum ReferenceWhite {
+        case aces
+        case dci
+        case d65
+        
+        public var value: XYZColor {
+            switch self {
+            case .aces:
+                return XYZColor(chromacity: SIMD2(0.32168, 0.33767))
+            case .dci:
+                return XYZColor(chromacity: SIMD2(0.3127, 0.3290))
+            case .d65:
+                return XYZColor(0.31271, 0.32902, 0.35827)
+            }
+        }
+    }
+    
+    public struct Primaries {
+        public var red: SIMD2<Scalar>
+        public var green: SIMD2<Scalar>
+        public var blue: SIMD2<Scalar>
+        public var white: SIMD2<Scalar>
+        
+        public init(red: SIMD2<Scalar>, green: SIMD2<Scalar>, blue: SIMD2<Scalar>, white: SIMD2<Scalar>) {
+            self.red = red
+            self.green = green
+            self.blue = blue
+            self.white = white
+        }
+        
+        // Reference: http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
+        public var rgbToXYZMatrix: Matrix3x3<Scalar> {
+            let x = SIMD4(self.red.x, self.green.x, self.blue.x, self.white.x)
+            let y = SIMD4(self.red.y, self.green.y, self.blue.y, self.white.y)
+            
+            let X = x / y;
+            let Y = SIMD4<Scalar>(repeating: 1.0)
+            let Z = (1.0 - x - y) / y
+            
+            let whitePointTransformMatrix = Matrix3x3(X.xyz, Y.xyz, Z.xyz).transpose
+            
+            let S = whitePointTransformMatrix.inverse * SIMD3(X.w, Y.w, Z.w)
+            
+            return Matrix3x3(S.x * whitePointTransformMatrix[0],
+                             S.y * whitePointTransformMatrix[1],
+                             S.z * whitePointTransformMatrix[2])
+        }
+        
+        
+        public static var sRGB: Primaries {
+            return Primaries(
+                red:   SIMD2(0.64000,  0.33000),
+                green: SIMD2(0.30000,  0.60000),
+                blue:  SIMD2(0.15000,  0.06000),
+                white: SIMD2(0.31270,  0.32900)) // D65
+        }
+        
+        public static var p3: Primaries {
+            return Primaries(
+                red:   SIMD2(0.68000,  0.32000),
+                green: SIMD2(0.26500,  0.69000),
+                blue:  SIMD2(0.15000,  0.06000),
+                white: SIMD2(0.31400,  0.35100)) // DCI
+        }
+        
+        public static var acesAP0: Primaries {
+            return Primaries(
+                red:   SIMD2(0.73470,  0.26530),
+                green: SIMD2(0.00000,  1.00000),
+                blue:  SIMD2(0.00010, -0.07700),
+                white: SIMD2(0.32168,  0.33767)) // ~D60
+        }
+        
+        
+        public static var acesAP1: Primaries {
+            return Primaries(
+                red:   SIMD2(0.71300,  0.29300),
+                green: SIMD2(0.16500,  0.83000),
+                blue:  SIMD2(0.12800,  0.04400),
+                white: SIMD2(0.32168,  0.33767)) // ~D60
+        }
+        
+        public static var rec2020: Primaries {
+            return Primaries(
+                red:   SIMD2(0.70800,  0.29200),
+                green: SIMD2(0.17000,  0.79700),
+                blue:  SIMD2(0.13100,  0.04600),
+                white: SIMD2(0.31270,  0.3290)) // ~D60
+        }
+        
+        public static var sonySGamut3: Primaries {
+            return Primaries(
+                red:   SIMD2(0.73000,  0.28000),
+                green: SIMD2(0.14000,  0.85500),
+                blue:  SIMD2(0.10000, -0.05000),
+                white: SIMD2(0.31270,  0.32900)) // D65
+        }
+        
+        public static var sonySGamut3Cine: Primaries {
+            return Primaries(
+                red:   SIMD2(0.76600,  0.27500),
+                green: SIMD2(0.22500,  0.80000),
+                blue:  SIMD2(0.08900, -0.08700),
+                white: SIMD2(0.31270,  0.32900)) // D65
+        }
+    }
+    
+    public enum EOTF {
+        case linear
+        case power(Scalar)
+        case acesCC
+        case acesCCT
+        case sRGB
+        case sonySLog3
+        
+        public func linearToGamma(_ x: Scalar) -> Scalar {
+            switch self {
+            case .linear:
+                return x
+            case .power(let power):
+                return Scalar.pow(x, 1.0 / power)
+            case .acesCC:
+                if x <= 0 {
+                    return (-16.0 + 9.72) / 17.52
+                } else if x < Scalar.exp2(-15.0) {
+                    return (Scalar.log2(Scalar.exp2(-16.0) + 0.5 * x) + 9.72) / 17.52
+                } else {
+                    return (Scalar.log2(x) + 9.72) / 17.52
+                }
+            case .acesCCT:
+                if x <= 0.0078125 {
+                    return 10.5402337416545 * x + 0.0729055341958355
+                } else {
+                    return (Scalar.log2(x) + 9.72) / 17.52
+                }
+            case .sRGB:
+                if x <= 0.0031308 {
+                    return 12.92 * x
+                } else {
+                    return 1.055 * Scalar.pow(x, 1.0 / 2.4) - 0.055
+                }
+            case .sonySLog3:
+                if x >= 0.01125000 {
+                    return (420.0 + Scalar.log10((x + 0.01) / (0.18 + 0.01)) * 261.5) / 1023.0
+                } else {
+                    return (x * (171.2102946929 - 95.0)/0.01125000 + 95.0) / 1023.0
+                }
+            }
+        }
+        
+        public func gammaToLinear(_ x: Scalar) -> Scalar {
+            switch self {
+            case .linear:
+                return x
+            case .power(let power):
+                return Scalar.pow(x, power)
+            case .acesCC:
+                if x <= -0.301369863014 {
+                    return 2.0 * (Scalar.exp2(x * 17.52 - 9.72) - Scalar.exp2(-16.0))
+                } else if x < 1.46799631204 {
+                    return Scalar.exp2(x * 17.52 - 9.72)
+                } else {
+                    return 65504.0
+                }
+            case .acesCCT:
+                if x <= 0.155251141552511 {
+                    return (x - 0.0729055341958355) / 10.5402337416545
+                } else if x < 1.46799631204 {
+                    return Scalar.exp2(x * 17.52 - 9.72)
+                } else {
+                    return 65504.0
+                }
+            case .sRGB:
+                if x <= 0.04045 {
+                    return x / 12.92
+                } else {
+                    return Scalar.pow((x + 0.055) / 1.055, 2.4)
+                }
+            case .sonySLog3:
+                if x >= 171.2102946929 / 1023.0 {
+                    return (Scalar.exp10((x * 1023.0 - 420.0) / 261.5)) * (0.18 + 0.01) - 0.01
+                } else {
+                    return (x * 1023.0 - 95.0) * 0.01125000 / (171.2102946929 - 95.0)
+                }
+            }
+        }
+    }
+    
+    public var primaries: Primaries
+    public var eotf: EOTF
+    public var referenceWhite: ReferenceWhite
+    
+    public static var sRGB: CIEXYZ1931ColorSpace {
+        return .init(primaries: .sRGB,
+                     eotf: .sRGB,
+                     referenceWhite: .d65)
+    }
+    
+    public static var dciP3: CIEXYZ1931ColorSpace {
+        return .init(primaries: .p3,
+                     eotf: .power(2.6),
+                     referenceWhite: .dci)
+    }
+    
+    public static var displayP3: CIEXYZ1931ColorSpace {
+        return .init(primaries: .p3,
+                     eotf: .sRGB,
+                     referenceWhite: .d65)
+    }
+    
+    public static var rec2020: CIEXYZ1931ColorSpace {
+        return .init(primaries: .rec2020,
+                     eotf: .sRGB,
+                     referenceWhite: .d65)
+    }
+    
+    public static var aces: CIEXYZ1931ColorSpace {
+        return .init(primaries: .acesAP0,
+                     eotf: .linear,
+                     referenceWhite: .aces)
+    }
+    
+    public static var acesCC: CIEXYZ1931ColorSpace {
+        return .init(primaries: .acesAP1,
+                     eotf: .acesCC,
+                     referenceWhite: .aces)
+    }
+    
+    public static var acesCCT: CIEXYZ1931ColorSpace {
+        return .init(primaries: .acesAP1,
+                     eotf: .acesCCT,
+                     referenceWhite: .aces)
+    }
+    
+    public static var acesCG: CIEXYZ1931ColorSpace {
+        return .init(primaries: .acesAP1,
+                     eotf: .linear,
+                     referenceWhite: .aces)
+    }
+    
+    public static var sonySGamut3: CIEXYZ1931ColorSpace {
+        return .init(primaries: .sonySGamut3,
+                     eotf: .sonySLog3,
+                     referenceWhite: .d65)
+    }
+    
+    public static var sonySGamut3Cine: CIEXYZ1931ColorSpace {
+        return .init(primaries: .sonySGamut3Cine,
+                     eotf: .sonySLog3,
+                     referenceWhite: .d65)
+    }
+    
+    public var rgbToXYZMatrix: Matrix3x3<Scalar> {
+        return self.primaries.rgbToXYZMatrix
+    }
+    
+    public var xyzToRGBMatrix: Matrix3x3<Scalar> {
+        self.rgbToXYZMatrix.inverse
+    }
+    
+    public static func chromaticAdaptationMatrix(from: XYZColor, to: XYZColor) -> Matrix3x3<Scalar> {
+        // http://www.brucelindbloom.com/index.html?Eqn_ChromAdapt.html
+        
+        let Ma = Matrix3x3<Scalar>(SIMD3(0.8951000,  0.2664000, -0.1614000),
+                           SIMD3(-0.7502000,  1.7135000,  0.0367000),
+                           SIMD3(0.0389000, -0.0685000,  1.0296000)).transpose
+        let MaInv = Matrix3x3<Scalar>(SIMD3( 0.9869929, -0.1470543, 0.1599627),
+                              SIMD3( 0.4323053,  0.5183603, 0.0492912),
+                              SIMD3(-0.0085287,  0.0400428, 0.9684867)).transpose
+        
+        let coeffSource = Ma * SIMD3<Scalar>(SIMD3(from))
+        let coeffDest = Ma * SIMD3<Scalar>(SIMD3(to))
+        
+        return MaInv * Matrix3x3(diagonal: coeffDest / coeffSource) * Ma
+    }
+    
+    public static func chromaticAdaptationMatrix(from: ReferenceWhite, to: ReferenceWhite) -> Matrix3x3<Scalar> {
+        return self.chromaticAdaptationMatrix(from: from.value, to: to.value)
+    }
+}
+
 
 /// Reference: https://bottosson.github.io/posts/oklab/
 public struct OklabColor : Equatable, Hashable, Sendable {
@@ -240,7 +568,7 @@ public struct OklabColor : Equatable, Hashable, Sendable {
                                   SIMD3(1.9779984951, -2.4285922050, 0.4505937099),
                                   SIMD3(0.0259040371, 0.7827717662, -0.8086757660)).transpose
         
-        let lms = m1 * SIMD3(xyzColor.x, xyzColor.y, xyzColor.z)
+        let lms = m1 * SIMD3(xyzColor.X, xyzColor.Y, xyzColor.Z)
         let lms_ = SIMD3(Float.pow(lms.x, 1.0 / 3.0), Float.pow(lms.y, 1.0 / 3.0), Float.pow(lms.z, 1.0 / 3.0))
         let Lab = m2 * lms_
         self.init(Lab)
@@ -755,7 +1083,7 @@ extension SIMD3 where Scalar == Float {
 extension SIMD3 where Scalar == Float {
     @inlinable
     public init(_ colour: XYZColor) {
-        self.init(colour.x, colour.y, colour.z)
+        self.init(colour.X, colour.Y, colour.Z)
     }
 }
 
@@ -833,12 +1161,12 @@ public func clamp(_ x: OklabColor, min minVec: OklabColor, max maxVec: OklabColo
 
 @inlinable
 public func min(_ a: XYZColor, _ b: XYZColor) -> XYZColor {
-    return XYZColor(min(a.x, b.x), min(a.y, b.y), min(a.z, b.z))
+    return XYZColor(min(a.X, b.X), min(a.Y, b.Y), min(a.Z, b.Z))
 }
 
 @inlinable
 public func max(_ a: XYZColor, _ b: XYZColor) -> XYZColor {
-    return XYZColor(max(a.x, b.x), max(a.y, b.y), max(a.z, b.z))
+    return XYZColor(max(a.X, b.X), max(a.Y, b.Y), max(a.Z, b.Z))
 }
 
 @inlinable
@@ -873,9 +1201,9 @@ extension XYZColor : Codable {
     @inlinable
     public func encode(to encoder: Encoder) throws {
         var container = encoder.unkeyedContainer()
-        try container.encode(self.x)
-        try container.encode(self.y)
-        try container.encode(self.z)
+        try container.encode(self.X)
+        try container.encode(self.Y)
+        try container.encode(self.Z)
     }
     
     @inlinable
@@ -885,7 +1213,7 @@ extension XYZColor : Codable {
         let y = try values.decode(Float.self)
         let z = try values.decode(Float.self)
         
-        self.init(x: x, y: y, z: z)
+        self.init(X: x, Y: y, Z: z)
     }
 }
 

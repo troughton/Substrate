@@ -124,9 +124,21 @@ extension Rect where Scalar: BinaryFloatingPoint {
     }
     
     @inlinable
+    public var area: Scalar {
+        get {
+            return self.width * self.height
+        }
+    }
+    
+    @inlinable
     public func contains(point: SIMD2<Scalar>) -> Bool {
         let maxPoint = self.origin + self.size
         return all(point .>= self.origin) && all(point .<= maxPoint)
+    }
+    
+    @inlinable
+    public func contains(rect: Rect<Scalar>) -> Bool {
+        return self.union(with: rect) == self
     }
     
     @inlinable
@@ -240,9 +252,21 @@ extension Rect where Scalar: FixedWidthInteger {
     }
     
     @inlinable
+    public var area: Scalar {
+        get {
+            return self.width * self.height
+        }
+    }
+    
+    @inlinable
     public func contains(point: SIMD2<Scalar>) -> Bool {
         let maxPoint = self.origin &+ self.size
         return all(point .>= self.origin) && all(point .<= maxPoint)
+    }
+    
+    @inlinable
+    public func contains(rect: Rect<Scalar>) -> Bool {
+        return self.union(with: rect) == self
     }
 
     @inlinable

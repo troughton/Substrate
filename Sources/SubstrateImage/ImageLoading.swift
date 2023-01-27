@@ -104,7 +104,7 @@ public struct ImageFileInfo: Hashable, Codable {
     public let colorSpace: ImageColorSpace
     public let alphaMode: ImageAlphaMode
     
-    init(width: Int, height: Int, channelCount: Int,
+    public init(width: Int, height: Int, channelCount: Int,
          bitDepth: Int,
          isSigned: Bool,
          isFloatingPoint: Bool,
@@ -1206,7 +1206,7 @@ extension Image where ComponentType: SIMDScalar {
     @_specialize(kind: full, where ComponentType == UInt8)
     @_specialize(kind: full, where ComponentType == UInt16)
     @_specialize(kind: full, where ComponentType == Float)
-    init(_cgImage cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
+    init(_cgImage cgImage: CGImage, fileInfo: ImageFileInfo?, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         var cgImage = cgImage
         
         let cgColorSpace = cgImage.colorSpace
@@ -1243,7 +1243,7 @@ extension Image where ComponentType: SIMDScalar {
         }
         
         let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
-        let channelCount = loadingDelegate.channelCount(for: fileInfo)
+        let channelCount = fileInfo.map { loadingDelegate.channelCount(for: $0) } ?? (cgImage.bitsPerPixel / cgImage.bitsPerComponent)
         
         let (imageData, allocator) = try loadingDelegate.allocateMemory(byteCount: cgImage.width * cgImage.height * channelCount * MemoryLayout<ComponentType>.stride, alignment: MemoryLayout<SIMD4<ComponentType>>.stride, zeroed: false)
         
@@ -1344,10 +1344,10 @@ extension Image where ComponentType: SIMDScalar {
 extension Image where ComponentType: SIMDScalar & UnsignedInteger & FixedWidthInteger {
     @_specialize(kind: full, where ComponentType == UInt8)
     @_specialize(kind: full, where ComponentType == UInt16)
-    public init(cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
+    public init(cgImage: CGImage, fileInfo: ImageFileInfo? = nil, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         try self.init(_cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
         
-        if fileInfo.channelCount < self.channelCount {
+        if let fileInfo = fileInfo, fileInfo.channelCount < self.channelCount {
             let alphaChannelIndex = self.channelCount - 1
             self.apply(channelRange: alphaChannelIndex..<self.channelCount) { _ in
                 ComponentType.max
@@ -1357,17 +1357,17 @@ extension Image where ComponentType: SIMDScalar & UnsignedInteger & FixedWidthIn
 }
 
 extension Image where ComponentType: SIMDScalar & SignedInteger & FixedWidthInteger {
-    public init(cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
+    public init(cgImage: CGImage, fileInfo: ImageFileInfo? = nil, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         try self.init(_cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
     }
 }
 
 extension Image where ComponentType: SIMDScalar & BinaryFloatingPoint {
     @_specialize(kind: full, where ComponentType == Float)
-    public init(cgImage: CGImage, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws {
+    public init(cgImage: CGImage, fileInfo: ImageFileInfo? = nil, loadingDelegate: ImageLoadingDelegate? = nil) throws {
         try self.init(_cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
         
-        if fileInfo.channelCount < self.channelCount {
+        if let fileInfo = fileInfo, fileInfo.channelCount < self.channelCount {
             let alphaChannelIndex = self.channelCount - 1
             self.apply(channelRange: alphaChannelIndex..<self.channelCount) { _ in
                 1.0
