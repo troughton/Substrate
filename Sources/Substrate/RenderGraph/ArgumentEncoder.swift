@@ -96,3 +96,57 @@ public struct BufferBacked<T> {
         }
     }
 }
+
+
+/// `BufferBacked` is a property wrapper that materialises a `shared` `ArgumentBuffer` from a provided value.
+@propertyWrapper
+public struct ArgumentBufferBacked<T: ArgumentBufferEncodable> {
+    @usableFromInline var _wrappedValue: T
+    @usableFromInline var isDirty: Bool = false
+    @usableFromInline var _buffer: ArgumentBuffer?
+    
+    
+    @inlinable
+    public var wrappedValue : T {
+        get {
+            return self._wrappedValue
+        } set {
+            self._wrappedValue = newValue
+            self.isDirty = true
+        }
+    }
+    
+    @inlinable
+    public var argumentBuffer : ArgumentBuffer {
+        mutating get async {
+            if self.isDirty {
+                await self.updateArgumentBuffer()
+            }
+            return self._buffer!
+        }
+    }
+    
+    @inlinable
+    public init(wrappedValue: T) {
+        self._wrappedValue = wrappedValue
+        self._buffer = nil
+        self.isDirty = true
+    }
+    
+    @inlinable
+    public mutating func updateArgumentBuffer() async {
+        let buffer = ArgumentBuffer(descriptor: T.argumentBufferDescriptor)
+        await self._wrappedValue.encode(into: buffer)
+        self._buffer = buffer
+    }
+    
+    @inlinable
+    public var projectedValue : ArgumentBufferBacked<T> {
+        get {
+            return self
+        }
+        set {
+            self = newValue
+        }
+    }
+}
