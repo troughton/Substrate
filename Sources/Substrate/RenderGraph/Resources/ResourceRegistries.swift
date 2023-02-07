@@ -415,16 +415,18 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
         self.generationChunks.advanced(by: index).initialize(to: generations)
     }
     
-    private func disposeImmediately(_ resource: Resource) {
+    private func disposeImmediately(_ resource: Resource, isFullyInitialised: Bool = true) {
         RenderBackend.dispose(resource: resource)
         
         let index = resource.index
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
         
-        self.sharedChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
-        self.persistentChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
-        self.labelChunks[chunkIndex].advanced(by: indexInChunk).deinitialize(count: 1)
-        self.hazardTrackingGroupChunks[chunkIndex].advanced(by: indexInChunk).deinitialize(count: 1)
+        if isFullyInitialised {
+            self.sharedChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
+            self.persistentChunks?[chunkIndex].deinitialize(from: indexInChunk, count: 1)
+            self.labelChunks[chunkIndex].advanced(by: indexInChunk).deinitialize(count: 1)
+            self.hazardTrackingGroupChunks[chunkIndex].advanced(by: indexInChunk).deinitialize(count: 1)
+        }
         self.generationChunks[chunkIndex][indexInChunk] = self.generationChunks[chunkIndex][indexInChunk] &+ 1
         
         self.freeIndices.append(index)
@@ -465,12 +467,12 @@ class PersistentRegistry<Resource: ResourceProtocolImpl> {
         }
     }
     
-    func dispose(_ resource: Resource) {
+    func dispose(_ resource: Resource, isFullyInitialised: Bool = true) {
         self.lock.withLock {
-            if resource.hasPendingRenderGraph {
+            if isFullyInitialised && resource.hasPendingRenderGraph {
                 self.enqueuedDisposals.append(resource)
             } else {
-                self.disposeImmediately(resource)
+                self.disposeImmediately(resource, isFullyInitialised: isFullyInitialised)
             }
         }
     }
