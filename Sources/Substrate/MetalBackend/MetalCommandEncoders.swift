@@ -213,7 +213,7 @@ final class FGMTLThreadRenderCommandEncoder {
             assert(index < 31, "The maximum number of buffers allowed in the buffer argument table for a single function is 31.")
             // For vertex buffers, index the bindings backwards from the maximum (30) to allow argument buffers and push constants to go first.
             
-            self.setBuffer(mtlBuffer, offset: (mtlBuffer?.offset ?? 0) + Int(args.pointee.offset), bindIndex: 30 - index, stages: .vertex)
+            self.setBuffer(mtlBuffer, offset: Int(args.pointee.offset), bindIndex: 30 - index, stages: .vertex)
             
         case .setVertexBufferOffset(let offset, let index):
             let baseOffset = self.baseBufferOffsets[30 - Int(index)]
