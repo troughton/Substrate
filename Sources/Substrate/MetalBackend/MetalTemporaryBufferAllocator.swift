@@ -109,6 +109,7 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
     
     let numFrames : Int
     let options : MTLResourceOptions
+    let alignment: Int
     private var currentIndex : Int = 0
     private var waitEvent : ContextWaitEvent = .init()
     private var nextFrameWaitEvent : ContextWaitEvent = .init()
@@ -116,12 +117,12 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
     public init(device: MTLDevice, numFrames: Int, blockSize: Int, options: MTLResourceOptions) {
         self.numFrames = numFrames
         self.options = options
+        self.alignment = device.isAppleSiliconGPU ? 16 : 256
         self.arenas = (0..<numFrames).map { _ in TemporaryBufferArena(blockSize: blockSize, device: device, options: options) }
     }
     
     public func allocate(bytes: Int) -> (MTLBuffer, Int) {
-        let alignment = 256
-        return self.arenas[self.currentIndex].allocate(bytes: bytes, alignedTo: alignment)
+        return self.arenas[self.currentIndex].allocate(bytes: bytes, alignedTo: self.alignment)
     }
     
     func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {

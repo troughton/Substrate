@@ -57,11 +57,13 @@ public struct Texture : ResourceProtocol {
         }
     }
     
+    @_spi(SubstrateTextureIO)
     public static func _createPersistentTextureWithoutDescriptor(flags: ResourceFlags = [.persistent]) -> Texture {
         precondition(flags.contains(.persistent))
         return PersistentTextureRegistry.instance.allocateHandle(flags: flags)
     }
     
+    @_spi(SubstrateTextureIO)
     public func _initialisePersistentTexture(descriptor: TextureDescriptor, heap: Heap?) {
         precondition(self.flags.contains(.persistent))
         PersistentTextureRegistry.instance.initialize(resource: self, descriptor: descriptor, heap: heap, flags: self.flags)
@@ -231,12 +233,19 @@ public struct Texture : ResourceProtocol {
         }
     }
     
-    public func dispose() {
+    @_spi(SubstrateTextureIO)
+    public func _dispose(isFullyInitialised: Bool) {
         guard self._usesPersistentRegistry, self.isValid else {
             return
         }
-        self.heap?.childResources.remove(Resource(self))
-        PersistentTextureRegistry.instance.dispose(self)
+        if isFullyInitialised {
+            self.heap?.childResources.remove(Resource(self))
+        }
+        PersistentTextureRegistry.instance.dispose(self, isFullyInitialised: isFullyInitialised)
+    }
+    
+    public func dispose() {
+        self._dispose(isFullyInitialised: true)
     }
     
     public static let invalid = Texture(descriptor: TextureDescriptor(type: .type2D, format: .r32Float, width: 1, height: 1, mipmapped: false, storageMode: .private, usage: .shaderRead), flags: .persistent)

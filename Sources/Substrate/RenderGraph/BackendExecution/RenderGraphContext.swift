@@ -114,8 +114,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
             self.renderGraphQueue.setGPUStartTime(commandBuffer.gpuStartTime, for: queueCBIndex)
             self.renderGraphQueue.setGPUEndTime(commandBuffer.gpuEndTime, for: queueCBIndex)
             
-            self.renderGraphQueue.didCompleteCommand(queueCBIndex)
-            self.renderGraphQueue.setCompletionTime(.now(), for: queueCBIndex)
+            self.renderGraphQueue.didCompleteCommand(queueCBIndex, completionTime: .now())
             
             if isLast {
                 CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)

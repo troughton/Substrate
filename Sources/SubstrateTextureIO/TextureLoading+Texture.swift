@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import Substrate
+@_spi(SubstrateTextureIO) import Substrate
 import stb_image
 import SubstrateImage
 #if canImport(Metal)
@@ -432,6 +432,8 @@ extension Texture {
     }
     
     private static func processSourceImage(_ textureData: inout Image<Float>, colorSpace: ImageColorSpace, gpuAlphaMode: ImageAlphaMode, options: TextureLoadingOptions) throws {
+        if Task.isCancelled { throw CancellationError() }
+        
         if colorSpace != .undefined {
             textureData.reinterpretColor(as: colorSpace)
         } else if options.contains(.mapUndefinedColorSpaceToSRGB), textureData.colorSpace == .undefined {
@@ -522,36 +524,56 @@ extension Texture {
     }
     
     @discardableResult
-    private func fillInternal(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws -> RenderGraphExecutionWaitToken {
+    private func fillInternal(textureData: AnyImage, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, isPartiallyInitialised: Bool) async throws -> RenderGraphExecutionWaitToken {
         precondition(storageMode != .private || usage.contains(.blitDestination))
         
-        let textureData = try Texture.loadSourceImage(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(storageMode: storageMode, options: options))
+        try self.checkCancelled(isPartiallyInitialised: isPartiallyInitialised)
         
         if isPartiallyInitialised {
             let descriptor = TextureDescriptor(type: .type2D, format: textureData.preferredPixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
             self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
         }
         
-        if self.label == nil {
-            self.label = url.lastPathComponent
+        return try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
+    }
+    
+    private func checkCancelled(isPartiallyInitialised: Bool) throws {
+        guard Task.isCancelled else { return }
+        
+        if isPartiallyInitialised {
+            self._dispose(isFullyInitialised: !isPartiallyInitialised)
+        } else {
+            self.dispose()
+        }
+            
+        throw CancellationError()
+    }
+    
+    @discardableResult
+    private func fillInternal(fromFileAt url: URL, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws -> RenderGraphExecutionWaitToken {
+        
+        try self.checkCancelled(isPartiallyInitialised: isPartiallyInitialised)
+        
+        let textureData = try Texture.loadSourceImage(fromFileAt: url, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(storageMode: storageMode, options: options))
+        
+        defer {
+            if self.label == nil {
+                self.label = url.lastPathComponent
+            }
         }
         
-        return try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
+        return try await self.fillInternal(textureData: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, isPartiallyInitialised: isPartiallyInitialised)
         
     }
     
     @discardableResult
     private func fillInternal(imageData: Data, colorSpace: ImageColorSpace, sourceAlphaMode: ImageAlphaMode, gpuAlphaMode: ImageAlphaMode, mipmapped: Bool, mipGenerationMode: MipGenerationMode, storageMode: StorageMode, usage: TextureUsage, options: TextureLoadingOptions, isPartiallyInitialised: Bool) async throws -> RenderGraphExecutionWaitToken {
-        precondition(storageMode != .private || usage.contains(.blitDestination))
+        
+        try self.checkCancelled(isPartiallyInitialised: isPartiallyInitialised)
         
         let textureData = try Texture.loadSourceImage(decodingImageData: imageData, colorSpace: colorSpace, sourceAlphaMode: sourceAlphaMode, gpuAlphaMode: gpuAlphaMode, options: options, loadingDelegate: DirectToTextureImageLoadingDelegate(storageMode: storageMode, options: options))
         
-        if isPartiallyInitialised {
-            let descriptor = TextureDescriptor(type: .type2D, format: textureData.preferredPixelFormat, width: textureData.width, height: textureData.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
-            self._initialisePersistentTexture(descriptor: descriptor, heap: nil)
-        }
-        
-        return try await textureData.copyData(to: self, mipGenerationMode: mipGenerationMode)
+        return try await self.fillInternal(textureData: textureData, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, isPartiallyInitialised: isPartiallyInitialised)
     }
     
     @discardableResult

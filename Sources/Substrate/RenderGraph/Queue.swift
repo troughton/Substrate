@@ -190,10 +190,11 @@ public struct Queue : Equatable, Sendable {
         }
     }
     
-    func didCompleteCommand(_ commandIndex: UInt64) {
+    func didCompleteCommand(_ commandIndex: UInt64, completionTime: DispatchTime) {
         self.lock.withLock {
             let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex)!
             UInt64.AtomicRepresentation.atomicStore(commandIndex, at: QueueRegistry.shared.lastCompletedCommands.advanced(by: Int(self.index)), ordering: .relaxed)
+            UInt64.AtomicRepresentation.atomicStore(completionTime.uptimeNanoseconds, at: QueueRegistry.shared.commandCompletionTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
             
             for waiter in QueueRegistry.shared.commandWaiters[indexInQueuesArray] {
                 waiter.resume()
@@ -244,12 +245,6 @@ public struct Queue : Equatable, Sendable {
         guard self.hasBufferedData(for: commandIndex) else { return nil } // Make sure the data we retrieved was valid
         
         return DispatchTime(uptimeNanoseconds: time)
-    }
-    
-    func setCompletionTime(_ time: DispatchTime, for commandIndex: UInt64) {
-        let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex)!
-        
-        UInt64.AtomicRepresentation.atomicStore(time.uptimeNanoseconds, at: QueueRegistry.shared.commandCompletionTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
     }
     
     public func gpuStartTime(for commandIndex: UInt64) -> Double? {

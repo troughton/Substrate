@@ -305,6 +305,8 @@ public struct ImageFileInfo: Hashable, Codable {
             
             var loadingComplete = false
             loadLoop: repeat {
+                if Task.isCancelled { throw CancellationError() }
+                
                 let status = bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: dataPrefixCount >= data.count)
                 switch status {
                 case NSBitmapImageRep.LoadStatus.unknownType.rawValue,
