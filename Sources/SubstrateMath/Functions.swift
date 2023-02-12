@@ -65,12 +65,12 @@ public func saturate<S: SIMD>(_ x: S) -> S where S.Scalar: FloatingPoint {
 }
 
 @inlinable
-public func saturate(_ c: RGBColor) -> RGBColor {
+public func saturate<Scalar>(_ c: RGBColor<Scalar>) -> RGBColor<Scalar> {
     return RGBColor(saturate(c.r), saturate(c.g), saturate(c.b))
 }
 
 @inlinable
-public func saturate(_ c: RGBAColor) -> RGBAColor {
+public func saturate<Scalar>(_ c: RGBAColor<Scalar>) -> RGBAColor<Scalar> {
     return RGBAColor(saturate(c.r), saturate(c.g), saturate(c.b), saturate(c.a))
 }
 

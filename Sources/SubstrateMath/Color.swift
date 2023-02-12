@@ -7,14 +7,14 @@
 
 import RealModule
 
-public struct RGBColor : Equatable, Hashable, Sendable {
-    public var r: Float
-    public var g: Float
-    public var b: Float
+public struct RGBColor<Scalar: BinaryFloatingPoint & Real> {
+    public var r: Scalar
+    public var g: Scalar
+    public var b: Scalar
     @usableFromInline let a: Float
     
     @inlinable
-    public init(r: Float, g: Float, b: Float) {
+    public init(r: Scalar, g: Scalar, b: Scalar) {
         self.r = r
         self.g = g
         self.b = b
@@ -22,7 +22,7 @@ public struct RGBColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public init(_ r: Float, _ g: Float, _ b: Float) {
+    public init(_ r: Scalar, _ g: Scalar, _ b: Scalar) {
         self.r = r
         self.g = g
         self.b = b
@@ -30,15 +30,7 @@ public struct RGBColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public init(_ rgb: SIMD3<Float>) {
-        self.r = rgb.x
-        self.g = rgb.y
-        self.b = rgb.z
-        self.a = 1.0
-    }
-    
-    @inlinable
-    public init(_ value: Float) {
+    public init(_ value: Scalar) {
         self.r = value
         self.g = value
         self.b = value
@@ -46,7 +38,7 @@ public struct RGBColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public init(_ xyzColor: XYZColor) {
+    public init(_ xyzColor: XYZColor<Scalar>) {
         let x = xyzColor.X, y = xyzColor.Y, z = xyzColor.Z
         self.r = 3.240479 * x - 1.537150 * y - 0.498535 * z
         self.g = -0.969256 * x + 1.875991 * y + 0.041556 * z
@@ -55,7 +47,7 @@ public struct RGBColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public subscript(i: Int) -> Float {
+    public subscript(i: Int) -> Scalar {
         get {
             switch i {
             case 0:
@@ -83,7 +75,7 @@ public struct RGBColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public var luminance: Float {
+    public var luminance: Scalar {
         get {
             return 0.212671 * self.r + 0.715160 * self.g + 0.072169 * self.b
         }
@@ -99,28 +91,59 @@ public struct RGBColor : Equatable, Hashable, Sendable {
         }
     }
     
-    public var tuple : (Float, Float, Float) {
+    public var tuple : (Scalar, Scalar, Scalar) {
         return (
             self.r, self.g, self.b
         )
     }
     
     @inlinable
-    public var sRGBToLinear: RGBColor {
+    public func decoded(using transferFunction: ColorTransferFunction<Scalar>) -> RGBColor {
         var result = RGBColor(0.0)
         for i in 0..<3 {
-            result[i] = self[i] <= 0.04045 ? (self[i] / 12.92) : Float.pow((self[i] + 0.055) / 1.055, 2.4)
+            result[i] = transferFunction.encodedToLinear(self[i])
         }
         return result
     }
     
     @inlinable
-    public var linearToSRGB: RGBColor {
+    public func encoded(using transferFunction: ColorTransferFunction<Scalar>) -> RGBColor {
         var result = RGBColor(0.0)
         for i in 0..<3 {
-            result[i] = self[i] <= 0.0031308 ? (12.92 * self[i]) : (1.055 * Float.pow(self[i], 1.0 / 2.4) - 0.055)
+            result[i] = transferFunction.linearToEncoded(self[i])
         }
         return result
+    }
+    
+    @available(*, deprecated, renamed: "decoded(using:)")
+    @inlinable
+    public var sRGBToLinear: RGBColor {
+        return self.decoded(using: .sRGB)
+    }
+    
+    @available(*, deprecated, renamed: "encoded(using:)")
+    @inlinable
+    public var linearToSRGB: RGBColor {
+        return self.encoded(using: .sRGB)
+    }
+}
+
+extension RGBColor: Equatable where Scalar: Equatable {}
+extension RGBColor: Hashable where Scalar: Hashable {}
+extension RGBColor: Sendable where Scalar: Sendable {}
+
+extension RGBColor where Scalar: SIMDScalar {
+    @inlinable
+    public init(_ rgb: SIMD3<Scalar>) {
+        self.r = rgb.x
+        self.g = rgb.y
+        self.b = rgb.z
+        self.a = 1.0
+    }
+    
+    @inlinable
+    public func converted(from inputColorSpace: CIEXYZ1931ColorSpace<Scalar>, to outputColorSpace: CIEXYZ1931ColorSpace<Scalar>) -> RGBColor<Scalar> {
+        return CIEXYZ1931ColorSpace.convert(self, from: inputColorSpace, to: outputColorSpace)
     }
 }
 
@@ -132,48 +155,27 @@ extension RGBColor: CustomStringConvertible {
 
 public typealias RGBColour = RGBColor
 
-public struct XYZColor : Equatable, Hashable, Sendable {
-    public var X: Float
-    public var Y: Float
-    public var Z: Float
+public struct XYZColor<Scalar: BinaryFloatingPoint & Real> {
+    public var X: Scalar
+    public var Y: Scalar
+    public var Z: Scalar
     
     @inlinable
-    public init(X: Float, Y: Float, Z: Float) {
+    public init(X: Scalar, Y: Scalar, Z: Scalar) {
         self.X = X
         self.Y = Y
         self.Z = Z
     }
     
     @inlinable
-    public init(chromacity: SIMD2<Float>, Y: Float = 1.0) {
-        let scaledY = Y / chromacity.y
-        self.X = scaledY * chromacity.x
-        self.Y = Y
-        self.Z = scaledY * (1.0 - chromacity.x - chromacity.y)
-    }
-    
-    @inlinable
-    public init(_ x: Float, _ y: Float, _ z: Float) {
+    public init(_ x: Scalar, _ y: Scalar, _ z: Scalar) {
         self.X = x
         self.Y = y
         self.Z = z
     }
     
     @inlinable
-    public init(_ XYZ: SIMD3<Float>) {
-        self.X = XYZ.x
-        self.Y = XYZ.y
-        self.Z = XYZ.z
-    }
-    
-    public init(_ rgbColor: RGBColor) {
-        self.X = 0.412453 * rgbColor.r + 0.357580 * rgbColor.g + 0.180423 * rgbColor.b
-        self.Y = 0.212671 * rgbColor.r + 0.715160 * rgbColor.g + 0.072169 * rgbColor.b
-        self.Z = 0.019334 * rgbColor.r + 0.119193 * rgbColor.g + 0.950227 * rgbColor.b
-    }
-    
-    @inlinable
-    public subscript(i: Int) -> Float {
+    public subscript(i: Int) -> Scalar {
         get {
             switch i {
             case 0:
@@ -201,51 +203,52 @@ public struct XYZColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public var luminance: Float {
-        return RGBColor(self).luminance
+    public var luminance: Scalar {
+        return self.Y
     }
     
-    public var tuple : (Float, Float, Float) {
+    @inlinable
+    public var tuple : (Scalar, Scalar, Scalar) {
         return (
             self.X, self.Y, self.Z
         )
     }
-    
-    public var xyChromacity: SIMD2<Float> {
-        let sum = self.X + self.Y + self.Z
-        return SIMD2(self.X / sum, self.Y / sum)
-    }
 }
 
-extension XYZColor {
-    @available(*, deprecated, renamed: "X")
-    public var x: Float {
-        get {
-            return self.X
-        }
-        set {
-            self.X = newValue
-        }
+extension XYZColor: Equatable where Scalar: Equatable {}
+extension XYZColor: Hashable where Scalar: Hashable {}
+extension XYZColor: Sendable where Scalar: Sendable {}
+
+extension XYZColor where Scalar: SIMDScalar {
+    @inlinable
+    public init(_ XYZ: SIMD3<Scalar>) {
+        self.X = XYZ.x
+        self.Y = XYZ.y
+        self.Z = XYZ.z
     }
     
-    @available(*, deprecated, renamed: "Y")
-    public var y: Float {
-        get {
-            return self.Y
-        }
-        set {
-            self.Y = newValue
-        }
+    @inlinable
+    public init(chromacity: SIMD2<Scalar>, Y: Scalar = 1.0) {
+        let scaledY = Y / chromacity.y
+        self.X = scaledY * chromacity.x
+        self.Y = Y
+        self.Z = scaledY * (1.0 - chromacity.x - chromacity.y)
     }
     
-    @available(*, deprecated, renamed: "Z")
-    public var z: Float {
-        get {
-            return self.Z
-        }
-        set {
-            self.Z = newValue
-        }
+    @inlinable
+    public init(_ rgbColor: RGBColor<Scalar>, colorSpace: CIEXYZ1931ColorSpace<Scalar>) {
+        let matrix = colorSpace.rgbToXYZMatrix
+        let XYZ = matrix * SIMD3(rgbColor)
+        
+        self.X = XYZ.x
+        self.Y = XYZ.y
+        self.Z = XYZ.z
+    }
+    
+    @inlinable
+    public var xyChromacity: SIMD2<Scalar> {
+        let sum = self.X + self.Y + self.Z
+        return SIMD2(self.X / sum, self.Y / sum)
     }
 }
 
@@ -290,7 +293,8 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             if x >= 0.01125000 {
                 return (420.0 + Scalar.log10((x + 0.01) / (0.18 + 0.01)) * 261.5) / 1023.0
             } else {
-                return (x * (171.2102946929 - 95.0)/0.01125000 + 95.0) / 1023.0
+                let scale: Scalar = (171.2102946929 - 95.0)/0.01125000
+                return (x * scale + 95.0) / 1023.0
             }
         case .pq:
             let m1: Scalar = 1305.0 / 8192.0
@@ -351,7 +355,8 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             if x >= 171.2102946929 / 1023.0 {
                 return (Scalar.exp10((x * 1023.0 - 420.0) / 261.5)) * (0.18 + 0.01) - 0.01
             } else {
-                return (x * 1023.0 - 95.0) * 0.01125000 / (171.2102946929 - 95.0)
+                let scale: Scalar = 0.01125000 / (171.2102946929 - 95.0)
+                return (x * 1023.0 - 95.0) * scale
             }
         case .pq:
             let m1: Scalar = 1305.0 / 8192.0
@@ -408,9 +413,8 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
             return ReferenceWhite(chromacity: SIMD2(0.31271, 0.32902))
         }
         
-        @inlinable
-        public var value: XYZColor {
-            return XYZColor(chromacity: SIMD2<Float>(self.chromacity))
+        public var value: XYZColor<Scalar> {
+            return XYZColor(chromacity: self.chromacity)
         }
     }
     
@@ -502,21 +506,25 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
             return ConversionContext(matrix: matrix, inputColorTransferFunction: inputColorSpace.eotf, outputColorTransferFunction: outputColorSpace.eotf)
         }
         
-        public func convert(_ input: SIMD3<Scalar>) -> SIMD3<Scalar> {
-            var linear = SIMD3<Scalar>.zero
-            for i in 0..<input.scalarCount {
-                linear[i] = self.inputColorTransferFunction.encodedToLinear(input[i])
+        public func convert(_ input: RGBColor<Scalar>) -> RGBColor<Scalar> {
+            var linear = SIMD3(input)
+            if self.inputColorTransferFunction != .linear {
+                for i in 0..<linear.scalarCount {
+                    linear[i] = self.inputColorTransferFunction.encodedToLinear(input[i])
+                }
             }
             
             if let matrix = self.matrix {
                 linear = matrix * linear
             }
             
-            var gamma = SIMD3<Scalar>.zero
-            for i in 0..<input.scalarCount {
-                gamma[i] = self.outputColorTransferFunction.linearToEncoded(linear[i])
+            var gamma = linear
+            if self.outputColorTransferFunction != .linear {
+                for i in 0..<gamma.scalarCount {
+                    gamma[i] = self.outputColorTransferFunction.linearToEncoded(linear[i])
+                }
             }
-            return gamma
+            return RGBColor(gamma)
         }
     }
     
@@ -618,7 +626,7 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         self.rgbToXYZMatrix.inverse
     }
     
-    public static func chromaticAdaptationMatrix(from: XYZColor, to: XYZColor) -> Matrix3x3<Scalar> {
+    public static func chromaticAdaptationMatrix(from: XYZColor<Scalar>, to: XYZColor<Scalar>) -> Matrix3x3<Scalar> {
         // http://www.brucelindbloom.com/index.html?Eqn_ChromAdapt.html
         
         let Ma = Matrix3x3<Scalar>(SIMD3(0.8951000,  0.2664000, -0.1614000),
@@ -642,7 +650,7 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         return .converting(from: inputColorSpace, to: outputColorSpace)
     }
     
-    public static func convert(_ value: SIMD3<Scalar>, from inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> SIMD3<Scalar> {
+    public static func convert(_ value: RGBColor<Scalar>, from inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> RGBColor<Scalar> {
         return ConversionContext.converting(from: inputColorSpace, to: outputColorSpace).convert(value)
     }
 }
@@ -661,68 +669,34 @@ extension CIEXYZ1931ColorSpace: Sendable where Scalar: Sendable {}
 
 extension CIEXYZ1931ColorSpace.ConversionContext: Sendable where Scalar: Sendable {}
 
-extension CIEXYZ1931ColorSpace.ConversionContext where Scalar == Float {
-    public func convert(_ input: RGBColor) -> RGBColor {
-        return RGBColor(self.convert(SIMD3(input)))
-    }
-}
-
-extension CIEXYZ1931ColorSpace where Scalar == Float {
-    public static func convert(_ value: RGBColor, from inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> RGBColor{
-        return RGBColor(self.convert(SIMD3(value), from: inputColorSpace, to: outputColorSpace))
-    }
-}
-
 /// Reference: https://bottosson.github.io/posts/oklab/
-public struct OklabColor : Equatable, Hashable, Sendable {
-    public var L: Float
-    public var a: Float
-    public var b: Float
+public struct OklabColor<Scalar: BinaryFloatingPoint & Real>: Equatable, Hashable, Sendable {
+    public var L: Scalar
+    public var a: Scalar
+    public var b: Scalar
     
     @inlinable
-    public init(L: Float, a: Float, b: Float) {
+    public init(L: Scalar, a: Scalar, b: Scalar) {
         self.L = L
         self.a = a
         self.b = b
     }
     
     @inlinable
-    public init(_ L: Float, _ a: Float, _ b: Float) {
+    public init(_ L: Scalar, _ a: Scalar, _ b: Scalar) {
         self.L = L
         self.a = a
         self.b = b
     }
     
-    @inlinable
-    public init(_ Lab: SIMD3<Float>) {
-        self.L = Lab.x
-        self.a = Lab.y
-        self.b = Lab.z
-    }
-    
-    public init(_ xyzColor: XYZColor) {
-        let m1 = Matrix3x3<Float>(SIMD3(0.8189330101, 0.3618667424, -0.1288597137),
-                                  SIMD3(0.0329845436, 0.9293118715, 0.0361456387),
-                                  SIMD3(0.0482003018, 0.2643662691, 0.6338517070)).transpose
-        
-        let m2 = Matrix3x3<Float>(SIMD3(0.2104542553, 0.7936177850, -0.0040720468),
-                                  SIMD3(1.9779984951, -2.4285922050, 0.4505937099),
-                                  SIMD3(0.0259040371, 0.7827717662, -0.8086757660)).transpose
-        
-        let lms = m1 * SIMD3(xyzColor.X, xyzColor.Y, xyzColor.Z)
-        let lms_ = SIMD3(Float.pow(lms.x, 1.0 / 3.0), Float.pow(lms.y, 1.0 / 3.0), Float.pow(lms.z, 1.0 / 3.0))
-        let Lab = m2 * lms_
-        self.init(Lab)
-    }
-    
-    public init(fromLinearSRGB c: RGBColor) {
+    public init(fromLinearSRGB c: RGBColor<Scalar>) {
         let l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b
         let m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b
         let s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b
 
-        let l_ = Float.pow(l, 1.0 / 3.0)
-        let m_ = Float.pow(m, 1.0 / 3.0)
-        let s_ = Float.pow(s, 1.0 / 3.0)
+        let l_ = Scalar.pow(l, 1.0 / 3.0)
+        let m_ = Scalar.pow(m, 1.0 / 3.0)
+        let s_ = Scalar.pow(s, 1.0 / 3.0)
 
         self.init(
             L: 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
@@ -732,19 +706,60 @@ public struct OklabColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public var luminance: Float {
+    public var luminance: Scalar {
         return self.L
     }
     
-    public var tuple : (Float, Float, Float) {
+    public var tuple : (Scalar, Scalar, Scalar) {
         return (
             self.L, self.a, self.b
         )
     }
 }
 
+extension OklabColor where Scalar: SIMDScalar {
+    @inlinable
+    public init(_ Lab: SIMD3<Scalar>) {
+        self.L = Lab.x
+        self.a = Lab.y
+        self.b = Lab.z
+    }
+    
+    @inlinable
+    @_specialize(where Scalar == Float)
+    public init(_ xyzColor: XYZColor<Scalar>) {
+        let m1 = Matrix3x3<Scalar>(SIMD3(0.8189330101, 0.3618667424, -0.1288597137),
+                                  SIMD3(0.0329845436, 0.9293118715, 0.0361456387),
+                                  SIMD3(0.0482003018, 0.2643662691, 0.6338517070)).transpose
+        
+        let m2 = Matrix3x3<Scalar>(SIMD3(0.2104542553, 0.7936177850, -0.0040720468),
+                                  SIMD3(1.9779984951, -2.4285922050, 0.4505937099),
+                                  SIMD3(0.0259040371, 0.7827717662, -0.8086757660)).transpose
+        
+        let lms = m1 * SIMD3(xyzColor.X, xyzColor.Y, xyzColor.Z)
+        let lms_ = SIMD3(Scalar.pow(lms.x, 1.0 / 3.0), Scalar.pow(lms.y, 1.0 / 3.0), Scalar.pow(lms.z, 1.0 / 3.0))
+        let Lab = m2 * lms_
+        self.init(Lab)
+    }
+    
+    public init(_ rgbColor: RGBColor<Scalar>, sourceColorSpace: CIEXYZ1931ColorSpace<Scalar>) {
+        if sourceColorSpace.eotf == .linear, sourceColorSpace.primaries == .sRGB, sourceColorSpace.referenceWhite == .d65 {
+            self.init(fromLinearSRGB: rgbColor)
+        } else {
+            let matrix = sourceColorSpace.rgbToXYZMatrix
+            var xyzColor = matrix * SIMD3(rgbColor)
+            
+            if sourceColorSpace.referenceWhite != .d65 {
+                xyzColor = CIEXYZ1931ColorSpace.chromaticAdaptationMatrix(from: sourceColorSpace.referenceWhite, to: .d65) * xyzColor
+            }
+            
+            self.init(XYZColor(xyzColor))
+        }
+    }
+}
+
 extension RGBColor {
-    public init(linearSRGBFrom c: OklabColor) {
+    public init(linearSRGBFrom c: OklabColor<Scalar>) {
         let l_ = c.L + 0.3963377774 * c.a + 0.2158037573 * c.b
         let m_ = c.L - 0.1055613458 * c.a - 0.0638541728 * c.b
         let s_ = c.L - 0.0894841775 * c.a - 1.2914855480 * c.b
@@ -762,18 +777,19 @@ extension RGBColor {
 }
 
 extension RGBAColor {
-    public init(linearSRGBFrom c: OklabColor, alpha: Float) {
+    public init(linearSRGBFrom c: OklabColor<Scalar>, alpha: Scalar) {
         self.init(RGBColor(linearSRGBFrom: c), alpha)
     }
 }
 
-extension XYZColor {
-    public init(_ labColor: OklabColor) {
-        let m1 = Matrix3x3<Float>(SIMD3(0.8189330101, 0.3618667424, -0.1288597137),
+extension XYZColor where Scalar == Float {
+    /// Returns a CIE 1931 XYZ color with a D65 white point.
+    public init(_ labColor: OklabColor<Scalar>) {
+        let m1 = Matrix3x3<Scalar>(SIMD3(0.8189330101, 0.3618667424, -0.1288597137),
                                   SIMD3(0.0329845436, 0.9293118715, 0.0361456387),
                                   SIMD3(0.0482003018, 0.2643662691, 0.6338517070)).transpose
         
-        let m2 = Matrix3x3<Float>(SIMD3(0.2104542553, 0.7936177850, -0.0040720468),
+        let m2 = Matrix3x3<Scalar>(SIMD3(0.2104542553, 0.7936177850, -0.0040720468),
                                   SIMD3(1.9779984951, -2.4285922050, 0.4505937099),
                                   SIMD3(0.0259040371, 0.7827717662, -0.8086757660)).transpose
         
@@ -784,25 +800,14 @@ extension XYZColor {
     }
 }
 
-public struct RGBAColor : Equatable, Hashable, Sendable {
-    
-    public var r: Float
-    public var g: Float
-    public var b: Float
-    public var a: Float
-    
-    @inlinable
-    public init(packed: UInt32) {
-        let a = (packed >> UInt32(24)) & UInt32(0xFF)
-        let b = (packed >> UInt32(16)) & UInt32(0xFF)
-        let g = (packed >> UInt32(8))  & UInt32(0xFF)
-        let r = packed & UInt32(0xFF)
-        
-        self.init(Float(r) / 255.0, Float(g) / 255.0, Float(b) / 255.0, Float(a) / 255.0)
-    }
+public struct RGBAColor<Scalar: BinaryFloatingPoint & Real> : Equatable, Hashable, Sendable {
+    public var r: Scalar
+    public var g: Scalar
+    public var b: Scalar
+    public var a: Scalar
     
     @inlinable
-    public init(r: Float, g: Float, b: Float, a: Float = 1.0) {
+    public init(r: Scalar, g: Scalar, b: Scalar, a: Scalar = 1.0) {
         self.r = r
         self.g = g
         self.b = b
@@ -810,23 +815,7 @@ public struct RGBAColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public init(rgb: SIMD3<Float>, a: Float = 1.0) {
-        self.r = rgb.x
-        self.g = rgb.y
-        self.b = rgb.z
-        self.a = a
-    }
-    
-    @inlinable
-    public init(_ rgba: SIMD4<Float>) {
-        self.r = rgba.x
-        self.g = rgba.y
-        self.b = rgba.z
-        self.a = rgba.w
-    }
-    
-    @inlinable
-    public init(_ r: Float, _ g: Float, _ b: Float, _ a: Float) {
+    public init(_ r: Scalar, _ g: Scalar, _ b: Scalar, _ a: Scalar) {
         self.r = r
         self.g = g
         self.b = b
@@ -834,7 +823,7 @@ public struct RGBAColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public init(_ value: Float) {
+    public init(_ value: Scalar) {
         self.r = value
         self.g = value
         self.b = value
@@ -842,7 +831,7 @@ public struct RGBAColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public init(value: Float, a: Float) {
+    public init(value: Scalar, a: Scalar) {
         self.r = value
         self.g = value
         self.b = value
@@ -850,7 +839,7 @@ public struct RGBAColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public init(_ rgb: RGBColor, _ a: Float = 1.0) {
+    public init(_ rgb: RGBColor<Scalar>, _ a: Scalar = 1.0) {
         self.r = rgb.r
         self.g = rgb.g
         self.b = rgb.b
@@ -858,7 +847,7 @@ public struct RGBAColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public subscript(i: Int) -> Float {
+    public subscript(i: Int) -> Scalar {
         get {
             switch i {
             case 0:
@@ -890,21 +879,12 @@ public struct RGBAColor : Equatable, Hashable, Sendable {
     }
     
     @inlinable
-    public var luminance: Float {
+    public var luminance: Scalar {
         return 0.212671 * self.r + 0.715160 * self.g + 0.072169 * self.b
     }
     
     @inlinable
-    public var xyz : (x: Float, y: Float, z: Float) {
-        return (
-            0.412453 * self.r + 0.357580 * self.g + 0.180423 * self.b,
-            0.212671 * self.r + 0.715160 * self.g + 0.072169 * self.b,
-            0.019334 * self.r + 0.119193 * self.g + 0.950227 * self.b
-        )
-    }
-    
-    @inlinable
-    public var rgb : RGBColor {
+    public var rgb : RGBColor<Scalar> {
         get {
             return RGBColor(r: self.r, g: self.g, b: self.b)
         }
@@ -913,6 +893,38 @@ public struct RGBAColor : Equatable, Hashable, Sendable {
             self.g = newValue.g
             self.b = newValue.b
         }
+    }
+}
+
+public typealias RGBAColour = RGBAColor
+
+extension RGBAColor where Scalar: SIMDScalar {
+    @inlinable
+    public init(rgb: SIMD3<Scalar>, a: Scalar = 1.0) {
+        self.r = rgb.x
+        self.g = rgb.y
+        self.b = rgb.z
+        self.a = a
+    }
+    
+    @inlinable
+    public init(_ rgba: SIMD4<Scalar>) {
+        self.r = rgba.x
+        self.g = rgba.y
+        self.b = rgba.z
+        self.a = rgba.w
+    }
+}
+
+extension RGBAColor where Scalar == Float {
+    @inlinable
+    public init(packed: UInt32) {
+        let a = (packed >> UInt32(24)) & UInt32(0xFF)
+        let b = (packed >> UInt32(16)) & UInt32(0xFF)
+        let g = (packed >> UInt32(8))  & UInt32(0xFF)
+        let r = packed & UInt32(0xFF)
+        
+        self.init(Float(r) / 255.0, Float(g) / 255.0, Float(b) / 255.0, Float(a) / 255.0)
     }
     
     @inlinable
@@ -925,8 +937,6 @@ public struct RGBAColor : Equatable, Hashable, Sendable {
         return (UInt32(w3) << 24) | (UInt32(w2) << 16) | (UInt32(w1) << 8) | UInt32(w0)
     }
 }
-
-public typealias RGBAColour = RGBAColor
 
 extension OklabColor {
     @inlinable
@@ -972,21 +982,21 @@ extension OklabColor {
     }
     
     @inlinable
-    public static func *=(lhs: inout OklabColor, rhs: Float) {
+    public static func *=(lhs: inout OklabColor, rhs: Scalar) {
         lhs.L *= rhs
         lhs.a *= rhs
         lhs.b *= rhs
     }
     
     @inlinable
-    public static func *(lhs: OklabColor, rhs: Float) -> OklabColor {
+    public static func *(lhs: OklabColor, rhs: Scalar) -> OklabColor {
         var result = lhs
         result *= rhs
         return result
     }
     
     @inlinable
-    public static func *(lhs: Float, rhs: OklabColor) -> OklabColor {
+    public static func *(lhs: Scalar, rhs: OklabColor) -> OklabColor {
         var result = rhs
         result *= lhs
         return result
@@ -1007,7 +1017,7 @@ extension OklabColor {
     }
     
     @inlinable
-    public static func /(lhs: Float, rhs: OklabColor) -> OklabColor {
+    public static func /(lhs: Scalar, rhs: OklabColor) -> OklabColor {
         return OklabColor(lhs / rhs.L, lhs / rhs.a, lhs / rhs.b)
     }
 }
@@ -1065,21 +1075,21 @@ extension RGBColor {
     }
     
     @inlinable
-    public static func *=(lhs: inout RGBColor, rhs: Float) {
+    public static func *=(lhs: inout RGBColor, rhs: Scalar) {
         lhs.r *= rhs
         lhs.g *= rhs
         lhs.b *= rhs
     }
     
     @inlinable
-    public static func *(lhs: RGBColor, rhs: Float) -> RGBColor {
+    public static func *(lhs: RGBColor, rhs: Scalar) -> RGBColor {
         var result = lhs
         result *= rhs
         return result
     }
     
     @inlinable
-    public static func *(lhs: Float, rhs: RGBColor) -> RGBColor {
+    public static func *(lhs: Scalar, rhs: RGBColor) -> RGBColor {
         var result = rhs
         result *= lhs
         return result
@@ -1100,7 +1110,7 @@ extension RGBColor {
     }
     
     @inlinable
-    public static func /(lhs: Float, rhs: RGBColor) -> RGBColor {
+    public static func /(lhs: Scalar, rhs: RGBColor) -> RGBColor {
         return RGBColor(lhs / rhs.r, lhs / rhs.g, lhs / rhs.b)
     }
     
@@ -1167,7 +1177,7 @@ extension RGBAColor {
     }
     
     @inlinable
-    public static func *=(lhs: inout RGBAColor, rhs: Float) {
+    public static func *=(lhs: inout RGBAColor, rhs: Scalar) {
         lhs.r *= rhs
         lhs.g *= rhs
         lhs.b *= rhs
@@ -1175,7 +1185,7 @@ extension RGBAColor {
     }
     
     @inlinable
-    public static func *(lhs: RGBAColor, rhs: Float) -> RGBAColor {
+    public static func *(lhs: RGBAColor, rhs: Scalar) -> RGBAColor {
         var result = lhs
         result *= rhs
         return result
@@ -1197,7 +1207,7 @@ extension RGBAColor {
     }
     
     @inlinable
-    public static func /(lhs: Float, rhs: RGBAColor) -> RGBAColor {
+    public static func /(lhs: Scalar, rhs: RGBAColor) -> RGBAColor {
         return RGBAColor(lhs / rhs.r, lhs / rhs.g, lhs / rhs.b, lhs / rhs.a)
     }
     
@@ -1207,117 +1217,117 @@ extension RGBAColor {
     }
 }
 
-extension SIMD3 where Scalar == Float {
+extension SIMD3 where Scalar: Real & BinaryFloatingPoint {
     @inlinable
-    public init(_ colour: RGBColor) {
+    public init(_ colour: RGBColor<Scalar>) {
         self.init(colour.r, colour.g, colour.b)
     }
 }
 
-extension SIMD3 where Scalar == Float {
+extension SIMD3 where Scalar: Real & BinaryFloatingPoint {
     @inlinable
-    public init(_ colour: OklabColor) {
+    public init(_ colour: OklabColor<Scalar>) {
         self.init(colour.L, colour.a, colour.b)
     }
 }
 
-extension SIMD3 where Scalar == Float {
+extension SIMD3 where Scalar: Real & BinaryFloatingPoint {
     @inlinable
-    public init(_ colour: XYZColor) {
+    public init(_ colour: XYZColor<Scalar>) {
         self.init(colour.X, colour.Y, colour.Z)
     }
 }
 
-extension SIMD4 where Scalar == Float {
+extension SIMD4 where Scalar: Real & BinaryFloatingPoint {
     @inlinable
-    public init(_ colour: RGBAColor) {
+    public init(_ colour: RGBAColor<Scalar>) {
         self.init(colour.r, colour.g, colour.b, colour.a)
     }
 }
 
 @inlinable
-public func interpolate(from u: RGBColor, to v: RGBColor, factor t: Float) -> RGBColor {
+public func interpolate<Scalar>(from u: RGBColor<Scalar>, to v: RGBColor<Scalar>, factor t: Scalar) -> RGBColor<Scalar> {
     return u + (v - u) * t
 }
 
 @inlinable
-public func interpolateOklabSpace(from u: RGBColor, to v: RGBColor, factor t: Float) -> RGBColor {
+public func interpolateOklabSpace<Scalar>(from u: RGBColor<Scalar>, to v: RGBColor<Scalar>, factor t: Scalar) -> RGBColor<Scalar> {
     return RGBColor(linearSRGBFrom: interpolate(from: OklabColor(fromLinearSRGB: u), to: OklabColor(fromLinearSRGB: v), factor: t))
 }
 
 @inlinable
-public func interpolate(from u: OklabColor, to v: OklabColor, factor t: Float) -> OklabColor {
+public func interpolate<Scalar>(from u: OklabColor<Scalar>, to v: OklabColor<Scalar>, factor t: Scalar) -> OklabColor<Scalar> {
     return u + (v - u) * t
 }
 
 @inlinable
-public func interpolate(from u: RGBAColor, to v: RGBAColor, factor t: Float) -> RGBAColor {
+public func interpolate<Scalar>(from u: RGBAColor<Scalar>, to v: RGBAColor<Scalar>, factor t: Scalar) -> RGBAColor<Scalar> {
     return u + (v - u) * t
 }
 
 @inlinable
-public func min(_ a: RGBColor, _ b: RGBColor) -> RGBColor {
+public func min<Scalar>(_ a: RGBColor<Scalar>, _ b: RGBColor<Scalar>) -> RGBColor<Scalar> {
     return RGBColor(min(a.r, b.r), min(a.g, b.g), min(a.b, b.b))
 }
 
 @inlinable
-public func max(_ a: RGBColor, _ b: RGBColor) -> RGBColor {
+public func max<Scalar>(_ a: RGBColor<Scalar>, _ b: RGBColor<Scalar>) -> RGBColor<Scalar> {
     return RGBColor(max(a.r, b.r), max(a.g, b.g), max(a.b, b.b))
 }
 
 @inlinable
-public func clamp(_ x: RGBColor, min minVec: RGBColor, max maxVec: RGBColor) -> RGBColor {
+public func clamp<Scalar>(_ x: RGBColor<Scalar>, min minVec: RGBColor<Scalar>, max maxVec: RGBColor<Scalar>) -> RGBColor<Scalar> {
     return min(max(minVec, x), maxVec)
 }
 
 @inlinable
-public func min(_ a: RGBAColor, _ b: RGBAColor) -> RGBAColor {
+public func min<Scalar>(_ a: RGBAColor<Scalar>, _ b: RGBAColor<Scalar>) -> RGBAColor<Scalar> {
     return RGBAColor(min(a.r, b.r), min(a.g, b.g), min(a.b, b.b), min(a.a, b.a))
 }
 
 @inlinable
-public func max(_ a: RGBAColor, _ b: RGBAColor) -> RGBAColor {
+public func max<Scalar>(_ a: RGBAColor<Scalar>, _ b: RGBAColor<Scalar>) -> RGBAColor<Scalar> {
     return RGBAColor(max(a.r, b.r), max(a.g, b.g), max(a.b, b.b), max(a.a, b.a))
 }
 
 @inlinable
-public func clamp(_ x: RGBAColor, min minVec: RGBAColor, max maxVec: RGBAColor) -> RGBAColor {
+public func clamp<Scalar>(_ x: RGBAColor<Scalar>, min minVec: RGBAColor<Scalar>, max maxVec: RGBAColor<Scalar>) -> RGBAColor<Scalar> {
     return min(max(minVec, x), maxVec)
 }
 
 @inlinable
-public func min(_ a: OklabColor, _ b: OklabColor) -> OklabColor {
+public func min<Scalar>(_ a: OklabColor<Scalar>, _ b: OklabColor<Scalar>) -> OklabColor<Scalar> {
     return OklabColor(min(a.L, b.L), min(a.a, b.a), min(a.b, b.b))
 }
 
 @inlinable
-public func max(_ a: OklabColor, _ b: OklabColor) -> OklabColor {
+public func max<Scalar>(_ a: OklabColor<Scalar>, _ b: OklabColor<Scalar>) -> OklabColor<Scalar> {
     return OklabColor(max(a.L, b.L), max(a.a, b.a), max(a.b, b.b))
 }
 
 @inlinable
-public func clamp(_ x: OklabColor, min minVec: OklabColor, max maxVec: OklabColor) -> OklabColor {
+public func clamp<Scalar>(_ x: OklabColor<Scalar>, min minVec: OklabColor<Scalar>, max maxVec: OklabColor<Scalar>) -> OklabColor<Scalar> {
     return min(max(minVec, x), maxVec)
 }
 
 @inlinable
-public func min(_ a: XYZColor, _ b: XYZColor) -> XYZColor {
+public func min<Scalar>(_ a: XYZColor<Scalar>, _ b: XYZColor<Scalar>) -> XYZColor<Scalar> {
     return XYZColor(min(a.X, b.X), min(a.Y, b.Y), min(a.Z, b.Z))
 }
 
 @inlinable
-public func max(_ a: XYZColor, _ b: XYZColor) -> XYZColor {
+public func max<Scalar>(_ a: XYZColor<Scalar>, _ b: XYZColor<Scalar>) -> XYZColor<Scalar> {
     return XYZColor(max(a.X, b.X), max(a.Y, b.Y), max(a.Z, b.Z))
 }
 
 @inlinable
-public func clamp(_ x: XYZColor, min minVec: XYZColor, max maxVec: XYZColor) -> XYZColor {
+public func clamp<Scalar>(_ x: XYZColor<Scalar>, min minVec: XYZColor<Scalar>, max maxVec: XYZColor<Scalar>) -> XYZColor<Scalar> {
     return min(max(minVec, x), maxVec)
 }
 
 // MARK: - Codable Conformance
 
-extension RGBColor : Codable {
+extension RGBColor: Encodable where Scalar: Encodable {
     @inlinable
     public func encode(to encoder: Encoder) throws {
         var container = encoder.unkeyedContainer()
@@ -1325,20 +1335,21 @@ extension RGBColor : Codable {
         try container.encode(self.g)
         try container.encode(self.b)
     }
+}
     
+extension RGBColor: Decodable where Scalar: Decodable {
     @inlinable
     public init(from decoder: Decoder) throws {
         var values = try decoder.unkeyedContainer()
-        let r = try values.decode(Float.self)
-        let g = try values.decode(Float.self)
-        let b = try values.decode(Float.self)
+        let r = try values.decode(Scalar.self)
+        let g = try values.decode(Scalar.self)
+        let b = try values.decode(Scalar.self)
         
         self.init(r: r, g: g, b: b)
     }
 }
 
-
-extension XYZColor : Codable {
+extension XYZColor: Encodable where Scalar: Encodable {
     @inlinable
     public func encode(to encoder: Encoder) throws {
         var container = encoder.unkeyedContainer()
@@ -1346,19 +1357,21 @@ extension XYZColor : Codable {
         try container.encode(self.Y)
         try container.encode(self.Z)
     }
-    
+}
+
+extension XYZColor: Decodable where Scalar: Decodable {
     @inlinable
     public init(from decoder: Decoder) throws {
         var values = try decoder.unkeyedContainer()
-        let x = try values.decode(Float.self)
-        let y = try values.decode(Float.self)
-        let z = try values.decode(Float.self)
+        let x = try values.decode(Scalar.self)
+        let y = try values.decode(Scalar.self)
+        let z = try values.decode(Scalar.self)
         
         self.init(X: x, Y: y, Z: z)
     }
 }
 
-extension OklabColor : Codable {
+extension OklabColor: Encodable where Scalar: Encodable {
     @inlinable
     public func encode(to encoder: Encoder) throws {
         var container = encoder.unkeyedContainer()
@@ -1366,19 +1379,21 @@ extension OklabColor : Codable {
         try container.encode(self.a)
         try container.encode(self.b)
     }
+}
     
+extension OklabColor: Decodable where Scalar: Decodable {
     @inlinable
     public init(from decoder: Decoder) throws {
         var values = try decoder.unkeyedContainer()
-        let L = try values.decode(Float.self)
-        let a = try values.decode(Float.self)
-        let b = try values.decode(Float.self)
+        let L = try values.decode(Scalar.self)
+        let a = try values.decode(Scalar.self)
+        let b = try values.decode(Scalar.self)
         
         self.init(L: L, a: a, b: b)
     }
 }
 
-extension RGBAColor : Codable {
+extension RGBAColor: Encodable where Scalar: Encodable {
     @inlinable
     public func encode(to encoder: Encoder) throws {
         var container = encoder.unkeyedContainer()
@@ -1387,14 +1402,16 @@ extension RGBAColor : Codable {
         try container.encode(self.b)
         try container.encode(self.a)
     }
+}
     
+extension RGBAColor: Decodable where Scalar: Decodable {
     @inlinable
     public init(from decoder: Decoder) throws {
         var values = try decoder.unkeyedContainer()
-        let r = try values.decode(Float.self)
-        let g = try values.decode(Float.self)
-        let b = try values.decode(Float.self)
-        let a = try values.decode(Float.self)
+        let r = try values.decode(Scalar.self)
+        let g = try values.decode(Scalar.self)
+        let b = try values.decode(Scalar.self)
+        let a = try values.decode(Scalar.self)
         
         self.init(r: r, g: g, b: b, a: a)
     }

@@ -3,6 +3,8 @@
 //  
 //
 
+import RealModule
+
 typealias PackedSIMD3<Scalar> = PackedVector3<Float>
 typealias PackedVector3d = PackedVector3<Double>
 
@@ -37,9 +39,9 @@ extension PackedVector3 {
     }
 }
 
-extension PackedVector3 where Scalar == Float {
+extension PackedVector3 where Scalar: BinaryFloatingPoint & Real {
     @inlinable
-    public init(_ vector: RGBColor) {
+    public init(_ vector: RGBColor<Scalar>) {
         self.x = vector.r
         self.y = vector.g
         self.z = vector.b
