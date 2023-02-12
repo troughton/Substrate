@@ -249,21 +249,168 @@ extension XYZColor {
     }
 }
 
-public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
-    public enum ReferenceWhite {
-        case aces
-        case dci
-        case d65
-        
-        public var value: XYZColor {
-            switch self {
-            case .aces:
-                return XYZColor(chromacity: SIMD2(0.32168, 0.33767))
-            case .dci:
-                return XYZColor(chromacity: SIMD2(0.3127, 0.3290))
-            case .d65:
-                return XYZColor(0.31271, 0.32902, 0.35827)
+public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
+    case linear
+    case power(Scalar)
+    case acesCC
+    case acesCCT
+    case sRGB
+    case sonySLog3
+    case pq
+    case hlg
+    
+    /// This is the OETF (opto-electronic transfer function) that converts linear light into an encoded signal.
+    public func linearToEncoded(_ x: Scalar) -> Scalar {
+        switch self {
+        case .linear:
+            return x
+        case .power(let power):
+            return Scalar.pow(x, 1.0 / power)
+        case .acesCC:
+            if x <= 0 {
+                return (-16.0 + 9.72) / 17.52
+            } else if x < Scalar.exp2(-15.0) {
+                return (Scalar.log2(Scalar.exp2(-16.0) + 0.5 * x) + 9.72) / 17.52
+            } else {
+                return (Scalar.log2(x) + 9.72) / 17.52
             }
+        case .acesCCT:
+            if x <= 0.0078125 {
+                return 10.5402337416545 * x + 0.0729055341958355
+            } else {
+                return (Scalar.log2(x) + 9.72) / 17.52
+            }
+        case .sRGB:
+            if x <= 0.0031308 {
+                return 12.92 * x
+            } else {
+                return 1.055 * Scalar.pow(x, 1.0 / 2.4) - 0.055
+            }
+        case .sonySLog3:
+            if x >= 0.01125000 {
+                return (420.0 + Scalar.log10((x + 0.01) / (0.18 + 0.01)) * 261.5) / 1023.0
+            } else {
+                return (x * (171.2102946929 - 95.0)/0.01125000 + 95.0) / 1023.0
+            }
+        case .pq:
+            let m1: Scalar = 1305.0 / 8192.0
+            let m2: Scalar = 2523.0 / 32.0
+            let c1: Scalar = 107.0 / 128.0
+            let c2: Scalar = 2413.0 / 128.0
+            let c3: Scalar = 2392.0 / 128.0
+            
+            let Y = x / 10_000.0
+            let Ym1 = Scalar.pow(Y, m1)
+            let numerator = c1 + c2 * Ym1
+            let denominator = 1.0 + c3 * Ym1
+            return Scalar.pow(numerator / denominator, m2)
+        case .hlg:
+            let E = x
+            let a: Scalar = 0.17883277
+            let b: Scalar = 0.28466892
+            let c: Scalar = 0.55991073
+            
+            if E < 1.0 / 12.0 {
+                return Scalar.sqrt(3.0 * E)
+            } else {
+                return a * Scalar.log(12.0 * E - b) + c
+            }
+        }
+    }
+    
+    /// This is the EOTF (electro-optical transfer function) that converts an encoded signal into linear light.
+    public func encodedToLinear(_ x: Scalar) -> Scalar {
+        switch self {
+        case .linear:
+            return x
+        case .power(let power):
+            return Scalar.pow(x, power)
+        case .acesCC:
+            if x <= -0.301369863014 {
+                return 2.0 * (Scalar.exp2(x * 17.52 - 9.72) - Scalar.exp2(-16.0))
+            } else if x < 1.46799631204 {
+                return Scalar.exp2(x * 17.52 - 9.72)
+            } else {
+                return 65504.0
+            }
+        case .acesCCT:
+            if x <= 0.155251141552511 {
+                return (x - 0.0729055341958355) / 10.5402337416545
+            } else if x < 1.46799631204 {
+                return Scalar.exp2(x * 17.52 - 9.72)
+            } else {
+                return 65504.0
+            }
+        case .sRGB:
+            if x <= 0.04045 {
+                return x / 12.92
+            } else {
+                return Scalar.pow((x + 0.055) / 1.055, 2.4)
+            }
+        case .sonySLog3:
+            if x >= 171.2102946929 / 1023.0 {
+                return (Scalar.exp10((x * 1023.0 - 420.0) / 261.5)) * (0.18 + 0.01) - 0.01
+            } else {
+                return (x * 1023.0 - 95.0) * 0.01125000 / (171.2102946929 - 95.0)
+            }
+        case .pq:
+            let m1: Scalar = 1305.0 / 8192.0
+            let m2: Scalar = 2523.0 / 32.0
+            let c1: Scalar = 107.0 / 128.0
+            let c2: Scalar = 2413.0 / 128.0
+            let c3: Scalar = 2392.0 / 128.0
+            
+            let inverse = self.linearToEncoded(x)
+            let numerator = max(Scalar.pow(inverse, 1.0 / m2) - c1, 0.0)
+            let denominator = c2 - c3 * Scalar.pow(inverse, 1.0 / m2)
+            
+            return 10_000.0 * Scalar.pow(numerator / denominator, 1.0 / m1)
+        case .hlg:
+            // NOTE: this ignores any display-specific settings and simply remaps using the inverse of the OETF.
+            let a: Scalar = 0.17883277
+            let b: Scalar = 0.28466892
+            let c: Scalar = 0.55991073
+            
+            if x < 0.5 {
+                return x * x / 3.0
+            } else {
+                // x = a * Scalar.log(12.0 * E - b) + c
+                // (x - c) / a = log(12.0 * E - b)
+                // exp((x - c) / a) + b = 12.0 * E
+                return Scalar.exp((x - c) / a + b) / 12.0
+            }
+            
+        }
+    }
+}
+
+public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
+    public struct ReferenceWhite: Hashable, Sendable {
+        public var chromacity: SIMD2<Scalar>
+        
+        @inlinable
+        public init(chromacity: SIMD2<Scalar>) {
+            self.chromacity = chromacity
+        }
+        
+        @inlinable
+        public static var aces: ReferenceWhite {
+            return ReferenceWhite(chromacity: SIMD2(0.32168, 0.33767))
+        }
+        
+        @inlinable
+        public static var dci: ReferenceWhite {
+            return ReferenceWhite(chromacity: SIMD2(0.314, 0.351))
+        }
+        
+        @inlinable
+        public static var d65: ReferenceWhite {
+            return ReferenceWhite(chromacity: SIMD2(0.31271, 0.32902))
+        }
+        
+        @inlinable
+        public var value: XYZColor {
+            return XYZColor(chromacity: SIMD2<Float>(self.chromacity))
         }
     }
     
@@ -271,180 +418,127 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         public var red: SIMD2<Scalar>
         public var green: SIMD2<Scalar>
         public var blue: SIMD2<Scalar>
-        public var white: SIMD2<Scalar>
         
-        public init(red: SIMD2<Scalar>, green: SIMD2<Scalar>, blue: SIMD2<Scalar>, white: SIMD2<Scalar>) {
+        @inlinable
+        public init(red: SIMD2<Scalar>, green: SIMD2<Scalar>, blue: SIMD2<Scalar>) {
             self.red = red
             self.green = green
             self.blue = blue
-            self.white = white
         }
         
-        // Reference: http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
-        public var rgbToXYZMatrix: Matrix3x3<Scalar> {
-            let x = SIMD4(self.red.x, self.green.x, self.blue.x, self.white.x)
-            let y = SIMD4(self.red.y, self.green.y, self.blue.y, self.white.y)
-            
-            let X = x / y;
-            let Y = SIMD4<Scalar>(repeating: 1.0)
-            let Z = (1.0 - x - y) / y
-            
-            let whitePointTransformMatrix = Matrix3x3(X.xyz, Y.xyz, Z.xyz).transpose
-            
-            let S = whitePointTransformMatrix.inverse * SIMD3(X.w, Y.w, Z.w)
-            
-            return Matrix3x3(S.x * whitePointTransformMatrix[0],
-                             S.y * whitePointTransformMatrix[1],
-                             S.z * whitePointTransformMatrix[2])
-        }
-        
-        
+        @inlinable
         public static var sRGB: Primaries {
             return Primaries(
                 red:   SIMD2(0.64000,  0.33000),
                 green: SIMD2(0.30000,  0.60000),
-                blue:  SIMD2(0.15000,  0.06000),
-                white: SIMD2(0.31270,  0.32900)) // D65
+                blue:  SIMD2(0.15000,  0.06000))
         }
         
+        @inlinable
         public static var p3: Primaries {
             return Primaries(
                 red:   SIMD2(0.68000,  0.32000),
                 green: SIMD2(0.26500,  0.69000),
-                blue:  SIMD2(0.15000,  0.06000),
-                white: SIMD2(0.31400,  0.35100)) // DCI
+                blue:  SIMD2(0.15000,  0.06000))
         }
         
+        @inlinable
         public static var acesAP0: Primaries {
             return Primaries(
                 red:   SIMD2(0.73470,  0.26530),
                 green: SIMD2(0.00000,  1.00000),
-                blue:  SIMD2(0.00010, -0.07700),
-                white: SIMD2(0.32168,  0.33767)) // ~D60
+                blue:  SIMD2(0.00010, -0.07700))
         }
         
         
+        @inlinable
         public static var acesAP1: Primaries {
             return Primaries(
                 red:   SIMD2(0.71300,  0.29300),
                 green: SIMD2(0.16500,  0.83000),
-                blue:  SIMD2(0.12800,  0.04400),
-                white: SIMD2(0.32168,  0.33767)) // ~D60
+                blue:  SIMD2(0.12800,  0.04400))
         }
         
+        @inlinable
         public static var rec2020: Primaries {
             return Primaries(
                 red:   SIMD2(0.70800,  0.29200),
                 green: SIMD2(0.17000,  0.79700),
-                blue:  SIMD2(0.13100,  0.04600),
-                white: SIMD2(0.31270,  0.3290)) // ~D60
+                blue:  SIMD2(0.13100,  0.04600))
         }
         
+        @inlinable
         public static var sonySGamut3: Primaries {
             return Primaries(
                 red:   SIMD2(0.73000,  0.28000),
                 green: SIMD2(0.14000,  0.85500),
-                blue:  SIMD2(0.10000, -0.05000),
-                white: SIMD2(0.31270,  0.32900)) // D65
+                blue:  SIMD2(0.10000, -0.05000))
         }
         
+        @inlinable
         public static var sonySGamut3Cine: Primaries {
             return Primaries(
                 red:   SIMD2(0.76600,  0.27500),
                 green: SIMD2(0.22500,  0.80000),
-                blue:  SIMD2(0.08900, -0.08700),
-                white: SIMD2(0.31270,  0.32900)) // D65
+                blue:  SIMD2(0.08900, -0.08700))
         }
     }
     
-    public enum EOTF {
-        case linear
-        case power(Scalar)
-        case acesCC
-        case acesCCT
-        case sRGB
-        case sonySLog3
+    public struct ConversionContext {
+        public var matrix: Matrix3x3<Scalar>?
+        public var inputColorTransferFunction: ColorTransferFunction<Scalar>
+        public var outputColorTransferFunction: ColorTransferFunction<Scalar>
         
-        public func linearToGamma(_ x: Scalar) -> Scalar {
-            switch self {
-            case .linear:
-                return x
-            case .power(let power):
-                return Scalar.pow(x, 1.0 / power)
-            case .acesCC:
-                if x <= 0 {
-                    return (-16.0 + 9.72) / 17.52
-                } else if x < Scalar.exp2(-15.0) {
-                    return (Scalar.log2(Scalar.exp2(-16.0) + 0.5 * x) + 9.72) / 17.52
-                } else {
-                    return (Scalar.log2(x) + 9.72) / 17.52
-                }
-            case .acesCCT:
-                if x <= 0.0078125 {
-                    return 10.5402337416545 * x + 0.0729055341958355
-                } else {
-                    return (Scalar.log2(x) + 9.72) / 17.52
-                }
-            case .sRGB:
-                if x <= 0.0031308 {
-                    return 12.92 * x
-                } else {
-                    return 1.055 * Scalar.pow(x, 1.0 / 2.4) - 0.055
-                }
-            case .sonySLog3:
-                if x >= 0.01125000 {
-                    return (420.0 + Scalar.log10((x + 0.01) / (0.18 + 0.01)) * 261.5) / 1023.0
-                } else {
-                    return (x * (171.2102946929 - 95.0)/0.01125000 + 95.0) / 1023.0
-                }
+        public static func converting(from inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> ConversionContext {
+            if inputColorSpace == outputColorSpace {
+                return .init(matrix: nil, inputColorTransferFunction: .linear, outputColorTransferFunction: .linear)
             }
+            
+            var matrix = inputColorSpace.rgbToXYZMatrix
+            if inputColorSpace.referenceWhite != outputColorSpace.referenceWhite {
+                matrix = CIEXYZ1931ColorSpace.chromaticAdaptationMatrix(from: XYZColor(chromacity: SIMD2(inputColorSpace.referenceWhite.chromacity)), to: XYZColor(chromacity: SIMD2(outputColorSpace.referenceWhite.chromacity))) * matrix
+            }
+            matrix = outputColorSpace.xyzToRGBMatrix * matrix
+            return ConversionContext(matrix: matrix, inputColorTransferFunction: inputColorSpace.eotf, outputColorTransferFunction: outputColorSpace.eotf)
         }
         
-        public func gammaToLinear(_ x: Scalar) -> Scalar {
-            switch self {
-            case .linear:
-                return x
-            case .power(let power):
-                return Scalar.pow(x, power)
-            case .acesCC:
-                if x <= -0.301369863014 {
-                    return 2.0 * (Scalar.exp2(x * 17.52 - 9.72) - Scalar.exp2(-16.0))
-                } else if x < 1.46799631204 {
-                    return Scalar.exp2(x * 17.52 - 9.72)
-                } else {
-                    return 65504.0
-                }
-            case .acesCCT:
-                if x <= 0.155251141552511 {
-                    return (x - 0.0729055341958355) / 10.5402337416545
-                } else if x < 1.46799631204 {
-                    return Scalar.exp2(x * 17.52 - 9.72)
-                } else {
-                    return 65504.0
-                }
-            case .sRGB:
-                if x <= 0.04045 {
-                    return x / 12.92
-                } else {
-                    return Scalar.pow((x + 0.055) / 1.055, 2.4)
-                }
-            case .sonySLog3:
-                if x >= 171.2102946929 / 1023.0 {
-                    return (Scalar.exp10((x * 1023.0 - 420.0) / 261.5)) * (0.18 + 0.01) - 0.01
-                } else {
-                    return (x * 1023.0 - 95.0) * 0.01125000 / (171.2102946929 - 95.0)
-                }
+        public func convert(_ input: SIMD3<Scalar>) -> SIMD3<Scalar> {
+            var linear = SIMD3<Scalar>.zero
+            for i in 0..<input.scalarCount {
+                linear[i] = self.inputColorTransferFunction.encodedToLinear(input[i])
             }
+            
+            if let matrix = self.matrix {
+                linear = matrix * linear
+            }
+            
+            var gamma = SIMD3<Scalar>.zero
+            for i in 0..<input.scalarCount {
+                gamma[i] = self.outputColorTransferFunction.linearToEncoded(linear[i])
+            }
+            return gamma
         }
     }
     
     public var primaries: Primaries
-    public var eotf: EOTF
+    public var eotf: ColorTransferFunction<Scalar>
     public var referenceWhite: ReferenceWhite
+    
+    public init(primaries: Primaries, eotf: ColorTransferFunction<Scalar>, referenceWhite: ReferenceWhite) {
+        self.primaries = primaries
+        self.eotf = eotf
+        self.referenceWhite = referenceWhite
+    }
     
     public static var sRGB: CIEXYZ1931ColorSpace {
         return .init(primaries: .sRGB,
                      eotf: .sRGB,
+                     referenceWhite: .d65)
+    }
+    
+    public static var linearSRGB: CIEXYZ1931ColorSpace {
+        return .init(primaries: .sRGB,
+                     eotf: .linear,
                      referenceWhite: .d65)
     }
     
@@ -502,8 +596,22 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
                      referenceWhite: .d65)
     }
     
+    // Reference: http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
     public var rgbToXYZMatrix: Matrix3x3<Scalar> {
-        return self.primaries.rgbToXYZMatrix
+        let x = SIMD4(self.primaries.red.x, self.primaries.green.x, self.primaries.blue.x, self.referenceWhite.chromacity.x)
+        let y = SIMD4(self.primaries.red.y, self.primaries.green.y, self.primaries.blue.y, self.referenceWhite.chromacity.y)
+        
+        let X = x / y;
+        let Y = SIMD4<Scalar>(repeating: 1.0)
+        let Z = (1.0 - x - y) / y
+        
+        let whitePointTransformMatrix = Matrix3x3(X.xyz, Y.xyz, Z.xyz).transpose
+        
+        let S = whitePointTransformMatrix.inverse * SIMD3(X.w, Y.w, Z.w)
+        
+        return Matrix3x3(S.x * whitePointTransformMatrix[0],
+                         S.y * whitePointTransformMatrix[1],
+                         S.z * whitePointTransformMatrix[2])
     }
     
     public var xyzToRGBMatrix: Matrix3x3<Scalar> {
@@ -529,8 +637,41 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
     public static func chromaticAdaptationMatrix(from: ReferenceWhite, to: ReferenceWhite) -> Matrix3x3<Scalar> {
         return self.chromaticAdaptationMatrix(from: from.value, to: to.value)
     }
+    
+    public static func conversionContext(convertingFrom inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> ConversionContext {
+        return .converting(from: inputColorSpace, to: outputColorSpace)
+    }
+    
+    public static func convert(_ value: SIMD3<Scalar>, from inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> SIMD3<Scalar> {
+        return ConversionContext.converting(from: inputColorSpace, to: outputColorSpace).convert(value)
+    }
 }
 
+extension CIEXYZ1931ColorSpace.Primaries: Equatable where Scalar: Equatable {}
+extension CIEXYZ1931ColorSpace.Primaries: Hashable where Scalar: Hashable {}
+extension CIEXYZ1931ColorSpace.Primaries: Sendable where Scalar: Sendable {}
+
+extension ColorTransferFunction: Equatable where Scalar: Equatable {}
+extension ColorTransferFunction: Hashable where Scalar: Hashable {}
+extension ColorTransferFunction: Sendable where Scalar: Sendable {}
+
+extension CIEXYZ1931ColorSpace: Equatable where Scalar: Equatable {}
+extension CIEXYZ1931ColorSpace: Hashable where Scalar: Hashable {}
+extension CIEXYZ1931ColorSpace: Sendable where Scalar: Sendable {}
+
+extension CIEXYZ1931ColorSpace.ConversionContext: Sendable where Scalar: Sendable {}
+
+extension CIEXYZ1931ColorSpace.ConversionContext where Scalar == Float {
+    public func convert(_ input: RGBColor) -> RGBColor {
+        return RGBColor(self.convert(SIMD3(input)))
+    }
+}
+
+extension CIEXYZ1931ColorSpace where Scalar == Float {
+    public static func convert(_ value: RGBColor, from inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> RGBColor{
+        return RGBColor(self.convert(SIMD3(value), from: inputColorSpace, to: outputColorSpace))
+    }
+}
 
 /// Reference: https://bottosson.github.io/posts/oklab/
 public struct OklabColor : Equatable, Hashable, Sendable {
