@@ -319,10 +319,6 @@ final class TypeLookup {
             return String(name.prefix(1).uppercased()) + name.dropFirst()
         }
         
-        if ["AffineMatrix", "AffineMatrix2D"].contains(name) {
-            return name + "<Float>"
-        }
-        
         return name
     }
     

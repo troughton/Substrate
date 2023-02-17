@@ -130,7 +130,7 @@ indirect enum SPIRVType : Hashable {
     var isKnownSwiftType: Bool {
         switch self {
         case .struct(let name, let members, _):
-            if ["AffineMatrix", "AffineMatrix2D"].contains(name) {
+            if ["AffineMatrix", "AffineMatrix2D", "PackedVector3"].contains(name) {
                 return true
             }
             if (name.starts(with: "type_StructuredBuffer") || name.starts(with: "type_RWStructuredBuffer")) || name.starts(with: "type_ByteAddressBuffer"),
@@ -400,6 +400,44 @@ extension SPIRVType {
                     structSize = structSize.roundedUpToMultiple(of: member.type.alignment)
                     structSize += member.type.size
                 }
+            }
+            
+            switch name {
+            case "PackedVector3", "AffineMatrix", "AffineMatrix2D":
+                guard !members.isEmpty else { break }
+                
+                let memberType = members[0].type
+                var elementType = memberType
+                var vectorElementCount = 1
+                if case .vector(let element, let length) = memberType {
+                    elementType = element
+                    vectorElementCount = length
+                }
+                
+                let expectedMemberCount: Int
+                let mappedType: SPIRVType
+                switch name {
+                case "PackedVector3":
+                    expectedMemberCount = 3
+                    mappedType = .packedVector(element: elementType, length: 3)
+                case "AffineMatrix":
+                    expectedMemberCount = 12
+                    mappedType = .matrix(element: elementType, rows: 4, columns: 3)
+                case "AffineMatrix2D":
+                    expectedMemberCount = 6
+                    mappedType = .matrix(element: elementType, rows: 2, columns: 3)
+                default:
+                    preconditionFailure()
+                }
+                
+                guard members.count * vectorElementCount == expectedMemberCount,
+                        members.dropFirst().allSatisfy({ $0.type == memberType }) else { break }
+                
+                self = mappedType
+                return
+                
+            default:
+                break
             }
             
             self = .struct(name: name, members: members, size: structSize)
