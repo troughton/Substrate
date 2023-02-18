@@ -79,7 +79,7 @@ extension Texture {
         return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: [.textureSlices(.init(slice: slice, mipLevel: mipLevel))], stages: stages)
     }
     
-    public func `as`(_ type: TextureUsage, slices: Range<Int>, mipLevels: Range<Int>, stages: RenderStages = []) -> ResourceUsage {
+    public func `as`(_ type: TextureUsage, slices: Range<Int>, mipLevels: Range<Int> = 0..<1, stages: RenderStages = []) -> ResourceUsage {
         return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: [.textureSlices(.init(slices: slices, mipLevels: mipLevels))], stages: stages)
     }
 }

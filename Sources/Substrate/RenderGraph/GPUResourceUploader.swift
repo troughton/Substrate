@@ -271,12 +271,6 @@ public final actor GPUResourceUploader {
     }
 }
 
-extension Range {
-    fileprivate func contains(_ other: Range) -> Bool {
-        return other.lowerBound >= self.lowerBound && other.upperBound <= self.upperBound
-    }
-}
-
 extension GPUResourceUploader {
     fileprivate final actor StagingBufferSubAllocator {
         private static let blockAlignment = 64

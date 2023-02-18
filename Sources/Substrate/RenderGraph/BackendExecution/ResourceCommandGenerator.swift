@@ -31,11 +31,6 @@ struct CompactedResourceCommand<T> : Comparable {
     }
 }
 
-extension Range where Bound: AdditiveArithmetic {
-    func offset(by: Bound) -> Self {
-        return (self.lowerBound + by)..<(self.upperBound + by)
-    }
-}
 
 enum PreFrameCommands {
     

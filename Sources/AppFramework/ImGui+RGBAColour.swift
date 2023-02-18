@@ -11,19 +11,19 @@ import SubstrateMath
 
 extension ImGui {
     @discardableResult
-    public static func colorButton(descriptionId: String, color: RGBAColor, size: SIMD2<Float> = .zero, flags: ColorEditFlags = []) -> Bool {
+    public static func colorButton(descriptionId: String, color: RGBAColor<Float>, size: SIMD2<Float> = .zero, flags: ColorEditFlags = []) -> Bool {
         return self.colorButton(descriptionId: descriptionId, color: SIMD4(color), size: size, flags: flags)
     }
     
-    public static func colorEdit(label: String, color: inout RGBColor, flags: ColorEditFlags) -> Bool {
+    public static func colorEdit(label: String, color: inout RGBColor<Float>, flags: ColorEditFlags) -> Bool {
         var imColor = SIMD3(color)
-        defer { color = RGBColor(imColor.x, imColor.y, imColor.z) }
+        defer { color = RGBColor<Float>(imColor.x, imColor.y, imColor.z) }
         return self.colorEdit(label: label, color: &imColor, flags: flags)
     }
     
-    public static func colorEdit(label: String, color: inout RGBAColor, flags: ColorEditFlags) -> Bool {
+    public static func colorEdit(label: String, color: inout RGBAColor<Float>, flags: ColorEditFlags) -> Bool {
         var imColor = SIMD4(color)
-        defer { color = RGBAColor(imColor.x, imColor.y, imColor.z, imColor.w) }
+        defer { color = RGBAColor<Float>(imColor.x, imColor.y, imColor.z, imColor.w) }
         return self.colorEdit(label: label, color: &imColor, flags: flags)
     }
     
