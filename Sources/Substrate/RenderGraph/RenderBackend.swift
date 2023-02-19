@@ -267,22 +267,22 @@ public struct RenderBackend {
 
 @usableFromInline
 protocol _ArgumentBufferImpl {
-    static func setBuffer(_ buffer: Buffer, offset: Int, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    static func setBuffer(_ buffer: Buffer, offset: Int, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
     
-    static func setTexture(_ texture: Texture, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
-    
-    @available(macOS 11.0, iOS 14.0, *)
-    static func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    static func setTexture(_ texture: Texture, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
     
     @available(macOS 11.0, iOS 14.0, *)
-    static func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    static func setAccelerationStructure(_ structure: AccelerationStructure, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
     
     @available(macOS 11.0, iOS 14.0, *)
-    static func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    static func setVisibleFunctionTable(_ table: VisibleFunctionTable, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
     
-    static func setSampler(_ sampler: SamplerState, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    @available(macOS 11.0, iOS 14.0, *)
+    static func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
     
-    static func setBytes(_ bytes: UnsafeRawBufferPointer, at path: ResourceBindingPath, on argBuffer: ArgumentBuffer)
+    static func setSampler(_ sampler: SamplerState, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
+    
+    static func setBytes(_ bytes: UnsafeRawBufferPointer, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
     
     static func encodedBufferSizeAndAlign(forArgument: ArgumentDescriptor) -> (size: Int, alignment: Int)
 }

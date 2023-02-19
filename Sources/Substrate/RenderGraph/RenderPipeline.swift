@@ -233,8 +233,14 @@ public struct RenderPipelineDescriptor : Hashable {
     }
     
     @inlinable
-    public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) {
-        self.functionConstants = try! FunctionConstants(functionConstants)
+    public mutating func setFunctionConstants<FC : FunctionConstantEncodable>(_ functionConstants: FC) {
+        self.functionConstants = FunctionConstants(functionConstants)
+    }
+    
+    @available(*, deprecated)
+    @inlinable
+    public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) throws {
+        self.functionConstants = try FunctionConstants(functionConstants)
     }
     
     @inlinable

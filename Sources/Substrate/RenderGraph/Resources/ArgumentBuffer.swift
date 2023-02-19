@@ -267,10 +267,10 @@ public struct ArgumentBuffer : ResourceProtocol {
         return self.descriptor.storageMode
     }
     
-    private func updateAccessWaitIndices<R: ResourceProtocolImpl>(resource: R, path: ResourceBindingPath) {
+    private func updateAccessWaitIndices<R: ResourceProtocolImpl>(resource: R, at index: Int) {
         guard resource._usesPersistentRegistry else { return }
         
-        let argument = self.descriptor.arguments[self.descriptor.arguments.binarySearch(predicate: { $0.index <= path.index }) - 1]
+        let argument = self.descriptor.arguments[self.descriptor.arguments.binarySearch(predicate: { $0.index <= index }) - 1]
         if argument.accessType == .read, let waitPointer = resource._readWaitIndicesPointer {
             self[\.contentAccessWaitIndices] = pointwiseMax(waitPointer.pointee, self[\.contentAccessWaitIndices])
         }
@@ -280,119 +280,91 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    public func setBuffer(_ buffer: Buffer?, offset: Int, at path: ResourceBindingPath) {
+    public func setBuffer(_ buffer: Buffer?, offset: Int, at index: Int, arrayIndex: Int = 0) {
         guard let buffer = buffer else { return }
         self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         
-        self.updateAccessWaitIndices(resource: buffer, path: path)
-        RenderBackend._backend.argumentBufferImpl.setBuffer(buffer, offset: offset, at: path, on: self)
+        self.updateAccessWaitIndices(resource: buffer, at: index)
+        RenderBackend._backend.argumentBufferImpl.setBuffer(buffer, offset: offset, at: index, arrayIndex: arrayIndex, on: self)
     }
     
-    public func setTexture(_ texture: Texture, at path: ResourceBindingPath) {
+    public func setTexture(_ texture: Texture, at index: Int, arrayIndex: Int = 0) {
         self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || texture.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         
-        self.updateAccessWaitIndices(resource: texture, path: path)
-        RenderBackend._backend.argumentBufferImpl.setTexture(texture, at: path, on: self)
+        self.updateAccessWaitIndices(resource: texture, at: index)
+        RenderBackend._backend.argumentBufferImpl.setTexture(texture, at: index, arrayIndex: arrayIndex, on: self)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath) {
+    public func setAccelerationStructure(_ structure: AccelerationStructure, at index: Int, arrayIndex: Int = 0) {
         self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || structure.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         
-        self.updateAccessWaitIndices(resource: structure, path: path)
-        RenderBackend._backend.argumentBufferImpl.setAccelerationStructure(structure, at: path, on: self)
+        self.updateAccessWaitIndices(resource: structure, at: index)
+        RenderBackend._backend.argumentBufferImpl.setAccelerationStructure(structure, at: index, arrayIndex: arrayIndex, on: self)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath) {
+    public func setVisibleFunctionTable(_ table: VisibleFunctionTable, at index: Int, arrayIndex: Int = 0) {
         self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         
-        self.updateAccessWaitIndices(resource: table, path: path)
-        RenderBackend._backend.argumentBufferImpl.setVisibleFunctionTable(table, at: path, on: self)
+        self.updateAccessWaitIndices(resource: table, at: index)
+        RenderBackend._backend.argumentBufferImpl.setVisibleFunctionTable(table, at: index, arrayIndex: arrayIndex, on: self)
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath) {
+    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at index: Int, arrayIndex: Int = 0) {
         self.checkHasCPUAccess(accessType: .write)
         
         assert(!self.flags.contains(.persistent) || table.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         
-        self.updateAccessWaitIndices(resource: table, path: path)
-        RenderBackend._backend.argumentBufferImpl.setIntersectionFunctionTable(table, at: path, on: self)
+        self.updateAccessWaitIndices(resource: table, at: index)
+        RenderBackend._backend.argumentBufferImpl.setIntersectionFunctionTable(table, at: index, arrayIndex: arrayIndex, on: self)
     }
     
     @inlinable
-    public func setSampler(_ sampler: SamplerDescriptor, at path: ResourceBindingPath) async {
+    public func setSampler(_ sampler: SamplerDescriptor, at index: Int, arrayIndex: Int = 0) async {
         self.checkHasCPUAccess(accessType: .write)
         
         let samplerState = await SamplerState(descriptor: sampler)
-        self.setSampler(samplerState, at: path)
+        self.setSampler(samplerState, at: index, arrayIndex: arrayIndex)
     }
     
     @inlinable
-    public func setSampler(_ sampler: SamplerState, at path: ResourceBindingPath) {
+    public func setSampler(_ sampler: SamplerState, at index: Int, arrayIndex: Int = 0) {
         self.checkHasCPUAccess(accessType: .write)
         
-        RenderBackend._backend.argumentBufferImpl.setSampler(sampler, at: path, on: self)
+        RenderBackend._backend.argumentBufferImpl.setSampler(sampler, at: index, arrayIndex: arrayIndex, on: self)
     }
     
     @inlinable
-    public func setValue<T>(_ value: T, at path: ResourceBindingPath) {
+    public func setValue<T>(_ value: T, at index: Int, arrayIndex: Int = 0) {
         precondition(_isPOD(T.self), "Only POD types should be used with setValue.")
         
         withUnsafeBytes(of: value) { bytes in
-            self.setBytes(bytes, at: path)
+            self.setBytes(bytes, at: index, arrayIndex: arrayIndex)
         }
     }
     
-    public func setValue<T : ResourceProtocol>(_ value: T, at path: ResourceBindingPath) {
+    public func setValue<T : ResourceProtocol>(_ value: T, at index: Int, arrayIndex: Int = 0) {
         preconditionFailure("setValue should not be used with resources; use setBuffer or setTexture instead.")
     }
     
-    public func setBytes(_ bytes: UnsafeRawBufferPointer, at path: ResourceBindingPath) {
+    public func setBytes(_ bytes: UnsafeRawBufferPointer, at index: Int, arrayIndex: Int = 0) {
         self.checkHasCPUAccess(accessType: .write)
         
-        RenderBackend._backend.argumentBufferImpl.setBytes(bytes, at: path, on: self)
+        RenderBackend._backend.argumentBufferImpl.setBytes(bytes, at: index, arrayIndex: arrayIndex, on: self)
     }
     
     public static var resourceType: ResourceType {
         return .argumentBuffer
-    }
-}
-
-extension ArgumentBuffer {
-    
-    public func setBuffers(_ buffers: [Buffer], offsets: [Int], paths: [ResourceBindingPath]) {
-        for (buffer, (offset, path)) in zip(buffers, zip(offsets, paths)) {
-            self.setBuffer(buffer, offset: offset, at: path)
-        }
-    }
-    
-    public func setTextures(_ textures: [Texture], paths: [ResourceBindingPath]) {
-        for (texture, path) in zip(textures, paths) {
-            self.setTexture(texture, at: path)
-        }
-    }
-    
-    public func setSamplers(_ samplers: [SamplerDescriptor], paths: [ResourceBindingPath]) async {
-        for (sampler, path) in zip(samplers, paths) {
-            await self.setSampler(sampler, at: path)
-        }
-    }
-    
-    
-    public func setSamplers(_ samplers: [SamplerState], paths: [ResourceBindingPath]) {
-        for (sampler, path) in zip(samplers, paths) {
-            self.setSampler(sampler, at: path)
-        }
     }
 }
 

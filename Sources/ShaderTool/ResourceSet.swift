@@ -384,28 +384,28 @@ final class ResourceSet {
 
             for resource in self.resources {
                 if resource.viewType == .inlineUniformBlock {
-                    stream.print("argBuffer.setValue(self.\(resource.name), at: ResourceBindingPath(type: .buffer, index: \(resource.binding.index), stages: []))")
+                    stream.print("argBuffer.setValue(self.\(resource.name), at: \(resource.binding.index))")
                     continue
                 } else if resource.viewType == .uniformBuffer {
                     // @BufferBacked property
                     
                     stream.print("if let resource = self.$\(resource.name).buffer {")
                                     
-                    stream.print("argBuffer.setBuffer(resource.wrappedValue, offset: resource.offset, at: ResourceBindingPath(type: .buffer, index: \(resource.binding.index), stages: []))")
+                    stream.print("argBuffer.setBuffer(resource.wrappedValue, offset: resource.offset, at: \(resource.binding.index))")
                     
                     stream.print("}")
                     
                     continue
                 } else if resource.viewType == .sampler {
                     // @BufferBacked property
-                    stream.print("argBuffer.setSampler(await self.$\(resource.name).state, at: ResourceBindingPath(type: .sampler, index: \(resource.binding.index), stages: []))")
+                    stream.print("argBuffer.setSampler(await self.$\(resource.name).state, at: \(resource.binding.index))")
                     
                     continue
                 }
                 
                 let arrayIndexString : String
                 if resource.binding.arrayLength > 1 {
-                    arrayIndexString = " + i"
+                    arrayIndexString = ", arrayIndex: i"
                     stream.print("for i in 0..<self.\(resource.name).count {")
                     stream.print("if let resource = self.\(resource.name)[i] {")
                 } else {
@@ -427,11 +427,11 @@ final class ResourceSet {
                     
                     switch type {
                     case .texture:
-                        stream.print("argBuffer.setTexture(resource, at: ResourceBindingPath(type: .texture, index: \(index)\(arrayIndexString), stages: []))")
+                        stream.print("argBuffer.setTexture(resource, at: \(index)\(arrayIndexString))")
                     case .sampler:
-                        stream.print("argBuffer.setSampler(resource, at: ResourceBindingPath(type: .sampler, index: \(index)\(arrayIndexString), stages: []))")
+                        stream.print("argBuffer.setSampler(resource, at: \(index)\(arrayIndexString))")
                     default:
-                        stream.print("argBuffer.setBuffer(resource, offset: self.$\(resource.name).offset, at: ResourceBindingPath(type: .buffer, index: \(index)\(arrayIndexString), stages: []))")
+                        stream.print("argBuffer.setBuffer(resource, offset: self.$\(resource.name).offset, at: \(index)\(arrayIndexString))")
                     }
                 }
                 
