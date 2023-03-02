@@ -17,7 +17,11 @@ extension ArgumentBuffer {
         
         // Zero out the argument buffer.
         let destPointer = storage.buffer.contents() + storage.offset
-        destPointer.assumingMemoryBound(to: UInt8.self).assign(repeating: 0, count: min(self.maximumAllocationLength, argEncoder.encoder.encodedLength))
+        var allocationLength = self.allocationLength
+        if allocationLength == .max {
+            allocationLength = argEncoder.encoder.encodedLength
+        }
+        destPointer.assumingMemoryBound(to: UInt8.self).assign(repeating: 0, count: allocationLength)
         
         argEncoder.encoder.setArgumentBuffer(storage.buffer, offset: storage.offset)
         await argEncoder.encodeArguments(from: self, resourceMap: resourceMap)

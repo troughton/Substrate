@@ -305,7 +305,13 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         }
         
         let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-        let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: min(argEncoder.encoder.encodedLength, argumentBuffer.maximumAllocationLength))
+        
+        var allocationLength = argumentBuffer.allocationLength
+        if allocationLength == .max {
+            allocationLength = argEncoder.encoder.encodedLength
+        }
+        
+        let storage = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: allocationLength)
         
         self.argumentBufferReferences[argumentBuffer] = storage
         
@@ -1001,7 +1007,13 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         }
         
         let argEncoder = Unmanaged<MetalArgumentEncoder>.fromOpaque(argumentBuffer.encoder!).takeUnretainedValue()
-        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: min(argumentBuffer.maximumAllocationLength, argEncoder.encoder.encodedLength))
+        
+        var allocationLength = argumentBuffer.allocationLength
+        if allocationLength == .max {
+            allocationLength = argEncoder.encoder.encodedLength
+        }
+        
+        let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: allocationLength)
         assert(fences.isEmpty)
         
         self.argumentBufferReferences[argumentBuffer] = storage
