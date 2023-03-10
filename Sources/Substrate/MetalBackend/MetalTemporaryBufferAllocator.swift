@@ -99,6 +99,9 @@ fileprivate class TemporaryBufferArena {
         if let currentBlock = self.currentBlock {
             self.availableBlocks.append((currentBlock, false))
         }
+        for (buffer, _) in self.availableBlocks {
+            buffer.removeAllDebugMarkers()
+        }
         self.currentBlock = nil
         self.currentBlockPos = 0
     }
