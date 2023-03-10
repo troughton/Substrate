@@ -8,6 +8,7 @@
 
 import Swift
 import RealModule
+import SubstrateUtilities
 
 public struct Rect<Scalar: SIMDScalar>: Hashable, Codable {
     public var origin : SIMD2<Scalar>
@@ -145,6 +146,80 @@ extension Rect where Scalar: BinaryFloatingPoint {
     public func intersects(with otherRect: Rect) -> Bool {
         return all((self.origin + self.size .>= otherRect.origin) .& (otherRect.origin + otherRect.size .>= self.origin))
     }
+    
+    @inlinable
+    public func intersects(with otherRect: Rect, transformedBy transform: RectTransform<Scalar>) -> Bool {
+        return self.intersects(with: otherRect.transformed(by: transform))
+    }
+    
+    @inlinable
+    public func intersects(with otherRect: Rect, transformedBy transform: AffineMatrix2D<Scalar>) -> Bool {
+        func project(point p: SIMD2<Scalar>, onto axis: SIMD2<Scalar>, minVal: inout Scalar, maxVal: inout Scalar) {
+            let projected = dot(axis, p)
+            minVal = min(minVal, projected)
+            maxVal = max(maxVal, projected)
+        }
+
+        func overlapsOnAxis(_ axis: SIMD2<Scalar>, pointsA: Array4<SIMD2<Scalar>>, pointsB: Array4<SIMD2<Scalar>>) -> Bool {
+            var minA = Scalar.infinity
+            var maxA = -Scalar.infinity
+
+            for point in pointsA {
+                project(point: point, onto: axis, minVal: &minA, maxVal: &maxA)
+            }
+
+            var minB = Scalar.infinity
+            var maxB = -Scalar.infinity
+
+            for point in pointsB {
+                project(point: point, onto: axis, minVal: &minB, maxVal: &maxB)
+            }
+
+            return (minA <= maxB) && (maxA >= minB)
+        }
+        
+        let selfMaxPoint = self.maxPoint
+        var pointsSelf = Array4(repeating: SIMD2<Scalar>.zero)
+        pointsSelf[0] = self.minPoint
+        pointsSelf[1] = SIMD2(self.minPoint.x, selfMaxPoint.y)
+        pointsSelf[2] = selfMaxPoint
+        pointsSelf[3] = SIMD2(selfMaxPoint.x, self.minPoint.y)
+        
+        let otherMaxPoint = otherRect.maxPoint
+        var pointsOther = Array4(repeating: SIMD2<Scalar>.zero)
+        pointsOther[0] = transform.transform(point: otherRect.minPoint)
+        pointsOther[1] = transform.transform(point: SIMD2(otherRect.minPoint.x, otherMaxPoint.y))
+        pointsOther[2] = transform.transform(point: otherMaxPoint)
+        pointsOther[3] = transform.transform(point: SIMD2(otherMaxPoint.x, otherRect.minPoint.y))
+        
+        
+        // Separating axis theorem: there must be overlap on every axis. First, check the X and Y axes.
+        
+        if (!overlapsOnAxis(SIMD2(1, 0), pointsA: pointsSelf, pointsB: pointsOther)) {
+            return false
+        }
+        
+        if (!overlapsOnAxis(SIMD2(0, 1), pointsA: pointsSelf, pointsB: pointsOther)) {
+            return false
+        }
+        
+        let tangentA = pointsOther[1] - pointsOther[0] // Local Y axis
+        let normalA = SIMD2(-tangentA.y, tangentA.x)
+        
+        if (!overlapsOnAxis(normalA, pointsA: pointsSelf, pointsB: pointsOther)) {
+            return false
+        }
+        
+        let tangentB = pointsOther[2] - pointsOther[1] // Local X axis
+        let normalB = SIMD2(-tangentB.y, tangentB.x)
+        
+        if (!overlapsOnAxis(normalB, pointsA: pointsSelf, pointsB: pointsOther)) {
+            return false
+        }
+        
+        return true
+    }
+    
     
     @inlinable
     public func union(with otherRect: Rect) -> Rect {

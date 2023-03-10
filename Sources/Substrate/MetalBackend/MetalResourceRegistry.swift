@@ -744,7 +744,11 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         let (mtlBuffer, fences, waitEvent) = allocator.collectBufferWithLength(buffer.descriptor.length, options: options)
         
         if let label = buffer.label {
-            mtlBuffer.buffer.label = label
+            if allocator is MetalTemporaryBufferAllocator {
+                mtlBuffer.buffer.addDebugMarker(label, range: mtlBuffer.offset..<(mtlBuffer.offset + buffer.descriptor.length))
+            } else {
+                mtlBuffer.buffer.label = label
+            }
         }
         
         buffer.backingResourcePointer = mtlBuffer._buffer.toOpaque()

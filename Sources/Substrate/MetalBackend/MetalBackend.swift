@@ -173,8 +173,14 @@ final class MetalBackend : SpecificRenderBackend {
     }
     
     @usableFromInline func updateLabel(on resource: Resource) {
-        if let buffer = Buffer(resource) {
-            buffer.mtlBuffer?.wrappedValue.label = buffer.label
+        if let buffer = Buffer(resource), let mtlBuffer = buffer.mtlBuffer {
+            if !buffer._usesPersistentRegistry, buffer.storageMode == .shared || buffer.storageMode == .managed {
+                if let label = buffer.label {
+                    mtlBuffer.buffer.addDebugMarker(label, range: mtlBuffer.offset..<(mtlBuffer.offset + buffer.descriptor.length))
+                }
+            } else {
+                mtlBuffer.buffer.label = buffer.label
+            }
         } else if let texture = Texture(resource) {
             texture.mtlTexture?.label = texture.label
         } else if let heap = Heap(resource) {
