@@ -43,7 +43,7 @@ let package = Package(
         .target(name: "SwiftFrameGraph", dependencies: ["Substrate"]),
         
         // SubstrateMath
-        .target(name: "SubstrateMath", dependencies: [.product(name: "RealModule", package: "swift-numerics")]),
+        .target(name: "SubstrateMath", dependencies: [.product(name: "RealModule", package: "swift-numerics"), "SubstrateUtilities"]),
         .testTarget(name: "SubstrateMathTests", dependencies: ["SubstrateMath", .product(name: "RealModule", package: "swift-numerics")]),
         
         // Substrate
