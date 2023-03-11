@@ -1491,7 +1491,7 @@ public final class RenderGraph {
             let signpostState = Self.signposter.beginInterval("Execute RenderGraph on Context", id: self.signpostID)
             let waitToken = await Self.$activeRenderGraph.withValue(self) {
                 return await self.context.executeRenderGraph(self, renderPasses: renderPasses, waitingFor: gpuQueueWaitIndices, onSwapchainPresented: onSwapchainPresented, onCompletion: { queueCommandRange in
-                    await self.didCompleteRender(queueCommandRange: queueCommandRange)
+                    self.didCompleteRender(queueCommandRange: queueCommandRange)
                     for item in completionNotifyQueue {
                         await item()
                     }

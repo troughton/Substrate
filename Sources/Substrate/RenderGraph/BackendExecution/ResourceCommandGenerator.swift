@@ -592,8 +592,6 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     
     func updateQueueWaitCommandIndices(frameCommandInfo: inout FrameCommandInfo<Backend.RenderTargetDescriptor>, queue: Queue) {
         for i in frameCommandInfo.commandEncoders.indices {
-            let encoderSignalValue = frameCommandInfo.globalCommandBufferIndex(frameIndex: frameCommandInfo.commandEncoders[i].commandBufferIndex)
-            
             for pass in frameCommandInfo.passes {
                 for readResource in pass.readResources {
                     if let readWaitIndices = readResource.withUnderlyingResource({ $0._readWaitIndicesPointer?.pointee }) {
