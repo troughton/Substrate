@@ -618,11 +618,11 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
             for pass in frameCommandInfo.passes {
                 for readResource in pass.readResources {
-                    readResource[waitIndexFor: queue, accessType: .read] = encoderSignalValue
+                    readResource[waitIndexFor: queue, accessType: .write] = encoderSignalValue
                 }
                 
                 for writtenResource in pass.writtenResources {
-                    writtenResource[waitIndexFor: queue, accessType: .write] = encoderSignalValue
+                    writtenResource[waitIndexFor: queue, accessType: .read] = encoderSignalValue
                 }
             }
         }
