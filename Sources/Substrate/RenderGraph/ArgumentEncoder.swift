@@ -101,10 +101,24 @@ public struct BufferBacked<T> {
 /// `BufferBacked` is a property wrapper that materialises a `shared` `ArgumentBuffer` from a provided value.
 @propertyWrapper
 public struct ArgumentBufferBacked<T: ArgumentBufferEncodable> {
+    @usableFromInline let flags: ResourceFlags
     @usableFromInline var _wrappedValue: T
     @usableFromInline var isDirty: Bool = false
     @usableFromInline var _buffer: ArgumentBuffer?
     
+    @inlinable
+    public init(wrappedValue: T, flags: ResourceFlags = []) {
+        self.flags = flags
+        self._wrappedValue = wrappedValue
+        self._buffer = nil
+        self.isDirty = true
+    }
+    
+    public mutating func dispose() {
+        self._buffer?.dispose()
+        self._buffer = nil
+        self.isDirty = true
+    }
     
     @inlinable
     public var wrappedValue : T {
@@ -113,6 +127,24 @@ public struct ArgumentBufferBacked<T: ArgumentBufferEncodable> {
         } set {
             self._wrappedValue = newValue
             self.isDirty = true
+        }
+    }
+    
+    public var label: String? {
+        get {
+            return self._buffer?.label
+        }
+        set {
+            if let newValue = newValue {
+                self.setBufferIfNeeded()
+                self._buffer!.label = newValue
+            }
+        }
+    }
+    
+    @usableFromInline mutating func setBufferIfNeeded() {
+        if self._buffer == nil {
+            self._buffer = ArgumentBuffer(descriptor: T.argumentBufferDescriptor, flags: self.flags)
         }
     }
     
@@ -127,17 +159,9 @@ public struct ArgumentBufferBacked<T: ArgumentBufferEncodable> {
     }
     
     @inlinable
-    public init(wrappedValue: T) {
-        self._wrappedValue = wrappedValue
-        self._buffer = nil
-        self.isDirty = true
-    }
-    
-    @inlinable
     public mutating func updateArgumentBuffer() async {
-        let buffer = ArgumentBuffer(descriptor: T.argumentBufferDescriptor)
-        await self._wrappedValue.encode(into: buffer)
-        self._buffer = buffer
+        self.setBufferIfNeeded()
+        await self._wrappedValue.encode(into: self._buffer!)
     }
     
     @inlinable
