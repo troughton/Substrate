@@ -1194,6 +1194,7 @@ public final class RenderGraph {
         
         passLoop: for (passIndex, pass) in passes.enumerated() {
             guard let pass = pass else { continue }
+            activeRenderTargets.reserveCapacity(passes.count)
             
             for i in activeRenderTargets.indices.reversed() {
                 if activeRenderTargets[i].renderTargets.tryMerge(withPass: pass) {
