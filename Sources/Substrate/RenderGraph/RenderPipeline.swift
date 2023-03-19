@@ -237,6 +237,7 @@ public struct RenderPipelineDescriptor : Hashable {
         self.functionConstants = FunctionConstants(functionConstants)
     }
     
+    @_disfavoredOverload
     @available(*, deprecated)
     @inlinable
     public mutating func setFunctionConstants<FC : FunctionConstantCodable>(_ functionConstants: FC) throws {

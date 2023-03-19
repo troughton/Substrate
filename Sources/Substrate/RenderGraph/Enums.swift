@@ -59,7 +59,7 @@ public struct ColorWriteMask : OptionSet, Hashable, Codable, Sendable {
 }
 
 
-public enum PixelFormat : UInt16, Hashable, Codable, CaseIterable {
+public enum PixelFormat : UInt16, Hashable, Codable, CaseIterable, Sendable {
     case invalid = 0
     
     /* Normal 8 bit formats */
