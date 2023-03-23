@@ -31,23 +31,23 @@ public func dot<V : SIMD>(_ a: V, _ b: V) -> V.Scalar where V.Scalar : FixedWidt
 }
 
 extension SIMD where Scalar : FloatingPoint {
-    @inlinable
+    @inlinable @inline(__always)
     public var lengthSquared : Scalar {
         return dot(self, self)
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public var length : Scalar {
         return self.lengthSquared.squareRoot()
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public var normalized : Self {
         return normalize(self)
     }
 }
 
-@inlinable
+@inlinable @inline(__always)
 public func normalize<V : SIMD>(_ v: V) -> V where V.Scalar : FloatingPoint {
     return v / V(repeating: v.length)
 }
