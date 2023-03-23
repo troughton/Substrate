@@ -135,10 +135,10 @@ extension Image where ComponentType == Float {
             // Convolve the middle section of the image.
             for windowI in 0..<Swift.max(swizzledDimensions.x - windowRadiusInclusive, 0) {
                 for c in 0..<self.channelCount {
-                    var dotVector: SIMD4<Float> = .zero
+                    var dotVector: SIMDType<Float> = .zero
                     
                     if pixelWeight != nil {
-                        var pixelWeights: SIMD4<Float> = .zero
+                        var pixelWeights: SIMDType<Float> = .zero
                         for i in 0..<windowWidth {
                             // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
                             // See https://github.com/apple/swift/issues/54069 for details.
@@ -187,10 +187,10 @@ extension Image where ComponentType == Float {
             // Now handle the end section where we need to clamp/wrap.
             for windowI in Swift.max(swizzledDimensions.x - windowRadiusInclusive, 0)..<swizzledDimensions.x {
                 for c in 0..<self.channelCount {
-                    var dotVector = SIMD4<Float>.zero
+                    var dotVector = SIMDType<Float>.zero
                     
                     if pixelWeight != nil {
-                        var pixelWeights: SIMD4<Float> = .zero
+                        var pixelWeights: SIMDType<Float> = .zero
                         for i in 0..<windowWidth {
                             // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
                             // See https://github.com/apple/swift/issues/54069 for details.
