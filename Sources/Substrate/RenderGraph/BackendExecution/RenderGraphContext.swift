@@ -35,6 +35,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     var enqueuedEmptyFrameCompletionHandlers = [(UInt64, @Sendable (_ queueCommandRange: Range<UInt64>) async -> Void)]()
     
     let accessSemaphore: AsyncSemaphore?
+    var needsWaitOnAccessSemaphore: Bool = true
     
     public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
@@ -63,6 +64,14 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     
     public nonisolated var transientRegistry: (any BackendTransientResourceRegistry)? {
         self.resourceRegistry
+    }
+    
+    public func acquireResourceAccess() async {
+        if self.needsWaitOnAccessSemaphore {
+            await self.accessSemaphore?.wait()
+            self.needsWaitOnAccessSemaphore = false
+        }
+        self.resourceRegistry?.prepareFrame()
     }
     
     func registerWindowTexture(for texture: Texture, swapchain: Any) async {
@@ -120,6 +129,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                 CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
                 self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
                 self.accessSemaphore?.signal()
+                self.needsWaitOnAccessSemaphore = true
                 
                 Task { await onCompletion() }
             }
@@ -132,7 +142,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                             waitingFor gpuQueueWaitIndices: QueueCommandIndices,
                             onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil,
                             onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken {
-        await self.accessSemaphore?.wait()
+        await self.acquireResourceAccess()
         
         await self.backend.reloadShaderLibraryIfNeeded()
         
@@ -142,11 +152,11 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     let (passes, _, usedResources) = await renderGraph.compile(renderPasses: renderPasses)
                     
                     // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
-                    self.resourceRegistry?.prepareFrame()
                     
                     if passes.isEmpty {
                         if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
                             self.accessSemaphore?.signal()
+                            self.needsWaitOnAccessSemaphore = true
                             await onCompletion(self.queueCommandBufferIndex..<self.queueCommandBufferIndex)
                         } else {
                             self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, onCompletion))

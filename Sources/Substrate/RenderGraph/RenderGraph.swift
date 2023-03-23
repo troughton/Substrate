@@ -727,6 +727,7 @@ protocol _RenderGraphContext : Actor {
     nonisolated var renderGraphQueue: Queue { get }
     func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], waitingFor gpuQueueWaitIndices: QueueCommandIndices, onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
+    func acquireResourceAccess() async
 }
 
 @usableFromInline enum RenderGraphTagType : UInt64 {
@@ -1425,6 +1426,15 @@ public final class RenderGraph {
                 self.lastGraphFirstCommand = queueCommandRange.first!
                 self.lastGraphLastCommand = queueCommandRange.last!
             }
+        }
+        
+//        print("Frame executed in \(self.lastGraphDurations().gpuTime * 1000.0)ms")
+    }
+    
+    public func withCPUResourceAccess<R>(perform: () async throws -> R) async rethrows -> R {
+        await self.context.acquireResourceAccess()
+        return try await Self.$activeRenderGraph.withValue(self) {
+            return try await perform()
         }
     }
     
