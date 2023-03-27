@@ -43,13 +43,11 @@ extension Image where ComponentType == Float {
     func _convolve(weights: [Float], wrapMode: ImageEdgeWrapMode = .clamp, pixelSwizzle: SIMD2<Int>, pixelWeight: ((_ x: Int, _ y: Int) -> Float)? = nil, into result: inout Image<Float>) {
         precondition(result.width == self.width && result.height == self.height && result.channelCount == self.channelCount)
         
-        typealias SIMDType<T: SIMDScalar> = SIMD4<T>
+        typealias SIMDType<T: SIMDScalar> = SIMD8<T>
         let simdWidth = SIMDType<Float>.scalarCount
         
         let windowRadiusInclusive = weights.count
         let windowRadius = windowRadiusInclusive - 1
-        var slidingWindow = [SIMDType<Float>](repeating: .zero, count: (2 * windowRadius + 1) * self.channelCount) // stored as e.g. (-2r, -1r, 0r, 1r, 2r, -2g, -1g etc.)
-        var pixelWeightsSlidingWindow = [SIMDType<Float>](repeating: .zero, count: (2 * windowRadius + 1))
         
         let weightsVector = self.weightsToWeightVector(weights: weights)
         let windowWidth = weightsVector.count
@@ -58,171 +56,125 @@ extension Image where ComponentType == Float {
         let swizzledDimensions = dimensions[pixelSwizzle]
         
         let strideDimension = swizzledDimensions.y
-        for base in stride(from: 0, to: strideDimension, by: simdWidth) {
-            var normalVector = SIMDType<Int>(repeating: base)
-            for i in 1..<simdWidth {
-                normalVector[i] += i
-            }
-            let simdMask = normalVector .< SIMDType(repeating: strideDimension)
+        
+        let slidingWindowCount = (2 * windowRadius + 1) * self.channelCount
+        let pixelWeightsSlidingWindowCount = pixelWeight != nil ? (2 * windowRadius + 1) : 0
+        
+        withUnsafeTemporaryAllocation(byteCount: (slidingWindowCount + pixelWeightsSlidingWindowCount) * MemoryLayout<SIMDType<Float>>.stride, alignment: MemoryLayout<SIMDType<Float>>.alignment) { slidingWindow in
+            let slidingWindow = slidingWindow.bindMemory(to: SIMDType<Float>.self)
+            let pixelWeightsSlidingWindow = UnsafeMutableBufferPointer(rebasing: slidingWindow.dropFirst(slidingWindowCount))
             
-            // Load the elements before the current pixel.
-            for windowI in 0..<windowRadius {
-                let wrappedCoord = self.computeWrappedCoordinate(coord: windowI - windowRadius, size: swizzledDimensions.x, wrapMode: wrapMode)
-                
-                for c in 0..<self.channelCount {
-                    if let wrappedCoord = wrappedCoord {
-                        for i in 0..<simdWidth {
-                            let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
-                            slidingWindow[c * windowWidth + windowI][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
-                        }
-                    } else {
-                        slidingWindow[c * windowWidth + windowI] = .zero
-                    }
+            for base in stride(from: 0, to: strideDimension, by: simdWidth) {
+                var normalVector = SIMDType<Int>(repeating: base)
+                for i in 1..<simdWidth {
+                    normalVector[i] += i
                 }
+                let simdMask = normalVector .< SIMDType(repeating: strideDimension)
                 
-                if let pixelWeight = pixelWeight {
-                    if let wrappedCoord = wrappedCoord {
-                        for i in 0..<simdWidth {
-                            let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
-                            pixelWeightsSlidingWindow[windowI][i] = simdMask[i] ? pixelWeight(pixel.x, pixel.y) : 0.0
+                // Load the elements before the current pixel.
+                for windowI in 0..<windowRadius {
+                    let wrappedCoord = self.computeWrappedCoordinate(coord: windowI - windowRadius, size: swizzledDimensions.x, wrapMode: wrapMode)
+                    
+                    for c in 0..<self.channelCount {
+                        if let wrappedCoord = wrappedCoord {
+                            for i in 0..<simdWidth {
+                                let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
+                                slidingWindow[c * windowWidth + windowI][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
+                            }
+                        } else {
+                            slidingWindow[c * windowWidth + windowI] = .zero
                         }
-                    } else {
-                        pixelWeightsSlidingWindow[windowI] = .zero
                     }
-                }
-            }
-            
-            // Load the current pixel (x = 0)
-            for c in 0..<self.channelCount {
-                for i in 0..<simdWidth {
-                    let pixel = SIMD2(0, normalVector[i])[pixelSwizzle]
-                    slidingWindow[c * windowWidth + windowRadius][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
                     
                     if let pixelWeight = pixelWeight {
-                        pixelWeightsSlidingWindow[windowRadius][i] = simdMask[i] ? pixelWeight(pixel.x, pixel.y) : 0.0
-                    }
-                }
-            }
-            
-            // Fill the sliding window for the elements after pixel 0.
-            for windowI in 1..<windowRadiusInclusive {
-                let windowOffset = windowI + windowRadius
-                let wrappedCoord = self.computeWrappedCoordinate(coord: windowI, size: swizzledDimensions.x, wrapMode: wrapMode)
-                
-                for c in 0..<self.channelCount {
-                    if let wrappedCoord = wrappedCoord {
-                        for i in 0..<simdWidth {
-                            let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
-                            slidingWindow[c * windowWidth + windowOffset][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
+                        if let wrappedCoord = wrappedCoord {
+                            for i in 0..<simdWidth {
+                                let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
+                                pixelWeightsSlidingWindow[windowI][i] = simdMask[i] ? pixelWeight(pixel.x, pixel.y) : 0.0
+                            }
+                        } else {
+                            pixelWeightsSlidingWindow[windowI] = .zero
                         }
-                    } else {
-                        slidingWindow[c * windowWidth + windowOffset] = .zero
                     }
                 }
                 
-                if let pixelWeight = pixelWeight {
-                    if let wrappedCoord = wrappedCoord {
-                        for i in 0..<simdWidth {
-                            let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
-                            pixelWeightsSlidingWindow[windowOffset][i] = simdMask[i] ? pixelWeight(pixel.x, pixel.y) : 0.0
-                        }
-                    } else {
-                        pixelWeightsSlidingWindow[windowOffset] = .zero
-                    }
-                }
-            }
-            
-            // Convolve the middle section of the image.
-            for windowI in 0..<Swift.max(swizzledDimensions.x - windowRadiusInclusive, 0) {
+                // Load the current pixel (x = 0)
                 for c in 0..<self.channelCount {
-                    var dotVector: SIMDType<Float> = .zero
-                    
-                    if pixelWeight != nil {
-                        var pixelWeights: SIMDType<Float> = .zero
-                        for i in 0..<windowWidth {
-                            // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
-                            // See https://github.com/apple/swift/issues/54069 for details.
-                            let weightsProduct = weightsVector[i] * pixelWeightsSlidingWindow[i]
-                            pixelWeights += weightsProduct
-                            dotVector += weightsVector[i] * weightsProduct
+                    for i in 0..<simdWidth {
+                        let pixel = SIMD2(0, normalVector[i])[pixelSwizzle]
+                        slidingWindow[c * windowWidth + windowRadius][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
+                        
+                        if let pixelWeight = pixelWeight {
+                            pixelWeightsSlidingWindow[windowRadius][i] = simdMask[i] ? pixelWeight(pixel.x, pixel.y) : 0.0
                         }
-                        dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
-                    } else {
-                        for i in 0..<windowWidth {
-                            // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
-                            // See https://github.com/apple/swift/issues/54069 for details.
-                            dotVector += weightsVector[i] * slidingWindow[c * windowWidth + i]
-                        }
-                    }
-                    
-                    for i in 0..<simdWidth where simdMask[i] {
-                        let pixel = SIMD2(windowI, normalVector[i])[pixelSwizzle]
-                        result[pixel.x, pixel.y, channel: c] = dotVector[i]
-                    }
-                    
-                    for i in 1..<windowWidth {
-                        slidingWindow[c * windowWidth + i - 1] = slidingWindow[c * windowWidth + i]
-                    }
-                    
-                    // Load the next pixel into the sliding window.
-                    for i in 0..<simdWidth where simdMask[i] {
-                        let pixel = SIMD2(windowI + windowRadiusInclusive, normalVector[i])[pixelSwizzle]
-                        slidingWindow[c * windowWidth + windowWidth - 1][i] = self[pixel.x, pixel.y, channel: c]
                     }
                 }
                 
-                if let pixelWeight = pixelWeight {
-                    for i in 1..<windowWidth {
-                        pixelWeightsSlidingWindow[i - 1] = pixelWeightsSlidingWindow[i]
+                // Fill the sliding window for the elements after pixel 0.
+                for windowI in 1..<windowRadiusInclusive {
+                    let windowOffset = windowI + windowRadius
+                    let wrappedCoord = self.computeWrappedCoordinate(coord: windowI, size: swizzledDimensions.x, wrapMode: wrapMode)
+                    
+                    for c in 0..<self.channelCount {
+                        if let wrappedCoord = wrappedCoord {
+                            for i in 0..<simdWidth {
+                                let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
+                                slidingWindow[c * windowWidth + windowOffset][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
+                            }
+                        } else {
+                            slidingWindow[c * windowWidth + windowOffset] = .zero
+                        }
                     }
                     
-                    // Load the next pixel into the sliding window.
-                    for i in 0..<simdWidth where simdMask[i] {
-                        let pixel = SIMD2(windowI + windowRadiusInclusive, normalVector[i])[pixelSwizzle]
-                        pixelWeightsSlidingWindow[windowWidth - 1][i] = pixelWeight(pixel.x, pixel.y)
+                    if let pixelWeight = pixelWeight {
+                        if let wrappedCoord = wrappedCoord {
+                            for i in 0..<simdWidth {
+                                let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
+                                pixelWeightsSlidingWindow[windowOffset][i] = simdMask[i] ? pixelWeight(pixel.x, pixel.y) : 0.0
+                            }
+                        } else {
+                            pixelWeightsSlidingWindow[windowOffset] = .zero
+                        }
                     }
                 }
-            }
-            
-            // Now handle the end section where we need to clamp/wrap.
-            for windowI in Swift.max(swizzledDimensions.x - windowRadiusInclusive, 0)..<swizzledDimensions.x {
-                for c in 0..<self.channelCount {
-                    var dotVector = SIMDType<Float>.zero
-                    
-                    if pixelWeight != nil {
-                        var pixelWeights: SIMDType<Float> = .zero
-                        for i in 0..<windowWidth {
-                            // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
-                            // See https://github.com/apple/swift/issues/54069 for details.
-                            let weightsProduct = weightsVector[i] * pixelWeightsSlidingWindow[i]
-                            pixelWeights += weightsProduct
-                            dotVector += weightsVector[i] * weightsProduct
+                
+                // Convolve the middle section of the image.
+                for windowI in 0..<Swift.max(swizzledDimensions.x - windowRadiusInclusive, 0) {
+                    for c in 0..<self.channelCount {
+                        var dotVector: SIMDType<Float> = .zero
+                        
+                        if pixelWeight != nil {
+                            var pixelWeights: SIMDType<Float> = .zero
+                            for i in 0..<windowWidth {
+                                // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
+                                // See https://github.com/apple/swift/issues/54069 for details.
+                                let weightsProduct = weightsVector[i] * pixelWeightsSlidingWindow[i]
+                                pixelWeights += weightsProduct
+                                dotVector += weightsVector[i] * weightsProduct
+                            }
+                            dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
+                        } else {
+                            for i in 0..<windowWidth {
+                                // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
+                                // See https://github.com/apple/swift/issues/54069 for details.
+                                dotVector += weightsVector[i] * slidingWindow[c * windowWidth + i]
+                            }
                         }
-                        dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
-                    } else {
-                        for i in 0..<windowWidth {
-                            // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
-                            // See https://github.com/apple/swift/issues/54069 for details.
-                            dotVector += weightsVector[i] * slidingWindow[c * windowWidth + i]
+                        
+                        for i in 0..<simdWidth where simdMask[i] {
+                            let pixel = SIMD2(windowI, normalVector[i])[pixelSwizzle]
+                            result[pixel.x, pixel.y, channel: c] = dotVector[i]
                         }
-                    }
-                    
-                    for i in 0..<simdWidth where simdMask[i] {
-                        let pixel = SIMD2(windowI, normalVector[i])[pixelSwizzle]
-                        result[pixel.x, pixel.y, channel: c] = dotVector[i]
-                    }
-                    
-                    for i in 1..<windowWidth {
-                        slidingWindow[c * windowWidth + i - 1] = slidingWindow[c * windowWidth + i]
-                    }
-                    
-                    if let wrappedCoord = self.computeWrappedCoordinate(coord: windowI + windowRadiusInclusive, size: swizzledDimensions.x, wrapMode: wrapMode) {
-                        for i in 0..<simdWidth {
-                            let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
-                            slidingWindow[c * windowWidth + windowWidth - 1][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
+                        
+                        for i in 1..<windowWidth {
+                            slidingWindow[c * windowWidth + i - 1] = slidingWindow[c * windowWidth + i]
                         }
-                    } else {
-                        slidingWindow[c * windowWidth + windowWidth - 1] = .zero
+                        
+                        // Load the next pixel into the sliding window.
+                        for i in 0..<simdWidth where simdMask[i] {
+                            let pixel = SIMD2(windowI + windowRadiusInclusive, normalVector[i])[pixelSwizzle]
+                            slidingWindow[c * windowWidth + windowWidth - 1][i] = self[pixel.x, pixel.y, channel: c]
+                        }
                     }
                     
                     if let pixelWeight = pixelWeight {
@@ -230,13 +182,68 @@ extension Image where ComponentType == Float {
                             pixelWeightsSlidingWindow[i - 1] = pixelWeightsSlidingWindow[i]
                         }
                         
+                        // Load the next pixel into the sliding window.
+                        for i in 0..<simdWidth where simdMask[i] {
+                            let pixel = SIMD2(windowI + windowRadiusInclusive, normalVector[i])[pixelSwizzle]
+                            pixelWeightsSlidingWindow[windowWidth - 1][i] = pixelWeight(pixel.x, pixel.y)
+                        }
+                    }
+                }
+                
+                // Now handle the end section where we need to clamp/wrap.
+                for windowI in Swift.max(swizzledDimensions.x - windowRadiusInclusive, 0)..<swizzledDimensions.x {
+                    for c in 0..<self.channelCount {
+                        var dotVector = SIMDType<Float>.zero
+                        
+                        if pixelWeight != nil {
+                            var pixelWeights: SIMDType<Float> = .zero
+                            for i in 0..<windowWidth {
+                                // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
+                                // See https://github.com/apple/swift/issues/54069 for details.
+                                let weightsProduct = weightsVector[i] * pixelWeightsSlidingWindow[i]
+                                pixelWeights += weightsProduct
+                                dotVector += weightsVector[i] * weightsProduct
+                            }
+                            dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
+                        } else {
+                            for i in 0..<windowWidth {
+                                // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
+                                // See https://github.com/apple/swift/issues/54069 for details.
+                                dotVector += weightsVector[i] * slidingWindow[c * windowWidth + i]
+                            }
+                        }
+                        
+                        for i in 0..<simdWidth where simdMask[i] {
+                            let pixel = SIMD2(windowI, normalVector[i])[pixelSwizzle]
+                            result[pixel.x, pixel.y, channel: c] = dotVector[i]
+                        }
+                        
+                        for i in 1..<windowWidth {
+                            slidingWindow[c * windowWidth + i - 1] = slidingWindow[c * windowWidth + i]
+                        }
+                        
                         if let wrappedCoord = self.computeWrappedCoordinate(coord: windowI + windowRadiusInclusive, size: swizzledDimensions.x, wrapMode: wrapMode) {
                             for i in 0..<simdWidth {
                                 let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
-                                pixelWeightsSlidingWindow[windowWidth - 1][i] = simdMask[i] ? pixelWeight(pixel.x, pixel.y) : 0.0
+                                slidingWindow[c * windowWidth + windowWidth - 1][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
                             }
                         } else {
-                            pixelWeightsSlidingWindow[windowWidth - 1] = .zero
+                            slidingWindow[c * windowWidth + windowWidth - 1] = .zero
+                        }
+                        
+                        if let pixelWeight = pixelWeight {
+                            for i in 1..<windowWidth {
+                                pixelWeightsSlidingWindow[i - 1] = pixelWeightsSlidingWindow[i]
+                            }
+                            
+                            if let wrappedCoord = self.computeWrappedCoordinate(coord: windowI + windowRadiusInclusive, size: swizzledDimensions.x, wrapMode: wrapMode) {
+                                for i in 0..<simdWidth {
+                                    let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
+                                    pixelWeightsSlidingWindow[windowWidth - 1][i] = simdMask[i] ? pixelWeight(pixel.x, pixel.y) : 0.0
+                                }
+                            } else {
+                                pixelWeightsSlidingWindow[windowWidth - 1] = .zero
+                            }
                         }
                     }
                 }
