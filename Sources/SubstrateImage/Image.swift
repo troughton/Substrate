@@ -616,21 +616,26 @@ public struct Image<ComponentType> : AnyImage {
         self.alphaMode = alphaMode
     }
     
-    @inlinable
+    @inlinable @inline(__always)
+    func uncheckedIndex(x: Int, y: Int, channel: Int) -> Int {
+        return (y &* self.width &+ x) &* self.channelCount &+ channel
+    }
+    
+    @inlinable @inline(__always)
     func setUnchecked(x: Int, y: Int, channel: Int, value: T) {
-        self.storage.data[y &* self.width &* self.channelCount + x &* self.channelCount &+ channel] = value
+        self.storage.data[self.uncheckedIndex(x: x, y: y, channel: channel)] = value
     }
     
     @inlinable
     public subscript(x: Int, y: Int, channel channel: Int) -> T {
         @inline(__always) get {
             precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channelCount)
-            return self.storage.data[y &* self.width &* self.channelCount + x &* self.channelCount &+ channel]
+            return self.storage.data[self.uncheckedIndex(x: x, y: y, channel: channel)]
         }
         @inline(__always) set {
             precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channelCount)
             self.ensureUniqueness()
-            self.storage.data[y &* self.width &* self.channelCount &+ x * self.channelCount &+ channel] = newValue
+            self.storage.data[self.uncheckedIndex(x: x, y: y, channel: channel)] = newValue
         }
     }
     
@@ -640,7 +645,7 @@ public struct Image<ComponentType> : AnyImage {
             x < self.width, y < self.height, channel < self.channelCount else {
                 return nil
         }
-        return self.storage.data[y &* self.width &* self.channelCount &+ x * self.channelCount &+ channel]
+        return self.storage.data[self.uncheckedIndex(x: x, y: y, channel: channel)]
     }
     
     @inlinable
@@ -1448,14 +1453,14 @@ extension Double: _ImageNormalizedComponent {
 extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     @inlinable
     public subscript(floatVectorAt x: Int, _ y: Int) -> SIMD4<ComponentType._ImageUnnormalizedType> {
-        get {
+        @inline(__always) get {
             let value = self[x, y]
             return SIMD4(value.x._imageNormalizedComponentToFloat(),
                          value.y._imageNormalizedComponentToFloat(),
                          value.z._imageNormalizedComponentToFloat(),
                          value.w._imageNormalizedComponentToFloat())
         }
-        set {
+        @inline(__always) set {
             self[x, y] = SIMD4(ComponentType(_imageNormalizingFloat: newValue.x),
                                ComponentType(_imageNormalizingFloat: newValue.y),
                                ComponentType(_imageNormalizingFloat: newValue.z),
