@@ -43,6 +43,11 @@ extension Image where ComponentType == Float {
     func _convolve(weights: [Float], wrapMode: ImageEdgeWrapMode = .clamp, pixelSwizzle: SIMD2<Int>, pixelWeight: ((_ x: Int, _ y: Int) -> Float)? = nil, into result: inout Image<Float>) {
         precondition(result.width == self.width && result.height == self.height && result.channelCount == self.channelCount)
         
+        result.ensureUniqueness() // so we can use the setUnchecked methods.
+        
+        let inputBuffer = self.storage.data
+        let resultBuffer = result.storage.data
+        
         typealias SIMDType<T: SIMDScalar> = SIMD8<T>
         let simdWidth = SIMDType<Float>.scalarCount
         
@@ -79,7 +84,7 @@ extension Image where ComponentType == Float {
                         if let wrappedCoord = wrappedCoord {
                             for i in 0..<simdWidth {
                                 let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
-                                slidingWindow[c * windowWidth + windowI][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
+                                slidingWindow[c * windowWidth + windowI][i] = simdMask[i] ? inputBuffer[self.uncheckedIndex(x: pixel.x, y: pixel.y, channel: c)] : 0.0
                             }
                         } else {
                             slidingWindow[c * windowWidth + windowI] = .zero
@@ -102,7 +107,7 @@ extension Image where ComponentType == Float {
                 for c in 0..<self.channelCount {
                     for i in 0..<simdWidth {
                         let pixel = SIMD2(0, normalVector[i])[pixelSwizzle]
-                        slidingWindow[c * windowWidth + windowRadius][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
+                        slidingWindow[c * windowWidth + windowRadius][i] = simdMask[i] ? inputBuffer[self.uncheckedIndex(x: pixel.x, y: pixel.y, channel: c)] : 0.0
                         
                         if let pixelWeight = pixelWeight {
                             pixelWeightsSlidingWindow[windowRadius][i] = simdMask[i] ? pixelWeight(pixel.x, pixel.y) : 0.0
@@ -119,7 +124,7 @@ extension Image where ComponentType == Float {
                         if let wrappedCoord = wrappedCoord {
                             for i in 0..<simdWidth {
                                 let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
-                                slidingWindow[c * windowWidth + windowOffset][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
+                                slidingWindow[c * windowWidth + windowOffset][i] = simdMask[i] ? inputBuffer[self.uncheckedIndex(x: pixel.x, y: pixel.y, channel: c)] : 0.0
                             }
                         } else {
                             slidingWindow[c * windowWidth + windowOffset] = .zero
@@ -146,24 +151,29 @@ extension Image where ComponentType == Float {
                         if pixelWeight != nil {
                             var pixelWeights: SIMDType<Float> = .zero
                             for i in 0..<windowWidth {
-                                // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
-                                // See https://github.com/apple/swift/issues/54069 for details.
                                 let weightsProduct = weightsVector[i] * pixelWeightsSlidingWindow[i]
-                                pixelWeights += weightsProduct
+#if SUBSTRATE_IMAGE_FMA || arch(arm64)
+                                pixelWeights.addProduct(SIMDType(repeating: weightsVector[i]), pixelWeightsSlidingWindow[i])
+                                dotVector.addProduct(SIMDType(repeating: weightsVector[i]), weightsProduct)
+#else
+                                pixelWeights += weightsVector[i] * pixelWeightsSlidingWindow[i]
                                 dotVector += weightsVector[i] * weightsProduct
+#endif
                             }
                             dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
                         } else {
                             for i in 0..<windowWidth {
-                                // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
-                                // See https://github.com/apple/swift/issues/54069 for details.
+#if SUBSTRATE_IMAGE_FMA || arch(arm64)
+                                dotVector.addProduct(SIMDType(repeating: weightsVector[i]), slidingWindow[c * windowWidth + i])
+#else
                                 dotVector += weightsVector[i] * slidingWindow[c * windowWidth + i]
+#endif
                             }
                         }
                         
                         for i in 0..<simdWidth where simdMask[i] {
                             let pixel = SIMD2(windowI, normalVector[i])[pixelSwizzle]
-                            result[pixel.x, pixel.y, channel: c] = dotVector[i]
+                            resultBuffer[result.uncheckedIndex(x: pixel.x, y: pixel.y, channel: c)] = dotVector[i]
                         }
                         
                         for i in 1..<windowWidth {
@@ -173,7 +183,7 @@ extension Image where ComponentType == Float {
                         // Load the next pixel into the sliding window.
                         for i in 0..<simdWidth where simdMask[i] {
                             let pixel = SIMD2(windowI + windowRadiusInclusive, normalVector[i])[pixelSwizzle]
-                            slidingWindow[c * windowWidth + windowWidth - 1][i] = self[pixel.x, pixel.y, channel: c]
+                            slidingWindow[c * windowWidth + windowWidth - 1][i] = inputBuffer[self.uncheckedIndex(x: pixel.x, y: pixel.y, channel: c)]
                         }
                     }
                     
@@ -198,24 +208,29 @@ extension Image where ComponentType == Float {
                         if pixelWeight != nil {
                             var pixelWeights: SIMDType<Float> = .zero
                             for i in 0..<windowWidth {
-                                // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
-                                // See https://github.com/apple/swift/issues/54069 for details.
                                 let weightsProduct = weightsVector[i] * pixelWeightsSlidingWindow[i]
-                                pixelWeights += weightsProduct
+#if SUBSTRATE_IMAGE_FMA || arch(arm64)
+                                pixelWeights.addProduct(SIMDType(repeating: weightsVector[i]), pixelWeightsSlidingWindow[i])
+                                dotVector.addProduct(SIMDType(repeating: weightsVector[i]), weightsProduct)
+#else
+                                pixelWeights += weightsVector[i] * pixelWeightsSlidingWindow[i]
                                 dotVector += weightsVector[i] * weightsProduct
+#endif
                             }
                             dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
                         } else {
                             for i in 0..<windowWidth {
-                                // FIXME: should be addingProduct/fma, but we don't have a (convenient) way to enable SSE/Neon at compile time, so the resulting library call is a significant bottleneck.
-                                // See https://github.com/apple/swift/issues/54069 for details.
+#if SUBSTRATE_IMAGE_FMA || arch(arm64)
+                                dotVector.addProduct(SIMDType(repeating: weightsVector[i]), slidingWindow[c * windowWidth + i])
+#else
                                 dotVector += weightsVector[i] * slidingWindow[c * windowWidth + i]
+#endif
                             }
                         }
                         
                         for i in 0..<simdWidth where simdMask[i] {
                             let pixel = SIMD2(windowI, normalVector[i])[pixelSwizzle]
-                            result[pixel.x, pixel.y, channel: c] = dotVector[i]
+                            resultBuffer[result.uncheckedIndex(x: pixel.x, y: pixel.y, channel: c)] = dotVector[i]
                         }
                         
                         for i in 1..<windowWidth {
@@ -225,7 +240,7 @@ extension Image where ComponentType == Float {
                         if let wrappedCoord = self.computeWrappedCoordinate(coord: windowI + windowRadiusInclusive, size: swizzledDimensions.x, wrapMode: wrapMode) {
                             for i in 0..<simdWidth {
                                 let pixel = SIMD2(wrappedCoord, normalVector[i])[pixelSwizzle]
-                                slidingWindow[c * windowWidth + windowWidth - 1][i] = simdMask[i] ? self[pixel.x, pixel.y, channel: c] : 0.0
+                                slidingWindow[c * windowWidth + windowWidth - 1][i] = simdMask[i] ? inputBuffer[self.uncheckedIndex(x: pixel.x, y: pixel.y, channel: c)] : 0.0
                             }
                         } else {
                             slidingWindow[c * windowWidth + windowWidth - 1] = .zero
