@@ -152,12 +152,11 @@ extension Image where ComponentType == Float {
                             var pixelWeights: SIMDType<Float> = .zero
                             for i in 0..<windowWidth {
                                 let weightsProduct = weightsVector[i] * pixelWeightsSlidingWindow[i]
+                                pixelWeights += weightsProduct
 #if SUBSTRATE_IMAGE_FMA || arch(arm64)
-                                pixelWeights.addProduct(SIMDType(repeating: weightsVector[i]), pixelWeightsSlidingWindow[i])
-                                dotVector.addProduct(SIMDType(repeating: weightsVector[i]), weightsProduct)
+                                dotVector.addProduct(weightsProduct, slidingWindow[c * windowWidth + i])
 #else
-                                pixelWeights += weightsVector[i] * pixelWeightsSlidingWindow[i]
-                                dotVector += weightsVector[i] * weightsProduct
+                                dotVector += weightsProduct * slidingWindow[c * windowWidth + i]
 #endif
                             }
                             dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
@@ -209,12 +208,11 @@ extension Image where ComponentType == Float {
                             var pixelWeights: SIMDType<Float> = .zero
                             for i in 0..<windowWidth {
                                 let weightsProduct = weightsVector[i] * pixelWeightsSlidingWindow[i]
+                                pixelWeights += weightsProduct
 #if SUBSTRATE_IMAGE_FMA || arch(arm64)
-                                pixelWeights.addProduct(SIMDType(repeating: weightsVector[i]), pixelWeightsSlidingWindow[i])
-                                dotVector.addProduct(SIMDType(repeating: weightsVector[i]), weightsProduct)
+                                dotVector.addProduct(weightsProduct, slidingWindow[c * windowWidth + i])
 #else
-                                pixelWeights += weightsVector[i] * pixelWeightsSlidingWindow[i]
-                                dotVector += weightsVector[i] * weightsProduct
+                                dotVector += weightsProduct * slidingWindow[c * windowWidth + i]
 #endif
                             }
                             dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
