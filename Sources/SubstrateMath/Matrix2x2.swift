@@ -9,6 +9,26 @@ public struct Matrix2x2<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
     public var columns: SIMD4<Scalar>
   
     @inlinable
+    public var c0: SIMD2<Scalar> {
+        get {
+            return self.columns.xy
+        }
+        set {
+            self.columns.xy = newValue
+        }
+    }
+    
+    @inlinable
+    public var c1: SIMD2<Scalar> {
+        get {
+            return self.columns.zw
+        }
+        set {
+            self.columns.zw = newValue
+        }
+    }
+    
+    @inlinable
     public init() {
         self.columns = SIMD4(1.0, 0.0, 0.0, 1.0)
     }
@@ -72,8 +92,18 @@ public struct Matrix2x2<Scalar: SIMDScalar & BinaryFloatingPoint> : Hashable {
     }
     
     @inlinable
+    public var adjugate: Matrix2x2 {
+        return Matrix2x2(SIMD4(self.columns.w, -self.columns.y, -self.columns.z, self.columns.x))
+    }
+    
+    @inlinable
     public var determinant: Scalar {
         return self.columns.x * self.columns.w - self.columns.y * self.columns.z
+    }
+    
+    @inlinable
+    public var inverse: Matrix2x2 {
+        return self.adjugate * (1.0 / self.determinant)
     }
     
     @inlinable
