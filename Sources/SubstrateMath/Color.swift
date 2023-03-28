@@ -290,7 +290,8 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             if x >= 0.01125000 {
                 return (420.0 + Scalar.log10((x + 0.01) / (0.18 + 0.01)) * 261.5) / 1023.0
             } else {
-                return (x * (171.2102946929 - 95.0)/0.01125000 + 95.0) / 1023.0
+                let scale: Scalar = (171.2102946929 - 95.0)/0.01125000
+                return (x * scale + 95.0) / 1023.0
             }
         case .pq:
             let m1: Scalar = 1305.0 / 8192.0
