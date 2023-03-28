@@ -160,6 +160,9 @@ extension Image where ComponentType == Float {
 #endif
                             }
                             dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
+                            
+                            let pixelWeight = pixelWeightsSlidingWindow[windowRadius]
+                            dotVector = (SIMDType<Float>.one - pixelWeight) * slidingWindow[c * windowWidth + windowRadius] + pixelWeight * dotVector
                         } else {
                             for i in 0..<windowWidth {
 #if SUBSTRATE_IMAGE_FMA || arch(arm64)
@@ -216,6 +219,9 @@ extension Image where ComponentType == Float {
 #endif
                             }
                             dotVector /= pixelWeights.replacing(with: .ulpOfOne, where: pixelWeights .== .zero)
+                            
+                            let pixelWeight = pixelWeightsSlidingWindow[windowRadius]
+                            dotVector = (SIMDType<Float>.one - pixelWeight) * slidingWindow[c * windowWidth + windowRadius] + pixelWeight * dotVector
                         } else {
                             for i in 0..<windowWidth {
 #if SUBSTRATE_IMAGE_FMA || arch(arm64)
