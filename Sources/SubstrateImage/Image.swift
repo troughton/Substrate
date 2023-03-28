@@ -1743,6 +1743,34 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
         
         return (mean, mean / count, mean / (count - 1))
     }
+    
+    
+    @inlinable
+    public func meanAndVariance(weightsImage: Image<ComponentType>) -> (mean: SIMD4<ComponentType._ImageUnnormalizedType>, variance: SIMD4<ComponentType._ImageUnnormalizedType>, sampleVariance: SIMD4<ComponentType._ImageUnnormalizedType>) {
+        // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+        var count = SIMD4<ComponentType._ImageUnnormalizedType>.zero
+        var mean = SIMD4<ComponentType._ImageUnnormalizedType>.zero
+        var mean2 = SIMD4<ComponentType._ImageUnnormalizedType>.zero
+        
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let value = self[floatVectorAt: x, y]
+                var weight = weightsImage[floatVectorAt: x, y]
+                if weightsImage.channelCount == 1 {
+                    weight = SIMD4(repeating: weight.x)
+                }
+                
+                count += weight
+                
+                let delta = value - mean
+                mean += delta * (weight / count.replacing(with: .ulpOfOne, where: weight .== .zero))
+                let delta2 = value - mean
+                mean2 += weight * delta * delta2
+            }
+        }
+        
+        return (mean, mean / count, mean / (count - SIMD4<ComponentType._ImageUnnormalizedType>.one))
+    }
 }
 
 extension Image {
