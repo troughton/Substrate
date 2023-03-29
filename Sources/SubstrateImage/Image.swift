@@ -1517,6 +1517,69 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     }
     
     @inlinable
+    func applyWrapMode(_ wrapMode: ImageEdgeWrapMode, floorCoord: SIMD2<Int>, ceilCoord: SIMD2<Int>, size: SIMD2<Int>) -> (floorCoord: SIMD2<Int>, ceilCoord: SIMD2<Int>) {
+        var floorCoord = floorCoord
+        var ceilCoord = ceilCoord
+        switch wrapMode {
+        case .zero:
+            break
+        case .wrap:
+            floorCoord = floorCoord % size
+            ceilCoord = ceilCoord % size
+            floorCoord.replace(with: floorCoord &+ size, where: floorCoord .< .zero)
+            ceilCoord.replace(with: ceilCoord &+ size, where: ceilCoord .< .zero)
+        case .reflect:
+            floorCoord = floorCoord % (2 &* size)
+            ceilCoord = ceilCoord % (2 &* size)
+            
+            floorCoord.replace(with: floorCoord &+ (2 &* size), where: floorCoord .< .zero)
+            ceilCoord.replace(with: ceilCoord &+ (2 &* size), where: ceilCoord .< .zero)
+            
+            floorCoord.replace(with: 2 &* size &- floorCoord, where: floorCoord .>= size)
+            ceilCoord.replace(with: 2 &* size &- ceilCoord, where: ceilCoord .>= size)
+            
+        case .clamp:
+            floorCoord = pointwiseMax(pointwiseMin(floorCoord, size &- .one), .zero)
+            ceilCoord = pointwiseMax(pointwiseMin(ceilCoord, size &- .one), .zero)
+        }
+        
+        return (floorCoord, ceilCoord)
+    }
+    
+    @inlinable
+    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, channel: Int, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        let unwrappedFloorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
+        let unwrappedCeilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
+        let lerpX = ComponentType._ImageUnnormalizedType(pixelCoordinate.x - pixelCoordinate.x.rounded(.down))
+        let lerpY = ComponentType._ImageUnnormalizedType(pixelCoordinate.y - pixelCoordinate.y.rounded(.down))
+        
+        let size = SIMD2(self.width, self.height)
+        
+        var (floorCoord, ceilCoord) = applyWrapMode(horizontalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
+        
+        if horizontalWrapMode != verticalWrapMode {
+            let (vFloorCoord, vCeilCoord) = applyWrapMode(verticalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
+            floorCoord.y = vFloorCoord.y
+            ceilCoord.y = vCeilCoord.y
+        }
+        
+        func readPixel(_ coord: SIMD2<Int>) -> ComponentType._ImageUnnormalizedType {
+            if horizontalWrapMode == .zero, coord.x < 0 || coord.x >= size.x { return .zero }
+            if verticalWrapMode == .zero, coord.y < 0 || coord.y >= size.y { return .zero }
+            return self[coord.x, coord.y, channel: channel]._imageNormalizedComponentToFloat()
+        }
+        
+        let a = readPixel(floorCoord)
+        let b = readPixel(SIMD2(ceilCoord.x, floorCoord.y))
+        let c = readPixel(SIMD2(floorCoord.x, ceilCoord.y))
+        let d = readPixel(ceilCoord)
+        
+        let top = (1.0 - lerpX) * a + lerpX * b
+        let bottom = (1.0 - lerpX) * c + lerpX * d
+        return (1.0 - lerpY) * top + lerpY * bottom
+    }
+    
+    @inlinable
     public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
         let unwrappedFloorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
         let unwrappedCeilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
@@ -1524,48 +1587,18 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
         let lerpY = ComponentType._ImageUnnormalizedType(pixelCoordinate.y - pixelCoordinate.y.rounded(.down))
         
         let size = SIMD2(self.width, self.height)
-        let maxCoord = size &- 1
         
-        func applyWrapMode(_ wrapMode: ImageEdgeWrapMode, floorCoord: SIMD2<Int>, ceilCoord: SIMD2<Int>) -> (floorCoord: SIMD2<Int>, ceilCoord: SIMD2<Int>) {
-            var floorCoord = floorCoord
-            var ceilCoord = ceilCoord
-            switch wrapMode {
-            case .zero:
-                break
-            case .wrap:
-                floorCoord = floorCoord % size
-                ceilCoord = ceilCoord % size
-                floorCoord.replace(with: floorCoord &+ size, where: floorCoord .< .zero)
-                ceilCoord.replace(with: ceilCoord &+ size, where: ceilCoord .< .zero)
-            case .reflect:
-                floorCoord = floorCoord % (2 &* size)
-                ceilCoord = ceilCoord % (2 &* size)
-                
-                floorCoord.replace(with: floorCoord &+ (2 &* size), where: floorCoord .< .zero)
-                ceilCoord.replace(with: ceilCoord &+ (2 &* size), where: ceilCoord .< .zero)
-                
-                floorCoord.replace(with: 2 &* size &- floorCoord, where: floorCoord .> maxCoord)
-                ceilCoord.replace(with: 2 &* size &- ceilCoord, where: ceilCoord .> maxCoord)
-                
-            case .clamp:
-                floorCoord = pointwiseMax(pointwiseMin(floorCoord, maxCoord), .zero)
-                ceilCoord = pointwiseMax(pointwiseMin(ceilCoord, maxCoord), .zero)
-            }
-            
-            return (floorCoord, ceilCoord)
-        }
-        
-        var (floorCoord, ceilCoord) = applyWrapMode(horizontalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord)
+        var (floorCoord, ceilCoord) = applyWrapMode(horizontalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
         
         if horizontalWrapMode != verticalWrapMode {
-            let (vFloorCoord, vCeilCoord) = applyWrapMode(verticalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord)
+            let (vFloorCoord, vCeilCoord) = applyWrapMode(verticalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
             floorCoord.y = vFloorCoord.y
             ceilCoord.y = vCeilCoord.y
         }
         
         func readPixel(_ coord: SIMD2<Int>) -> SIMD4<ComponentType._ImageUnnormalizedType> {
-            if horizontalWrapMode == .zero, coord.x < 0 || coord.x > maxCoord.x { return .zero }
-            if verticalWrapMode == .zero, coord.y < 0 || coord.y > maxCoord.y { return .zero }
+            if horizontalWrapMode == .zero, coord.x < 0 || coord.x >= size.x { return .zero }
+            if verticalWrapMode == .zero, coord.y < 0 || coord.y >= size.y { return .zero }
             return self[floatVectorAt: coord.x, coord.y]
         }
         
