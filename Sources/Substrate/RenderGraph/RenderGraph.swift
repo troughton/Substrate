@@ -1579,7 +1579,7 @@ public final class RenderGraph {
         let signpostState = Self.signposter.beginInterval("Execute RenderGraph", id: self.signpostID)
         defer { Self.signposter.endInterval("Execute RenderGraph", signpostState) }
         
-        self.renderPassLock.lock()
+        await self.renderPassLock.lock()
         
         let renderPasses = self.renderPasses
         let submissionNotifyQueue = self.submissionNotifyQueue

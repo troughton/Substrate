@@ -318,14 +318,14 @@ public struct Queue : Equatable, Sendable {
     public func waitForCommandCompletion(_ index: UInt64) async {
         if self.lastCompletedCommand >= index { return }
         
-        self.lock.lock()
+        await self.lock.lock()
         while self.lastCompletedCommand < index {
             // First, make sure that the slot in the buffer belongs to us
             // by making sure the command has been submitted.
             guard let indexInQueuesArray = self.indexInQueuesArrays(for: index) else {
                 self.lock.unlock()
                 await self.waitForCommandSubmission(index)
-                self.lock.lock()
+                await self.lock.lock()
                 continue
             }
             
