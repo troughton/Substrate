@@ -1645,6 +1645,10 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
             let scale = inputRangeScale * outputRangeScale
             let offset = inputRangeOffset * outputRangeScale + outputRangeOffset
             
+            if scale == .one, offset == .zero {
+                return
+            }
+            
             for y in 0..<self.height {
                 for x in 0..<self.width {
                     self[floatVectorAt: x, y] = self[floatVectorAt: x, y] * scale + offset
@@ -1694,6 +1698,10 @@ extension Image where ComponentType: _ImageNormalizedComponent, ComponentType._I
             // (x * inputScale * outputScale + inputOffset * outputScale + outputOffset
             let scale = inputRangeScale * outputRangeScale
             let offset = inputRangeOffset * outputRangeScale + outputRangeOffset
+            
+            if scale == 1.0, offset == 0.0 {
+                return
+            }
             
             self.apply(channelRange: channelRange) { val in
                 .init(_imageNormalizingFloat: val._imageNormalizedComponentToFloat() * scale + offset)
