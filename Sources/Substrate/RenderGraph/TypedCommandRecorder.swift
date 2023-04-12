@@ -91,7 +91,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     var depthStencilDescriptorChanged : Bool = false
     @usableFromInline var hasSetPushConstants : Bool = false
     
-    @StateBacked<TypedRenderPipelineDescriptor<R>, RenderPipelineState>
+//    @StateBacked<TypedRenderPipelineDescriptor<R>, RenderPipelineState>
     public var pipeline : TypedRenderPipelineDescriptor<R> {
         didSet {
             self.pipelineDescriptorChanged = true
