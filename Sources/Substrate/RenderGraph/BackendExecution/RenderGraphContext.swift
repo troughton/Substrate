@@ -74,8 +74,13 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         return FrameResourceMap<Backend>(persistentRegistry: self.backend.resourceRegistry, transientRegistry: self.resourceRegistry)
     }
     
-    public nonisolated func withContext<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @escaping @Sendable () async -> T) async -> T {
+    @_unsafeInheritExecutor
+    public nonisolated func withContext<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async -> T) async -> T {
         return await self.taskStream.enqueueAndWait(perform)
+    }
+    
+    public nonisolated func withContextAsync(@_inheritActorContext @_implicitSelfCapture _ perform: @escaping @Sendable () async -> Void) {
+        return self.taskStream.enqueue(perform)
     }
     
     func processEmptyFrameCompletionHandlers(afterSubmissionIndex: UInt64) async {
