@@ -341,7 +341,7 @@ final class FGMTLThreadRenderCommandEncoder {
                 self.triangleFillMode = descriptor.fillMode
             }
                 
-            let state = await stateCaches.renderPipelineCache[descriptor, renderTarget: renderTarget]!
+            let state = await stateCaches.renderPipelineCache.state(descriptor: descriptor, renderTarget: renderTarget)!
             if state !== self.boundPipelineState {
                 encoder.setRenderPipelineState(state)
                 self.boundPipelineState = state
@@ -604,7 +604,7 @@ final class FGMTLComputeCommandEncoder {
             
         case .setComputePipelineDescriptor(let descriptorPtr):
             let descriptor = descriptorPtr.takeUnretainedValue()
-            let state = await stateCaches.computePipelineCache[descriptor.pipelineDescriptor, descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth]!
+            let state = await stateCaches.computePipelineCache.state(descriptor: descriptor.pipelineDescriptor, threadgroupSizeIsMultipleOfThreadExecutionWidth: descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth)!
             if state !== self.boundPipelineState {
                 encoder.setComputePipelineState(state)
                 self.boundPipelineState = state
