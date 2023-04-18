@@ -162,7 +162,7 @@ public struct AffineMatrix2D<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable
     
     public var description : String {
         return """
-                AffineMatrix2D( \(self.c0.x), \(self.c0.y), \(self.c2.x),
+                AffineMatrix2D( \(self.c0.x), \(self.c1.x), \(self.c2.x),
                                 \(self.c0.y), \(self.c1.y), \(self.c2.y) )
                """
     }
