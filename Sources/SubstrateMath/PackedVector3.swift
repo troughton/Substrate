@@ -6,7 +6,7 @@
 typealias PackedSIMD3<Scalar> = PackedVector3<Float>
 typealias PackedVector3d = PackedVector3<Double>
 
-public struct PackedVector3<Scalar: SIMDScalar>: Hashable, Codable {
+public struct PackedVector3<Scalar: SIMDScalar>: Hashable {
     public var x: Scalar
     public var y: Scalar
     public var z: Scalar
@@ -57,6 +57,25 @@ extension SIMD4 {
     @inlinable
     public init(_ xyz: PackedVector3<Scalar>, _ w: Scalar) {
         self.init(xyz.x, xyz.y, xyz.z, w)
+    }
+}
+
+extension PackedVector3: Codable {
+    @inlinable
+    public init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        let x = try container.decode(Scalar.self)
+        let y = try container.decode(Scalar.self)
+        let z = try container.decode(Scalar.self)
+        self.init(x, y, z)
+    }
+    
+    @inlinable
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.unkeyedContainer()
+        try container.encode(self.x)
+        try container.encode(self.y)
+        try container.encode(self.z)
     }
 }
 
