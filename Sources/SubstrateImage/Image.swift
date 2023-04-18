@@ -1618,6 +1618,16 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     }
     
     @inlinable
+    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, channel: Int, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), channel: channel, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode)
+    }
+    
+    @inlinable
+    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, channel: Int, wrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), channel: channel, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
+    }
+    
+    @inlinable
     public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
         return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode)
     }
