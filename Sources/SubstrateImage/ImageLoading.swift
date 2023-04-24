@@ -631,6 +631,11 @@ extension Image where ComponentType == UInt8 {
         let fileInfo = try ImageFileInfo(url: url)
         let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
         
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        
+        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
+        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(format: fileInfo.format, channelCount: channels)
+        
         if fileInfo.decodableByWuffs {
             do {
                 try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
@@ -651,11 +656,6 @@ extension Image where ComponentType == UInt8 {
             return
         }
 #endif
-        
-        let channels = loadingDelegate.channelCount(for: fileInfo)
-        
-        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
-        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(format: fileInfo.format, channelCount: channels)
         
         let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
         setupStbImageAllocatorContext(delegateWrapper)
@@ -825,6 +825,10 @@ extension Image where ComponentType == UInt16 {
         let fileInfo = try ImageFileInfo(url: url)
         let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
         
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
+        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(format: fileInfo.format, channelCount: channels)
+        
         if fileInfo.decodableByWuffs {
             do {
                 try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
@@ -843,10 +847,6 @@ extension Image where ComponentType == UInt16 {
             return
         }
 #endif
-        
-        let channels = loadingDelegate.channelCount(for: fileInfo)
-        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
-        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(format: fileInfo.format, channelCount: channels)
         
         let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
         setupStbImageAllocatorContext(delegateWrapper)
