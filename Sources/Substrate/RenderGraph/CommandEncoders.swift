@@ -382,9 +382,13 @@ public class ResourceBindingEncoder : CommandEncoder {
             return
         }
         
-        let bindingPath = RenderBackend.argumentBufferPath(at: setIndex, stages: A.activeStages)
+        let descriptor = A.argumentBufferDescriptor
         
-        let argumentBuffer = ArgumentBuffer(descriptor: A.argumentBufferDescriptor)
+        if descriptor.arguments.isEmpty {
+            return
+        }
+        
+        let argumentBuffer = ArgumentBuffer(descriptor: descriptor)
         assert(argumentBuffer.bindings.isEmpty)
         arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
      
@@ -405,7 +409,8 @@ public class ResourceBindingEncoder : CommandEncoder {
                 }
             }
         }
-
+        
+        let bindingPath = RenderBackend.argumentBufferPath(at: setIndex, stages: A.activeStages)
         self.pendingArgumentBuffers.append((bindingPath, argumentBuffer, type: .standalone, assumeConsistentUsage: false))
         self.needsUpdateBindings = true
     }
