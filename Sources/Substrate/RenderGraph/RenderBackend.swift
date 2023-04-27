@@ -93,6 +93,7 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     
     var pushConstantPath : ResourceBindingPath { get }
     func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath
+    func argumentBufferEncoder(for descriptor: ArgumentBufferDescriptor) -> UnsafeRawPointer?
 }
 
 public struct RenderBackend {

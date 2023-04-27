@@ -402,6 +402,10 @@ final class UnavailableBackend : SpecificRenderBackend {
         preconditionFailure()
     }
     
+    func argumentBufferEncoder(for descriptor: ArgumentBufferDescriptor) -> UnsafeRawPointer? {
+        preconditionFailure()
+    }
+    
     func backingResource(_ resource: Resource) -> Any? {
         preconditionFailure()
     }

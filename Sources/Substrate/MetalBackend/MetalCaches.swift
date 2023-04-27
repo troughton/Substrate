@@ -249,7 +249,7 @@ final actor MetalDepthStencilStateCache {
 
 final class MetalArgumentEncoderCache {
     let device: MTLDevice
-    private var cache: [ArgumentBufferDescriptor: MTLArgumentEncoder]
+    private var cache: [ArgumentBufferDescriptor: MetalArgumentEncoder]
     let lock = SpinLock()
     
     init(device: MTLDevice) {
@@ -261,7 +261,11 @@ final class MetalArgumentEncoderCache {
         self.lock.deinit()
     }
     
-    public subscript(descriptor: ArgumentBufferDescriptor) -> MTLArgumentEncoder {
+    public subscript(descriptor: ArgumentBufferDescriptor) -> MetalArgumentEncoder {
+        var descriptor = descriptor
+        if descriptor.arguments.last?.arrayLength ?? 0 > 1 {
+            descriptor.arguments[descriptor.arguments.count - 1].arrayLength = descriptor.arguments[descriptor.arguments.count - 1].arrayLength.roundedUpToPowerOfTwo // Reuse the same argument encoder for descriptors with various trailing array sizes.
+        }
         return self.lock.withLock {
             if let encoder = self.cache[descriptor] {
                 return encoder
@@ -269,8 +273,11 @@ final class MetalArgumentEncoderCache {
             
             let arguments = descriptor.argumentDescriptors
             let encoder = self.device.makeArgumentEncoder(arguments: arguments)
-            self.cache[descriptor] = encoder
-            return encoder!
+            let bindingIndexCount = descriptor.arguments.reduce(0, { $0 + max($1.arrayLength, 1) })
+            let maxBindingIndex = ((descriptor.arguments.last?.index ?? -1) + max(descriptor.arguments.last?.arrayLength ?? 1, 1)) - 1
+            let wrappedEncoder = MetalArgumentEncoder(encoder: encoder!, bindingIndexCount: bindingIndexCount, maxBindingIndex: maxBindingIndex)
+            self.cache[descriptor] = wrappedEncoder
+            return wrappedEncoder
         }
     }
 }

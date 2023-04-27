@@ -263,12 +263,12 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 print("Warning: requested heap \(heap) for buffer \(argumentBuffer) is invalid.")
                 return nil
             }
-            guard let mtlBufferObj = mtlHeap.makeBuffer(length: encoder.encodedLength, options: options) else {
+            guard let mtlBufferObj = mtlHeap.makeBuffer(length: encoder.encoder.encodedLength, options: options) else {
                 return nil
             }
             mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
         } else {
-            guard let mtlBufferObj = self.device.makeBuffer(length: encoder.encodedLength, options: options) else {
+            guard let mtlBufferObj = self.device.makeBuffer(length: encoder.encoder.encodedLength, options: options) else {
                 return nil
             }
             mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)

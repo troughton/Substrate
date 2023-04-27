@@ -370,6 +370,10 @@ final class MetalBackend : SpecificRenderBackend {
         return ResourceBindingPath(stages: stages, type: .buffer, argumentBufferIndex: nil, index: index + 1) // Push constants go at index 0
     }
     
+    @usableFromInline func argumentBufferEncoder(for descriptor: ArgumentBufferDescriptor) -> UnsafeRawPointer? {
+        return UnsafeRawPointer(Unmanaged.passUnretained(self.stateCaches.argumentEncoderCache[descriptor]).toOpaque())
+    }
+    
     // MARK: - SpecificRenderBackend conformance
     
     static var requiresResourceResidencyTracking: Bool {

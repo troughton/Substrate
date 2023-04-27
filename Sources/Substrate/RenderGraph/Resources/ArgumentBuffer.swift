@@ -196,11 +196,15 @@ public struct ArgumentBuffer : ResourceProtocol {
         self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: .init(arguments: []), flags: [])
         
         assert(self.encoder == nil)
-        self.replaceEncoder(with: encoder, expectingCurrentValue: nil)
+        _ = self.replaceEncoder(with: encoder, expectingCurrentValue: nil)
     }
     
     public init(descriptor: ArgumentBufferDescriptor, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         precondition(!flags.contains(.historyBuffer), "Argument Buffers cannot be used as history buffers.")
+        
+        guard let encoder = RenderBackend._backend.argumentBufferEncoder(for: descriptor) else {
+            preconditionFailure("Argument buffer encoder couldn't be created.")
+        }
         
         if flags.contains(.persistent) {
             self = PersistentArgumentBufferRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
@@ -214,6 +218,7 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
         
         assert(self.encoder == nil)
+        _ = self.replaceEncoder(with: encoder, expectingCurrentValue: nil)
     }
     
     public init<A : ArgumentBufferEncodable>(encoding arguments: A, setIndex: Int, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
