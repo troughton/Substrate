@@ -11,7 +11,7 @@ import RealModule
 /// Internally, the data is stored in row-major format for size reasons;
 /// however, all operations treat it as a column-major type
 /// It's conceptually a Matrix4x3f but happens to be stored as a 3x4f.
-public struct AffineMatrix<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable, CustomStringConvertible {
+public struct AffineMatrix<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, CustomStringConvertible {
     public var r0 : SIMD4<Scalar>
     public var r1 : SIMD4<Scalar>
     public var r2 : SIMD4<Scalar>
@@ -48,6 +48,19 @@ public struct AffineMatrix<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, 
         self.r2 = SIMD4(c0.z, c1.z, c2.z, c3.z)
         
         assert(SIMD4(c0.w, c1.w, c2.w, c3.w) == SIMD4(0, 0, 0, 1), "Columns cannot be represented as an affine transform.")
+    }
+    
+    /// Creates an instance with the specified columns
+    ///
+    /// - parameter c0: a vector representing column 0
+    /// - parameter c1: a vector representing column 1
+    /// - parameter c2: a vector representing column 2
+    /// - parameter c3: a vector representing column 3
+    @inlinable
+    public init(_ c0: SIMD3<Scalar>, _ c1: SIMD3<Scalar>, _ c2: SIMD3<Scalar>, _ c3: SIMD3<Scalar>) {
+        self.r0 = SIMD4(c0.x, c1.x, c2.x, c3.x)
+        self.r1 = SIMD4(c0.y, c1.y, c2.y, c3.y)
+        self.r2 = SIMD4(c0.z, c1.z, c2.z, c3.z)
     }
     
     @inlinable
@@ -675,5 +688,41 @@ extension AffineMatrix {
             self.r2.w = newValue.z
             assert(newValue.w == 1.0)
         }
+    }
+}
+
+extension AffineMatrix: Codable {
+    @usableFromInline enum CodingKeys: String, CodingKey {
+        case r0
+        case r1
+        case r2
+    }
+    
+    @inlinable
+    public init(from decoder: Decoder) throws {
+        do {
+            var container = try decoder.unkeyedContainer()
+            let c0 = try container.decode(SIMD3<Scalar>.self)
+            let c1 = try container.decode(SIMD3<Scalar>.self)
+            let c2 = try container.decode(SIMD3<Scalar>.self)
+            let c3 = try container.decode(SIMD3<Scalar>.self)
+            self.init(c0, c1, c2, c3)
+        } catch {
+            // Legacy.
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let r0 = try container.decode(SIMD4<Scalar>.self, forKey: .r0)
+            let r1 = try container.decode(SIMD4<Scalar>.self, forKey: .r1)
+            let r2 = try container.decode(SIMD4<Scalar>.self, forKey: .r2)
+            self.init(rows: r0, r1, r2)
+        }
+    }
+    
+    @inlinable
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.unkeyedContainer()
+        try container.encode(self[0].xyz)
+        try container.encode(self[1].xyz)
+        try container.encode(self[2].xyz)
+        try container.encode(self[3].xyz)
     }
 }

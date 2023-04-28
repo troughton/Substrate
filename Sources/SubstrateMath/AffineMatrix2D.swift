@@ -6,7 +6,7 @@
 import RealModule
 
 /// A matrix that can represent 2D affine transformations.
-public struct AffineMatrix2D<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, Codable, CustomStringConvertible {
+public struct AffineMatrix2D<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable, CustomStringConvertible {
     public var c0 : SIMD2<Scalar>
     public var c1 : SIMD2<Scalar>
     public var c2 : SIMD2<Scalar>
@@ -162,7 +162,7 @@ public struct AffineMatrix2D<Scalar: SIMDScalar & BinaryFloatingPoint>: Hashable
     
     public var description : String {
         return """
-                AffineMatrix2D( \(self.c0.x), \(self.c0.y), \(self.c2.x),
+                AffineMatrix2D( \(self.c0.x), \(self.c1.x), \(self.c2.x),
                                 \(self.c0.y), \(self.c1.y), \(self.c2.y) )
                """
     }
@@ -350,5 +350,40 @@ extension AffineMatrix2D {
         set {
             self.c2 = newValue
         }
+    }
+}
+
+
+extension AffineMatrix2D: Codable {
+    @usableFromInline enum CodingKeys: String, CodingKey {
+        case c0
+        case c1
+        case c2
+    }
+    
+    @inlinable
+    public init(from decoder: Decoder) throws {
+        do {
+            var container = try decoder.unkeyedContainer()
+            let c0 = try container.decode(SIMD2<Scalar>.self)
+            let c1 = try container.decode(SIMD2<Scalar>.self)
+            let c2 = try container.decode(SIMD2<Scalar>.self)
+            self.init(c0, c1, c2)
+        } catch {
+            // Legacy.
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let c0 = try container.decode(SIMD2<Scalar>.self, forKey: .c0)
+            let c1 = try container.decode(SIMD2<Scalar>.self, forKey: .c1)
+            let c2 = try container.decode(SIMD2<Scalar>.self, forKey: .c2)
+            self.init(c0, c1, c2)
+        }
+    }
+    
+    @inlinable
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.unkeyedContainer()
+        try container.encode(self.c0)
+        try container.encode(self.c1)
+        try container.encode(self.c2)
     }
 }

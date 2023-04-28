@@ -529,8 +529,8 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
     }
     
     public var primaries: Primaries
-    public var eotf: ColorTransferFunction<Scalar>
     public var referenceWhite: ReferenceWhite
+    public var eotf: ColorTransferFunction<Scalar>
     
     public init(primaries: Primaries, eotf: ColorTransferFunction<Scalar>, referenceWhite: ReferenceWhite) {
         self.primaries = primaries

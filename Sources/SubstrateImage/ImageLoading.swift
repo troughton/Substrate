@@ -104,12 +104,16 @@ public struct ImageFileInfo: Hashable, Codable {
     public let colorSpace: ImageColorSpace
     public let alphaMode: ImageAlphaMode
     
+    /// The physical size of the image in metres.
+    public let physicalSize: SIMD2<Double>?
+    
     public init(width: Int, height: Int, channelCount: Int,
-         bitDepth: Int,
-         isSigned: Bool,
-         isFloatingPoint: Bool,
-         colorSpace: ImageColorSpace,
-         alphaMode: ImageAlphaMode) {
+                bitDepth: Int,
+                isSigned: Bool,
+                isFloatingPoint: Bool,
+                colorSpace: ImageColorSpace,
+                alphaMode: ImageAlphaMode,
+                physicalSize: SIMD2<Double>? = nil) {
         self.format = nil
         self.width = width
         self.height = height
@@ -119,6 +123,7 @@ public struct ImageFileInfo: Hashable, Codable {
         self.isFloatingPoint = isFloatingPoint
         self.colorSpace = colorSpace
         self.alphaMode = alphaMode
+        self.physicalSize = physicalSize
     }
     
     public init(url: URL) throws {
@@ -212,6 +217,8 @@ public struct ImageFileInfo: Hashable, Codable {
             self.bitDepth = 32
             self.alphaMode = channelCount == 2 || channelCount == 4 ? .premultiplied : .none
             
+            self.physicalSize = nil
+            
         case .png:
             var state = LodePNGState()
             lodepng_state_init(&state)
@@ -238,7 +245,7 @@ public struct ImageFileInfo: Hashable, Codable {
                 try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "sBIT")
 //                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "bKGD")
 //                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "hIST")
-//                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "pHYs")
+                try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "pHYs")
                 try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "iCCP")
             }
             
@@ -270,6 +277,12 @@ public struct ImageFileInfo: Hashable, Codable {
                 self.colorSpace = .undefined
             }
             
+            if state.info_png.phys_defined != 0 {
+                self.physicalSize = SIMD2(1.0 / Double(state.info_png.phys_x), 1.0 / Double(state.info_png.phys_y))
+            } else {
+                self.physicalSize = nil
+            }
+            
         case .jpg, .tga, .bmp, .psd, .gif, .hdr:
             var width : Int32 = 0
             var height : Int32 = 0
@@ -297,6 +310,8 @@ public struct ImageFileInfo: Hashable, Codable {
             self.isSigned = false
             self.colorSpace = isHDR ? .linearSRGB : .undefined
             self.alphaMode = componentsPerPixel == 2 || componentsPerPixel == 4 ? .inferred : .none
+            
+            self.physicalSize = nil // TODO: read physical sizes from PSDs
             
         default:
             #if canImport(AppKit)
@@ -360,6 +375,8 @@ public struct ImageFileInfo: Hashable, Codable {
             default:
                 self.alphaMode = .inferred
             }
+            
+            self.physicalSize = nil // TODO: read physical sizes from PSDs
             
             #else
             throw ImageLoadingError.invalidData
@@ -631,6 +648,11 @@ extension Image where ComponentType == UInt8 {
         let fileInfo = try ImageFileInfo(url: url)
         let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
         
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        
+        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
+        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(format: fileInfo.format, channelCount: channels)
+        
         if fileInfo.decodableByWuffs {
             do {
                 try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
@@ -651,11 +673,6 @@ extension Image where ComponentType == UInt8 {
             return
         }
 #endif
-        
-        let channels = loadingDelegate.channelCount(for: fileInfo)
-        
-        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
-        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(format: fileInfo.format, channelCount: channels)
         
         let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
         setupStbImageAllocatorContext(delegateWrapper)
@@ -825,6 +842,10 @@ extension Image where ComponentType == UInt16 {
         let fileInfo = try ImageFileInfo(url: url)
         let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
         
+        let channels = loadingDelegate.channelCount(for: fileInfo)
+        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
+        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(format: fileInfo.format, channelCount: channels)
+        
         if fileInfo.decodableByWuffs {
             do {
                 try self.init(wuffsFileAt: url, fileInfo: fileInfo, colorSpace: colorSpace, alphaMode: alphaMode, loadingDelegate: loadingDelegate)
@@ -843,10 +864,6 @@ extension Image where ComponentType == UInt16 {
             return
         }
 #endif
-        
-        let channels = loadingDelegate.channelCount(for: fileInfo)
-        let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
-        let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode.inferFromFileFormat(format: fileInfo.format, channelCount: channels)
         
         let delegateWrapper = STBLoadingDelegate(loadingDelegate: loadingDelegate, expectedSize: MemoryLayout<ComponentType>.stride * fileInfo.width * fileInfo.height * channels)
         setupStbImageAllocatorContext(delegateWrapper)

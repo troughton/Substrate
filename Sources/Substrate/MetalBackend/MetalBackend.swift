@@ -395,6 +395,10 @@ final class MetalBackend : SpecificRenderBackend {
         return ResourceBindingPath(type: .buffer, index: index + 1, argumentBufferIndex: nil, stages: stages) // Push constants go at index 0
     }
     
+    @usableFromInline func argumentBufferEncoder(for descriptor: ArgumentBufferDescriptor) -> UnsafeRawPointer? {
+        return UnsafeRawPointer(Unmanaged.passUnretained(self.stateCaches.argumentEncoderCache[descriptor]).toOpaque())
+    }
+    
     // MARK: - SpecificRenderBackend conformance
     
     static var requiresResourceResidencyTracking: Bool {
@@ -753,7 +757,7 @@ final class MetalBackend : SpecificRenderBackend {
         if index >= queue.lastSubmittedCommand, let contextRegistry = context.resourceRegistry {
             Task {
                 try await Task.sleep(nanoseconds: 1_000_000_000) // wait for one second.
-                await context.withContext {
+                context.withContextAsync {
                     if index >= queue.lastSubmittedCommand {
                         // If there are no more pending commands on the queue and there haven't been for a number of seconds, we can make all of the transient allocators purgeable.
                         contextRegistry.makeTransientAllocatorsPurgeable()

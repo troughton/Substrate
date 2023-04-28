@@ -186,7 +186,13 @@ public class ResourceBindingEncoder : CommandEncoder {
             return
         }
         
-        let argumentBuffer = ArgumentBuffer(descriptor: A.argumentBufferDescriptor)
+        let descriptor = A.argumentBufferDescriptor
+        
+        if descriptor.arguments.isEmpty {
+            return
+        }
+        
+        let argumentBuffer = ArgumentBuffer(descriptor: descriptor)
         await arguments.encode(into: argumentBuffer)
      
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS

@@ -13,7 +13,7 @@ import OrderedCollections
 import SubstrateUtilities
 
 struct MTLPendingPurgeabilityChange {
-    let resource: MTLResource
+    let resource: AnyObject & NSObjectProtocol
     let state: MTLPurgeableState
     let after: QueueCommandIndices
 }
@@ -26,7 +26,7 @@ final class MetalResourcePurgeabilityManager {
     var pendingPurgabilityChanges: OrderedDictionary<ObjectIdentifier, MTLPendingPurgeabilityChange> = [:]
     
     @discardableResult
-    func setPurgeableState(on resource: MTLResource, to state: MTLPurgeableState) -> MTLPurgeableState {
+    func setPurgeableState(resource: AnyObject & NSObjectProtocol, setState: (MTLPurgeableState) -> MTLPurgeableState, to state: MTLPurgeableState) -> MTLPurgeableState {
         self.lock.withSemaphore {
             let pendingValue = self.pendingPurgabilityChanges.removeValue(forKey: ObjectIdentifier(resource))
             switch state {
@@ -34,20 +34,29 @@ final class MetalResourcePurgeabilityManager {
                 let pendingCommands = QueueRegistry.lastSubmittedCommands
                 if !all(QueueRegistry.lastCompletedCommands .>= pendingCommands) {
                     self.pendingPurgabilityChanges.updateValue(MTLPendingPurgeabilityChange(resource: resource, state: state, after: pendingCommands), forKey: ObjectIdentifier(resource))
-                    return resource.setPurgeableState(.keepCurrent)
+                    return setState(.keepCurrent)
                 } else {
                     fallthrough
                 }
             default:
-                let trueValue = resource.setPurgeableState(state)
+                let trueValue = setState(state)
                 return pendingValue?.state == .empty ? .empty : trueValue
             }
         }
     }
     
     @discardableResult
+    func setPurgeableState(on resource: MTLResource, to state: MTLPurgeableState) -> MTLPurgeableState {
+        self.setPurgeableState(resource: resource, setState: { newState in
+            resource.setPurgeableState(newState)
+        }, to: state)
+    }
+    
+    @discardableResult
     func setPurgeableState(on heap: MTLHeap, to state: MTLPurgeableState) -> MTLPurgeableState {
-        self.setPurgeableState(on: unsafeBitCast(heap, to: MTLResource.self), to: state) // We only call updatePurgeableState, and it's an Objective-C protocol (meaning the function is accessed through objc_msgsend, so the unsafe cast is fine.
+        self.setPurgeableState(resource: heap, setState: { newState in
+            heap.setPurgeableState(newState)
+        }, to: state)
     }
     
     func processPurgeabilityChanges() {
@@ -60,7 +69,11 @@ final class MetalResourcePurgeabilityManager {
             if !isComplete {
                 break
             }
-            value.resource.setPurgeableState(value.state)
+            if let heap = value.resource as? MTLHeap {
+                heap.setPurgeableState(value.state)
+            } else {
+                unsafeBitCast(value.resource, to: MTLResource.self).setPurgeableState(value.state)
+            }
             processedCount += 1
         }
         self.pendingPurgabilityChanges.removeFirst(processedCount)

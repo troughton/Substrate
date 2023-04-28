@@ -616,21 +616,26 @@ public struct Image<ComponentType> : AnyImage {
         self.alphaMode = alphaMode
     }
     
-    @inlinable
+    @inlinable @inline(__always)
+    func uncheckedIndex(x: Int, y: Int, channel: Int) -> Int {
+        return (y &* self.width &+ x) &* self.channelCount &+ channel
+    }
+    
+    @inlinable @inline(__always)
     func setUnchecked(x: Int, y: Int, channel: Int, value: T) {
-        self.storage.data[y &* self.width &* self.channelCount + x &* self.channelCount &+ channel] = value
+        self.storage.data[self.uncheckedIndex(x: x, y: y, channel: channel)] = value
     }
     
     @inlinable
     public subscript(x: Int, y: Int, channel channel: Int) -> T {
         @inline(__always) get {
             precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channelCount)
-            return self.storage.data[y &* self.width &* self.channelCount + x &* self.channelCount &+ channel]
+            return self.storage.data[self.uncheckedIndex(x: x, y: y, channel: channel)]
         }
         @inline(__always) set {
             precondition(x >= 0 && y >= 0 && channel >= 0 && x < self.width && y < self.height && channel < self.channelCount)
             self.ensureUniqueness()
-            self.storage.data[y &* self.width &* self.channelCount &+ x * self.channelCount &+ channel] = newValue
+            self.storage.data[self.uncheckedIndex(x: x, y: y, channel: channel)] = newValue
         }
     }
     
@@ -640,7 +645,7 @@ public struct Image<ComponentType> : AnyImage {
             x < self.width, y < self.height, channel < self.channelCount else {
                 return nil
         }
-        return self.storage.data[y &* self.width &* self.channelCount &+ x * self.channelCount &+ channel]
+        return self.storage.data[self.uncheckedIndex(x: x, y: y, channel: channel)]
     }
     
     @inlinable
@@ -1448,14 +1453,14 @@ extension Double: _ImageNormalizedComponent {
 extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     @inlinable
     public subscript(floatVectorAt x: Int, _ y: Int) -> SIMD4<ComponentType._ImageUnnormalizedType> {
-        get {
+        @inline(__always) get {
             let value = self[x, y]
             return SIMD4(value.x._imageNormalizedComponentToFloat(),
                          value.y._imageNormalizedComponentToFloat(),
                          value.z._imageNormalizedComponentToFloat(),
                          value.w._imageNormalizedComponentToFloat())
         }
-        set {
+        @inline(__always) set {
             self[x, y] = SIMD4(ComponentType(_imageNormalizingFloat: newValue.x),
                                ComponentType(_imageNormalizingFloat: newValue.y),
                                ComponentType(_imageNormalizingFloat: newValue.z),
@@ -1512,6 +1517,69 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     }
     
     @inlinable
+    func applyWrapMode(_ wrapMode: ImageEdgeWrapMode, floorCoord: SIMD2<Int>, ceilCoord: SIMD2<Int>, size: SIMD2<Int>) -> (floorCoord: SIMD2<Int>, ceilCoord: SIMD2<Int>) {
+        var floorCoord = floorCoord
+        var ceilCoord = ceilCoord
+        switch wrapMode {
+        case .zero:
+            break
+        case .wrap:
+            floorCoord = floorCoord % size
+            ceilCoord = ceilCoord % size
+            floorCoord.replace(with: floorCoord &+ size, where: floorCoord .< .zero)
+            ceilCoord.replace(with: ceilCoord &+ size, where: ceilCoord .< .zero)
+        case .reflect:
+            floorCoord = floorCoord % (2 &* size)
+            ceilCoord = ceilCoord % (2 &* size)
+            
+            floorCoord.replace(with: floorCoord &+ (2 &* size), where: floorCoord .< .zero)
+            ceilCoord.replace(with: ceilCoord &+ (2 &* size), where: ceilCoord .< .zero)
+            
+            floorCoord.replace(with: 2 &* size &- floorCoord, where: floorCoord .>= size)
+            ceilCoord.replace(with: 2 &* size &- ceilCoord, where: ceilCoord .>= size)
+            
+        case .clamp:
+            floorCoord = pointwiseMax(pointwiseMin(floorCoord, size &- .one), .zero)
+            ceilCoord = pointwiseMax(pointwiseMin(ceilCoord, size &- .one), .zero)
+        }
+        
+        return (floorCoord, ceilCoord)
+    }
+    
+    @inlinable
+    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, channel: Int, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        let unwrappedFloorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
+        let unwrappedCeilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
+        let lerpX = ComponentType._ImageUnnormalizedType(pixelCoordinate.x - pixelCoordinate.x.rounded(.down))
+        let lerpY = ComponentType._ImageUnnormalizedType(pixelCoordinate.y - pixelCoordinate.y.rounded(.down))
+        
+        let size = SIMD2(self.width, self.height)
+        
+        var (floorCoord, ceilCoord) = applyWrapMode(horizontalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
+        
+        if horizontalWrapMode != verticalWrapMode {
+            let (vFloorCoord, vCeilCoord) = applyWrapMode(verticalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
+            floorCoord.y = vFloorCoord.y
+            ceilCoord.y = vCeilCoord.y
+        }
+        
+        func readPixel(_ coord: SIMD2<Int>) -> ComponentType._ImageUnnormalizedType {
+            if horizontalWrapMode == .zero, coord.x < 0 || coord.x >= size.x { return .zero }
+            if verticalWrapMode == .zero, coord.y < 0 || coord.y >= size.y { return .zero }
+            return self[coord.x, coord.y, channel: channel]._imageNormalizedComponentToFloat()
+        }
+        
+        let a = readPixel(floorCoord)
+        let b = readPixel(SIMD2(ceilCoord.x, floorCoord.y))
+        let c = readPixel(SIMD2(floorCoord.x, ceilCoord.y))
+        let d = readPixel(ceilCoord)
+        
+        let top = (1.0 - lerpX) * a + lerpX * b
+        let bottom = (1.0 - lerpX) * c + lerpX * d
+        return (1.0 - lerpY) * top + lerpY * bottom
+    }
+    
+    @inlinable
     public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
         let unwrappedFloorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
         let unwrappedCeilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
@@ -1519,48 +1587,18 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
         let lerpY = ComponentType._ImageUnnormalizedType(pixelCoordinate.y - pixelCoordinate.y.rounded(.down))
         
         let size = SIMD2(self.width, self.height)
-        let maxCoord = size &- 1
         
-        func applyWrapMode(_ wrapMode: ImageEdgeWrapMode, floorCoord: SIMD2<Int>, ceilCoord: SIMD2<Int>) -> (floorCoord: SIMD2<Int>, ceilCoord: SIMD2<Int>) {
-            var floorCoord = floorCoord
-            var ceilCoord = ceilCoord
-            switch wrapMode {
-            case .zero:
-                break
-            case .wrap:
-                floorCoord = floorCoord % size
-                ceilCoord = ceilCoord % size
-                floorCoord.replace(with: floorCoord &+ size, where: floorCoord .< .zero)
-                ceilCoord.replace(with: ceilCoord &+ size, where: ceilCoord .< .zero)
-            case .reflect:
-                floorCoord = floorCoord % (2 &* size)
-                ceilCoord = ceilCoord % (2 &* size)
-                
-                floorCoord.replace(with: floorCoord &+ (2 &* size), where: floorCoord .< .zero)
-                ceilCoord.replace(with: ceilCoord &+ (2 &* size), where: ceilCoord .< .zero)
-                
-                floorCoord.replace(with: 2 &* size &- floorCoord, where: floorCoord .> maxCoord)
-                ceilCoord.replace(with: 2 &* size &- ceilCoord, where: ceilCoord .> maxCoord)
-                
-            case .clamp:
-                floorCoord = pointwiseMax(pointwiseMin(floorCoord, maxCoord), .zero)
-                ceilCoord = pointwiseMax(pointwiseMin(ceilCoord, maxCoord), .zero)
-            }
-            
-            return (floorCoord, ceilCoord)
-        }
-        
-        var (floorCoord, ceilCoord) = applyWrapMode(horizontalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord)
+        var (floorCoord, ceilCoord) = applyWrapMode(horizontalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
         
         if horizontalWrapMode != verticalWrapMode {
-            let (vFloorCoord, vCeilCoord) = applyWrapMode(verticalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord)
+            let (vFloorCoord, vCeilCoord) = applyWrapMode(verticalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
             floorCoord.y = vFloorCoord.y
             ceilCoord.y = vCeilCoord.y
         }
         
         func readPixel(_ coord: SIMD2<Int>) -> SIMD4<ComponentType._ImageUnnormalizedType> {
-            if horizontalWrapMode == .zero, coord.x < 0 || coord.x > maxCoord.x { return .zero }
-            if verticalWrapMode == .zero, coord.y < 0 || coord.y > maxCoord.y { return .zero }
+            if horizontalWrapMode == .zero, coord.x < 0 || coord.x >= size.x { return .zero }
+            if verticalWrapMode == .zero, coord.y < 0 || coord.y >= size.y { return .zero }
             return self[floatVectorAt: coord.x, coord.y]
         }
         
@@ -1577,6 +1615,16 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     @inlinable
     public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
         return self.sample(pixelCoordinate: pixelCoordinate, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
+    }
+    
+    @inlinable
+    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, channel: Int, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), channel: channel, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode)
+    }
+    
+    @inlinable
+    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, channel: Int, wrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), channel: channel, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
     }
     
     @inlinable
@@ -1606,6 +1654,10 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
             // (x * inputScale * outputScale + inputOffset * outputScale + outputOffset
             let scale = inputRangeScale * outputRangeScale
             let offset = inputRangeOffset * outputRangeScale + outputRangeOffset
+            
+            if scale == .one, offset == .zero {
+                return
+            }
             
             for y in 0..<self.height {
                 for x in 0..<self.width {
@@ -1656,6 +1708,10 @@ extension Image where ComponentType: _ImageNormalizedComponent, ComponentType._I
             // (x * inputScale * outputScale + inputOffset * outputScale + outputOffset
             let scale = inputRangeScale * outputRangeScale
             let offset = inputRangeOffset * outputRangeScale + outputRangeOffset
+            
+            if scale == 1.0, offset == 0.0 {
+                return
+            }
             
             self.apply(channelRange: channelRange) { val in
                 .init(_imageNormalizingFloat: val._imageNormalizedComponentToFloat() * scale + offset)
@@ -1737,6 +1793,34 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
         }
         
         return (mean, mean / count, mean / (count - 1))
+    }
+    
+    
+    @inlinable
+    public func meanAndVariance(weightsImage: Image<ComponentType>) -> (mean: SIMD4<ComponentType._ImageUnnormalizedType>, variance: SIMD4<ComponentType._ImageUnnormalizedType>, sampleVariance: SIMD4<ComponentType._ImageUnnormalizedType>) {
+        // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+        var count = SIMD4<ComponentType._ImageUnnormalizedType>.zero
+        var mean = SIMD4<ComponentType._ImageUnnormalizedType>.zero
+        var mean2 = SIMD4<ComponentType._ImageUnnormalizedType>.zero
+        
+        for y in 0..<self.height {
+            for x in 0..<self.width {
+                let value = self[floatVectorAt: x, y]
+                var weight = weightsImage[floatVectorAt: x, y]
+                if weightsImage.channelCount == 1 {
+                    weight = SIMD4(repeating: weight.x)
+                }
+                
+                count += weight
+                
+                let delta = value - mean
+                mean += delta * (weight / count.replacing(with: .ulpOfOne, where: weight .== .zero))
+                let delta2 = value - mean
+                mean2 += weight * delta * delta2
+            }
+        }
+        
+        return (mean, mean / count, mean / (count - SIMD4<ComponentType._ImageUnnormalizedType>.one))
     }
 }
 
