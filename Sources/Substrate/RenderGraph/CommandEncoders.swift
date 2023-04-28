@@ -384,14 +384,16 @@ public class ResourceBindingEncoder : CommandEncoder {
         
         let descriptor = A.argumentBufferDescriptor
         
-        if descriptor.arguments.isEmpty {
-            return
-        }
-        
         let argumentBuffer = ArgumentBuffer(descriptor: descriptor)
         assert(argumentBuffer.bindings.isEmpty)
         arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
      
+        if descriptor.arguments.isEmpty {
+            // The argument buffer is empty, and any directly bound elements have been bound, so there's nothing else to do here.
+            // The immediate-mode branch splits up the direct and indirect bindings to make this cleaner.
+            return
+        }
+        
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
         argumentBuffer.label = "Descriptor Set for \(String(reflecting: A.self))"
 #endif
