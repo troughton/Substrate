@@ -285,7 +285,11 @@ final class ResourceSet {
             
             var bindingIndex = resource.binding.index
             if let platformBindingPath = platformBindingPath {
-                bindingIndex = resource.platformBindings[keyPath: platformBindingPath].map { Int($0) } ?? resource.binding.index
+                if let platformBinding = resource.platformBindings[keyPath: platformBindingPath] {
+                    bindingIndex = Int(platformBinding)
+                } else {
+                    continue // This binding isn't present for this platform.
+                }
             }
             stream.print("ArgumentDescriptor(resourceType: .\(argumentResourceType), index: \(bindingIndex), arrayLength: \(max(resource.binding.arrayLength, 1)), accessType: \(accessTypeString)),")
         }
