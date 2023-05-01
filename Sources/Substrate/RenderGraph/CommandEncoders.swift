@@ -384,8 +384,19 @@ public class ResourceBindingEncoder : CommandEncoder {
         
         let descriptor = A.argumentBufferDescriptor
         
-        let argumentBuffer = ArgumentBuffer(descriptor: descriptor)
-        assert(argumentBuffer.bindings.isEmpty)
+        let argumentBuffer: ArgumentBuffer
+        if descriptor.arguments.isEmpty {
+            // We can't construct a valid argument buffer from an empty descriptor.
+            // Provide an invalid one for backwards compatibility and rely on the encode(into:)
+            // not accessing the argument buffer if it has no indirectly bound arguments.
+            // This behaviour is fixed on the immediate-mode branch.
+            let handle = UInt64(ArgumentBuffer.resourceType.rawValue) << Resource.typeBitsRange.lowerBound
+            argumentBuffer = ArgumentBuffer(handle: handle)
+        } else {
+            argumentBuffer = ArgumentBuffer(descriptor: descriptor)
+            assert(argumentBuffer.bindings.isEmpty)
+        }
+        
         arguments.encode(into: argumentBuffer, setIndex: setIndex, bindingEncoder: self)
      
         if descriptor.arguments.isEmpty {
