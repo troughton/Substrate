@@ -90,6 +90,7 @@ fileprivate func findExecutable(_ name: String) -> URL? {
     
     let localBin = "/usr/local/bin/\(name)"
     let usrBin = "/usr/bin/\(name)"
+    let homebrewBin = "/opt/homebrew/bin/\(name)"
     
     if FileManager.default.fileExists(atPath: localBin) {
         return URL(fileURLWithPath: localBin)
@@ -97,6 +98,10 @@ fileprivate func findExecutable(_ name: String) -> URL? {
     
     if FileManager.default.fileExists(atPath: usrBin) {
         return URL(fileURLWithPath: usrBin)
+    }
+    
+    if FileManager.default.fileExists(atPath: homebrewBin) {
+        return URL(fileURLWithPath: homebrewBin)
     }
 
     return nil
