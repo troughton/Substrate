@@ -244,7 +244,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
             
             if previousEncoderIndex >= 0, usageEncoderIndex > previousEncoderIndex {
                 if pendingUsageIndex < .max {
-                    assert(!pendingUsageStages.intersection(frameCommandInfo.commandEncoders[usageEncoderIndex].type.allStages).isEmpty)
+                    assert(!pendingUsageStages.intersection(frameCommandInfo.commandEncoders[previousEncoderIndex].type.allStages).isEmpty)
                     self.commands.append(FrameResourceCommand(command: .useResource(resource, usage: pendingUsageType, stages: pendingUsageStages, allowReordering: !resourceIsRenderTarget), // Keep the useResource call as late as possible for render targets, and don't allow reordering within an encoder.
                                                               index: pendingUsageIndex))
                 }
