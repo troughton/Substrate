@@ -75,14 +75,14 @@ public protocol RenderPassReflection {
     
     associatedtype PushConstants : NoArgConstructable = NilPushConstants
     
-    associatedtype Set0 : ArgumentBufferEncodable & NoArgConstructable = NilSet
-    associatedtype Set1 : ArgumentBufferEncodable & NoArgConstructable = NilSet
-    associatedtype Set2 : ArgumentBufferEncodable & NoArgConstructable = NilSet
-    associatedtype Set3 : ArgumentBufferEncodable & NoArgConstructable = NilSet
-    associatedtype Set4 : ArgumentBufferEncodable & NoArgConstructable = NilSet
-    associatedtype Set5 : ArgumentBufferEncodable & NoArgConstructable = NilSet
-    associatedtype Set6 : ArgumentBufferEncodable & NoArgConstructable = NilSet
-    associatedtype Set7 : ArgumentBufferEncodable & NoArgConstructable = NilSet
+    associatedtype Set0 : ShaderResourceSet & NoArgConstructable = NilSet
+    associatedtype Set1 : ShaderResourceSet & NoArgConstructable = NilSet
+    associatedtype Set2 : ShaderResourceSet & NoArgConstructable = NilSet
+    associatedtype Set3 : ShaderResourceSet & NoArgConstructable = NilSet
+    associatedtype Set4 : ShaderResourceSet & NoArgConstructable = NilSet
+    associatedtype Set5 : ShaderResourceSet & NoArgConstructable = NilSet
+    associatedtype Set6 : ShaderResourceSet & NoArgConstructable = NilSet
+    associatedtype Set7 : ShaderResourceSet & NoArgConstructable = NilSet
 }
 
 extension RenderPassReflection {
