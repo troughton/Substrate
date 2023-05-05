@@ -1253,7 +1253,7 @@ public final class RenderGraph {
         }
     }
     
-    func compile(renderPasses: [RenderPassRecord]) async -> ([RenderPassRecord], DependencyTable<DependencyType>, Set<Resource>) {
+    func compile(renderPasses: [RenderPassRecord]) async -> ([CPURenderPass], [RenderPassRecord], DependencyTable<DependencyType>, Set<Resource>) {
         let signpostState = Self.signposter.beginInterval("Compile RenderGraph")
         defer { Self.signposter.endInterval("Compile RenderGraph", signpostState) }
         
@@ -1328,13 +1328,13 @@ public final class RenderGraph {
             }
         }
         
+        var cpuPasses = [CPURenderPass]()
+        
         var i = 0
         while i < activePasses.count {
             let passRecord = activePasses[i]
             if passRecord.type == .cpu {
-                await (passRecord.pass as! CPURenderPass).execute()
-            }
-            if passRecord.type == .cpu {
+                cpuPasses.append(passRecord.pass as! CPURenderPass)
                 passRecord.isActive = false // We've definitely executed the pass now, so there's no more work to be done on it by the GPU backends.
                 activePasses.remove(at: i)
             } else {
@@ -1372,7 +1372,7 @@ public final class RenderGraph {
             }
         }
         
-        return (activePasses, activePassDependencies, self.usedResources)
+        return (cpuPasses, activePasses, activePassDependencies, self.usedResources)
     }
     
     @available(*, deprecated, renamed: "onSubmission")

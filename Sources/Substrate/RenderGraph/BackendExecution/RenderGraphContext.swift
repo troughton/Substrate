@@ -154,11 +154,15 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         return await self.taskStream.enqueueAndWait {
             return await Backend.activeContextTaskLocal.withValue(self) {
                 return await RenderGraph.$activeRenderGraph.withValue(renderGraph) {
-                    let (passes, _, usedResources) = await renderGraph.compile(renderPasses: renderPasses)
+                    var (cpuPasses, passes, _, usedResources) = await renderGraph.compile(renderPasses: renderPasses)
                     
                     // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
                     
                     if passes.isEmpty {
+                        for pass in cpuPasses {
+                            await pass.execute()
+                        }
+                        
                         if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
                             self.accessSemaphore?.signal()
                             self.needsWaitOnAccessSemaphore = true
@@ -172,6 +176,11 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     var frameCommandInfo = FrameCommandInfo<Backend.RenderTargetDescriptor>(passes: passes, initialCommandBufferGlobalIndex: self.queueCommandBufferIndex + 1)
                     self.commandGenerator.generateCommands(passes: passes, usedResources: usedResources, transientRegistry: self.resourceRegistry, backend: backend, frameCommandInfo: &frameCommandInfo)
                     await self.commandGenerator.executePreFrameCommands(context: self, frameCommandInfo: &frameCommandInfo)
+                    
+                    // We've now executed the pre-frame commands and materialised any resources we need, which means it's safe to run the CPU passes.
+                    for pass in cpuPasses {
+                        await pass.execute()
+                    }
                     
                     await RenderGraph.signposter.withIntervalSignpost("Sort and Compact Resource Commands") {
                         self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
