@@ -187,8 +187,9 @@ public class ResourceBindingEncoder : CommandEncoder {
         }
         
         let descriptor = A.argumentBufferDescriptor
-        
+     
         if descriptor.arguments.isEmpty {
+            // The argument buffer is empty, and any directly bound elements have been bound, so there's nothing else to do here.
             return
         }
         
