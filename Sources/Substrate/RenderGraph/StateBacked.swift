@@ -89,7 +89,11 @@ extension TypedRenderPipelineDescriptor: StateDescriptor {
     }
     
     public func makeState() async -> RenderPipelineState {
-        return await self.descriptor.makeState()
+        var descriptor = self.descriptor
+        if self.constantsChanged {
+            descriptor.functionConstants = FunctionConstants(self.constants)
+        }
+        return await descriptor.makeState()
     }
 }
 
@@ -113,7 +117,11 @@ extension TypedComputePipelineDescriptor: StateDescriptor {
     }
     
     public func makeState() async -> ComputePipelineState {
-        return await self.descriptor.makeState()
+        var descriptor = self.descriptor
+        if self.constantsChanged {
+            descriptor.functionConstants = FunctionConstants(self.constants)
+        }
+        return await descriptor.makeState()
     }
 }
 
