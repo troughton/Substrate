@@ -752,7 +752,7 @@ public final class RenderGraph {
     
     private let frameTimingLock = SpinLock()
     private var previousFrameCompletionTime : UInt64 = 0
-    private var _lastGraphCPUTime = 1000.0 / 60.0
+    private var _lastGraphCPUTime = 0.0
     private var lastGraphFirstCommand: UInt64 = 0
     private var lastGraphLastCommand: UInt64 = 0
     
@@ -835,6 +835,7 @@ public final class RenderGraph {
         return !self.renderPasses.isEmpty
     }
     
+    /// The time for the last frame to be completed on the CPU and GPU, in seconds.
     public func lastGraphDurations() -> (cpuTime: Double, gpuTime: Double) {
         return self.frameTimingLock.withLock {
             let gpuStartTime = self.queue.gpuStartTime(for: self.lastGraphFirstCommand) ?? 0.0

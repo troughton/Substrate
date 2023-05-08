@@ -247,6 +247,7 @@ public struct Queue : Equatable, Sendable {
         return DispatchTime(uptimeNanoseconds: time)
     }
     
+    /// The host time at which the specified command buffer began executing on the GPU, in seconds.
     public func gpuStartTime(for commandIndex: UInt64) -> Double? {
         guard let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex) else { return nil }
         
@@ -263,6 +264,7 @@ public struct Queue : Equatable, Sendable {
         UInt64.AtomicRepresentation.atomicStore(time.bitPattern, at: QueueRegistry.shared.commandGPUStartTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
     }
     
+    /// The host time at which the specified command buffer completed on the GPU, in seconds.
     public func gpuEndTime(for commandIndex: UInt64) -> Double? {
         guard let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex) else { return nil }
         
@@ -279,6 +281,7 @@ public struct Queue : Equatable, Sendable {
         UInt64.AtomicRepresentation.atomicStore(time.bitPattern, at: QueueRegistry.shared.commandGPUEndTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
     }
     
+    /// The time the specified command took to execute on the GPU, in seconds.
     public func gpuDuration(for commandIndex: UInt64) -> Double? {
         guard let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex) else { return nil }
         
