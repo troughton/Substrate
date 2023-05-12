@@ -7,7 +7,7 @@
 
 import Foundation
 @_spi(SubstrateTextureIO) import Substrate
-import stb_image
+@_spi(SubstrateTextureIO) import SubstrateImageIO
 import SubstrateImage
 #if canImport(Metal)
 @preconcurrency import Metal

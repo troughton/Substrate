@@ -2,6 +2,7 @@ import Foundation
 import stb_image_write
 import tinyexr
 import LodePNG
+import SubstrateImage
 
 #if canImport(zlib)
 import zlib
@@ -18,13 +19,7 @@ import AppKit
 @available(*, deprecated, renamed: "ImageFileFormat")
 public typealias TextureFileFormat = ImageFileFormat
 
-public struct ImageFileFormat: Hashable, Codable {
-    public var typeIdentifier: String
-    
-    public init(typeIdentifier: String) {
-        self.typeIdentifier = typeIdentifier
-    }
-    
+extension ImageFileFormat {
     @available(*, deprecated, renamed: "init(typeIdentifier:)")
     public init?(uti: String) {
         self.init(typeIdentifier: uti)
@@ -69,10 +64,6 @@ public struct ImageFileFormat: Hashable, Codable {
     @available(*, deprecated, renamed: "typeIdentifier")
     public var uti: String {
         return self.typeIdentifier
-    }
-    
-    public static func ~=(lhs: ImageFileFormat, rhs: ImageFileFormat) -> Bool {
-        return lhs == rhs
     }
     
     public static var genericImage: ImageFileFormat {
@@ -427,21 +418,21 @@ extension Image {
 
 extension Image where ComponentType == UInt8 {
     public func writeBMP(to url: URL) throws {
-        let result = stbi_write_bmp(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress)
+        let result = self.withUnsafeBufferPointer { stbi_write_bmp(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), $0.baseAddress) }
         if result == 0 {
             throw TextureSaveError.errorWritingFile("(no error message)")
         }
     }
     
     public func writeJPEG(to url: URL, quality: Double = 0.9) throws {
-        let result = stbi_write_jpg(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress, /* quality = */ Int32((Swift.min(Swift.max(0.0, quality), 1.0) * 100.0).rounded()))
+        let result = self.withUnsafeBufferPointer { stbi_write_jpg(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), $0.baseAddress, /* quality = */ Int32((Swift.min(Swift.max(0.0, quality), 1.0) * 100.0).rounded())) }
         if result == 0 {
             throw TextureSaveError.errorWritingFile("(no error message)")
         }
     }
     
     public func writeTGA(to url: URL) throws {
-        let result = stbi_write_tga(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress)
+        let result = self.withUnsafeBufferPointer { stbi_write_tga(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), $0.baseAddress) }
         if result == 0 {
             throw TextureSaveError.errorWritingFile("(no error message)")
         }
@@ -542,7 +533,7 @@ public enum EXRCompressionType {
 extension Image where ComponentType == Float {
     
     public func writeHDR(to url: URL) throws {
-        let result = stbi_write_hdr(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), self.storage.data.baseAddress)
+        let result = self.withUnsafeBufferPointer { stbi_write_hdr(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), $0.baseAddress) }
         if result == 0 {
             throw TextureSaveError.errorWritingFile("(no error message)")
         }
