@@ -68,7 +68,8 @@ enum PreFrameCommands {
         }
     }
     
-    func execute<Backend: SpecificRenderBackend, Dependency: Substrate.Dependency>(commandIndex: Int, context: RenderGraphContextImpl<Backend>, textureIsStored: (Texture) -> Bool, encoderDependencies: inout DependencyTable<Dependency?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) async {
+    @_specialize(kind: full, where Backend == MetalBackend)
+    func execute<Backend: SpecificRenderBackend>(commandIndex: Int, context: RenderGraphContextImpl<Backend>, textureIsStored: (Texture) -> Bool, encoderDependencies: inout DependencyTable<Backend.InterEncoderDependencyType?>, waitEventValues: inout QueueCommandIndices, signalEventValue: UInt64) async {
         let queue = context.renderGraphQueue
         let queueIndex = Int(queue.index)
         let resourceMap = context.resourceMap
@@ -158,7 +159,7 @@ enum PreFrameCommands {
         case .waitForHeapAliasingFences(let resource, let waitDependency):
             resourceRegistry!.withHeapAliasingFencesIfPresent(for: resource.handle, perform: { fenceDependencies in
                 for signalDependency in fenceDependencies {
-                    let dependency = Dependency(signal: signalDependency, wait: waitDependency)
+                    let dependency = Backend.InterEncoderDependencyType(signal: signalDependency, wait: waitDependency)
                     
                     let newDependency = encoderDependencies.dependency(from: dependency.wait.encoderIndex, on: dependency.signal.encoderIndex)?.merged(with: dependency) ?? dependency
                     encoderDependencies.setDependency(from: dependency.wait.encoderIndex, on: dependency.signal.encoderIndex, to: newDependency)
