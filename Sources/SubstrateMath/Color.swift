@@ -7,18 +7,17 @@
 
 import RealModule
 
+@_alignment(16)
 public struct RGBColor : Equatable, Hashable, Sendable {
     public var r: Float
     public var g: Float
     public var b: Float
-    @usableFromInline let a: Float
     
     @inlinable
     public init(r: Float, g: Float, b: Float) {
         self.r = r
         self.g = g
         self.b = b
-        self.a = 1.0
     }
     
     @inlinable
@@ -26,7 +25,6 @@ public struct RGBColor : Equatable, Hashable, Sendable {
         self.r = r
         self.g = g
         self.b = b
-        self.a = 1.0
     }
     
     @inlinable
@@ -34,7 +32,6 @@ public struct RGBColor : Equatable, Hashable, Sendable {
         self.r = rgb.x
         self.g = rgb.y
         self.b = rgb.z
-        self.a = 1.0
     }
     
     @inlinable
@@ -42,7 +39,6 @@ public struct RGBColor : Equatable, Hashable, Sendable {
         self.r = value
         self.g = value
         self.b = value
-        self.a = 1.0
     }
     
     @inlinable
@@ -51,7 +47,6 @@ public struct RGBColor : Equatable, Hashable, Sendable {
         self.r = 3.240479 * x - 1.537150 * y - 0.498535 * z
         self.g = -0.969256 * x + 1.875991 * y + 0.041556 * z
         self.b = 0.055648 * x - 0.204043 * y + 1.057311 * z
-        self.a = 1.0
     }
     
     @inlinable
