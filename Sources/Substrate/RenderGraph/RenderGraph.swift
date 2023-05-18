@@ -710,7 +710,7 @@ public struct RenderGraphExecutionWaitToken: Sendable {
 protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var renderGraphQueue: Queue { get }
-    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken
+    func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onSwapchainPresented: (RenderGraph.SwapchainPresentedCallback)?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken
     func registerWindowTexture(for texture: Texture, swapchain: Any) async
 }
 
@@ -753,12 +753,12 @@ public final class RenderGraph {
     private let frameTimingLock = SpinLock()
     private var previousFrameCompletionTime : UInt64 = 0
     private var _lastGraphCPUTime = 0.0
-    private var lastGraphFirstCommand: UInt64 = 0
-    private var lastGraphLastCommand: UInt64 = 0
+    private var lastGraphFirstCommand: UInt64 = .max
+    private var lastGraphLastCommand: UInt64 = .max
     
     var submissionNotifyQueue = [@Sendable () async -> Void]()
     var completionNotifyQueue = [@Sendable () async -> Void]()
-    var presentationNotifyQueue = [@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void]()
+    var presentationNotifyQueue = [SwapchainPresentedCallback]()
     let context : _RenderGraphContext
     let inflightFrameCount: Int
     let currentInflightFrameCount: ManagedAtomic<Int> = .init(0)
@@ -1532,8 +1532,10 @@ public final class RenderGraph {
         }
     }
     
+    public typealias SwapchainPresentedCallback = @Sendable (Texture?, Result<OpaquePointer?, Error>) -> Void
+    
     /// Enqueue `function` to be executed once the render graph has completed on the GPU.
-    public func onSwapchainPresented(_ function: @Sendable @escaping (Texture, Result<OpaquePointer?, Error>) -> Void) {
+    public func onSwapchainPresented(_ function: @escaping SwapchainPresentedCallback) {
         self.renderPassLock.withLock {
             self.presentationNotifyQueue.append(function)
         }
@@ -1561,8 +1563,15 @@ public final class RenderGraph {
             if !queueCommandRange.isEmpty {
                 self.lastGraphFirstCommand = queueCommandRange.first!
                 self.lastGraphLastCommand = queueCommandRange.last!
+            } else {
+                self.lastGraphFirstCommand = .max
+                self.lastGraphLastCommand = .max
             }
         }
+    }
+    
+    public enum RenderGraphError: Error {
+        case emptyRenderGraph
     }
     
     /// Process the render passes that have been enqueued on this render graph through calls to `addPass()` or similar by culling passes that don't produce
@@ -1605,12 +1614,22 @@ public final class RenderGraph {
         }
         
         guard !renderPasses.isEmpty else {
-            return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: self.queue.lastSubmittedCommand)
+            let lastSubmittedCommand = self.queue.lastSubmittedCommand
+            self.didCompleteRender(queueCommandRange: lastSubmittedCommand..<lastSubmittedCommand)
+            Task.detached {
+                for item in completionNotifyQueue {
+                    await item()
+                }
+                for item in presentationNotifyQueue {
+                    item(nil, .failure(RenderGraphError.emptyRenderGraph))
+                }
+            }
+            return RenderGraphExecutionWaitToken(queue: self.queue, executionIndex: lastSubmittedCommand)
         }
         
         self.currentInflightFrameCount.wrappingIncrement(ordering: .relaxed)
         
-        var onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil
+        var onSwapchainPresented: (SwapchainPresentedCallback)? = nil
         if !presentationNotifyQueue.isEmpty {
             if presentationNotifyQueue.count == 1 {
                 onSwapchainPresented = presentationNotifyQueue[0]

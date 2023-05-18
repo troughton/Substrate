@@ -135,7 +135,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
 //    @_specialize(kind: full, where Backend == VulkanBackend)
     func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord],
                                                                   usedResources: Set<Resource>),
-                            onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil,
+                            onSwapchainPresented: (RenderGraph.SwapchainPresentedCallback)? = nil,
                             onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken {
         await self.accessSemaphore?.wait()
         
