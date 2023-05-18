@@ -24,7 +24,7 @@ extension Image where ComponentType == UInt8 {
         
         self.ensureUniqueness()
         
-        let alphaChannel = self.channelCount - 1
+        guard let alphaChannel = self.alphaChannelIndex else { preconditionFailure() }
         for y in 0..<self.height {
             for x in 0..<self.width {
                 let alpha = self[x, y, channel: alphaChannel]
@@ -55,7 +55,7 @@ extension Image where ComponentType == UInt8 {
         
         self.ensureUniqueness()
         
-        let alphaChannel = self.channelCount - 1
+        guard let alphaChannel = self.alphaChannelIndex else { preconditionFailure() }
         for y in 0..<self.height {
             for x in 0..<self.width {
                 let alpha = self[x, y, channel: alphaChannel]
@@ -71,8 +71,9 @@ extension Image where ComponentType == UInt8 {
 }
 
 extension Image where ComponentType == UInt8 {
+    @_assemblyVision
     private func _convertPremultSRGBBlendedSRGBToPremultLinearBlendedSRGB() {
-        let alphaChannel = self.channelCount - 1
+        guard let alphaChannel = self.alphaChannelIndex else { preconditionFailure() }
         for y in 0..<self.height {
             for x in 0..<self.width {
                 let alpha = self[x, y, channel: alphaChannel]
@@ -185,7 +186,7 @@ extension Image where ComponentType == Float {
          r' = (linearToSRGB((1.0 - alpha) + sRGBToLinear(r) * alpha) - (1.0 - a')) / a'
          */
         
-        let alphaChannel = self.channelCount - 1
+        guard let alphaChannel = self.alphaChannelIndex else { preconditionFailure() }
         
         for y in 0..<self.height {
             for x in 0..<self.width {
@@ -243,7 +244,7 @@ extension Image where ComponentType == Float {
             self.colorSpace = .linearSRGB
         }
         
-        let alphaChannel = self.channelCount - 1
+        guard let alphaChannel = self.alphaChannelIndex else { preconditionFailure() }
         
         for y in 0..<self.height {
             for x in 0..<self.width {

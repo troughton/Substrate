@@ -41,6 +41,7 @@ enum ColorSpaceLUTs {
                                                 0x3f5f11ec,0x3f612eee,0x3f634eef,0x3f6571e9,0x3f6797e3,0x3f69c0d6,0x3f6beccd,0x3f6e1bbf,
                                                 0x3f704db8,0x3f7282af,0x3f74baae,0x3f76f5ae,0x3f7933b9,0x3f7b74c6,0x3f7db8e0,0x3f800000]
     
+    @inlinable @inline(__always)
     static func srgbToLinearFloat(_ value: UInt8) -> Float {
         return Float(bitPattern: srgbToLinearFloatLUT[Int(value)])
     }
@@ -49,6 +50,7 @@ enum ColorSpaceLUTs {
         return (0...UInt8.max).map { return floatToUnorm(ImageColorSpace.convert(unormToFloat($0), from: .linearSRGB, to: .sRGB), type: UInt8.self) }
     }()
     
+    @inlinable @inline(__always)
     static func linearToSRGB(_ value: UInt8) -> UInt8 {
         return linearToSRGBLUT[Int(value)]
     }
@@ -57,6 +59,7 @@ enum ColorSpaceLUTs {
         return (0...UInt8.max).map { return floatToUnorm(srgbToLinearFloat($0), type: UInt8.self) }
     }()
     
+    @inlinable @inline(__always)
     static func sRGBToLinear(_ value: UInt8) -> UInt8 {
         return sRGBToLinearLUT[Int(value)]
     }
@@ -77,6 +80,7 @@ enum ColorSpaceLUTs {
         }
     }()
     
+    @inlinable @inline(__always)
     static func premultToPostmult(value: UInt8, alpha: UInt8) -> UInt8 {
         return premultToPostmultAlphaLUT[Int(alpha) * 256 + Int(value)]
     }
@@ -92,6 +96,7 @@ enum ColorSpaceLUTs {
         }
     }()
     
+    @inlinable @inline(__always)
     static func postmultToPremult(value: UInt8, alpha: UInt8) -> UInt8 {
         return postmultToPremultAlphaLUT[Int(alpha) * 256 + Int(value)]
     }
@@ -112,6 +117,7 @@ enum ColorSpaceLUTs {
         }
     }()
     
+    @inlinable @inline(__always)
     static func sRGBPremultToPostmult(value: UInt8, alpha: UInt8) -> UInt8 {
         return sRGBPremultToPostmultAlphaLUT[Int(alpha) * 256 + Int(value)]
     }
@@ -127,6 +133,7 @@ enum ColorSpaceLUTs {
         }
     }()
     
+    @inlinable @inline(__always)
     static func sRGBPostmultToPremult(value: UInt8, alpha: UInt8) -> UInt8 {
         return sRGBPostmultToPremultAlphaLUT[Int(alpha) * 256 + Int(value)]
     }
@@ -157,10 +164,12 @@ enum ColorSpaceLUTs {
         }
     }()
     
+    @inlinable @inline(__always)
     static func linearBlendedSRGBToSRGBBlendedSRGB(alpha: UInt8) -> UInt8 {
         return linearBlendedSRGBToSRGBBlendedSRGB_AlphaLUT[Int(alpha)]
     }
     
+    @inlinable @inline(__always)
     static func premultLinearBlendedSRGBToPostmultSRGBBlendedSRGB(alpha: UInt8, value: UInt8) -> UInt8 {
         return premultLinearBlendedSRGBToPostmultSRGBBlendedSRGB_ColorLUT[Int(alpha) * 256 + Int(value)]
     }
@@ -194,10 +203,12 @@ enum ColorSpaceLUTs {
         }
     }()
     
+    @inlinable @inline(__always)
     static func sRGBBlendedSRGBToLinearBlendedSRGB(alpha: UInt8) -> UInt8 {
         return sRGBBlendedSRGBToLinearBlendedSRGB_AlphaLUT[Int(alpha)]
     }
     
+    @inlinable @inline(__always)
     static func postmultSRGBBlendedSRGBToPremultLinearBlendedSRGB(alpha: UInt8, value: UInt8) -> UInt8 {
         return postmultSRGBBlendedSRGBToPremultLinearBlendedSRGB_ColorLUT[Int(alpha) * 256 + Int(value)]
     }
@@ -217,6 +228,7 @@ enum ColorSpaceLUTs {
         }
     }()
     
+    @inlinable @inline(__always)
     static func premultSRGBBlendedSRGBToPremultLinearBlendedSRGB(alpha: UInt8, value: UInt8) -> UInt8 {
         return premultSRGBBlendedSRGBToPremultLinearBlendedSRGB_ColorLUT[Int(alpha) * 256 + Int(value)]
     }
