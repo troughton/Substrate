@@ -318,19 +318,23 @@ extension ImageFileInfo {
             loadLoop: repeat {
                 if Task.isCancelled { throw CancellationError() }
                 
-                let status = bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: dataPrefixCount >= data.count)
+                let complete = dataPrefixCount >= data.count
+                let status = bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: complete)
+                loadingComplete = complete
+                
                 switch status {
                 case NSBitmapImageRep.LoadStatus.unknownType.rawValue,
                     NSBitmapImageRep.LoadStatus.readingHeader.rawValue:
-                    dataPrefixCount += 2048
+                    dataPrefixCount *= 2
                 case NSBitmapImageRep.LoadStatus.invalidData.rawValue,
                     NSBitmapImageRep.LoadStatus.unexpectedEOF.rawValue:
                     throw ImageLoadingError.invalidData(message: "Invalid data or unexpected end of file")
                 case NSBitmapImageRep.LoadStatus.willNeedAllData.rawValue:
                     dataPrefixCount = data.count
+                    break loadLoop
                 case NSBitmapImageRep.LoadStatus.completed.rawValue,
                     _ where status > 0:
-                    loadingComplete = status == NSBitmapImageRep.LoadStatus.completed.rawValue
+                    loadingComplete = loadingComplete || status == NSBitmapImageRep.LoadStatus.completed.rawValue
                     break loadLoop
                 default:
                     throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
@@ -338,16 +342,16 @@ extension ImageFileInfo {
             } while true
             
             if !loadingComplete {
-                bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: true)
+                bitmapImageRep.incrementalLoad(from: data, complete: true)
             }
             
             let format = format
-            let width = bitmapImageRep.pixelsWide
-            let height = bitmapImageRep.pixelsHigh
-            let channelCount = bitmapImageRep.samplesPerPixel
-            let bitDepth = bitmapImageRep.bitsPerPixel / bitmapImageRep.samplesPerPixel
-            let isSigned = false
-            let isFloatingPoint = bitmapImageRep.bitmapFormat.contains(.floatingPointSamples)
+            var width = bitmapImageRep.pixelsWide
+            var height = bitmapImageRep.pixelsHigh
+            var channelCount = bitmapImageRep.samplesPerPixel
+            var bitDepth = bitmapImageRep.bitsPerPixel / bitmapImageRep.samplesPerPixel
+            var isFloatingPoint = bitmapImageRep.bitmapFormat.contains(.floatingPointSamples)
+            var isSigned = isFloatingPoint
             
             let colorSpace: ImageColorSpace
             if let cgColorSpace = bitmapImageRep.colorSpace.cgColorSpace {
@@ -364,7 +368,7 @@ extension ImageFileInfo {
                 colorSpace = .undefined
             }
             
-            let alphaMode: ImageAlphaMode
+            var alphaMode: ImageAlphaMode
             switch bitmapImageRep.samplesPerPixel {
             case 1, 3:
                 alphaMode = .none
@@ -372,6 +376,24 @@ extension ImageFileInfo {
                 alphaMode = bitmapImageRep.bitmapFormat.contains(.alphaNonpremultiplied) ? .postmultiplied : .premultiplied
             default:
                 alphaMode = .inferred
+            }
+            
+            if bitmapImageRep.pixelsWide == 0 || bitmapImageRep.pixelsHigh == 0, let cgImage = bitmapImageRep.cgImage {
+                // Sometimes the NSBitmapImageRep's pixelsWide and pixelsHigh fields don't get correctly initialised (FB12193672).
+                width = cgImage.width
+                height = cgImage.height
+                channelCount = cgImage.bitsPerPixel / cgImage.bitsPerComponent
+                bitDepth = cgImage.bitsPerComponent
+                isFloatingPoint = cgImage.bitmapInfo.contains(.floatComponents)
+                isSigned = isFloatingPoint
+                switch cgImage.alphaInfo {
+                case .first, .last, .alphaOnly:
+                    alphaMode = .postmultiplied
+                case .premultipliedFirst, .premultipliedLast:
+                    alphaMode = .premultiplied
+                default:
+                    alphaMode = .none
+                }
             }
             
             let physicalSize: SIMD2<Double>? = nil // TODO: read physical sizes from PSDs
