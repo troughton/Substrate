@@ -11,14 +11,12 @@ public struct RGBColor<Scalar: BinaryFloatingPoint & Real> {
     public var r: Scalar
     public var g: Scalar
     public var b: Scalar
-    @usableFromInline let a: Float
     
     @inlinable
     public init(r: Scalar, g: Scalar, b: Scalar) {
         self.r = r
         self.g = g
         self.b = b
-        self.a = 1.0
     }
     
     @inlinable
@@ -26,7 +24,6 @@ public struct RGBColor<Scalar: BinaryFloatingPoint & Real> {
         self.r = r
         self.g = g
         self.b = b
-        self.a = 1.0
     }
     
     @inlinable
@@ -34,7 +31,6 @@ public struct RGBColor<Scalar: BinaryFloatingPoint & Real> {
         self.r = value
         self.g = value
         self.b = value
-        self.a = 1.0
     }
     
     @inlinable
@@ -43,7 +39,6 @@ public struct RGBColor<Scalar: BinaryFloatingPoint & Real> {
         self.r = 3.240479 * x - 1.537150 * y - 0.498535 * z
         self.g = -0.969256 * x + 1.875991 * y + 0.041556 * z
         self.b = 0.055648 * x - 0.204043 * y + 1.057311 * z
-        self.a = 1.0
     }
     
     @inlinable
@@ -138,7 +133,6 @@ extension RGBColor where Scalar: SIMDScalar {
         self.r = rgb.x
         self.g = rgb.y
         self.b = rgb.z
-        self.a = 1.0
     }
     
     @inlinable

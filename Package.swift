@@ -19,7 +19,8 @@ let package = Package(
         .library(name: "Substrate", targets: ["Substrate"]),
         .library(name: "SubstrateUtilities", targets: ["SubstrateUtilities"]),
         .library(name: "SubstrateImage", targets: ["SubstrateImage"]),
-        .library(name: "SubstrateTextureIO", targets: ["SubstrateImage", "SubstrateTextureIO"]),
+        .library(name: "SubstrateImageIO", targets: ["SubstrateImage", "SubstrateImageIO"]),
+        .library(name: "SubstrateTextureIO", targets: ["SubstrateImage", "SubstrateImageIO", "SubstrateTextureIO"]),
         .library(name: "SubstrateMath", targets: ["SubstrateMath"]),
         .library(name: "AppFramework", targets: ["AppFramework"]),
         .executable(name: "ShaderTool", targets: ["ShaderTool"])
@@ -48,20 +49,24 @@ let package = Package(
         
         // Substrate
         .target(name: "SubstrateImage", dependencies: [
-                    .product(name: "stb_image", package: "Cstb"),
                     .product(name: "stb_image_resize", package: "Cstb"),
-                    .product(name: "stb_image_write", package: "Cstb"),
-                    .product(name: "tinyexr", package: "Cstb"),
-                    .product(name: "LodePNG", package: "LodePNG"),
-                    .product(name: "WuffsAux", package: "Wuffs"),
-                    .product(name: "CWuffs", package: "Wuffs"),
                     .product(name: "RealModule", package: "swift-numerics")],
                 swiftSettings: [
                 ]),
         
         .testTarget(name: "SubstrateImageTests", dependencies: ["SubstrateImage"]),
         
-        .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage"],
+        .target(name: "SubstrateImageIO", dependencies: ["SubstrateImage",
+                                                         .product(name: "stb_image", package: "Cstb"),
+                                                         .product(name: "stb_image_write", package: "Cstb"),
+                                                         .product(name: "tinyexr", package: "Cstb"),
+                                                         .product(name: "LodePNG", package: "LodePNG"),
+                                                         .product(name: "WuffsAux", package: "Wuffs"),
+                                                         .product(name: "CWuffs", package: "Wuffs")],
+                swiftSettings: [
+                ]),
+        
+        .target(name: "SubstrateTextureIO", dependencies: ["Substrate", "SubstrateImage", "SubstrateImageIO"],
                 swiftSettings: [
                 ]),
         

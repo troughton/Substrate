@@ -345,6 +345,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         case .buffer:
             let buffer = Buffer(resource)!
             if let mtlBuffer = buffer.backingResourcePointer {
+                if buffer.heap != nil { Unmanaged<MTLResource>.fromOpaque(mtlBuffer)._withUnsafeGuaranteedRef { $0.makeAliasable() } }
                 CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer)))
             }
         case .texture:
@@ -353,6 +354,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 if texture.flags.contains(.windowHandle) {
                     return
                 }
+                if texture.heap != nil { Unmanaged<MTLResource>.fromOpaque(mtlTexture)._withUnsafeGuaranteedRef { $0.makeAliasable() } }
                 CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlTexture)))
             }
             

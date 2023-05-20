@@ -301,7 +301,9 @@ extension AffineMatrix2D where Scalar : Real {
             
             // compute x scale factor and normalize first column
             scale.x = m[0].length
-            m[0] = m[0] / scale.x
+            if scale.x != 0 {
+                m[0] /= scale.x
+            }
             
             // compute shear factor and make 2nd column orthogonal to 1st
             var shear: Scalar = 0
@@ -310,7 +312,9 @@ extension AffineMatrix2D where Scalar : Real {
             
             // compute y scale factor and normalize 2nd column
             scale.y = m[1].length
-            m[1] = m[1] / scale.y
+            if scale.y != 0 {
+                m[1] /= scale.y
+            }
             shear /= scale.y
             shear = Scalar.atan(shear)
             

@@ -7,6 +7,7 @@
 //
 
 import Foundation
+@_spi(SubstrateTextureIO) import SubstrateImage
 import CWuffs
 import WuffsAux
 import stb_image
@@ -91,41 +92,31 @@ fileprivate func inspectPNGChunkByName(state: inout LodePNGState, data: UnsafePo
     }
 }
 
-public struct ImageFileInfo: Hashable, Codable {
-    public let format: ImageFileFormat?
-    public let width : Int
-    public let height : Int
-    public let channelCount : Int
-    
-    public let bitDepth: Int
-    public let isSigned: Bool
-    public let isFloatingPoint: Bool
-    
-    public let colorSpace: ImageColorSpace
-    public let alphaMode: ImageAlphaMode
-    
-    /// The physical size of the image in metres.
-    public let physicalSize: SIMD2<Double>?
-    
-    public init(width: Int, height: Int, channelCount: Int,
-                bitDepth: Int,
-                isSigned: Bool,
-                isFloatingPoint: Bool,
-                colorSpace: ImageColorSpace,
-                alphaMode: ImageAlphaMode,
-                physicalSize: SIMD2<Double>? = nil) {
-        self.format = nil
-        self.width = width
-        self.height = height
-        self.channelCount = channelCount
-        self.bitDepth = bitDepth
-        self.isSigned = isSigned
-        self.isFloatingPoint = isFloatingPoint
-        self.colorSpace = colorSpace
-        self.alphaMode = alphaMode
-        self.physicalSize = physicalSize
+extension ImageAlphaMode {
+    func inferFromFileFormat(format: ImageFileFormat?, channelCount: Int) -> ImageAlphaMode {
+        if channelCount != 2 && channelCount != 4 {
+            return .none
+        }
+        if case .inferred = self, let format = format {
+            switch format {
+            case .png:
+                return .postmultiplied
+            case .exr:
+                return .premultiplied
+            case .bmp:
+                return .premultiplied
+            case .jpg, .hdr:
+                return .premultiplied // No transparency
+            default:
+                break
+            }
+        }
+        
+        return self
     }
-    
+}
+
+extension ImageFileInfo {
     public init(url: URL) throws {
         guard let format = ImageFileFormat(fileExtension: url.pathExtension) else {
             throw ImageLoadingError.invalidFile(url)
@@ -204,20 +195,21 @@ public struct ImageFileInfo: Hashable, Codable {
                 }
             }
             
-            self.format = .exr
-            self.width = Int(header.data_window.max_x - header.data_window.min_x + 1)
-            self.height = Int(header.data_window.max_y - header.data_window.min_y + 1)
+            let format = ImageFileFormat.exr
+            let width = Int(header.data_window.max_x - header.data_window.min_x + 1)
+            let height = Int(header.data_window.max_y - header.data_window.min_y + 1)
             
             let channelCount = Int(header.num_channels)
-            self.channelCount = channelCount
             
-            self.colorSpace = .linearSRGB
-            self.isFloatingPoint = true
-            self.isSigned = true
-            self.bitDepth = 32
-            self.alphaMode = channelCount == 2 || channelCount == 4 ? .premultiplied : .none
+            let colorSpace = ImageColorSpace.linearSRGB
+            let isFloatingPoint = true
+            let isSigned = true
+            let bitDepth = 32
+            let alphaMode: ImageAlphaMode = channelCount == 2 || channelCount == 4 ? .premultiplied : .none
+             
+            let physicalSize: SIMD2<Double>? = nil
             
-            self.physicalSize = nil
+            self.init(format: format, width: width, height: height, channelCount: channelCount, bitDepth: bitDepth, isSigned: isSigned, isFloatingPoint: isFloatingPoint, colorSpace: colorSpace, alphaMode: alphaMode, physicalSize: physicalSize)
             
         case .png:
             var state = LodePNGState()
@@ -249,10 +241,8 @@ public struct ImageFileInfo: Hashable, Codable {
                 try? inspectPNGChunkByName(state: &state, data: baseAddress, end: end, type: "iCCP")
             }
             
-            self.format = .png
-            self.width = Int(width)
-            self.height = Int(height)
-            self.channelCount = withUnsafePointer(to: state.info_png.color) {
+             let format = ImageFileFormat.png
+             let channelCount = withUnsafePointer(to: state.info_png.color) {
                 if lodepng_is_palette_type($0) != 0 {
                     return lodepng_has_palette_alpha($0) != 0 ? 4 : 3
                 } else {
@@ -260,28 +250,32 @@ public struct ImageFileInfo: Hashable, Codable {
                 }
             }
             
-            self.alphaMode = withUnsafePointer(to: state.info_png.color, { lodepng_can_have_alpha($0) != 0 }) ? .postmultiplied : .none
-            self.bitDepth = Int(state.info_png.color.bitdepth)
-            self.isSigned = false
-            self.isFloatingPoint = false
+            let alphaMode: ImageAlphaMode = withUnsafePointer(to: state.info_png.color, { lodepng_can_have_alpha($0) != 0 }) ? .postmultiplied : .none
+            let bitDepth = Int(state.info_png.color.bitdepth)
+            let isSigned = false
+            let isFloatingPoint = false
             
+            let colorSpace: ImageColorSpace
             if state.info_png.srgb_defined != 0 {
-                self.colorSpace = .sRGB
+                colorSpace = .sRGB
             } else if state.info_png.gama_defined != 0 {
                 if state.info_png.gama_gamma == 100_000 {
-                    self.colorSpace = .linearSRGB
+                    colorSpace = .linearSRGB
                 } else {
-                    self.colorSpace = .gammaSRGB(Float(state.info_png.gama_gamma) / 100_000.0)
+                    colorSpace = .gammaSRGB(Float(state.info_png.gama_gamma) / 100_000.0)
                 }
             } else {
-                self.colorSpace = .undefined
+                colorSpace = .undefined
             }
             
+            let physicalSize: SIMD2<Double>?
             if state.info_png.phys_defined != 0 {
-                self.physicalSize = SIMD2(1.0 / Double(state.info_png.phys_x), 1.0 / Double(state.info_png.phys_y))
+                physicalSize = SIMD2(1.0 / Double(state.info_png.phys_x), 1.0 / Double(state.info_png.phys_y))
             } else {
-                self.physicalSize = nil
+                physicalSize = nil
             }
+            
+            self.init(format: format, width: Int(width), height: Int(height), channelCount: channelCount, bitDepth: bitDepth, isSigned: isSigned, isFloatingPoint: isFloatingPoint, colorSpace: colorSpace, alphaMode: alphaMode, physicalSize: physicalSize)
             
         case .jpg, .tga, .bmp, .psd, .gif, .hdr:
             var width : Int32 = 0
@@ -291,27 +285,29 @@ public struct ImageFileInfo: Hashable, Codable {
                 throw ImageLoadingError.invalidData(message: stbi_failure_reason().flatMap { String(cString: $0) })
             }
             
-            self.format = ImageFileFormat(typeOf: data)
-            self.width = Int(width)
-            self.height = Int(height)
-            self.channelCount = Int(componentsPerPixel)
+            let format = ImageFileFormat(typeOf: data)
+            let channelCount = Int(componentsPerPixel)
             
             let isHDR = data.withUnsafeBytes { stbi_is_hdr_from_memory($0.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32($0.count)) } != 0
             let is16Bit = data.withUnsafeBytes { stbi_is_16_bit_from_memory($0.baseAddress?.assumingMemoryBound(to: stbi_uc.self), Int32($0.count)) } != 0
             
+            let bitDepth: Int
+            let isFloatingPoint: Bool
             if isHDR {
-                self.bitDepth = 32
-                self.isFloatingPoint = true
+                bitDepth = 32
+                isFloatingPoint = true
             } else {
-                self.bitDepth = is16Bit ? 16 : 8
-                self.isFloatingPoint = false
+                bitDepth = is16Bit ? 16 : 8
+                isFloatingPoint = false
             }
             
-            self.isSigned = false
-            self.colorSpace = isHDR ? .linearSRGB : .undefined
-            self.alphaMode = componentsPerPixel == 2 || componentsPerPixel == 4 ? .inferred : .none
+            let isSigned = false
+            let colorSpace: ImageColorSpace = isHDR ? .linearSRGB : .undefined
+            let alphaMode: ImageAlphaMode = componentsPerPixel == 2 || componentsPerPixel == 4 ? .inferred : .none
             
-            self.physicalSize = nil // TODO: read physical sizes from PSDs
+            let physicalSize: SIMD2<Double>? = nil // TODO: read physical sizes from PSDs
+            
+            self.init(format: format, width: Int(width), height: Int(height), channelCount: channelCount, bitDepth: bitDepth, isSigned: isSigned, isFloatingPoint: isFloatingPoint, colorSpace: colorSpace, alphaMode: alphaMode, physicalSize: physicalSize)
             
         default:
             #if canImport(AppKit)
@@ -322,19 +318,23 @@ public struct ImageFileInfo: Hashable, Codable {
             loadLoop: repeat {
                 if Task.isCancelled { throw CancellationError() }
                 
-                let status = bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: dataPrefixCount >= data.count)
+                let complete = dataPrefixCount >= data.count
+                let status = bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: complete)
+                loadingComplete = complete
+                
                 switch status {
                 case NSBitmapImageRep.LoadStatus.unknownType.rawValue,
                     NSBitmapImageRep.LoadStatus.readingHeader.rawValue:
-                    dataPrefixCount += 2048
+                    dataPrefixCount *= 2
                 case NSBitmapImageRep.LoadStatus.invalidData.rawValue,
                     NSBitmapImageRep.LoadStatus.unexpectedEOF.rawValue:
                     throw ImageLoadingError.invalidData(message: "Invalid data or unexpected end of file")
                 case NSBitmapImageRep.LoadStatus.willNeedAllData.rawValue:
                     dataPrefixCount = data.count
+                    break loadLoop
                 case NSBitmapImageRep.LoadStatus.completed.rawValue,
                     _ where status > 0:
-                    loadingComplete = status == NSBitmapImageRep.LoadStatus.completed.rawValue
+                    loadingComplete = loadingComplete || status == NSBitmapImageRep.LoadStatus.completed.rawValue
                     break loadLoop
                 default:
                     throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
@@ -342,41 +342,63 @@ public struct ImageFileInfo: Hashable, Codable {
             } while true
             
             if !loadingComplete {
-                bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: true)
+                bitmapImageRep.incrementalLoad(from: data, complete: true)
             }
             
-            self.format = format
-            self.width = bitmapImageRep.pixelsWide
-            self.height = bitmapImageRep.pixelsHigh
-            self.channelCount = bitmapImageRep.samplesPerPixel
-            self.bitDepth = bitmapImageRep.bitsPerPixel / bitmapImageRep.samplesPerPixel
-            self.isSigned = false
-            self.isFloatingPoint = bitmapImageRep.bitmapFormat.contains(.floatingPointSamples)
+            let format = format
+            var width = bitmapImageRep.pixelsWide
+            var height = bitmapImageRep.pixelsHigh
+            var channelCount = bitmapImageRep.samplesPerPixel
+            var bitDepth = bitmapImageRep.bitsPerPixel / bitmapImageRep.samplesPerPixel
+            var isFloatingPoint = bitmapImageRep.bitmapFormat.contains(.floatingPointSamples)
+            var isSigned = isFloatingPoint
             
-            if let colorSpace = bitmapImageRep.colorSpace.cgColorSpace {
-                if colorSpace.name == CGColorSpace.genericGrayGamma2_2 || colorSpace.name == CGColorSpace.sRGB {
-                    self.colorSpace = .sRGB
-                } else if colorSpace.name == CGColorSpace.linearGray || colorSpace.name == CGColorSpace.linearSRGB {
-                    self.colorSpace = .linearSRGB
+            let colorSpace: ImageColorSpace
+            if let cgColorSpace = bitmapImageRep.colorSpace.cgColorSpace {
+                if cgColorSpace.name == CGColorSpace.genericGrayGamma2_2 || cgColorSpace.name == CGColorSpace.sRGB {
+                    colorSpace = .sRGB
+                } else if cgColorSpace.name == CGColorSpace.linearGray || cgColorSpace.name == CGColorSpace.linearSRGB {
+                    colorSpace = .linearSRGB
                 } else if let gamma = bitmapImageRep.value(forProperty: .gamma) as? Double {
-                    self.colorSpace = .gammaSRGB(Float(1.0 / gamma))
+                    colorSpace = .gammaSRGB(Float(1.0 / gamma))
                 } else {
-                    self.colorSpace = .undefined
+                    colorSpace = .undefined
                 }
             } else {
-                self.colorSpace = .undefined
+                colorSpace = .undefined
             }
             
+            var alphaMode: ImageAlphaMode
             switch bitmapImageRep.samplesPerPixel {
             case 1, 3:
-                self.alphaMode = .none
+                alphaMode = .none
             case 2, 4:
-                self.alphaMode = bitmapImageRep.bitmapFormat.contains(.alphaNonpremultiplied) ? .postmultiplied : .premultiplied
+                alphaMode = bitmapImageRep.bitmapFormat.contains(.alphaNonpremultiplied) ? .postmultiplied : .premultiplied
             default:
-                self.alphaMode = .inferred
+                alphaMode = .inferred
             }
             
-            self.physicalSize = nil // TODO: read physical sizes from PSDs
+            if bitmapImageRep.pixelsWide == 0 || bitmapImageRep.pixelsHigh == 0, let cgImage = bitmapImageRep.cgImage {
+                // Sometimes the NSBitmapImageRep's pixelsWide and pixelsHigh fields don't get correctly initialised (FB12193672).
+                width = cgImage.width
+                height = cgImage.height
+                channelCount = cgImage.bitsPerPixel / cgImage.bitsPerComponent
+                bitDepth = cgImage.bitsPerComponent
+                isFloatingPoint = cgImage.bitmapInfo.contains(.floatComponents)
+                isSigned = isFloatingPoint
+                switch cgImage.alphaInfo {
+                case .first, .last, .alphaOnly:
+                    alphaMode = .postmultiplied
+                case .premultipliedFirst, .premultipliedLast:
+                    alphaMode = .premultiplied
+                default:
+                    alphaMode = .none
+                }
+            }
+            
+            let physicalSize: SIMD2<Double>? = nil // TODO: read physical sizes from PSDs
+            
+            self.init(format: format, width: width, height: height, channelCount: channelCount, bitDepth: bitDepth, isSigned: isSigned, isFloatingPoint: isFloatingPoint, colorSpace: colorSpace, alphaMode: alphaMode, physicalSize: physicalSize)
             
             #else
             throw ImageLoadingError.invalidData
@@ -384,24 +406,6 @@ public struct ImageFileInfo: Hashable, Codable {
         }
     }
 }
-
-public protocol ImageLoadingDelegate {
-    func channelCount(for fileInfo: ImageFileInfo) -> Int
-    func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) async throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator)
-}
-
-extension ImageLoadingDelegate {
-    public func channelCount(for fileInfo: ImageFileInfo) -> Int {
-        return fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
-    }
-    
-    public func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator) {
-        return ImageAllocator.allocateMemoryDefault(byteCount: byteCount, alignment: alignment, zeroed: zeroed)
-    }
-}
-
-@usableFromInline
-struct DefaultImageLoadingDelegate: ImageLoadingDelegate {}
 
 struct WuffsImageDecodeCallbacks: DecodeImageCallbacks {
     let loadingDelegate: ImageLoadingDelegate
@@ -1139,37 +1143,42 @@ extension Image where ComponentType == Float {
             default:
                 channelIndex = c
             }
+            let width = self.width
+            let height = self.height
+            let rowStride = self.componentsPerRow
+            let channelCount = self.channelCount
             
-            if header.tiled != 0 {
-                for it in 0..<Int(image.num_tiles) {
-                    let src = UnsafeRawPointer(image.tiles![it].images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
-                    for j in 0..<header.tile_size_y {
-                        for i in 0..<header.tile_size_x {
-                            let ii =
+            self.withUnsafeMutableBufferPointer { data in
+                if header.tiled != 0 {
+                    for it in 0..<Int(image.num_tiles) {
+                        let src = UnsafeRawPointer(image.tiles![it].images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
+                        for j in 0..<header.tile_size_y {
+                            for i in 0..<header.tile_size_x {
+                                let ii =
                                 image.tiles![it].offset_x * header.tile_size_x + i
-                            let jj =
+                                let jj =
                                 image.tiles![it].offset_y * header.tile_size_y + j
-                            let idx = Int(ii + jj * image.width)
-                            
-                            // out of region check.
-                            if ii >= image.width || jj >= image.height {
-                                continue;
+                                let idx = Int(ii + jj * image.width)
+                                
+                                // out of region check.
+                                if ii >= image.width || jj >= image.height {
+                                    continue;
+                                }
+                                let srcIdx = Int(i + j * header.tile_size_x)
+                                
+                                data[channelCount * idx + channelIndex] = src[c][srcIdx]
                             }
-                            let srcIdx = Int(i + j * header.tile_size_x)
-                            
-                            self.storage.data[self.channelCount * idx + channelIndex] = src[c][srcIdx]
+                        }
+                    }
+                } else {
+                    let src = UnsafeRawPointer(image.images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
+                    for y in 0..<height {
+                        for x in 0..<width {
+                            let i = y &* rowStride &+ x
+                            data[channelCount &* i + channelIndex] = src[c][i]
                         }
                     }
                 }
-            } else {
-                let src = UnsafeRawPointer(image.images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
-                for y in 0..<self.height {
-                    for x in 0..<self.width {
-                        let i = y &* self.width &+ x
-                        self.storage.data[self.channelCount &* i + channelIndex] = src[c][i]
-                    }
-                }
-                
             }
         }
     }
@@ -1180,263 +1189,15 @@ extension Image where ComponentType == Float {
     }
 }
 
-#if canImport(CoreGraphics)
-import CoreGraphics
-
-
-extension Image {
-    public var cgColorSpace: CGColorSpace {
-        let isGrayscale = self.channelCount < 3
-        
-        let colorSpace: CGColorSpace
-        switch self.colorSpace {
-        case .undefined:
-            colorSpace = isGrayscale ? CGColorSpaceCreateDeviceGray() : CGColorSpaceCreateDeviceRGB()
-        case .gammaSRGB(let gamma):
-            var whitePoint: [CGFloat] = [0.3127, 0.3290, 1.0]
-            colorSpace = CGColorSpace(calibratedGrayWhitePoint: &whitePoint, blackPoint: nil, gamma: CGFloat(gamma)) ?? CGColorSpace(name: CGColorSpace.linearSRGB)!
-        case .linearSRGB:
-            colorSpace = CGColorSpace(name: isGrayscale ? CGColorSpace.linearGray : CGColorSpace.linearSRGB)!
-        case .sRGB:
-            colorSpace = CGColorSpace(name: isGrayscale ? CGColorSpace.genericGrayGamma2_2 : CGColorSpace.sRGB)!
-        }
-        return colorSpace
-    }
-    
-    public var cgBitmapInfo: CGBitmapInfo {
-        var bitmapInfo = CGBitmapInfo()
-        if T.self == Float.self {
-            bitmapInfo.formUnion(.floatComponents)
-        } else if T.self == UInt16.self {
-            bitmapInfo.formUnion(.byteOrder16Little)
-        } else if T.self == UInt32.self {
-            bitmapInfo.formUnion(.byteOrder32Little)
-        }
-        if self.channelCount == 4 || self.channelCount == 2 {
-            bitmapInfo.formUnion(CGBitmapInfo(rawValue: self.alphaMode == .premultiplied ? CGImageAlphaInfo.premultipliedLast.rawValue : CGImageAlphaInfo.last.rawValue))
-        } else {
-            bitmapInfo.formUnion(CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue))
-        }
-        return bitmapInfo
-    }
-}
-
-extension Image where ComponentType: SIMDScalar {
-    @_specialize(kind: full, where ComponentType == UInt8)
-    @_specialize(kind: full, where ComponentType == UInt16)
-    @_specialize(kind: full, where ComponentType == Float)
-    init(_cgImage cgImage: CGImage, fileInfo: ImageFileInfo?, loadingDelegate: ImageLoadingDelegate? = nil) throws {
-        var cgImage = cgImage
-        
-        let cgColorSpace = cgImage.colorSpace
-        let colorSpace: ImageColorSpace
-        switch cgColorSpace?.name {
-        case CGColorSpace.linearSRGB, CGColorSpace.linearGray, CGColorSpace.extendedLinearSRGB:
-            colorSpace = .linearSRGB
-        case CGColorSpace.sRGB, CGColorSpace.extendedSRGB:
-            colorSpace = .sRGB
-        default:
-            if ComponentType.self == UInt8.self, let sRGB = cgImage.copy(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!) {
-                cgImage = sRGB
-                colorSpace = .sRGB
-            } else if let linearSRGB = cgImage.copy(colorSpace: CGColorSpace(name: CGColorSpace.linearSRGB)!) {
-                cgImage = linearSRGB
-                colorSpace = .linearSRGB
-            } else {
-                colorSpace = .undefined
-            }
-        }
-        
-        guard let data = cgImage.dataProvider?.data as NSData? else {
-            throw ImageLoadingError.invalidData(message: "Unable to retrieve CGImage data provider")
-        }
-        
-        let alphaMode: ImageAlphaMode
-        switch cgImage.alphaInfo {
-        case .first, .last:
-            alphaMode = .postmultiplied
-        case .premultipliedFirst, .premultipliedLast:
-            alphaMode = .premultiplied
-        default:
-            alphaMode = .none
-        }
-        
-        let loadingDelegate = loadingDelegate ?? DefaultImageLoadingDelegate()
-        let channelCount = fileInfo.map { loadingDelegate.channelCount(for: $0) } ?? (cgImage.bitsPerPixel / cgImage.bitsPerComponent)
-        
-        let (imageData, allocator) = try loadingDelegate.allocateMemory(byteCount: cgImage.width * cgImage.height * channelCount * MemoryLayout<ComponentType>.stride, alignment: MemoryLayout<SIMD4<ComponentType>>.stride, zeroed: false)
-        
-        self.init(width: cgImage.width, height: cgImage.height,
-                  channelCount: channelCount,
-                  colorSpace: colorSpace,
-                  alphaMode: alphaMode,
-                  data: imageData.bindMemory(to: ComponentType.self),
-                  allocator: allocator)
-        
-        let sourceChannelCount = cgImage.bitsPerPixel / cgImage.bitsPerComponent
-        let width = self.width
-        let height = self.height
-        
-        self.withUnsafeMutableBufferPointer { contentsBuffer in
-            for y in 0..<height {
-                let base = data.bytes + y * cgImage.bytesPerRow
-                let dest = contentsBuffer.baseAddress!.advanced(by: y * width * channelCount)
-                if sourceChannelCount == channelCount {
-                    for i in 0..<width * channelCount {
-                        dest.advanced(by: i).initialize(to: base.load(fromByteOffset: i * MemoryLayout<ComponentType>.stride, as: ComponentType.self))
-                    }
-                } else {
-                    for x in 0..<width {
-                        for c in 0..<Swift.min(sourceChannelCount, channelCount) {
-                            dest.advanced(by: x * channelCount + c).initialize(to: base.load(fromByteOffset: (x * sourceChannelCount + c) * MemoryLayout<ComponentType>.stride, as: ComponentType.self))
-                        }
-                        for c in Swift.min(sourceChannelCount, channelCount)..<channelCount {
-                            dest.advanced(by: x * channelCount + c).withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<ComponentType>.size) { $0.initialize(repeating: 0 as UInt8, count: MemoryLayout<ComponentType>.size) }
-                        }
-                    }
-                }
-            }
-            
-            // Reference: https://stackoverflow.com/a/49087310
-            let alphaInfo: CGImageAlphaInfo? = CGImageAlphaInfo(rawValue: cgImage.bitmapInfo.rawValue & CGBitmapInfo.alphaInfoMask.rawValue)
-            let alphaFirst: Bool = alphaInfo == .premultipliedFirst || alphaInfo == .first || alphaInfo == .noneSkipFirst
-            let alphaLast: Bool = alphaInfo == .premultipliedLast || alphaInfo == .last || alphaInfo == .noneSkipLast
-            var argbOrder: Bool = false
-            if cgImage.bitsPerComponent == 8, !cgImage.bitmapInfo.intersection([.byteOrder16Little, .byteOrder32Little]).isEmpty {
-                argbOrder = true
-            } else if cgImage.bitsPerComponent == 16, cgImage.bitmapInfo.contains(.byteOrder32Little) {
-                argbOrder = true
-            } else if cgImage.bitsPerComponent == 16, !cgImage.bitmapInfo.contains(.byteOrder16Little) {
-                contentsBuffer.withMemoryRebound(to: UInt16.self) { buffer in
-                    for i in buffer.indices {
-                        buffer[i] = buffer[i].bigEndian
-                    }
-                }
-                
-                argbOrder = false
-            } else if cgImage.bitsPerComponent == 32, !cgImage.bitmapInfo.contains(.byteOrder32Little) {
-                contentsBuffer.withMemoryRebound(to: UInt32.self) { buffer in
-                    for i in buffer.indices {
-                        buffer[i] = buffer[i].bigEndian
-                    }
-                }
-                
-                argbOrder = false
-            }
-            
-            if channelCount == 2 {
-                if alphaFirst != argbOrder {
-                    for baseIndex in stride(from: 0, to: contentsBuffer.count, by: channelCount) {
-                        contentsBuffer.swapAt(baseIndex + 0, baseIndex + 1) // AR to RA
-                    }
-                }
-            } else if channelCount == 3 {
-                if argbOrder {
-                    for baseIndex in stride(from: 0, to: contentsBuffer.count, by: channelCount) {
-                        contentsBuffer.swapAt(baseIndex + 0, baseIndex + 2) // BGR to RGB
-                    }
-                }
-            } else if channelCount == 4 {
-                let swizzle: SIMD4<Int>
-                if alphaFirst && argbOrder {
-                    swizzle = SIMD4(2, 1, 0, 3)
-                } else if alphaFirst {
-                    swizzle = SIMD4(1, 2, 3, 0)
-                } else if alphaLast && argbOrder {
-                    swizzle = SIMD4(3, 2, 1, 0)
-                } else {
-                    swizzle = SIMD4(0, 1, 2, 3)
-                }
-                
-                if swizzle != SIMD4(0, 1, 2, 3) {
-                    contentsBuffer.withMemoryRebound(to: SIMD4<ComponentType>.self) { buffer in
-                        for i in buffer.indices {
-                            buffer[i] = buffer[i][swizzle]
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-extension Image where ComponentType: SIMDScalar & UnsignedInteger & FixedWidthInteger {
-    @_specialize(kind: full, where ComponentType == UInt8)
-    @_specialize(kind: full, where ComponentType == UInt16)
-    public init(cgImage: CGImage, fileInfo: ImageFileInfo? = nil, loadingDelegate: ImageLoadingDelegate? = nil) throws {
-        try self.init(_cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
-        
-        if let fileInfo = fileInfo, fileInfo.channelCount < self.channelCount {
-            let alphaChannelIndex = self.channelCount - 1
-            self.apply(channelRange: alphaChannelIndex..<self.channelCount) { _ in
-                ComponentType.max
-            }
-        }
-    }
-}
-
-extension Image where ComponentType: SIMDScalar & SignedInteger & FixedWidthInteger {
-    public init(cgImage: CGImage, fileInfo: ImageFileInfo? = nil, loadingDelegate: ImageLoadingDelegate? = nil) throws {
-        try self.init(_cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
-    }
-}
-
-extension Image where ComponentType: SIMDScalar & BinaryFloatingPoint {
-    @_specialize(kind: full, where ComponentType == Float)
-    public init(cgImage: CGImage, fileInfo: ImageFileInfo? = nil, loadingDelegate: ImageLoadingDelegate? = nil) throws {
-        try self.init(_cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
-        
-        if let fileInfo = fileInfo, fileInfo.channelCount < self.channelCount {
-            let alphaChannelIndex = self.channelCount - 1
-            self.apply(channelRange: alphaChannelIndex..<self.channelCount) { _ in
-                1.0
-            }
-        }
-    }
-}
-
-#endif
-
 #if canImport(AppKit)
 
 extension Image {
     @inline(__always)
     fileprivate func converted<R>(to format: R.Type) throws -> Image<R> {
-        if R.self == ComponentType.self {
-            return self as! Image<R>
+        guard let result = Image<R>(self) else {
+            throw ImageLoadingError.unsupportedComponentFormat(R.self)
         }
-        if ComponentType.self == Float.self {
-            if R.self == UInt8.self {
-                return Image<UInt8>(self as! Image<Float>) as! Image<R>
-            } else if R.self == Int8.self {
-                return Image<Int8>(self as! Image<Float>) as! Image<R>
-            } else if R.self == UInt16.self {
-                return Image<UInt16>(self as! Image<Float>) as! Image<R>
-            } else if R.self == Int16.self {
-                return Image<Int16>(self as! Image<Float>) as! Image<R>
-            }
-        } else if ComponentType.self == UInt8.self {
-            if R.self == UInt16.self {
-                return (self as! Image<UInt16>).map { Int16($0) } as! Image<R>
-            } else if R.self == Float.self {
-                return Image<Float>(self as! Image<UInt8>) as! Image<R>
-            }
-        } else if ComponentType.self == Int8.self {
-            if R.self == Int16.self {
-                return (self as! Image<Int8>).map { Int16($0) } as! Image<R>
-            } else if R.self == Float.self {
-                return Image<Float>(self as! Image<Int8>) as! Image<R>
-            }
-        } else if ComponentType.self == UInt16.self {
-            if R.self == Float.self {
-                return Image<Float>(self as! Image<UInt16>) as! Image<R>
-            }
-        } else if ComponentType.self == Int16.self {
-            if R.self == Float.self {
-                return Image<Float>(self as! Image<Int16>) as! Image<R>
-            }
-        }
-        throw ImageLoadingError.unsupportedComponentFormat(R.self)
+        return result
     }
 }
 

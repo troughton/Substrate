@@ -225,28 +225,6 @@ public enum ImageAlphaMode: String, Codable, Hashable, Sendable {
     case postmultiplied
     
     case inferred
-    
-    func inferFromFileFormat(format: ImageFileFormat?, channelCount: Int) -> ImageAlphaMode {
-        if channelCount != 2 && channelCount != 4 {
-            return .none
-        }
-        if case .inferred = self, let format = format {
-            switch format {
-            case .png:
-                return .postmultiplied
-            case .exr:
-                return .premultiplied
-            case .bmp:
-                return .premultiplied
-            case .jpg, .hdr:
-                return .premultiplied // No transparency
-            default:
-                break
-            }
-        }
-        
-        return self
-    }
 }
 
 public enum ImageEdgeWrapMode: Hashable, Sendable {
@@ -342,7 +320,8 @@ public enum ImageAllocator {
         return (memory, .system)
     }
     
-    func deallocate(data: UnsafeMutableRawBufferPointer) {
+    @_spi(SubstrateTextureIO)
+    public func deallocate(data: UnsafeMutableRawBufferPointer) {
         switch self {
         case .system:
             data.deallocate()
@@ -526,6 +505,66 @@ public struct Image<ComponentType> : AnyImage {
     }
     
     @inlinable
+    public init(_ other: Image<ComponentType>) {
+        self = other
+    }
+    
+    @inlinable
+    public init?<Other>(_ other: Image<Other>) {
+        if let image = other as? Image<ComponentType> {
+            self = image
+        } else if let image = other as? Image<Float> {
+            if ComponentType.self == UInt8.self {
+                self = Image<UInt8>(image) as! Image<ComponentType>
+            } else if ComponentType.self == Int8.self {
+                self = Image<Int8>(image) as! Image<ComponentType>
+            } else if ComponentType.self == UInt16.self {
+                self = Image<UInt16>(image) as! Image<ComponentType>
+            } else if ComponentType.self == Int16.self {
+                self = Image<Int16>(image) as! Image<ComponentType>
+            } else {
+                return nil
+            }
+        } else if let image = other as? Image<UInt8> {
+            if ComponentType.self == UInt16.self {
+                self = Image<UInt16>(image) as! Image<ComponentType>
+            } else if ComponentType.self == Int8.self {
+                self = Image<Int8>(image) as! Image<ComponentType>
+            } else if ComponentType.self == UInt16.self {
+                self = Image<UInt16>(image) as! Image<ComponentType>
+            } else if ComponentType.self == Int16.self {
+                self = Image<Int16>(image) as! Image<ComponentType>
+            } else if ComponentType.self == Float.self {
+                self = Image<Float>(image) as! Image<ComponentType>
+            } else {
+                return nil
+            }
+        } else if let image = other as? Image<Int8> {
+            if ComponentType.self == Int16.self {
+                self = Image<Int16>(image) as! Image<ComponentType>
+            } else if ComponentType.self == Float.self {
+                self = Image<Float>(image) as! Image<ComponentType>
+            } else {
+                return nil
+            }
+        } else if let image = other as? Image<UInt16> {
+            if ComponentType.self == Float.self {
+                self = Image<Float>(image) as! Image<ComponentType>
+            } else {
+                return nil
+            }
+        } else if let image = other as? Image<Int16> {
+            if ComponentType.self == Float.self {
+                self = Image<Float>(image) as! Image<ComponentType>
+            } else {
+                return nil
+            }
+        } else {
+            return nil
+        }
+    }
+    
+    @inlinable
     mutating func ensureUniqueness() {
         if !isKnownUniquelyReferenced(&self.storage) {
             self.storage = .init(copying: self.truncatedStorageData)
@@ -537,6 +576,10 @@ public struct Image<ComponentType> : AnyImage {
         return self.storage.allocator
     }
     
+    public var componentsPerRow: Int {
+        return self.width * self.channelCount
+    }
+    
     @inlinable
     public var allocatedSize: Int {
         return self.storage.data.count * MemoryLayout<ComponentType>.stride
@@ -544,7 +587,7 @@ public struct Image<ComponentType> : AnyImage {
     
     @inlinable
     public var elementCount: Int {
-        return self.width * self.height * self.channelCount
+        return self.height * self.componentsPerRow
     }
     
     @usableFromInline
@@ -618,7 +661,7 @@ public struct Image<ComponentType> : AnyImage {
     
     @inlinable @inline(__always)
     func uncheckedIndex(x: Int, y: Int, channel: Int) -> Int {
-        return (y &* self.width &+ x) &* self.channelCount &+ channel
+        return y &* self.componentsPerRow &+ x &* self.channelCount &+ channel
     }
     
     @inlinable @inline(__always)
@@ -664,7 +707,7 @@ public struct Image<ComponentType> : AnyImage {
         precondition(channelRange.lowerBound >= 0 && channelRange.upperBound <= self.channelCount)
         self.ensureUniqueness()
         for y in 0..<self.height {
-            let yBase = y * self.width * self.channelCount
+            let yBase = y * self.componentsPerRow
             for x in 0..<self.width {
                 let baseIndex = yBase + x * self.channelCount
                 for c in channelRange {
@@ -679,7 +722,7 @@ public struct Image<ComponentType> : AnyImage {
         precondition(channelRange.lowerBound >= 0 && channelRange.upperBound <= self.channelCount)
         self.ensureUniqueness()
         for y in 0..<self.height {
-            let yBase = y * self.width * self.channelCount
+            let yBase = y * self.componentsPerRow
             for x in 0..<self.width {
                 let baseIndex = yBase + x * self.channelCount
                 for c in channelRange {
@@ -698,7 +741,7 @@ public struct Image<ComponentType> : AnyImage {
     @inlinable
     public func forEachPixel(_ function: (_ x: Int, _ y: Int, _ channel: Int, _ value: T) -> Void) {
         for y in 0..<self.height {
-            let yBase = y * self.width * self.channelCount
+            let yBase = y * self.componentsPerRow
             for x in 0..<self.width {
                 let baseIndex = yBase + x * self.channelCount
                 for c in 0..<self.channelCount {
@@ -827,10 +870,12 @@ public struct Image<ComponentType> : AnyImage {
         
         let sourceWidth = self.width
         let sourceHeight = self.height
+        let sourceStride = self.componentsPerRow * MemoryLayout<ComponentType>.stride
+        let resultStride = result.componentsPerRow * MemoryLayout<ComponentType>.stride
         sourceImage.withUnsafeBufferPointer { storage in
             result.withUnsafeMutableBufferPointer { result in
-                _ = stbir_resize(storage.baseAddress, Int32(sourceWidth), Int32(sourceHeight), 0,
-                                 result.baseAddress, Int32(width), Int32(height), 0,
+                _ = stbir_resize(storage.baseAddress, Int32(sourceWidth), Int32(sourceHeight), Int32(sourceStride),
+                                 result.baseAddress, Int32(width), Int32(height), Int32(resultStride),
                                  dataType,
                                  Int32(self.channelCount),
                                  self.channelCount == 4 ? 3 : -1,
@@ -867,7 +912,7 @@ public struct Image<ComponentType> : AnyImage {
         var result = Image<ComponentType>(width: self.height, height: self.width, channelCount: self.channelCount, colorSpace: self.colorSpace, alphaModeAllowInferred: self.alphaMode, zeroStorage: false)
         
         let pixelStride = self.channelCount
-        let rowStride = self.width * pixelStride
+        let rowStride = self.componentsPerRow
         let width = result.width
         let height = result.height
         result.withUnsafeMutableBufferPointer { result in
@@ -987,12 +1032,12 @@ extension Image where ComponentType: SIMDScalar {
             var result = SIMD4<ComponentType>()
             if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
                 for i in 0..<Swift.min(alphaChannelIndex, 3) {
-                    result[i] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i]
+                    result[i] = storage[y &* self.componentsPerRow &+ x &* self.channelCount &+ i]
                 }
-                result[3] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ alphaChannelIndex]
+                result[3] = storage[y &* self.componentsPerRow &+ x &* self.channelCount &+ alphaChannelIndex]
             } else {
                 for i in 0..<Swift.min(self.channelCount, 4) {
-                    result[i] = storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i]
+                    result[i] = storage[y &* self.componentsPerRow &+ x &* self.channelCount &+ i]
                 }
             }
             return result
@@ -1007,12 +1052,12 @@ extension Image where ComponentType: SIMDScalar {
             
             if self.channelCount != 4, let alphaChannelIndex = self.alphaChannelIndex {
                 for i in 0..<Swift.min(alphaChannelIndex, 3) {
-                    storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i] = newValue[i]
+                    storage[y &* self.componentsPerRow &+ x &* self.channelCount &+ i] = newValue[i]
                 }
                 storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ alphaChannelIndex] = newValue.w
             } else {
                 for i in 0..<Swift.min(self.channelCount, 4) {
-                    storage[y &* self.width &* self.channelCount &+ x &* self.channelCount &+ i] = newValue[i]
+                    storage[y &* self.componentsPerRow &+ x &* self.channelCount &+ i] = newValue[i]
                 }
             }
         }
@@ -1141,13 +1186,13 @@ extension Image: Collection {
         @inlinable
         init(x: Int, y: Int, image: Image) {
             precondition((0..<image.width).contains(x) && (0..<image.height).contains(y))
-            self.offset = image.channelCount * (image.width * y + x)
+            self.offset = image.componentsPerRow * y + image.channelCount * x
         }
         
         @inlinable
         init(x: Int, y: Int, channel: Int, image: Image) {
             precondition((0..<image.width).contains(x) && (0..<image.height).contains(y) && (0..<image.channelCount).contains(channel))
-            self.offset = image.channelCount * (image.width * y + x) + channel
+            self.offset = image.componentsPerRow * y + image.channelCount * x
         }
         
         @inlinable
@@ -1172,7 +1217,7 @@ extension Image: Collection {
             let channelCount = self.channelCount
             
             let (pixelIndex, channelIndex) = position.offset.quotientAndRemainder(dividingBy: channelCount)
-            let (y, x) = pixelIndex.quotientAndRemainder(dividingBy: self.width)
+            let (y, x) = pixelIndex.quotientAndRemainder(dividingBy: self.componentsPerRow)
             
             return self.withUnsafeBufferPointer { imageBuffer in
                 return (x, y, channelIndex, imageBuffer[position.offset])
@@ -1192,19 +1237,19 @@ extension Image: Collection {
     
     @inlinable
     public var endIndex: Index {
-        return .init(offset: self.width * self.height * self.channelCount)
+        return .init(offset: self.height * self.componentsPerRow)
     }
     
     @inlinable
     public func index(after i: Index) -> Index {
-        return .init(offset: i.offset + 1)
+        return .init(offset: i.offset + 1) // FIXME: componentsPerRow/row stride
     }
 }
 
 extension Image where ComponentType == UInt8 {
     private func _applyUnchecked(_ function: (UInt8) -> UInt8, channelRange: Range<Int>) {
         for y in 0..<self.height {
-            let yBase = y * self.width * self.channelCount
+            let yBase = y * self.componentsPerRow
             for x in 0..<self.width {
                 let baseIndex = yBase + x * self.channelCount
                 for c in channelRange {
@@ -1225,7 +1270,7 @@ extension Image where ComponentType == UInt8 {
     private func _convertWithAlpha(using lut: UnsafeBufferPointer<UInt8>) {
         let buffer = UnsafeMutableBufferPointer(rebasing: self.storage.data.prefix(self.elementCount))
         if self.channelCount == 4 {
-            let simdBuffer = UnsafeMutableRawBufferPointer(buffer).bindMemory(to: SIMD4<UInt8>.self)
+            let simdBuffer = UnsafeMutableRawBufferPointer(buffer).bindMemory(to: SIMD4<UInt8>.self) // FIXME: componentsPerRow/row stride
             for i in 0..<simdBuffer.count {
                 let sourcePixels = simdBuffer[i]
                 let alpha = sourcePixels.w
@@ -1284,7 +1329,7 @@ extension Image where ComponentType: BinaryInteger & FixedWidthInteger & Unsigne
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
                 for (i, sourceVal) in source.enumerated() {
-                    dest[i] = floatToUnorm(sourceVal, type: T.self)
+                    dest[i] = floatToUnorm(sourceVal, type: T.self) // FIXME: componentsPerRow/row stride
                 }
             }
         }
@@ -1613,6 +1658,11 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     }
     
     @inlinable
+    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, channel: Int, wrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        return self.sample(pixelCoordinate: pixelCoordinate, channel: channel, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
+    }
+    
+    @inlinable
     public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
         return self.sample(pixelCoordinate: pixelCoordinate, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
     }
@@ -1894,7 +1944,7 @@ extension Image where ComponentType == Float {
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
                 for (i, sourceVal) in source.enumerated() {
-                    dest[i] = snormToFloat(sourceVal)
+                    dest[i] = snormToFloat(sourceVal) // FIXME: componentsPerRow/row stride
                 }
             }
         }
@@ -1907,7 +1957,7 @@ extension Image where ComponentType == Float {
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
                 for (i, sourceVal) in source.enumerated() {
-                    dest[i] = unormToFloat(sourceVal)
+                    dest[i] = unormToFloat(sourceVal) // FIXME: componentsPerRow/row stride
                 }
             }
         }
@@ -1988,9 +2038,28 @@ extension Image where ComponentType: BinaryFloatingPoint {
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
                 for (i, sourceVal) in source.enumerated() {
-                    dest[i] = T(sourceVal)
+                    dest[i] = T(sourceVal)  // FIXME: componentsPerRow/row stride
                 }
             }
         }
     }
+}
+
+public protocol ImageLoadingDelegate {
+    func channelCount(for fileInfo: ImageFileInfo) -> Int
+    func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) async throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator)
+}
+
+extension ImageLoadingDelegate {
+    public func channelCount(for fileInfo: ImageFileInfo) -> Int {
+        return fileInfo.channelCount == 3 ? 4 : fileInfo.channelCount
+    }
+    
+    public func allocateMemory(byteCount: Int, alignment: Int, zeroed: Bool) throws -> (allocation: UnsafeMutableRawBufferPointer, allocator: ImageAllocator) {
+        return ImageAllocator.allocateMemoryDefault(byteCount: byteCount, alignment: alignment, zeroed: zeroed)
+    }
+}
+
+@_spi(SubstrateTextureIO) public struct DefaultImageLoadingDelegate: ImageLoadingDelegate {
+    public init() {}
 }

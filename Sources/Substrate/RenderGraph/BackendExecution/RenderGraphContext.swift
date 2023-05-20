@@ -145,7 +145,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
 //    @_specialize(kind: full, where Backend == VulkanBackend)
     func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord],
                             waitingFor gpuQueueWaitIndices: QueueCommandIndices,
-                            onSwapchainPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil,
+                            onSwapchainPresented: RenderGraph.SwapchainPresentedCallback? = nil,
                             onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken {
         await self.acquireResourceAccess()
         
