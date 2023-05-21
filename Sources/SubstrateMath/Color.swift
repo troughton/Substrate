@@ -943,10 +943,10 @@ extension RGBAColor where Scalar == Float {
     
     @inlinable
     public var packed : UInt32 {
-        let w0 = clamp(self.r, min: 0, max: 1) * Float(UInt8.max)
-        let w1 = clamp(self.g, min: 0, max: 1) * Float(UInt8.max)
-        let w2 = clamp(self.b, min: 0, max: 1) * Float(UInt8.max)
-        let w3 = clamp(self.a, min: 0, max: 1) * Float(UInt8.max)
+        let w0 = clamp(self.r, min: 0, max: 1) * Float(UInt8.max) + 0.5
+        let w1 = clamp(self.g, min: 0, max: 1) * Float(UInt8.max) + 0.5
+        let w2 = clamp(self.b, min: 0, max: 1) * Float(UInt8.max) + 0.5
+        let w3 = clamp(self.a, min: 0, max: 1) * Float(UInt8.max) + 0.5
         
         return (UInt32(w3) << 24) | (UInt32(w2) << 16) | (UInt32(w1) << 8) | UInt32(w0)
     }

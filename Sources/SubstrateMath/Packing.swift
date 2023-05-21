@@ -153,10 +153,10 @@ public enum Packing {
     
     @inlinable
     public static func packFloatToUChar4(_ x: Float, _ y: Float, _ z: Float, _ w: Float) -> UInt32 {
-        let w0 = clamp(x, min: 0, max: 1) * Float(UInt8.max)
-        let w1 = clamp(y, min: 0, max: 1) * Float(UInt8.max)
-        let w2 = clamp(z, min: 0, max: 1) * Float(UInt8.max)
-        let w3 = clamp(w, min: 0, max: 1) * Float(UInt8.max)
+        let w0 = clamp(x, min: 0, max: 1) * Float(UInt8.max) + 0.5
+        let w1 = clamp(y, min: 0, max: 1) * Float(UInt8.max) + 0.5
+        let w2 = clamp(z, min: 0, max: 1) * Float(UInt8.max) + 0.5
+        let w3 = clamp(w, min: 0, max: 1) * Float(UInt8.max) + 0.5
         
         return (UInt32(w3) &<< 24) | (UInt32(w2) &<< 16) | (UInt32(w1) &<< 8) | UInt32(w0)
     }
