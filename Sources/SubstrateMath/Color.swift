@@ -7,38 +7,66 @@
 
 import RealModule
 
-public struct RGBColor<Scalar: BinaryFloatingPoint & Real> {
-    public var r: Scalar
-    public var g: Scalar
-    public var b: Scalar
+public struct RGBColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
+    @usableFromInline var storage: SIMD3<Scalar>
+    
+    @inlinable
+    public var r: Scalar {
+        @inline(__always) get {
+            storage.x
+        }
+        @inline(__always) set {
+            storage.x = newValue
+        }
+    }
+    
+    @inlinable
+    public var g: Scalar {
+        @inline(__always) get {
+            storage.y
+        }
+        @inline(__always) set {
+            storage.y = newValue
+        }
+    }
+    
+    @inlinable
+    public var b: Scalar {
+        @inline(__always) get {
+            storage.z
+        }
+        @inline(__always) set {
+            storage.z = newValue
+        }
+    }
     
     @inlinable
     public init(r: Scalar, g: Scalar, b: Scalar) {
-        self.r = r
-        self.g = g
-        self.b = b
+        self.storage = SIMD3(r, g, b)
     }
     
     @inlinable
     public init(_ r: Scalar, _ g: Scalar, _ b: Scalar) {
-        self.r = r
-        self.g = g
-        self.b = b
+        self.storage = SIMD3(r, g, b)
     }
     
     @inlinable
     public init(_ value: Scalar) {
-        self.r = value
-        self.g = value
-        self.b = value
+        self.storage = SIMD3(repeating: value)
+    }
+    
+    @inlinable
+    public init(_ rgb: SIMD3<Scalar>) {
+        self.storage = rgb
     }
     
     @inlinable
     public init(_ xyzColor: XYZColor<Scalar>) {
         let x = xyzColor.X, y = xyzColor.Y, z = xyzColor.Z
-        self.r = 3.240479 * x - 1.537150 * y - 0.498535 * z
-        self.g = -0.969256 * x + 1.875991 * y + 0.041556 * z
-        self.b = 0.055648 * x - 0.204043 * y + 1.057311 * z
+        let r = 3.240479 * x - 1.537150 * y - 0.498535 * z
+        let g = -0.969256 * x + 1.875991 * y + 0.041556 * z
+        let b = 0.055648 * x - 0.204043 * y + 1.057311 * z
+        self.init(r, g, b)
     }
     
     @inlinable
@@ -110,6 +138,11 @@ public struct RGBColor<Scalar: BinaryFloatingPoint & Real> {
         return result
     }
     
+    @inlinable
+    public func converted(from inputColorSpace: CIEXYZ1931ColorSpace<Scalar>, to outputColorSpace: CIEXYZ1931ColorSpace<Scalar>) -> RGBColor<Scalar> {
+        return CIEXYZ1931ColorSpace.convert(self, from: inputColorSpace, to: outputColorSpace)
+    }
+    
     @available(*, deprecated, renamed: "decoded(using:)")
     @inlinable
     public var sRGBToLinear: RGBColor {
@@ -126,20 +159,6 @@ public struct RGBColor<Scalar: BinaryFloatingPoint & Real> {
 extension RGBColor: Equatable where Scalar: Equatable {}
 extension RGBColor: Hashable where Scalar: Hashable {}
 extension RGBColor: Sendable where Scalar: Sendable {}
-
-extension RGBColor where Scalar: SIMDScalar {
-    @inlinable
-    public init(_ rgb: SIMD3<Scalar>) {
-        self.r = rgb.x
-        self.g = rgb.y
-        self.b = rgb.z
-    }
-    
-    @inlinable
-    public func converted(from inputColorSpace: CIEXYZ1931ColorSpace<Scalar>, to outputColorSpace: CIEXYZ1931ColorSpace<Scalar>) -> RGBColor<Scalar> {
-        return CIEXYZ1931ColorSpace.convert(self, from: inputColorSpace, to: outputColorSpace)
-    }
-}
 
 extension RGBColor: CustomStringConvertible {
     public var description: String {
@@ -664,7 +683,7 @@ extension CIEXYZ1931ColorSpace: Sendable where Scalar: Sendable {}
 extension CIEXYZ1931ColorSpace.ConversionContext: Sendable where Scalar: Sendable {}
 
 /// Reference: https://bottosson.github.io/posts/oklab/
-public struct OklabColor<Scalar: BinaryFloatingPoint & Real>: Equatable, Hashable, Sendable {
+public struct OklabColor<Scalar: BinaryFloatingPoint & Real> {
     public var L: Scalar
     public var a: Scalar
     public var b: Scalar
@@ -683,22 +702,6 @@ public struct OklabColor<Scalar: BinaryFloatingPoint & Real>: Equatable, Hashabl
         self.b = b
     }
     
-    public init(fromLinearSRGB c: RGBColor<Scalar>) {
-        let l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b
-        let m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b
-        let s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b
-
-        let l_ = Scalar.pow(l, 1.0 / 3.0)
-        let m_ = Scalar.pow(m, 1.0 / 3.0)
-        let s_ = Scalar.pow(s, 1.0 / 3.0)
-
-        self.init(
-            L: 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
-            a: 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
-            b: 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
-        )
-    }
-    
     @inlinable
     public var luminance: Scalar {
         return self.L
@@ -711,7 +714,26 @@ public struct OklabColor<Scalar: BinaryFloatingPoint & Real>: Equatable, Hashabl
     }
 }
 
+extension OklabColor: Equatable where Scalar: Equatable {}
+extension OklabColor: Hashable where Scalar: Hashable {}
+extension OklabColor: Sendable where Scalar: Sendable {}
+
 extension OklabColor where Scalar: SIMDScalar {
+    public init(fromLinearSRGB c: RGBColor<Scalar>)  {
+        let l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b
+        let m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b
+        let s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b
+
+        let l_ = Scalar.pow(l, 1.0 / 3.0)
+        let m_ = Scalar.pow(m, 1.0 / 3.0)
+        let s_ = Scalar.pow(s, 1.0 / 3.0)
+
+        let L: Scalar = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
+        let a: Scalar = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
+        let b: Scalar = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+        self.init(L: L, a: a, b: b)
+    }
+    
     @inlinable
     public init(_ Lab: SIMD3<Scalar>) {
         self.L = Lab.x
@@ -794,7 +816,7 @@ extension XYZColor where Scalar == Float {
     }
 }
 
-public struct RGBAColor<Scalar: BinaryFloatingPoint & Real> : Equatable, Hashable, Sendable {
+public struct RGBAColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> : Equatable, Hashable, Sendable {
     public var r: Scalar
     public var g: Scalar
     public var b: Scalar
@@ -888,11 +910,7 @@ public struct RGBAColor<Scalar: BinaryFloatingPoint & Real> : Equatable, Hashabl
             self.b = newValue.b
         }
     }
-}
-
-public typealias RGBAColour = RGBAColor
-
-extension RGBAColor where Scalar: SIMDScalar {
+    
     @inlinable
     public init(rgb: SIMD3<Scalar>, a: Scalar = 1.0) {
         self.r = rgb.x
@@ -909,6 +927,8 @@ extension RGBAColor where Scalar: SIMDScalar {
         self.a = rgba.w
     }
 }
+
+public typealias RGBAColour = RGBAColor
 
 extension RGBAColor where Scalar == Float {
     @inlinable
