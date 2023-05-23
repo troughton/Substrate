@@ -1098,7 +1098,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         
         if let depthAttachment = renderPass.renderTargetDescriptor.depthAttachment {
             needsClearCommand = needsClearCommand || renderPass.depthClearOperation.isClear
-            let usagePointers = self.commandRecorder.resourceUsagePointers(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: 0)
+            let usagePointers = self.commandRecorder.resourceUsagePointers(for: depthAttachment.texture, slice: depthAttachment.slice, level: depthAttachment.level, encoder: self, usageType: renderPass.depthClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: [.vertex, .fragment], isIndirectlyBound: false, firstCommandOffset: 0)
             assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
             let usagePointer = usagePointers.first!
             self.renderTargetAttachmentUsages[.depth] = usagePointer
@@ -1106,7 +1106,7 @@ public final class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderComma
         
         if let stencilAttachment = renderPass.renderTargetDescriptor.stencilAttachment {
             needsClearCommand = needsClearCommand || renderPass.stencilClearOperation.isClear
-            let usagePointers = self.commandRecorder.resourceUsagePointers(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: .vertex, isIndirectlyBound: false, firstCommandOffset: 0)
+            let usagePointers = self.commandRecorder.resourceUsagePointers(for: stencilAttachment.texture, slice: stencilAttachment.slice, level: stencilAttachment.level, encoder: self, usageType: renderPass.stencilClearOperation.isClear ? .writeOnlyRenderTarget : .unusedRenderTarget, stages: [.vertex, .fragment], isIndirectlyBound: false, firstCommandOffset: 0)
             assert(usagePointers.count == 1, "There shouldn't be any subresources for a render target texture usage")
             let usagePointer = usagePointers.first!
             self.renderTargetAttachmentUsages[.stencil] = usagePointer
