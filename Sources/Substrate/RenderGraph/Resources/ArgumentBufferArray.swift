@@ -143,6 +143,10 @@ public struct TypedArgumentBufferArray<K : FunctionArgumentKey> : ResourceProtoc
         return self.argumentBufferArray.isKnownInUse
     }
     
+    public var hasPendingRenderGraph: Bool {
+        return self.argumentBufferArray.hasPendingRenderGraph
+    }
+    
     public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {
         self.argumentBufferArray.markAsUsed(activeRenderGraphMask: activeRenderGraphMask)
     }
