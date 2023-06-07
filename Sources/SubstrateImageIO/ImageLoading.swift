@@ -1173,9 +1173,10 @@ extension Image where ComponentType == Float {
                 } else {
                     let src = UnsafeRawPointer(image.images)!.bindMemory(to: UnsafePointer<Float>.self, capacity: Int(image.num_channels))
                     for y in 0..<height {
+                        let rowBase = y &* rowStride
                         for x in 0..<width {
-                            let i = y &* rowStride &+ x
-                            data[channelCount &* i + channelIndex] = src[c][i]
+                            let i = y &* width &+ x
+                            data[rowBase &+ x &* channelCount + channelIndex] = src[c][i]
                         }
                     }
                 }
