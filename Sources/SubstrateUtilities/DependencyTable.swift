@@ -26,11 +26,18 @@ public struct DependencyTable<T> {
     public mutating func resizeAndClear(capacity: Int, clearValue value: T) {
         self.capacity = capacity
         
-        self.storage.removeAll(keepingCapacity: true)
-        
         let elementCount = (capacity * capacity + capacity) / 2
-        self.storage.reserveCapacity(elementCount)
-        self.storage.append(contentsOf: repeatElement(value, count: elementCount))
+        if self.storage.count > elementCount {
+            self.storage.removeSubrange(elementCount..<self.storage.count)
+        }
+        
+        for i in 0..<self.storage.count {
+            self.storage[i] = value
+        }
+        
+        if elementCount > self.storage.count {
+            self.storage.append(contentsOf: repeatElement(value, count: elementCount - self.storage.count))
+        }
     }
     
     @inlinable
