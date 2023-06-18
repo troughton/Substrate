@@ -351,6 +351,15 @@ public struct IntersectionFunctionTable : ResourceProtocol {
         return .private
     }
     
+    public var stateFlags: ResourceStateFlags {
+        get {
+            return self[\.stateFlags] ?? []
+        }
+        nonmutating set {
+            self[\.stateFlags] = newValue
+        }
+    }
+    
     public static var resourceType: ResourceType { .intersectionFunctionTable }
 }
 

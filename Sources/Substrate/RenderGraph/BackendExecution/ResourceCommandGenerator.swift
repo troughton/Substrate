@@ -98,6 +98,7 @@ enum PreFrameCommands {
             
             await table.waitForCPUAccess(accessType: .write)
             await context.backend.fillVisibleFunctionTable(table, firstUseCommandIndex: commandIndex)
+            table.stateFlags.formUnion(.initialised)
             
         case .materialiseIntersectionFunctionTable(let table):
             precondition(table.flags.contains(.persistent))
@@ -106,6 +107,7 @@ enum PreFrameCommands {
             
             await table.waitForCPUAccess(accessType: .write)
             await context.backend.fillIntersectionFunctionTable(table, firstUseCommandIndex: commandIndex)
+            table.stateFlags.formUnion(.initialised)
             
         case .disposeResource(let resource, let afterStages):
             let disposalWaitEvent = ContextWaitEvent(waitValue: signalEventValue, afterStages: afterStages)
