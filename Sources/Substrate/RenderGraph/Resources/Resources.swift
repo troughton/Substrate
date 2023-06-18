@@ -155,6 +155,8 @@ public protocol ResourceProtocol: Sendable {
     /// Returns whether the resource is known to currently be in use by the CPU or GPU.
     var isKnownInUse: Bool { get }
     
+    var hasPendingRenderGraph: Bool { get }
+    
     /// Marks the resource as being currently in use by `renderGraph`, ensuring that, if `dispose()` is called,
     /// it will not get deallocated until after the `renderGraph` has completed.
     func markAsUsed(by renderGraph: RenderGraph)
@@ -712,6 +714,10 @@ public struct Resource : ResourceProtocol, Hashable {
     
     public var isValid: Bool {
         self[\.isValid]
+    }
+    
+    public var hasPendingRenderGraph: Bool {
+        self.withUnderlyingResource({ $0.hasPendingRenderGraph })
     }
     
     public func markAsUsed(activeRenderGraphMask: ActiveRenderGraphMask) {

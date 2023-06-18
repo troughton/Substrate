@@ -25,6 +25,11 @@ public struct Quaternion<Scalar : SIMDScalar & BinaryFloatingPoint & Real>: Hash
     }
     
     @inlinable
+    public init<Other>(_ other: Quaternion<Other>) {
+        self.storage = .init(other.storage)
+    }
+    
+    @inlinable
     public init(angle: Angle<Scalar>, axis: SIMD3<Scalar>) {
         let halfAngle = -angle.radians * 0.5
         

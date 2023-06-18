@@ -375,6 +375,7 @@ extension AffineMatrix {
             )
     }
     
+    @available(*, deprecated, renamed: "lookAtInv")
     @inlinable
     public static func lookAt(forward: SIMD3<Scalar>) -> AffineMatrix {
         var up = SIMD3<Scalar>(0, 1, 0)
