@@ -161,53 +161,53 @@ public enum PixelFormat : UInt16, Hashable, Codable, CaseIterable, Sendable {
     case bc7_rgbaUnorm = 152
     case bc7_rgbaUnorm_sRGB = 153
     
-//    /* ASTC sRGB */
-//    case astc_4x4_sRGB = 186
-//    case astc_5x4_sRGB = 187
-//    case astc_5x5_sRGB = 188
-//    case astc_6x5_sRGB = 189
-//    case astc_6x6_sRGB = 190
-//    case astc_8x5_sRGB = 192
-//    case astc_8x6_sRGB = 193
-//    case astc_8x8_sRGB = 194
-//    case astc_10x5_sRGB = 195
-//    case astc_10x6_sRGB = 196
-//    case astc_10x8_sRGB = 197
-//    case astc_10x10_sRGB = 198
-//    case astc_12x10_sRGB = 199
-//    case astc_12x12_sRGB = 200
-//
-//    /* ASTC LDR */
-//    case astc_4x4_ldr = 204
-//    case astc_5x4_ldr = 205
-//    case astc_5x5_ldr = 206
-//    case astc_6x5_ldr = 207
-//    case astc_6x6_ldr = 208
-//    case astc_8x5_ldr = 210
-//    case astc_8x6_ldr = 211
-//    case astc_8x8_ldr = 212
-//    case astc_10x5_ldr = 213
-//    case astc_10x6_ldr = 214
-//    case astc_10x8_ldr = 215
-//    case astc_10x10_ldr = 216
-//    case astc_12x10_ldr = 217
-//    case astc_12x12_ldr = 218
-//
-//    /* ASTC HDR (High Dynamic Range) Formats */
-//    case astc_4x4_hdr = 222
-//    case astc_5x4_hdr = 223
-//    case astc_5x5_hdr = 224
-//    case astc_6x5_hdr = 225
-//    case astc_6x6_hdr = 226
-//    case astc_8x5_hdr = 228
-//    case astc_8x6_hdr = 229
-//    case astc_8x8_hdr = 230
-//    case astc_10x5_hdr = 231
-//    case astc_10x6_hdr = 232
-//    case astc_10x8_hdr = 233
-//    case astc_10x10_hdr = 234
-//    case astc_12x10_hdr = 235
-//    case astc_12x12_hdr = 236
+    /* ASTC sRGB */
+    case astc_4x4_sRGB = 186
+    case astc_5x4_sRGB = 187
+    case astc_5x5_sRGB = 188
+    case astc_6x5_sRGB = 189
+    case astc_6x6_sRGB = 190
+    case astc_8x5_sRGB = 192
+    case astc_8x6_sRGB = 193
+    case astc_8x8_sRGB = 194
+    case astc_10x5_sRGB = 195
+    case astc_10x6_sRGB = 196
+    case astc_10x8_sRGB = 197
+    case astc_10x10_sRGB = 198
+    case astc_12x10_sRGB = 199
+    case astc_12x12_sRGB = 200
+
+    /* ASTC LDR */
+    case astc_4x4_ldr = 204
+    case astc_5x4_ldr = 205
+    case astc_5x5_ldr = 206
+    case astc_6x5_ldr = 207
+    case astc_6x6_ldr = 208
+    case astc_8x5_ldr = 210
+    case astc_8x6_ldr = 211
+    case astc_8x8_ldr = 212
+    case astc_10x5_ldr = 213
+    case astc_10x6_ldr = 214
+    case astc_10x8_ldr = 215
+    case astc_10x10_ldr = 216
+    case astc_12x10_ldr = 217
+    case astc_12x12_ldr = 218
+
+    /* ASTC HDR (High Dynamic Range) Formats */
+    case astc_4x4_hdr = 222
+    case astc_5x4_hdr = 223
+    case astc_5x5_hdr = 224
+    case astc_6x5_hdr = 225
+    case astc_6x6_hdr = 226
+    case astc_8x5_hdr = 228
+    case astc_8x6_hdr = 229
+    case astc_8x8_hdr = 230
+    case astc_10x5_hdr = 231
+    case astc_10x6_hdr = 232
+    case astc_10x8_hdr = 233
+    case astc_10x10_hdr = 234
+    case astc_12x10_hdr = 235
+    case astc_12x12_hdr = 236
 
     case gbgr422 = 240
     
@@ -233,7 +233,7 @@ public enum PixelFormat : UInt16, Hashable, Codable, CaseIterable, Sendable {
     @inlinable
     public var isSRGB : Bool {
         switch self {
-        case .r8Unorm_sRGB, .rg8Unorm_sRGB, .rgba8Unorm_sRGB, .bgra8Unorm_sRGB, .bgr10_xr_sRGB, .bgra10_xr_sRGB, .bc1_rgba_sRGB, .bc2_rgba_sRGB, .bc3_rgba_sRGB, .bc7_rgbaUnorm_sRGB:
+        case .r8Unorm_sRGB, .rg8Unorm_sRGB, .rgba8Unorm_sRGB, .bgra8Unorm_sRGB, .bgr10_xr_sRGB, .bgra10_xr_sRGB, .bc1_rgba_sRGB, .bc2_rgba_sRGB, .bc3_rgba_sRGB, .bc7_rgbaUnorm_sRGB, .astc_4x4_sRGB, .astc_5x4_sRGB, .astc_5x5_sRGB, .astc_6x5_sRGB, .astc_6x6_sRGB, .astc_8x5_sRGB, .astc_8x6_sRGB, .astc_8x8_sRGB, .astc_10x5_sRGB, .astc_10x6_sRGB, .astc_10x8_sRGB, .astc_10x10_sRGB, .astc_12x10_sRGB, .astc_12x12_sRGB:
             return true
         default:
             return false
@@ -241,41 +241,43 @@ public enum PixelFormat : UInt16, Hashable, Codable, CaseIterable, Sendable {
     }
     
     @inlinable
-    public var channelCount : Int {
+    public var channelCount: Int {
         switch self {
         case .invalid:
             return 0
             
         case .r8Sint, .r8Uint, .r8Snorm, .r8Unorm, .r8Unorm_sRGB, .a8Unorm,
-             .r16Sint, .r16Uint, .r16Float, .r16Snorm, .r16Unorm,
-             .r32Sint, .r32Uint, .r32Float,
-             .depth16Unorm, .depth32Float, .stencil8,
-             .bc4_rSnorm, .bc4_rUnorm:
+                .r16Sint, .r16Uint, .r16Float, .r16Snorm, .r16Unorm,
+                .r32Sint, .r32Uint, .r32Float,
+                .depth16Unorm, .depth32Float, .stencil8,
+                .bc4_rSnorm, .bc4_rUnorm:
             return 1
             
         case .rg8Sint, .rg8Uint, .rg8Snorm, .rg8Unorm, .rg8Unorm_sRGB,
-             .rg16Sint, .rg16Uint, .rg16Float, .rg16Snorm, .rg16Unorm,
-             .rg32Sint, .rg32Uint, .rg32Float,
-             .depth24Unorm_stencil8, .x24_stencil8, .depth32Float_stencil8, .x32_stencil8,
-             .bc5_rgSnorm, .bc5_rgUnorm:
+                .rg16Sint, .rg16Uint, .rg16Float, .rg16Snorm, .rg16Unorm,
+                .rg32Sint, .rg32Uint, .rg32Float,
+                .depth24Unorm_stencil8, .x24_stencil8, .depth32Float_stencil8, .x32_stencil8,
+                .bc5_rgSnorm, .bc5_rgUnorm:
             return 2
             
         case .b5g6r5Unorm, .rg11b10Float, .rgb9e5Float, .bgr10_xr, .bgr10_xr_sRGB,
-             .bc6H_rgbFloat, .bc6H_rgbuFloat,
-             .gbgr422, .bgrg422:
+                .bc6H_rgbFloat, .bc6H_rgbuFloat,
+                .gbgr422, .bgrg422:
             return 3
             
         case .rgba8Sint, .rgba8Uint, .rgba8Snorm, .rgba8Unorm, .rgba8Unorm_sRGB,
-             .bgra8Unorm, .bgra8Unorm_sRGB,
-             .rgba16Sint, .rgba16Uint, .rgba16Float, .rgba16Snorm, .rgba16Unorm,
-             .rgba32Sint, .rgba32Uint, .rgba32Float,
-             .a1bgr5Unorm, .abgr4Unorm, .bgr5a1Unorm,
-             .rgb10a2Uint, .rgb10a2Unorm, .bgr10a2Unorm,
-             .bgra10_xr, .bgra10_xr_sRGB,
-             .bc1_rgba, .bc1_rgba_sRGB,
-             .bc2_rgba, .bc2_rgba_sRGB,
-             .bc3_rgba, .bc3_rgba_sRGB,
-             .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+                .bgra8Unorm, .bgra8Unorm_sRGB,
+                .rgba16Sint, .rgba16Uint, .rgba16Float, .rgba16Snorm, .rgba16Unorm,
+                .rgba32Sint, .rgba32Uint, .rgba32Float,
+                .a1bgr5Unorm, .abgr4Unorm, .bgr5a1Unorm,
+                .rgb10a2Uint, .rgb10a2Unorm, .bgr10a2Unorm,
+                .bgra10_xr, .bgra10_xr_sRGB,
+                .bc1_rgba, .bc1_rgba_sRGB,
+                .bc2_rgba, .bc2_rgba_sRGB,
+                .bc3_rgba, .bc3_rgba_sRGB,
+                .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+            return 4
+        case .astc_4x4_sRGB, .astc_5x4_sRGB, .astc_5x5_sRGB, .astc_6x5_sRGB, .astc_6x6_sRGB, .astc_8x5_sRGB, .astc_8x6_sRGB, .astc_8x8_sRGB, .astc_10x5_sRGB, .astc_10x6_sRGB, .astc_10x8_sRGB, .astc_10x10_sRGB, .astc_12x10_sRGB, .astc_12x12_sRGB, .astc_4x4_ldr, .astc_5x4_ldr, .astc_5x5_ldr, .astc_6x5_ldr, .astc_6x6_ldr, .astc_8x5_ldr, .astc_8x6_ldr, .astc_8x8_ldr, .astc_10x5_ldr, .astc_10x6_ldr, .astc_10x8_ldr, .astc_10x10_ldr, .astc_12x10_ldr, .astc_12x12_ldr, .astc_4x4_hdr, .astc_5x4_hdr, .astc_5x5_hdr, .astc_6x5_hdr, .astc_6x6_hdr, .astc_8x5_hdr, .astc_8x6_hdr,  .astc_8x8_hdr, .astc_10x5_hdr, .astc_10x6_hdr, .astc_10x8_hdr, .astc_10x10_hdr, .astc_12x10_hdr, .astc_12x12_hdr:
             return 4
         }
     }
@@ -363,6 +365,35 @@ public enum PixelFormat : UInt16, Hashable, Codable, CaseIterable, Sendable {
         // 4:2:2 subsampled
         case .gbgr422, .bgrg422:
             return 2
+            
+        case .astc_4x4_sRGB, .astc_4x4_ldr, .astc_4x4_hdr:
+            return 1
+        case .astc_5x4_sRGB, .astc_5x4_ldr, .astc_5x4_hdr:
+            return 128.0 / 20.0
+        case .astc_5x5_sRGB, .astc_5x5_ldr, .astc_5x5_hdr:
+            return 128.0 / 25.0
+        case .astc_6x5_sRGB, .astc_6x5_ldr, .astc_6x5_hdr:
+            return 128.0 / 30.0
+        case .astc_6x6_sRGB, .astc_6x6_ldr, .astc_6x6_hdr:
+            return 128.0 / 36.0
+        case .astc_8x5_sRGB, .astc_8x5_ldr, .astc_8x5_hdr:
+            return 128.0 / 40.0
+        case .astc_8x6_sRGB, .astc_8x6_ldr, .astc_8x6_hdr:
+            return 128.0 / 48.0
+        case .astc_8x8_sRGB, .astc_8x8_ldr, .astc_8x8_hdr:
+            return 128.0 / 64.0
+        case .astc_10x5_sRGB, .astc_10x5_ldr, .astc_10x5_hdr:
+            return 128.0 / 50.0
+        case .astc_10x6_sRGB, .astc_10x6_ldr, .astc_10x6_hdr:
+            return 128.0 / 60.0
+        case .astc_10x8_sRGB, .astc_10x8_ldr, .astc_10x8_hdr:
+            return 128.0 / 80.0
+        case .astc_10x10_sRGB, .astc_10x10_ldr, .astc_10x10_hdr:
+            return 128.0 / 100.0
+        case .astc_12x10_sRGB, .astc_12x10_ldr, .astc_12x10_hdr:
+            return 128.0 / 120.0
+        case .astc_12x12_sRGB, .astc_12x12_ldr, .astc_12x12_hdr:
+            return 128.0 / 144.0
         }
     }
     
@@ -371,6 +402,28 @@ public enum PixelFormat : UInt16, Hashable, Codable, CaseIterable, Sendable {
         switch self  {
         case .bc1_rgba, .bc2_rgba, .bc3_rgba, .bc1_rgba_sRGB, .bc2_rgba_sRGB, .bc3_rgba_sRGB, .bc4_rSnorm, .bc4_rUnorm, .bc5_rgSnorm, .bc5_rgUnorm, .bc6H_rgbFloat, .bc6H_rgbuFloat, .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
             return 4 // 4x4 blocks
+        case .gbgr422, .bgrg422:
+            return 2 // chroma subsampled
+        case .astc_4x4_sRGB, .astc_4x4_ldr, .astc_4x4_hdr,
+                .astc_5x4_sRGB, .astc_5x4_ldr, .astc_5x4_hdr:
+            return 4
+        case .astc_5x5_sRGB, .astc_5x5_ldr, .astc_5x5_hdr,
+                .astc_6x5_sRGB, .astc_6x5_ldr, .astc_6x5_hdr,
+                .astc_8x5_sRGB, .astc_8x5_ldr, .astc_8x5_hdr,
+                .astc_10x5_sRGB, .astc_10x5_ldr, .astc_10x5_hdr:
+            return 5
+        case .astc_6x6_sRGB, .astc_6x6_ldr, .astc_6x6_hdr,
+                .astc_8x6_sRGB, .astc_8x6_ldr, .astc_8x6_hdr,
+                .astc_10x6_sRGB, .astc_10x6_ldr, .astc_10x6_hdr:
+            return 6
+        case .astc_8x8_sRGB, .astc_8x8_ldr, .astc_8x8_hdr,
+                .astc_10x8_sRGB, .astc_10x8_ldr, .astc_10x8_hdr:
+            return 8
+        case .astc_10x10_sRGB, .astc_10x10_ldr, .astc_10x10_hdr,
+            .astc_12x10_sRGB, .astc_12x10_ldr, .astc_12x10_hdr:
+            return 10
+        case .astc_12x12_sRGB, .astc_12x12_ldr, .astc_12x12_hdr:
+            return 12
         default:
             return 1
         }
@@ -462,7 +515,22 @@ extension PixelFormat {
                 .bc2_rgba, .bc2_rgba_sRGB,
                 .bc3_rgba, .bc3_rgba_sRGB,
                 .bc4_rUnorm, .bc5_rgUnorm,
-                .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB:
+                .bc7_rgbaUnorm, .bc7_rgbaUnorm_sRGB,
+            
+                .astc_4x4_sRGB, .astc_5x4_sRGB,
+                .astc_5x5_sRGB, .astc_6x5_sRGB,
+                .astc_6x6_sRGB, .astc_8x5_sRGB,
+                .astc_8x6_sRGB, .astc_8x8_sRGB,
+                .astc_10x5_sRGB, .astc_10x6_sRGB,
+                .astc_10x8_sRGB, .astc_10x10_sRGB,
+                .astc_12x10_sRGB, .astc_12x12_sRGB,
+                .astc_4x4_ldr, .astc_5x4_ldr,
+                .astc_5x5_ldr, .astc_6x5_ldr,
+                .astc_6x6_ldr, .astc_8x5_ldr,
+                .astc_8x6_ldr, .astc_8x8_ldr,
+                .astc_10x5_ldr, .astc_10x6_ldr,
+                .astc_10x8_ldr, .astc_10x10_ldr,
+                .astc_12x10_ldr, .astc_12x12_ldr:
             return true
         default:
             return false
