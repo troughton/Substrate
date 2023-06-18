@@ -1,5 +1,5 @@
+#if canImport(WebGPU)
 import WebGPU
-
 
 extension WGPUAddressMode {
     init?(_ samplerMode: SamplerAddressMode) {
@@ -590,3 +590,5 @@ extension WGPUTextureUsage: OptionSet {
         }
     }
 }
+
+#endif
