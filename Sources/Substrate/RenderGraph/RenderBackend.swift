@@ -40,6 +40,9 @@ public enum RenderAPI {
 #if canImport(Vulkan)
     case vulkan
 #endif
+#if canImport(WebGPU)
+    case webGPU
+#endif
 }
 
 public protocol RenderBackendProtocol : AnyObject {

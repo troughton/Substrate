@@ -71,7 +71,10 @@ let package = Package(
                 ]),
         
         .target(name: "SubstrateCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
-        .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross"), .product(name: "OrderedCollections", package: "swift-collections")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"],
+        
+        .target(name: "WebGPU"),
+        
+        .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", "WebGPU", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross"), .product(name: "OrderedCollections", package: "swift-collections")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"],
                 swiftSettings: [
 //                    .define("SUBSTRATE_DISABLE_AUTOMATIC_LABELS"),
 //                    .define("SUBSTRATE_USE_PLATFORM_HAZARD_TRACKING"),
