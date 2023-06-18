@@ -403,7 +403,7 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
 }
 
 public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
-    public struct ReferenceWhite: Hashable, Sendable {
+    public struct ReferenceWhite: Hashable {
         public var chromacity: SIMD2<Scalar>
         
         @inlinable
@@ -784,10 +784,13 @@ extension RGBColor {
         let m = m_ * m_ * m_
         let s = s_ * s_ * s_
         
+        let r: Scalar = +4.0767245293 * l - 3.3072168827 * m + 0.2307590544 * s
+        let g: Scalar = -1.2681437731 * l + 2.6093323231 * m - 0.3411344290 * s
+        let b: Scalar = -0.0041119885 * l - 0.7034763098 * m + 1.7068625689 * s
         self.init(
-            r: +4.0767245293 * l - 3.3072168827 * m + 0.2307590544 * s,
-            g: -1.2681437731 * l + 2.6093323231 * m - 0.3411344290 * s,
-            b: -0.0041119885 * l - 0.7034763098 * m + 1.7068625689 * s
+            r: r,
+            g: g,
+            b: b
         )
     }
 }
@@ -816,7 +819,7 @@ extension XYZColor where Scalar == Float {
     }
 }
 
-public struct RGBAColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> : Equatable, Hashable, Sendable {
+public struct RGBAColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
     public var r: Scalar
     public var g: Scalar
     public var b: Scalar
@@ -927,6 +930,10 @@ public struct RGBAColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> : Equat
         self.a = rgba.w
     }
 }
+
+extension RGBAColor: Equatable where Scalar: Equatable {}
+extension RGBAColor: Hashable where Scalar: Hashable {}
+extension RGBAColor: Sendable where Scalar: Sendable {}
 
 public typealias RGBAColour = RGBAColor
 
