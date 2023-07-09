@@ -438,3 +438,7 @@ public enum VertexStepFunction : UInt8 {
     case perPatch
     case perPatchControlPoint
 }
+
+func unavailableFunction(_ api: RenderAPI, function: String = #function) {
+    preconditionFailure("Function \(function) is unavailable on \(api)")
+}

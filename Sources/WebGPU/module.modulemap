@@ -1,0 +1,4 @@
+module WebGPU {
+    umbrella header "webgpu.h"
+    export *
+}

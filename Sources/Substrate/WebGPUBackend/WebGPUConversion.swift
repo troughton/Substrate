@@ -208,11 +208,11 @@ extension WGPUTextureFormat {
         case .invalid:
             self = WGPUTextureFormat_Undefined
         case .a8Unorm:
-            self = 
+            return nil
         case .r8Unorm:
             self = WGPUTextureFormat_R8Unorm
         case .r8Unorm_sRGB:
-            self = 
+            return nil
         case .r8Snorm:
             self = WGPUTextureFormat_R8Snorm
         case .r8Uint:
@@ -220,9 +220,9 @@ extension WGPUTextureFormat {
         case .r8Sint:
             self = WGPUTextureFormat_R8Sint
         case .r16Unorm:
-            self = 
+            return nil
         case .r16Snorm:
-            self = 
+            return nil
         case .r16Uint:
             self = WGPUTextureFormat_R16Uint
         case .r16Sint:
@@ -232,7 +232,7 @@ extension WGPUTextureFormat {
         case .rg8Unorm:
             self = WGPUTextureFormat_RG8Unorm
         case .rg8Unorm_sRGB:
-            self = 
+            return nil
         case .rg8Snorm:
             self = WGPUTextureFormat_RG8Snorm
         case .rg8Uint:
@@ -240,13 +240,13 @@ extension WGPUTextureFormat {
         case .rg8Sint:
             self = WGPUTextureFormat_RG8Sint
         case .b5g6r5Unorm:
-            self = 
+            return nil
         case .a1bgr5Unorm:
-            self = 
+            return nil
         case .abgr4Unorm:
-            self = 
+            return nil
         case .bgr5a1Unorm:
-            self = 
+            return nil
         case .r32Uint:
             self = WGPUTextureFormat_R32Uint
         case .r32Sint:
@@ -254,9 +254,9 @@ extension WGPUTextureFormat {
         case .r32Float:
             self = WGPUTextureFormat_R32Float
         case .rg16Unorm:
-            self = 
+            return nil
         case .rg16Snorm:
-            self = 
+            return nil
         case .rg16Uint:
             self = WGPUTextureFormat_RG16Uint
         case .rg16Sint:
@@ -399,6 +399,8 @@ extension WGPUTextureFormat {
             self = WGPUTextureFormat_ASTC10x8UnormSrgb
         case .astc_10x10_ldr:
             self = WGPUTextureFormat_ASTC10x10Unorm
+        case .astc_10x10_sRGB:
+            self = WGPUTextureFormat_ASTC10x10UnormSrgb
         case .astc_12x10_ldr:
             self = WGPUTextureFormat_ASTC12x10UnormSrgb
         case .astc_12x10_sRGB:
@@ -407,6 +409,8 @@ extension WGPUTextureFormat {
             self = WGPUTextureFormat_ASTC12x12UnormSrgb
         case .astc_12x12_sRGB:
             self = WGPUTextureFormat_ASTC12x12UnormSrgb
+        case .astc_4x4_hdr, .astc_5x4_hdr, .astc_5x5_hdr, .astc_6x5_hdr, .astc_6x6_hdr, .astc_8x5_hdr, .astc_8x6_hdr, .astc_8x8_hdr, .astc_10x5_hdr, .astc_10x6_hdr, .astc_10x8_hdr, .astc_10x10_hdr, .astc_12x10_hdr, .astc_12x12_hdr:
+            return nil
         }
     }
 }

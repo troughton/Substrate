@@ -72,7 +72,7 @@ let package = Package(
         
         .target(name: "SubstrateCExtras", dependencies: vulkanDependencies, exclude: ["CMakeLists.txt"]),
         
-        .target(name: "WebGPU"),
+        .systemLibrary(name: "WebGPU"),
         
         .target(name: "Substrate", dependencies: ["SubstrateUtilities", "SubstrateCExtras", "WebGPU", .product(name: "Atomics", package: "swift-atomics"), .product(name: "SPIRV-Cross", package: "SPIRV-Cross"), .product(name: "OrderedCollections", package: "swift-collections")] + vulkanDependencies, path: "Sources/Substrate", exclude: ["CMakeLists.txt", "MetalBackend/CMakeLists.txt", "VulkanBackend/CMakeLists.txt"],
                 swiftSettings: [

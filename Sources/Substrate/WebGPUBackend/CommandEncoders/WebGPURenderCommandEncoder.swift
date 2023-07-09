@@ -12,6 +12,12 @@ extension Buffer {
     }
 }
 
+extension Texture {
+    var wgpuTexture: WGPUTexture? {
+        preconditionFailure()
+    }
+}
+
 extension ArgumentBuffer {
     var wgpuBindGroup: WGPUBindGroup? {
         preconditionFailure()
@@ -44,7 +50,7 @@ final class WebGPURenderCommandEncoder: RenderCommandEncoderImpl {
     }
     
     func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
-        preconditionFailure("setBytes is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     func setVertexBuffer(_ buffer: Buffer, offset: Int, index: Int) {
@@ -71,34 +77,34 @@ final class WebGPURenderCommandEncoder: RenderCommandEncoderImpl {
     }
     
     func setBuffer(_ buffer: Buffer, offset: Int, at path: ResourceBindingPath) {
-        preconditionFailure("setBuffer is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     func setBufferOffset(_ offset: Int, at path: ResourceBindingPath) {
-        preconditionFailure("setBufferOffset is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     func setTexture(_ texture: Texture, at path: ResourceBindingPath) {
-        preconditionFailure("setTexture is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     func setSampler(_ state: SamplerState, at path: ResourceBindingPath) {
-        preconditionFailure("setTexture is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     @available(macOS 12.0, iOS 15.0, *)
     func setVisibleFunctionTable(_ table: VisibleFunctionTable, at path: ResourceBindingPath) {
-        preconditionFailure("setVisibleFunctionTable is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     @available(macOS 12.0, iOS 15.0, *)
     func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at path: ResourceBindingPath) {
-        preconditionFailure("setIntersectionFunctionTable is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     @available(macOS 12.0, iOS 15.0, *)
     func setAccelerationStructure(_ structure: AccelerationStructure, at path: ResourceBindingPath) {
-        preconditionFailure("setAccelerationStructure is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     func setViewport(_ viewport: Viewport) {
@@ -122,7 +128,7 @@ final class WebGPURenderCommandEncoder: RenderCommandEncoderImpl {
     }
     
     func setBlendColor(red: Float, green: Float, blue: Float, alpha: Float) {
-        var color = WGPUColor(r: Double(red), g: Double(green), b: Double(blue), a: Double(alpha))
+        let color = WGPUColor(r: Double(red), g: Double(green), b: Double(blue), a: Double(alpha))
         withUnsafePointer(to: color) { color in
             wgpuRenderPassEncoderSetBlendConstant(self.encoder, color)
         }
@@ -154,7 +160,7 @@ final class WebGPURenderCommandEncoder: RenderCommandEncoderImpl {
     
     @available(macOS 12.0, iOS 15.0, *)
     func setThreadgroupMemoryLength(_ length: Int, at path: ResourceBindingPath) {
-        preconditionFailure("setThreadgroupMemoryLength is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) {
@@ -190,27 +196,28 @@ final class WebGPURenderCommandEncoder: RenderCommandEncoderImpl {
     
     @available(macOS 13.0, iOS 16.0, *)
     func drawMeshThreadgroups(_ threadgroupsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
-        preconditionFailure("drawMeshThreadgroups is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     @available(macOS 13.0, iOS 16.0, *)
     func drawMeshThreads(_ threadsPerGrid: Size, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
-        preconditionFailure("drawMeshThreads is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     @available(macOS 13.0, iOS 16.0, *)
     func drawMeshThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerObjectThreadgroup: Size, threadsPerMeshThreadgroup: Size) {
-        preconditionFailure("drawMeshThreadgroups is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     func dispatchThreadsPerTile(_ threadsPerTile: Size) {
-        preconditionFailure("dispatchThreadsPerTile is unsupported on WebGPU")
+        unavailableFunction(.webGPU)
     }
     
     func useResource(_ resource: Resource, usage: ResourceUsageType, stages: RenderStages) {
     }
     
     func useHeap(_ heap: Heap, stages: RenderStages) {
+        
     }
     
     func memoryBarrier(scope: BarrierScope, after: RenderStages, before: RenderStages) {
