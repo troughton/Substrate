@@ -14,9 +14,9 @@ import stb_image
 import tinyexr
 import LodePNG
 
-#if canImport(AppKit)
-import AppKit
+#if canImport(CoreGraphics)
 import CoreGraphics
+import ImageIO
 #endif
 
 //@available(*, deprecated, renamed: "ImageFileInfo")
@@ -156,10 +156,10 @@ extension ImageFileInfo {
                 self = format
                 return
             } else {
-#if canImport(AppKit)
-                // NOTE: 'public.image' is checked in ImageFileInfo.requiresNSBitmapImageRepDecode
+#if canImport(CoreGraphics)
+                // NOTE: 'public.image' is checked in ImageFileInfo.requiresCGImageDecode
                 if let format = try? Self.init(format: .genericImage, data: data) {
-                    // Try NSBitmapImageRep
+                    // Try CoreGraphics
                     self = format
                     return
                 }
@@ -310,90 +310,86 @@ extension ImageFileInfo {
             self.init(format: format, width: Int(width), height: Int(height), channelCount: channelCount, bitDepth: bitDepth, isSigned: isSigned, isFloatingPoint: isFloatingPoint, colorSpace: colorSpace, alphaMode: alphaMode, physicalSize: physicalSize)
             
         default:
-            #if canImport(AppKit)
-            let bitmapImageRep = NSBitmapImageRep(forIncrementalLoad: ())
+            #if canImport(CoreGraphics)
+            let options = [kCGImageSourceShouldAllowFloat: true] as CFDictionary
+            let cgImageSource = CGImageSourceCreateIncremental(options)
             var dataPrefixCount = 2048 // Start with a 2KB chunk. We only want to load the header.
             
-            var loadingComplete = false
             loadLoop: repeat {
                 if Task.isCancelled { throw CancellationError() }
                 
                 let complete = dataPrefixCount >= data.count
-                let status = bitmapImageRep.incrementalLoad(from: data.prefix(dataPrefixCount), complete: complete)
-                loadingComplete = complete
+                CGImageSourceUpdateData(cgImageSource, data.prefix(dataPrefixCount) as CFData, complete)
+                let status = CGImageSourceGetStatus(cgImageSource)
+                
+                print("Status is \(status); properties are \(CGImageSourceCopyPropertiesAtIndex(cgImageSource, 0, options) as NSDictionary?)")
                 
                 switch status {
-                case NSBitmapImageRep.LoadStatus.unknownType.rawValue,
-                    NSBitmapImageRep.LoadStatus.readingHeader.rawValue:
+                case .statusUnknownType,
+                        .statusReadingHeader:
                     dataPrefixCount *= 2
-                case NSBitmapImageRep.LoadStatus.invalidData.rawValue,
-                    NSBitmapImageRep.LoadStatus.unexpectedEOF.rawValue:
+                case .statusInvalidData,
+                        .statusUnexpectedEOF:
                     throw ImageLoadingError.invalidData(message: "Invalid data or unexpected end of file")
-                case NSBitmapImageRep.LoadStatus.willNeedAllData.rawValue:
-                    dataPrefixCount = data.count
-                    break loadLoop
-                case NSBitmapImageRep.LoadStatus.completed.rawValue,
-                    _ where status > 0:
-                    loadingComplete = loadingComplete || status == NSBitmapImageRep.LoadStatus.completed.rawValue
+                case .statusIncomplete:
+                    if let _ = CGImageSourceCopyPropertiesAtIndex(cgImageSource, 0, options) {
+                        break loadLoop
+                    } else {
+                        dataPrefixCount *= 2
+                    }
+                case .statusComplete:
                     break loadLoop
                 default:
-                    throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
+                    throw ImageLoadingError.invalidData(message: "Unknown error in CGImageSource decoding")
                 }
             } while true
             
-            if !loadingComplete {
-                bitmapImageRep.incrementalLoad(from: data, complete: true)
+            guard let properties = CGImageSourceCopyPropertiesAtIndex(cgImageSource, 0, options) as NSDictionary? else {
+                throw ImageLoadingError.invalidData(message: "Unknown error in CGImageSource decoding")
             }
             
             let format = format
-            var width = bitmapImageRep.pixelsWide
-            var height = bitmapImageRep.pixelsHigh
-            var channelCount = bitmapImageRep.samplesPerPixel
-            var bitDepth = bitmapImageRep.bitsPerPixel / bitmapImageRep.samplesPerPixel
-            var isFloatingPoint = bitmapImageRep.bitmapFormat.contains(.floatingPointSamples)
-            var isSigned = isFloatingPoint
-            
-            let colorSpace: ImageColorSpace
-            if let cgColorSpace = bitmapImageRep.colorSpace.cgColorSpace {
-                if cgColorSpace.name == CGColorSpace.genericGrayGamma2_2 || cgColorSpace.name == CGColorSpace.sRGB {
-                    colorSpace = .sRGB
-                } else if cgColorSpace.name == CGColorSpace.linearGray || cgColorSpace.name == CGColorSpace.linearSRGB {
-                    colorSpace = .linearSRGB
-                } else if let gamma = bitmapImageRep.value(forProperty: .gamma) as? Double {
-                    colorSpace = .gammaSRGB(Float(1.0 / gamma))
-                } else {
-                    colorSpace = .undefined
-                }
-            } else {
-                colorSpace = .undefined
+            guard let width = properties[kCGImagePropertyPixelWidth] as? Int,
+                  let height = properties[kCGImagePropertyPixelHeight] as? Int,
+                  let bitDepth = properties[kCGImagePropertyDepth] as? Int,
+                  let colorModel = properties[kCGImagePropertyColorModel] else {
+                throw ImageLoadingError.invalidData(message: "Unknown error in CGImageSource decoding")
             }
-            
-            var alphaMode: ImageAlphaMode
-            switch bitmapImageRep.samplesPerPixel {
-            case 1, 3:
-                alphaMode = .none
-            case 2, 4:
-                alphaMode = bitmapImageRep.bitmapFormat.contains(.alphaNonpremultiplied) ? .postmultiplied : .premultiplied
+            let hasAlpha = (properties[kCGImagePropertyHasAlpha] as! Bool?) ?? false
+            let channelCount: Int
+            switch colorModel as! CFString {
+            case kCGImagePropertyColorModelLab, kCGImagePropertyColorModelRGB:
+                channelCount = hasAlpha ? 4 : 3
+            case kCGImagePropertyColorModelCMYK:
+                channelCount = 4
+            case kCGImagePropertyColorModelGray:
+                channelCount = hasAlpha ? 1 : 2
             default:
-                alphaMode = .inferred
+                throw ImageLoadingError.invalidData(message: "Unknown color model in CGImageSource decoding")
+            }
+            let isFloatingPoint = (properties[kCGImagePropertyIsFloat] as! Bool?) ?? false
+            let isSigned = isFloatingPoint
+            
+            var colorSpace: ImageColorSpace = .undefined
+            if let colorSpaceName = properties[kCGImagePropertyNamedColorSpace] as! CFString? {
+                if colorSpaceName == CGColorSpace.genericGrayGamma2_2 || colorSpaceName == CGColorSpace.sRGB {
+                    colorSpace = .sRGB
+                } else if colorSpaceName == CGColorSpace.linearGray || colorSpaceName == CGColorSpace.linearSRGB {
+                    colorSpace = .linearSRGB
+                }
+            }
+            if colorSpace == .undefined {
+                if let gamma = (properties[kCGImagePropertyPNGDictionary] as? NSDictionary)?[kCGImagePropertyPNGGamma] as? Double {
+                    colorSpace = .gammaSRGB(Float(1.0 / gamma))
+                } else if let gamma = (properties[kCGImagePropertyExifDictionary] as? NSDictionary)?[kCGImagePropertyExifGamma] as? Double {
+                    colorSpace = .gammaSRGB(Float(1.0 / gamma))
+                }
             }
             
-            if bitmapImageRep.pixelsWide == 0 || bitmapImageRep.pixelsHigh == 0, let cgImage = bitmapImageRep.cgImage {
-                // Sometimes the NSBitmapImageRep's pixelsWide and pixelsHigh fields don't get correctly initialised (FB12193672).
-                width = cgImage.width
-                height = cgImage.height
-                channelCount = cgImage.bitsPerPixel / cgImage.bitsPerComponent
-                bitDepth = cgImage.bitsPerComponent
-                isFloatingPoint = cgImage.bitmapInfo.contains(.floatComponents)
-                isSigned = isFloatingPoint
-                switch cgImage.alphaInfo {
-                case .first, .last, .alphaOnly:
-                    alphaMode = .postmultiplied
-                case .premultipliedFirst, .premultipliedLast:
-                    alphaMode = .premultiplied
-                default:
-                    alphaMode = .none
-                }
+            var alphaMode: ImageAlphaMode = .none
+            if hasAlpha {
+                alphaMode = .inferred
+                print("The image dictionary is \(properties)")
             }
             
             let physicalSize: SIMD2<Double>? = nil // TODO: read physical sizes from PSDs
@@ -401,7 +397,7 @@ extension ImageFileInfo {
             self.init(format: format, width: width, height: height, channelCount: channelCount, bitDepth: bitDepth, isSigned: isSigned, isFloatingPoint: isFloatingPoint, colorSpace: colorSpace, alphaMode: alphaMode, physicalSize: physicalSize)
             
             #else
-            throw ImageLoadingError.invalidData
+            throw ImageLoadingError.invalidData(message: nil)
             #endif
         }
     }
@@ -485,15 +481,17 @@ extension ImageFileInfo {
         return true
     }
     
-#if canImport(AppKit)
-    fileprivate var requiresNSBitmapImageRepDecode: Bool {
+#if canImport(CoreGraphics)
+    fileprivate var requiresCGImageDecode: Bool {
         guard let format = self.format else { return false }
         if format == .genericImage {
-            // public.image is used for images where NSBitmapImageRep
+            // public.image is used for images where CoreGraphics
             // was used to load them but we don't know the exact format.
             return true
         }
-        return !ImageFileFormat.nativeFormats.contains(format) && NSBitmapImageRep.imageTypes.contains(where: { $0 == format.typeIdentifier })
+        if ImageFileFormat.nativeFormats.contains(format) { return false }
+
+        return (CGImageSourceCopyTypeIdentifiers() as! [String]).contains(where: { $0 == format.typeIdentifier })
     }
 #endif
 }
@@ -668,12 +666,12 @@ extension Image where ComponentType == UInt8 {
             }
         }
         
-#if canImport(AppKit)
-        if fileInfo.requiresNSBitmapImageRepDecode {
-            guard let bitmapImage = NSBitmapImageRep(data: try Data(contentsOf: url, options: .mappedIfSafe)) else {
+#if canImport(CoreGraphics)
+        if fileInfo.requiresCGImageDecode {
+            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil), let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
                 throw ImageLoadingError.invalidFile(url)
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+            self = try makeImageFromCGImage(cgImage: image, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -714,12 +712,12 @@ extension Image where ComponentType == UInt8 {
             }
         }
         
-#if canImport(AppKit)
-        if fileInfo.requiresNSBitmapImageRepDecode {
-            guard let bitmapImage = NSBitmapImageRep(data: data) else {
-                throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
+#if canImport(CoreGraphics)
+        if fileInfo.requiresCGImageDecode {
+            guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+                throw ImageLoadingError.invalidData(message: "Unknown error decoding CGImageSource.")
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+            self = try makeImageFromCGImage(cgImage: image, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -763,12 +761,12 @@ extension Image where ComponentType == Int8 {
             }
         }
         
-#if canImport(AppKit)
-        if fileInfo.requiresNSBitmapImageRepDecode {
-            guard let bitmapImage = NSBitmapImageRep(data: try Data(contentsOf: url, options: .mappedIfSafe)) else {
+#if canImport(CoreGraphics)
+        if fileInfo.requiresCGImageDecode {
+            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil), let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
                 throw ImageLoadingError.invalidFile(url)
             }
-            self = try bitmapImage.makeImage(fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+            self = try makeImageFromCGImage(cgImage: image, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -807,12 +805,12 @@ extension Image where ComponentType == Int8 {
             }
         }
         
-#if canImport(AppKit)
-        if fileInfo.requiresNSBitmapImageRepDecode {
-            guard let bitmapImage = NSBitmapImageRep(data: data) else {
-                throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
+#if canImport(CoreGraphics)
+        if fileInfo.requiresCGImageDecode {
+            guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+                throw ImageLoadingError.invalidData(message: "Unknown error in CGImage decoding.")
             }
-            self = try bitmapImage.makeImage(fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+            self = try makeImageFromCGImage(cgImage: image, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -859,12 +857,12 @@ extension Image where ComponentType == UInt16 {
             }
         }
         
-#if canImport(AppKit)
-        if fileInfo.requiresNSBitmapImageRepDecode {
-            guard let bitmapImage = NSBitmapImageRep(data: try Data(contentsOf: url, options: .mappedIfSafe)) else {
+#if canImport(CoreGraphics)
+        if fileInfo.requiresCGImageDecode {
+            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil), let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
                 throw ImageLoadingError.invalidFile(url)
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+            self = try makeImageFromCGImage(cgImage: image, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -905,12 +903,12 @@ extension Image where ComponentType == UInt16 {
             }
         }
         
-#if canImport(AppKit)
-        if fileInfo.requiresNSBitmapImageRepDecode {
-            guard let bitmapImage = NSBitmapImageRep(data: data) else {
-                throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
+#if canImport(CoreGraphics)
+        if fileInfo.requiresCGImageDecode {
+            guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil), let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+                throw ImageLoadingError.invalidData(message: "Unknown error decoding CGImageSource.")
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+            self = try makeImageFromCGImage(cgImage: image, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -960,12 +958,13 @@ extension Image where ComponentType == Float {
         
         let fileInfo = try ImageFileInfo(url: url)
         
-#if canImport(AppKit)
-        if fileInfo.requiresNSBitmapImageRepDecode {
-            guard let bitmapImage = NSBitmapImageRep(data: try Data(contentsOf: url, options: .mappedIfSafe)) else {
+#if canImport(CoreGraphics)
+        if fileInfo.requiresCGImageDecode {
+            let options = [kCGImageSourceShouldAllowFloat: true] as CFDictionary
+            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, options), let image = CGImageSourceCreateImageAtIndex(imageSource, 0, options) else {
                 throw ImageLoadingError.invalidFile(url)
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+            self = try makeImageFromCGImage(cgImage: image, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -1015,12 +1014,13 @@ extension Image where ComponentType == Float {
         let colorSpace = colorSpace != .undefined ? colorSpace : fileInfo.colorSpace
         let alphaMode = alphaMode != .inferred ? alphaMode : fileInfo.alphaMode
         
-#if canImport(AppKit)
-        if fileInfo.requiresNSBitmapImageRepDecode {
-            guard let bitmapImage = NSBitmapImageRep(data: data) else {
-                throw ImageLoadingError.invalidData(message: "Unknown error in NSBitmapImageRep decoding")
+#if canImport(CoreGraphics)
+        if fileInfo.requiresCGImageDecode {
+            let options = [kCGImageSourceShouldAllowFloat: true] as CFDictionary
+            guard let imageSource = CGImageSourceCreateWithData(data as CFData, options), let image = CGImageSourceCreateImageAtIndex(imageSource, 0, options) else {
+                throw ImageLoadingError.invalidData(message: "Unknown error in CGImage decoding")
             }
-            self = try bitmapImage.makeImage(colorSpace: colorSpace, alphaMode: alphaMode, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
+            self = try makeImageFromCGImage(cgImage: image, fileInfo: fileInfo, loadingDelegate: loadingDelegate)
             return
         }
 #endif
@@ -1190,7 +1190,7 @@ extension Image where ComponentType == Float {
     }
 }
 
-#if canImport(AppKit)
+#if canImport(CoreGraphics)
 
 extension Image {
     @inline(__always)
@@ -1202,27 +1202,30 @@ extension Image {
     }
 }
 
-extension NSBitmapImageRep {
-    @inline(__always)
-    fileprivate func makeImageFromCGImage<T: SIMDScalar>(cgImage: CGImage, format: T.Type = T.self, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws -> Image<T> {
-        let bitmapInfo = cgImage.bitmapInfo
-        if bitmapInfo.contains(.floatComponents) {
-            return try Image<Float>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
-        } else if cgImage.bitsPerComponent == 16 {
-            return try Image<UInt16>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
-        } else if cgImage.bitsPerComponent == 32 {
-            return try Image<UInt32>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
-        } else if cgImage.bitsPerComponent == 8 {
-            return try Image<UInt8>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
-        } else {
-            throw ImageLoadingError.invalidData(message: "Unsupported bits per component \(cgImage.bitsPerComponent)")
-        }
+@inline(__always)
+fileprivate func makeImageFromCGImage<T: SIMDScalar>(cgImage: CGImage, format: T.Type = T.self, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws -> Image<T> {
+    let bitmapInfo = cgImage.bitmapInfo
+    if bitmapInfo.contains(.floatComponents) {
+        return try Image<Float>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
+    } else if cgImage.bitsPerComponent == 16 {
+        return try Image<UInt16>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
+    } else if cgImage.bitsPerComponent == 32 {
+        return try Image<UInt32>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
+    } else if cgImage.bitsPerComponent == 8 {
+        return try Image<UInt8>(cgImage: cgImage, fileInfo: fileInfo, loadingDelegate: loadingDelegate).converted(to: format)
+    } else {
+        throw ImageLoadingError.invalidData(message: "Unsupported bits per component \(cgImage.bitsPerComponent)")
     }
-    
+}
+
+#if canImport(AppKit)
+import AppKit
+
+extension NSBitmapImageRep {
     @inline(__always)
     func makeImage<T: SIMDScalar>(format: T.Type = T.self, colorSpace: ImageColorSpace = .undefined, alphaMode: ImageAlphaMode = .inferred, fileInfo: ImageFileInfo, loadingDelegate: ImageLoadingDelegate? = nil) throws -> Image<T> {
         if let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil),
-           let image = try? self.makeImageFromCGImage(cgImage: cgImage, format: format, fileInfo: fileInfo, loadingDelegate: loadingDelegate) {
+           let image = try? makeImageFromCGImage(cgImage: cgImage, format: format, fileInfo: fileInfo, loadingDelegate: loadingDelegate) {
            return image
         }
         
@@ -1242,4 +1245,5 @@ extension NSBitmapImageRep {
     }
 }
 
+#endif
 #endif
