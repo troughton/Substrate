@@ -322,8 +322,6 @@ extension ImageFileInfo {
                 CGImageSourceUpdateData(cgImageSource, data.prefix(dataPrefixCount) as CFData, complete)
                 let status = CGImageSourceGetStatus(cgImageSource)
                 
-                print("Status is \(status); properties are \(CGImageSourceCopyPropertiesAtIndex(cgImageSource, 0, options) as NSDictionary?)")
-                
                 switch status {
                 case .statusUnknownType,
                         .statusReadingHeader:
@@ -389,7 +387,6 @@ extension ImageFileInfo {
             var alphaMode: ImageAlphaMode = .none
             if hasAlpha {
                 alphaMode = .inferred
-                print("The image dictionary is \(properties)")
             }
             
             let physicalSize: SIMD2<Double>? = nil // TODO: read physical sizes from PSDs
