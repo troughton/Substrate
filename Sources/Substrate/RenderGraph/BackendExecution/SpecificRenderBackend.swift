@@ -6,6 +6,7 @@
 //
 
 import SubstrateUtilities
+import Dispatch
 
 protocol SpecificRenderBackend: _RenderBackendProtocol {
     associatedtype RenderTargetDescriptor: BackendRenderTargetDescriptor
@@ -81,8 +82,8 @@ protocol BackendCommandBuffer: AnyObject {
     func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry, onPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?)
     func commit(onCompletion: @escaping (Self) -> Void)
     
-    var gpuStartTime: Double { get }
-    var gpuEndTime: Double { get }
+    var gpuStartTime: DispatchTime { get }
+    var gpuEndTime: DispatchTime { get }
     
     var error: Error? { get }
 }

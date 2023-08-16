@@ -29,8 +29,8 @@ final class UnavailableBackend : SpecificRenderBackend {
         func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry, onPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil) { preconditionFailure() }
         func commit(onCompletion: @escaping (CommandBufferImpl) -> Void) { preconditionFailure() }
         
-        var gpuStartTime: Double { preconditionFailure() }
-        var gpuEndTime: Double { preconditionFailure() }
+        var gpuStartTime: DispatchTime { preconditionFailure() }
+        var gpuEndTime: DispatchTime { preconditionFailure() }
         
         var error: Error? { preconditionFailure() }
     }

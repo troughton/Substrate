@@ -757,7 +757,7 @@ public final class RenderGraph {
     
     private let frameTimingLock = SpinLock()
     private var previousFrameCompletionTime : UInt64 = 0
-    private var _lastGraphCPUTime = 0.0
+    private var _lastGraphCPUTime: RenderDuration = .zero
     private var lastGraphFirstCommand: UInt64 = .max
     private var lastGraphLastCommand: UInt64 = .max
     
@@ -838,12 +838,11 @@ public final class RenderGraph {
         return !self.renderPasses.isEmpty
     }
     
-    /// The time for the last frame to be completed on the CPU and GPU, in seconds.
-    public func lastGraphDurations() -> (cpuTime: Double, gpuTime: Double) {
+    public func lastGraphDurations() -> (cpu: RenderDuration, gpu: RenderDuration) {
         return self.frameTimingLock.withLock {
-            let gpuStartTime = self.queue.gpuStartTime(for: self.lastGraphFirstCommand) ?? 0.0
+            let gpuStartTime = self.queue.gpuStartTime(for: self.lastGraphFirstCommand) ?? .init(uptimeNanoseconds: 0)
             let gpuEndTime = self.queue.gpuEndTime(for: self.lastGraphLastCommand) ?? gpuStartTime
-            return (self._lastGraphCPUTime, gpuEndTime - gpuStartTime)
+            return (cpu: self._lastGraphCPUTime, gpu: .init(nanoseconds: gpuEndTime.uptimeNanoseconds - gpuStartTime.uptimeNanoseconds))
         }
     }
     
@@ -1423,7 +1422,7 @@ public final class RenderGraph {
             let completionTime = DispatchTime.now().uptimeNanoseconds
             let elapsed = completionTime - min(self.previousFrameCompletionTime, completionTime)
             self.previousFrameCompletionTime = completionTime
-            self._lastGraphCPUTime = Double(elapsed) * 1e-9
+            self._lastGraphCPUTime = .init(nanoseconds: elapsed)
             
             if !queueCommandRange.isEmpty {
                 self.lastGraphFirstCommand = queueCommandRange.first!

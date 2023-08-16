@@ -48,19 +48,19 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         self.compactedResourceCommands = compactedResourceCommands
     }
     
-    var gpuStartTime: Double {
+    var gpuStartTime: DispatchTime {
         if #available(OSX 10.15, *) {
-            return self.commandBuffer.gpuStartTime
+            return .init(uptimeNanoseconds: UInt64(self.commandBuffer.gpuStartTime * 1e9))
         } else {
-            return 0.0
+            return .init(uptimeNanoseconds: 0)
         }
     }
     
-    var gpuEndTime: Double {
+    var gpuEndTime: DispatchTime {
         if #available(OSX 10.15, *) {
-            return self.commandBuffer.gpuEndTime
+            return .init(uptimeNanoseconds: UInt64(self.commandBuffer.gpuEndTime * 1e9))
         } else {
-            return 0.0
+            return .init(uptimeNanoseconds: 0)
         }
     }
     

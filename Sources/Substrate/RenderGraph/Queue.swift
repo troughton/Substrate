@@ -248,41 +248,41 @@ public struct Queue : Equatable, Sendable {
     }
     
     /// The host time at which the specified command buffer began executing on the GPU, in seconds.
-    public func gpuStartTime(for commandIndex: UInt64) -> Double? {
+    public func gpuStartTime(for commandIndex: UInt64) -> DispatchTime? {
         guard let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex) else { return nil }
         
         let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.commandGPUStartTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
         
         guard self.hasBufferedData(for: commandIndex) else { return nil }
         
-        return Double(bitPattern: time)
+        return DispatchTime(uptimeNanoseconds: time)
     }
     
-    func setGPUStartTime(_ time: Double, for commandIndex: UInt64) {
+    func setGPUStartTime(_ time: DispatchTime, for commandIndex: UInt64) {
         let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex)!
         
-        UInt64.AtomicRepresentation.atomicStore(time.bitPattern, at: QueueRegistry.shared.commandGPUStartTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
+        UInt64.AtomicRepresentation.atomicStore(time.uptimeNanoseconds, at: QueueRegistry.shared.commandGPUStartTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
     }
     
     /// The host time at which the specified command buffer completed on the GPU, in seconds.
-    public func gpuEndTime(for commandIndex: UInt64) -> Double? {
+    public func gpuEndTime(for commandIndex: UInt64) -> DispatchTime? {
         guard let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex) else { return nil }
         
         let time = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.commandGPUEndTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
         
         guard self.hasBufferedData(for: commandIndex) else { return nil } // Make sure the data we retrieved was valid
         
-        return Double(bitPattern: time)
+        return DispatchTime(uptimeNanoseconds: time)
     }
     
-    func setGPUEndTime(_ time: Double, for commandIndex: UInt64) {
+    func setGPUEndTime(_ time: DispatchTime, for commandIndex: UInt64) {
         let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex)!
         
-        UInt64.AtomicRepresentation.atomicStore(time.bitPattern, at: QueueRegistry.shared.commandGPUEndTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
+        UInt64.AtomicRepresentation.atomicStore(time.uptimeNanoseconds, at: QueueRegistry.shared.commandGPUEndTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
     }
     
     /// The time the specified command took to execute on the GPU, in seconds.
-    public func gpuDuration(for commandIndex: UInt64) -> Double? {
+    public func gpuDuration(for commandIndex: UInt64) -> RenderDuration? {
         guard let indexInQueuesArray = self.indexInQueuesArrays(for: commandIndex) else { return nil }
         
         let startTime = UInt64.AtomicRepresentation.atomicLoad(at: QueueRegistry.shared.commandGPUStartTimes.advanced(by: indexInQueuesArray), ordering: .relaxed)
@@ -290,7 +290,7 @@ public struct Queue : Equatable, Sendable {
         
         guard self.hasBufferedData(for: commandIndex) else { return nil } // Make sure the data we retrieved was valid
         
-        return Double(bitPattern: endTime) - Double(bitPattern: startTime)
+        return RenderDuration(nanoseconds: max(endTime, startTime) - startTime)
     }
     
     public var lastCompletedCommand : UInt64 {
