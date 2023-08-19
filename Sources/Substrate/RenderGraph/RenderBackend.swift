@@ -187,7 +187,7 @@ public struct RenderBackend {
     }
     
     @inlinable
-    static var requiresEmulatedInputAttachments : Bool {
+    public static var requiresEmulatedInputAttachments : Bool {
         return _backend.requiresEmulatedInputAttachments
     }
     

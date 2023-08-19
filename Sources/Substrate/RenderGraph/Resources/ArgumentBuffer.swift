@@ -239,7 +239,6 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    
 #if canImport(Metal)
     // For Metal: residency tracking.
     

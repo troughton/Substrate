@@ -105,12 +105,14 @@ public struct ArgumentBufferBacked<T: ArgumentBufferEncodable> {
     @usableFromInline var _wrappedValue: T
     @usableFromInline var isDirty: Bool = false
     @usableFromInline var _buffer: ArgumentBuffer?
+    @usableFromInline var renderGraph: RenderGraph?
     
     @inlinable
-    public init(wrappedValue: T, flags: ResourceFlags = []) {
+    public init(wrappedValue: T, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) {
         self.flags = flags
         self._wrappedValue = wrappedValue
         self._buffer = nil
+        self.renderGraph = renderGraph
         self.isDirty = true
     }
     
@@ -144,7 +146,7 @@ public struct ArgumentBufferBacked<T: ArgumentBufferEncodable> {
     
     @usableFromInline mutating func setBufferIfNeeded() {
         if self._buffer == nil {
-            self._buffer = ArgumentBuffer(descriptor: T.argumentBufferDescriptor, flags: self.flags)
+            self._buffer = ArgumentBuffer(descriptor: T.argumentBufferDescriptor, renderGraph: self.renderGraph, flags: self.flags)
         }
     }
     

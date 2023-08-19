@@ -96,10 +96,12 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     
     func setVertexBufferOffset(_ offset: Int, index: Int) {
         assert(index < 31, "The maximum number of buffers allowed in the buffer argument table for a single function is 31.")
-        encoder.setVertexBufferOffset(offset, index: 30 - index)
+        encoder.setVertexBufferOffset(self.baseBufferOffsets[30 - index] + offset, index: 30 - index)
     }
     
     func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer, at index: Int, stages: RenderStages) {
+        if stages.isEmpty { return }
+        
         let bufferStorage = argumentBuffer.mtlBuffer!
 
         for resource in argumentBuffer.usedResources where !self.usedResources.contains(resource) {

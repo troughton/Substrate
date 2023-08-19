@@ -31,6 +31,10 @@ public struct ResourceUsageListBuilder {
         return expression.map { [$0] } ?? []
     }
     
+    @inlinable public static func buildExpression(_ expression: Component) -> Component {
+        return expression
+    }
+    
     /// Enables support for `if` statements that do not have an `else`.
     @inlinable public static func buildOptional(_ component: Component?) -> Component {
         return component.map { $0 } ?? []

@@ -182,9 +182,10 @@ public final actor GPUResourceUploader {
             try fillBuffer(contents, &writtenRange)
         }
         
-        self.renderGraph.addBlitCallbackPass(name: "uploadBytes(length: \(length), cacheMode: \(cacheMode))", using: resources + [
+        self.renderGraph.addBlitCallbackPass(name: "uploadBytes(length: \(length), cacheMode: \(cacheMode))", using: {
+            resources
             stagingBuffer.as(.blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + length))
-        ]) { bce in
+            }) { bce in
             copyFromBuffer(stagingBuffer, stagingBufferOffset, bce)
         }
             
@@ -221,10 +222,10 @@ public final actor GPUResourceUploader {
                 try bytes(contents, &writtenRange)
             }
             
-            self.renderGraph.addBlitCallbackPass(name: "uploadBytes(count: \(count), to: \(buffer), offset: \(offset))", using: [
-                stagingBuffer.as(.blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + count)),
+            self.renderGraph.addBlitCallbackPass(name: "uploadBytes(count: \(count), to: \(buffer), offset: \(offset))", using: {
+                stagingBuffer.as(.blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + count))
                 buffer.as(.blitDestination, byteRange: offset..<(offset + count))
-            ]) { bce in
+            }) { bce in
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, to: buffer, destinationOffset: offset, size: count)
             }
             return await self._flush(cacheMode: cacheMode, buffer: stagingBuffer, allocationRange: allocationRange)
@@ -259,10 +260,10 @@ public final actor GPUResourceUploader {
             }
             
             self.renderGraph.addBlitCallbackPass(name: "replaceTextureRegion(\(region), mipmapLevel: \(mipmapLevel), slice: \(slice), in: \(texture), withBytes: \(bytes), bytesPerRow: \(bytesPerRow), bytesPerImage: \(bytesPerImage))",
-            using: [
-                stagingBuffer.as(.blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + bytesPerImage)),
+                                                 using: {
+                stagingBuffer.as(.blitSource, byteRange: stagingBufferOffset..<(stagingBufferOffset + bytesPerImage))
                 texture.as(.blitDestination, slice: slice, mipLevel: mipmapLevel)
-            ]
+            }
             ) { bce in
                 bce.copy(from: stagingBuffer, sourceOffset: stagingBufferOffset, sourceBytesPerRow: bytesPerRow, sourceBytesPerImage: bytesPerImage, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: region.origin)
             }

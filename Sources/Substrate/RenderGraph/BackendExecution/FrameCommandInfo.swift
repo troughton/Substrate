@@ -70,7 +70,7 @@ struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
                 
 #if !SUBSTRATE_DISABLE_AUTOMATIC_LABELS
                 let name: String
-                if passRange.count <= 3 {
+                if passRange.count <= 4 {
                     name = passes[passRange].lazy.map { $0.name }.joined(separator: ", ")
                 } else {
                     name = "[\(passes[passRange.first!].name)...\(passes[passRange.last!].name)] (\(passRange.count) passes)"

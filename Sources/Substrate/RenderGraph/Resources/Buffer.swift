@@ -276,14 +276,27 @@ public struct Buffer : ResourceProtocol {
         
         if let contents = self[\.mappedContents] {
             let range = 0..<source.count * MemoryLayout<C.Element>.stride
-            _ = UnsafeMutableRawBufferPointer(start: contents, count: range.count).initializeMemory(as: C.Element.self, from: source)
+            if source.withContiguousStorageIfAvailable({ buffer in
+                contents.copyMemory(from: UnsafeRawPointer(buffer.baseAddress!), byteCount: range.count)
+            }) == nil {
+                for (i, elem) in source.enumerated() {
+                    contents.storeBytes(of: elem, toByteOffset: i * MemoryLayout<C.Element>.stride, as: C.Element.self)
+                }
+            }
             RenderBackend.buffer(self, didModifyRange: range)
             self.stateFlags.formUnion(.initialised)
         } else {
             self._deferredSliceActions.append(DeferredBufferSlice(closure: {
-                $0.withMutableContents(range: range, {
-                    let initializedBuffer = $0.bindMemory(to: C.Element.self).initialize(from: source)
-                    $1 = 0..<initializedBuffer.1 * MemoryLayout<C.Element>.stride
+                $0.withMutableContents(range: range, { contents, initializedRange in
+                    if source.withContiguousStorageIfAvailable({ buffer in
+                        contents.copyMemory(from: UnsafeRawBufferPointer(buffer))
+                    }) == nil {
+                        for (i, elem) in source.enumerated() {
+                            contents.baseAddress!.storeBytes(of: elem, toByteOffset: i * MemoryLayout<C.Element>.stride, as: C.Element.self)
+                        }
+                    }
+                    
+                    initializedRange = 0..<requiredCapacity
                 })
             }))
         }
