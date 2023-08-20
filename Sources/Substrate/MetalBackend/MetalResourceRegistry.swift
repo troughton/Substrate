@@ -213,6 +213,56 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return mtlBuffer
     }
     
+    @discardableResult
+    public nonisolated func allocateArgumentBufferArray(_ argumentBufferArray: ArgumentBufferArray) -> MTLBufferReference? {
+        precondition(argumentBufferArray._usesPersistentRegistry)
+        
+        // NOTE: all synchronisation is managed through the per-queue waitIndices associated with the resource.
+        
+        let options: MTLResourceOptions = [.storageModeShared, .substrateTrackedHazards]
+        
+        let mtlBuffer : MTLBufferReference
+        
+        let stride = argumentBufferArray.descriptor.bufferLength
+        
+        if let heap = argumentBufferArray.heap {
+            guard let mtlBufferObj = heap.mtlHeap.makeBuffer(length: stride * argumentBufferArray.arrayLength, options: options) else {
+                return nil
+            }
+            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
+        } else {
+            guard let mtlBufferObj = self.device.makeBuffer(length: stride * argumentBufferArray.arrayLength, options: options) else {
+                return nil
+            }
+            mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
+        }
+        
+        if let label = argumentBufferArray.label {
+            mtlBuffer.buffer.label = label
+        }
+        
+        argumentBufferArray.backingResourcePointer = mtlBuffer._buffer.toOpaque()
+        
+        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+            let contents = argumentBufferArray.storageMode == .private ? nil : mtlBuffer.buffer.contents().advanced(by: mtlBuffer.offset)
+            argumentBufferArray[\.gpuAddresses] = mtlBuffer.buffer.gpuAddress.advanced(by: mtlBuffer.offset)
+            
+            for (i, argumentBuffer) in argumentBufferArray.enumerated() {
+                argumentBuffer[\.mappedContents] = contents?.advanced(by: i * stride)
+            }
+            for (i, argumentBuffer) in argumentBufferArray.enumerated() {
+                argumentBuffer[\.gpuAddresses] = mtlBuffer.buffer.gpuAddress.advanced(by: mtlBuffer.offset + i * stride)
+            }
+        } else {
+            let encoder = Unmanaged.passUnretained(self.stateCaches.argumentEncoderCache[argumentBufferArray.descriptor])
+            for argumentBuffer in argumentBufferArray {
+                argumentBuffer[\.encoders] = encoder
+            }
+        }
+        
+        return mtlBuffer
+    }
+    
     @available(macOS 11.0, iOS 14.0, *)
     @discardableResult
     public nonisolated func allocateAccelerationStructure(_ structure: AccelerationStructure) -> MTLAccelerationStructure? {

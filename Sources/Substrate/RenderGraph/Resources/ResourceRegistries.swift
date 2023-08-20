@@ -450,7 +450,7 @@ final class TransientRegistryManager {
             
             let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
             let generation = self.generationChunks[chunkIndex][indexInChunk]
-            let handle =  UInt64(truncatingIfNeeded: index) |
+            let handle = UInt64(truncatingIfNeeded: index) |
             (UInt64(generation) << Resource.generationBitsRange.lowerBound) |
             (UInt64(flags.rawValue) << Resource.flagBitsRange.lowerBound) |
             (UInt64(Resource.resourceType.rawValue) << Resource.typeBitsRange.lowerBound)
@@ -488,7 +488,7 @@ final class TransientRegistryManager {
         self.generationChunks.advanced(by: index).initialize(to: generations)
     }
     
-    private func disposeImmediately(_ resource: Resource, isFullyInitialised: Bool = true) {
+    func disposeImmediately(_ resource: Resource, isFullyInitialised: Bool = true) {
         RenderBackend.dispose(resource: resource)
         
         let index = resource.index

@@ -15,6 +15,7 @@ public enum ResourceType : UInt8 {
     case sampler
     case threadgroupMemory
     case argumentBuffer
+    case argumentBufferArray
     case imageblockData
     case imageblock
     case visibleFunctionTable

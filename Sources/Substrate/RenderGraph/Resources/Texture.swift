@@ -42,10 +42,12 @@ public struct Texture : ResourceProtocol {
         if flags.contains(.persistent) || flags.contains(.historyBuffer) {
             self = PersistentTextureRegistry.instance.allocate(descriptor: descriptor, heap: nil, flags: flags)
             
-            assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
-            let didAllocate = RenderBackend.materialisePersistentResource(self)
-            assert(didAllocate, "Allocation failed for persistent texture \(self)")
-            if !didAllocate { self.dispose() }
+            if flags.contains(.persistent) {
+                assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
+                let didAllocate = RenderBackend.materialisePersistentResource(self)
+                assert(didAllocate, "Allocation failed for persistent texture \(self)")
+                if !didAllocate { self.dispose() }
+            }
         } else {
             precondition(RenderGraph.activeRenderGraph == nil, "Transient resources cannot be created during render graph execution. Instead, create this resource in an init() method and pass in the render graph to use.")
             precondition(descriptor.storageMode == .private, "Transient textures must be GPU-private.")

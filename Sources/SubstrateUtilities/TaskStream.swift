@@ -20,18 +20,24 @@ public final class TaskStream {
     let taskHandle: Task<Void, Never>
     @usableFromInline let taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
     
-    public init(priority: TaskPriority = .medium) {
+    public convenience init(priority: TaskPriority = .medium) {
+        self.init(creatingTask: { stream in
+            Task.detached(priority: priority, operation: {
+                for await task in stream {
+                    await task()
+                }
+            })
+        })
+    }
+    
+    public init(creatingTask: (AsyncStream<@Sendable () async -> Void>) -> Task<Void, Never>) {
         var taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation? = nil
         let taskStream = AsyncStream<@Sendable () async -> Void> { continuation in
             taskStreamContinuation = continuation
         }
         self.taskStreamContinuation = taskStreamContinuation!
         
-        self.taskHandle = Task.detached(priority: priority) {
-            for await task in taskStream {
-                await task()
-            }
-        }
+        self.taskHandle = creatingTask(taskStream)
     }
     
     deinit {

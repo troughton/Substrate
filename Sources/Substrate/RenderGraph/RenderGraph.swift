@@ -1322,11 +1322,11 @@ public final class RenderGraph {
             self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, passRenderTargetIndices: passRenderTargetIndices, addedToList: &addedToList, activePasses: &activePasses, allocator: AllocatorType(allocator))
         }
         
-        for i in (0..<renderPasses.count) {
-            if !renderPasses[i].isActive {
-                print("Pass \(renderPasses[i].name) is inactive")
-            }
-        }
+//        for i in (0..<renderPasses.count) {
+//            if !renderPasses[i].isActive {
+//                print("Pass \(renderPasses[i].name) is inactive")
+//            }
+//        }
         
         var cpuPasses = [CPURenderPass]()
         
