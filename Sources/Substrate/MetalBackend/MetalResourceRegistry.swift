@@ -191,11 +191,13 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 return nil
             }
             mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
+            argumentBuffer.usedHeaps.insert(heap.backingResourcePointer!)
         } else {
             guard let mtlBufferObj = self.device.makeBuffer(length: argumentBuffer.descriptor.bufferLength, options: options) else {
                 return nil
             }
             mtlBuffer = MTLBufferReference(buffer: Unmanaged<MTLBuffer>.passRetained(mtlBufferObj), offset: 0)
+            argumentBuffer.usedResources.insert(mtlBuffer._buffer.toOpaque())
         }
         
         if let label = argumentBuffer.label {
@@ -861,7 +863,6 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         let (storage, fences, waitEvent) = self.allocateArgumentBufferStorage(for: argumentBuffer, encodedLength: argumentBuffer.descriptor.bufferLength)
         assert(fences.isEmpty)
         
-        
         argumentBuffer.backingResourcePointer = storage._buffer.toOpaque()
         argumentBuffer[\.backingBufferOffsets] = storage.offset
         argumentBuffer[\.mappedContents] = argumentBuffer.storageMode == .private ? nil : storage.buffer.contents().advanced(by: storage.offset)
@@ -871,6 +872,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         } else {
             argumentBuffer[\.encoders] = Unmanaged.passUnretained(self.persistentRegistry.stateCaches.argumentEncoderCache[argumentBuffer.descriptor])
         }
+        
+        argumentBuffer.usedResources.insert(storage._buffer.toOpaque())
         
         self.argumentBufferWaitEvents[argumentBuffer] = waitEvent
         
