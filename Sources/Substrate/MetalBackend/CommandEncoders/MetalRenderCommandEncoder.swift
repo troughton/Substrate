@@ -55,10 +55,12 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     }
     
     func processInputAttachmentUsages() {
+#if os(macOS)
         guard !self.isAppleSiliconGPU else { return }
         if let inputAttachmentBarrierStages = self.inputAttachmentBarrierStages, #available(iOS 16.0, *) {
             encoder.memoryBarrier(scope: .renderTargets, after: inputAttachmentBarrierStages.after, before: inputAttachmentBarrierStages.before)
         }
+#endif
     }
     
     func pushDebugGroup(_ string: String) {
