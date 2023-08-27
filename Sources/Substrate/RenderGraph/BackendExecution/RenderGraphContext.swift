@@ -35,7 +35,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     var enqueuedEmptyFrameCompletionHandlers = [(UInt64, @Sendable (_ queueCommandRange: Range<UInt64>) async -> Void)]()
     
     let accessSemaphore: AsyncSemaphore?
-    var needsWaitOnAccessSemaphore: Bool = true
+    var needsWaitOnAccessSemaphore: Bool = true // This gets set to false if we've already waited on the semaphore for the next RenderGraph.
     
     public init(backend: Backend, inflightFrameCount: Int, transientRegistryIndex: Int) {
         self.backend = backend
@@ -121,22 +121,22 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         
         self.renderGraphQueue.submitCommand(commandIndex: queueCBIndex)
         commandBuffer.commit { commandBuffer in
-            if let error = commandBuffer.error {
-                print("Error executing command buffer \(queueCBIndex): \(error)")
-            }
-            
-            self.renderGraphQueue.setGPUStartTime(commandBuffer.gpuStartTime, for: queueCBIndex)
-            self.renderGraphQueue.setGPUEndTime(commandBuffer.gpuEndTime, for: queueCBIndex)
-            
-            self.renderGraphQueue.didCompleteCommand(queueCBIndex, completionTime: .now())
-            
-            if isLast {
-                CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
-                self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
-                self.accessSemaphore?.signal()
-                self.needsWaitOnAccessSemaphore = true
+            Task {
+                if let error = commandBuffer.error {
+                    print("Error executing command buffer \(queueCBIndex): \(error)")
+                }
                 
-                Task { await onCompletion() }
+                self.renderGraphQueue.setGPUStartTime(commandBuffer.gpuStartTime, for: queueCBIndex)
+                self.renderGraphQueue.setGPUEndTime(commandBuffer.gpuEndTime, for: queueCBIndex)
+                
+                self.renderGraphQueue.didCompleteCommand(queueCBIndex, completionTime: .now())
+                
+                if isLast {
+                    CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
+                    self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
+                    self.accessSemaphore?.signal()
+                    await onCompletion()
+                }
             }
         }
     }
@@ -147,14 +147,17 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                             waitingFor gpuQueueWaitIndices: QueueCommandIndices,
                             onSwapchainPresented: RenderGraph.SwapchainPresentedCallback? = nil,
                             onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken {
-        await self.acquireResourceAccess()
-        
-        await self.backend.reloadShaderLibraryIfNeeded()
-        
         return await self.taskStream.enqueueAndWait {
+            await self.acquireResourceAccess()
+            await self.backend.reloadShaderLibraryIfNeeded()
+            
+            defer {
+                self.needsWaitOnAccessSemaphore = true
+            }
+            
             return await Backend.activeContextTaskLocal.withValue(self) {
                 return await RenderGraph.$activeRenderGraph.withValue(renderGraph) {
-                    var (cpuPasses, passes, _, usedResources) = await renderGraph.compile(renderPasses: renderPasses)
+                    let (cpuPasses, passes, _, usedResources) = await renderGraph.compile(renderPasses: renderPasses)
                     
                     // Use separate command buffers for onscreen and offscreen work (Delivering Optimised Metal Apps and Games, WWDC 2019)
                     

@@ -68,6 +68,7 @@ fileprivate class TemporaryBufferArena {
             return self.allocate(bytes: bytes, alignedTo: alignment)
         }
         let retVal = (self.currentBlock!, alignedPosition)
+        
         self.currentBlockPos = (alignedPosition + bytes)
         return retVal
     }
@@ -114,8 +115,6 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
     let options : MTLResourceOptions
     let alignment: Int
     private var currentIndex : Int = 0
-    private var waitEvent : ContextWaitEvent = .init()
-    private var nextFrameWaitEvent : ContextWaitEvent = .init()
     
     public init(device: MTLDevice, numFrames: Int, blockSize: Int, options: MTLResourceOptions) {
         self.numFrames = numFrames
@@ -131,16 +130,10 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
     func collectBufferWithLength(_ length: Int, options: MTLResourceOptions) -> (MTLBufferReference, [FenceDependency], ContextWaitEvent) {
         assert(options == self.options)
         let (buffer, offset) = self.allocate(bytes: length)
-        return (MTLBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset), [], self.waitEvent)
+        return (MTLBufferReference(buffer: Unmanaged.passUnretained(buffer), offset: offset), [], .init())
     }
     
     func depositBuffer(_ buffer: MTLBufferReference, fences: [FenceDependency], waitEvent: ContextWaitEvent) {
-        assert(fences.isEmpty)
-        if self.nextFrameWaitEvent.waitValue < waitEvent.waitValue {
-            self.nextFrameWaitEvent = waitEvent
-        }  else {
-            self.nextFrameWaitEvent.afterStages.formUnion(waitEvent.afterStages)
-        }
     }
     
     func flush() {
@@ -156,8 +149,6 @@ class MetalTemporaryBufferAllocator : MetalBufferAllocator {
     public func cycleFrames() {
         self.arenas[self.currentIndex].reset()
         self.currentIndex = (self.currentIndex + 1) % self.numFrames
-        self.waitEvent = self.nextFrameWaitEvent
-        self.nextFrameWaitEvent = .init()
     }
 }
 
