@@ -102,7 +102,7 @@ public struct RecordedResourceUsage {
         if usage.subresources.isEmpty {
             activeRange = .fullResource
         } else {
-            var textureMask = SubresourceMask()
+            var textureMask = SubresourceMask.none
             for subresource in usage.subresources {
                 switch subresource {
                 case .wholeResource:

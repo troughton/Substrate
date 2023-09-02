@@ -47,6 +47,12 @@ public struct SubresourceMask {
         }
     }
     
+    public static var none: SubresourceMask {
+        var mask = SubresourceMask()
+        mask.value = .zero
+        return mask
+    }
+    
     @inlinable
     static func uintCount(bitCount: Int) -> Int {
         return (bitCount + Element.bitWidth - 1) / Element.bitWidth
