@@ -77,7 +77,28 @@ final class MetalPipelineReflection : PipelineReflection {
         }
         
         self.init(pipelineState: renderState, threadExecutionWidth: threadExecutionWidth, bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentBufferDescriptors: argumentDescriptorCache)
+    }
+    
+    
+    @available(macOS 13.0, *)
+    public convenience init(threadExecutionWidth: Int, objectFunction: MTLFunction, meshFunction: MTLFunction, fragmentFunction: MTLFunction?, renderState: MTLRenderPipelineState, renderReflection: MTLRenderPipelineReflection) {
+        var bindingPathCache = HashMap<BindingPathCacheKey, ResourceBindingPath>()
+        var reflectionCache = [ResourceBindingPath : ArgumentReflection]()
+        var argumentDescriptorCache = [ResourceBindingPath: ArgumentBufferDescriptor]()
         
+        renderReflection.objectBindings.forEach { binding in
+            MetalPipelineReflection.fillCaches(function: objectFunction, binding: binding, stages: .object, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentBufferDescriptorCache: &argumentDescriptorCache)
+        }
+        
+        renderReflection.meshBindings.forEach { binding in
+            MetalPipelineReflection.fillCaches(function: meshFunction, binding: binding, stages: .mesh, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentBufferDescriptorCache: &argumentDescriptorCache)
+        }
+        
+        renderReflection.fragmentBindings.forEach { binding in
+            MetalPipelineReflection.fillCaches(function: fragmentFunction!, binding: binding, stages: .fragment, bindingPathCache: &bindingPathCache, reflectionCache: &reflectionCache, argumentBufferDescriptorCache: &argumentDescriptorCache)
+        }
+        
+        self.init(pipelineState: renderState, threadExecutionWidth: threadExecutionWidth, bindingPathCache: bindingPathCache, reflectionCache: reflectionCache, argumentBufferDescriptors: argumentDescriptorCache)
     }
     
     public convenience init(threadExecutionWidth: Int, function: MTLFunction, computeState: MTLComputePipelineState, computeReflection: MTLComputePipelineReflection) {
@@ -207,6 +228,132 @@ final class MetalPipelineReflection : PipelineReflection {
                         reflectionCache[subPath] = memberReflection
                     }
                     bindingPathCache[BindingPathCacheKey(argumentName: member.name, argumentBufferIndex: argument.index)] = subPath
+                }
+            }
+            
+            if isArgumentBuffer {
+                argumentBufferDescriptorCache[rootPath] = ArgumentBufferDescriptor(arguments: argumentBufferBindings)
+            }
+        }
+    }
+    
+    @available(macOS 13.0, *)
+    static func fillCaches(function: MTLFunction, binding: MTLBinding, stages: RenderStages, bindingPathCache: inout HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: inout [ResourceBindingPath : ArgumentReflection], argumentBufferDescriptorCache: inout [ResourceBindingPath: ArgumentBufferDescriptor]) {
+        guard binding.type != .threadgroupMemory else { return }
+        
+        let mtlStages = MTLRenderStages(stages)
+        
+        let cacheKey = BindingPathCacheKey(argumentName: binding.name, argumentBufferIndex: nil)
+        
+        var rootPath = ResourceBindingPath(type: binding.type, index: binding.index, argumentBufferIndex: nil, stages: mtlStages)
+        var reflection = ArgumentReflection(binding, bindingPath: rootPath, stages: stages)
+        
+        if let existingMatch = bindingPathCache[BindingPathCacheKey(argumentName: binding.name, argumentBufferIndex: nil)] {
+            assert(existingMatch.index == rootPath.index && existingMatch.type == rootPath.type, "A variable with the same name is bound at different indices or with different types in the vertex and fragment shader.")
+            
+            rootPath.stages = existingMatch.stages
+            let existingReflection = reflectionCache[rootPath]!
+            rootPath.stages.formUnion(mtlStages)
+            
+            reflection.activeStages.formUnion(existingReflection.activeStages)
+            reflection.bindingPath = rootPath
+            reflection.usageType.formUnion(existingReflection.usageType)
+        }
+        bindingPathCache[cacheKey] = rootPath
+        reflectionCache[rootPath] = reflection
+        
+        if let elementStruct = (binding as? MTLBufferBinding)?.bufferPointerType?.elementStructType() {
+            let isArgumentBuffer = elementStruct.members.contains(where: { member in
+                if member.offset < 0 { return true } // Only applies for macOS versions earlier than 13.0 (Ventura)
+                return member.argumentIndex > 0
+            })
+            var argumentBufferBindings = [ArgumentDescriptor]()
+            var argumentBufferBindingCount = 0
+            var argumentBufferMaxBinding = 0
+            
+            let metalArgBufferPath = rootPath
+            for member in elementStruct.members {
+                if isArgumentBuffer {
+                    let arrayLength = member.arrayType()?.arrayLength ?? 1
+                    argumentBufferBindingCount += arrayLength
+                    argumentBufferMaxBinding = max(member.argumentIndex + arrayLength - 1, argumentBufferMaxBinding)
+                }
+
+                // Ignore pipeline stages for resources contained within argument buffers.
+                let dataType: MTLDataType
+                if let arrayType = member.arrayType() {
+                    dataType = arrayType.elementType // Handle arrays of textures
+                } else {
+                    dataType = member.dataType
+                }
+                
+                let subPath = ResourceBindingPath(type: dataType, index: member.argumentIndex, argumentBufferIndex: metalArgBufferPath.index, stages: [])
+                
+                let memberReflection : ArgumentReflection?
+                if let arrayType = member.arrayType() {
+                    memberReflection = ArgumentReflection(array: arrayType, argumentBuffer: binding, bindingPath: subPath, stages: reflection.activeStages)
+                    
+                    if isArgumentBuffer {
+                        switch arrayType.elementType {
+                        case .pointer:
+                            let pointerType = arrayType.elementPointerType()!
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .storageBuffer, index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: ResourceAccessType(pointerType.access)))
+                        case .sampler:
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .sampler, index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: .read))
+                        case .texture:
+                            let textureType = arrayType.elementTextureReferenceType()!
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .texture(type: TextureType(textureType.textureType)), index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: ResourceAccessType(textureType.access)))
+                            
+                        case .primitiveAccelerationStructure, .instanceAccelerationStructure:
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .accelerationStructure, index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: .read))
+                            
+                        default:
+                            print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
+                            break
+                        }
+                    }
+                    
+                } else {
+                    memberReflection = ArgumentReflection(member: member, argumentBuffer: binding, bindingPath: subPath, stages: reflection.activeStages)
+                    
+                    if isArgumentBuffer {
+                        switch dataType {
+                        case .pointer:
+                            let pointerType = member.pointerType()!
+                            let isConstantBuffer = pointerType.alignment >= 16 && pointerType.access == .readOnly
+                            
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: isConstantBuffer ? .constantBuffer(alignment: pointerType.alignment) : .storageBuffer, index: member.argumentIndex, arrayLength: 1, accessType: ResourceAccessType(pointerType.access)))
+                        case .sampler:
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .sampler, index: member.argumentIndex, arrayLength: 1, accessType: .read))
+                        case .texture:
+                            let textureType = member.textureReferenceType()!
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .texture(type: TextureType(textureType.textureType)), index: member.argumentIndex, arrayLength: 1, accessType: ResourceAccessType(textureType.access)))
+                            
+                        case .primitiveAccelerationStructure, .instanceAccelerationStructure:
+                            argumentBufferBindings.append(ArgumentDescriptor(resourceType: .accelerationStructure, index: member.argumentIndex, arrayLength: 1, accessType: .read))
+                            
+                        default:
+                            print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
+                            break
+                        }
+                    }
+                }
+                
+                if let memberReflection = memberReflection {
+                    assert(ResourceType(subPath.type) == memberReflection.type)
+                    
+                    if var existingReflection = reflectionCache[subPath] {
+                        existingReflection.activeStages.formUnion(memberReflection.activeStages)
+                        if !memberReflection.activeStages.isEmpty {
+                            existingReflection.activeRange = .fullResource
+                        }
+                        assert(existingReflection.type == memberReflection.type)
+                        assert(existingReflection.usageType == memberReflection.usageType)
+                        reflectionCache[subPath] = existingReflection
+                    } else {
+                        reflectionCache[subPath] = memberReflection
+                    }
+                    bindingPathCache[BindingPathCacheKey(argumentName: member.name, argumentBufferIndex: binding.index)] = subPath
                 }
             }
             

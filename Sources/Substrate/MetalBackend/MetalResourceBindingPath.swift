@@ -74,6 +74,27 @@ extension ResourceBindingPath {
         }
     }
     
+    @_disfavoredOverload
+    public init(type: MTLBindingType, index: Int, argumentBufferIndex: Int? = nil, stages: MTLRenderStages) {
+        self = ResourceBindingPath(value: 0)
+        
+        self.value.setBits(in: ResourceBindingPath.indexRange, to: UInt64(index), clearMask: ResourceBindingPath.indexClearMask)
+        
+        self.stages = stages
+        
+        let argBufferBits = argumentBufferIndex ?? ResourceBindingPath.argumentBufferNone
+        self.value.setBits(in: ResourceBindingPath.argumentBufferIndexRange, to: UInt64(truncatingIfNeeded: argBufferBits), clearMask: ResourceBindingPath.argumentBufferIndexClearMask)
+        
+        switch type {
+        case .texture:
+            self.value |= ResourceBindingPath.textureTypeFlag
+        case .sampler:
+            self.value |= ResourceBindingPath.samplerTypeFlag
+        default:
+            self.value |= ResourceBindingPath.bufferTypeFlag
+        }
+    }
+    
     public var stageTypeAndArgBufferMask : UInt64 {
         return self.value & (ResourceBindingPath.indexClearMask & ResourceBindingPath.arrayIndexClearMask)
     }

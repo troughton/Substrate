@@ -105,14 +105,28 @@ final actor MetalRenderPipelineCache {
             renderStateTask = task
         } else {
             renderStateTask = Task.detached {
-                guard let mtlDescriptor = await MTLRenderPipelineDescriptor(descriptor, functionCache: self.functionCache) else {
-                    return
+                switch descriptor._vertexProcessingDescriptor {
+                case .vertex:
+                    guard let mtlDescriptor = await MTLRenderPipelineDescriptor(descriptor, functionCache: self.functionCache) else {
+                        return
+                    }
+                    let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
+                    
+                    // TODO: can we retrieve the thread execution width for render pipelines?
+                    let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
+                    await self.setState(state, reflection: pipelineReflection, for: descriptor)
+                case .mesh:
+                    if #available(macOS 13.0, iOS 15.0, *) {
+                        guard let mtlDescriptor = await MTLMeshRenderPipelineDescriptor(descriptor, functionCache: self.functionCache) else {
+                            return
+                        }
+                        let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
+                        
+                        // TODO: can we retrieve the thread execution width for render pipelines?
+                        let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, objectFunction: mtlDescriptor.objectFunction!, meshFunction: mtlDescriptor.meshFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
+                        await self.setState(state, reflection: pipelineReflection, for: descriptor)
+                    }
                 }
-                let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
-                
-                // TODO: can we retrieve the thread execution width for render pipelines?
-                let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
-                await self.setState(state, reflection: pipelineReflection, for: descriptor)
             }
             
             self.renderStateTasks[descriptor] = renderStateTask

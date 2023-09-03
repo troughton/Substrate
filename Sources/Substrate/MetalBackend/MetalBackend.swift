@@ -389,12 +389,12 @@ final class MetalBackend : SpecificRenderBackend {
     }
 
     @usableFromInline var pushConstantPath: ResourceBindingPath {
-        return ResourceBindingPath(type: .buffer, index: 0, argumentBufferIndex: nil, stages: [.vertex, .fragment]) // Push constants go at index 0
+        return ResourceBindingPath(type: MTLArgumentType.buffer, index: 0, argumentBufferIndex: nil, stages: [.vertex, .fragment]) // Push constants go at index 0
     }
     
     @usableFromInline func argumentBufferPath(at index: Int, stages: RenderStages) -> ResourceBindingPath {
         let stages = MTLRenderStages(stages)
-        return ResourceBindingPath(type: .buffer, index: index + 1, argumentBufferIndex: nil, stages: stages) // Push constants go at index 0
+        return ResourceBindingPath(type: MTLArgumentType.buffer, index: index + 1, argumentBufferIndex: nil, stages: stages) // Push constants go at index 0
     }
     
     @usableFromInline func argumentBufferEncoder(for descriptor: ArgumentBufferDescriptor) -> UnsafeRawPointer? {
@@ -760,9 +760,9 @@ final class MetalBackend : SpecificRenderBackend {
             Task {
                 try await Task.sleep(nanoseconds: 1_000_000_000) // wait for one second.
                 context.withContextAsync {
-                    if index >= queue.lastSubmittedCommand {
+                    if index >= queue.lastSubmittedCommand, await context.needsWaitOnAccessSemaphore {
                         // If there are no more pending commands on the queue and there haven't been for a number of seconds, we can make all of the transient allocators purgeable.
-                        contextRegistry.makeTransientAllocatorsPurgeable()
+//                        contextRegistry.makeTransientAllocatorsPurgeable()
                     }
                 }
             }

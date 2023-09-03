@@ -21,6 +21,7 @@ public enum ResourceType : UInt8 {
     case visibleFunctionTable
     case accelerationStructure
     case intersectionFunctionTable
+    case objectPayload
     case hazardTrackingGroup
     
     public var isMaterialisedOnFirstUse: Bool {

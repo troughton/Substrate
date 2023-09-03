@@ -316,12 +316,16 @@ extension MTLRenderPipelineColorAttachmentDescriptor {
 
 extension MTLRenderPipelineDescriptor {
     convenience init?(_ descriptor: RenderPipelineDescriptor, functionCache: MetalFunctionCache) async {
+        guard case .vertex(let vertexPipelineDescriptor) = descriptor._vertexProcessingDescriptor else {
+            return nil
+        }
+        
         self.init()
         if let label = descriptor.label {
             self.label = label
         }
         
-        guard let vertexFunction = await functionCache.function(for: descriptor.vertexFunction) else {
+        guard let vertexFunction = await functionCache.function(for: vertexPipelineDescriptor.vertexFunction) else {
             return nil
         }
         self.vertexFunction = vertexFunction
@@ -333,9 +337,64 @@ extension MTLRenderPipelineDescriptor {
             self.fragmentFunction = function
         }
         
-        if let vertexDescriptor = descriptor.vertexDescriptor {
+        if let vertexDescriptor = vertexPipelineDescriptor.vertexDescriptor {
             self.vertexDescriptor = MTLVertexDescriptor(vertexDescriptor)
         }
+        
+        self.isAlphaToCoverageEnabled = descriptor.isAlphaToCoverageEnabled
+        self.isAlphaToOneEnabled = descriptor.isAlphaToOneEnabled
+        
+        self.isRasterizationEnabled = descriptor.isRasterizationEnabled
+        
+        self.depthAttachmentPixelFormat = MTLPixelFormat(descriptor.depthAttachmentFormat)
+        self.stencilAttachmentPixelFormat = MTLPixelFormat(descriptor.stencilAttachmentFormat)
+        
+        for i in 0..<descriptor.colorAttachmentFormats.count {
+            self.colorAttachments[i] = MTLRenderPipelineColorAttachmentDescriptor(blendDescriptor: descriptor.blendStates[i, default: nil], writeMask: descriptor.writeMasks[i, default: []], pixelFormat: MTLPixelFormat(descriptor.colorAttachmentFormats[i, default: .invalid]))
+        }
+        
+        self.rasterSampleCount = descriptor.rasterSampleCount
+    }
+}
+
+@available(macOS 13.0, *)
+extension MTLMeshRenderPipelineDescriptor {
+    convenience init?(_ descriptor: RenderPipelineDescriptor, functionCache: MetalFunctionCache) async {
+        guard case .mesh(let meshPipelineDescriptor) = descriptor._vertexProcessingDescriptor else {
+            return nil
+        }
+        
+        self.init()
+        if let label = descriptor.label {
+            self.label = label
+        }
+        
+        guard let objectFunction = await functionCache.function(for: meshPipelineDescriptor.objectFunction) else {
+            return nil
+        }
+        self.objectFunction = objectFunction
+        
+        guard let meshFunction = await functionCache.function(for: meshPipelineDescriptor.meshFunction) else {
+            return nil
+        }
+        self.meshFunction = meshFunction
+        
+        if !descriptor.fragmentFunction.name.isEmpty {
+            guard let function = await functionCache.function(for: descriptor.fragmentFunction) else {
+                return nil
+            }
+            self.fragmentFunction = function
+        }
+        
+        self.maxTotalThreadsPerObjectThreadgroup = meshPipelineDescriptor.maxTotalThreadsPerObjectThreadgroup
+        self.maxTotalThreadsPerMeshThreadgroup = meshPipelineDescriptor.maxTotalThreadsPerMeshThreadgroup
+        
+        self.objectThreadgroupSizeIsMultipleOfThreadExecutionWidth = meshPipelineDescriptor.objectThreadgroupSizeIsMultipleOfThreadExecutionWidth
+        self.meshThreadgroupSizeIsMultipleOfThreadExecutionWidth = meshPipelineDescriptor.meshThreadgroupSizeIsMultipleOfThreadExecutionWidth
+        
+        self.payloadMemoryLength = meshPipelineDescriptor.payloadMemoryLength
+        
+        self.maxTotalThreadgroupsPerMeshGrid = meshPipelineDescriptor.maxTotalThreadgroupsPerMeshGrid
         
         self.isAlphaToCoverageEnabled = descriptor.isAlphaToCoverageEnabled
         self.isAlphaToOneEnabled = descriptor.isAlphaToOneEnabled

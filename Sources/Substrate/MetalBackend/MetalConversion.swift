@@ -172,6 +172,35 @@ extension ResourceType {
             fatalError()
         }
     }
+    
+    public init(_ type: MTLBindingType) {
+        switch type {
+        case .buffer:
+            self = .buffer
+        case .sampler:
+            self = .sampler
+        case .texture:
+            self = .texture
+        case .threadgroupMemory:
+            self = .threadgroupMemory
+        case .imageblockData:
+            self = .imageblockData
+        case .imageblock:
+            self = .imageblock
+        case .visibleFunctionTable:
+            self = .visibleFunctionTable
+        case .primitiveAccelerationStructure:
+            self = .accelerationStructure
+        case .instanceAccelerationStructure:
+            self = .accelerationStructure
+        case .intersectionFunctionTable:
+            self = .intersectionFunctionTable
+        case .objectPayload:
+            self = .objectPayload
+        @unknown default:
+            fatalError()
+        }
+    }
 }
 
 extension ResourceUsageType {
@@ -221,6 +250,15 @@ extension ArgumentReflection {
         self.init(type: ResourceType(argument.type), bindingPath: bindingPath, arrayLength: argument.arrayLength, usageType: ResourceUsageType(argument.access), activeStages: argument.isActive ? stages : [], activeRange: activeRange)
     }
     
+    @available(macOS 13.0, *)
+    init(_ binding: MTLBinding, bindingPath: ResourceBindingPath, stages: RenderStages) {
+        var activeRange: ActiveResourceRange = binding.isUsed ? .fullResource : .inactive
+        if let bufferBinding = binding as? MTLBufferBinding {
+            activeRange = .buffer(0..<bufferBinding.bufferDataSize)
+        }
+        self.init(type: ResourceType(binding.type), bindingPath: bindingPath, arrayLength: (binding as? MTLTextureBinding)?.arrayLength ?? 1, usageType: ResourceUsageType(binding.access), activeStages: binding.isUsed ? stages : [], activeRange: activeRange)
+    }
+    
     init(member: MTLStructMember, argumentBuffer: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
         let type : ResourceType
         let usageType : ResourceUsageType
@@ -247,6 +285,33 @@ extension ArgumentReflection {
         self.init(type: type, bindingPath: bindingPath, arrayLength: member.arrayType()?.arrayLength ?? 1, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
     }
     
+    @available(macOS 13.0, *)
+    init(member: MTLStructMember, argumentBuffer: MTLBinding, bindingPath: ResourceBindingPath, stages: RenderStages) {
+        let type : ResourceType
+        let usageType : ResourceUsageType
+        
+        var activeRange: ActiveResourceRange = argumentBuffer.isUsed ? .fullResource : .inactive
+        
+        switch member.dataType {
+        case .texture:
+            type = .texture
+            usageType = ResourceUsageType(member.textureReferenceType()!.access)
+        case .sampler:
+            type = .sampler
+            usageType = []
+        default:
+            type = .buffer
+            if let arrayType = member.arrayType() {
+                activeRange = .buffer(0..<arrayType.arrayLength * arrayType.stride)
+            } else if let pointerType = member.pointerType() {
+                activeRange = .buffer(0..<pointerType.dataSize)
+            }
+            usageType = ResourceUsageType(member.pointerType()?.access ?? .readOnly) // It might be POD, in which case the usage is read only.
+        }
+        
+        self.init(type: type, bindingPath: bindingPath, arrayLength: member.arrayType()?.arrayLength ?? 1, usageType: usageType, activeStages: argumentBuffer.isUsed ? stages : [], activeRange: activeRange)
+    }
+    
     init?(array: MTLArrayType, argumentBuffer: MTLArgument, bindingPath: ResourceBindingPath, stages: RenderStages) {
         let type : ResourceType
         let usageType : ResourceUsageType
@@ -269,6 +334,31 @@ extension ArgumentReflection {
         }
         
         self.init(type: type, bindingPath: bindingPath, arrayLength: array.arrayLength, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
+    }
+    
+    @available(macOS 13.0, *)
+    init?(array: MTLArrayType, argumentBuffer: MTLBinding, bindingPath: ResourceBindingPath, stages: RenderStages) {
+        let type : ResourceType
+        let usageType : ResourceUsageType
+        
+        var activeRange: ActiveResourceRange = argumentBuffer.isUsed ? .fullResource : .inactive
+        
+        switch array.elementType {
+        case .texture:
+            type = .texture
+            guard let textureReferenceType = array.elementTextureReferenceType() else { return nil }
+            usageType = ResourceUsageType(textureReferenceType.access)
+        case .sampler:
+            type = .sampler
+            usageType = []
+        default:
+            type = .buffer
+            guard let elementPointerType = array.elementPointerType() else { return nil }
+            usageType = ResourceUsageType(elementPointerType.access)
+            activeRange = .buffer(0..<elementPointerType.dataSize)
+        }
+        
+        self.init(type: type, bindingPath: bindingPath, arrayLength: array.arrayLength, usageType: usageType, activeStages: argumentBuffer.isUsed ? stages : [], activeRange: activeRange)
     }
     
 }

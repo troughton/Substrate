@@ -26,6 +26,33 @@ public struct PackedVector3<Scalar: SIMDScalar>: Hashable {
         self.y = value
         self.z = value
     }
+    
+    public subscript(i: Int) -> Scalar {
+        get {
+            switch i {
+            case 0:
+                return self.x
+            case 1:
+                return self.y
+            case 2:
+                return self.z
+            default:
+                preconditionFailure()
+            }
+        }
+        set {
+            switch i {
+            case 0:
+                self.x = newValue
+            case 1:
+                self.y = newValue
+            case 2:
+                self.z = newValue
+            default:
+                preconditionFailure()
+            }
+        }
+    }
 }
 
 extension PackedVector3: @unchecked Sendable where Scalar: Sendable {}

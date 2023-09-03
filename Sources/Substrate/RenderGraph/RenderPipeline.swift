@@ -190,7 +190,105 @@ public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
     }
 }
 
-public struct RenderPipelineDescriptor : Hashable {
+public struct VertexRenderPipelineDescriptor: Hashable {
+    public var vertexDescriptor : VertexDescriptor? = nil
+    
+    public var vertexFunction: FunctionDescriptor = .init()
+    
+    public var functionConstants : FunctionConstants? {
+        get {
+            return self.vertexFunction.constants
+        }
+        set {
+            self.vertexFunction.constants = newValue
+        }
+    }
+}
+
+public struct MeshRenderPipelineDescriptor: Hashable {
+    public init()  {
+        
+    }
+    
+    public var objectFunction: FunctionDescriptor = .init()
+    public var meshFunction: FunctionDescriptor = .init()
+    
+    public var maxTotalThreadsPerObjectThreadgroup: Int = 0
+    public var maxTotalThreadsPerMeshThreadgroup: Int = 0
+    
+    public var objectThreadgroupSizeIsMultipleOfThreadExecutionWidth: Bool = false
+    public var meshThreadgroupSizeIsMultipleOfThreadExecutionWidth: Bool = false
+    
+    public var payloadMemoryLength: Int = 0
+    
+    public var maxTotalThreadgroupsPerMeshGrid: Int = 0
+ 
+    public var functionConstants : FunctionConstants? {
+        get {
+            return self.meshFunction.constants ?? self.objectFunction.constants
+        }
+        set {
+            self.meshFunction.constants = newValue
+            self.objectFunction.constants = newValue
+        }
+    }
+}
+
+public struct RenderPipelineDescriptor: Hashable {
+    enum VertexProcessingDescriptor: Hashable {
+        case vertex(VertexRenderPipelineDescriptor)
+        case mesh(MeshRenderPipelineDescriptor)
+        
+        var functionConstants : FunctionConstants? {
+            get {
+                switch self {
+                case .vertex(let vertex):
+                    return vertex.functionConstants
+                case .mesh(let mesh):
+                    return mesh.functionConstants
+                }
+            }
+            set {
+                switch self {
+                case .vertex(var vertex):
+                    vertex.functionConstants = newValue
+                    self = .vertex(vertex)
+                case .mesh(var mesh):
+                    mesh.functionConstants = newValue
+                    self = .mesh(mesh)
+                }
+            }
+        }
+        
+        var vertexPipelineDescriptor: VertexRenderPipelineDescriptor {
+            get {
+                switch self {
+                case .vertex(let vertex):
+                    return vertex
+                default:
+                    return .init()
+                }
+            }
+            set {
+                self = .vertex(newValue)
+            }
+        }
+        
+        var meshPipelineDescriptor: MeshRenderPipelineDescriptor {
+            get {
+                switch self {
+                case .mesh(let mesh):
+                    return mesh
+                default:
+                    return .init()
+                }
+            }
+            set {
+                self = .mesh(newValue)
+            }
+        }
+    }
+    
     public init() {
         
     }
@@ -202,9 +300,35 @@ public struct RenderPipelineDescriptor : Hashable {
     
     public var label: String? = nil
     
-    public var vertexDescriptor : VertexDescriptor? = nil
+    var _vertexProcessingDescriptor: VertexProcessingDescriptor = .vertex(.init())
     
-    public var vertexFunction: FunctionDescriptor = .init()
+    public var vertexFunction: FunctionDescriptor {
+        get {
+            self._vertexProcessingDescriptor.vertexPipelineDescriptor.vertexFunction
+        }
+        set {
+            self._vertexProcessingDescriptor.vertexPipelineDescriptor.vertexFunction = newValue
+        }
+    }
+    
+    public var vertexDescriptor: VertexDescriptor? {
+        get {
+            self._vertexProcessingDescriptor.vertexPipelineDescriptor.vertexDescriptor
+        }
+        set {
+            self._vertexProcessingDescriptor.vertexPipelineDescriptor.vertexDescriptor = newValue
+        }
+    }
+    
+    public var meshPipeline: MeshRenderPipelineDescriptor {
+        get {
+            self._vertexProcessingDescriptor.meshPipelineDescriptor
+        }
+        set {
+            self._vertexProcessingDescriptor.meshPipelineDescriptor = newValue
+        }
+    }
+    
     public var fragmentFunction: FunctionDescriptor = .init()
     
     /* Rasterization and visibility state */
@@ -224,10 +348,10 @@ public struct RenderPipelineDescriptor : Hashable {
     public var writeMasks : ColorAttachmentArray<ColorWriteMask> = .init(repeating: .all)
     public var functionConstants : FunctionConstants? {
         get {
-            return self.vertexFunction.constants ?? self.fragmentFunction.constants
+            return self.fragmentFunction.constants ?? self._vertexProcessingDescriptor.functionConstants
         }
         set {
-            self.vertexFunction.constants = newValue
+            self._vertexProcessingDescriptor.functionConstants = newValue
             self.fragmentFunction.constants = newValue
         }
     }
