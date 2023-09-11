@@ -124,6 +124,10 @@ public typealias Array13<Element> = Adjoin<Array8<Element>, Array5<Element>>
 public typealias Array14<Element> = Adjoin<Array8<Element>, Array6<Element>>
 public typealias Array15<Element> = Adjoin<Array8<Element>, Array7<Element>>
 public typealias Array16<Element> = Adjoin<Array8<Element>, Array8<Element>>
+public typealias Array32<Element> = Adjoin<Array16<Element>, Array16<Element>>
+public typealias Array64<Element> = Adjoin<Array32<Element>, Array32<Element>>
+public typealias Array128<Element> = Adjoin<Array64<Element>, Array64<Element>>
+public typealias Array256<Element> = Adjoin<Array128<Element>, Array128<Element>>
 
 // MARK: - Functionality introduced by conformance to StaticArray
 extension StaticArray {
