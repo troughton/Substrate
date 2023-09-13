@@ -138,7 +138,7 @@ extension RectTransform {
     }
 }
 
-#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+#if canImport(CoreGraphics)
 
 import CoreGraphics
 

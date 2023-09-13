@@ -160,11 +160,19 @@ final class MetalCommandBuffer: BackendCommandBuffer {
                 continue
             case .success(let drawable):
                 if let onPresented = onPresented {
+#if os(visionOS) && targetEnvironment(simulator)
+                    unsafeBitCast(drawable, to: MTLDrawableExtensions.self).addPresentedHandler { drawable in
+                        withExtendedLifetime(drawable) {
+                            onPresented(texture, .success(OpaquePointer(Unmanaged.passUnretained(drawable).toOpaque())))
+                        }
+                    }
+#else
                     drawable.addPresentedHandler { drawable in
                         withExtendedLifetime(drawable) {
                             onPresented(texture, .success(OpaquePointer(Unmanaged.passUnretained(drawable).toOpaque())))
                         }
                     }
+#endif
                 }
                 
                 if drawable.layer.presentsWithTransaction {
@@ -205,5 +213,13 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         return self.commandBuffer.error
     }
 }
+
+#if os(visionOS) && targetEnvironment(simulator)
+
+protocol MTLDrawableExtensions: MTLDrawable {
+    func addPresentedHandler(_ handler: MTLDrawablePresentedHandler)
+}
+
+#endif
 
 #endif
