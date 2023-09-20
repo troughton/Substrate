@@ -61,7 +61,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         self.renderGraphQueue.dispose()
     }
     
-    func registerWindowTexture(for texture: Texture, swapchain: Any) async {
+    func registerWindowTexture(for texture: Texture, swapchain: Swapchain) async {
         guard let resourceRegistry = self.resourceRegistry else {
             print("Error: cannot associate a window texture with a no-transient-resources RenderGraph")
             return

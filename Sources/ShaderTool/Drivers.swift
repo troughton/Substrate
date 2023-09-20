@@ -89,11 +89,18 @@ fileprivate func findExecutable(_ name: String) -> URL? {
     } catch {}
     
     let localBin = "/usr/local/bin/\(name)"
+    let homebrewBin = "/opt/homebrew/bin/\(name)"
     let usrBin = "/usr/bin/\(name)"
     
+    #if os(macOS)
     if FileManager.default.fileExists(atPath: localBin) {
         return URL(fileURLWithPath: localBin)
     }
+    
+    if FileManager.default.fileExists(atPath: homebrewBin) {
+        return URL(fileURLWithPath: homebrewBin)
+    }
+    #endif
     
     if FileManager.default.fileExists(atPath: usrBin) {
         return URL(fileURLWithPath: usrBin)
@@ -154,6 +161,16 @@ extension Target {
             return "macosx"
         case .metal(.iOS, _):
             return "iphoneos"
+        case .metal(.iOSSimulator, _):
+            return "iphonesimulator"
+        case .metal(.tvOS, _):
+            return "tvos"
+        case .metal(.tvOSSimulator, _):
+            return "tvsimulator"
+        case .metal(.visionOS, _):
+            return "xros"
+        case .metal(.visionOSSimulator, _):
+            return "xrsimulator"
         default:
             return nil
         }
@@ -163,7 +180,8 @@ extension Target {
         switch self {
         case .metal(.macOS, let deploymentTarget), .metal(.macOSAppleSilicon, let deploymentTarget):
             return "-mmacosx-version-min=\(deploymentTarget)"
-        case .metal(.iOS, let deploymentTarget):
+        case .metal(.iOS, let deploymentTarget),
+             .metal(.iOSSimulator, let deploymentTarget):
             return "-mios-version-min=\(deploymentTarget)"
         default:
             return nil
@@ -213,10 +231,10 @@ final class MetalDriver {
         }
         
         arguments.append(contentsOf: [
-                            target.metalTargetVersion!,
+                            target.metalTargetVersion,
                             target.metalStandardLibrary,
                             sourceFile.path,
-                            "-o", destinationFile.path].compactMap { $0 })
+                            "-o", destinationFile.path].lazy.compactMap { $0 })
         
         return try Process.run(self.url, arguments: arguments, terminationHandler: nil)
     }

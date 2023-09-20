@@ -371,7 +371,7 @@ final class DescriptorSet {
             stream.print("#if canImport(Metal)")
             stream.print("if RenderBackend.api == .metal {")
             if self.resources.contains(where: { $0.viewType == .storageImage || $0.platformBindings.macOSMetalIndex != $0.platformBindings.appleSiliconMetalIndex }) {
-                stream.print("#if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)")
+                stream.print("#if (os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)) && !targetEnvironment(macCatalyst)")
                 stream.print("let isAppleSiliconGPU = true")
                 stream.print("#elseif arch(i386) || arch(x86_64)")
                 stream.print("let isAppleSiliconGPU = false")

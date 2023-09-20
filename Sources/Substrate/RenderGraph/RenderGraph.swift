@@ -711,7 +711,7 @@ protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var renderGraphQueue: Queue { get }
     func executeRenderGraph(_ executeFunc: @escaping () async -> (passes: [RenderPassRecord], usedResources: Set<Resource>), onSwapchainPresented: (RenderGraph.SwapchainPresentedCallback)?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken
-    func registerWindowTexture(for texture: Texture, swapchain: Any) async
+    func registerWindowTexture(for texture: Texture, swapchain: Swapchain) async
 }
 
 @usableFromInline enum RenderGraphTagType : UInt64 {
@@ -1531,7 +1531,7 @@ public final class RenderGraph {
         }
     }
     
-    public typealias SwapchainPresentedCallback = @Sendable (Texture?, Result<OpaquePointer?, Error>) -> Void
+    public typealias SwapchainPresentedCallback = @Sendable (Texture?, Result<(any Drawable)?, Error>) -> Void
     
     /// Enqueue `function` to be executed once the render graph has completed on the GPU.
     public func onSwapchainPresented(_ function: @escaping SwapchainPresentedCallback) {
