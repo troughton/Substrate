@@ -66,7 +66,7 @@ fileprivate func ??<T>(lhs: T?, rhs: () async -> T) async -> T {
     return await rhs()
 }
 
-final class MetalBackend : SpecificRenderBackend {
+public final class MetalBackend : SpecificRenderBackend {
     @TaskLocal static var activeContext: RenderGraphContextImpl<MetalBackend>? = nil
     
     static var activeContextTaskLocal: TaskLocal<RenderGraphContextImpl<MetalBackend>?> { $activeContext }
@@ -98,7 +98,7 @@ final class MetalBackend : SpecificRenderBackend {
     
     var queueSyncEvents = [MTLEvent?](repeating: nil, count: QueueRegistry.maxQueues)
     
-    public init(device: MTLDevice?, libraryPath: String? = nil, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
+    init(device: MTLDevice?, libraryPath: String? = nil, enableValidation: Bool = true, enableShaderHotReloading: Bool = true) {
         self.device = device ?? MTLCreateSystemDefaultDevice()!
         self.stateCaches = MetalStateCaches(device: self.device, libraryPath: libraryPath)
         self.resourceRegistry = MetalPersistentResourceRegistry(device: self.device)
@@ -112,6 +112,12 @@ final class MetalBackend : SpecificRenderBackend {
     
     public var renderDevice: Any {
         return self.device
+    }
+    
+    public var shaderLibrary: MTLLibrary {
+        get async {
+            return await self.stateCaches.functionCache.library
+        }
     }
     
     func reloadShaderLibraryIfNeeded() async {
@@ -198,12 +204,12 @@ final class MetalBackend : SpecificRenderBackend {
         return .nonDiscardable
     }
     
-    @usableFromInline func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
+    public func sizeAndAlignment(for buffer: BufferDescriptor) -> (size: Int, alignment: Int) {
         let sizeAndAlign = self.device.heapBufferSizeAndAlign(length: buffer.length, options: MTLResourceOptions(storageMode: buffer.storageMode, cacheMode: buffer.cacheMode, isAppleSiliconGPU: self.isAppleSiliconGPU))
         return (sizeAndAlign.size, sizeAndAlign.align)
     }
     
-    @usableFromInline func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
+    public func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int) {
         let sizeAndAlign = self.device.heapTextureSizeAndAlign(descriptor: MTLTextureDescriptor(texture, usage: MTLTextureUsage(texture.usageHint), isAppleSiliconGPU: self.isAppleSiliconGPU))
         return (sizeAndAlign.size, sizeAndAlign.align)
     }
@@ -381,7 +387,7 @@ final class MetalBackend : SpecificRenderBackend {
         return true
     }
     
-    var requiresEmulatedInputAttachments: Bool {
+    @usableFromInline var requiresEmulatedInputAttachments: Bool {
         return !self.isAppleSiliconGPU
     }
     
