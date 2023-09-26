@@ -226,6 +226,10 @@ final class MetalDriver {
             arguments.append("-O")
         }
         
+        for define in target.targetDefines {
+            arguments.append("-D\(define)")
+        }
+        
         if let metalVersion = target.metalVersion, (metalVersion.major == 2 && metalVersion.minor >= 3) || metalVersion.major >= 3 {
             arguments.append("-fpreserve-invariance")
         }
