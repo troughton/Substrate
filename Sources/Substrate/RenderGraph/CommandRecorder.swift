@@ -385,12 +385,15 @@ final class RenderGraphCommandRecorder {
                 if usageType == .write || usageType == .readWrite {
                     assert(textureUsage.contains(.shaderWrite))
                 }
+                #if !canImport(Metal)
+                // Metal doesn't have blit texture usages.
                 if usageType == .blitSource {
                     assert(textureUsage.contains(.blitSource))
                 }
                 if usageType == .blitDestination {
                     assert(textureUsage.contains(.blitDestination))
                 }
+                #endif
             } else if let bufferUsage = Buffer(resource)?.descriptor.usageHint {
                 if usageType == .read {
                     assert(bufferUsage.contains(.shaderRead))
