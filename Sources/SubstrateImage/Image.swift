@@ -156,7 +156,7 @@ public enum ImageColorSpace: Hashable, Sendable {
         case .linearSRGB:
             return color
         case .gammaSRGB(let gamma):
-            return pow(color, gamma)
+            return Float.pow(color, 1.0 / gamma)
         }
     }
 
@@ -170,7 +170,7 @@ public enum ImageColorSpace: Hashable, Sendable {
         case .linearSRGB:
             return color
         case .gammaSRGB(let gamma):
-            return pow(color, 1.0 / gamma)
+            return Float.pow(color, gamma)
         }
     }
     
