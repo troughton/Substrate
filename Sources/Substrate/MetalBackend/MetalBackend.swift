@@ -250,7 +250,11 @@ public final class MetalBackend : SpecificRenderBackend {
             return false
             #endif
         case .r8Unorm_sRGB, .rg8Unorm_sRGB:
+            #if targetEnvironment(simulator)
+            return false
+            #else
             return self.isAppleSiliconGPU
+            #endif
         case .bc1_rgba, .bc1_rgba_sRGB,
              .bc2_rgba, .bc2_rgba_sRGB,
              .bc3_rgba, .bc3_rgba_sRGB,
