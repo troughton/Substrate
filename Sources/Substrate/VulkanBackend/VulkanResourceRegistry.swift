@@ -329,8 +329,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     private var descriptorPoolIndex: Int = 0
     private var frameIndex: UInt64 = 0
     
-    var windowReferences = [Texture : VulkanSwapChain]()
-    public private(set) var frameSwapChains : [VulkanSwapChain] = []
+    var windowReferences = [Texture : VulkanSwapchain]()
+    public private(set) var frameSwapchains : [VulkanSwapchain] = []
     
     public init(device: VulkanDevice, inflightFrameCount: Int, queue: Queue, transientRegistryIndex: Int, persistentRegistry: VulkanPersistentResourceRegistry) {
         self.queue = queue
@@ -383,7 +383,7 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
     }
     
     public func registerWindowTexture(for texture: Texture, swapchain: Any) {
-        self.windowReferences[texture] = (swapchain as! VulkanSwapChain)
+        self.windowReferences[texture] = (swapchain as! VulkanSwapchain)
     }
     
     func allocatorForBuffer(storageMode: StorageMode, cacheMode: CPUCacheMode, flags: ResourceFlags) -> VulkanBufferAllocator {
@@ -508,9 +508,9 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
 
     @MainActor
     private func createWindowHandleTexture(_ texture: Texture) {
-        let swapChain = self.windowReferences.removeValue(forKey: texture)!
-        self.frameSwapChains.append(swapChain)
-        let image = swapChain.nextImage(descriptor: texture.descriptor)
+        let swapchain = self.windowReferences.removeValue(forKey: texture)!
+        self.frameSwapchains.append(swapchain)
+        let image = swapchain.nextImage(descriptor: texture.descriptor)
         image.computeFrameLayouts(resource: Resource(texture), usages: texture.usages, preserveLastLayout: false, frameIndex: self.frameIndex)
         self.textureReferences[texture] = VkImageReference(image: Unmanaged.passUnretained(image))
     }
@@ -712,8 +712,8 @@ final class VulkanTransientResourceRegistry: BackendTransientResourceRegistry {
         resource.dispose() // This will dispose it in the RenderGraph persistent allocator, which will in turn call dispose here at the end of the frame.
     }
     
-    func clearSwapChains() {
-        self.frameSwapChains.removeAll(keepingCapacity: true)
+    func clearSwapchains() {
+        self.frameSwapchains.removeAll(keepingCapacity: true)
     }
     
     func cycleFrames() {

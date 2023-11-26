@@ -5,7 +5,7 @@
 //  Created by Thomas Roughton on 12/07/19.
 //
 
-#if canImport(Metal) && !targetEnvironment(macCatalyst)
+#if (os(macOS) || os(iOS)) && !targetEnvironment(macCatalyst)
 
 @preconcurrency import Metal
 
@@ -51,7 +51,6 @@ let GL_R : GLuint = 0x2002
 let GL_R32F : GLuint = 0x822E
 let GL_DEPTH_COMPONENT : GLuint = 0x1902
 #endif
-
 
 /// OpenGLMetalInteropTexture is a utility class that exposes both a Metal and an OpenGL texture with the same backing memory.
 @available(OSX, deprecated: 10.14)

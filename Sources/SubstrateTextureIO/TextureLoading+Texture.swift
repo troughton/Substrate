@@ -177,49 +177,42 @@ public enum TextureLoadingError : Error {
 extension Image {
     @discardableResult
     public func copyData(to texture: Texture, region: Region, mipmapLevel: Int, slice: Int = 0) async -> RenderGraphExecutionWaitToken {
-        if texture.descriptor.storageMode == .private {
 #if canImport(Metal)
-            if case .vm_allocate = self.allocator {
-                // On Metal, we can make vm_allocate'd buffers directly accessible to the GPU.
-                let allocatedSize = self.allocatedSize
-                let token = await self.withUnsafeBufferPointer { bytes -> RenderGraphExecutionWaitToken? in
-                    guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: allocatedSize, options: .storageModeShared, deallocator: nil) else { return nil }
-                    let substrateBuffer = Buffer(descriptor: BufferDescriptor(length: allocatedSize, storageMode: .shared, cacheMode: .defaultCache, usage: .blitSource), externalResource: mtlBuffer)
-
-                    let token = await GPUResourceUploader.runBlitPass(using: [
-                        substrateBuffer.as(.shaderRead),
-                        texture.as(.blitDestination, slice: slice, mipLevel: mipmapLevel),
-                    ]) { bce in
-                        bce.copy(from: substrateBuffer, sourceOffset: 0, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
-                    }
-                    Task {
-                        await token.wait()
-                        substrateBuffer.dispose()
-                    }
-                    return token
-                }
-                if let token = token {
-                    return token
-                }
-            }
-#endif
-            if case .custom(let context, _) = self.allocator,
-               let uploadBufferToken = context as? GPUResourceUploader.UploadBufferToken {
-                let buffer = uploadBufferToken.stagingBuffer!
-                let sourceOffset = self.withUnsafeBufferPointer { bytes in
-                    buffer.withContents { return UnsafeRawPointer(bytes.baseAddress!) - $0.baseAddress! }
-                }
-                uploadBufferToken.didModifyBuffer()
-                
-                let executionToken = await GPUResourceUploader.runBlitPass(using: [
-                    buffer.as(.shaderRead),
+        if case .vm_allocate = self.allocator {
+            // On Metal, we can make vm_allocate'd buffers directly accessible to the GPU.
+            let allocatedSize = self.allocatedSize
+            let token = await self.withUnsafeBufferPointer { bytes -> RenderGraphExecutionWaitToken? in
+                guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: allocatedSize, options: .storageModeShared, deallocator: nil) else { return nil }
+                let substrateBuffer = Buffer(descriptor: BufferDescriptor(length: allocatedSize, storageMode: .shared, cacheMode: .defaultCache, usage: .blitSource), externalResource: mtlBuffer)
+                let token = await GPUResourceUploader.runBlitPass(using: [
+                    substrateBuffer.as(.shaderRead),
                     texture.as(.blitDestination, slice: slice, mipLevel: mipmapLevel),
                 ]) { bce in
-                    bce.copy(from: buffer, sourceOffset: sourceOffset, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
+                    bce.copy(from: substrateBuffer, sourceOffset: 0, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
                 }
-                await uploadBufferToken.didFlush(token: executionToken)
-                return executionToken
+                substrateBuffer.dispose()
+                return token
             }
+            if let token = token {
+                return token
+            }
+        }
+#endif
+        if case .custom(let context, _) = self.allocator,
+            let uploadBufferToken = context as? GPUResourceUploader.UploadBufferToken {
+            let buffer = uploadBufferToken.stagingBuffer!
+            let sourceOffset = self.withUnsafeBufferPointer { bytes in
+                buffer.withContents { return UnsafeRawPointer(bytes.baseAddress!) - $0.baseAddress! }
+            }
+            
+            let executionToken = await GPUResourceUploader.runBlitPass(using: [
+                buffer.as(.shaderRead),
+                texture.as(.blitDestination, slice: slice, mipLevel: mipmapLevel),
+            ]) { bce in
+                bce.copy(from: buffer, sourceOffset: sourceOffset, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
+            }
+            await uploadBufferToken.didFlush(token: executionToken)
+            return executionToken
         }
         
         return await self.withUnsafeBufferPointer { bytes in

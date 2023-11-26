@@ -280,7 +280,7 @@ public class CocoaWindow : NSObject, Window, NSWindowDelegate, MTKWindow {
     
     @MainActor
     private func getTexture(renderGraph: RenderGraph) async -> Texture {
-        return await Texture(descriptor: self.textureDescriptor, isMinimised: false, nativeWindow: self.mtkView.layer as Any, renderGraph: renderGraph)
+        return await Texture(descriptor: self.textureDescriptor, isMinimised: false, swapchain: self.mtkView.layer as! CAMetalLayer, renderGraph: renderGraph)
     }
     
     public var texture: Texture {

@@ -256,7 +256,7 @@ extension ImageFileInfo {
             let isFloatingPoint = false
             
             let colorSpace: ImageColorSpace
-            if state.info_png.srgb_defined != 0 {
+            if state.info_png.srgb_defined != 0 || (state.info_png.iccp_defined != 0 && strcmp(state.info_png.iccp_name, "sRGB IEC61966-2.1") == 0) {
                 colorSpace = .sRGB
             } else if state.info_png.gama_defined != 0 {
                 if state.info_png.gama_gamma == 100_000 {

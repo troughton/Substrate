@@ -47,7 +47,7 @@ public class SDLVulkanWindow : SDLWindow {
             fatalError("Unable to create Vulkan surface: " + String(cString: SDL_GetError()))
         }
 
-        self.swapChain = VulkanSwapChain(device: vulkanBackend.device, surface: self.vkSurface!)
+        self.swapchain = VulkanSwapchain(device: vulkanBackend.device, surface: self.vkSurface!)
     }
 }
 
@@ -85,7 +85,7 @@ public class SDLMetalWindow : SDLWindow {
         #endif
         
         metalLayer.device = (RenderBackend.renderDevice as! MTLDevice)
-        self.swapChain = metalLayer
+        self.swapchain = metalLayer
     }
     
     deinit {
@@ -93,7 +93,7 @@ public class SDLMetalWindow : SDLWindow {
     }
 }
 
-extension CAMetalLayer : SwapChain {
+extension CAMetalLayer : Swapchain {
     public var format : PixelFormat {
         return PixelFormat(self.pixelFormat)
     }

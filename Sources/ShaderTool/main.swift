@@ -18,7 +18,23 @@ extension Target: ExpressibleByArgument {
         } else if lowercasedArg.starts(with: "macos") {
             self = .metal(platform: .macOS, deploymentTarget: version ?? "10.14")
         } else if lowercasedArg.starts(with: "ios") {
-            self = .metal(platform: .iOS, deploymentTarget: version ?? "12.0")
+            if lowercasedArg.contains("simulator") {
+                self = .metal(platform: .iOSSimulator, deploymentTarget: version ?? "12.0")
+            } else {
+                self = .metal(platform: .iOS, deploymentTarget: version ?? "12.0")
+            }
+        } else if lowercasedArg.starts(with: "tvos") {
+            if lowercasedArg.contains("simulator") {
+                self = .metal(platform: .tvOSSimulator, deploymentTarget: version ?? "12.0")
+            } else {
+                self = .metal(platform: .tvOS, deploymentTarget: version ?? "12.0")
+            }
+        } else if lowercasedArg.starts(with: "visionos") {
+            if lowercasedArg.contains("simulator") {
+                self = .metal(platform: .visionOSSimulator, deploymentTarget: version ?? "1.0")
+            } else {
+                self = .metal(platform: .visionOS, deploymentTarget: version ?? "1.0")
+            }
         } else if lowercasedArg.starts(with: "vulkan") {
             self = .vulkan(version: version ?? "1.1")
         } else {

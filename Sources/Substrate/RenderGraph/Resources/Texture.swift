@@ -154,11 +154,16 @@ public struct Texture : ResourceProtocol {
         }
     }
     
-    public init(descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Any, renderGraph: RenderGraph) async {
+    @available(*, deprecated, renamed: "init(descriptor:isMinimised:swapchain:renderGraph:)")
+    public init(descriptor: TextureDescriptor, isMinimised: Bool, nativeWindow: Swapchain, renderGraph: RenderGraph) async {
+        await self.init(descriptor: descriptor, isMinimised: isMinimised, swapchain: nativeWindow, renderGraph: renderGraph)
+    }
+    
+    public init(descriptor: TextureDescriptor, isMinimised: Bool = false, swapchain: Swapchain, renderGraph: RenderGraph) async {
         self.init(descriptor: descriptor, renderGraph: renderGraph, flags: isMinimised ? [] : .windowHandle)
         
         if !isMinimised {
-            await renderGraph.context.registerWindowTexture(for: self, swapchain: nativeWindow)
+            await renderGraph.context.registerWindowTexture(for: self, swapchain: swapchain)
         }
     }
     

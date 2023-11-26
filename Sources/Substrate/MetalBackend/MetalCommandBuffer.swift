@@ -19,7 +19,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     let commandInfo: FrameCommandInfo<MetalRenderTargetDescriptor>
     let compactedResourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>]
     
-    var drawablesToPresentOnScheduled = [CAMetalDrawable]()
+    var drawablesToPresentOnScheduled = [Drawable]()
     
     init(backend: MetalBackend,
          queue: MTLCommandQueue,
@@ -182,7 +182,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         self.commandBuffer.encodeSignalEvent(event, value: value)
     }
     
-    func presentSwapchains(resourceRegistry: MetalTransientResourceRegistry, onPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?) {
+    func presentSwapchains(resourceRegistry: MetalTransientResourceRegistry, onPresented: RenderGraph.SwapchainPresentedCallback?) {
         // Only contains drawables applicable to the render passes in the command buffer...
         for (texture, result) in resourceRegistry.frameDrawables {
             switch result {
@@ -191,26 +191,21 @@ final class MetalCommandBuffer: BackendCommandBuffer {
                 continue
             case .success(let drawable):
                 if let onPresented = onPresented {
-                    drawable.addPresentedHandler { drawable in
+                    drawable.addPresentedHandler {
                         withExtendedLifetime(drawable) {
-                            onPresented(texture, .success(OpaquePointer(Unmanaged.passUnretained(drawable).toOpaque())))
+                            onPresented(texture, .success(drawable))
                         }
                     }
                 }
                 
-                if drawable.layer.presentsWithTransaction {
-                    self.drawablesToPresentOnScheduled.append(drawable)
-                    continue
-                }
-                
-                self.commandBuffer.present(drawable)
+                self.drawablesToPresentOnScheduled.append(drawable)
             }
         }
         // because we reset the list after each command buffer submission.
         resourceRegistry.clearDrawables()
     }
     
-    func presentDrawables(_ drawablesToPresent: [MTLDrawable]) {
+    func presentDrawables(_ drawablesToPresent: [Drawable]) {
         for drawable in drawablesToPresent {
             drawable.present()
         }
@@ -236,5 +231,13 @@ final class MetalCommandBuffer: BackendCommandBuffer {
         return self.commandBuffer.error
     }
 }
+
+#if os(visionOS) && targetEnvironment(simulator)
+
+protocol MTLDrawableExtensions: MTLDrawable {
+    func addPresentedHandler(_ handler: MTLDrawablePresentedHandler)
+}
+
+#endif
 
 #endif

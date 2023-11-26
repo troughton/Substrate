@@ -38,7 +38,7 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
     var signalSemaphores = [VkSemaphore?]()
     var signalSemaphoreSignalValues = ExpandingBuffer<UInt64>()
     
-    var presentSwapchains = [VulkanSwapChain]()
+    var presentSwapchains = [VulkanSwapchain]()
     
     init(backend: VulkanBackend,
          queue: VulkanDeviceQueue,
@@ -123,9 +123,9 @@ final class VulkanCommandBuffer: BackendCommandBuffer {
         }
         
         // Only contains drawables applicable to the render passes in the command buffer...
-        self.presentSwapchains.append(contentsOf: resourceRegistry.frameSwapChains)
+        self.presentSwapchains.append(contentsOf: resourceRegistry.frameSwapchains)
         // because we reset the list after each command buffer submission.
-        resourceRegistry.clearSwapChains()
+        resourceRegistry.clearSwapchains()
     }
     
     func commit(onCompletion: @escaping (VulkanCommandBuffer) -> Void) {

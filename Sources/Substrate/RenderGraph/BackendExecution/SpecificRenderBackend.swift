@@ -79,7 +79,7 @@ protocol BackendCommandBuffer: AnyObject {
     
     func waitForEvent(_ event: Backend.Event, value: UInt64)
     func signalEvent(_ event: Backend.Event, value: UInt64)
-    func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry, onPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)?)
+    func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry, onPresented: RenderGraph.SwapchainPresentedCallback?)
     func commit(onCompletion: @escaping (Self) -> Void)
     
     var gpuStartTime: DispatchTime { get }
@@ -102,7 +102,7 @@ protocol BackendTransientResourceRegistry {
     
     // TransientResourceRegistry requirements:
     
-    func registerWindowTexture(for texture: Texture, swapchain: Any) async
+    func registerWindowTexture(for texture: Texture, swapchain: Swapchain) async
     
     func allocateBufferIfNeeded(_ buffer: Buffer, forceGPUPrivate: Bool) -> Backend.BufferReference
     func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) async -> Backend.TextureReference

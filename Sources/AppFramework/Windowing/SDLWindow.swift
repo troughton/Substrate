@@ -94,7 +94,7 @@ open class SDLWindow : Window {
         self._texture = CachedAsync()
         
         self._texture.constructor = { [unowned(unsafe) self] in
-            return await Texture(descriptor: self.textureDescriptor, isMinimised: self.minimized, nativeWindow: self.swapChain!, renderGraph: renderGraph)
+            return await Texture(descriptor: self.textureDescriptor, isMinimised: self.minimized, nativeWindow: self.swapchain!, renderGraph: renderGraph)
         }
     }
     
@@ -102,7 +102,7 @@ open class SDLWindow : Window {
         SDL_DestroyWindow(self.sdlWindowPointer)
     }
     
-    public var swapChain : SwapChain! = nil
+    public var swapchain : Swapchain! = nil
     
     var _texture : CachedAsync<Texture>
     
@@ -113,7 +113,7 @@ open class SDLWindow : Window {
     }
     
     public var textureDescriptor : TextureDescriptor {
-        return TextureDescriptor(type: .type2D, format: self.swapChain.format, width: Int(self.drawableSize.width), height: Int(self.drawableSize.height), mipmapped: false)
+        return TextureDescriptor(type: .type2D, format: self.swapchain.format, width: Int(self.drawableSize.width), height: Int(self.drawableSize.height), mipmapped: false)
     }
     
     public func cycleFrames() {

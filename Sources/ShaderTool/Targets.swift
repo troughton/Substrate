@@ -13,6 +13,11 @@ enum Target: Equatable {
         case macOS
         case macOSAppleSilicon
         case iOS
+        case tvOS
+        case visionOS
+        case iOSSimulator
+        case tvOSSimulator
+        case visionOSSimulator
     }
     
     case metal(platform: MetalPlatform, deploymentTarget: String)
@@ -20,10 +25,9 @@ enum Target: Equatable {
     
     static func ==(lhs: Target, rhs: Target) -> Bool {
         switch (lhs, rhs) {
-        case (.metal(.iOS, _), .metal(.iOS, _)),
-             (.metal(.macOS, _), .metal(.macOS, _)),
-             (.metal(.macOSAppleSilicon, _), .metal(.macOSAppleSilicon, _)),
-             (.vulkan(_), .vulkan(_)):
+        case (.metal(let platformA, _), .metal(let platformB, _)):
+            return platformA == platformB
+        case (.vulkan, .vulkan):
             return true
         default:
             return false
@@ -64,6 +68,8 @@ enum Target: Equatable {
             switch platform {
             case .macOS:
                 switch (majorVersion, minorVersion) {
+                case _ where majorVersion >= 14:
+                    return (3, 0)
                 case _ where majorVersion >= 11:
                     return (2, 3)
                 case (10, 16):
@@ -83,7 +89,7 @@ enum Target: Equatable {
                 }
             case .macOSAppleSilicon:
                 return (2, 3)
-            case .iOS:
+            case .iOS, .tvOS, .iOSSimulator, .tvOSSimulator:
                 switch majorVersion {
                 case _ where majorVersion >= 14:
                     return (2, 3)
@@ -100,6 +106,8 @@ enum Target: Equatable {
                 default:
                     return (1, 0)
                 }
+            case .visionOS, .visionOSSimulator:
+                return (3, 0)
             }
         default:
             return nil
@@ -139,6 +147,16 @@ enum Target: Equatable {
             return ["TARGET_METAL_MACOS", "TARGET_METAL_APPLE_SILICON"]
         case .metal(.iOS, _):
             return ["TARGET_METAL_IOS", "TARGET_METAL_APPLE_SILICON"]
+        case .metal(.tvOS, _):
+            return ["TARGET_METAL_TVOS", "TARGET_METAL_APPLE_SILICON"]
+        case .metal(.visionOS, _):
+            return ["TARGET_METAL_VISIONOS", "TARGET_METAL_APPLE_SILICON"]
+        case .metal(.iOSSimulator, _):
+            return ["TARGET_METAL_IOS", "TARGET_METAL_SIMULATOR", "TARGET_METAL_APPLE_SILICON"]
+        case .metal(.tvOSSimulator, _):
+            return ["TARGET_METAL_TVOS", "TARGET_METAL_SIMULATOR", "TARGET_METAL_APPLE_SILICON"]
+        case .metal(.visionOSSimulator, _):
+            return ["TARGET_METAL_VISIONOS", "TARGET_METAL_SIMULATOR", "TARGET_METAL_APPLE_SILICON"]
         case .vulkan:
             return ["TARGET_VULKAN"]
         }
@@ -237,13 +255,13 @@ final class MetalCompiler : TargetCompiler {
                     spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_IOS_USE_SIMDGROUP_FUNCTIONS, 1)
                 }
                 switch self.target {
-                case .metal(.iOS, _), .metal(.macOSAppleSilicon, _):
+                case .metal(.macOS, _):
+                    spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, UInt32(SPVC_MSL_PLATFORM_MACOS.rawValue))
+                    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FRAMEBUFFER_FETCH_SUBPASS, 0)
+                default:
                     spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, UInt32(SPVC_MSL_PLATFORM_IOS.rawValue))
                     spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FRAMEBUFFER_FETCH_SUBPASS, 1)
                     spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_IOS_USE_SIMDGROUP_FUNCTIONS, 1)
-                default:
-                    spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_MSL_PLATFORM, UInt32(SPVC_MSL_PLATFORM_MACOS.rawValue))
-                    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_MSL_FRAMEBUFFER_FETCH_SUBPASS, 0)
                 }
                 
                 spvc_compiler_install_compiler_options(compiler.compiler, options)

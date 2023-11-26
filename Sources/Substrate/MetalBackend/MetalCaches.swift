@@ -332,14 +332,32 @@ final class MetalStateCaches {
             
             var isDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: libraryPath, isDirectory: &isDirectory), isDirectory.boolValue {
+                let defaultLibraryName: String
                 #if os(macOS) || targetEnvironment(macCatalyst)
-                libraryURL = libraryURL.appendingPathComponent(device.isAppleSiliconGPU ? "Library-macOSAppleSilicon.metallib" : "Library-macOS.metallib")
+                defaultLibraryName = device.isAppleSiliconGPU ? "Library-macOSAppleSilicon.metallib" : "Library-macOS.metallib"
+                #elseif os(iOS)
+                #if targetEnvironment(simulator)
+                defaultLibraryName = "Library-iOSSimulator.metallib"
                 #else
-                libraryURL = libraryURL.appendingPathComponent("Library-iOS.metallib")
+                defaultLibraryName = "Library-iOS.metallib"
                 #endif
+                #elseif os(tvOS)
+                #if targetEnvironment(simulator)
+                defaultLibraryName = "Library-tvOSSimulator.metallib"
+                #else
+                defaultLibraryName = "Library-tvOS.metallib"
+                #endif
+                #elseif os(visionOS)
+                #if targetEnvironment(simulator)
+                defaultLibraryName = "Library-visionOSSimulator.metallib"
+                #else
+                defaultLibraryName = "Library-visionOS.metallib"
+                #endif
+                #endif
+                libraryURL = libraryURL.appendingPathComponent(defaultLibraryName)
             }
             
-            library = try! device.makeLibrary(filepath: libraryURL.path)
+            library = try! device.makeLibrary(URL: libraryURL)
             self.libraryURL = libraryURL
             self.loadedLibraryModificationDate = try! libraryURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate!
         } else {

@@ -9,9 +9,6 @@
 import Dispatch
 import Substrate
 
-@_silgen_name("swift_task_runAndBlockThread")
-public func runAsyncAndBlock(_ asyncFun: @escaping () async -> ())
-
 @MainActor
 public protocol UpdateScheduler {
 }
@@ -64,8 +61,8 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
         }
         
         let previousTask = self.previousTask
-        self.previousTask = detach {
-            await previousTask?.get()
+        self.previousTask = Task.detached {
+            await previousTask?.value
             await self.application.update()
         }
     }

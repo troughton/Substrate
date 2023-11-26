@@ -486,8 +486,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
     private let colorRenderTargetAllocator : MetalHeapResourceAllocator
     private let depthRenderTargetAllocator : MetalHeapResourceAllocator
     
-    var windowReferences = [Texture : CAMetalLayer]()
-    public private(set) var frameDrawables : [(Texture, Result<CAMetalDrawable, RenderTargetTextureError>)] = []
+    var windowReferences = [Texture : Swapchain]()
+    public private(set) var frameDrawables : [(Texture, Result<Drawable, RenderTargetTextureError>)] = []
     
     var isExecutingFrame: Bool = false
     
@@ -543,8 +543,8 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         self.argumentBufferWaitEvents.prepareFrame()
     }
     
-    public func registerWindowTexture(for texture: Texture, swapchain: Any) {
-        self.windowReferences[texture] = (swapchain as! CAMetalLayer)
+    public func registerWindowTexture(for texture: Texture, swapchain: Swapchain) {
+        self.windowReferences[texture] = swapchain
     }
     
     func allocatorForTexture(storageMode: MTLStorageMode, flags: ResourceFlags, textureParams: (PixelFormat, MTLTextureUsage)) -> MetalTextureAllocator {
@@ -756,12 +756,12 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         // The texture reference should always be present but the texture itself might not be.
         if texture.mtlTexture == nil {
             do {
-                guard let windowReference = self.windowReferences.removeValue(forKey: texture),
-                      let mtlDrawable = windowReference.nextDrawable() else {
+                guard let windowReference = self.windowReferences.removeValue(forKey: texture) else {
                     throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
                 }
                 
-                let drawableTexture = mtlDrawable.texture
+                let mtlDrawable = try windowReference.nextDrawable()
+                let drawableTexture = Unmanaged<MTLTexture>.fromOpaque(mtlDrawable.texture).takeUnretainedValue()
                 if drawableTexture.width >= texture.descriptor.size.width && drawableTexture.height >= texture.descriptor.size.height {
                     self.frameDrawables.append((texture, .success(mtlDrawable)))
                     texture.backingResourcePointer = Unmanaged.passRetained(drawableTexture).toOpaque()

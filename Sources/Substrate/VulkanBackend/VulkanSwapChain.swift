@@ -1,5 +1,5 @@
 //
-//  VulkanSwapChain.swift
+//  VulkanSwapchain.swift
 //  VkRenderer
 //
 //  Created by Thomas Roughton on 10/01/18.
@@ -10,9 +10,9 @@ import Vulkan
 import SubstrateUtilities
 import SubstrateCExtras
 
-public class VulkanSwapChain : SwapChain {
+public class VulkanSwapchain : Swapchain {
     
-    struct SwapChainSupportDetails {
+    struct SwapchainSupportDetails {
         let capabilities : VkSurfaceCapabilitiesKHR
         let formats : [VkSurfaceFormatKHR]
         let presentModes : [VkPresentModeKHR]
@@ -51,9 +51,9 @@ public class VulkanSwapChain : SwapChain {
     var surfaceFormat : VkSurfaceFormatKHR! = nil
     let presentQueue: VulkanDeviceQueue
 
-    private var needsRecreateSwapChain = false
+    private var needsRecreateSwapchain = false
     
-    private(set) var swapChain : VkSwapchainKHR? = nil
+    private(set) var swapchain : VkSwapchainKHR? = nil
     private(set) var images : [VulkanImage] = []
     private var imageAcquisitionSemaphores : [VkSemaphore] = []
     private var imagePresentationSemaphores : [VkSemaphore] = []
@@ -73,24 +73,24 @@ public class VulkanSwapChain : SwapChain {
         if let surfaceFormat = self.surfaceFormat {
             return PixelFormat(surfaceFormat.format)
         } else {
-            let swapChainSupport = SwapChainSupportDetails(physicalDevice: device.physicalDevice.vkDevice, surface: surface)
-            self.surfaceFormat = VulkanSwapChain.chooseSwapSurfaceFormat(availableFormats: swapChainSupport.formats)
+            let swapchainSupport = SwapchainSupportDetails(physicalDevice: device.physicalDevice.vkDevice, surface: surface)
+            self.surfaceFormat = VulkanSwapchain.chooseSwapSurfaceFormat(availableFormats: swapchainSupport.formats)
             return self.format
         }
     }
     
-    private func createSwapChain(drawableSize: Size) {
-        let swapChainSupport = SwapChainSupportDetails(physicalDevice: device.physicalDevice.vkDevice, surface: surface)
-        self.surfaceFormat = VulkanSwapChain.chooseSwapSurfaceFormat(availableFormats: swapChainSupport.formats)
-        let presentMode = VulkanSwapChain.chooseSwapPresentMode(availableModes: swapChainSupport.presentModes)
+    private func createSwapchain(drawableSize: Size) {
+        let swapchainSupport = SwapchainSupportDetails(physicalDevice: device.physicalDevice.vkDevice, surface: surface)
+        self.surfaceFormat = VulkanSwapchain.chooseSwapSurfaceFormat(availableFormats: swapchainSupport.formats)
+        let presentMode = VulkanSwapchain.chooseSwapPresentMode(availableModes: swapchainSupport.presentModes)
         
-        let extent = VulkanSwapChain.chooseSwapExtent(capabilities: swapChainSupport.capabilities, windowSize: drawableSize)
+        let extent = VulkanSwapchain.chooseSwapExtent(capabilities: swapchainSupport.capabilities, windowSize: drawableSize)
         self.currentDrawableSize = drawableSize
 
-        var imageCount = swapChainSupport.capabilities.minImageCount + 1
-        if swapChainSupport.capabilities.maxImageCount > 0 && imageCount < swapChainSupport.capabilities.maxImageCount {
+        var imageCount = swapchainSupport.capabilities.minImageCount + 1
+        if swapchainSupport.capabilities.maxImageCount > 0 && imageCount < swapchainSupport.capabilities.maxImageCount {
             imageCount = max(imageCount, 3)
-            imageCount = min(imageCount, swapChainSupport.capabilities.maxImageCount)
+            imageCount = min(imageCount, swapchainSupport.capabilities.maxImageCount)
         }
         
         var createInfo = VkSwapchainCreateInfoKHR()
@@ -104,7 +104,7 @@ public class VulkanSwapChain : SwapChain {
         createInfo.imageArrayLayers = 1
         createInfo.imageUsage = VkImageUsageFlags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
         
-        createInfo.preTransform = swapChainSupport.capabilities.currentTransform
+        createInfo.preTransform = swapchainSupport.capabilities.currentTransform
         createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
         createInfo.presentMode = presentMode
         createInfo.clipped = true
@@ -120,7 +120,7 @@ public class VulkanSwapChain : SwapChain {
             sharingMode = .exclusive
         }
         
-        var swapChain : VkSwapchainKHR? = nil
+        var swapchain : VkSwapchainKHR? = nil
         queueFamilyIndices.withUnsafeBufferPointer { queueFamilyIndices in
             if !renderQueueIndices.contains(presentQueueIndex) {
                 createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT
@@ -130,17 +130,17 @@ public class VulkanSwapChain : SwapChain {
                 createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE
             }
             
-            if vkCreateSwapchainKHR(device.vkDevice, &createInfo, nil, &swapChain) != VK_SUCCESS {
+            if vkCreateSwapchainKHR(device.vkDevice, &createInfo, nil, &swapchain) != VK_SUCCESS {
                 fatalError("Failed to create swap chain.")
             }
         }
         
-        self.swapChain = swapChain!
+        self.swapchain = swapchain!
         
-        vkGetSwapchainImagesKHR(device.vkDevice, swapChain, &imageCount, nil)
+        vkGetSwapchainImagesKHR(device.vkDevice, swapchain, &imageCount, nil)
         
         var images = [VkImage?](repeating: nil, count: Int(imageCount))
-        vkGetSwapchainImagesKHR(device.vkDevice, swapChain, &imageCount, &images)
+        vkGetSwapchainImagesKHR(device.vkDevice, swapchain, &imageCount, &images)
         
         self.images = images.lazy.compactMap { $0 }.enumerated().map { (i, image) in
             var descriptor = VulkanImageDescriptor()
@@ -177,34 +177,34 @@ public class VulkanSwapChain : SwapChain {
         }
     }
     
-    private func cleanupSwapChain() {
+    private func cleanupSwapchain() {
         vkDeviceWaitIdle(self.device.vkDevice)
-        vkDestroySwapchainKHR(self.device.vkDevice, swapChain, nil)
+        vkDestroySwapchainKHR(self.device.vkDevice, swapchain, nil)
     }
 
-    private func recreateSwapChain(drawableSize: Size) {
-        self.cleanupSwapChain()
-        self.createSwapChain(drawableSize: drawableSize)
+    private func recreateSwapchain(drawableSize: Size) {
+        self.cleanupSwapchain()
+        self.createSwapchain(drawableSize: drawableSize)
     }
     
     func nextImage(descriptor: TextureDescriptor) -> VulkanImage {
         guard self.currentImageIndex == nil else {
-            fatalError("VulkanSwapChain.nextImage() called without corresponding submit()")
+            fatalError("VulkanSwapchain.nextImage() called without corresponding submit()")
         }
 
-        if self.swapChain == nil {
-            self.createSwapChain(drawableSize: descriptor.size)
+        if self.swapchain == nil {
+            self.createSwapchain(drawableSize: descriptor.size)
         } else if descriptor.size != self.currentDrawableSize {
-            self.recreateSwapChain(drawableSize: descriptor.size)
+            self.recreateSwapchain(drawableSize: descriptor.size)
         }
         
         var imageIndex = 0 as UInt32
         let semaphore = self.imageAcquisitionSemaphores[self.currentFrameIndex]
         
-        let result = vkAcquireNextImageKHR(device.vkDevice, self.swapChain, UInt64.max, semaphore, nil, &imageIndex)
+        let result = vkAcquireNextImageKHR(device.vkDevice, self.swapchain, UInt64.max, semaphore, nil, &imageIndex)
         
         if result == VK_ERROR_OUT_OF_DATE_KHR {
-            self.recreateSwapChain(drawableSize: descriptor.size)
+            self.recreateSwapchain(drawableSize: descriptor.size)
             return self.nextImage(descriptor: descriptor)
         } else if result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR {
             fatalError("Failed to acquire swap chain image.")
@@ -226,7 +226,7 @@ public class VulkanSwapChain : SwapChain {
     
     func submit() {
         guard let imageIndex = self.currentImageIndex else {
-            fatalError("VulkanSwapChain.submit() called without matching nextImage(). Aborting.")
+            fatalError("VulkanSwapchain.submit() called without matching nextImage(). Aborting.")
         }
         defer {
             self.currentImageIndex = nil
@@ -242,10 +242,10 @@ public class VulkanSwapChain : SwapChain {
         withUnsafePointer(to: self.presentationSemaphore as VkSemaphore?) { semaphorePtr in
             presentInfo.pWaitSemaphores = semaphorePtr
             
-            var swapChain = self.swapChain as VkSwapchainKHR?
+            var swapchain = self.swapchain as VkSwapchainKHR?
             presentInfo.swapchainCount = 1
-            withUnsafePointer(to: &swapChain) { swapChainPtr in
-                presentInfo.pSwapchains = swapChainPtr
+            withUnsafePointer(to: &swapchain) { swapchainPtr in
+                presentInfo.pSwapchains = swapchainPtr
                 
                 var imageIndex = UInt32(image.swapchainImageIndex!)
                 
@@ -254,8 +254,8 @@ public class VulkanSwapChain : SwapChain {
                     
                     let result = vkQueuePresentKHR(presentQueue.vkQueue, &presentInfo)
                     if result == VK_ERROR_OUT_OF_DATE_KHR /*|| result == VK_SUBOPTIMAL_KHR*/ {
-                        self.cleanupSwapChain()
-                        self.createSwapChain(drawableSize: self.currentDrawableSize)
+                        self.cleanupSwapchain()
+                        self.createSwapchain(drawableSize: self.currentDrawableSize)
                     } else if result != VK_SUCCESS {
                         fatalError("Failed to present swap chain image: \(result).")
                     }
@@ -313,7 +313,7 @@ public class VulkanSwapChain : SwapChain {
     }
     
     deinit {
-        self.cleanupSwapChain()
+        self.cleanupSwapchain()
     }
 }
 

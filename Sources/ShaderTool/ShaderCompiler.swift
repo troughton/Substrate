@@ -246,6 +246,7 @@ final class ShaderCompiler {
             print("Compiling SPIR-V:\n")
             
             for target in targets {
+                print("Compiling SPIR-V for target \(target.description)")
                 for file in self.sourceFiles {
                     for entryPoint in file.entryPoints {
                         spirvFiles.append(self.compileToSPV(file: file, entryPoint: entryPoint, target: target, group: spvCompilationGroup))

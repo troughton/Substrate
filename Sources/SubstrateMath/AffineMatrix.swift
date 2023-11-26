@@ -687,7 +687,6 @@ extension AffineMatrix {
             self.r0.w = newValue.x
             self.r1.w = newValue.y
             self.r2.w = newValue.z
-            assert(newValue.w == 1.0)
         }
     }
 }

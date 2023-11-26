@@ -26,7 +26,7 @@ final class UnavailableBackend : SpecificRenderBackend {
         
         func waitForEvent(_ event: Backend.Event, value: UInt64) { preconditionFailure() }
         func signalEvent(_ event: Backend.Event, value: UInt64) { preconditionFailure() }
-        func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry, onPresented: (@Sendable (Texture, Result<OpaquePointer?, Error>) -> Void)? = nil) { preconditionFailure() }
+        func presentSwapchains(resourceRegistry: Backend.TransientResourceRegistry, onPresented: RenderGraph.SwapchainPresentedCallback? = nil) { preconditionFailure() }
         func commit(onCompletion: @escaping (CommandBufferImpl) -> Void) { preconditionFailure() }
         
         var gpuStartTime: DispatchTime { preconditionFailure() }
@@ -151,7 +151,7 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
-        func registerWindowTexture(for: Texture, swapchain: Any) async {
+        func registerWindowTexture(for: Texture, swapchain: Swapchain) async {
             preconditionFailure()
         }
         

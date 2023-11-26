@@ -271,9 +271,12 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
     case acesCC
     case acesCCT
     case sRGB
+    case rec709
     case sonySLog3
     case pq
     case hlg
+    
+    public static var rec2020: ColorTransferFunction { return .rec709 }
     
     /// This is the OETF (opto-electronic transfer function) that converts linear light into an encoded signal.
     public func linearToEncoded(_ x: Scalar) -> Scalar {
@@ -301,6 +304,14 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
                 return 12.92 * x
             } else {
                 return 1.055 * Scalar.pow(x, 1.0 / 2.4) - 0.055
+            }
+        case .rec709:
+            let alpha: Scalar = 1.09929682680944
+            let beta: Scalar = 0.018053968510807
+            if x < beta {
+                return 4.5 * x
+            } else {
+                return alpha * Scalar.pow(x, 0.45) - (alpha - 1.0)
             }
         case .sonySLog3:
             if x >= 0.01125000 {
@@ -363,6 +374,14 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
                 return x / 12.92
             } else {
                 return Scalar.pow((x + 0.055) / 1.055, 2.4)
+            }
+        case .rec709:
+            let alpha: Scalar = 1.09929682680944
+            let beta: Scalar = 0.018053968510807
+            if x < 4.5 * beta {
+                return x / 4.5
+            } else {
+                return Scalar.pow((x + (alpha - 1.0)) / alpha, 1.0 / 0.45)
             }
         case .sonySLog3:
             if x >= 171.2102946929 / 1023.0 {
@@ -551,6 +570,12 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         self.referenceWhite = referenceWhite
     }
     
+    public static var rec709: CIEXYZ1931ColorSpace {
+        return .init(primaries: .sRGB,
+                     eotf: .rec709,
+                     referenceWhite: .d65)
+    }
+    
     public static var sRGB: CIEXYZ1931ColorSpace {
         return .init(primaries: .sRGB,
                      eotf: .sRGB,
@@ -577,7 +602,7 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
     
     public static var rec2020: CIEXYZ1931ColorSpace {
         return .init(primaries: .rec2020,
-                     eotf: .sRGB,
+                     eotf: .rec2020,
                      referenceWhite: .d65)
     }
     
