@@ -6,7 +6,7 @@
 //
 //
 
-#if canImport(CSDL2) && !os(iOS) && !(os(macOS) && arch(arm64))
+#if canImport(CSDL2) && !os(iOS) 
 
 #if os(macOS)
     import AppKit
@@ -113,7 +113,7 @@ open class SDLWindow : Window {
     }
     
     public var textureDescriptor : TextureDescriptor {
-        return TextureDescriptor(type: .type2D, format: self.swapchain.format, width: Int(self.drawableSize.width), height: Int(self.drawableSize.height), mipmapped: false)
+        return TextureDescriptor(type: .type2D, format: self.swapchain.drawablePixelFormat, width: Int(self.drawableSize.width), height: Int(self.drawableSize.height), mipmapped: false)
     }
     
     public func cycleFrames() {

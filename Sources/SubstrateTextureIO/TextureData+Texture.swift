@@ -22,7 +22,7 @@ extension Texture {
     
     /// Uploads a Image to a GPU texture using the GPUResourceUploader.
     @inlinable
-    public init(image: AnyImage, pixelFormat: PixelFormat, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) async throws {
+    public init(image: AnyImage, pixelFormat: PixelFormat, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) async throws {
         precondition(image.preferredPixelFormat.bytesPerPixel == pixelFormat.bytesPerPixel)
         let usage = usage.union(storageMode == .private ? TextureUsage.blitDestination : [])
         let descriptor = TextureDescriptor(type: .type2D, format: pixelFormat, width: image.width, height: image.height, mipmapped: mipmapped, storageMode: storageMode, usage: usage)
@@ -33,7 +33,7 @@ extension Texture {
     
     /// Uploads a Image to a GPU texture using the GPUResourceUploader.
     @inlinable
-    public init(image: AnyImage, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .private, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) async throws {
+    public init(image: AnyImage, mipmapped: Bool = false, mipGenerationMode: MipGenerationMode = .gpuDefault, storageMode: StorageMode = .preferredForLoadedImage, usage: TextureUsage = .shaderRead, flags: ResourceFlags = .persistent) async throws {
         try await self.init(image: image, pixelFormat: image.preferredPixelFormat, mipmapped: mipmapped, mipGenerationMode: mipGenerationMode, storageMode: storageMode, usage: usage, flags: flags)
     }
 }

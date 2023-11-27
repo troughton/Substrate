@@ -13,7 +13,7 @@ import Substrate
 public protocol UpdateScheduler {
 }
 
-#if canImport(CSDL2) && !(os(iOS) || os(tvOS) || (os(macOS) && arch(arm64)))
+#if canImport(CSDL2) && !(os(iOS) || os(tvOS))
 
 public final class SDLUpdateScheduler : UpdateScheduler  {
     public init(appDelegate: ApplicationDelegate?, windowDelegates: @escaping @autoclosure () -> [WindowDelegate], windowRenderGraph: RenderGraph) async {
