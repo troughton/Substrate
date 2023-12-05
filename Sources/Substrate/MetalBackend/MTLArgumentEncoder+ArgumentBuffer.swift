@@ -57,8 +57,10 @@ extension MetalArgumentEncoder {
             
             switch binding {
             case .texture(let texture):
-                guard let mtlTexture = resourceMap[texture]?.texture else { continue }
-                self.encoder.setTexture(mtlTexture, index: bindingIndex)
+                // We need to use renderTargetTexture in case the texture hasn't been materialised yet; this may force early drawable retrieval.
+                // Substrate immediate-mode will address this issue directly.
+                guard let mtlTexture = texture.flags.contains(.windowHandle) ? try? await resourceMap.renderTargetTexture(texture) : resourceMap[texture] else { continue }
+                self.encoder.setTexture(mtlTexture.texture, index: bindingIndex)
             case .buffer(let buffer, let offset):
                 guard let mtlBuffer = resourceMap[buffer] else { continue }
                 self.encoder.setBuffer(mtlBuffer.buffer, offset: offset + mtlBuffer.offset, index: bindingIndex)
