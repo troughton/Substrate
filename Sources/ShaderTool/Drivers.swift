@@ -222,8 +222,6 @@ final class MetalDriver {
             ]
         if debug {
             arguments.append(contentsOf: ["-gline-tables-only", "-MO", "-frecord-sources"])
-        } else {
-            arguments.append("-O")
         }
         
         for define in target.targetDefines {
