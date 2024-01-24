@@ -12,7 +12,7 @@ import SubstrateUtilities
 
 enum RenderTargetTextureError : Error {
     case invalidSizeDrawable(Texture, requestedSize: Size, drawableSize: Size)
-    case unableToRetrieveDrawable(Texture)
+    case unableToRetrieveDrawable(Texture, Error?)
 }
 
 

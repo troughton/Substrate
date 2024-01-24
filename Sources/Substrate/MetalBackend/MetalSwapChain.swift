@@ -67,7 +67,18 @@ extension TextureResource.DrawableQueue: Swapchain {
     
     @_disfavoredOverload
     public func nextDrawable() throws -> Substrate.Drawable {
-        return TextureResource.Drawable.DrawableWrapper(drawable: try (self as TextureResource.DrawableQueue).nextDrawable())
+        while true {
+            do {
+                let result = TextureResource.Drawable.DrawableWrapper(drawable: try (self as TextureResource.DrawableQueue).nextDrawable())
+                return result
+            } catch let error as NSError {
+                if !self.allowsNextDrawableTimeout, String(describing: error).hasSuffix("timeoutReached") {
+                    // Work around TextureResource.DrawableQueue not always respecting allowsNextDrawableTimeout.
+                    continue
+                }
+                throw error
+            }
+        }
     }
 }
 

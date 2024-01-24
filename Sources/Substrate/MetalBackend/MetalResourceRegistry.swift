@@ -912,7 +912,7 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         if self.textureReferences[texture]!._texture == nil {
             do {
                 guard let windowReference = self.windowReferences.removeValue(forKey: texture) else {
-                    throw RenderTargetTextureError.unableToRetrieveDrawable(texture)
+                    throw RenderTargetTextureError.unableToRetrieveDrawable(texture, nil)
                 }
                 
                 let mtlDrawable = try windowReference.nextDrawable()
@@ -930,6 +930,9 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
                 }
             } catch let error as RenderTargetTextureError {
                 self.frameDrawables.append((texture, .failure(error)))
+                throw error
+            } catch let error {
+                self.frameDrawables.append((texture, .failure(.unableToRetrieveDrawable(texture, error))))
                 throw error
             }
         }
