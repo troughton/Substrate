@@ -279,6 +279,7 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
     public static var rec2020: ColorTransferFunction { return .rec709 }
     
     /// This is the OETF (opto-electronic transfer function) that converts linear light into an encoded signal.
+    @inlinable
     public func linearToEncoded(_ x: Scalar) -> Scalar {
         switch self {
         case .linear:
@@ -347,6 +348,7 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
     }
     
     /// This is the EOTF (electro-optical transfer function) that converts an encoded signal into linear light.
+    @inlinable
     public func encodedToLinear(_ x: Scalar) -> Scalar {
         switch self {
         case .linear:
@@ -525,6 +527,14 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         public var inputColorTransferFunction: ColorTransferFunction<Scalar>
         public var outputColorTransferFunction: ColorTransferFunction<Scalar>
         
+        @inlinable
+        init(matrix: Matrix3x3<Scalar>? = nil, inputColorTransferFunction: ColorTransferFunction<Scalar>, outputColorTransferFunction: ColorTransferFunction<Scalar>) {
+            self.matrix = matrix
+            self.inputColorTransferFunction = inputColorTransferFunction
+            self.outputColorTransferFunction = outputColorTransferFunction
+        }
+        
+        @inlinable
         public static func converting(from inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> ConversionContext {
             if inputColorSpace == outputColorSpace {
                 return .init(matrix: nil, inputColorTransferFunction: .linear, outputColorTransferFunction: .linear)
@@ -538,6 +548,7 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
             return ConversionContext(matrix: matrix, inputColorTransferFunction: inputColorSpace.eotf, outputColorTransferFunction: outputColorSpace.eotf)
         }
         
+        @inlinable
         public func convert(_ input: RGBColor<Scalar>) -> RGBColor<Scalar> {
             var linear = SIMD3(input)
             if self.inputColorTransferFunction != .linear {
