@@ -7,7 +7,7 @@
 
 #if canImport(Metal)
 
-@preconcurrency import Metal
+import Metal
 
 extension ArgumentBufferDescriptor {
     func offset(index: Int, arrayIndex: Int) -> Int {
@@ -140,7 +140,7 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
     static func setSampler(_ sampler: SamplerState, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
         let state = Unmanaged<MTLSamplerState>.fromOpaque(UnsafeRawPointer(sampler.state)).takeUnretainedValue()
         
-        if self.supportsResourceGPUAddresses {
+        if self.supportsResourceGPUAddresses, #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
             argBuffer[\.mappedContents]!.storeBytes(of: state.gpuResourceID, toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: MTLResourceID.self)
         } else {
             let argBufferMTL = argBuffer.mtlBuffer!

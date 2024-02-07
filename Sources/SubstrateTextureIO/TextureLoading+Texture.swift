@@ -10,7 +10,7 @@ import Foundation
 @_spi(SubstrateTextureIO) import SubstrateImageIO
 import SubstrateImage
 #if canImport(Metal)
-@preconcurrency import Metal
+import Metal
 #endif
 
 public enum MipGenerationMode: Hashable, Sendable {

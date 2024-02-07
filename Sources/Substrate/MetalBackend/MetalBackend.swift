@@ -8,7 +8,7 @@
 #if canImport(Metal)
 
 import SubstrateUtilities
-@preconcurrency import Metal
+import Metal
 
 extension MTLResourceOptions {
     static var substrateTrackedHazards : MTLResourceOptions {

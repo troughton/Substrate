@@ -9,7 +9,7 @@
 import Foundation
 
 #if canImport(Metal)
-@preconcurrency import Metal
+import Metal
 #endif
 #if canImport(Vulkan)
 import Vulkan

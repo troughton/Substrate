@@ -10,7 +10,7 @@
 import SubstrateMath
 import Substrate
 import Cocoa
-@preconcurrency import MetalKit
+import MetalKit
 import ImGui
 
 public class CocoaApplication : Application {

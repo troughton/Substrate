@@ -7,7 +7,7 @@
 
 #if os(macOS)
 
-@preconcurrency import MetalKit
+import MetalKit
 import Substrate
 
 public final class ExternallyDrivenScheduler : UpdateScheduler  {

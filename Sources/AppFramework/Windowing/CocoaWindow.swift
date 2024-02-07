@@ -10,8 +10,8 @@ import SubstrateUtilities
 import Substrate
 
 #if os(macOS) || os(iOS)
-@preconcurrency import MetalKit
-@preconcurrency import Metal
+import MetalKit
+import Metal
 
 public protocol MTKWindow {
     var mtkView : MTKView { get }

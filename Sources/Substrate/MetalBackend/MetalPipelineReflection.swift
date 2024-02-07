@@ -7,7 +7,7 @@
 
 #if canImport(Metal)
 
-@preconcurrency import Metal
+import Metal
 import SubstrateUtilities
 
 final class MetalPipelineReflection : PipelineReflection {

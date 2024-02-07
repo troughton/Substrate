@@ -10,7 +10,7 @@
 import SubstrateMath
 import Substrate
 import UIKit
-@preconcurrency import MetalKit
+import MetalKit
 import ImGui
 
 final class CocoaInputManager : InputManagerInternal {

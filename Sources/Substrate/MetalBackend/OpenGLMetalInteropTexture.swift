@@ -7,7 +7,7 @@
 
 #if (os(macOS) || os(iOS)) && !targetEnvironment(macCatalyst)
 
-@preconcurrency import Metal
+import Metal
 
 #if os(macOS)
 import AppKit

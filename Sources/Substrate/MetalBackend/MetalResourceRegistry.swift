@@ -7,8 +7,8 @@
 
 #if canImport(Metal)
 
-@preconcurrency import Metal
-@preconcurrency import MetalKit
+import Metal
+import MetalKit
 import SubstrateUtilities
 import OSLog
 

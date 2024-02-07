@@ -8,8 +8,8 @@
 #if os(iOS)
 import Foundation
 import UIKit
-@preconcurrency import Metal
-@preconcurrency import MetalKit
+import Metal
+import MetalKit
 import Substrate
 import SubstrateUtilities
 

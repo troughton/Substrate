@@ -10,7 +10,7 @@
 
 #if os(macOS)
     import AppKit
-    @preconcurrency import MetalKit
+    import MetalKit
 #endif
 
 import SubstrateUtilities
