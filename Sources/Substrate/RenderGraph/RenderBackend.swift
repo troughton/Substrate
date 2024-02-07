@@ -70,8 +70,8 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
     func buffer(_ buffer: Buffer, didModifyRange range: Range<Int>)
     func buffer(_ buffer: ArgumentBuffer, didModifyRange range: Range<Int>)
     
-    func renderPipelineState(for descriptor: RenderPipelineDescriptor) async -> RenderPipelineState
-    func computePipelineState(for descriptor: ComputePipelineDescriptor) async -> ComputePipelineState
+    func renderPipelineState(for descriptor: RenderPipelineDescriptor) async throws -> RenderPipelineState
+    func computePipelineState(for descriptor: ComputePipelineDescriptor) async throws -> ComputePipelineState
     func depthStencilState(for descriptor: DepthStencilDescriptor) async -> DepthStencilState
     func samplerState(for descriptor: SamplerDescriptor) async -> SamplerState
     

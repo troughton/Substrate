@@ -371,10 +371,10 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         assert(passRecord.pass === renderPass)
     }
     
-    public func setRenderPipelineDescriptor(_ descriptor: RenderPipelineDescriptor, retainExistingBindings: Bool = true) async {
+    public func setRenderPipelineDescriptor(_ descriptor: RenderPipelineDescriptor, retainExistingBindings: Bool = true) async throws {
         var descriptor = descriptor
         descriptor.setPixelFormatsAndSampleCount(from: self.drawRenderPass.renderTargetsDescriptor)
-        self.setRenderPipelineState(await RenderBackend._backend.renderPipelineState(for: descriptor))
+        self.setRenderPipelineState(try await RenderBackend._backend.renderPipelineState(for: descriptor))
     }
     
     public func setRenderPipelineState(_ pipelineState: RenderPipelineState) {
@@ -581,8 +581,8 @@ public class ComputeCommandEncoder : ResourceBindingEncoder {
         assert(passRecord.pass === renderPass)
     }
     
-    public func setComputePipelineDescriptor(_ descriptor: ComputePipelineDescriptor) async {
-        self.setComputePipelineState(await RenderBackend._backend.computePipelineState(for: descriptor))
+    public func setComputePipelineDescriptor(_ descriptor: ComputePipelineDescriptor) async throws {
+        self.setComputePipelineState(try await RenderBackend._backend.computePipelineState(for: descriptor))
     }
     
     public func setComputePipelineState(_ pipelineState: ComputePipelineState) {

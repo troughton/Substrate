@@ -199,7 +199,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.pipeline.descriptor.setPixelFormatsAndSampleCount(from: encoder.renderTargetsDescriptor)
     }
     
-    func updateEncoderState() async {
+    func updateEncoderState() async throws {
         defer {
             self.pipelineDescriptorChanged = false
             self.depthStencilDescriptorChanged = false
@@ -212,7 +212,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         
         if self.pipelineDescriptorChanged {
             self.pipeline.flushConstants()
-            self.encoder.setRenderPipelineState(await self.$pipeline.state)
+            self.encoder.setRenderPipelineState(try await self.$pipeline.state)
         }
         
         if self.resourceSetChangeMask != 0 {
@@ -327,13 +327,17 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
     }
     
     public func drawPrimitives(type primitiveType: PrimitiveType, vertexStart: Int, vertexCount: Int, instanceCount: Int = 1, baseInstance: Int = 0) async {
-        await self.updateEncoderState()
-        self.encoder.drawPrimitives(type: primitiveType, vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
+        do {
+            try await self.updateEncoderState()
+            self.encoder.drawPrimitives(type: primitiveType, vertexStart: vertexStart, vertexCount: vertexCount, instanceCount: instanceCount, baseInstance: baseInstance)
+        } catch {}
     }
     
     public func drawIndexedPrimitives(type primitiveType: PrimitiveType, indexCount: Int, indexType: IndexType, indexBuffer: Buffer, indexBufferOffset: Int, instanceCount: Int = 1, baseVertex: Int = 0, baseInstance: Int = 0) async {
-        await self.updateEncoderState()
-        self.encoder.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
+        do {
+            try await self.updateEncoderState()
+            self.encoder.drawIndexedPrimitives(type: primitiveType, indexCount: indexCount, indexType: indexType, indexBuffer: indexBuffer, indexBufferOffset: indexBufferOffset, instanceCount: instanceCount, baseVertex: baseVertex, baseInstance: baseInstance)
+        } catch {}
     }
     
     public func useResource<R: ResourceProtocol>(_ resource: R, usage: ResourceUsageType, stages: RenderStages) {
@@ -461,20 +465,20 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         }
     }
     
-    func updatePipelineState() async {
+    func updatePipelineState() async throws {
         if self.pipelineDescriptorChanged {
             self.pipeline.flushConstants()
-            self.encoder.setComputePipelineState(await self.$pipeline.state)
+            self.encoder.setComputePipelineState(try await self.$pipeline.state)
             self.pipelineDescriptorChanged = false
         }
     }
     
-    func updateEncoderState() async {
+    func updateEncoderState() async throws {
         defer {
             self.resourceSetChangeMask = 0
         }
         
-        await self.updatePipelineState()
+        try await self.updatePipelineState()
         
         if self.resourceSetChangeMask != 0 {
             if (self.resourceSetChangeMask & (1 << 0)) != 0 {
@@ -507,7 +511,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     /// The number of threads in a SIMD group/wave for the current pipeline state.
     public var currentThreadExecutionWidth: Int {
         get async {
-            await self.updatePipelineState()
+            try? await self.updatePipelineState()
             return self.encoder.currentThreadExecutionWidth
         }
     }
@@ -562,18 +566,24 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
     }
     
     public func dispatchThreads(_ threadsPerGrid: Size, threadsPerThreadgroup: Size) async {
-        await self.updateEncoderState()
-        self.encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+        do {
+            try await self.updateEncoderState()
+            self.encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+        } catch {}
     }
     
     public func dispatchThreadgroups(_ threadgroupsPerGrid: Size, threadsPerThreadgroup: Size) async {
-        await self.updateEncoderState()
-        self.encoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+        do {
+            try await self.updateEncoderState()
+            self.encoder.dispatchThreadgroups(threadgroupsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
+        } catch {}
     }
     
     public func dispatchThreadgroups(indirectBuffer: Buffer, indirectBufferOffset: Int, threadsPerThreadgroup: Size) async {
-        await self.updateEncoderState()
-        self.encoder.dispatchThreadgroups(indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset, threadsPerThreadgroup: threadsPerThreadgroup)
+        do {
+            try await self.updateEncoderState()
+            self.encoder.dispatchThreadgroups(indirectBuffer: indirectBuffer, indirectBufferOffset: indirectBufferOffset, threadsPerThreadgroup: threadsPerThreadgroup)
+        } catch {}
     }
     
     public func useResource<R: ResourceProtocol>(_ resource: R, usage: ResourceUsageType) {

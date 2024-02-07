@@ -7,12 +7,13 @@
 
 import Foundation
 
+// TODO: update for typed throws
 public protocol StateDescriptor {
     associatedtype State
     
     init()
     init(describing state: State)
-    func makeState() async -> State
+    func makeState() async throws -> State
 }
 
 @propertyWrapper
@@ -31,11 +32,11 @@ public struct StateBacked<Descriptor: StateDescriptor> {
     
     @inlinable
     public var state: Descriptor.State {
-        mutating get async {
+        mutating get async throws {
             if let _state = self._state {
                 return _state
             }
-            self._state = await self.wrappedValue.makeState()
+            self._state = try await self.wrappedValue.makeState()
             return self._state!
         }
     }
@@ -76,8 +77,8 @@ extension RenderPipelineDescriptor: StateDescriptor {
         self = state.descriptor
     }
     
-    public func makeState() async -> RenderPipelineState {
-        return await RenderBackend._backend.renderPipelineState(for: self)
+    public func makeState() async throws -> RenderPipelineState {
+        return try await RenderBackend._backend.renderPipelineState(for: self)
     }
 }
 
@@ -88,12 +89,12 @@ extension TypedRenderPipelineDescriptor: StateDescriptor {
         self.init(descriptor: state.descriptor)
     }
     
-    public func makeState() async -> RenderPipelineState {
+    public func makeState() async throws -> RenderPipelineState {
         var descriptor = self.descriptor
         if self.constantsChanged {
             descriptor.functionConstants = FunctionConstants(self.constants)
         }
-        return await descriptor.makeState()
+        return try await descriptor.makeState()
     }
 }
 
@@ -104,8 +105,8 @@ extension ComputePipelineDescriptor: StateDescriptor {
         self = state.descriptor
     }
     
-    public func makeState() async -> ComputePipelineState {
-        return await RenderBackend._backend.computePipelineState(for: self)
+    public func makeState() async throws -> ComputePipelineState {
+        return try await RenderBackend._backend.computePipelineState(for: self)
     }
 }
 
@@ -116,12 +117,12 @@ extension TypedComputePipelineDescriptor: StateDescriptor {
         self.init(descriptor: state.descriptor)
     }
     
-    public func makeState() async -> ComputePipelineState {
+    public func makeState() async throws -> ComputePipelineState {
         var descriptor = self.descriptor
         if self.constantsChanged {
             descriptor.functionConstants = FunctionConstants(self.constants)
         }
-        return await descriptor.makeState()
+        return try await descriptor.makeState()
     }
 }
 

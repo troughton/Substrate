@@ -206,11 +206,15 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         
         argumentBuffer.backingResourcePointer = mtlBuffer._buffer.toOpaque()
         argumentBuffer[\.mappedContents] = argumentBuffer.storageMode == .private ? nil : mtlBuffer.buffer.contents().advanced(by: mtlBuffer.offset)
+        #if !targetEnvironment(simulator)
         if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
             argumentBuffer[\.gpuAddresses] = mtlBuffer.buffer.gpuAddress.advanced(by: mtlBuffer.offset)
         } else {
             argumentBuffer[\.encoders] = Unmanaged.passUnretained(self.stateCaches.argumentEncoderCache[argumentBuffer.descriptor])
         }
+        #else
+        argumentBuffer[\.encoders] = Unmanaged.passUnretained(self.stateCaches.argumentEncoderCache[argumentBuffer.descriptor])
+        #endif
         
         return mtlBuffer
     }
@@ -245,6 +249,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         
         argumentBufferArray.backingResourcePointer = mtlBuffer._buffer.toOpaque()
         
+        #if !targetEnvironment(simulator)
         if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
             let contents = argumentBufferArray.storageMode == .private ? nil : mtlBuffer.buffer.contents().advanced(by: mtlBuffer.offset)
             argumentBufferArray[\.gpuAddresses] = mtlBuffer.buffer.gpuAddress.advanced(by: mtlBuffer.offset)
@@ -261,6 +266,12 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
                 argumentBuffer[\.encoders] = encoder
             }
         }
+        #else
+        let encoder = Unmanaged.passUnretained(self.stateCaches.argumentEncoderCache[argumentBufferArray.descriptor])
+        for argumentBuffer in argumentBufferArray {
+            argumentBuffer[\.encoders] = encoder
+        }
+        #endif
         
         return mtlBuffer
     }
@@ -337,35 +348,94 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         return mtlTable
     }
     
+    
+    @usableFromInline nonisolated func replaceBackingResource(for resource: Resource, with: Any?) -> Any? {
+        precondition(resource.flags.contains(.persistent))
+        
+        switch resource.type {
+        case .texture:
+            let texture = Texture(resource)!
+            let previousValue = texture.backingResourcePointer
+            
+            let mtlTexture = with as! MTLTexture?
+            texture.backingResourcePointer = mtlTexture.map { Unmanaged<MTLTexture>.passRetained($0).toOpaque() }
+            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+                texture[\.gpuAddresses] = mtlTexture?.gpuResourceID._impl ?? 0
+            }
+            
+            return previousValue.map { Unmanaged<MTLTexture>.fromOpaque($0).takeRetainedValue() }
+        case .buffer:
+            let buffer = Buffer(resource)!
+            let previousValue = buffer.backingResourcePointer
+            
+            let mtlBuffer = with as! MTLBuffer?
+            buffer.backingResourcePointer = mtlBuffer.map { Unmanaged<MTLBuffer>.passRetained($0).toOpaque() }
+            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+                buffer[\.gpuAddresses] = mtlBuffer?.gpuAddress ?? 0
+            }
+            
+            return previousValue.map { Unmanaged<MTLBuffer>.fromOpaque($0).takeRetainedValue() }
+        case .argumentBuffer:
+            let buffer = ArgumentBuffer(resource)!
+            let previousValue = buffer.backingResourcePointer
+            
+            let mtlBuffer = with as! MTLBuffer?
+            buffer.backingResourcePointer = mtlBuffer.map { Unmanaged<MTLBuffer>.passRetained($0).toOpaque() }
+            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+                buffer[\.gpuAddresses] = mtlBuffer?.gpuAddress ?? 0
+            }
+            
+            return previousValue.map { Unmanaged<MTLBuffer>.fromOpaque($0).takeRetainedValue() }
+        case .heap:
+            let heap = Heap(resource)!
+            let previousValue = heap.backingResourcePointer
+            let mtlHeap = with as! MTLHeap?
+            heap.backingResourcePointer = mtlHeap.map { Unmanaged<MTLHeap>.passRetained($0).toOpaque() }
+            return previousValue.map { Unmanaged<MTLHeap>.fromOpaque($0).takeRetainedValue() }
+        case .accelerationStructure:
+            let structure = AccelerationStructure(resource)!
+            let previousValue = structure.backingResourcePointer
+            
+            let mtlStructure = with as! MTLAccelerationStructure?
+            structure.backingResourcePointer = mtlStructure.map { Unmanaged<MTLAccelerationStructure>.passRetained($0).toOpaque() }
+            
+            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+                structure[\.gpuAddresses] = mtlStructure?.gpuResourceID._impl ?? 0
+            }
+            
+            return previousValue.map { Unmanaged<MTLAccelerationStructure>.fromOpaque($0).takeRetainedValue() }
+        case .visibleFunctionTable:
+            let table = VisibleFunctionTable(resource)!
+            let previousValue = table.backingResourcePointer
+            
+            let mtlTable = with as! MTLVisibleFunctionTable?
+            table.backingResourcePointer = mtlTable.map { Unmanaged<MTLVisibleFunctionTable>.passRetained($0).toOpaque() }
+            
+            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+                table[\.gpuAddresses] = mtlTable?.gpuResourceID._impl ?? 0
+            }
+            
+            return previousValue.map { Unmanaged<MTLVisibleFunctionTable>.fromOpaque($0).takeRetainedValue() }
+        case .intersectionFunctionTable:
+            let table = IntersectionFunctionTable(resource)!
+            let previousValue = table.backingResourcePointer
+            
+            let mtlTable = with as! MTLIntersectionFunctionTable?
+            table.backingResourcePointer = mtlTable.map { Unmanaged<MTLIntersectionFunctionTable>.passRetained($0).toOpaque() }
+            
+            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+                table[\.gpuAddresses] = mtlTable?.gpuResourceID._impl ?? 0
+            }
+            
+            return previousValue.map { Unmanaged<MTLIntersectionFunctionTable>.fromOpaque($0).takeRetainedValue() }
+        default:
+            preconditionFailure("Unhandled resource type in replaceBackingResource")
+        }
+    }
+    
     public nonisolated func importExternalResource(_ resource: Resource, backingResource: Any) {
         precondition(resource.flags.contains(.persistent), "importExternalResource requires that resource be persistent")
-        
-        if let texture = Texture(resource) {
-            let mtlTexture = backingResource as! MTLTexture
-            
-            texture.backingResourcePointer = Unmanaged.passRetained(mtlTexture).toOpaque()
-            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
-                texture[\.gpuAddresses] = mtlTexture.gpuResourceID._impl
-            }
-        } else if let buffer = Buffer(resource) {
-            let mtlBuffer = backingResource as! MTLBuffer
-            
-            buffer.backingResourcePointer = Unmanaged.passRetained(mtlBuffer).toOpaque()
-            buffer[\.mappedContents] = mtlBuffer.storageMode == .private ? nil : mtlBuffer.contents()
-            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
-                buffer[\.gpuAddresses] = mtlBuffer.gpuAddress
-            }
-        } else if let accelerationStructure = AccelerationStructure(resource) {
-            let mtlAccelerationStructure = backingResource as! MTLAccelerationStructure
-            
-            accelerationStructure.backingResourcePointer = Unmanaged.passRetained(mtlAccelerationStructure).toOpaque()
-            
-            if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
-                accelerationStructure[\.gpuAddresses] = mtlAccelerationStructure.gpuResourceID._impl
-            }
-        } else {
-            preconditionFailure("Unhandled resource type \(resource.type)")
-        }
+        _ = self.replaceBackingResource(for: resource, with: backingResource)
     }
     
     public subscript(descriptor: SamplerDescriptor) -> SamplerState {
@@ -870,11 +940,15 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
         argumentBuffer[\.backingBufferOffsets] = storage.offset
         argumentBuffer[\.mappedContents] = argumentBuffer.storageMode == .private ? nil : storage.buffer.contents().advanced(by: storage.offset)
     
+        #if !targetEnvironment(simulator)
         if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
             argumentBuffer[\.gpuAddresses] = storage.buffer.gpuAddress.advanced(by: storage.offset)
         } else {
             argumentBuffer[\.encoders] = Unmanaged.passUnretained(self.persistentRegistry.stateCaches.argumentEncoderCache[argumentBuffer.descriptor])
         }
+        #else
+        argumentBuffer[\.encoders] = Unmanaged.passUnretained(self.persistentRegistry.stateCaches.argumentEncoderCache[argumentBuffer.descriptor])
+        #endif
         
         argumentBuffer.usedResources.insert(storage._buffer.toOpaque())
         

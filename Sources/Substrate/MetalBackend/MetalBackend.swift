@@ -154,30 +154,7 @@ public final class MetalBackend : SpecificRenderBackend {
     }
     
     @usableFromInline func replaceBackingResource(for resource: Resource, with: Any?) -> Any? {
-        switch resource.type {
-        case .texture:
-            let texture = Texture(resource)!
-            let previousValue = texture.backingResourcePointer
-            texture.backingResourcePointer = (with as! MTLTexture?).map { Unmanaged<MTLTexture>.passRetained($0).toOpaque() }
-            return previousValue.map { Unmanaged<MTLTexture>.fromOpaque($0).takeRetainedValue() }
-        case .buffer:
-            let buffer = Buffer(resource)!
-            let previousValue = buffer.backingResourcePointer
-            buffer.backingResourcePointer = (with as! MTLBuffer?).map { Unmanaged<MTLBuffer>.passRetained($0).toOpaque() }
-            return previousValue.map { Unmanaged<MTLBuffer>.fromOpaque($0).takeRetainedValue() }
-        case .heap:
-            let heap = Heap(resource)!
-            let previousValue = heap.backingResourcePointer
-            heap.backingResourcePointer = (with as! MTLHeap?).map { Unmanaged<MTLHeap>.passRetained($0).toOpaque() }
-            return previousValue.map { Unmanaged<MTLHeap>.fromOpaque($0).takeRetainedValue() }
-        case .accelerationStructure:
-            let structure = AccelerationStructure(resource)!
-            let previousValue = structure.backingResourcePointer
-            structure.backingResourcePointer = (with as! MTLAccelerationStructure?).map { Unmanaged<MTLAccelerationStructure>.passRetained($0).toOpaque() }
-            return previousValue.map { Unmanaged<MTLAccelerationStructure>.fromOpaque($0).takeRetainedValue() }
-        default:
-            preconditionFailure("Unhandled resource type in replaceBackingResource")
-        }
+        self.resourceRegistry.replaceBackingResource(for: resource, with: with)
     }
     
     @usableFromInline func updateLabel(on resource: Resource) {
@@ -189,10 +166,24 @@ public final class MetalBackend : SpecificRenderBackend {
             } else {
                 mtlBuffer.buffer.label = buffer.label
             }
+        } else if let argumentBuffer = ArgumentBuffer(resource), let mtlBuffer = argumentBuffer.mtlBuffer {
+            if !argumentBuffer._usesPersistentRegistry, argumentBuffer.storageMode == .shared || argumentBuffer.storageMode == .managed {
+                if let label = argumentBuffer.label {
+                    mtlBuffer.buffer.addDebugMarker(label, range: mtlBuffer.offset..<(mtlBuffer.offset + argumentBuffer.descriptor.bufferLength))
+                }
+            } else {
+                mtlBuffer.buffer.label = argumentBuffer.label
+            }
         } else if let texture = Texture(resource) {
             texture.mtlTexture?.label = texture.label
         } else if let heap = Heap(resource) {
             heap.mtlHeap.label = heap.label
+        } else if let accelerationStructure = AccelerationStructure(resource) {
+            accelerationStructure.mtlAccelerationStructure?.label = accelerationStructure.label
+        } else if let table = VisibleFunctionTable(resource) {
+            table.mtlVisibleFunctionTable?.label = table.label
+        } else if let table = IntersectionFunctionTable(resource) {
+            table.mtlIntersectionFunctionTable?.label = table.label
         }
     }
     
@@ -286,6 +277,15 @@ public final class MetalBackend : SpecificRenderBackend {
         }
     }
     
+    public nonisolated var supportsResourceGPUAddresses: Bool {
+        #if !targetEnvironment(simulator)
+        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+            return true
+        }
+        #endif
+        return false
+    }
+    
     public var isAppleSiliconGPU: Bool {
         return self.device.isAppleSiliconGPU
     }
@@ -343,23 +343,23 @@ public final class MetalBackend : SpecificRenderBackend {
     
     public func backingResource(_ resource: Resource) -> Any? {
         if let buffer = Buffer(resource) {
-            return buffer[\.backingResources].map { Unmanaged<MTLBuffer>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
+            return buffer.backingResourcePointer.map { Unmanaged<MTLBuffer>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         } else if let texture = Texture(resource) {
-            return texture[\.backingResources].map { Unmanaged<MTLTexture>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
+            return texture.backingResourcePointer.map { Unmanaged<MTLTexture>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         } else if let heap = Heap(resource) {
-            return heap[\.backingResources].map { Unmanaged<MTLHeap>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
+            return heap.backingResourcePointer.map { Unmanaged<MTLHeap>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         } else if let accelerationStructure = AccelerationStructure(resource), #available(macOS 11.0, iOS 14.0, *) {
-            return accelerationStructure[\.backingResources].map { Unmanaged<MTLAccelerationStructure>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
+            return accelerationStructure.backingResourcePointer.map { Unmanaged<MTLAccelerationStructure>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         }
         return nil
     }
     
-    @usableFromInline func renderPipelineState(for descriptor: RenderPipelineDescriptor) async -> RenderPipelineState {
-        return await self.stateCaches.renderPipelineState(descriptor: descriptor)!
+    @usableFromInline func renderPipelineState(for descriptor: RenderPipelineDescriptor) async throws -> RenderPipelineState {
+        return try await self.stateCaches.renderPipelineState(descriptor: descriptor)
     }
     
-    @usableFromInline func computePipelineState(for descriptor: ComputePipelineDescriptor) async -> ComputePipelineState {
-        return await self.stateCaches.computePipelineState(descriptor: descriptor)!
+    @usableFromInline func computePipelineState(for descriptor: ComputePipelineDescriptor) async throws -> ComputePipelineState {
+        return try await self.stateCaches.computePipelineState(descriptor: descriptor)
     }
     
     @usableFromInline func depthStencilState(for descriptor: DepthStencilDescriptor) async -> DepthStencilState {
@@ -433,13 +433,13 @@ public final class MetalBackend : SpecificRenderBackend {
                 preconditionFailure()
             }
             for (i, function) in table.functions.enumerated() {
-                guard let function = function, let mtlFunction = await stateCaches.functionCache.function(for: function) else { continue }
+                guard let function = function, let mtlFunction = try? await stateCaches.functionCache.function(for: function) else { continue }
                 mtlTable.setFunction(renderPipeline.functionHandle(function: mtlFunction, stage: MTLRenderStages(table.descriptor.renderStage)), index: i)
             }
         } else {
             let computePipeline = pipelineState as! MTLComputePipelineState
             for (i, function) in table.functions.enumerated() {
-                guard let function = function, let mtlFunction = await stateCaches.functionCache.function(for: function) else { continue }
+                guard let function = function, let mtlFunction = try? await stateCaches.functionCache.function(for: function) else { continue }
                 mtlTable.setFunction(computePipeline.functionHandle(function: mtlFunction), index: i)
             }
         }
@@ -484,7 +484,7 @@ public final class MetalBackend : SpecificRenderBackend {
                     }
                     mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                 case .function(let functionDescriptor):
-                    guard let mtlFunction = await stateCaches.functionCache.function(for: functionDescriptor) else { continue }
+                    guard let mtlFunction = try? await stateCaches.functionCache.function(for: functionDescriptor) else { continue }
                     mtlTable.setFunction(renderPipeline.functionHandle(function: mtlFunction, stage: MTLRenderStages(table.descriptor.renderStage)), index: i)
                 }
             }
@@ -507,7 +507,7 @@ public final class MetalBackend : SpecificRenderBackend {
                     }
                     mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                 case .function(let functionDescriptor):
-                    guard let mtlFunction = await stateCaches.functionCache.function(for: functionDescriptor) else { continue }
+                    guard let mtlFunction = try? await stateCaches.functionCache.function(for: functionDescriptor) else { continue }
                     mtlTable.setFunction(computePipeline.functionHandle(function: mtlFunction), index: i)
                 }
             }

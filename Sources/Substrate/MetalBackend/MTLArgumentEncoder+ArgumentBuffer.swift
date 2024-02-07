@@ -28,8 +28,17 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
         }
     }
     
-    static func setBuffer(_ buffer: Buffer, offset: Int, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
+    static var supportsResourceGPUAddresses: Bool {
+        #if !targetEnvironment(simulator)
         if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+            return true
+        }
+        #endif
+        return false
+    }
+    
+    static func setBuffer(_ buffer: Buffer, offset: Int, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
+        if self.supportsResourceGPUAddresses {
             precondition(buffer[\.gpuAddresses] != 0, "Resource \(buffer) does not have a backing resource.")
             
             let gpuAddress = buffer[\.gpuAddresses] + UInt64(offset)
@@ -44,15 +53,15 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
             encoder.setBuffer(mtlBuffer.buffer, offset: mtlBuffer.offset + offset, index: index + arrayIndex)
         }
         
-        if let heap = buffer.heap, let mtlHeap = heap[\.backingResources] {
+        if let heap = buffer.heap, let mtlHeap = heap.backingResourcePointer {
             argBuffer.usedHeaps.insert(mtlHeap)
-        } else if let mtlResource = buffer[\.backingResources] {
+        } else if let mtlResource = buffer.backingResourcePointer {
             argBuffer.usedResources.insert(mtlResource)
         }
     }
     
     static func setTexture(_ texture: Texture, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+        if self.supportsResourceGPUAddresses {
             precondition(texture[\.gpuAddresses] != 0, "Resource \(texture) does not have a backing resource.")
             argBuffer[\.mappedContents]!.storeBytes(of: texture[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
         } else {
@@ -63,15 +72,15 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
             encoder.setTexture(texture.mtlTexture!, index: index + arrayIndex)
         }
         
-        if let heap = texture.heap, let mtlHeap = heap[\.backingResources] {
+        if let heap = texture.heap, let mtlHeap = heap.backingResourcePointer {
             argBuffer.usedHeaps.insert(mtlHeap)
-        } else if let mtlResource = texture[\.backingResources] {
+        } else if let mtlResource = texture.backingResourcePointer {
             argBuffer.usedResources.insert(mtlResource)
         }
     }
     
     static func setAccelerationStructure(_ structure: AccelerationStructure, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+        if self.supportsResourceGPUAddresses {
             precondition(structure[\.gpuAddresses] != 0, "Resource \(structure) does not have a backing resource.")
             argBuffer[\.mappedContents]!.storeBytes(of: structure[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
         } else {
@@ -82,16 +91,15 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
             encoder.setAccelerationStructure(structure.mtlAccelerationStructure!, index: index + arrayIndex)
         }
         
-        if let heap = structure.heap, let mtlHeap = heap[\.backingResources] {
+        if let heap = structure.heap, let mtlHeap = heap.backingResourcePointer {
             argBuffer.usedHeaps.insert(mtlHeap)
-        } else if let mtlResource = structure[\.backingResources] {
+        } else if let mtlResource = structure.backingResourcePointer {
             argBuffer.usedResources.insert(mtlResource)
         }
     }
     
     static func setVisibleFunctionTable(_ table: VisibleFunctionTable, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        
-        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+        if self.supportsResourceGPUAddresses {
             precondition(table[\.gpuAddresses] != 0, "Resource \(table) does not have a backing resource.")
             argBuffer[\.mappedContents]!.storeBytes(of: table[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
         } else {
@@ -102,15 +110,15 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
             encoder.setVisibleFunctionTable(table.mtlVisibleFunctionTable!, index: index + arrayIndex)
         }
         
-        if let heap = table.heap, let mtlHeap = heap[\.backingResources] {
+        if let heap = table.heap, let mtlHeap = heap.backingResourcePointer {
             argBuffer.usedHeaps.insert(mtlHeap)
-        } else if let mtlResource = table[\.backingResources] {
+        } else if let mtlResource = table.backingResourcePointer {
             argBuffer.usedResources.insert(mtlResource)
         }
     }
     
     static func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+        if self.supportsResourceGPUAddresses {
             precondition(table[\.gpuAddresses] != 0, "Resource \(table) does not have a backing resource.")
             
             argBuffer[\.mappedContents]!.storeBytes(of: table[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
@@ -122,9 +130,9 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
             encoder.setIntersectionFunctionTable(table.mtlIntersectionFunctionTable!, index: index + arrayIndex)
         }
         
-        if let heap = table.heap, let mtlHeap = heap[\.backingResources] {
+        if let heap = table.heap, let mtlHeap = heap.backingResourcePointer {
             argBuffer.usedHeaps.insert(mtlHeap)
-        } else if let mtlResource = table[\.backingResources] {
+        } else if let mtlResource = table.backingResourcePointer {
             argBuffer.usedResources.insert(mtlResource)
         }
     }
@@ -132,7 +140,7 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
     static func setSampler(_ sampler: SamplerState, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
         let state = Unmanaged<MTLSamplerState>.fromOpaque(UnsafeRawPointer(sampler.state)).takeUnretainedValue()
         
-        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+        if self.supportsResourceGPUAddresses {
             argBuffer[\.mappedContents]!.storeBytes(of: state.gpuResourceID, toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: MTLResourceID.self)
         } else {
             let argBufferMTL = argBuffer.mtlBuffer!

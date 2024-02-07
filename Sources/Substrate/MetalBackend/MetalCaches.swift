@@ -23,7 +23,7 @@ final actor MetalFunctionCache {
         self.functionCache[descriptor] = function
     }
     
-    func function(for functionDescriptor: FunctionDescriptor) async -> MTLFunction? {
+    func function(for functionDescriptor: FunctionDescriptor) async throws -> MTLFunction {
         if let function = self.functionCache[functionDescriptor] {
             return function
         }
@@ -44,7 +44,7 @@ final actor MetalFunctionCache {
             return self.functionCache[functionDescriptor]!
         } catch {
             print("MetalRenderGraph: Error creating function named \(functionDescriptor.name)\(functionDescriptor.constants.map { " with constants \($0)" } ?? ""): \(error)")
-            return nil
+            throw error
         }
     }
 }
@@ -95,7 +95,7 @@ final actor MetalRenderPipelineCache {
         }
     }
     
-    public func state(descriptor: RenderPipelineDescriptor) async -> RenderPipelineState? {
+    public func state(descriptor: RenderPipelineDescriptor) async throws -> RenderPipelineState {
         if let state = self.renderStates[descriptor] {
             return state
         }
@@ -106,20 +106,16 @@ final actor MetalRenderPipelineCache {
         } else {
             renderStateTask = Task.detached {
                 switch descriptor._vertexProcessingDescriptor {
-                case .vertex:
-                    guard let mtlDescriptor = await MTLRenderPipelineDescriptor(descriptor, functionCache: self.functionCache) else {
-                        return
-                    }
+                case .vertex(let vertexPipelineDescriptor):
+                    let mtlDescriptor = try await MTLRenderPipelineDescriptor(descriptor, vertexPipelineDescriptor: vertexPipelineDescriptor, functionCache: self.functionCache)
                     let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
                     
                     // TODO: can we retrieve the thread execution width for render pipelines?
                     let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
                     await self.setState(state, reflection: pipelineReflection, for: descriptor)
-                case .mesh:
+                case .mesh(let meshPipelineDescriptor):
                     if #available(macOS 13.0, iOS 15.0, *) {
-                        guard let mtlDescriptor = await MTLMeshRenderPipelineDescriptor(descriptor, functionCache: self.functionCache) else {
-                            return
-                        }
+                        let mtlDescriptor = try await MTLMeshRenderPipelineDescriptor(descriptor, meshPipelineDescriptor: meshPipelineDescriptor, functionCache: self.functionCache)
                         let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
                         
                         // TODO: can we retrieve the thread execution width for render pipelines?
@@ -134,10 +130,10 @@ final actor MetalRenderPipelineCache {
         
         do {
             _ = try await renderStateTask.value
-            return self.renderStates[descriptor]
+            return self.renderStates[descriptor]!
         } catch {
             print("MetalRenderGraph: Error creating render pipeline state for descriptor \(descriptor): \(error)")
-            return nil
+            throw error
         }
     }
     
@@ -146,11 +142,12 @@ final actor MetalRenderPipelineCache {
             return reflection
         }
         
-        guard await self.state(descriptor: pipelineDescriptor) != nil else {
+        do {
+            let _ = try await self.state(descriptor: pipelineDescriptor)
+            return await self.reflection(descriptor: pipelineDescriptor)
+        } catch {
             return nil
         }
-        
-        return await self.reflection(descriptor: pipelineDescriptor)
     }
     
 }
@@ -183,9 +180,7 @@ final actor MetalComputePipelineCache {
     }
     
     nonisolated func createComputeState(descriptor: ComputePipelineDescriptor) async throws {
-        guard let function = await self.functionCache.function(for: descriptor.function) else {
-            return
-        }
+        let function = try await self.functionCache.function(for: descriptor.function)
         
         let mtlDescriptor = MTLComputePipelineDescriptor()
         mtlDescriptor.computeFunction = function
@@ -194,9 +189,8 @@ final actor MetalComputePipelineCache {
         if !descriptor.linkedFunctions.isEmpty, #available(iOS 14.0, macOS 11.0, *) {
             var functions = [MTLFunction]()
             for functionDescriptor in descriptor.linkedFunctions {
-                if let function = await self.functionCache.function(for: functionDescriptor) {
-                    functions.append(function)
-                }
+                let function = try await self.functionCache.function(for: functionDescriptor)
+                functions.append(function)
             }
             let linkedFunctions = MTLLinkedFunctions()
             linkedFunctions.functions = functions
@@ -210,7 +204,7 @@ final actor MetalComputePipelineCache {
         await self.setState(state, reflection: pipelineReflection, for: descriptor)
     }
     
-    public func state(descriptor: ComputePipelineDescriptor) async -> MetalComputePipelineState? {
+    public func state(descriptor: ComputePipelineDescriptor) async throws -> MetalComputePipelineState {
         if let state = self.computeStates[descriptor] {
             return state
         }
@@ -227,10 +221,10 @@ final actor MetalComputePipelineCache {
         
         do {
             _ = try await computeStateTask.value
-            return self.computeStates[descriptor]
+            return self.computeStates[descriptor]!
         } catch {
             print("MetalRenderGraph: Error creating compute pipeline state for descriptor \(descriptor): \(error)")
-            return nil
+            throw error
         }
     }
     
@@ -240,10 +234,12 @@ final actor MetalComputePipelineCache {
             return reflection
         }
         
-        guard await self.state(descriptor: pipelineDescriptor) != nil else {
+        do {
+            _ = try await self.state(descriptor: pipelineDescriptor)
+            return await self.reflection(for: pipelineDescriptor)
+        } catch {
             return nil
         }
-        return await self.reflection(for: pipelineDescriptor)
     }
 }
 
@@ -406,12 +402,12 @@ final class MetalStateCaches {
         }
     }
     
-    public func renderPipelineState(descriptor pipelineDescriptor: RenderPipelineDescriptor) async -> RenderPipelineState? {
-        return await self.renderPipelineCache.state(descriptor: pipelineDescriptor)
+    public func renderPipelineState(descriptor pipelineDescriptor: RenderPipelineDescriptor) async throws -> RenderPipelineState {
+        return try await self.renderPipelineCache.state(descriptor: pipelineDescriptor)
     }
     
-    public func computePipelineState(descriptor: ComputePipelineDescriptor) async -> ComputePipelineState? {
-        return await self.computePipelineCache.state(descriptor: descriptor)
+    public func computePipelineState(descriptor: ComputePipelineDescriptor) async throws -> ComputePipelineState {
+        return try await self.computePipelineCache.state(descriptor: descriptor)
     }
 
     public func renderPipelineReflection(descriptor pipelineDescriptor: RenderPipelineDescriptor) async -> MetalPipelineReflection? {

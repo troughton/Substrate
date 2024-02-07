@@ -402,7 +402,7 @@ final class ResourceSet {
                     continue
                 } else if resource.viewType == .sampler {
                     // @BufferBacked property
-                    stream.print("argBuffer.setSampler(await self.$\(resource.name).state, at: \(resource.binding.index))")
+                    stream.print("argBuffer.setSampler(try! await self.$\(resource.name).state, at: \(resource.binding.index))")
                     
                     continue
                 }

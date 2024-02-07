@@ -315,25 +315,17 @@ extension MTLRenderPipelineColorAttachmentDescriptor {
 }
 
 extension MTLRenderPipelineDescriptor {
-    convenience init?(_ descriptor: RenderPipelineDescriptor, functionCache: MetalFunctionCache) async {
-        guard case .vertex(let vertexPipelineDescriptor) = descriptor._vertexProcessingDescriptor else {
-            return nil
-        }
-        
+    convenience init(_ descriptor: RenderPipelineDescriptor, vertexPipelineDescriptor: VertexRenderPipelineDescriptor, functionCache: MetalFunctionCache) async throws {
         self.init()
         if let label = descriptor.label {
             self.label = label
         }
         
-        guard let vertexFunction = await functionCache.function(for: vertexPipelineDescriptor.vertexFunction) else {
-            return nil
-        }
+        let vertexFunction = try await functionCache.function(for: vertexPipelineDescriptor.vertexFunction)
         self.vertexFunction = vertexFunction
         
         if !descriptor.fragmentFunction.name.isEmpty {
-            guard let function = await functionCache.function(for: descriptor.fragmentFunction) else {
-                return nil
-            }
+            let function = try await functionCache.function(for: descriptor.fragmentFunction)
             self.fragmentFunction = function
         }
         
@@ -359,30 +351,20 @@ extension MTLRenderPipelineDescriptor {
 
 @available(macOS 13.0, *)
 extension MTLMeshRenderPipelineDescriptor {
-    convenience init?(_ descriptor: RenderPipelineDescriptor, functionCache: MetalFunctionCache) async {
-        guard case .mesh(let meshPipelineDescriptor) = descriptor._vertexProcessingDescriptor else {
-            return nil
-        }
-        
+    convenience init(_ descriptor: RenderPipelineDescriptor, meshPipelineDescriptor: MeshRenderPipelineDescriptor, functionCache: MetalFunctionCache) async throws {
         self.init()
         if let label = descriptor.label {
             self.label = label
         }
         
-        guard let objectFunction = await functionCache.function(for: meshPipelineDescriptor.objectFunction) else {
-            return nil
-        }
+        let objectFunction = try await functionCache.function(for: meshPipelineDescriptor.objectFunction)
         self.objectFunction = objectFunction
         
-        guard let meshFunction = await functionCache.function(for: meshPipelineDescriptor.meshFunction) else {
-            return nil
-        }
+        let meshFunction = try await functionCache.function(for: meshPipelineDescriptor.meshFunction)
         self.meshFunction = meshFunction
         
         if !descriptor.fragmentFunction.name.isEmpty {
-            guard let function = await functionCache.function(for: descriptor.fragmentFunction) else {
-                return nil
-            }
+            let function = try await functionCache.function(for: descriptor.fragmentFunction)
             self.fragmentFunction = function
         }
         
