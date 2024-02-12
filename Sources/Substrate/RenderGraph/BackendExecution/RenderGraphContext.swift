@@ -121,7 +121,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         
         self.renderGraphQueue.submitCommand(commandIndex: queueCBIndex)
         commandBuffer.commit { commandBuffer in
-            Task {
+            Task.detached {
                 if let error = commandBuffer.error {
                     print("Error executing command buffer \(queueCBIndex): \(error)")
                 }
