@@ -232,7 +232,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
     }
 }
 
-#if os(visionOS) && targetEnvironment(simulator)
+#if targetEnvironment(simulator)
 
 protocol MTLDrawableExtensions: MTLDrawable {
     func addPresentedHandler(_ handler: MTLDrawablePresentedHandler)

@@ -250,7 +250,7 @@ extension ArgumentReflection {
         self.init(type: ResourceType(argument.type), bindingPath: bindingPath, arrayLength: argument.arrayLength, usageType: ResourceUsageType(argument.access), activeStages: argument.isActive ? stages : [], activeRange: activeRange)
     }
     
-    @available(macOS 13.0, *)
+    @available(macOS 13.0, iOS 16.0, *)
     init(_ binding: MTLBinding, bindingPath: ResourceBindingPath, stages: RenderStages) {
         var activeRange: ActiveResourceRange = binding.isUsed ? .fullResource : .inactive
         if let bufferBinding = binding as? MTLBufferBinding {
@@ -285,7 +285,7 @@ extension ArgumentReflection {
         self.init(type: type, bindingPath: bindingPath, arrayLength: member.arrayType()?.arrayLength ?? 1, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
     }
     
-    @available(macOS 13.0, *)
+    @available(macOS 13.0, iOS 16.0, *)
     init(member: MTLStructMember, argumentBuffer: MTLBinding, bindingPath: ResourceBindingPath, stages: RenderStages) {
         let type : ResourceType
         let usageType : ResourceUsageType
@@ -336,7 +336,7 @@ extension ArgumentReflection {
         self.init(type: type, bindingPath: bindingPath, arrayLength: array.arrayLength, usageType: usageType, activeStages: argumentBuffer.isActive ? stages : [], activeRange: activeRange)
     }
     
-    @available(macOS 13.0, *)
+    @available(macOS 13.0, iOS 16.0, *)
     init?(array: MTLArrayType, argumentBuffer: MTLBinding, bindingPath: ResourceBindingPath, stages: RenderStages) {
         let type : ResourceType
         let usageType : ResourceUsageType

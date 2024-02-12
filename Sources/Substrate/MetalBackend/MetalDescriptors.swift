@@ -349,7 +349,7 @@ extension MTLRenderPipelineDescriptor {
     }
 }
 
-@available(macOS 13.0, *)
+@available(macOS 13.0, iOS 16.0, *)
 extension MTLMeshRenderPipelineDescriptor {
     convenience init(_ descriptor: RenderPipelineDescriptor, meshPipelineDescriptor: MeshRenderPipelineDescriptor, functionCache: MetalFunctionCache) async throws {
         self.init()

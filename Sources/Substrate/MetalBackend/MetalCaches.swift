@@ -114,7 +114,7 @@ final actor MetalRenderPipelineCache {
                     let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
                     await self.setState(state, reflection: pipelineReflection, for: descriptor)
                 case .mesh(let meshPipelineDescriptor):
-                    if #available(macOS 13.0, iOS 15.0, *) {
+                    if #available(macOS 13.0, iOS 16.0, *) {
                         let mtlDescriptor = try await MTLMeshRenderPipelineDescriptor(descriptor, meshPipelineDescriptor: meshPipelineDescriptor, functionCache: self.functionCache)
                         let (state, reflection) = try await self.device.makeRenderPipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo])
                         

@@ -80,7 +80,7 @@ final class MetalPipelineReflection : PipelineReflection {
     }
     
     
-    @available(macOS 13.0, *)
+    @available(macOS 13.0, iOS 16.0, *)
     public convenience init(threadExecutionWidth: Int, objectFunction: MTLFunction, meshFunction: MTLFunction, fragmentFunction: MTLFunction?, renderState: MTLRenderPipelineState, renderReflection: MTLRenderPipelineReflection) {
         var bindingPathCache = HashMap<BindingPathCacheKey, ResourceBindingPath>()
         var reflectionCache = [ResourceBindingPath : ArgumentReflection]()
@@ -237,7 +237,7 @@ final class MetalPipelineReflection : PipelineReflection {
         }
     }
     
-    @available(macOS 13.0, *)
+    @available(macOS 13.0, iOS 16.0, *)
     static func fillCaches(function: MTLFunction, binding: MTLBinding, stages: RenderStages, bindingPathCache: inout HashMap<BindingPathCacheKey, ResourceBindingPath>, reflectionCache: inout [ResourceBindingPath : ArgumentReflection], argumentBufferDescriptorCache: inout [ResourceBindingPath: ArgumentBufferDescriptor]) {
         guard binding.type != .threadgroupMemory else { return }
         

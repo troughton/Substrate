@@ -21,7 +21,7 @@ struct CAMetalDrawableWrapper: Drawable {
     }
     
     func addPresentedHandler(_ onPresented: @escaping () -> Void) {
-#if os(visionOS) && targetEnvironment(simulator)
+#if targetEnvironment(simulator)
         unsafeBitCast(self.drawable, to: MTLDrawableExtensions.self).addPresentedHandler { drawable in
             withExtendedLifetime(drawable) {
                 onPresented()
