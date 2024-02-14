@@ -348,7 +348,7 @@ final class CallbackDrawRenderPass : DrawRenderPass {
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
-                resources: [ResourceUsage] = [],
+                resources: [ResourceUsage],
                 execute: @escaping @Sendable (RenderCommandEncoder) async -> Void) {
         self.name = name
         self.renderTargetsDescriptor = renderTargets
@@ -385,7 +385,7 @@ final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : Reflec
                 colorClearOperations: [ColorClearOperation],
                 depthClearOperation: DepthClearOperation,
                 stencilClearOperation: StencilClearOperation,
-                resources: [ResourceUsage] = [],
+                resources: [ResourceUsage],
                 reflection: R.Type, execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
         self.name = name
         self.renderTargetsDescriptor = renderTargets
@@ -415,7 +415,7 @@ final class CallbackComputeRenderPass : ComputeRenderPass {
     public let executeFunc : (ComputeCommandEncoder) async -> Void
     
     public init(name: String,
-                resources: [ResourceUsage] = [],
+                resources: [ResourceUsage],
                 execute: @escaping @Sendable (ComputeCommandEncoder) async -> Void) {
         self.name = name
         self.resources = resources
@@ -434,7 +434,7 @@ final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : Ref
     public let executeFunc : (TypedComputeCommandEncoder<R>) async -> Void
     
     public init(name: String,
-                resources: [ResourceUsage] = [],
+                resources: [ResourceUsage],
                 reflection: R.Type,
                 execute: @escaping @Sendable (TypedComputeCommandEncoder<R>) async -> Void) {
         self.name = name
@@ -454,7 +454,7 @@ final class CallbackCPURenderPass : CPURenderPass {
     public let executeFunc : @Sendable () async -> Void
     
     public init(name: String,
-                resources: [ResourceUsage] = [],
+                resources: [ResourceUsage],
                 execute: @escaping @Sendable () async -> Void) {
         self.name = name
         self.resources = resources
@@ -1020,6 +1020,7 @@ public final class RenderGraph {
                                        execute: @escaping @Sendable (TypedRenderCommandEncoder<R>) async -> Void) {
         self.addPass(ReflectableCallbackDrawRenderPass(name: name, renderTargets: renderTargets,
                                                        colorClearOperations: colorClearOperations, depthClearOperation: depthClearOperation, stencilClearOperation: stencilClearOperation,
+                                                       resources: resources(),
                                                        reflection: reflection, execute: execute))
     }
 
