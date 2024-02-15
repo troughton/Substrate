@@ -1150,6 +1150,8 @@ public final class RenderGraph {
     // Then, it will execute the command list.
     
     nonisolated func fillUsedResourcesFromPass(passRecord: RenderPassRecord, resourceUsageAllocator: TagAllocator) {
+        let hasUnifiedMemory = RenderBackend.hasUnifiedMemory
+        
         passRecord.readResources = .init(allocator: .tag(resourceUsageAllocator))
         passRecord.writtenResources = .init(allocator: .tag(resourceUsageAllocator))
         
@@ -1163,6 +1165,14 @@ public final class RenderGraph {
             }
             if resourceUsage.type.isRead {
                 passRecord.readResources.insert(resource.resourceForUsageTracking)
+                
+                // If we read a resource on the CPU in a pass,
+                // treat that as a GPU write for tracking purposes.
+                if resourceUsage.type.contains(.cpuRead),
+                    resource.storageMode == .managed,
+                   !hasUnifiedMemory {
+                    passRecord.writtenResources.insert(resource.resourceForUsageTracking)
+                }
             }
         }
     }
