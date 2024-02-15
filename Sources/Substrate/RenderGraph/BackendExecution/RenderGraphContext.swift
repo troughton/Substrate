@@ -102,7 +102,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         }
     }
     
-    func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, commandBufferIndex: Int, lastCommandBufferIndex: Int, syncEvent: Backend.Event, onCompletion: @Sendable @escaping () async -> Void) async {
+    func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, isLast: Bool, syncEvent: Backend.Event, onCompletion: (@Sendable () async -> Void)? = nil) async {
         // Make sure that the sync event value is what we expect, so we don't update it past
         // the signal for another buffer before that buffer has completed.
         // We only need to do this if we haven't already waited in this command buffer for it.
@@ -115,9 +115,6 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         
         let queueCBIndex = self.queueCommandBufferIndex
         await self.processEmptyFrameCompletionHandlers(afterSubmissionIndex: queueCBIndex)
-        
-        let isFirst = commandBufferIndex == 0
-        let isLast = commandBufferIndex == lastCommandBufferIndex
         
         self.renderGraphQueue.submitCommand(commandIndex: queueCBIndex)
         commandBuffer.commit { commandBuffer in
@@ -135,8 +132,8 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
                     self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
                     self.accessSemaphore?.signal()
-                    await onCompletion()
                 }
+                await onCompletion?()
             }
         }
     }
@@ -197,6 +194,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     self.commandGenerator.updateQueueWaitCommandIndices(frameCommandInfo: &frameCommandInfo, queue: self.renderGraphQueue)
                     
                     var commandBuffers = [Backend.CommandBuffer]()
+                    commandBuffers.reserveCapacity(frameCommandInfo.commandBufferCount)
                     var waitedEvents = QueueCommandIndices(repeating: 0)
                     
                     for (i, encoderInfo) in frameCommandInfo.commandEncoders.enumerated() {
@@ -204,6 +202,10 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                         if commandBufferIndex != commandBuffers.endIndex - 1 {
                             if let transientRegistry = self.resourceRegistry {
                                 commandBuffers.last?.presentSwapchains(resourceRegistry: transientRegistry, onPresented: onSwapchainPresented)
+                            }
+                            
+                            if let lastCommandBuffer = commandBuffers.last {
+                                await self.submitCommandBuffer(lastCommandBuffer, isLast: false, syncEvent: self.syncEvent)
                             }
                             commandBuffers.append(self.commandQueue.makeCommandBuffer(commandInfo: frameCommandInfo,
                                                                                       transientRegistry: self.resourceRegistry,
@@ -243,11 +245,10 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                     self.commandGenerator.reset()
                     self.compactedResourceCommands.removeAll(keepingCapacity: true)
 
-                    let syncEvent = backend.syncEvent(for: self.renderGraphQueue)!
                     let commandBufferRange = frameCommandInfo.baseCommandBufferGlobalIndex..<(frameCommandInfo.baseCommandBufferGlobalIndex + UInt64(frameCommandInfo.commandBufferCount))
 
-                    for (i, commandBuffer) in commandBuffers.enumerated() {
-                        await self.submitCommandBuffer(commandBuffer, commandBufferIndex: i, lastCommandBufferIndex: commandBuffers.count - 1, syncEvent: syncEvent, onCompletion: {
+                    if let lastCommandBuffer = commandBuffers.last {
+                        await self.submitCommandBuffer(lastCommandBuffer, isLast: true, syncEvent: self.syncEvent, onCompletion: {
                             await onCompletion(commandBufferRange)
                         })
                     }
