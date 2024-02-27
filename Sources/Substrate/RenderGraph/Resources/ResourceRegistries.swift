@@ -82,8 +82,8 @@ final class TransientRegistryManager {
 
 @usableFromInline protocol PersistentResourceProperties: ResourceProperties {
     var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { get }
-    var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { get }
-    var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { get }
+    var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { get }
+    var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { get }
 }
 
 @usableFromInline struct EmptyProperties<Descriptor>: PersistentResourceProperties {
@@ -92,8 +92,8 @@ final class TransientRegistryManager {
     @usableFromInline func initialize(index: Int, descriptor: Descriptor, heap: Heap?, flags: ResourceFlags) {}
     @usableFromInline func deinitialize(from index: Int, count: Int) {}
     
-    @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
-    @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
+    @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { nil }
+    @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { nil }
     @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
 }
 

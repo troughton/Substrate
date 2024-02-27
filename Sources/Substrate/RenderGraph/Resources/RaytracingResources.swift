@@ -6,6 +6,7 @@
 //
 
 import SubstrateUtilities
+import Atomics
 
 // MARK: - AccelerationStructure
 
@@ -81,15 +82,15 @@ extension AccelerationStructure: CustomStringConvertible {
     @usableFromInline struct PersistentProperties: PersistentResourceProperties {
         
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
-        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
-        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         /// The RenderGraphs that are currently using this resource.
         let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         
         @usableFromInline init(capacity: Int) {
-            self.readWaitIndices = .allocate(capacity: capacity)
-            self.writeWaitIndices = .allocate(capacity: capacity)
+            self.readWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
             self.activeRenderGraphs = .allocate(capacity: capacity)
         }
         
@@ -100,19 +101,19 @@ extension AccelerationStructure: CustomStringConvertible {
         }
         
         @usableFromInline func initialize(index: Int, descriptor size: Int, heap: Heap?, flags: ResourceFlags) {
-            self.readWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
-            self.writeWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
             self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
         }
         
         @usableFromInline func deinitialize(from index: Int, count: Int) {
-            self.readWaitIndices.advanced(by: index).deinitialize(count: count)
-            self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
             self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
         }
         
-        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.writeWaitIndices }
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { activeRenderGraphs }
     }
     
@@ -239,15 +240,15 @@ extension VisibleFunctionTable: CustomStringConvertible {
     
     @usableFromInline struct PersistentProperties: PersistentResourceProperties {
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
-        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
-        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         
         @usableFromInline
         init(capacity: Int) {
-            self.readWaitIndices = .allocate(capacity: capacity)
-            self.writeWaitIndices = .allocate(capacity: capacity)
+            self.readWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
             self.stateFlags = .allocate(capacity: capacity)
         }
         
@@ -260,20 +261,20 @@ extension VisibleFunctionTable: CustomStringConvertible {
         
         @usableFromInline
         func initialize(index: Int, descriptor: VisibleFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
-            self.readWaitIndices.advanced(by: index).initialize(to: .zero)
-            self.writeWaitIndices.advanced(by: index).initialize(to: .zero)
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
             self.stateFlags.advanced(by: index).initialize(to: [])
         }
         
         @usableFromInline
         func deinitialize(from index: Int, count: Int) {
-            self.readWaitIndices.advanced(by: index).deinitialize(count: count)
-            self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
             self.stateFlags.advanced(by: index).deinitialize(count: count)
         }
         
-        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.writeWaitIndices }
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
     }
     
@@ -389,15 +390,15 @@ extension IntersectionFunctionTable: CustomStringConvertible {
     
     @usableFromInline struct PersistentProperties: PersistentResourceProperties {
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
-        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
-        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         
         @usableFromInline
         init(capacity: Int) {
-            self.readWaitIndices = .allocate(capacity: capacity)
-            self.writeWaitIndices = .allocate(capacity: capacity)
+            self.readWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
             self.stateFlags = .allocate(capacity: capacity)
         }
         
@@ -410,21 +411,21 @@ extension IntersectionFunctionTable: CustomStringConvertible {
         
         @usableFromInline
         func initialize(index: Int, descriptor: IntersectionFunctionTableDescriptor, heap: Heap?, flags: ResourceFlags) {
-            self.readWaitIndices.advanced(by: index).initialize(to: .zero)
-            self.writeWaitIndices.advanced(by: index).initialize(to: .zero)
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
             self.stateFlags.advanced(by: index).initialize(to: [])
         }
         
         @usableFromInline
         func deinitialize(from index: Int, count: Int) {
-            self.readWaitIndices.advanced(by: index).deinitialize(count: count)
-            self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
             self.stateFlags.advanced(by: index).deinitialize(count: count)
         }
         
         
-        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.writeWaitIndices }
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
     }
     

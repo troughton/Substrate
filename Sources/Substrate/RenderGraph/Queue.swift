@@ -349,4 +349,5 @@ public struct Queue : Equatable, Sendable {
     }
 }
 
-public typealias QueueCommandIndices = SIMD8<UInt64>
+public typealias QueueCommandIndex = UInt64
+public typealias QueueCommandIndices = SIMD8<QueueCommandIndex>

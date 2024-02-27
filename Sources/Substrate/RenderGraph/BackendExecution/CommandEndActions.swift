@@ -26,7 +26,7 @@ struct CommandEndAction: Sendable {
 
 struct QueueEndAction: Sendable {
     let type: CommandEndActionType
-    let after: UInt64
+    let after: QueueCommandIndex
 }
 
 @globalActor
@@ -44,11 +44,11 @@ final actor CommandEndActionManager {
         self.deviceCommandEndActions.append(deviceAction)
     }
     
-    func enqueue(action: CommandEndActionType, after commandIndex: UInt64, on queue: Queue) {
+    func enqueue(action: CommandEndActionType, after commandIndex: QueueCommandIndex, on queue: Queue) {
         self.queueCommandEndActions[Int(queue.index)].append(QueueEndAction(type: action, after: commandIndex))
     }
     
-    func didCompleteCommand(_ command: UInt64, on queue: Queue) {
+    func didCompleteCommand(_ command: QueueCommandIndex, on queue: Queue) {
         do {
             var lastCompletedCommands = QueueRegistry.lastCompletedCommands
             lastCompletedCommands[Int(queue.index)] = command // We have a more recent lastCompletedCommand than the queue does.
@@ -87,13 +87,13 @@ final actor CommandEndActionManager {
         }
     }
     
-    static nonisolated func enqueue(action: CommandEndActionType, after commandIndex: UInt64, on queue: Queue) {
+    static nonisolated func enqueue(action: CommandEndActionType, after commandIndex: QueueCommandIndex, on queue: Queue) {
         Task { @CommandEndActionManager in
             await shared.enqueue(action: action, after: commandIndex, on: queue)
         }
     }
     
-    static nonisolated func didCompleteCommand(_ command: UInt64, on queue: Queue) {
+    static nonisolated func didCompleteCommand(_ command: QueueCommandIndex, on queue: Queue) {
         Task { @CommandEndActionManager in
             await shared.didCompleteCommand(command, on: queue)
         }

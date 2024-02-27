@@ -604,7 +604,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         for i in frameCommandInfo.commandEncoders.indices {
             for pass in frameCommandInfo.passes {
                 for readResource in pass.readResources {
-                    if let readWaitIndices = readResource.withUnderlyingResource({ $0._readWaitIndicesPointer?.pointee }) {
+                    if let readWaitIndicesPtr = readResource.withUnderlyingResource({ $0._readWaitIndicesPointer }) {
+                        let readWaitIndices = QueueCommandIndex.AtomicRepresentation.snapshotIndices(at: readWaitIndicesPtr, ordering: .relaxed)
                         frameCommandInfo.commandEncoders[i].queueCommandWaitIndices = pointwiseMax(frameCommandInfo.commandEncoders[i].queueCommandWaitIndices, readWaitIndices)
                     }
                     
@@ -614,7 +615,8 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
                 }
                 
                 for writtenResource in pass.writtenResources {
-                    if let writeWaitIndices = writtenResource.withUnderlyingResource({ $0._writeWaitIndicesPointer?.pointee }) {
+                    if let writeWaitIndicesPtr = writtenResource.withUnderlyingResource({ $0._writeWaitIndicesPointer }) {
+                        let writeWaitIndices = QueueCommandIndex.AtomicRepresentation.snapshotIndices(at: writeWaitIndicesPtr, ordering: .relaxed)
                         frameCommandInfo.commandEncoders[i].queueCommandWaitIndices = pointwiseMax(frameCommandInfo.commandEncoders[i].queueCommandWaitIndices, writeWaitIndices)
                     }
                 }

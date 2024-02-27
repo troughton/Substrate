@@ -22,7 +22,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     let commandGenerator: ResourceCommandGenerator<Backend>
     let taskStream: TaskStream
     
-    var queueCommandBufferIndex: UInt64 = 0 // The last command buffer submitted
+    var queueCommandBufferIndex: QueueCommandIndex = 0 // The last command buffer submitted
     let syncEvent: Backend.Event
        
     let commandQueue: Backend.QueueImpl

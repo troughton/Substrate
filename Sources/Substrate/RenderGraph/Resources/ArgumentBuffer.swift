@@ -270,12 +270,15 @@ public struct ArgumentBuffer : ResourceProtocol {
         guard resource._usesPersistentRegistry else { return }
         
         let argument = self.descriptor.arguments[self.descriptor.arguments.binarySearch(predicate: { $0.index <= index }) - 1]
+        
         if argument.accessType == .read, let waitPointer = resource._readWaitIndicesPointer {
-            self[\.contentAccessWaitIndices] = pointwiseMax(waitPointer.pointee, self[\.contentAccessWaitIndices])
+            let waitIndices = QueueCommandIndex.AtomicRepresentation.snapshotIndices(at: waitPointer, ordering: .relaxed)
+            self[\.contentAccessWaitIndices] = pointwiseMax(waitIndices, self[\.contentAccessWaitIndices])
         }
         
         if argument.accessType == .readWrite || argument.accessType == .write, let waitPointer = resource._writeWaitIndicesPointer {
-            self[\.contentAccessWaitIndices] = pointwiseMax(waitPointer.pointee, self[\.contentAccessWaitIndices])
+            let waitIndices = QueueCommandIndex.AtomicRepresentation.snapshotIndices(at: waitPointer, ordering: .relaxed)
+            self[\.contentAccessWaitIndices] = pointwiseMax(waitIndices, self[\.contentAccessWaitIndices])
         }
     }
     
@@ -432,16 +435,16 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     @usableFromInline struct PersistentArgumentBufferProperties: PersistentResourceProperties {
         let heaps : UnsafeMutablePointer<Heap?>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
-        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
-        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         /// The RenderGraphs that are currently using this resource.
         let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         
         @usableFromInline init(capacity: Int) {
             self.heaps = .allocate(capacity: capacity)
-            self.readWaitIndices = .allocate(capacity: capacity)
-            self.writeWaitIndices = .allocate(capacity: capacity)
+            self.readWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
             self.activeRenderGraphs = .allocate(capacity: capacity)
         }
         
@@ -454,15 +457,15 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         
         @usableFromInline func initialize(index indexInChunk: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
             self.heaps.advanced(by: indexInChunk).initialize(to: nil)
-            self.readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.readWaitIndices.advanced(by: indexInChunk * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: indexInChunk * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
             self.activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
         }
         
         @usableFromInline func initialize(index indexInChunk: Int) {
             self.heaps.advanced(by: indexInChunk).initialize(to: nil)
-            self.readWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
-            self.writeWaitIndices.advanced(by: indexInChunk).initialize(to: SIMD8(repeating: 0))
+            self.readWaitIndices.advanced(by: indexInChunk * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: indexInChunk * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
             self.activeRenderGraphs.advanced(by: indexInChunk).initialize(to: UInt8.AtomicRepresentation(0))
         }
         
@@ -470,8 +473,8 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
             self.heaps.advanced(by: indexInChunk).deinitialize(count: count)
         }
         
-        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.writeWaitIndices }
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
     

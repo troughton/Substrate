@@ -6,7 +6,7 @@
 //
 
 import SubstrateUtilities
-
+import Atomics
 
 public struct Texture : ResourceProtocol {
     public struct TextureViewDescriptor {
@@ -321,17 +321,17 @@ public enum TextureViewBaseInfo {
         
         let stateFlags : UnsafeMutablePointer<ResourceStateFlags>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
-        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
-        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         /// The RenderGraphs that are currently using this resource.
         let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         let heaps : UnsafeMutablePointer<Heap?>
         
         @usableFromInline init(capacity: Int) {
             self.stateFlags = .allocate(capacity: capacity)
-            self.readWaitIndices = .allocate(capacity: capacity)
-            self.writeWaitIndices = .allocate(capacity: capacity)
+            self.readWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
             self.activeRenderGraphs = .allocate(capacity: capacity)
             self.heaps = .allocate(capacity: capacity)
         }
@@ -346,23 +346,23 @@ public enum TextureViewBaseInfo {
         
         @usableFromInline func initialize(index: Int, descriptor: TextureDescriptor, heap: Heap?, flags: ResourceFlags) {
             self.stateFlags.advanced(by: index).initialize(to: [])
-            self.readWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
-            self.writeWaitIndices.advanced(by: index).initialize(to: SIMD8(repeating: 0))
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
             self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
             self.heaps.advanced(by: index).initialize(to: heap)
         }
         
         @usableFromInline func deinitialize(from index: Int, count: Int) {
             self.stateFlags.advanced(by: index).deinitialize(count: count)
-            self.readWaitIndices.advanced(by: index).deinitialize(count: count)
-            self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
             self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
             self.heaps.advanced(by: index).deinitialize(count: count)
         }
         
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
-        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.writeWaitIndices }
     }
 }
 

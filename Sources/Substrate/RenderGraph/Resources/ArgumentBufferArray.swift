@@ -161,7 +161,7 @@ struct ArgumentBufferArrayProperties: PersistentResourceProperties {
         self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
     }
     
-    @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
-    @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { nil }
+    @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { nil }
+    @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { nil }
     @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { activeRenderGraphs }
 }

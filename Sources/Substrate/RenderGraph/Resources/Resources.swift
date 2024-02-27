@@ -400,7 +400,7 @@ extension ResourceProtocolImpl {
         }
     }
     
-    @_transparent
+    @inline(__always)
     var _activeRenderGraphsPointer: UnsafeMutablePointer<UInt8.AtomicRepresentation>? {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
@@ -411,43 +411,49 @@ extension ResourceProtocolImpl {
     }
     
     
-    @_transparent
-    var _readWaitIndicesPointer: UnsafeMutablePointer<QueueCommandIndices>? {
+    @inline(__always)
+    var _readWaitIndicesPointer: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return Self.persistentRegistry.persistentChunks?[chunkIndex].readWaitIndicesOptional?.advanced(by: indexInChunk)
+            return Self.persistentRegistry.persistentChunks?[chunkIndex].readWaitIndicesOptional?.advanced(by: indexInChunk * QueueCommandIndices.scalarCount)
         } else {
             return nil
         }
     }
     
-    @_transparent
-    var _writeWaitIndicesPointer: UnsafeMutablePointer<QueueCommandIndices>? {
+    @inline(__always)
+    var _writeWaitIndicesPointer: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? {
         if self._usesPersistentRegistry {
             let (chunkIndex, indexInChunk) = self.index.quotientAndRemainder(dividingBy: Self.itemsPerChunk)
-            return Self.persistentRegistry.persistentChunks?[chunkIndex].writeWaitIndicesOptional?.advanced(by: indexInChunk)
+            return Self.persistentRegistry.persistentChunks?[chunkIndex].writeWaitIndicesOptional?.advanced(by: indexInChunk * QueueCommandIndices.scalarCount)
         } else {
             return nil
         }
     }
     
-    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> UInt64 {
+    public subscript(waitIndexFor queue: Queue, accessType type: ResourceAccessType) -> QueueCommandIndex {
         get {
             guard self._usesPersistentRegistry else { return 0 }
             if type == .read {
-                return self._readWaitIndicesPointer?.pointee[Int(queue.index)] ?? 0
+                guard let pointer = self._readWaitIndicesPointer else { return 0 }
+                return QueueCommandIndex.AtomicRepresentation.atomicLoad(at: pointer.advanced(by: Int(queue.index)), ordering: .relaxed)
             } else {
-                return self._writeWaitIndicesPointer?.pointee[Int(queue.index)] ?? 0
+                guard let pointer = self._writeWaitIndicesPointer else { return 0 }
+                return QueueCommandIndex.AtomicRepresentation.atomicLoad(at: pointer.advanced(by: Int(queue.index)), ordering: .relaxed)
             }
         }
         nonmutating set {
             guard self._usesPersistentRegistry else { return }
             
             if type == .read || type == .readWrite {
-                self._readWaitIndicesPointer?.pointee[Int(queue.index)] = newValue
+                if let pointer = self._readWaitIndicesPointer {
+                    QueueCommandIndex.AtomicRepresentation.atomicMax(at: pointer.advanced(by: Int(queue.index)), value: newValue)
+                }
             }
             if type == .write || type == .readWrite {
-                self._writeWaitIndicesPointer?.pointee[Int(queue.index)] = newValue
+                if let pointer = self._writeWaitIndicesPointer {
+                    QueueCommandIndex.AtomicRepresentation.atomicMax(at: pointer.advanced(by: Int(queue.index)), value: newValue)
+                }
             }
         }
     }
@@ -868,5 +874,27 @@ extension ResourceProtocol {
         nonmutating set {
             _ = newValue
         }
+    }
+}
+
+extension QueueCommandIndex.AtomicRepresentation {
+    @discardableResult
+    static func atomicMax(at pointer: UnsafeMutablePointer<Self>, value: QueueCommandIndex) -> Bool {
+        var currentValue = Self.atomicLoad(at: pointer, ordering: .relaxed)
+        guard currentValue <= value else { return false }
+        repeat {
+            let (exchanged, original) = Self.atomicWeakCompareExchange(expected: currentValue, desired: value, at: pointer, ordering: .relaxed)
+            if exchanged { return true }
+            currentValue = original
+        } while value > currentValue
+        return false
+    }
+    
+    static func snapshotIndices(at pointer: UnsafeMutablePointer<Self>, ordering: AtomicLoadOrdering) -> QueueCommandIndices {
+        var result = QueueCommandIndices()
+        for i in 0..<QueueCommandIndices.scalarCount {
+            result[i] = Self.atomicLoad(at: pointer.advanced(by: i), ordering: .relaxed)
+        }
+        return result
     }
 }

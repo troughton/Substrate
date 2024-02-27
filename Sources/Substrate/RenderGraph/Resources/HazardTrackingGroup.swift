@@ -138,14 +138,14 @@ struct HazardTrackingGroupProperties: ResourceProperties {
         /// The RenderGraphs that are currently using this resource.
         let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
-        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let readWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         /// The index that must be completed on the GPU for each queue before the CPU can write to this resource's memory.
-        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndices>
+        let writeWaitIndices : UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>
         
         @usableFromInline init(capacity: Int) {
             self.activeRenderGraphs = .allocate(capacity: capacity)
-            self.readWaitIndices = .allocate(capacity: capacity)
-            self.writeWaitIndices = .allocate(capacity: capacity)
+            self.readWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices = .allocate(capacity: capacity * QueueCommandIndices.scalarCount)
         }
         
         @usableFromInline func deallocate() {
@@ -156,18 +156,18 @@ struct HazardTrackingGroupProperties: ResourceProperties {
         
         @usableFromInline func initialize(index: Int, descriptor: ResourceType, heap: Heap?, flags: ResourceFlags) {
             self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
-            self.readWaitIndices.advanced(by: index).initialize(to: .zero)
-            self.writeWaitIndices.advanced(by: index).initialize(to: .zero)
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).initialize(repeating: .init(0), count: QueueCommandIndices.scalarCount)
         }
         
         @usableFromInline func deinitialize(from index: Int, count: Int) {
             self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
-            self.readWaitIndices.advanced(by: index).deinitialize(count: count)
-            self.writeWaitIndices.advanced(by: index).deinitialize(count: count)
+            self.readWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
+            self.writeWaitIndices.advanced(by: index * QueueCommandIndices.scalarCount).deinitialize(count: count * QueueCommandIndices.scalarCount)
         }
         
-        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.readWaitIndices }
-        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndices>? { self.writeWaitIndices }
+        @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.readWaitIndices }
+        @usableFromInline var writeWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { self.writeWaitIndices }
         @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { self.activeRenderGraphs }
     }
         
