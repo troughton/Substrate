@@ -63,9 +63,18 @@ public struct RGBColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
     @inlinable
     public init(_ xyzColor: XYZColor<Scalar>) {
         let x = xyzColor.X, y = xyzColor.Y, z = xyzColor.Z
-        let r = 3.240479 * x - 1.537150 * y - 0.498535 * z
-        let g = -0.969256 * x + 1.875991 * y + 0.041556 * z
-        let b = 0.055648 * x - 0.204043 * y + 1.057311 * z
+        let rX: Scalar = 3.240479
+        let rY: Scalar = -1.537150
+        let rZ: Scalar = -0.498535
+        let gX: Scalar = -0.969256
+        let gY: Scalar = 1.875991
+        let gZ: Scalar = 0.041556
+        let bX: Scalar = 0.055648
+        let bY: Scalar = -0.204043
+        let bZ: Scalar = 1.057311
+        let r = rX * x + rY * y + rZ * z
+        let g = gX * x + gY * y + gZ * z
+        let b = bX * x + bY * y + bZ * z
         self.init(r, g, b)
     }
     
@@ -100,7 +109,10 @@ public struct RGBColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
     @inlinable
     public var luminance: Scalar {
         get {
-            return 0.212671 * self.r + 0.715160 * self.g + 0.072169 * self.b
+            let rWeight: Scalar = 0.212671
+            let gWeight: Scalar = 0.715160
+            let bWeight: Scalar = 0.072169
+            return rWeight * self.r + gWeight * self.g + bWeight * self.b
         }
         set {
             let currentLuminance = self.luminance
@@ -265,6 +277,99 @@ extension XYZColor where Scalar: SIMDScalar {
     }
 }
 
+// ALEXA Log C Curve: Usage in VFX (Harald Brendel)
+// https://www.arri.com/resource/blob/31918/66f56e6abb6e5b6553929edf9aa7483e/2017-03-alexa-logc-curve-in-vfx-data.pdf
+public enum ArriAlexaEl: Int, CaseIterable, Hashable, Sendable, Codable {
+    case el160 = 160
+    case el200 = 200
+    case el250 = 250
+    case el320 = 320
+    case el400 = 400
+    case el500 = 500
+    case el640 = 640
+    case el800 = 800
+    case el1000 = 1000
+    case el1280 = 1280
+    case el1600 = 1600
+    
+    @inlinable
+    public var sensorSignalParameters: ArriLogCParameters {
+        switch self {
+        case .el160:
+            return .init(cut: 0.004680, a: 40.0, b: -0.076072, c: 0.269036, d: 0.381991, e: 42.062665, f: -0.071569)
+        case .el200:
+            return .init(cut: 0.004597, a: 50.0, b: -0.118740, c: 0.266007, d: 0.382478, e: 51.986387, f: -0.110339)
+        case .el250:
+            return .init(cut: 0.004518, a: 62.5, b: -0.171260, c: 0.262978, d: 0.382966, e: 64.243053, f: -0.158224)
+        case .el320:
+            return .init(cut: 0.004436, a: 80.0, b: -0.243808, c: 0.259627, d: 0.383508, e: 81.183335, f: -0.224409)
+        case .el400:
+            return .init(cut: 0.004369, a: 100.0, b: -0.325820, c: 0.256598, d: 0.383999, e: 100.295280, f: -0.299079)
+        case .el500:
+            return .init(cut: 0.004309, a: 125.0, b: -0.427461, c: 0.253569, d: 0.384493, e: 123.889239, f: -0.391261)
+        case .el640:
+            return .init(cut: 0.004249, a: 160.0, b: -0.568709, c: 0.250219, d: 0.385040, e: 156.482680, f: -0.518605)
+        case .el800:
+            return .init(cut: 0.004201, a: 200.0, b: -0.729169, c: 0.247190, d: 0.385537, e: 193.235573, f: -0.662201)
+        case .el1000:
+            return .init(cut: 0.004160, a: 250.0, b: -0.928805, c: 0.244161, d: 0.386036, e: 238.584745, f: -0.839385)
+        case .el1280:
+            return .init(cut: 0.004120, a: 320.0, b: -1.207168, c: 0.240810, d: 0.386590, e: 301.197380, f: -1.084020)
+        case .el1600:
+            return .init(cut: 0.004088, a: 400.0, b: -1.524256, c: 0.237781, d: 0.387093, e: 371.761171, f: -1.359723)
+        }
+    }
+    
+    @inlinable
+    public var exposureValueParameters: ArriLogCParameters {
+        switch self {
+        case .el160:
+            return .init(cut: 0.005561, a: 5.555556, b: 0.080216, c: 0.269036, d: 0.381991, e: 5.842037, f: 0.092778)
+        case .el200:
+            return .init(cut: 0.006208, a: 5.555556, b: 0.076621, c: 0.266007, d: 0.382478, e: 5.776265, f: 0.092782)
+        case .el250:
+            return .init(cut: 0.006871, a: 5.555556, b: 0.072941, c: 0.262978, d: 0.382966, e: 5.710494, f: 0.092786)
+        case .el320:
+            return .init(cut: 0.007622, a: 5.555556, b: 0.068768, c: 0.259627, d: 0.383508, e: 5.637732, f: 0.092791)
+        case .el400:
+            return .init(cut: 0.008318, a: 5.555556, b: 0.064901, c: 0.256598, d: 0.383999, e: 5.571960, f: 0.092795)
+        case .el500:
+            return .init(cut: 0.009031, a: 5.555556, b: 0.060939, c: 0.253569, d: 0.384493, e: 5.506188, f: 0.092800)
+        case .el640:
+            return .init(cut: 0.009840, a: 5.555556, b: 0.056443, c: 0.250219, d: 0.385040, e: 5.433426, f: 0.092805)
+        case .el800:
+            return .init(cut: 0.010591, a: 5.555556, b: 0.052272, c: 0.247190, d: 0.385537, e: 5.367655, f: 0.092809)
+        case .el1000:
+            return .init(cut: 0.011361, a: 5.555556, b: 0.047996, c: 0.244161, d: 0.386036, e: 5.301883, f: 0.092814)
+        case .el1280:
+            return .init(cut: 0.012235, a: 5.555556, b: 0.043137, c: 0.240810, d: 0.386590, e: 5.229121, f: 0.092819)
+        case .el1600:
+            return .init(cut: 0.013047, a: 5.555556, b: 0.038625, c: 0.237781, d: 0.387093, e: 5.163350, f: 0.092824)
+        }
+    }
+}
+
+public struct ArriLogCParameters: Hashable, Sendable {
+    public let cut: Double
+    public let a: Double
+    public let b: Double
+    public let c: Double
+    public let d: Double
+    public let e: Double
+    public let f: Double
+    
+    @inlinable
+    public init(cut: Double, a: Double, b: Double, c: Double, d: Double, e: Double, f: Double) {
+        self.cut = cut
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
+        self.e = e
+        self.f = f
+    }
+}
+
 public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
     case linear
     case power(Scalar)
@@ -272,6 +377,8 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
     case acesCCT
     case sRGB
     case rec709
+    case arriLogC(ArriLogCParameters)
+    case arriLogC4
     case sonySLog3
     case pq
     case hlg
@@ -314,9 +421,29 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             } else {
                 return alpha * Scalar.pow(x, 0.45) - (alpha - 1.0)
             }
+        case .arriLogC(let params):
+            let cut = Scalar(params.cut)
+            let a = Scalar(params.a)
+            let b = Scalar(params.b)
+            let c = Scalar(params.c)
+            let d = Scalar(params.d)
+            let e = Scalar(params.e)
+            let f = Scalar(params.f)
+            return (x > cut) ? c * Scalar.log10(a * x + b) + d : e * x + f
+        case .arriLogC4:
+            let a: Scalar = 262128.0 / 117.45 // (2^18 - 16) / 117.45
+            let b: Scalar = (1023.0 - 95.0) / 1023.0
+            let c: Scalar = 95.0 / 1023.0
+            let s: Scalar = 0.1135972086105891 //  7.0 * Scalar.log(2.0) * Scalar.exp2(7.0 - 14.0 * c / b) / (a * b)
+            let t: Scalar = -0.018056996119911309 // (Scalar.exp2(14.0 * -c / b + 6.0) - 64.0) / a
+            
+            let log2: Scalar = Scalar.log2(a * x + Scalar(64.0))
+            let log2Part: Scalar = (log2 - 6.0) / 14.0
+            return x >= t ? log2Part * b + c : (x - t) / s
         case .sonySLog3:
             if x >= 0.01125000 {
-                return (420.0 + Scalar.log10((x + 0.01) / (0.18 + 0.01)) * 261.5) / 1023.0
+                let log10Part: Scalar = Scalar.log10((x + 0.01) / (0.18 + 0.01))
+                return (420.0 + log10Part * 261.5) / 1023.0
             } else {
                 let scale: Scalar = (171.2102946929 - 95.0)/0.01125000
                 return (x * scale + 95.0) / 1023.0
@@ -385,9 +512,33 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             } else {
                 return Scalar.pow((x + (alpha - 1.0)) / alpha, 1.0 / 0.45)
             }
+        case .arriLogC(let params):
+            let cut = Scalar(params.cut)
+            let a: Scalar = Scalar(params.a)
+            let b: Scalar = Scalar(params.b)
+            let c: Scalar = Scalar(params.c)
+            let d: Scalar = Scalar(params.d)
+            let e: Scalar = Scalar(params.e)
+            let f: Scalar = Scalar(params.f)
+            let eCutF = e * cut + f
+            
+            let exp10 = Scalar.exp10((x - d) / c)
+            return (x > eCutF) ? (exp10 - b) / a : (x - f) / e
+        case .arriLogC4:
+            let a: Scalar = 262128.0 / 117.45 // (2^18 - 16) / 117.45
+            let b: Scalar = (1023.0 - 95.0) / 1023.0
+            let c: Scalar = 95.0 / 1023.0
+            let s: Scalar = 0.1135972086105891 //  7.0 * Scalar.log(2.0) * Scalar.exp2(7.0 - 14.0 * c / b) / (a * b)
+            let t: Scalar = -0.018056996119911309 // (Scalar.exp2(14.0 * -c / b + 6.0) - 64.0) / a
+            
+            let xcb: Scalar = (x - c) / b
+            let exp2 = Scalar.exp2(14.0 * xcb + 6.0)
+            let exp2A: Scalar = (exp2 - 64.0) / a
+            return x >= 0.0 ? exp2A : x * s + t
         case .sonySLog3:
             if x >= 171.2102946929 / 1023.0 {
-                return (Scalar.exp10((x * 1023.0 - 420.0) / 261.5)) * (0.18 + 0.01) - 0.01
+                let exp10Part: Scalar = Scalar.exp10((x * 1023.0 - 420.0) / 261.5)
+                return exp10Part * (0.18 + 0.01) - 0.01
             } else {
                 let scale: Scalar = 0.01125000 / (171.2102946929 - 95.0)
                 return (x * 1023.0 - 95.0) * scale
@@ -418,7 +569,6 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
                 // exp((x - c) / a) + b = 12.0 * E
                 return Scalar.exp((x - c) / a + b) / 12.0
             }
-            
         }
     }
 }
@@ -503,6 +653,22 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
                 red:   SIMD2(0.70800,  0.29200),
                 green: SIMD2(0.17000,  0.79700),
                 blue:  SIMD2(0.13100,  0.04600))
+        }
+        
+        @inlinable
+        public static var arriWideGamutRGB: Primaries {
+            return Primaries(
+                red:   SIMD2(0.6840,  0.3130),
+                green: SIMD2(0.2210,  0.8480),
+                blue:  SIMD2(0.0861, -0.1020))
+        }
+        
+        @inlinable
+        public static var arriWideGamut4: Primaries {
+            return Primaries(
+                red:   SIMD2(0.7347,  0.2653),
+                green: SIMD2(0.1424,  0.8576),
+                blue:  SIMD2(0.0991, -0.0308))
         }
         
         @inlinable
@@ -641,6 +807,18 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
                      referenceWhite: .aces)
     }
     
+    public static func arriLogC(el: ArriAlexaEl, usingSensorValues: Bool = false) -> CIEXYZ1931ColorSpace {
+        return .init(primaries: .arriWideGamutRGB,
+                     eotf: .arriLogC(usingSensorValues ? el.sensorSignalParameters : el.exposureValueParameters),
+                     referenceWhite: .d65)
+    }
+    
+    public static var arriLogC4: CIEXYZ1931ColorSpace {
+        return .init(primaries: .arriWideGamut4,
+                     eotf: .arriLogC4,
+                     referenceWhite: .d65)
+    }
+    
     public static var sonySGamut3: CIEXYZ1931ColorSpace {
         return .init(primaries: .sonySGamut3,
                      eotf: .sonySLog3,
@@ -756,17 +934,37 @@ extension OklabColor: Sendable where Scalar: Sendable {}
 
 extension OklabColor where Scalar: SIMDScalar {
     public init(fromLinearSRGB c: RGBColor<Scalar>)  {
-        let l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b
-        let m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b
-        let s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b
+        let lR: Scalar = 0.4122214708
+        let lG: Scalar = 0.5363325363
+        let lB: Scalar = 0.0514459929
+        let mR: Scalar = 0.2119034982
+        let mG: Scalar = 0.6806995451
+        let mB: Scalar = 0.1073969566
+        let sR: Scalar = 0.0883024619
+        let sG: Scalar = 0.2817188376
+        let sB: Scalar = 0.6299787005
+        
+        let l = lR * c.r + lG * c.g + lB * c.b
+        let m = mR * c.r + mG * c.g + mB * c.b
+        let s = sR * c.r + sG * c.g + sB * c.b
 
         let l_ = Scalar.pow(l, 1.0 / 3.0)
         let m_ = Scalar.pow(m, 1.0 / 3.0)
         let s_ = Scalar.pow(s, 1.0 / 3.0)
 
-        let L: Scalar = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
-        let a: Scalar = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
-        let b: Scalar = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+        let Ll: Scalar = 0.2104542553
+        let Lm: Scalar = 0.7936177850
+        let Ls: Scalar = -0.0040720468
+        let al: Scalar = 1.9779984951
+        let am: Scalar = -2.4285922050
+        let `as`: Scalar = 0.4505937099
+        let bl: Scalar = 0.0259040371
+        let bm: Scalar = 0.7827717662
+        let bs: Scalar = -0.8086757660
+        
+        let L: Scalar = Ll * l_ + Lm * m_ + Ls * s_
+        let a: Scalar = al * l_ + am * m_ + `as` * s_
+        let b: Scalar = bl * l_ + bm * m_ + bs * s_
         self.init(L: L, a: a, b: b)
     }
     
@@ -812,17 +1010,32 @@ extension OklabColor where Scalar: SIMDScalar {
 
 extension RGBColor {
     public init(linearSRGBFrom c: OklabColor<Scalar>) {
-        let l_ = c.L + 0.3963377774 * c.a + 0.2158037573 * c.b
-        let m_ = c.L - 0.1055613458 * c.a - 0.0638541728 * c.b
-        let s_ = c.L - 0.0894841775 * c.a - 1.2914855480 * c.b
+        let la: Scalar =  0.3963377774
+        let lb: Scalar =  0.2158037573
+        let ma: Scalar = -0.1055613458
+        let mb: Scalar = -0.0638541728
+        let sa: Scalar = -0.0894841775
+        let sb: Scalar = -1.2914855480
+        let l_ = c.L + la * c.a + lb * c.b
+        let m_ = c.L + ma * c.a + mb * c.b
+        let s_ = c.L + sa * c.a + sb * c.b
         
         let l = l_ * l_ * l_
         let m = m_ * m_ * m_
         let s = s_ * s_ * s_
         
-        let r: Scalar = +4.0767245293 * l - 3.3072168827 * m + 0.2307590544 * s
-        let g: Scalar = -1.2681437731 * l + 2.6093323231 * m - 0.3411344290 * s
-        let b: Scalar = -0.0041119885 * l - 0.7034763098 * m + 1.7068625689 * s
+        let rl: Scalar = +4.0767245293
+        let rm: Scalar = -3.3072168827
+        let rs: Scalar = +0.2307590544
+        let gl: Scalar = -1.2681437731
+        let gm: Scalar = +2.6093323231
+        let gs: Scalar = -0.3411344290
+        let bl: Scalar = -0.0041119885
+        let bm: Scalar = -0.7034763098
+        let bs: Scalar = +1.7068625689
+        let r: Scalar = rl * l + rm * m + rs * s
+        let g: Scalar = gl * l + gm * m + gs * s
+        let b: Scalar = bl * l + bm * m + bs * s
         self.init(
             r: r,
             g: g,
@@ -935,7 +1148,10 @@ public struct RGBAColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
     
     @inlinable
     public var luminance: Scalar {
-        return 0.212671 * self.r + 0.715160 * self.g + 0.072169 * self.b
+        let rWeight: Scalar = 0.212671
+        let gWeight: Scalar = 0.715160
+        let bWeight: Scalar = 0.072169
+        return rWeight * self.r + gWeight * self.g + bWeight * self.b
     }
     
     @inlinable

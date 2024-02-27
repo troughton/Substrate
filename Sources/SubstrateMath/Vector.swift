@@ -77,11 +77,13 @@ public func reflect<S>(incident: SIMD3<S>, normal: SIMD3<S>) -> SIMD3<S> where S
 
 @inlinable
 public func refract<S>(incident I: SIMD3<S>, normal N: SIMD3<S>, eta: S) -> SIMD3<S> where S : BinaryFloatingPoint {
-    let k = 1.0 - eta * eta * (1.0 - dot(N, I) * dot(N, I))
+    let NdotI: S = dot(N, I)
+    let sinSq: S = (1.0 - NdotI * NdotI)
+    let k: S = 1.0 - eta * eta * sinSq
     if k < 0.0 {
         return .zero
     } else {
-        return eta * I - (eta * dot(N, I) + k.squareRoot()) * N
+        return eta * I - (eta * NdotI + k.squareRoot()) * N
     }
 }
 

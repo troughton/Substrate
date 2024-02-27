@@ -320,7 +320,9 @@ extension AffineMatrix2D where Scalar : Real {
             
             // Check for a coordinate system flip. If the determinant is -1,
             // then negate the matrix and the scaling factors.
-            if m[0, 0] * m[1, 1] - m[0, 1] * m[1, 0] < 0 {
+            let detXW: Scalar = m[0, 0] * m[1, 1]
+            let detYZ: Scalar = m[0, 1] * m[1, 0]
+            if detXW - detYZ < 0 {
                 scale *= -1
                 m[0] *= -1
                 m[1] *= -1
