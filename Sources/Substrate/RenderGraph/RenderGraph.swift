@@ -725,7 +725,7 @@ protocol _RenderGraphContext : Actor {
     nonisolated var transientRegistry: (any BackendTransientResourceRegistry)? { get }
     nonisolated var transientRegistryIndex : Int { get }
     nonisolated var renderGraphQueue: Queue { get }
-    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], waitingFor gpuQueueWaitIndices: QueueCommandIndices, onSwapchainPresented: RenderGraph.SwapchainPresentedCallback?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken
+    func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord], waitingFor gpuQueueWaitIndices: QueueCommandIndices, onSwapchainPresented: RenderGraph.SwapchainPresentedCallback?, onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) -> Void) async -> RenderGraphExecutionWaitToken
     func registerWindowTexture(for texture: Texture, swapchain: Swapchain) async
     func acquireResourceAccess() async
 }
@@ -1531,8 +1531,13 @@ public final class RenderGraph {
             let waitToken = await Self.$activeRenderGraph.withValue(self) {
                 return await self.context.executeRenderGraph(self, renderPasses: renderPasses, waitingFor: gpuQueueWaitIndices, onSwapchainPresented: onSwapchainPresented, onCompletion: { queueCommandRange in
                     self.didCompleteRender(queueCommandRange: queueCommandRange)
-                    for item in completionNotifyQueue {
-                        await item()
+                    
+                    if !completionNotifyQueue.isEmpty {
+                        Task.detached { [completionNotifyQueue] in
+                            for item in completionNotifyQueue {
+                                await item()
+                            }
+                        }
                     }
                 })
             }

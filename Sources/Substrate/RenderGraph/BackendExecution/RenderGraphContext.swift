@@ -102,7 +102,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         }
     }
     
-    func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, isLast: Bool, syncEvent: Backend.Event, onCompletion: (@Sendable () async -> Void)? = nil) async {
+    func submitCommandBuffer(_ commandBuffer: Backend.CommandBuffer, isLast: Bool, syncEvent: Backend.Event, onCompletion: (@Sendable () -> Void)? = nil) async {
         // Make sure that the sync event value is what we expect, so we don't update it past
         // the signal for another buffer before that buffer has completed.
         // We only need to do this if we haven't already waited in this command buffer for it.
@@ -118,23 +118,21 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         
         self.renderGraphQueue.submitCommand(commandIndex: queueCBIndex)
         commandBuffer.commit { commandBuffer in
-            Task.detached {
-                if let error = commandBuffer.error {
-                    print("Error executing command buffer \(queueCBIndex): \(error)")
-                }
-                
-                self.renderGraphQueue.setGPUStartTime(commandBuffer.gpuStartTime, for: queueCBIndex)
-                self.renderGraphQueue.setGPUEndTime(commandBuffer.gpuEndTime, for: queueCBIndex)
-                
-                self.renderGraphQueue.didCompleteCommand(queueCBIndex, completionTime: .now())
-                
-                if isLast {
-                    CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
-                    self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
-                    self.accessSemaphore?.signal()
-                }
-                await onCompletion?()
+            if let error = commandBuffer.error {
+                print("Error executing command buffer \(queueCBIndex): \(error)")
             }
+            
+            self.renderGraphQueue.setGPUStartTime(commandBuffer.gpuStartTime, for: queueCBIndex)
+            self.renderGraphQueue.setGPUEndTime(commandBuffer.gpuEndTime, for: queueCBIndex)
+            
+            self.renderGraphQueue.didCompleteCommand(queueCBIndex, completionTime: .now())
+            
+            if isLast {
+                CommandEndActionManager.didCompleteCommand(queueCBIndex, on: self.renderGraphQueue)
+                self.backend.didCompleteCommand(queueCBIndex, queue: self.renderGraphQueue, context: self)
+                self.accessSemaphore?.signal()
+            }
+            onCompletion?()
         }
     }
     
@@ -143,7 +141,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
     func executeRenderGraph(_ renderGraph: RenderGraph, renderPasses: [RenderPassRecord],
                             waitingFor gpuQueueWaitIndices: QueueCommandIndices,
                             onSwapchainPresented: RenderGraph.SwapchainPresentedCallback? = nil,
-                            onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) async -> Void) async -> RenderGraphExecutionWaitToken {
+                            onCompletion: @Sendable @escaping (_ queueCommandRange: Range<UInt64>) -> Void) async -> RenderGraphExecutionWaitToken {
         return await self.taskStream.enqueueAndWait {
             await self.acquireResourceAccess()
             await self.backend.reloadShaderLibraryIfNeeded()
@@ -249,7 +247,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
 
                     if let lastCommandBuffer = commandBuffers.last {
                         await self.submitCommandBuffer(lastCommandBuffer, isLast: true, syncEvent: self.syncEvent, onCompletion: {
-                            await onCompletion(commandBufferRange)
+                            onCompletion(commandBufferRange)
                         })
                     }
                     return RenderGraphExecutionWaitToken(queue: self.renderGraphQueue, executionIndex: self.queueCommandBufferIndex)
