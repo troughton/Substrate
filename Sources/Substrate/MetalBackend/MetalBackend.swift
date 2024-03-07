@@ -627,7 +627,7 @@ public final class MetalBackend : SpecificRenderBackend {
         let useResources: (inout [CompactedResourceCommand<MetalCompactedResourceCommandType>]) -> Void = { compactedResourceCommands in
             for (key, resources) in encoderUseResources where !resources.isEmpty {
                 let memory = allocator.allocate(capacity: resources.count) as UnsafeMutablePointer<Unmanaged<MTLResource>>
-                memory.assign(from: resources, count: resources.count)
+                memory.update(from: resources, count: resources.count)
                 let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: resources.count)
                 
                 compactedResourceCommands.append(.init(command: .useResources(bufferPointer, usage: key.usage, stages: key.stages), index: encoderUseResourceCommandIndex, order: .before))
@@ -659,7 +659,7 @@ public final class MetalBackend : SpecificRenderBackend {
             case .useResource(let resource, let usage, let stages, let allowReordering):
                 
                 var computedUsageType: MTLResourceUsage = []
-                if usage.contains(.inputAttachment) {
+                if usage.contains(.inputAttachment), !self.isAppleSiliconGPU {
                     assert(resource.type == .texture || resource.type == .hazardTrackingGroup)
                     computedUsageType.formUnion(.read)
                 } else {
@@ -673,6 +673,8 @@ public final class MetalBackend : SpecificRenderBackend {
                         computedUsageType.formUnion(.write)
                     }
                 }
+                
+                if computedUsageType.isEmpty { continue }
                 
                 if !allowReordering {
                     let memory: UnsafeMutablePointer<Unmanaged<MTLResource>>
