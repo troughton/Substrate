@@ -223,7 +223,7 @@ extension Rect where Scalar: BinaryFloatingPoint {
     
     @inlinable
     public func union(with otherRect: Rect) -> Rect {
-        return Rect(minPoint: pointwiseMin(self.minPoint, otherRect.minPoint), maxPoint: pointwiseMin(self.maxPoint, otherRect.maxPoint))
+        return Rect(minPoint: pointwiseMin(self.minPoint, otherRect.minPoint), maxPoint: pointwiseMax(self.maxPoint, otherRect.maxPoint))
     }
     
     @inlinable
@@ -351,7 +351,7 @@ extension Rect where Scalar: FixedWidthInteger {
     
     @inlinable
     public func union(with otherRect: Rect) -> Rect {
-        return Rect(minPoint: pointwiseMin(self.minPoint, otherRect.minPoint), maxPoint: pointwiseMin(self.maxPoint, otherRect.maxPoint))
+        return Rect(minPoint: pointwiseMin(self.minPoint, otherRect.minPoint), maxPoint: pointwiseMax(self.maxPoint, otherRect.maxPoint))
     }
 }
 
