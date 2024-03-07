@@ -601,8 +601,9 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
     }
     
     func updateQueueWaitCommandIndices(frameCommandInfo: inout FrameCommandInfo<Backend.RenderTargetDescriptor>, queue: Queue) {
+        // Wait for resources to become available.
         for i in frameCommandInfo.commandEncoders.indices {
-            for pass in frameCommandInfo.passes {
+            for pass in frameCommandInfo.passes[frameCommandInfo.commandEncoders[i].passRange] {
                 for readResource in pass.readResources {
                     if let readWaitIndicesPtr = readResource.withUnderlyingResource({ $0._readWaitIndicesPointer }) {
                         let readWaitIndices = QueueCommandIndex.AtomicRepresentation.snapshotIndices(at: readWaitIndicesPtr, ordering: .relaxed)
@@ -626,7 +627,7 @@ final class ResourceCommandGenerator<Backend: SpecificRenderBackend> {
         for i in frameCommandInfo.commandEncoders.indices {
             let encoderSignalValue = frameCommandInfo.globalCommandBufferIndex(frameIndex: frameCommandInfo.commandEncoders[i].commandBufferIndex)
             
-            for pass in frameCommandInfo.passes {
+            for pass in frameCommandInfo.passes[frameCommandInfo.commandEncoders[i].passRange] {
                 for readResource in pass.readResources {
                     readResource[waitIndexFor: queue, accessType: .write] = encoderSignalValue
                 }
