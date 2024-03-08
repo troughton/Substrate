@@ -24,7 +24,7 @@ public struct TextureSubresourceRange {
 }
 
 public struct ResourceUsage {
-    public enum Subresource {
+    public enum Subresources {
         case wholeResource
         case bufferRange(Range<Int>)
         case textureSlices(TextureSubresourceRange)
@@ -33,9 +33,10 @@ public struct ResourceUsage {
     public var resource: Resource
     public var type: ResourceUsageType
     public var stages: RenderStages // empty means the default for the pass.
-    public var subresources: [Subresource]
+    public var subresources: Subresources
     
-    public init(resource: Resource, usage type: ResourceUsageType, subresources: [Subresource] = [.wholeResource], stages: RenderStages = []) {
+    @inlinable 
+    public init(resource: Resource, usage type: ResourceUsageType, subresources: Subresources = .wholeResource, stages: RenderStages = []) {
         self.resource = resource
         self.subresources = subresources
         self.stages = stages
@@ -53,34 +54,40 @@ extension ResourceUsage : CustomStringConvertible {
 }
 
 extension ResourceProtocol {
-    public func `as`(_ type: ResourceUsageType, subresources: [ResourceUsage.Subresource] = [.wholeResource], stages: RenderStages = []) -> ResourceUsage {
+    @inlinable 
+    public func `as`(_ type: ResourceUsageType, subresources: ResourceUsage.Subresources = .wholeResource, stages: RenderStages = []) -> ResourceUsage {
         return ResourceUsage(resource: Resource(self), usage: type, subresources: subresources, stages: stages)
     }
 }
 
 extension ArgumentBuffer {
+    @inlinable 
     public func `as`(_ type: ArgumentBufferUsage, stages: RenderStages = []) -> ResourceUsage {
-        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: [.wholeResource], stages: stages)
+        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: .wholeResource, stages: stages)
     }
 }
 
 extension Buffer {
+    @inlinable 
     public func `as`(_ type: BufferUsage, byteRange: Range<Int>? = nil, stages: RenderStages = []) -> ResourceUsage {
-        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: byteRange.map { [.bufferRange($0)] } ?? [.wholeResource], stages: stages)
+        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: byteRange.map { .bufferRange($0) } ?? .wholeResource, stages: stages)
     }
 }
 
 extension Texture {
-    public func `as`(_ type: TextureUsage, subresources: [TextureSubresourceRange]? = nil, stages: RenderStages = []) -> ResourceUsage {
-        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: subresources?.map { .textureSlices($0) } ?? [.wholeResource], stages: stages)
+    @inlinable 
+    public func `as`(_ type: TextureUsage, subresources: TextureSubresourceRange? = nil, stages: RenderStages = []) -> ResourceUsage {
+        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: subresources.map { .textureSlices($0) } ?? .wholeResource, stages: stages)
     }
     
+    @inlinable 
     public func `as`(_ type: TextureUsage, slice: Int, mipLevel: Int, stages: RenderStages = []) -> ResourceUsage {
-        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: [.textureSlices(.init(slice: slice, mipLevel: mipLevel))], stages: stages)
+        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: .textureSlices(.init(slice: slice, mipLevel: mipLevel)), stages: stages)
     }
     
+    @inlinable 
     public func `as`(_ type: TextureUsage, slices: Range<Int>, mipLevels: Range<Int> = 0..<1, stages: RenderStages = []) -> ResourceUsage {
-        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: [.textureSlices(.init(slices: slices, mipLevels: mipLevels))], stages: stages)
+        return ResourceUsage(resource: Resource(self), usage: ResourceUsageType(type), subresources: .textureSlices(.init(slices: slices, mipLevels: mipLevels)), stages: stages)
     }
 }
 
@@ -99,22 +106,20 @@ public struct RecordedResourceUsage {
         self.usage = usage
         
         var activeRange = ActiveResourceRange.inactive
-        if usage.subresources.isEmpty {
+        if case .wholeResource = usage.subresources {
             activeRange = .fullResource
         } else {
             var textureMask = SubresourceMask.none
-            for subresource in usage.subresources {
-                switch subresource {
-                case .wholeResource:
-                    activeRange = .fullResource
-                case .bufferRange(let range):
-                    activeRange.formUnion(with: .buffer(range), resource: usage.resource, allocator: allocator)
-                case .textureSlices(let textureRange):
-                    guard let texture = Texture(usage.resource) else { break }
-                    for mipLevel in textureRange.mipLevels {
-                        for slice in textureRange.slices {
-                            textureMask[slice: slice, level: mipLevel, descriptor: texture.descriptor, allocator: allocator] = true
-                        }
+            switch usage.subresources {
+            case .wholeResource:
+                activeRange = .fullResource
+            case .bufferRange(let range):
+                activeRange.formUnion(with: .buffer(range), resource: usage.resource, allocator: allocator)
+            case .textureSlices(let textureRange):
+                guard let texture = Texture(usage.resource) else { break }
+                for mipLevel in textureRange.mipLevels {
+                    for slice in textureRange.slices {
+                        textureMask[slice: slice, level: mipLevel, descriptor: texture.descriptor, allocator: allocator] = true
                     }
                 }
             }

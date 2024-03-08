@@ -39,10 +39,3 @@ final class ComputePipelineDescriptorBox {
         self.pipelineDescriptor = pipelineDescriptor
     }
 }
-
-extension ChunkArray where Element == (Resource, ResourceUsage) {
-    @inlinable
-    var pointerToLastUsage: UnsafeMutablePointer<ResourceUsage> {
-        return UnsafeMutableRawPointer(self.pointerToLast).advanced(by: MemoryLayout<Resource>.stride).assumingMemoryBound(to: ResourceUsage.self)
-    }
-}

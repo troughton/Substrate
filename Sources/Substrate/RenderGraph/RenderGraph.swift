@@ -118,7 +118,7 @@ extension DrawRenderPass {
     }
     
     @inlinable
-    public var renderTargetsDescriptor : RenderTargetDescriptor {
+    public var renderTargetsDescriptor : RenderTargetsDescriptor {
         return self.renderTargetDescriptor
     }
     
@@ -133,42 +133,27 @@ extension DrawRenderPass {
     }
     
     public var inferredResources: [ResourceUsage] {
-        let declaredResources = self.resources.lazy.compactMap { resource in
-            (resource.resource, resource)
-        }
-        let resources = [Resource: ResourceUsage](declaredResources, uniquingKeysWith: { a, b in
-            var result = a
-            result.type.formUnion(b.type)
-            result.subresources.append(contentsOf: b.subresources)
-            return result
-        })
-        
-        var inferredResources = resources
+        let declaredResources = self.resources
+        var inferredResources = declaredResources
         
         let renderTargets = self.renderTargetsDescriptor
         for attachment in renderTargets.colorAttachments {
-            if let attachment = attachment, resources[Resource(attachment.texture)] == nil {
+            if let attachment = attachment, !declaredResources.contains(where: { $0.resource == Resource(attachment.texture) }) {
                 let subresource = TextureSubresourceRange(slice: attachment.slice, mipLevel: attachment.level)
-                
-                inferredResources[Resource(attachment.texture), default: attachment.texture.as(.colorAttachment, subresources: [], stages: .fragment)]
-                    .subresources.append(.textureSlices(subresource))
+                inferredResources.append(attachment.texture.as(.colorAttachment, subresources: .textureSlices(subresource), stages: .fragment))
             }
         }
         
-        if let attachment = renderTargets.depthAttachment, resources[Resource(attachment.texture)] == nil {
+        if let attachment = renderTargets.depthAttachment, !declaredResources.contains(where: { $0.resource == Resource(attachment.texture) }) {
             let subresource = TextureSubresourceRange(slice: attachment.slice, mipLevel: attachment.level)
-            
-            inferredResources[Resource(attachment.texture), default: attachment.texture.as(.depthStencilAttachment, subresources: [], stages: [.vertex, .fragment])]
-                .subresources.append(.textureSlices(subresource))
+            inferredResources.append(attachment.texture.as(.depthStencilAttachment, subresources: .textureSlices(subresource), stages: [.vertex, .fragment]))
         }
         
-        if let attachment = renderTargets.stencilAttachment, resources[Resource(attachment.texture)] == nil {
+        if let attachment = renderTargets.stencilAttachment, !declaredResources.contains(where: { $0.resource == Resource(attachment.texture) }) {
             let subresource = TextureSubresourceRange(slice: attachment.slice, mipLevel: attachment.level)
-            
-            inferredResources[Resource(attachment.texture), default: attachment.texture.as(.depthStencilAttachment, subresources: [], stages: [.vertex, .fragment])]
-                .subresources.append(.textureSlices(subresource))
+            inferredResources.append(attachment.texture.as(.depthStencilAttachment, subresources: .textureSlices(subresource), stages: [.vertex, .fragment]))
         }
-        return Array(inferredResources.values)
+        return inferredResources
     }
     
     func renderTargetsDescriptorForActiveAttachments(passIndex: Int) -> RenderTargetsDescriptor {
