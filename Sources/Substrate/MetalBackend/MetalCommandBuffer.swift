@@ -90,7 +90,7 @@ final class MetalCommandBuffer: BackendCommandBuffer {
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
                 renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                let encoderImpl = MetalRenderCommandEncoder(passRecord: passRecord, encoder: renderEncoder, usedResources: encoderUsedResources, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                let encoderImpl = MetalRenderCommandEncoder(passRecord: passRecord, encoder: renderEncoder, usedResources: encoderUsedResources, defaultDepthStencilState: self.backend.stateCaches.depthStencilCache.defaultDepthState, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 let encoder = RenderCommandEncoder(renderPass: (passRecord.pass as! DrawRenderPass), passRecord: passRecord, impl: encoderImpl, renderTargetsDescriptor: renderTargetsDescriptor.descriptor)
                 await (passRecord.pass as! DrawRenderPass).execute(renderCommandEncoder: encoder)
                 encoder.endEncoding()

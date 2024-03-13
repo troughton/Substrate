@@ -12,15 +12,21 @@ import Metal
 final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     let encoder: MTLRenderCommandEncoder
     let usedResources: Set<UnsafeMutableRawPointer>
+    let defaultDepthStencilState: MTLDepthStencilState
     let isAppleSiliconGPU: Bool
     
     var inputAttachmentBarrierStages: (after: MTLRenderStages, before: MTLRenderStages)?
     
     private var baseBufferOffsets = [Int](repeating: 0, count: 31 * 5) // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     
-    init(passRecord: RenderPassRecord, encoder: MTLRenderCommandEncoder, usedResources: Set<UnsafeMutableRawPointer>, isAppleSiliconGPU: Bool) {
+    init(passRecord: RenderPassRecord, 
+         encoder: MTLRenderCommandEncoder,
+         usedResources: Set<UnsafeMutableRawPointer>,
+         defaultDepthStencilState: MTLDepthStencilState,
+         isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.usedResources = usedResources
+        self.defaultDepthStencilState = defaultDepthStencilState
         self.isAppleSiliconGPU = isAppleSiliconGPU
         
         if isAppleSiliconGPU {
@@ -290,6 +296,10 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
             encoder.setDepthStencilState($0)
         }
         encoder.setDepthClipMode(MTLDepthClipMode(depthStencilState.descriptor.depthClipMode))
+    }
+    
+    func setDefaultDepthStencilState() {
+        encoder.setDepthStencilState(self.defaultDepthStencilState)
     }
     
     func setStencilReferenceValue(_ referenceValue: UInt32) {

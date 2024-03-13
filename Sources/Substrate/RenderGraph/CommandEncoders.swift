@@ -290,6 +290,7 @@ protocol RenderCommandEncoderImpl: ResourceBindingEncoderImpl {
     func setScissorRect(_ rect: ScissorRect)
     func setRenderPipelineState(_ pipelineState: RenderPipelineState)
     func setDepthStencilState(_ depthStencilState: DepthStencilState)
+    func setDefaultDepthStencilState()
     func setStencilReferenceValue(_ referenceValue: UInt32)
     func setStencilReferenceValues(front frontReferenceValue: UInt32, back backReferenceValue: UInt32)
     
@@ -354,6 +355,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         static let triangleFillMode = DrawDynamicState(rawValue: 1 << 4)
         static let depthBias = DrawDynamicState(rawValue: 1 << 5)
         static let stencilReferenceValue = DrawDynamicState(rawValue: 1 << 6)
+        static let depthStencil = DrawDynamicState(rawValue: 1 << 7)
     }
     
     let drawRenderPass : DrawRenderPass
@@ -425,6 +427,7 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
     }
     
     public func setDepthStencilState(_ depthStencilState: DepthStencilState) {
+        self.nonDefaultDynamicState.formUnion(.depthStencil)
         impl.setDepthStencilState(depthStencilState)
     }
     
@@ -534,6 +537,9 @@ public class RenderCommandEncoder : ResourceBindingEncoder, AnyRenderCommandEnco
         }
         if self.nonDefaultDynamicState.contains(.stencilReferenceValue) {
             self.setStencilReferenceValue(0)
+        }
+        if self.nonDefaultDynamicState.contains(.depthStencil) {
+            impl.setDefaultDepthStencilState()
         }
         
         super.endEncoding()
