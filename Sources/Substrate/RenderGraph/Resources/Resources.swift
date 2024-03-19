@@ -88,17 +88,29 @@ public struct RenderStages : OptionSet, Hashable {
 public struct ResourceFlags : OptionSet {
     public let rawValue: UInt16
     
+    @inlinable @inline(__always)
     public init(rawValue: UInt16) {
         self.rawValue = rawValue
     }
     
-    public static let persistent = ResourceFlags(rawValue: 1 << 0)
-    public static let windowHandle = ResourceFlags(rawValue: 1 << 1)
-    public static let historyBuffer = ResourceFlags(rawValue: 1 << 2)
-    public static let externalOwnership = ResourceFlags(rawValue: (1 << 3) | (1 << 0))
-    public static let immutableOnceInitialised = ResourceFlags(rawValue: 1 << 4)
+    @inlinable
+    public static var persistent: ResourceFlags { ResourceFlags(rawValue: 1 << 0) }
+    
+    @inlinable
+    public static var windowHandle: ResourceFlags { ResourceFlags(rawValue: 1 << 1) }
+    
+    @inlinable
+    public static var historyBuffer: ResourceFlags { ResourceFlags(rawValue: 1 << 2) }
+    
+    @inlinable
+    public static var externalOwnership: ResourceFlags { ResourceFlags(rawValue: 1 << 3) }
+    
+    @inlinable
+    public static var immutableOnceInitialised: ResourceFlags { ResourceFlags(rawValue: 1 << 4) }
+    
     /// If this resource is a view into another resource.
-    public static let resourceView = ResourceFlags(rawValue: 1 << 5)
+    @inlinable
+    public static var resourceView: ResourceFlags { ResourceFlags(rawValue: 1 << 5) }
 }
 
 public struct ResourceStateFlags : OptionSet {
@@ -769,47 +781,47 @@ extension Resource : CustomHashable {
 extension ResourceProtocol {
     public typealias Handle = UInt64
     
-    @inlinable
+    @inlinable @inline(__always)
     public static var typeBitsRange : Range<Int> { return 56..<64 }
     
-    @inlinable
+    @inlinable @inline(__always)
     public static var flagBitsRange : Range<Int> { return 40..<56 }
     
-    @inlinable
+    @inlinable @inline(__always)
     public static var generationBitsRange : Range<Int> { return 32..<40 }
     
-    @inlinable
+    @inlinable @inline(__always)
     public static var transientRegistryIndexBitsRange : Range<Int> { return 28..<32 }
     
-    @inlinable
+    @inlinable @inline(__always)
     public static var indexBitsRange : Range<Int> { return 0..<28 }
     
-    @inlinable
+    @inlinable @inline(__always)
     public var type : ResourceType {
         return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.typeBitsRange)))!
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public var flags : ResourceFlags {
         return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.flagBitsRange)))
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public var generation : UInt8 {
         return UInt8(truncatingIfNeeded: self.handle.bits(in: Self.generationBitsRange))
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public var transientRegistryIndex : Int {
         return Int(self.handle.bits(in: Self.transientRegistryIndexBitsRange))
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public var index : Int {
         return Int(truncatingIfNeeded: self.handle.bits(in: Self.indexBitsRange))
     }
     
-    @inlinable
+    @inlinable @inline(__always)
     public var _usesPersistentRegistry : Bool {
         if self.flags.contains(.persistent) || self.flags.contains(.historyBuffer) {
             return true
