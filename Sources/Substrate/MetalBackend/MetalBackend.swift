@@ -47,7 +47,9 @@ extension MTLHazardTrackingMode {
 extension MTLDevice {
     @inlinable
     public var isAppleSiliconGPU: Bool {
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+        #if targetEnvironment(simulator)
+        return false
+        #elseif (os(iOS) || os(tvOS) || os(watchOS)) && !(targetEnvironment(macCatalyst) || targetEnvironment(simulator))
         return true
         #else
         if #available(macOS 11.0, macCatalyst 14.0, *) {
@@ -291,7 +293,7 @@ public final class MetalBackend : SpecificRenderBackend {
     }
     
     public var hasUnifiedMemory: Bool {
-        #if (os(iOS) || os(tvOS) || os(watchOS)) && !targetEnvironment(macCatalyst)
+        #if (os(iOS) || os(tvOS) || os(watchOS)) && !(targetEnvironment(macCatalyst) || targetEnvironment(simulator))
         return true
         #else
         if #available(OSX 10.15, *) {
