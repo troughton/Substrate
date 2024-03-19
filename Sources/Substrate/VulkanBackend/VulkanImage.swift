@@ -7,7 +7,7 @@
 
 #if canImport(Vulkan)
 import Vulkan
-import SubstrateCExtras
+@_implementationOnly import SubstrateCExtras
 import SubstrateUtilities
 
 extension VkImageViewType : Hashable {

@@ -7,7 +7,7 @@
 
 #if canImport(Vulkan)
 import Vulkan
-import SubstrateCExtras
+@_implementationOnly import SubstrateCExtras
 
 struct VulkanBufferDescriptor : Equatable {
     var flags : VkBufferCreateFlags

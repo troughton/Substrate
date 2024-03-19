@@ -7,7 +7,7 @@
 
 #if canImport(Vulkan)
 import Vulkan
-import SubstrateCExtras
+@_implementationOnly import SubstrateCExtras
 
 final class VulkanFramebuffer {
     let device : VulkanDevice

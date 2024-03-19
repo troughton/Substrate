@@ -6,7 +6,6 @@
 //
 
 import SubstrateUtilities
-import SubstrateCExtras
 
 // This 'PerformOrder' type is necessary to make sure the command goes to the right Command Encoder
 @usableFromInline enum PerformOrder : Comparable {

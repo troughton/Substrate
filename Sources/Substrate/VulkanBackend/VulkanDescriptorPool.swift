@@ -7,7 +7,7 @@
 
 #if canImport(Vulkan)
 import Vulkan
-import SubstrateCExtras
+@_implementationOnly import SubstrateCExtras
 
 final class VulkanDescriptorPool {
     public static let maxSetsPerPool : UInt32 = 64

@@ -8,7 +8,7 @@
 #if canImport(Vulkan)
 import Vulkan
 import Dispatch
-import SubstrateCExtras
+@_implementationOnly import SubstrateCExtras
 import SubstrateUtilities
 
 extension VkImageSubresourceRange {

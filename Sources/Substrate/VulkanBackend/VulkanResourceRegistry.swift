@@ -8,7 +8,7 @@
 #if canImport(Vulkan)
 import Vulkan
 import SubstrateUtilities
-import SubstrateCExtras
+@_implementationOnly import SubstrateCExtras
 import Dispatch
 
 class VulkanHeap {} // Just a stub for now.

@@ -8,7 +8,7 @@
 #if canImport(Vulkan)
 import Vulkan
 import Foundation
-import SubstrateCExtras
+@_implementationOnly import SubstrateCExtras
 
 extension String {
     init<T>(cStringTuple: T) {

@@ -7,7 +7,7 @@
 
 #if canImport(Vulkan)
 import Vulkan
-import SubstrateCExtras
+@_implementationOnly import SubstrateCExtras
 
 extension ResourceBindingPath {
     fileprivate static let setIndexRange = 56..<64

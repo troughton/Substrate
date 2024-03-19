@@ -1,6 +1,6 @@
 #if canImport(Vulkan)
 import Vulkan
-import SubstrateCExtras
+@_implementationOnly import SubstrateCExtras
 import SPIRV_Cross
 
 // Must be kept in sync with VkReflectionContext
