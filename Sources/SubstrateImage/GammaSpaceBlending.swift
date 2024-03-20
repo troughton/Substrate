@@ -71,7 +71,6 @@ extension Image where ComponentType == UInt8 {
 }
 
 extension Image where ComponentType == UInt8 {
-    @_assemblyVision
     private func _convertPremultSRGBBlendedSRGBToPremultLinearBlendedSRGB() {
         guard let alphaChannel = self.alphaChannelIndex else { preconditionFailure() }
         for y in 0..<self.height {
