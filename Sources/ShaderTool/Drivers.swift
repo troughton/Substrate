@@ -67,6 +67,19 @@ enum DriverError : Error {
 }
 
 fileprivate func findExecutable(_ name: String) -> URL? {
+#if os(Windows)
+    let name = name + ".exe"
+#endif
+    
+    // Check next to the ShaderTool executable.
+    if let executableURL = Bundle.main.executableURL {
+        let parentURL = executableURL.deletingLastPathComponent()
+        let testURL = parentURL.appendingPathComponent(name)
+        if FileManager.default.fileExists(atPath: testURL.path) {
+            return testURL
+        }
+    }
+    
     let task = Process()
     task.executableURL = URL(fileURLWithPath: "/usr/bin/which")
     task.arguments = [name]  

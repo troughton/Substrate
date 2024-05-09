@@ -167,6 +167,7 @@ final class ShaderCompiler {
     
     let sourceFiles : [DXCSourceFile]
     let targets : [Target]
+    let reflectionOnlyTargets: Set<Target>
     
     let dxcDriver : DXCDriver
     let spirvOptDriver : SPIRVOptDriver?
@@ -178,7 +179,7 @@ final class ShaderCompiler {
     
     var spirvCompilers : [SPIRVCompiler] = []
     
-    init(directory: URL, reflectionFile: URL? = nil, targets: [Target] = [.defaultTarget], compileWithDebugInfo: Bool, legalizeHLSL: Bool, invariantPosition: Bool) throws {
+    init(directory: URL, reflectionFile: URL? = nil, targets: [Target] = [.defaultTarget], reflectionOnlyTargets: [Target], compileWithDebugInfo: Bool, legalizeHLSL: Bool, invariantPosition: Bool) throws {
         self.baseDirectory = directory
         self.sourceDirectory = directory.appendingPathComponent("Source/RenderPasses")
         self.reflectionFile = reflectionFile
@@ -193,6 +194,10 @@ final class ShaderCompiler {
         }
         
         self.targets = targets
+        
+        var reflectionOnlyTargetsSet = Set(reflectionOnlyTargets)
+        reflectionOnlyTargetsSet.subtract(targets)
+        self.reflectionOnlyTargets = reflectionOnlyTargetsSet
 
         self.dxcDriver = try DXCDriver()
         
@@ -261,7 +266,7 @@ final class ShaderCompiler {
             self.spirvCompilers = spirvFiles.compactMap { file in
                 guard file.exists else { return nil }
                 do {
-                    return try SPIRVCompiler(file: file, context: self.context, forceInvariantPosition: self.invariantPosition)
+                    return try SPIRVCompiler(file: file, context: self.context, forceInvariantPosition: self.invariantPosition, reflectionOnly: self.reflectionOnlyTargets.contains(file.target))
                 } catch {
                     print("Error generating SPIRV compiler for file \(file): \(error)")
                     return nil

@@ -8,7 +8,7 @@
 import Foundation
 import SPIRV_Cross
 
-enum Target: Equatable {
+enum Target: Hashable {
     enum MetalPlatform: String, Hashable {
         case macOS
         case macOSAppleSilicon
@@ -274,6 +274,8 @@ final class MetalCompiler : TargetCompiler {
             do {
                 // Generate the compiled source unconditionally, since we need it to compute bindings for reflection.
                 let compiledSource = try compiler.compiledSource()
+                
+                guard !compiler.reflectionOnly else { return }
                 
                 if metalFileURL.needsGeneration(sourceFile: compiler.file.url) {
                     print("\(self.target): Compiling \(compiler.file.url.lastPathComponent)")

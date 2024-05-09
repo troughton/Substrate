@@ -45,15 +45,17 @@ final class SPIRVCompiler {
     let file : SPIRVFile
     let compiler : spvc_compiler
     let forceInvariantPosition: Bool
+    let reflectionOnly: Bool
     var currentEntryPoint : EntryPoint? = nil
     
     var activeResourceIds : Set<SpvId> = []
     var shaderResources : spvc_resources? = nil
     
-    init(file: SPIRVFile, context: SPIRVContext, forceInvariantPosition: Bool) throws {
+    init(file: SPIRVFile, context: SPIRVContext, forceInvariantPosition: Bool, reflectionOnly: Bool) throws {
         self.context = context
         self.file = file
         self.forceInvariantPosition = forceInvariantPosition
+        self.reflectionOnly = reflectionOnly
         
         let spv = try Data(contentsOf: file.url)
         

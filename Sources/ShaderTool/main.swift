@@ -53,6 +53,9 @@ struct ShaderTool: ParsableCommand {
     @Option(help: "The targets to compile for.")
     var target: [Target] = []
     
+    @Option(help: "Targets to include in the shader reflection but which should not be fully compiled.")
+    var reflectionTarget: [Target] = []
+    
     @Flag(help: "Compile the shaders with debug information.")
     var debug: Bool = false
     
@@ -72,6 +75,7 @@ struct ShaderTool: ParsableCommand {
         let compiler = try ShaderCompiler(directory: URL(fileURLWithPath: shaderDirectory),
                                           reflectionFile: reflectionURL,
                                           targets: target.isEmpty ? [Target.defaultTarget] : target,
+                                          reflectionOnlyTargets: self.reflectionTarget,
                                           compileWithDebugInfo: self.debug,
                                           legalizeHLSL: !self.skipHLSLLegalization,
                                           invariantPosition: self.invariantPosition)
