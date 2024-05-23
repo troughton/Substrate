@@ -185,7 +185,7 @@ extension Image {
                 guard let mtlBuffer = (RenderBackend.renderDevice as! MTLDevice).makeBuffer(bytesNoCopy: UnsafeMutableRawPointer(mutating: bytes.baseAddress!), length: allocatedSize, options: .storageModeShared, deallocator: nil) else { return nil }
                 let substrateBuffer = Buffer(descriptor: BufferDescriptor(length: allocatedSize, storageMode: .shared, cacheMode: .defaultCache, usage: .blitSource), externalResource: mtlBuffer)
                 let token = await GPUResourceUploader.runBlitPass(using: [
-                    substrateBuffer.as(.shaderRead),
+                    substrateBuffer.as(.blitSource),
                     texture.as(.blitDestination, slice: slice, mipLevel: mipmapLevel),
                 ]) { bce in
                     bce.copy(from: substrateBuffer, sourceOffset: 0, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())
@@ -206,7 +206,7 @@ extension Image {
             }
             
             let executionToken = await GPUResourceUploader.runBlitPass(using: [
-                buffer.as(.shaderRead),
+                buffer.as(.blitSource),
                 texture.as(.blitDestination, slice: slice, mipLevel: mipmapLevel),
             ]) { bce in
                 bce.copy(from: buffer, sourceOffset: sourceOffset, sourceBytesPerRow: self.width * self.channelCount * MemoryLayout<T>.stride, sourceBytesPerImage: self.width * self.height * self.channelCount * MemoryLayout<T>.stride, sourceSize: region.size, to: texture, destinationSlice: slice, destinationLevel: mipmapLevel, destinationOrigin: Origin())

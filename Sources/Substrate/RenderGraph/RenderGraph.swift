@@ -553,6 +553,23 @@ final class CallbackAccelerationStructureRenderPass : AccelerationStructureRende
             return []
         }
     }
+    
+    var validResourceUsageTypes: ResourceUsageType {
+        switch self {
+        case .cpu:
+            return .cpuReadWrite
+        case .draw:
+            return [.shaderReadWrite, .colorAttachment, .depthStencilAttachment, .inputAttachment, .vertexBuffer, .indexBuffer, .constantBuffer, .indirectBuffer, .cpuReadWrite, .textureView]
+        case .compute:
+            return [.shaderReadWrite, .constantBuffer, .indirectBuffer, .cpuReadWrite, .textureView]
+        case .blit:
+            return [.blitSource, .blitDestination, .cpuReadWrite, .textureView]
+        case .accelerationStructure:
+            return [.shaderReadWrite, .cpuReadWrite]
+        case .external:
+            return ResourceUsageType(rawValue: ~0)
+        }
+    }
 }
 
 @usableFromInline
@@ -1142,18 +1159,23 @@ public final class RenderGraph {
         
         let resources = (passRecord.pass as? DrawRenderPass)?.inferredResources ?? passRecord.pass.resources
         
+        let validUsageTypes = passRecord.type.validResourceUsageTypes
+        
         for resourceUsage in resources {
+            assert(resourceUsage.type.isSubset(of: validUsageTypes), "Resource Usage Type \(resourceUsage.type.subtracting(validUsageTypes)) is not a valid usage for pass type \(passRecord.type)")
+            let type = resourceUsage.type.intersection(validUsageTypes)
+            
             let resource = resourceUsage.resource
             resource.markAsUsed(activeRenderGraphMask: 1 << self.queue.index)
-            if resourceUsage.type.isWrite {
+            if type.isWrite {
                 passRecord.writtenResources.insert(resource.resourceForUsageTracking)
             }
-            if resourceUsage.type.isRead {
+            if type.isRead {
                 passRecord.readResources.insert(resource.resourceForUsageTracking)
                 
                 // If we read a resource on the CPU in a pass,
                 // treat that as a GPU write for tracking purposes.
-                if resourceUsage.type.contains(.cpuRead),
+                if type.contains(.cpuRead),
                     resource.storageMode == .managed,
                    !hasUnifiedMemory {
                     passRecord.writtenResources.insert(resource.resourceForUsageTracking)
@@ -1183,24 +1205,25 @@ public final class RenderGraph {
         }
     }
     
-    func computePassRenderTargetIndices(passes: [DrawRenderPass?]) -> [Int] {
+    func computePassRenderTargetIndices(passes: [RenderPassRecord]) -> [Int] {
         var activeRenderTargets = [(index: Int, renderTargets: RenderTargetsDescriptor)]()
         
         var descriptorIndices = [Int](repeating: -1, count: passes.count)
         var nextDescriptorIndex = 0
         
         passLoop: for (passIndex, pass) in passes.enumerated() {
-            guard let pass = pass else { continue }
+            guard pass.type == .draw else { continue }
+            let drawRenderPass = pass.pass as! DrawRenderPass
             activeRenderTargets.reserveCapacity(passes.count)
             
             for i in activeRenderTargets.indices.reversed() {
-                if activeRenderTargets[i].renderTargets.tryMerge(withPass: pass) {
+                if activeRenderTargets[i].renderTargets.tryMerge(withPass: drawRenderPass) {
                     descriptorIndices[passIndex] = activeRenderTargets[i].index
                     continue passLoop
                 }
             }
             
-            activeRenderTargets.append((nextDescriptorIndex, pass.renderTargetsDescriptor))
+            activeRenderTargets.append((nextDescriptorIndex, drawRenderPass.renderTargetsDescriptor))
             descriptorIndices[passIndex] = nextDescriptorIndex
             nextDescriptorIndex += 1
         }
@@ -1313,7 +1336,7 @@ public final class RenderGraph {
         
         var addedToList = [Bool](repeating: false, count: renderPasses.count)
         var activePasses = [RenderPassRecord]()
-        let passRenderTargetIndices = self.computePassRenderTargetIndices(passes: renderPasses.map { $0.type == .draw ? ($0.pass! as! DrawRenderPass) : nil })
+        let passRenderTargetIndices = self.computePassRenderTargetIndices(passes: renderPasses)
         for i in (0..<renderPasses.count).reversed() where passHasSideEffects[i] {
             self.computeDependencyOrdering(passIndex: i, dependencyTable: dependencyTable, renderPasses: renderPasses, passRenderTargetIndices: passRenderTargetIndices, addedToList: &addedToList, activePasses: &activePasses, allocator: AllocatorType(allocator))
         }
