@@ -11,7 +11,10 @@ extension Target: ExpressibleByArgument {
     init?(argument: String) {
         let lowercasedArg = argument.lowercased()
         let versionStartIndex = lowercasedArg.firstIndex(where: { $0.isNumber })
-        let version = versionStartIndex.map { String(lowercasedArg[$0...]) }
+        var version = versionStartIndex.map { String(lowercasedArg[$0...]) }
+        version = version.map {
+            $0.contains(".") ? $0 : $0 + ".0"
+        }
         
         if lowercasedArg.starts(with: "macos-applesilicon") || lowercasedArg.starts(with: "macos-apple-silicon") {
             self = .metal(platform: .macOSAppleSilicon, deploymentTarget: version ?? "10.16")

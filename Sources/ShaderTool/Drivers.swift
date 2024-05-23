@@ -237,6 +237,9 @@ final class MetalDriver {
                          "-Wno-unused-const-variable", // Ignore warnings for unused function constants
                          "-Wno-unused-variable", // Ignore warnings for unused variables
             ]
+        if case .metal(.iOSSimulator, var deploymentTarget) = self.target {
+            arguments.append(contentsOf: ["-target", "air64-apple-ios\(deploymentTarget)-simulator"])
+        }
         if debug {
             arguments.append(contentsOf: ["-gline-tables-only", "-MO", "-frecord-sources"])
         }
@@ -259,8 +262,12 @@ final class MetalDriver {
     }
     
     func generateLibrary(airFiles: [URL], outputLibrary: URL) throws -> Process {
-        let arguments = ["-sdk", target.metalSDK!, "metallib",
-                         "-o", outputLibrary.path] + airFiles.map { $0.path }
+        var arguments = ["-sdk", target.metalSDK!, "metal",
+                         "-o", outputLibrary.path]
+        if case .metal(.iOSSimulator, var deploymentTarget) = self.target {
+            arguments.append(contentsOf: ["-target", "air64-apple-ios\(deploymentTarget)-simulator"])
+        }
+        arguments.append(contentsOf: airFiles.lazy.map { $0.path })
         return try Process.run(self.url, arguments: arguments, terminationHandler: nil)
     }
 }
