@@ -11,7 +11,7 @@ import Metal
 
 final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
     var descriptor : RenderTargetsDescriptor
-    var renderPasses = [(pass: DrawRenderPass, passIndex: Int)]()
+    private var renderPasses = [(pass: DrawRenderPass, passIndex: Int)]()
     
     var colorActions : [(MTLLoadAction, MTLStoreAction)] = []
     var depthActions : (MTLLoadAction, MTLStoreAction) = (.dontCare, .dontCare)
@@ -263,6 +263,8 @@ final class MetalRenderTargetDescriptor: BackendRenderTargetDescriptor {
         } else {
             self.stencilActions = (.dontCare, .dontCare)
         }
+        
+        self.renderPasses.removeAll()
     }
 }
 
