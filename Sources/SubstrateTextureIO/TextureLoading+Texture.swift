@@ -234,6 +234,8 @@ extension Image {
             throw TextureLoadingError.mismatchingDimensions(expected: Size(width: self.width, height: self.height), actual: texture.descriptor.size)
         }
         
+        guard !Task.isCancelled else { throw CancellationError() }
+        
         return await withTaskGroup(of: RenderGraphExecutionWaitToken.self) { taskGroup in
             if texture.descriptor.mipmapLevelCount > 1, case .cpu(let wrapMode, let filter) = mipGenerationMode {
                 let mips = self.generateMipChain(wrapMode: wrapMode, filter: filter, compressedBlockSize: 1, mipmapCount: texture.descriptor.mipmapLevelCount)
