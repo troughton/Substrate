@@ -315,6 +315,8 @@ extension ImageFileInfo {
             let cgImageSource = CGImageSourceCreateIncremental(options)
             var dataPrefixCount = 2048 // Start with a 2KB chunk. We only want to load the header.
             
+            var cfProperties: CFDictionary? = nil
+            
             loadLoop: repeat {
                 if Task.isCancelled { throw CancellationError() }
                 
@@ -330,19 +332,28 @@ extension ImageFileInfo {
                         .statusUnexpectedEOF:
                     throw ImageLoadingError.invalidData(message: "Invalid data or unexpected end of file")
                 case .statusIncomplete:
-                    if let _ = CGImageSourceCopyPropertiesAtIndex(cgImageSource, 0, options) {
+                    cfProperties = CGImageSourceCopyPropertiesAtIndex(cgImageSource, 0, options)
+                    
+                    if let properties = cfProperties,
+                       CFDictionaryGetValueIfPresent(properties, Unmanaged.passUnretained(kCGImagePropertyPixelWidth).toOpaque(), nil),
+                       CFDictionaryGetValueIfPresent(properties, Unmanaged.passUnretained(kCGImagePropertyPixelHeight).toOpaque(), nil),
+                       CFDictionaryGetValueIfPresent(properties, Unmanaged.passUnretained(kCGImagePropertyDepth).toOpaque(), nil),
+                       CFDictionaryGetValueIfPresent(properties, Unmanaged.passUnretained(kCGImagePropertyColorModel).toOpaque(), nil) {
                         break loadLoop
                     } else {
                         dataPrefixCount *= 2
                     }
                 case .statusComplete:
+                    cfProperties = CGImageSourceCopyPropertiesAtIndex(cgImageSource, 0, options)
                     break loadLoop
                 default:
                     throw ImageLoadingError.invalidData(message: "Unknown error in CGImageSource decoding")
                 }
             } while true
             
-            guard let properties = CGImageSourceCopyPropertiesAtIndex(cgImageSource, 0, options) as NSDictionary? else {
+            cfProperties = cfProperties ?? CGImageSourceCopyPropertiesAtIndex(cgImageSource, 0, options)
+            
+            guard let properties = cfProperties as NSDictionary? else {
                 throw ImageLoadingError.invalidData(message: "Unknown error in CGImageSource decoding")
             }
             
