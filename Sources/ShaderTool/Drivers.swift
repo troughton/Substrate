@@ -231,15 +231,36 @@ final class MetalDriver {
         self.target = target
     }
     
+    private var targetString: String {
+        guard case .metal(let platform, let deploymentTarget) = self.target else {
+            preconditionFailure()
+        }
+        
+        switch platform {
+        case .macOS, .macOSAppleSilicon:
+            return "air64-apple-macos\(deploymentTarget)"
+        case .iOS:
+            return "air64-apple-ios\(deploymentTarget)"
+        case .tvOS:
+            return "air64-apple-tvos\(deploymentTarget)"
+        case .visionOS:
+            return "air64-apple-xros\(deploymentTarget)"
+        case .iOSSimulator:
+            return "air64-apple-ios\(deploymentTarget)-simulator"
+        case .tvOSSimulator:
+            return "air64-apple-tvos\(deploymentTarget)-simulator"
+        case .visionOSSimulator:
+            return "air64-apple-xros\(deploymentTarget)-simulator"
+        }
+    }
+    
     func compileToAIR(sourceFile: URL, destinationFile: URL, withDebugInformation debug: Bool) throws -> Process {
         var arguments = ["-sdk", target.metalSDK!,
                          "metal", "-c", "-ffast-math",
                          "-Wno-unused-const-variable", // Ignore warnings for unused function constants
                          "-Wno-unused-variable", // Ignore warnings for unused variables
+                         "-target", self.targetString,
             ]
-        if case .metal(.iOSSimulator, var deploymentTarget) = self.target {
-            arguments.append(contentsOf: ["-target", "air64-apple-ios\(deploymentTarget)-simulator"])
-        }
         if debug {
             arguments.append(contentsOf: ["-gline-tables-only", "-MO", "-frecord-sources"])
         }
@@ -263,10 +284,8 @@ final class MetalDriver {
     
     func generateLibrary(airFiles: [URL], outputLibrary: URL) throws -> Process {
         var arguments = ["-sdk", target.metalSDK!, "metal",
-                         "-o", outputLibrary.path]
-        if case .metal(.iOSSimulator, var deploymentTarget) = self.target {
-            arguments.append(contentsOf: ["-target", "air64-apple-ios\(deploymentTarget)-simulator"])
-        }
+                         "-o", outputLibrary.path,
+                         "-target", self.targetString]
         arguments.append(contentsOf: airFiles.lazy.map { $0.path })
         return try Process.run(self.url, arguments: arguments, terminationHandler: nil)
     }
