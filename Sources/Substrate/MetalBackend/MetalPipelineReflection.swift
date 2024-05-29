@@ -182,8 +182,11 @@ final class MetalPipelineReflection : PipelineReflection {
                             argumentBufferBindings.append(ArgumentDescriptor(resourceType: .accelerationStructure, index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: .read))
                             
                         default:
-                            print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
-                            break
+                            if let dataType = DataType(dataType) {
+                                argumentBufferBindings.append(ArgumentDescriptor(resourceType: .inlineData(type: dataType), index: member.argumentIndex, arrayLength: 1, accessType: .read))
+                            } else {
+                                print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
+                            }
                         }
                     }
                     
@@ -207,8 +210,11 @@ final class MetalPipelineReflection : PipelineReflection {
                             argumentBufferBindings.append(ArgumentDescriptor(resourceType: .accelerationStructure, index: member.argumentIndex, arrayLength: 1, accessType: .read))
                             
                         default:
-                            print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
-                            break
+                            if let dataType = DataType(dataType) {
+                                argumentBufferBindings.append(ArgumentDescriptor(resourceType: .inlineData(type: dataType), index: member.argumentIndex, arrayLength: 1, accessType: .read))
+                            } else {
+                                print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
+                            }
                         }
                     }
                 }
@@ -308,8 +314,11 @@ final class MetalPipelineReflection : PipelineReflection {
                             argumentBufferBindings.append(ArgumentDescriptor(resourceType: .accelerationStructure, index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: .read))
                             
                         default:
-                            print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
-                            break
+                            if let dataType = DataType(arrayType.elementType) {
+                                argumentBufferBindings.append(ArgumentDescriptor(resourceType: .inlineData(type: dataType), index: member.argumentIndex, arrayLength: arrayType.arrayLength, accessType: .read))
+                            } else {
+                                print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
+                            }
                         }
                     }
                     
@@ -333,8 +342,11 @@ final class MetalPipelineReflection : PipelineReflection {
                             argumentBufferBindings.append(ArgumentDescriptor(resourceType: .accelerationStructure, index: member.argumentIndex, arrayLength: 1, accessType: .read))
                             
                         default:
-                            print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
-                            break
+                            if let dataType = DataType(dataType) {
+                                argumentBufferBindings.append(ArgumentDescriptor(resourceType: .inlineData(type: dataType), index: member.argumentIndex, arrayLength: member.arrayType()?.arrayLength ?? 1, accessType: .read))
+                            } else {
+                                print("MetalPipelineReflection: warning: unhandled argument at index \(member.argumentIndex)")
+                            }
                         }
                     }
                 }

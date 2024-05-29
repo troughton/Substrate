@@ -111,6 +111,129 @@ extension CPUCacheMode {
     }
 }
 
+extension DataType {
+    public init?(_ dataType: MTLDataType) {
+        switch dataType {
+        case .none:
+            self = .none
+        case .struct:
+            self = .struct
+        case .array:
+            self = .array
+        case .float:
+            self = .float
+        case .float2:
+            self = .float2
+        case .float3:
+            self = .float3
+        case .float4:
+            self = .float4
+        case .float2x2:
+            self = .float2x2
+        case .float2x3:
+            self = .float2x3
+        case .float2x4:
+            self = .float2x4
+        case .float3x2:
+            self = .float3x2
+        case .float3x3:
+            self = .float3x3
+        case .float3x4:
+            self = .float3x4
+        case .float4x2:
+            self = .float4x2
+        case .float4x3:
+            self = .float4x3
+        case .float4x4:
+            self = .float4x4
+        case .half:
+            self = .half
+        case .half2:
+            self = .half2
+        case .half3:
+            self = .half3
+        case .half4:
+            self = .half4
+        case .half2x2:
+            self = .half2x2
+        case .half2x3:
+            self = .half2x3
+        case .half2x4:
+            self = .half2x4
+        case .half3x2:
+            self = .half3x2
+        case .half3x3:
+            self = .half3x3
+        case .half3x4:
+            self = .half3x4
+        case .half4x2:
+            self = .half4x2
+        case .half4x3:
+            self = .half4x3
+        case .half4x4:
+            self = .half4x4
+        case .int:
+            self = .int
+        case .int2:
+            self = .int2
+        case .int3:
+            self = .int3
+        case .int4:
+            self = .int4
+        case .uint:
+            self = .uint
+        case .uint2:
+            self = .uint2
+        case .uint3:
+            self = .uint3
+        case .uint4:
+            self = .uint4
+        case .short:
+            self = .short
+        case .short2:
+            self = .short2
+        case .short3:
+            self = .short3
+        case .short4:
+            self = .short4
+        case .ushort:
+            self = .ushort
+        case .ushort2:
+            self = .ushort2
+        case .ushort3:
+            self = .ushort3
+        case .ushort4:
+            self = .ushort4
+        case .char:
+            self = .char
+        case .char2:
+            self = .char2
+        case .char3:
+            self = .char3
+        case .char4:
+            self = .char4
+        case .uchar:
+            self = .uchar
+        case .uchar2:
+            self = .uchar2
+        case .uchar3:
+            self = .uchar3
+        case .uchar4:
+            self = .uchar4
+        case .bool:
+            self = .bool
+        case .bool2:
+            self = .bool2
+        case .bool3:
+            self = .bool3
+        case .bool4:
+            self = .bool4
+        default:
+            return nil
+        }
+    }
+}
+
 extension TextureUsage {
     public init(_ usage: MTLTextureUsage) {
         self.init()

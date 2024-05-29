@@ -38,6 +38,7 @@ public struct ArgumentDescriptor: Hashable, Sendable {
     public var index: Int // VkDescriptorSetLayoutBinding.binding
     public var arrayLength: Int // VkDescriptorSetLayoutBinding.descriptorCount
     public var accessType: ResourceAccessType // VkDescriptorSetLayoutBinding.descriptorType
+    @usableFromInline var encodedBufferAlignment: Int
     @usableFromInline var encodedBufferOffset: Int
     @usableFromInline var encodedBufferStride: Int
     
@@ -48,8 +49,10 @@ public struct ArgumentDescriptor: Hashable, Sendable {
         self.accessType = accessType
         self.encodedBufferOffset = -1
         self.encodedBufferStride = 0
+        self.encodedBufferAlignment = 0
         
         let sizeAndAlign = RenderBackend._backend!.argumentBufferImpl.encodedBufferSizeAndAlign(forArgument: self)
+        self.encodedBufferAlignment = sizeAndAlign.alignment
         self.encodedBufferStride = sizeAndAlign.size.roundedUpToMultiple(of: sizeAndAlign.alignment)
     }
 }
@@ -87,14 +90,33 @@ public struct ArgumentBufferDescriptor: Hashable, Sendable {
         }
     }
     public var storageMode: StorageMode
-    @usableFromInline var bufferLength: Int
+    
+#if canImport(Metal) // Argument Buffer Array support
+    public var arrayLength: Int
+#endif
+    
+    @usableFromInline var _elementStride: Int
     
     @inlinable
-    public init(arguments: [ArgumentDescriptor], storageMode: StorageMode = .shared) {
+    public var bufferLength: Int {
+#if canImport(Metal) // Argument Buffer Array support
+        return self._elementStride * self.arrayLength
+#else
+        return self._elementStride
+#endif
+    }
+    
+    @inlinable
+    public init(arguments: [ArgumentDescriptor], storageMode: StorageMode = .shared, arrayLength: Int = 1) {
+#if !canImport(Metal)
+        precondition(arrayLength == 1, "Argument Buffer arrays are only supported on Metal.")
+#endif
+        
         self._arguments = arguments
+        self.arrayLength = arrayLength
         self.storageMode = storageMode
         
-        self.bufferLength = 0
+        self._elementStride = 0
         self.calculateBufferOffsets()
     }
     
@@ -102,17 +124,21 @@ public struct ArgumentBufferDescriptor: Hashable, Sendable {
     mutating func calculateBufferOffsets() {
         var offset = 0
         var nextIndex = 0
+        var maxAlign = 0
         for i in self._arguments.indices {
             precondition(self._arguments[i].index < 0 || self._arguments[i].index >= nextIndex, "Arguments must be in order of ascending index.")
             self._arguments[i].index = max(self._arguments[i].index, nextIndex)
             
-            offset = offset.roundedUpToMultiple(of: self._arguments[i].encodedBufferStride)
+            maxAlign = max(maxAlign, self._arguments[i].encodedBufferAlignment)
+            
+            offset = offset.roundedUpToMultiple(of: self._arguments[i].encodedBufferAlignment)
             self._arguments[i].encodedBufferOffset = offset
             nextIndex = self._arguments[i].index + self._arguments[i].arrayLength
             offset += self._arguments[i].encodedBufferStride * self._arguments[i].arrayLength
         }
         
-        self.bufferLength = offset
+        let elementStride = offset.roundedUpToMultiple(of: maxAlign)
+        self._elementStride = elementStride
     }
 }
 
@@ -240,6 +266,12 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
 #if canImport(Metal)
+    /// For Metal, argument buffers can be arrays; this lets you set the target array element to encode into.
+    public func setArrayElementForEncoding(_ encodingArrayElement: Int) {
+        precondition(encodingArrayElement >= 0 && encodingArrayElement < self.descriptor.arrayLength)
+        self[\.encodingByteOffsets] = self.descriptor._elementStride * encodingArrayElement
+    }
+    
     // For Metal: residency tracking.
     
     public var usedResources: HashSet<UnsafeMutableRawPointer> {
@@ -486,6 +518,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     let encoders : UnsafeMutablePointer<Unmanaged<MTLArgumentEncoder>?> // Some opaque backend type that can construct the argument buffer
     let usedResources: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     let usedHeaps: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
+    let encodingByteOffsets: UnsafeMutablePointer<Int>
     #endif
     
     @usableFromInline typealias Descriptor = ArgumentBufferDescriptor
@@ -499,6 +532,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.encoders = .allocate(capacity: capacity)
         self.usedResources = .allocate(capacity: capacity)
         self.usedHeaps = .allocate(capacity: capacity)
+        self.encodingByteOffsets = .allocate(capacity: capacity)
 #endif
     }
     
@@ -511,6 +545,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.encoders.deallocate()
         self.usedResources.deallocate()
         self.usedHeaps.deallocate()
+        self.encodingByteOffsets.deallocate()
 #endif
     }
     
@@ -523,6 +558,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.encoders.advanced(by: indexInChunk).initialize(to: nil)
         self.usedResources.advanced(by: indexInChunk).initialize(to: .init()) // TODO: pass in the appropriate allocator.
         self.usedHeaps.advanced(by: indexInChunk).initialize(to: .init())
+        self.encodingByteOffsets.advanced(by: indexInChunk).initialize(to: 0)
 #endif
     }
     
@@ -539,6 +575,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         }
         self.usedResources.advanced(by: index).deinitialize(count: count)
         self.usedHeaps.advanced(by: index).deinitialize(count: count)
+        self.encodingByteOffsets.advanced(by: index).deinitialize(count: count)
 #endif
     }
 }
