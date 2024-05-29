@@ -40,7 +40,7 @@ final actor CommandEndActionManager {
         self.deviceCommandEndActions.append(CommandEndAction(type: action, after: commandIndices))
     }
     
-    func enqueue(deviceAction: CommandEndAction) { // FIXME: Swift Assertion failed: (Layout->getElementOffset(F.LayoutFieldIndex) == F.Offset), function finish, file CoroFrame.cpp, line 771.
+    func enqueue(deviceAction: CommandEndAction) {
         self.deviceCommandEndActions.append(deviceAction)
     }
     
