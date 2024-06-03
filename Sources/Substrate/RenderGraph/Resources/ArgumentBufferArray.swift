@@ -33,15 +33,14 @@ public struct ArgumentBufferArray : ResourceProtocol, Collection {
         self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
     }
     
-    public init?(descriptor: ArgumentBufferDescriptor, arrayLength: Int) {
+    public init(descriptor: ArgumentBufferDescriptor, arrayLength: Int) {
         let flags : ResourceFlags = .persistent
         
         self = PersistentArgumentBufferArrayRegistry.instance.allocate(descriptor: ArgumentBufferArrayDescriptor(descriptor: descriptor, arrayLength: arrayLength), heap: nil, flags: flags)
         
-        if !RenderBackend.materialisePersistentResource(self) {
-            self.dispose()
-            return nil
-        }
+        let didAllocate = RenderBackend.materialisePersistentResource(self)
+        assert(didAllocate, "Allocation failed for persistent buffer \(self)")
+        if !didAllocate { self.dispose() }
     }
     
     public internal(set) var descriptor : ArgumentBufferDescriptor {
@@ -75,7 +74,7 @@ public struct ArgumentBufferArray : ResourceProtocol, Collection {
     }
     
     public subscript(position: Int) -> ArgumentBuffer {
-        precondition(position > 0 && position < self.arrayLength)
+        precondition(position >= 0 && position < self.arrayLength)
         return (self[\.argumentBuffers]! as UnsafeMutablePointer<ArgumentBuffer>)[position]
     }
     
@@ -152,7 +151,7 @@ struct ArgumentBufferArrayProperties: PersistentResourceProperties {
     @usableFromInline func deinitialize(from index: Int, count: Int) {
         for i in index..<(index + count) {
             for j in 0..<self.descriptors[i].arrayLength {
-                PersistentArgumentBufferRegistry.instance.disposeImmediately(self.argumentBuffers[i][j])
+                PersistentArgumentBufferRegistry.instance.disposeImmediately(self.argumentBuffers[i][j], disposeInBackend: false)
             }
             self.argumentBuffers[i].deallocate()
         }

@@ -38,17 +38,16 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
     }
     
     static func setBuffer(_ buffer: Buffer, offset: Int, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        let encodingOffset = argBuffer[\.encodingByteOffsets]
         if self.supportsResourceGPUAddresses {
             precondition(buffer[\.gpuAddresses] != 0, "Resource \(buffer) does not have a backing resource.")
             
             let gpuAddress = buffer[\.gpuAddresses] + UInt64(offset)
             
-            argBuffer[\.mappedContents]!.storeBytes(of: gpuAddress, toByteOffset: encodingOffset + argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
+            argBuffer[\.mappedContents]!.storeBytes(of: gpuAddress, toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
         } else {
             let argBufferMTL = argBuffer.mtlBuffer!
             let encoder = argBuffer[\.encoders]!.takeUnretainedValue()
-            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset + encodingOffset)
+            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset)
             
             let mtlBuffer = buffer.mtlBuffer!
             encoder.setBuffer(mtlBuffer.buffer, offset: mtlBuffer.offset + offset, index: index + arrayIndex)
@@ -62,14 +61,13 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
     }
     
     static func setTexture(_ texture: Texture, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        let encodingOffset = argBuffer[\.encodingByteOffsets]
         if self.supportsResourceGPUAddresses {
             precondition(texture[\.gpuAddresses] != 0, "Resource \(texture) does not have a backing resource.")
-            argBuffer[\.mappedContents]!.storeBytes(of: texture[\.gpuAddresses], toByteOffset: encodingOffset + argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
+            argBuffer[\.mappedContents]!.storeBytes(of: texture[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
         } else {
             let argBufferMTL = argBuffer.mtlBuffer!
             let encoder = argBuffer[\.encoders]!.takeUnretainedValue()
-            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset + encodingOffset)
+            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset)
             
             encoder.setTexture(texture.mtlTexture!, index: index + arrayIndex)
         }
@@ -82,14 +80,13 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
     }
     
     static func setAccelerationStructure(_ structure: AccelerationStructure, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        let encodingOffset = argBuffer[\.encodingByteOffsets]
         if self.supportsResourceGPUAddresses {
             precondition(structure[\.gpuAddresses] != 0, "Resource \(structure) does not have a backing resource.")
-            argBuffer[\.mappedContents]!.storeBytes(of: structure[\.gpuAddresses], toByteOffset: encodingOffset + argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
+            argBuffer[\.mappedContents]!.storeBytes(of: structure[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
         } else {
             let argBufferMTL = argBuffer.mtlBuffer!
             let encoder = argBuffer[\.encoders]!.takeUnretainedValue()
-            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset + encodingOffset)
+            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset)
             
             encoder.setAccelerationStructure(structure.mtlAccelerationStructure!, index: index + arrayIndex)
         }
@@ -102,14 +99,13 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
     }
     
     static func setVisibleFunctionTable(_ table: VisibleFunctionTable, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        let encodingOffset = argBuffer[\.encodingByteOffsets]
         if self.supportsResourceGPUAddresses {
             precondition(table[\.gpuAddresses] != 0, "Resource \(table) does not have a backing resource.")
-            argBuffer[\.mappedContents]!.storeBytes(of: table[\.gpuAddresses], toByteOffset: encodingOffset + argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
+            argBuffer[\.mappedContents]!.storeBytes(of: table[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
         } else {
             let argBufferMTL = argBuffer.mtlBuffer!
             let encoder = argBuffer[\.encoders]!.takeUnretainedValue()
-            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset + encodingOffset)
+            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset)
             
             encoder.setVisibleFunctionTable(table.mtlVisibleFunctionTable!, index: index + arrayIndex)
         }
@@ -122,15 +118,14 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
     }
     
     static func setIntersectionFunctionTable(_ table: IntersectionFunctionTable, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        let encodingOffset = argBuffer[\.encodingByteOffsets]
         if self.supportsResourceGPUAddresses {
             precondition(table[\.gpuAddresses] != 0, "Resource \(table) does not have a backing resource.")
             
-            argBuffer[\.mappedContents]!.storeBytes(of: table[\.gpuAddresses], toByteOffset: encodingOffset + argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
+            argBuffer[\.mappedContents]!.storeBytes(of: table[\.gpuAddresses], toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: UInt64.self)
         } else {
             let argBufferMTL = argBuffer.mtlBuffer!
             let encoder = argBuffer[\.encoders]!.takeUnretainedValue()
-            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset + encodingOffset)
+            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset)
             
             encoder.setIntersectionFunctionTable(table.mtlIntersectionFunctionTable!, index: index + arrayIndex)
         }
@@ -143,22 +138,21 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
     }
     
     static func setSampler(_ sampler: SamplerState, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        let encodingOffset = argBuffer[\.encodingByteOffsets]
         let state = Unmanaged<MTLSamplerState>.fromOpaque(UnsafeRawPointer(sampler.state)).takeUnretainedValue()
         
         if self.supportsResourceGPUAddresses, #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
-            argBuffer[\.mappedContents]!.storeBytes(of: state.gpuResourceID, toByteOffset: encodingOffset + argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: MTLResourceID.self)
+            argBuffer[\.mappedContents]!.storeBytes(of: state.gpuResourceID, toByteOffset: argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex), as: MTLResourceID.self)
         } else {
             let argBufferMTL = argBuffer.mtlBuffer!
             let encoder = argBuffer[\.encoders]!.takeUnretainedValue()
-            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset + encodingOffset)
+            encoder.setArgumentBuffer(argBufferMTL.buffer, offset: argBufferMTL.offset)
             
             encoder.setSamplerState(state, index: index + arrayIndex)
         }
     }
     
     static func setBytes(_ bytes: UnsafeRawBufferPointer, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer) {
-        let offset = argBuffer[\.encodingByteOffsets] + argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex)
+        let offset = argBuffer.descriptor.offset(index: index, arrayIndex: arrayIndex)
         argBuffer[\.mappedContents]!.advanced(by: offset).copyMemory(from: bytes.baseAddress!, byteCount: bytes.count)
     }
 }

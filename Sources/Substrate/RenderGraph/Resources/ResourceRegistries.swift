@@ -488,8 +488,10 @@ final class TransientRegistryManager {
         self.generationChunks.advanced(by: index).initialize(to: generations)
     }
     
-    func disposeImmediately(_ resource: Resource, isFullyInitialised: Bool = true) {
-        RenderBackend.dispose(resource: resource)
+    func disposeImmediately(_ resource: Resource, isFullyInitialised: Bool = true, disposeInBackend: Bool = true) {
+        if disposeInBackend {
+            RenderBackend.dispose(resource: resource)
+        }
         
         let index = resource.index
         let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)

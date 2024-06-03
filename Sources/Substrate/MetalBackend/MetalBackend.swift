@@ -350,6 +350,10 @@ public final class MetalBackend : SpecificRenderBackend {
             return texture.backingResourcePointer.map { Unmanaged<MTLTexture>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         } else if let heap = Heap(resource) {
             return heap.backingResourcePointer.map { Unmanaged<MTLHeap>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
+        } else if let argumentBuffer = ArgumentBuffer(resource) {
+            return argumentBuffer.backingResourcePointer.map { Unmanaged<MTLBuffer>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
+        } else if let argumentBufferArray = ArgumentBufferArray(resource) {
+            return argumentBufferArray.backingResourcePointer.map { Unmanaged<MTLBuffer>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         } else if let accelerationStructure = AccelerationStructure(resource), #available(macOS 11.0, iOS 14.0, *) {
             return accelerationStructure.backingResourcePointer.map { Unmanaged<MTLAccelerationStructure>.fromOpaque(UnsafeRawPointer($0)).takeUnretainedValue() }
         }

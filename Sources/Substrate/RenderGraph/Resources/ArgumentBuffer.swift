@@ -91,29 +91,16 @@ public struct ArgumentBufferDescriptor: Hashable, Sendable {
     }
     public var storageMode: StorageMode
     
-#if canImport(Metal) // Argument Buffer Array support
-    public var arrayLength: Int
-#endif
-    
     @usableFromInline var _elementStride: Int
     
     @inlinable
     public var bufferLength: Int {
-#if canImport(Metal) // Argument Buffer Array support
-        return self._elementStride * self.arrayLength
-#else
         return self._elementStride
-#endif
     }
     
     @inlinable
-    public init(arguments: [ArgumentDescriptor], storageMode: StorageMode = .shared, arrayLength: Int = 1) {
-#if !canImport(Metal)
-        precondition(arrayLength == 1, "Argument Buffer arrays are only supported on Metal.")
-#endif
-        
+    public init(arguments: [ArgumentDescriptor], storageMode: StorageMode = .shared) {
         self._arguments = arguments
-        self.arrayLength = arrayLength
         self.storageMode = storageMode
         
         self._elementStride = 0
@@ -266,12 +253,6 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
 #if canImport(Metal)
-    /// For Metal, argument buffers can be arrays; this lets you set the target array element to encode into.
-    public func setArrayElementForEncoding(_ encodingArrayElement: Int) {
-        precondition(encodingArrayElement >= 0 && encodingArrayElement < self.descriptor.arrayLength)
-        self[\.encodingByteOffsets] = self.descriptor._elementStride * encodingArrayElement
-    }
-    
     // For Metal: residency tracking.
     
     public var usedResources: HashSet<UnsafeMutableRawPointer> {
@@ -518,7 +499,6 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     let encoders : UnsafeMutablePointer<Unmanaged<MTLArgumentEncoder>?> // Some opaque backend type that can construct the argument buffer
     let usedResources: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     let usedHeaps: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
-    let encodingByteOffsets: UnsafeMutablePointer<Int>
     #endif
     
     @usableFromInline typealias Descriptor = ArgumentBufferDescriptor
@@ -532,7 +512,6 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.encoders = .allocate(capacity: capacity)
         self.usedResources = .allocate(capacity: capacity)
         self.usedHeaps = .allocate(capacity: capacity)
-        self.encodingByteOffsets = .allocate(capacity: capacity)
 #endif
     }
     
@@ -545,7 +524,6 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.encoders.deallocate()
         self.usedResources.deallocate()
         self.usedHeaps.deallocate()
-        self.encodingByteOffsets.deallocate()
 #endif
     }
     
@@ -558,7 +536,6 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.encoders.advanced(by: indexInChunk).initialize(to: nil)
         self.usedResources.advanced(by: indexInChunk).initialize(to: .init()) // TODO: pass in the appropriate allocator.
         self.usedHeaps.advanced(by: indexInChunk).initialize(to: .init())
-        self.encodingByteOffsets.advanced(by: indexInChunk).initialize(to: 0)
 #endif
     }
     
@@ -575,7 +552,6 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         }
         self.usedResources.advanced(by: index).deinitialize(count: count)
         self.usedHeaps.advanced(by: index).deinitialize(count: count)
-        self.encodingByteOffsets.advanced(by: index).deinitialize(count: count)
 #endif
     }
 }

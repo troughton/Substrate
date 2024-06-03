@@ -249,14 +249,17 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         
         argumentBufferArray.backingResourcePointer = mtlBuffer._buffer.toOpaque()
         
+        let contents = argumentBufferArray.storageMode == .private ? nil : mtlBuffer.buffer.contents().advanced(by: mtlBuffer.offset)
+        
+        for (i, argumentBuffer) in argumentBufferArray.enumerated() {
+            argumentBuffer[\.mappedContents] = contents?.advanced(by: i * stride)
+            argumentBuffer.backingResourcePointer = argumentBufferArray.backingResourcePointer
+        }
+        
         #if !targetEnvironment(simulator)
         if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
-            let contents = argumentBufferArray.storageMode == .private ? nil : mtlBuffer.buffer.contents().advanced(by: mtlBuffer.offset)
             argumentBufferArray[\.gpuAddresses] = mtlBuffer.buffer.gpuAddress.advanced(by: mtlBuffer.offset)
             
-            for (i, argumentBuffer) in argumentBufferArray.enumerated() {
-                argumentBuffer[\.mappedContents] = contents?.advanced(by: i * stride)
-            }
             for (i, argumentBuffer) in argumentBufferArray.enumerated() {
                 argumentBuffer[\.gpuAddresses] = mtlBuffer.buffer.gpuAddress.advanced(by: mtlBuffer.offset + i * stride)
             }
@@ -488,6 +491,11 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             
         case .argumentBuffer:
             let buffer = ArgumentBuffer(resource)!
+            if let mtlBuffer = buffer.backingResourcePointer {
+                CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer)))
+            }
+        case .argumentBufferArray:
+            let buffer = ArgumentBufferArray(resource)!
             if let mtlBuffer = buffer.backingResourcePointer {
                 CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlBuffer)))
             }
