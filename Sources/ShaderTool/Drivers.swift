@@ -262,7 +262,7 @@ final class MetalDriver {
                          "-target", self.targetString,
             ]
         if debug {
-            arguments.append(contentsOf: ["-gline-tables-only", "-MO", "-frecord-sources"])
+            arguments.append(contentsOf: ["-gline-tables-only", "-frecord-sources"])
         }
         
         for define in target.targetDefines {
