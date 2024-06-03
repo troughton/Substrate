@@ -273,6 +273,10 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.encoder.setBufferOffset(offset, at: path)
     }
     
+    public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
+        self.encoder.setTexture(texture, at: path)
+    }
+    
     public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) async {
        await self.encoder.setSampler(descriptor, at: path)
     }
@@ -281,8 +285,19 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         self.encoder.setSampler(state, at: path)
     }
     
-    public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
-        self.encoder.setTexture(texture, at: path)
+    @available(macOS 12.0, iOS 15.0, *)
+    public func setVisibleFunctionTable(_ table: VisibleFunctionTable?, at path: ResourceBindingPath) {
+        self.encoder.setVisibleFunctionTable(table, at: path)
+    }
+    
+    @available(macOS 12.0, iOS 15.0, *)
+    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, at path: ResourceBindingPath) {
+        self.encoder.setIntersectionFunctionTable(table, at: path)
+    }
+    
+    @available(macOS 12.0, iOS 15.0, *)
+    public func setAccelerationStructure(_ structure: AccelerationStructure?, at path: ResourceBindingPath) {
+        self.encoder.setAccelerationStructure(structure, at: path)
     }
     
     public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
@@ -340,7 +355,7 @@ public final class TypedRenderCommandEncoder<R : RenderPassReflection> : AnyRend
         } catch {}
     }
     
-    public func useResource<R: ResourceProtocol>(_ resource: R, usage: ResourceUsageType, stages: RenderStages) {
+    public func useResource<ResourceType: ResourceProtocol>(_ resource: ResourceType, usage: ResourceUsageType, stages: RenderStages) {
         self.encoder.useResource(resource, usage: usage, stages: stages)
     }
     
@@ -383,7 +398,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
             withUnsafeBytes(of: oldValue, { oldValue in
                 withUnsafeBytes(of: self.pushConstants, { pushConstants in
                     if !hasSetPushConstants || memcmp(oldValue.baseAddress!, pushConstants.baseAddress!, pushConstants.count) != 0 {
-                        self.encoder.setBytes(&self.pushConstants, length: MemoryLayout<R.PushConstants>.size, at: RenderBackend.pushConstantPath)
+                        self.encoder.setBytes(pushConstants.baseAddress!, length: MemoryLayout<R.PushConstants>.size, at: RenderBackend.pushConstantPath)
                         hasSetPushConstants = true
                     }
                 })
@@ -549,6 +564,10 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         self.encoder.setBufferOffset(offset, at: path)
     }
     
+    public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
+        self.encoder.setTexture(texture, at: path)
+    }
+    
     public func setSampler(_ descriptor: SamplerDescriptor?, at path: ResourceBindingPath) async {
         await self.encoder.setSampler(descriptor, at: path)
     }
@@ -557,8 +576,19 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         self.encoder.setSampler(state, at: path)
     }
     
-    public func setTexture(_ texture: Texture?, at path: ResourceBindingPath) {
-        self.encoder.setTexture(texture, at: path)
+    @available(macOS 12.0, iOS 15.0, *)
+    public func setVisibleFunctionTable(_ table: VisibleFunctionTable?, at path: ResourceBindingPath) {
+        self.encoder.setVisibleFunctionTable(table, at: path)
+    }
+    
+    @available(macOS 12.0, iOS 15.0, *)
+    public func setIntersectionFunctionTable(_ table: IntersectionFunctionTable?, at path: ResourceBindingPath) {
+        self.encoder.setIntersectionFunctionTable(table, at: path)
+    }
+    
+    @available(macOS 12.0, iOS 15.0, *)
+    public func setAccelerationStructure(_ structure: AccelerationStructure?, at path: ResourceBindingPath) {
+        self.encoder.setAccelerationStructure(structure, at: path)
     }
     
     public func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer?, at index: Int, stages: RenderStages) {
@@ -586,7 +616,7 @@ public final class TypedComputeCommandEncoder<R : RenderPassReflection> {
         } catch {}
     }
     
-    public func useResource<R: ResourceProtocol>(_ resource: R, usage: ResourceUsageType) {
+    public func useResource<ResourceType: ResourceProtocol>(_ resource: ResourceType, usage: ResourceUsageType) {
         self.encoder.useResource(resource, usage: usage)
     }
     
