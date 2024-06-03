@@ -64,7 +64,15 @@ extension ReflectionPrinter {
             return
         }
         
-        print("public enum \(stageName) : String {")
+        print("public struct \(stageName): RawRepresentable, Hashable {")
+        print("public let rawValue: String")
+        newLine()
+        
+        print("@inlinable")
+        print("public init(rawValue: String) {")
+        print("self.rawValue = rawValue")
+        print("}")
+        newLine()
         
         for entryPoint in filteredEntryPoints.sorted(by: { $0.name < $1.name }) {
             let name = entryPoint.name
@@ -72,7 +80,7 @@ extension ReflectionPrinter {
             var enumCaseName = String(name[entryPointFunctionNameStart...])
             enumCaseName.replaceSubrange(enumCaseName.startIndex...enumCaseName.startIndex, with: enumCaseName[enumCaseName.startIndex].lowercased())
             
-            print("case \(enumCaseName) = \"\(name)\"")
+            print("public static var \(enumCaseName): \(stageName) { \(stageName)(rawValue: \"\(name)\") }")
         }
         
         print("}")
@@ -140,30 +148,30 @@ extension ReflectionPrinter {
         if !pass.pushConstants.isEmpty {
             let setCount = (pass.sets.lastIndex(where: { $0 != nil }) ?? pass.sets.count - 1) + 1
             
-            print("public static var pushConstantPath : ResourceBindingPath {")
-            do {
-                print("#if canImport(Metal)")
-                print("if RenderBackend.api == .metal {")
-                
-                print("return ResourceBindingPath(type: .buffer, index: \(setCount), argumentBufferIndex: nil, stages: [.vertex, .fragment])")
-
-                print("}")
-                print("#endif // canImport(Metal)")
-            }
-            newLine()
-            // Vulkan
-            do {
-                print("#if canImport(Vulkan)")
-                print("if RenderBackend.api == .vulkan {")
-                
-                print("return .pushConstantPath")
-
-                print("}")
-                print("#endif // canImport(Vulkan)")
-            }
-            print("return .nil")
-            print("}")
-            newLine()
+//            print("public static var pushConstantPath : ResourceBindingPath {")
+//            do {
+//                print("#if canImport(Metal)")
+//                print("if RenderBackend.api == .metal {")
+//                
+//                print("return ResourceBindingPath(type: .buffer, index: \(setCount), argumentBufferIndex: nil, stages: [.vertex, .fragment])")
+//
+//                print("}")
+//                print("#endif // canImport(Metal)")
+//            }
+//            newLine()
+//            // Vulkan
+//            do {
+//                print("#if canImport(Vulkan)")
+//                print("if RenderBackend.api == .vulkan {")
+//                
+//                print("return .pushConstantPath")
+//
+//                print("}")
+//                print("#endif // canImport(Vulkan)")
+//            }
+//            print("return .nil")
+//            print("}")
+//            newLine()
             
             if pass.pushConstants.count == 1, !pass.pushConstants.first!.type.isKnownSwiftType {
                 if pass.pushConstants.first!.type.name != "PushConstants" {
