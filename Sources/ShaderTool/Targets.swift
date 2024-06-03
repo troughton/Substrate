@@ -309,9 +309,11 @@ final class MetalCompiler : TargetCompiler {
             }
         }
         
+        let fileModificationTimes = computeSourceFileModificationTimes(sourceFiles.lazy.map { $0.metalSource })
+        
         for (metalFileURL, airFileURL) in sourceFiles {
             do {
-                if airFileURL.needsGeneration(sourceFile: metalFileURL) {
+                if airFileURL.needsGeneration(sourceFile: metalFileURL, modificationDates: fileModificationTimes) {
                     try self.driver.compileToAIR(sourceFile: metalFileURL, destinationFile: airFileURL, withDebugInformation: debug).waitUntilExit()
                     
                     needsRegenerateLibrary = true

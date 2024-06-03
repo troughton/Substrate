@@ -100,8 +100,13 @@ extension FileManager {
 }
 
 extension URL {
-    func needsGeneration(sourceFile: URL) -> Bool {
-        let sourceFileDate = (try? sourceFile.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantFuture
+    func needsGeneration(sourceFile: URL, modificationDates: [URL: Date] = [:]) -> Bool {
+        let sourceFileDate: Date
+        if let date = modificationDates[sourceFile] {
+            sourceFileDate = date
+        } else {
+            sourceFileDate = (try? sourceFile.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantFuture
+        }
         
         let modificationDate = (try? self.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
         return modificationDate < sourceFileDate
@@ -118,7 +123,7 @@ enum ShaderCompilerError : Error {
     case duplicateTarget(Target)
 }
 
-func computeSourceFileModificationTimes(_ files: [URL]) -> [URL : Date] {
+func computeSourceFileModificationTimes(_ files: some Sequence<URL>) -> [URL : Date] {
 
     let includeRegexPattern = Regex("#include(?:\\s+)\"([^\"]+)\"")
     
