@@ -400,8 +400,10 @@ public struct AxisAlignedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & 
         self.maxPoint = pointwiseMax(point, self.maxPoint)
     }
     
+    @inlinable
     public static var baseBox : AxisAlignedBoundingBox { return AxisAlignedBoundingBox(min: SIMD3<Scalar>(repeating: Scalar.infinity), max: SIMD3<Scalar>(repeating: -Scalar.infinity)) }
     
+    @inlinable
     public static var unitBox : AxisAlignedBoundingBox { return AxisAlignedBoundingBox(min: SIMD3<Scalar>(repeating: -0.5), max: SIMD3<Scalar>(repeating: 0.5)) }
     
     @inlinable
