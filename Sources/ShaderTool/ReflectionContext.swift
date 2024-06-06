@@ -88,7 +88,12 @@ final class ReflectionContext {
         self.resourceSets = allSets
     }
     
+    @discardableResult
     func mergePasses(_ pass: RenderPass, sourcePass: RenderPass) -> Bool {
+        pass.entryPoints.append(contentsOf: sourcePass.entryPoints)
+        
+        var fullyCompatible = true
+        
         do {
             // Merge function constants.
             var i = 0
@@ -102,8 +107,8 @@ final class ReflectionContext {
                     j += 1
                 } else {
                     if pass.functionConstants[i] != sourcePass.functionConstants[j] {
-                        print("Warning: cannot merge \(sourcePass.name) with \(pass.name) since function constants \(pass.functionConstants[i]) and \(sourcePass.functionConstants[j]) share the same index but are different.")
-                        return false
+//                        print("Warning: cannot merge \(sourcePass.name) with \(pass.name) since function constants \(pass.functionConstants[i]) and \(sourcePass.functionConstants[j]) share the same index but are different.")
+                        fullyCompatible = false
                     }
                     
                     i += 1
@@ -114,7 +119,7 @@ final class ReflectionContext {
             pass.functionConstants.append(contentsOf: sourcePass.functionConstants[j...])
         }
         
-        do {
+        pushConstantBlock: do {
             // Merge push constants.
             var i = 0
             var j = 0
@@ -124,8 +129,9 @@ final class ReflectionContext {
                                     sourcePass.pushConstants[j].range.lowerBound <= pass.pushConstants[i].range.upperBound
                 
                 if rangesOverlap && pass.pushConstants[i].range != sourcePass.pushConstants[j].range {
-                    print("Warning: cannot merge \(sourcePass.name) with \(pass.name) since push constants \(pass.pushConstants[i]) and \(sourcePass.pushConstants[j]) have overlapping ranges.")
-                    return false
+//                    print("Warning: cannot merge \(sourcePass.name) with \(pass.name) since push constants \(pass.pushConstants[i]) and \(sourcePass.pushConstants[j]) have overlapping ranges.")
+                    fullyCompatible = false
+                    break pushConstantBlock
                 }
                 
                 if pass.pushConstants[i].range.lowerBound < sourcePass.pushConstants[j].range.lowerBound {
@@ -135,8 +141,8 @@ final class ReflectionContext {
                     j += 1
                 } else {
                     if pass.pushConstants[i] != sourcePass.pushConstants[j] {
-                        print("Warning: cannot merge \(sourcePass.name) with \(pass.name) since push constants \(pass.pushConstants[i]) and \(sourcePass.pushConstants[j]) share the same index but are different.")
-                        return false
+                        fullyCompatible = false
+                        break pushConstantBlock
                     }
                     
                     i += 1
@@ -161,12 +167,13 @@ final class ReflectionContext {
                     pass.boundResources.insert(sourcePass.boundResources[j], at: i)
                     j += 1
                 } else {
-                    if pass.boundResources[i].name != sourcePass.boundResources[j].name ||
-                        pass.boundResources[i].type != sourcePass.boundResources[j].type {
-                        print("Warning: cannot merge \(sourcePass.name) with \(pass.name) since resources \(pass.boundResources[i]) and \(sourcePass.boundResources[j]) share the same binding but are different.")
-                        return false
+                    if pass.boundResources[i].name == sourcePass.boundResources[j].name,
+                        pass.boundResources[i].type == sourcePass.boundResources[j].type {
+                        pass.boundResources[i].stages.formUnion(sourcePass.boundResources[j].stages)
+                    } else {
+//                        print("Warning: cannot merge \(sourcePass.name) with \(pass.name) since resources \(pass.boundResources[i]) and \(sourcePass.boundResources[j]) share the same binding but are different.")
+                        fullyCompatible = false
                     }
-                    pass.boundResources[i].stages.formUnion(sourcePass.boundResources[j].stages)
                     
                     i += 1
                     j += 1
@@ -176,8 +183,7 @@ final class ReflectionContext {
             pass.boundResources.append(contentsOf: sourcePass.boundResources[j...])
         }
         
-        pass.entryPoints.append(contentsOf: sourcePass.entryPoints)
-        return true
+        return fullyCompatible
     }
     
     func mergeExternalEntryPoints() {
