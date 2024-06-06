@@ -353,6 +353,14 @@ extension Rect where Scalar: FixedWidthInteger {
     public func union(with otherRect: Rect) -> Rect {
         return Rect(minPoint: pointwiseMin(self.minPoint, otherRect.minPoint), maxPoint: pointwiseMax(self.maxPoint, otherRect.maxPoint))
     }
+    
+    @inlinable
+    public func clipped(to otherRect: Rect) -> Rect {
+        let currentMax = self.origin &+ self.size
+        let minPoint = pointwiseMin(pointwiseMax(otherRect.origin, self.origin), currentMax)
+        let maxPoint = pointwiseMax(minPoint, pointwiseMin(otherRect.origin &+ otherRect.size, currentMax))
+        return Rect(origin: minPoint, size: maxPoint &- minPoint)
+    }
 }
 
 public struct AxisAlignedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & Comparable>: Hashable, Codable {
