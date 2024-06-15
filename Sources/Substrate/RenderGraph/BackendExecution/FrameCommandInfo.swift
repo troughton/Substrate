@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct CommandEncoderInfo {
+struct CommandEncoderInfo: Sendable {
     var type: RenderPassType
     
     var commandBufferIndex: Int
@@ -24,7 +24,7 @@ struct CommandEncoderInfo {
 #endif
 }
 
-struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor> {
+struct FrameCommandInfo<RenderTarget: BackendRenderTargetDescriptor>: Sendable {
     let globalFrameIndex: UInt64
     let baseCommandBufferGlobalIndex: UInt64
     

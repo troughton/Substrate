@@ -8,7 +8,7 @@
 
 import SubstrateUtilities
 
-public struct VertexBufferLayoutDescriptor : Hashable {
+public struct VertexBufferLayoutDescriptor : Hashable, Sendable {
     @usableFromInline var _stride: UInt16
     public var stepFunction: VertexStepFunction
     @usableFromInline var _stepRate: UInt32
@@ -41,7 +41,7 @@ public struct VertexBufferLayoutDescriptor : Hashable {
 }
 
 
-public struct VertexAttributeDescriptor : Hashable {
+public struct VertexAttributeDescriptor : Hashable, Sendable {
     public var format: VertexFormat
     @usableFromInline var _offset: UInt16
     @usableFromInline var _bufferIndex: UInt16
@@ -73,7 +73,7 @@ public struct VertexAttributeDescriptor : Hashable {
     }
 }
 
-public struct VertexDescriptor : Hashable {
+public struct VertexDescriptor : Hashable, Sendable {
     public var layouts = Array8<VertexBufferLayoutDescriptor>(repeating: VertexBufferLayoutDescriptor())
     public var attributes = Array16<VertexAttributeDescriptor>(repeating: VertexAttributeDescriptor(format: .invalid, offset: 0, bufferIndex: 0))
     

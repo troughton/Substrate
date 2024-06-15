@@ -26,7 +26,7 @@ extension TextureDescriptor {
 
 /// Represents a range of subresources within a texture.
 /// Warning: depending on the texture slice count, this may behave as either a value or a reference type; as such, it should be treated as a move-only type.
-public struct SubresourceMask {
+public struct SubresourceMask: Sendable {
     public typealias Element = UInt64
     @usableFromInline var value: Element = .max // .max means the entire resource is in use, and 0 means the entire resource is inactive
     

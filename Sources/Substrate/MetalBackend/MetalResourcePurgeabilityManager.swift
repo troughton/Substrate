@@ -19,7 +19,7 @@ struct MTLPendingPurgeabilityChange {
 }
 
 // A utility to ensure that volatile/empty purgeable states only get applied once all GPU commands in-flight have completed.
-final class MetalResourcePurgeabilityManager {
+final class MetalResourcePurgeabilityManager: @unchecked Sendable {
     static let instance = MetalResourcePurgeabilityManager()
     
     let lock = DispatchSemaphore(value: 1)

@@ -48,7 +48,7 @@ public struct SignpostMetadata: ExpressibleByStringLiteral, ExpressibleByStringI
     }
 }
 
-public struct Signposter {
+public struct Signposter: @unchecked Sendable {
 #if canImport(OSLog)
     public var signposter: Any? // OSSignposter
 #endif

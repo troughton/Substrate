@@ -8,7 +8,7 @@
 import Foundation
 import SubstrateUtilities
 
-public struct TextureSubresourceRange {
+public struct TextureSubresourceRange: Sendable {
     public var slices: Range<Int>
     public var mipLevels: Range<Int>
     
@@ -23,8 +23,8 @@ public struct TextureSubresourceRange {
     }
 }
 
-public struct ResourceUsage {
-    public enum Subresources {
+public struct ResourceUsage: Sendable {
+    public enum Subresources: Sendable {
         case wholeResource
         case bufferRange(Range<Int>)
         case textureSlices(TextureSubresourceRange)
@@ -91,7 +91,7 @@ extension Texture {
     }
 }
 
-public struct RecordedResourceUsage {
+public struct RecordedResourceUsage: Sendable {
     @usableFromInline var passIndex: Int
     @usableFromInline var usage: ResourceUsage
     @usableFromInline var activeRange: ActiveResourceRange

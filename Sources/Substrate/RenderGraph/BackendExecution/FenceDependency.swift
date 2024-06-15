@@ -7,7 +7,7 @@
 
 import Foundation
 
-protocol Dependency {
+protocol Dependency: Sendable {
     init(resource: Resource,
          producingUsage: RecordedResourceUsage, producingEncoder: Int,
          consumingUsage: RecordedResourceUsage, consumingEncoder: Int)

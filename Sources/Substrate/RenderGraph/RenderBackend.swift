@@ -15,7 +15,7 @@ import Metal
 import Vulkan
 #endif
 
-public protocol PipelineReflection : AnyObject {
+public protocol PipelineReflection : AnyObject, Sendable {
     var pipelineState: UnsafeRawPointer? { get }
     
     func bindingPath(argumentBuffer: ArgumentBuffer, argumentName: String, arrayIndex: Int) -> ResourceBindingPath?
@@ -42,7 +42,7 @@ public enum RenderAPI {
 #endif
 }
 
-public protocol RenderBackendProtocol : AnyObject {
+public protocol RenderBackendProtocol : AnyObject, Sendable {
     func backingResource(_ resource: Resource) -> Any?
     
     func sizeAndAlignment(for texture: TextureDescriptor) -> (size: Int, alignment: Int)
@@ -101,7 +101,7 @@ protocol _RenderBackendProtocol : RenderBackendProtocol {
 }
 
 public struct RenderBackend {
-    @usableFromInline static var _backend : _RenderBackendProtocol! = nil
+    @usableFromInline nonisolated(unsafe) static var _backend : _RenderBackendProtocol! = nil
     
     @inlinable
     public static var backend : RenderBackendProtocol {
@@ -428,7 +428,7 @@ public struct FunctionConstants : Hashable, Sendable {
     }
 }
 
-public enum VertexStepFunction : UInt8 {
+public enum VertexStepFunction : UInt8, Sendable {
     case constant
     case perVertex
     case perInstance

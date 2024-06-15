@@ -15,7 +15,7 @@ import Atomics
 // Chunk-based registries allocate storage in blocks. This avoids excessive memory usage while simultaneously ensuring that the memory for a resource is never reallocated (which would cause issues in multithreaded contexts, requiring locks for all access).
 
 // We use TransientRegistryArray rather than a regular array so that the compiler can optimise away retains/releases by knowing that the registries are immortal.
-@usableFromInline struct TransientRegistryArray<T: TransientRegistry> {
+@usableFromInline struct TransientRegistryArray<T: TransientRegistry>: Sendable {
     let registry0: T
     let registry1: T
     let registry2: T
@@ -47,8 +47,8 @@ import Atomics
 final class TransientRegistryManager {
     public static let maxTransientRegistries = UInt8.bitWidth
     
-    static var allocatedRegistries : UInt8 = 0
-    static var lock = SpinLock()
+    nonisolated(unsafe) static var allocatedRegistries : UInt8 = 0
+    static let lock = SpinLock()
     
     public static func allocate() -> Int {
         return self.lock.withLock {
@@ -97,11 +97,11 @@ final class TransientRegistryManager {
     @usableFromInline var activeRenderGraphsOptional: UnsafeMutablePointer<UInt8.AtomicRepresentation>? { nil }
 }
 
-@usableFromInline protocol TransientRegistry {
+@usableFromInline protocol TransientRegistry: Sendable {
     associatedtype Resource: ResourceProtocolImpl
     init(transientRegistryIndex: Int)
-    func allocateHandle(flags: ResourceFlags) -> Resource
-    func initialize(resource: Resource, descriptor: Resource.Descriptor)
+    func allocateHandle(flags: ResourceFlags) -> ResourceHandle
+    func initialize(resource: ResourceHandle, descriptor: Resource.Descriptor)
     func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource
     func clear()
     
@@ -176,10 +176,10 @@ final class TransientRegistryManager {
     }
 }
 
-@usableFromInline class TransientChunkRegistry<Resource: ResourceProtocolImpl>: TransientRegistry {
+@usableFromInline class TransientChunkRegistry<Resource: ResourceProtocolImpl>: TransientRegistry, @unchecked Sendable {
     class var maxChunks: Int { 2048 }
     
-    var lock = SpinLock()
+    let lock = SpinLock()
     
     let transientRegistryIndex : Int
     var count = 0
@@ -245,7 +245,7 @@ final class TransientRegistryManager {
         return self.sharedResourcePropertyChunks[chunkIndex].labels.advanced(by: indexInChunk)
     }
     
-    @usableFromInline func allocateHandle(flags: ResourceFlags) -> Resource {
+    @usableFromInline func allocateHandle(flags: ResourceFlags) -> ResourceHandle {
         return self.lock.withLock {
             
             let index = self.count
@@ -262,11 +262,11 @@ final class TransientRegistryManager {
             (UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound) |
             (UInt64(flags.rawValue) << Resource.flagBitsRange.lowerBound) |
             (UInt64(Resource.resourceType.rawValue) << Resource.typeBitsRange.lowerBound)
-            return Resource(handle: handle)
+            return ResourceHandle(bitPattern: handle)
         }
     }
     
-    @usableFromInline func initialize(resource: Resource, descriptor: Resource.Descriptor) {
+    @usableFromInline func initialize(resource: ResourceHandle, descriptor: Resource.Descriptor) {
         let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
         self.sharedResourcePropertyChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
         self.sharedPropertyChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: nil, flags: resource.flags)
@@ -276,7 +276,7 @@ final class TransientRegistryManager {
     @usableFromInline func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource {
         let resource = self.allocateHandle(flags: flags)
         self.initialize(resource: resource, descriptor: descriptor)
-        return resource
+        return Resource(handle: resource)
     }
     
     var chunkCount : Int {
@@ -309,7 +309,7 @@ final class TransientRegistryManager {
     }
 }
 
-@usableFromInline class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegistry {
+@usableFromInline class TransientFixedSizeRegistry<Resource: ResourceProtocolImpl>: TransientRegistry, @unchecked Sendable {
     let transientRegistryIndex : Int
     var capacity : Int
     var count = UnsafeMutablePointer<Int.AtomicRepresentation>.allocate(capacity: 1)
@@ -362,7 +362,7 @@ final class TransientRegistryManager {
         return self.labels.advanced(by: index)
     }
     
-    @usableFromInline func allocateHandle(flags: ResourceFlags) -> Resource {
+    @usableFromInline func allocateHandle(flags: ResourceFlags) -> ResourceHandle {
         let index = Int.AtomicRepresentation.atomicLoadThenWrappingIncrement(at: self.count, ordering: .relaxed)
         self.ensureCapacity(index + 1)
         
@@ -373,10 +373,10 @@ final class TransientRegistryManager {
         (UInt64(self.transientRegistryIndex) << Resource.transientRegistryIndexBitsRange.lowerBound) |
         (UInt64(flags.rawValue) << Resource.flagBitsRange.lowerBound) |
         (UInt64(Resource.resourceType.rawValue) << Resource.typeBitsRange.lowerBound)
-        return Resource(handle: handle)
+        return ResourceHandle(bitPattern: handle)
     }
     
-    @usableFromInline func initialize(resource: Resource, descriptor: Resource.Descriptor) {
+    @usableFromInline func initialize(resource: ResourceHandle, descriptor: Resource.Descriptor) {
         self.sharedPropertyStorage.initialize(index: resource.index, descriptor: descriptor, heap: nil, flags: resource.flags)
         self.sharedStorage.initialize(index: resource.index, descriptor: descriptor, heap: nil, flags: resource.flags)
         self.transientStorage.initialize(index: resource.index, descriptor: descriptor, heap: nil, flags: resource.flags)
@@ -384,9 +384,9 @@ final class TransientRegistryManager {
     }
     
     @usableFromInline func allocate(descriptor: Resource.Descriptor, flags: ResourceFlags) -> Resource {
-        let resource = self.allocateHandle(flags: flags)
-        self.initialize(resource: resource, descriptor: descriptor)
-        return resource
+        let resourceHandle = self.allocateHandle(flags: flags)
+        self.initialize(resource: resourceHandle, descriptor: descriptor)
+        return Resource(handle: resourceHandle)
     }
     
     func ensureCapacity(_ capacity: Int) {
@@ -406,7 +406,7 @@ final class TransientRegistryManager {
     }
 }
 
-@usableFromInline class PersistentRegistry<Resource: ResourceProtocolImpl> {
+@usableFromInline class PersistentRegistry<Resource: ResourceProtocolImpl>: @unchecked Sendable {
     class var maxChunks: Int { 2048 }
     
     var lock = SpinLock()
@@ -435,7 +435,7 @@ final class TransientRegistryManager {
         self.generationChunks = .allocate(capacity: Self.maxChunks)
     }
     
-    func allocateHandle(flags: ResourceFlags) -> Resource {
+    func allocateHandle(flags: ResourceFlags) -> ResourceHandle {
         return self.lock.withLock {
             let index : Int
             if let reusedIndex = self.freeIndices.popFirst() {
@@ -454,11 +454,11 @@ final class TransientRegistryManager {
             (UInt64(generation) << Resource.generationBitsRange.lowerBound) |
             (UInt64(flags.rawValue) << Resource.flagBitsRange.lowerBound) |
             (UInt64(Resource.resourceType.rawValue) << Resource.typeBitsRange.lowerBound)
-            return Resource(handle: handle)
+            return ResourceHandle(bitPattern: handle)
         }
     }
     
-    func initialize(resource: Resource, descriptor: Resource.Descriptor, heap: Heap?, flags: ResourceFlags) {
+    func initialize(resource: ResourceHandle, descriptor: Resource.Descriptor, heap: Heap?, flags: ResourceFlags) {
         let (chunkIndex, indexInChunk) = resource.index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
         self.sharedPropertyChunks[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
         self.sharedChunks?[chunkIndex].initialize(index: indexInChunk, descriptor: descriptor, heap: heap, flags: flags)
@@ -466,9 +466,9 @@ final class TransientRegistryManager {
     }
     
     func allocate(descriptor: Resource.Descriptor, heap: Heap?, flags: ResourceFlags) -> Resource {
-        let resource = self.allocateHandle(flags: flags)
-        self.initialize(resource: resource, descriptor: descriptor, heap: heap, flags: flags)
-        return resource
+        let resourceHandle = self.allocateHandle(flags: flags)
+        self.initialize(resource: resourceHandle, descriptor: descriptor, heap: heap, flags: flags)
+        return Resource(handle: resourceHandle)
     }
     
     var chunkCount : Int {

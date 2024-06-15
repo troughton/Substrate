@@ -29,7 +29,7 @@ public struct NilFunctions : RawRepresentable {
 }
 
 public struct NilSet : ShaderResourceSet {
-    public static var activeStages: RenderStages = []
+    public static var activeStages: RenderStages { [] }
     
     public static var bindingIndex: Int {
         return -1

@@ -6,14 +6,14 @@
 //
 
 import SubstrateUtilities
+import Atomics
 
 public struct Heap : ResourceProtocol {
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public let handle: ResourceHandle
     
     public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .heap)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        assert(handle.resourceType == .heap)
+        self.handle = handle
     }
     
     public init?(size: Int, type: HeapType = .automaticPlacement, storageMode: StorageMode = .managed, cacheMode: CPUCacheMode = .defaultCache) {

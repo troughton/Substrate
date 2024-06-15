@@ -39,7 +39,7 @@ public enum ResourceType : UInt8 {
  @constant RenderStageVertex   All vertex work prior to rasterization has completed.
  @constant RenderStageFragment All rendering work has completed.
  */
-public struct RenderStages : OptionSet, Hashable {
+public struct RenderStages : OptionSet, Hashable, Sendable {
     
     public let rawValue : UInt
     
@@ -47,16 +47,16 @@ public struct RenderStages : OptionSet, Hashable {
         self.rawValue = rawValue
     }
     
-    public static var vertex: RenderStages = RenderStages(rawValue: 1 << 0)
-    public static var fragment: RenderStages = RenderStages(rawValue: 1 << 1)
-    public static var tile: RenderStages = RenderStages(rawValue: 1 << 2)
-    public static var object: RenderStages = RenderStages(rawValue: 1 << 3)
-    public static var mesh: RenderStages = RenderStages(rawValue: 1 << 4)
+    public static let vertex: RenderStages = RenderStages(rawValue: 1 << 0)
+    public static let fragment: RenderStages = RenderStages(rawValue: 1 << 1)
+    public static let tile: RenderStages = RenderStages(rawValue: 1 << 2)
+    public static let object: RenderStages = RenderStages(rawValue: 1 << 3)
+    public static let mesh: RenderStages = RenderStages(rawValue: 1 << 4)
     
-    public static var compute: RenderStages = RenderStages(rawValue: 1 << 5)
-    public static var blit: RenderStages = RenderStages(rawValue: 1 << 6)
+    public static let compute: RenderStages = RenderStages(rawValue: 1 << 5)
+    public static let blit: RenderStages = RenderStages(rawValue: 1 << 6)
     
-    public static var cpuBeforeRender: RenderStages = RenderStages(rawValue: 1 << 7)
+    public static let cpuBeforeRender: RenderStages = RenderStages(rawValue: 1 << 7)
     
     public var first : RenderStages {
         switch (self.contains(.vertex), self.contains(.fragment)) {
@@ -113,7 +113,7 @@ public struct ResourceFlags : OptionSet {
     public static var resourceView: ResourceFlags { ResourceFlags(rawValue: 1 << 5) }
 }
 
-public struct ResourceStateFlags : OptionSet {
+public struct ResourceStateFlags : OptionSet, Sendable {
     public let rawValue: UInt16
     
     public init(rawValue: UInt16) {
@@ -216,7 +216,7 @@ extension ResourceProtocolImpl {
     
     @inlinable
     public var customHashValue : Int {
-        return Int(truncatingIfNeeded: self.handle)
+        return Int(truncatingIfNeeded: self.handle.bitPattern)
     }
     
     public func dispose() {
@@ -601,19 +601,70 @@ extension ResourceProtocol {
     }
 }
 
+public struct ResourceHandle: Hashable, @unchecked Sendable {
+    @inlinable @inline(__always)
+    public static var typeBitsRange : Range<Int> { return 56..<64 }
+    
+    @inlinable @inline(__always)
+    public static var flagBitsRange : Range<Int> { return 40..<56 }
+    
+    @inlinable @inline(__always)
+    public static var generationBitsRange : Range<Int> { return 32..<40 }
+    
+    @inlinable @inline(__always)
+    public static var transientRegistryIndexBitsRange : Range<Int> { return 28..<32 }
+    
+    @inlinable @inline(__always)
+    public static var indexBitsRange : Range<Int> { return 0..<28 }
+    
+    @usableFromInline var _handle: UnsafeRawPointer
+    
+    @inlinable @inline(__always)
+    public var bitPattern: UInt64 { return UInt64(UInt(bitPattern: _handle)) }
+    
+    @inlinable
+    public init(bitPattern handle: UInt64) {
+        assert(ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: handle.bits(in: Resource.typeBitsRange))) != nil)
+        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+    }
+    
+    @inlinable @inline(__always)
+    public var resourceType: ResourceType {
+        return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.bitPattern.bits(in: Resource.typeBitsRange)))!
+    }
+    
+    @inlinable @inline(__always)
+    public var flags : ResourceFlags {
+        return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: self.bitPattern.bits(in: Self.flagBitsRange)))
+    }
+    
+    @inlinable @inline(__always)
+    public var generation : UInt8 {
+        return UInt8(truncatingIfNeeded: self.bitPattern.bits(in: Self.generationBitsRange))
+    }
+    
+    @inlinable @inline(__always)
+    public var transientRegistryIndex : Int {
+        return Int(self.bitPattern.bits(in: Self.transientRegistryIndexBitsRange))
+    }
+    
+    @inlinable @inline(__always)
+    public var index : Int {
+        return Int(truncatingIfNeeded: self.bitPattern.bits(in: Self.indexBitsRange))
+    }
+}
+
 public struct Resource : ResourceProtocol, Hashable {
     public static var resourceType: ResourceType { fatalError() }
     
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public let handle: ResourceHandle
     
     public init<R : ResourceProtocol>(_ resource: R) {
-        self._handle = UnsafeRawPointer(bitPattern: UInt(resource.handle))!
+        self.handle = resource.handle
     }
     
     public init(handle: Handle) {
-        assert(ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: handle.bits(in: Self.typeBitsRange))) != nil)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        self.handle = handle
     }
     
     
@@ -779,7 +830,7 @@ extension Resource : CustomHashable {
 }
 
 extension ResourceProtocol {
-    public typealias Handle = UInt64
+    public typealias Handle = ResourceHandle
     
     @inlinable @inline(__always)
     public static var typeBitsRange : Range<Int> { return 56..<64 }
@@ -798,27 +849,27 @@ extension ResourceProtocol {
     
     @inlinable @inline(__always)
     public var type : ResourceType {
-        return ResourceType(rawValue: ResourceType.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.typeBitsRange)))!
+        return self.handle.resourceType
     }
     
     @inlinable @inline(__always)
     public var flags : ResourceFlags {
-        return ResourceFlags(rawValue: ResourceFlags.RawValue(truncatingIfNeeded: self.handle.bits(in: Self.flagBitsRange)))
+        return self.handle.flags
     }
     
     @inlinable @inline(__always)
     public var generation : UInt8 {
-        return UInt8(truncatingIfNeeded: self.handle.bits(in: Self.generationBitsRange))
+        return self.handle.generation
     }
     
     @inlinable @inline(__always)
     public var transientRegistryIndex : Int {
-        return Int(self.handle.bits(in: Self.transientRegistryIndexBitsRange))
+        return self.handle.transientRegistryIndex
     }
     
     @inlinable @inline(__always)
     public var index : Int {
-        return Int(truncatingIfNeeded: self.handle.bits(in: Self.indexBitsRange))
+        return self.handle.index
     }
     
     @inlinable @inline(__always)
@@ -895,7 +946,7 @@ extension QueueCommandIndex.AtomicRepresentation {
         var currentValue = Self.atomicLoad(at: pointer, ordering: .relaxed)
         guard currentValue <= value else { return false }
         repeat {
-            let (exchanged, original) = Self.atomicWeakCompareExchange(expected: currentValue, desired: value, at: pointer, ordering: .relaxed)
+            let (exchanged, original) = Self.atomicWeakCompareExchange(expected: currentValue, desired: value, at: pointer, successOrdering: .relaxed, failureOrdering: .relaxed)
             if exchanged { return true }
             currentValue = original
         } while value > currentValue

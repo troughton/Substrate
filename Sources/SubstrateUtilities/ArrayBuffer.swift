@@ -28,7 +28,8 @@ public final class FixedSizeBuffer<Element> : MutableCollection, RandomAccessCol
     
     public let allocator : AllocatorType
     public private(set) var capacity : Int
-    public private(set) var buffer : UnsafeMutablePointer<Element>!
+    @usableFromInline var _buffer: UnsafeMutablePointer<Element>!
+    public var buffer : UnsafeMutablePointer<Element>! { return self._buffer }
     
     // @inlinable
     public init(allocator: AllocatorType = .system, capacity: Int, defaultValue: Element) {
@@ -37,8 +38,8 @@ public final class FixedSizeBuffer<Element> : MutableCollection, RandomAccessCol
         self.allocator = allocator
         
         self.capacity = capacity
-        self.buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
-        self.buffer!.initialize(repeating: defaultValue, count: self.capacity)
+        self._buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
+        self._buffer!.initialize(repeating: defaultValue, count: self.capacity)
     }
     
     public init(allocator: AllocatorType = .system, uninitializedCapacity: Int) {
@@ -46,9 +47,9 @@ public final class FixedSizeBuffer<Element> : MutableCollection, RandomAccessCol
         self.capacity = uninitializedCapacity
 
         if uninitializedCapacity == 0 {
-            self.buffer = nil
+            self._buffer = nil
         } else {
-            self.buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
+            self._buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
         }
     }
     
@@ -56,23 +57,23 @@ public final class FixedSizeBuffer<Element> : MutableCollection, RandomAccessCol
         self.init(allocator: allocator, uninitializedCapacity: array.count)
         
         for (i, element) in array.enumerated() {
-            self.buffer![i] = element
+            self._buffer![i] = element
         }
     }
     
     public convenience init(allocator: AllocatorType = .system, from: UnsafePointer<Element>, count: Int) {
         self.init(allocator: allocator, uninitializedCapacity: count)
-        self.buffer.initialize(from: from, count: count)
+        self._buffer.initialize(from: from, count: count)
     }
     
     @inlinable
     public subscript(index: Int) -> Element {
         get {
             assert(index >= self.startIndex && index < endIndex, "Index out of bounds")
-            return self.buffer!.advanced(by: index).pointee
+            return self._buffer!.advanced(by: index).pointee
         } set {
             assert(index >= self.startIndex && index < endIndex, "Index out of bounds")
-            self.buffer!.advanced(by: index).pointee = newValue
+            self._buffer!.advanced(by: index).pointee = newValue
         }
     }
     
@@ -97,7 +98,7 @@ public final class FixedSizeBuffer<Element> : MutableCollection, RandomAccessCol
     }
     
     deinit {
-        if let buffer = self.buffer {
+        if let buffer = self._buffer {
             buffer.deinitialize(count: self.capacity)
             Allocator.deallocate(buffer, allocator: self.allocator)
         }
@@ -109,7 +110,7 @@ extension FixedSizeBuffer : ExpressibleByArrayLiteral {
     public convenience init(arrayLiteral elements: Element...) {
         
         self.init(uninitializedCapacity: elements.count)
-        _ = UnsafeMutableBufferPointer(start: self.buffer, count: elements.count).initialize(from: elements)
+        _ = UnsafeMutableBufferPointer(start: self._buffer, count: elements.count).initialize(from: elements)
     }
 }
 
@@ -121,7 +122,8 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     public let allocator : AllocatorType
     
     public var capacity : Int
-    public var buffer : UnsafeMutablePointer<Element>!
+    @usableFromInline var _buffer: UnsafeMutablePointer<Element>!
+    public var buffer : UnsafeMutablePointer<Element>! { return self._buffer }
     
     public var count : Int = 0
     
@@ -130,9 +132,9 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
         self.allocator = allocator
         self.capacity = initialCapacity
         if initialCapacity > 0 {
-            self.buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
+            self._buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
         } else {
-            self.buffer = nil
+            self._buffer = nil
         }
         
         if case .custom(let arena) = self.allocator {
@@ -146,24 +148,24 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
         self.allocator = allocator
         
         self.capacity = uninitializedCapacity
-        self.buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
+        self._buffer = Allocator.allocate(capacity: capacity, allocator: allocator)
     }
     
     @inlinable
     public subscript(index: Int) -> Element {
         get {
             assert(index < self.capacity)
-            return self.buffer.unsafelyUnwrapped.advanced(by: index).pointee
+            return self._buffer.unsafelyUnwrapped.advanced(by: index).pointee
         } set {
             assert(index < self.capacity)
-            self.buffer.unsafelyUnwrapped.advanced(by: index).pointee = newValue
+            self._buffer.unsafelyUnwrapped.advanced(by: index).pointee = newValue
         }
     }
     
     @inlinable
     public func append(_ element: Element) {
         self.reserveCapacity(self.count + 1)
-        self.buffer.unsafelyUnwrapped.advanced(by: self.count).initialize(to: element)
+        self._buffer.unsafelyUnwrapped.advanced(by: self.count).initialize(to: element)
         self.count += 1
     }
     
@@ -178,7 +180,7 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     @inlinable
     public func append(from: UnsafePointer<Element>, count: Int) {
         self.reserveCapacity( self.count + count)
-        self.buffer.unsafelyUnwrapped.advanced(by: self.count).initialize(from: from, count: count)
+        self._buffer.unsafelyUnwrapped.advanced(by: self.count).initialize(from: from, count: count)
         self.count += count
     }
     
@@ -188,20 +190,20 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
         guard count > 0 else { return }
         
         self.reserveCapacity(self.count + count)
-        self.buffer.unsafelyUnwrapped.advanced(by: self.count).initialize(repeating: element, count: count)
+        self._buffer.unsafelyUnwrapped.advanced(by: self.count).initialize(repeating: element, count: count)
         self.count += count
     }
     
     @inlinable
     public func removeAll() {
-        self.buffer?.deinitialize(count: self.count)
+        self._buffer?.deinitialize(count: self.count)
         self.count = 0
     }
     
     @inlinable
     @discardableResult
     public func removeLast() -> Element {
-        let last = self.buffer.unsafelyUnwrapped.advanced(by: self.count - 1).move()
+        let last = self._buffer.unsafelyUnwrapped.advanced(by: self.count - 1).move()
         self.count -= 1
         return last
     }
@@ -215,9 +217,9 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     @inlinable
     public func removeRange(_ range: Range<Int>) {
         precondition(range.clamped(to: self.indices) == range)
-        self.buffer.unsafelyUnwrapped.advanced(by: range.lowerBound).deinitialize(count: range.count)
+        self._buffer.unsafelyUnwrapped.advanced(by: range.lowerBound).deinitialize(count: range.count)
         if range.upperBound < self.count {
-            self.buffer.unsafelyUnwrapped.advanced(by: range.lowerBound).moveInitialize(from: self.buffer.unsafelyUnwrapped.advanced(by: range.upperBound), count: self.count - range.upperBound)
+            self._buffer.unsafelyUnwrapped.advanced(by: range.lowerBound).moveInitialize(from: self._buffer.unsafelyUnwrapped.advanced(by: range.upperBound), count: self.count - range.upperBound)
         }
         self.count -= range.count
     }
@@ -226,9 +228,9 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     @discardableResult
     public func remove(at index: Int) -> Element {
         precondition(self.indices.contains(index))
-        let element = self.buffer.unsafelyUnwrapped.advanced(by: index).move()
+        let element = self._buffer.unsafelyUnwrapped.advanced(by: index).move()
         if index < self.count {
-            self.buffer.unsafelyUnwrapped.advanced(by: index).moveInitialize(from: self.buffer.unsafelyUnwrapped.advanced(by: index + 1), count: self.count - index + 1)
+            self._buffer.unsafelyUnwrapped.advanced(by: index).moveInitialize(from: self._buffer.unsafelyUnwrapped.advanced(by: index + 1), count: self.count - index + 1)
         }
         self.count -= 1
         return element
@@ -240,8 +242,8 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
         precondition(!self.isEmpty)
         let count = Swift.min(count, self.count)
         let remainder = self.count - count
-        self.buffer.unsafelyUnwrapped.deinitialize(count: count)
-        self.buffer.unsafelyUnwrapped.moveInitialize(from: self.buffer.unsafelyUnwrapped.advanced(by: count), count: remainder)
+        self._buffer.unsafelyUnwrapped.deinitialize(count: count)
+        self._buffer.unsafelyUnwrapped.moveInitialize(from: self._buffer.unsafelyUnwrapped.advanced(by: count), count: remainder)
         self.count = remainder
     }
     
@@ -262,18 +264,18 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
 
             let newBaseAddress = Allocator.allocate(capacity: newCapacity, allocator: self.allocator) as UnsafeMutablePointer<Element>
             
-            if let buffer = self.buffer {
+            if let buffer = self._buffer {
                 newBaseAddress.moveInitialize(from: buffer, count: self.count)
                 Allocator.deallocate(buffer, allocator: self.allocator)
             }
             
-            self.buffer = newBaseAddress
+            self._buffer = newBaseAddress
             self.capacity = newCapacity
         }
     }
     
     public func sort(by areInIncreasingOrder: (Element, Element) -> Bool) {
-        var bufferPointer = UnsafeMutableBufferPointer(start: self.buffer, count: self.count)
+        var bufferPointer = UnsafeMutableBufferPointer(start: self._buffer, count: self.count)
         bufferPointer.sort(by: areInIncreasingOrder)
     }
     
@@ -283,7 +285,7 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
     }
     
     deinit {
-        if let buffer = self.buffer {
+        if let buffer = self._buffer {
             // Leave POD types initialised since there's no harm in doing so.
             if !_isPOD(Element.self) {
                buffer.deinitialize(count: self.count)
@@ -296,7 +298,7 @@ public final class ExpandingBuffer<Element> : MutableCollection, RandomAccessCol
 
 extension ExpandingBuffer where Element : Comparable {
     public func sort() {
-        var bufferPointer = UnsafeMutableBufferPointer(start: self.buffer, count: self.count)
+        var bufferPointer = UnsafeMutableBufferPointer(start: self._buffer, count: self.count)
         bufferPointer.sort()
     }
 }
@@ -312,7 +314,7 @@ extension ExpandingBuffer where Element == UInt8 {
     @inlinable
     public func append<T>(_ element: T) {
         self.reserveCapacity(self.count + MemoryLayout.size(ofValue: element))
-        UnsafeMutableRawPointer(self.buffer.unsafelyUnwrapped.advanced(by: self.count)).assumingMemoryBound(to: T.self).initialize(to: element)
+        UnsafeMutableRawPointer(self._buffer.unsafelyUnwrapped.advanced(by: self.count)).assumingMemoryBound(to: T.self).initialize(to: element)
         self.count += MemoryLayout.size(ofValue: element)
     }
     
@@ -321,7 +323,7 @@ extension ExpandingBuffer where Element == UInt8 {
         assert(self.count % MemoryLayout<T>.alignment == 0)
         
         self.reserveCapacity(self.count + count * MemoryLayout<T>.stride)
-        UnsafeMutableRawPointer(self.buffer.unsafelyUnwrapped.advanced(by: self.count)).assumingMemoryBound(to: T.self).initialize(repeating: element, count: count)
+        UnsafeMutableRawPointer(self._buffer.unsafelyUnwrapped.advanced(by: self.count)).assumingMemoryBound(to: T.self).initialize(repeating: element, count: count)
         self.count += count * MemoryLayout<T>.stride
     }
     
@@ -330,17 +332,17 @@ extension ExpandingBuffer where Element == UInt8 {
         assert(self.count % MemoryLayout<T>.alignment == 0)
         self.reserveCapacity(self.count + count * MemoryLayout<T>.stride)
         
-        UnsafeMutableRawPointer(self.buffer.unsafelyUnwrapped.advanced(by: self.count)).assumingMemoryBound(to: T.self).initialize(from: from, count: count)
+        UnsafeMutableRawPointer(self._buffer.unsafelyUnwrapped.advanced(by: self.count)).assumingMemoryBound(to: T.self).initialize(from: from, count: count)
         self.count += count * MemoryLayout<T>.stride
     }
     
     @inlinable
     public subscript<T>(index: Int, as type: T.Type) -> T {
         get {
-            return UnsafeRawPointer(self.buffer.unsafelyUnwrapped).load(fromByteOffset: index * MemoryLayout<T>.stride, as: T.self)
+            return UnsafeRawPointer(self._buffer.unsafelyUnwrapped).load(fromByteOffset: index * MemoryLayout<T>.stride, as: T.self)
         }
         set {
-            UnsafeMutableRawPointer(self.buffer.unsafelyUnwrapped).storeBytes(of: newValue, toByteOffset: index * MemoryLayout<T>.stride, as: T.self)
+            UnsafeMutableRawPointer(self._buffer.unsafelyUnwrapped).storeBytes(of: newValue, toByteOffset: index * MemoryLayout<T>.stride, as: T.self)
         }
     }
     
@@ -349,7 +351,7 @@ extension ExpandingBuffer where Element == UInt8 {
     public func withStorageForAppendingBytes(count: Int, alignment: Int, _ closure: (UnsafeMutablePointer<Element>) throws -> Void) rethrows -> Int {
         let alignedInsertionPosition = self.count.roundedUpToMultiple(of: alignment)
         self.reserveCapacity(alignedInsertionPosition + count)
-        try closure(self.buffer.unsafelyUnwrapped.advanced(by: alignedInsertionPosition))
+        try closure(self._buffer.unsafelyUnwrapped.advanced(by: alignedInsertionPosition))
         self.count = alignedInsertionPosition + count
         
         return alignedInsertionPosition
@@ -374,7 +376,7 @@ extension ExpandingBuffer : Codable where Element : Codable {
         
         for i in 0..<count {
             let value = try nestedContainer.decode(Element.self)
-            self.buffer.unsafelyUnwrapped.advanced(by: i).initialize(to: value)
+            self._buffer.unsafelyUnwrapped.advanced(by: i).initialize(to: value)
         }
         
         self.count = count

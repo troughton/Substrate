@@ -6,11 +6,11 @@
 //
 
 #if canImport(Metal)
-import Metal
+@preconcurrency import Metal
 import MetalKit
 import SubstrateUtilities
 
-final class MetalCommandBuffer: BackendCommandBuffer {
+final class MetalCommandBuffer: BackendCommandBuffer, @unchecked Sendable {
     typealias Backend = MetalBackend
     
     let backend: MetalBackend

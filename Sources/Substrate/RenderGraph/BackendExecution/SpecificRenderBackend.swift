@@ -14,7 +14,7 @@ protocol SpecificRenderBackend: _RenderBackendProtocol {
     
     associatedtype QueueImpl: Substrate.BackendQueue where QueueImpl.Backend == Self
     associatedtype Event
-    associatedtype CompactedResourceCommandType
+    associatedtype CompactedResourceCommandType: Sendable
     
     associatedtype TransientResourceRegistry: BackendTransientResourceRegistry where TransientResourceRegistry.Backend == Self
     associatedtype PersistentResourceRegistry: BackendPersistentResourceRegistry where PersistentResourceRegistry.Backend == Self
@@ -56,7 +56,7 @@ extension SpecificRenderBackend {
     }
 }
 
-protocol BackendRenderTargetDescriptor: AnyObject {
+protocol BackendRenderTargetDescriptor: AnyObject, Sendable {
     init(renderPass: RenderPassRecord)
     var descriptor: RenderTargetsDescriptor { get }
     func descriptorMergedWithPass(_ pass: RenderPassRecord, allRenderPasses: [RenderPassRecord], storedTextures: inout [Texture]) -> Self
@@ -72,7 +72,7 @@ protocol BackendQueue: AnyObject {
         compactedResourceCommands: [CompactedResourceCommand<Backend.CompactedResourceCommandType>]) -> Backend.CommandBuffer
 }
 
-protocol BackendCommandBuffer: AnyObject {
+protocol BackendCommandBuffer: AnyObject, Sendable {
     associatedtype Backend: SpecificRenderBackend where Backend.CommandBuffer == Self
     
     func encodeCommands(encoderIndex: Int) async
@@ -88,7 +88,7 @@ protocol BackendCommandBuffer: AnyObject {
     var error: Error? { get }
 }
 
-protocol BackendTransientResourceRegistry {
+protocol BackendTransientResourceRegistry: Sendable {
     static func isAliasedHeapResource(resource: Resource) -> Bool
     
     // ResourceRegistry requirements:

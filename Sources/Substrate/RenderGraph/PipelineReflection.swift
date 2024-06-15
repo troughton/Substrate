@@ -10,7 +10,7 @@ import SubstrateUtilities
 /// A generic resource binding path.
 /// Can be customised by the backends to any size-compatible POD type,
 /// and then converted into a ResourceBindingPath for use of the RenderGraph.
-public struct ResourceBindingPath : Hashable {
+public struct ResourceBindingPath : Hashable, Sendable {
     public var value : UInt64
     
     public init(value: UInt64) {

@@ -31,16 +31,14 @@ public struct Buffer : ResourceProtocol {
         }
     }
     
-
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public let handle: ResourceHandle
     
     /// Retrieves a `Buffer` from an existing valid `Buffer` handle.
     ///
     /// - Parameter handle: the handle for the buffer to retrieve.
     public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .buffer)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        assert(handle.resourceType == .buffer)
+        self.handle = handle
     }
     
     @available(*, deprecated, renamed: "init(length:storageMode:cacheMode:usage:bytes:renderGraph:flags:)")

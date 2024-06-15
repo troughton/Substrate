@@ -130,8 +130,7 @@ public struct ArgumentBufferDescriptor: Hashable, Sendable {
 }
 
 public struct ArgumentBuffer : ResourceProtocol {
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public let handle: ResourceHandle
     
     public enum ArgumentResource {
         case buffer(Buffer, offset: Int)
@@ -171,8 +170,8 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
     public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .argumentBuffer)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        assert(handle.resourceType == .argumentBuffer)
+        self.handle = handle
     }
    
     public init(bindingPath: ResourceBindingPath, pipelineState: PipelineState, renderGraph: RenderGraph? = nil) {

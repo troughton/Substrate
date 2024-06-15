@@ -7,7 +7,8 @@
 
 #if canImport(Metal)
 import Metal
-import MetalKit
+@preconcurrency import MetalKit
+import SubstrateUtilities
 
 struct CAMetalDrawableWrapper: Drawable {
     let drawable: CAMetalDrawable
@@ -39,7 +40,7 @@ enum CAMetalLayerDrawableError: Error {
     case nilDrawable
 }
 
-extension CAMetalLayer: Swapchain {
+extension CAMetalLayer: Swapchain, @unchecked Sendable {
     @_disfavoredOverload
     public var drawablePixelFormat: PixelFormat {
         return PixelFormat(self.pixelFormat)
@@ -59,7 +60,7 @@ extension CAMetalLayer: Swapchain {
 import RealityKit
 
 @available(macOS 12.0, iOS 15.0, tvOS 15.0, *)
-extension TextureResource.DrawableQueue: Swapchain {
+extension TextureResource.DrawableQueue: Swapchain, @unchecked Sendable {
     @_disfavoredOverload
     public var drawablePixelFormat: PixelFormat {
         return PixelFormat(self.pixelFormat)
@@ -84,9 +85,10 @@ extension TextureResource.DrawableQueue: Swapchain {
 
 @available(macOS 12.0, iOS 15.0, tvOS 15.0, *)
 extension TextureResource.Drawable {
-    final class DrawableWrapper: Drawable {
+    final class DrawableWrapper: Drawable, @unchecked Sendable {
         let drawable: TextureResource.Drawable
-        var presentedHandlers: [() -> Void] = []
+        let lock = SpinLock()
+        var presentedHandlers: [@Sendable () -> Void] = []
         
         init(drawable: TextureResource.Drawable) {
             self.drawable = drawable
@@ -99,13 +101,16 @@ extension TextureResource.Drawable {
         func present() {
             self.drawable.present()
             
-            for handler in self.presentedHandlers {
+            let presentedHandlers = self.lock.withLock { self.presentedHandlers }
+            for handler in presentedHandlers {
                 handler()
             }
         }
         
-        func addPresentedHandler(_ onPresented: @escaping () -> Void) {
-            self.presentedHandlers.append(onPresented)
+        func addPresentedHandler(_ onPresented: @escaping @Sendable () -> Void) {
+            self.lock.withLock {
+                self.presentedHandlers.append(onPresented)
+            }
         }
     }
 }

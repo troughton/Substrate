@@ -8,7 +8,7 @@
 import SubstrateUtilities
 
 // This 'PerformOrder' type is necessary to make sure the command goes to the right Command Encoder
-@usableFromInline enum PerformOrder : Comparable {
+@usableFromInline enum PerformOrder : Comparable, Sendable {
     case before // Before the command index
     case after // After the command index
     

@@ -7,11 +7,11 @@
 
 #if canImport(Metal)
 
-import Metal
+@preconcurrency import Metal
 import SubstrateUtilities
 import Atomics
 
-enum MetalCompactedResourceCommandType {
+enum MetalCompactedResourceCommandType: @unchecked Sendable {
     // These commands need to be executed during render pass execution and do not modify the MetalResourceRegistry.
     case useResources(UnsafeMutableBufferPointer<MTLResource>, usage: MTLResourceUsage, stages: MTLRenderStages)
     case resourceMemoryBarrier(resources: UnsafeMutableBufferPointer<MTLResource>, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)

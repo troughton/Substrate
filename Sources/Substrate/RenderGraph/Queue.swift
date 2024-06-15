@@ -17,7 +17,7 @@ import Glibc
 import CRT
 #endif
 
-public final class QueueRegistry {
+public final class QueueRegistry: @unchecked Sendable {
     public static let shared = QueueRegistry()
     
     public static let maxQueues = UInt8.bitWidth

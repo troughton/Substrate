@@ -7,7 +7,7 @@
 
 #if canImport(Metal)
 
-import Metal
+@preconcurrency import Metal
 import MetalKit
 import SubstrateUtilities
 import OSLog
@@ -79,7 +79,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
     
     var samplerReferences = [SamplerDescriptor : SamplerState]()
     
-    private let device : MTLDevice
+    private nonisolated let device : MTLDevice
     let stateCaches: MetalStateCaches
     
     public init(device: MTLDevice, stateCaches: MetalStateCaches) {
@@ -527,14 +527,14 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
 }
 
 
-final class MetalTransientResourceRegistry: BackendTransientResourceRegistry {
+final class MetalTransientResourceRegistry: BackendTransientResourceRegistry, @unchecked Sendable {
     
     typealias Backend = MetalBackend
     
     let device: MTLDevice
     let queue: Queue
     let persistentRegistry : MetalPersistentResourceRegistry
-    var accessLock = SpinLock()
+    let accessLock = SpinLock()
     
     var textureWaitEvents : TransientResourceMap<Texture, ContextWaitEvent>
     var bufferWaitEvents : TransientResourceMap<Buffer, ContextWaitEvent>

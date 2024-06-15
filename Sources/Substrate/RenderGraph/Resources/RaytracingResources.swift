@@ -10,14 +10,12 @@ import Atomics
 
 // MARK: - AccelerationStructure
 
-public struct AccelerationStructure : ResourceProtocol {
-
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+public struct AccelerationStructure : ResourceProtocol, Sendable {
+    public let handle: ResourceHandle
     
     public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .accelerationStructure)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        assert(handle.resourceType == .accelerationStructure)
+        self.handle = handle
     }
     
     @available(macOS 11.0, iOS 14.0, *)
@@ -136,7 +134,7 @@ extension AccelerationStructure: CustomStringConvertible {
     }
 }
 
-final class AccelerationStructureRegistry: PersistentRegistry<AccelerationStructure> {
+final class AccelerationStructureRegistry: PersistentRegistry<AccelerationStructure>, @unchecked Sendable {
     static let instance = AccelerationStructureRegistry()
 }
 
@@ -150,13 +148,11 @@ public struct VisibleFunctionTableDescriptor {
 }
 
 public struct VisibleFunctionTable : ResourceProtocol {
-
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public let handle: ResourceHandle
     
     public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .visibleFunctionTable)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        assert(handle.resourceType == .visibleFunctionTable)
+        self.handle = handle
     }
     
     @available(macOS 11.0, iOS 14.0, *)
@@ -297,7 +293,7 @@ extension VisibleFunctionTable: CustomStringConvertible {
     }
 }
 
-@usableFromInline final class VisibleFunctionTableRegistry: PersistentRegistry<VisibleFunctionTable> {
+@usableFromInline final class VisibleFunctionTableRegistry: PersistentRegistry<VisibleFunctionTable>, @unchecked Sendable {
     @usableFromInline static let instance = VisibleFunctionTableRegistry()
     
     func markAllAsUninitialised() {
@@ -314,13 +310,11 @@ extension VisibleFunctionTable: CustomStringConvertible {
 // MARK: - IntersectionFunctionTable
 
 public struct IntersectionFunctionTable : ResourceProtocol {
-
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public let handle: ResourceHandle
     
     public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .intersectionFunctionTable)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        assert(handle.resourceType == .intersectionFunctionTable)
+        self.handle = handle
     }
     
     @available(macOS 11.0, iOS 14.0, *)

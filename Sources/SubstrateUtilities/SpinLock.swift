@@ -28,7 +28,7 @@ func yieldCPU() {
 #endif
 
 /// An implementation of a spin-lock using test-and-swap
-public struct SpinLock {
+public struct SpinLock: @unchecked Sendable {
     @usableFromInline let value : UnsafeMutablePointer<UInt32.AtomicRepresentation>
     
     @inlinable
@@ -111,7 +111,7 @@ extension Task: AnyTask {
     }
 }
 
-public final class AsyncSpinLock {
+public final class AsyncSpinLock: @unchecked Sendable {
     @usableFromInline let lock = SpinLock()
     @usableFromInline var currentTask: AnyTask?
     
@@ -125,43 +125,47 @@ public final class AsyncSpinLock {
     }
     
     @inlinable @_unsafeInheritExecutor
-    public func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable @escaping () async -> T) async -> T {
+    public func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async -> T) async -> T {
         await self.lock.lock()
         while let currentTask = self.currentTask {
             self.lock.unlock()
             _ = await currentTask.wait()
             await self.lock.lock()
         }
-        let newTask = Task {
-            let result = await perform()
-            await self.lock.lock()
-            self.currentTask = nil
+        return await withoutActuallyEscaping(perform) { perform in
+            let newTask = Task {
+                let result = await perform()
+                await self.lock.lock()
+                self.currentTask = nil
+                self.lock.unlock()
+                return result
+            }
+            self.currentTask = newTask
             self.lock.unlock()
-            return result
+            return await newTask.value
         }
-        self.currentTask = newTask
-        self.lock.unlock()
-        return await newTask.value
     }
     
     @inlinable @_unsafeInheritExecutor
-    public func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable @escaping () async throws -> T) async throws -> T {
+    public func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async throws -> T) async throws -> T {
         await self.lock.lock()
         while let currentTask = self.currentTask {
             self.lock.unlock()
             _ = await currentTask.wait()
             await self.lock.lock()
         }
-        let newTask = Task {
-            let result = try await perform()
-            await self.lock.lock()
-            self.currentTask = nil
+        return try await withoutActuallyEscaping(perform) { perform in
+            let newTask = Task {
+                let result = try await perform()
+                await self.lock.lock()
+                self.currentTask = nil
+                self.lock.unlock()
+                return result
+            }
+            self.currentTask = newTask
             self.lock.unlock()
-            return result
+            return try await newTask.value
         }
-        self.currentTask = newTask
-        self.lock.unlock()
-        return try await newTask.value
     }
 }
 

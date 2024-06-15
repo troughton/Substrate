@@ -170,7 +170,7 @@ public struct RGBColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
 
 extension RGBColor: Equatable where Scalar: Equatable {}
 extension RGBColor: Hashable where Scalar: Hashable {}
-extension RGBColor: Sendable where Scalar: Sendable {}
+extension RGBColor: @unchecked Sendable where Scalar: Sendable {}
 
 extension RGBColor: CustomStringConvertible {
     public var description: String {
@@ -884,17 +884,17 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
 
 extension CIEXYZ1931ColorSpace.Primaries: Equatable where Scalar: Equatable {}
 extension CIEXYZ1931ColorSpace.Primaries: Hashable where Scalar: Hashable {}
-extension CIEXYZ1931ColorSpace.Primaries: Sendable where Scalar: Sendable {}
+extension CIEXYZ1931ColorSpace.Primaries: @unchecked Sendable where Scalar: Sendable {}
 
 extension ColorTransferFunction: Equatable where Scalar: Equatable {}
 extension ColorTransferFunction: Hashable where Scalar: Hashable {}
-extension ColorTransferFunction: Sendable where Scalar: Sendable {}
+extension ColorTransferFunction: @unchecked Sendable where Scalar: Sendable {}
 
 extension CIEXYZ1931ColorSpace: Equatable where Scalar: Equatable {}
 extension CIEXYZ1931ColorSpace: Hashable where Scalar: Hashable {}
-extension CIEXYZ1931ColorSpace: Sendable where Scalar: Sendable {}
+extension CIEXYZ1931ColorSpace: @unchecked Sendable where Scalar: Sendable {}
 
-extension CIEXYZ1931ColorSpace.ConversionContext: Sendable where Scalar: Sendable {}
+extension CIEXYZ1931ColorSpace.ConversionContext: @unchecked Sendable where Scalar: Sendable {}
 
 /// Reference: https://bottosson.github.io/posts/oklab/
 public struct OklabColor<Scalar: BinaryFloatingPoint & Real> {
@@ -1185,7 +1185,7 @@ public struct RGBAColor<Scalar: BinaryFloatingPoint & Real & SIMDScalar> {
 
 extension RGBAColor: Equatable where Scalar: Equatable {}
 extension RGBAColor: Hashable where Scalar: Hashable {}
-extension RGBAColor: Sendable where Scalar: Sendable {}
+extension RGBAColor: @unchecked Sendable where Scalar: Sendable {}
 
 public typealias RGBAColour = RGBAColor
 

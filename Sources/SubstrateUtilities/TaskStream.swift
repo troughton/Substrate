@@ -7,12 +7,12 @@
 
 import Foundation
 
-public final class TaskStream {
-    @usableFromInline final class TaskHolder<R> {
+public final class TaskStream: @unchecked Sendable {
+    @usableFromInline final class TaskHolder<R>: Sendable {
         @usableFromInline let task: @Sendable () async throws -> R
         
         @inlinable
-        init(task: @escaping @Sendable  () async throws -> R) {
+        init(task: @escaping @Sendable () async throws -> R) {
             self.task = task
         }
     }

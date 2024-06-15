@@ -12,7 +12,7 @@ import SubstrateUtilities
 /// for textures, it represents individual slices of the texture.
 /// Since `SubresourceMask` is semantically a move-only type, so is `ActiveResourceRange`; it requires a deep copy
 /// to be safely copied.
-public enum ActiveResourceRange {
+public enum ActiveResourceRange: Sendable {
     case inactive
     case fullResource
     case buffer(Range<Int>)

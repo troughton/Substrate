@@ -56,7 +56,7 @@ public struct FunctionDescriptor : Hashable, ExpressibleByStringLiteral, Sendabl
     }
 }
 
-public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
+public struct TypedRenderPipelineDescriptor<R : RenderPassReflection>: Sendable {
     public var descriptor : RenderPipelineDescriptor
     
     public init() {
@@ -190,7 +190,7 @@ public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
     }
 }
 
-public struct VertexRenderPipelineDescriptor: Hashable {
+public struct VertexRenderPipelineDescriptor: Hashable, Sendable {
     public var vertexDescriptor : VertexDescriptor? = nil
     
     public var vertexFunction: FunctionDescriptor = .init()
@@ -205,7 +205,7 @@ public struct VertexRenderPipelineDescriptor: Hashable {
     }
 }
 
-public struct MeshRenderPipelineDescriptor: Hashable {
+public struct MeshRenderPipelineDescriptor: Hashable, Sendable {
     public init()  {
         
     }
@@ -234,8 +234,8 @@ public struct MeshRenderPipelineDescriptor: Hashable {
     }
 }
 
-public struct RenderPipelineDescriptor: Hashable {
-    enum VertexProcessingDescriptor: Hashable {
+public struct RenderPipelineDescriptor: Hashable, Sendable {
+    enum VertexProcessingDescriptor: Hashable, Sendable {
         case vertex(VertexRenderPipelineDescriptor)
         case mesh(MeshRenderPipelineDescriptor)
         
@@ -404,11 +404,15 @@ public struct RenderPipelineDescriptor: Hashable {
     }
 }
 
-public class PipelineState: Hashable {
+public class PipelineState: Hashable, @unchecked Sendable {
     let state: OpaquePointer
     
     init(state: OpaquePointer) {
         self.state = state
+    }
+    
+    init(state: AnyObject & Sendable) {
+        self.state = OpaquePointer(Unmanaged.passUnretained(state).toOpaque())
     }
     
     func argumentBufferDescriptor(at path: ResourceBindingPath) -> ArgumentBufferDescriptor? {
@@ -424,7 +428,7 @@ public class PipelineState: Hashable {
     }
 }
 
-public class RenderPipelineState: PipelineState {
+public class RenderPipelineState: PipelineState, @unchecked Sendable {
     public let descriptor: RenderPipelineDescriptor
     
     private let argumentBufferDescriptors: [ResourceBindingPath: ArgumentBufferDescriptor]
@@ -440,7 +444,7 @@ public class RenderPipelineState: PipelineState {
     }
 }
 
-public struct TypedComputePipelineDescriptor<R : RenderPassReflection> {
+public struct TypedComputePipelineDescriptor<R : RenderPassReflection>: Sendable {
     public var descriptor : ComputePipelineDescriptor
     
     public init() {

@@ -103,6 +103,9 @@ extension DependencyTable where T == Bool {
     }
 }
 
+extension DependencyTable: Equatable where T: Equatable {}
+extension DependencyTable: Sendable where T: Sendable {}
+
 public struct DependencyBitset {
     @usableFromInline var storage : [UInt]
     public /* internal(set) */ var capacity : Int

@@ -23,12 +23,11 @@ public struct Texture : ResourceProtocol {
         }
     }
 
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public let handle : ResourceHandle
     
-    public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .texture)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+    public init(handle: ResourceHandle) {
+        assert(handle.resourceType == .texture)
+        self.handle = handle
     }
     
     @available(*, deprecated, renamed: "init(descriptor:renderGraph:flags:)")
@@ -62,13 +61,13 @@ public struct Texture : ResourceProtocol {
     @_spi(SubstrateTextureIO)
     public static func _createPersistentTextureWithoutDescriptor(flags: ResourceFlags = [.persistent]) -> Texture {
         precondition(flags.contains(.persistent))
-        return PersistentTextureRegistry.instance.allocateHandle(flags: flags)
+        return Texture(handle: PersistentTextureRegistry.instance.allocateHandle(flags: flags))
     }
     
     @_spi(SubstrateTextureIO)
     public func _initialisePersistentTexture(descriptor: TextureDescriptor, heap: Heap?) {
         precondition(self.flags.contains(.persistent))
-        PersistentTextureRegistry.instance.initialize(resource: self, descriptor: descriptor, heap: heap, flags: self.flags)
+        PersistentTextureRegistry.instance.initialize(resource: self.handle, descriptor: descriptor, heap: heap, flags: self.flags)
         
         assert(!descriptor.usageHint.isEmpty, "Persistent resources must explicitly specify their usage.")
         let didAllocate = RenderBackend.materialisePersistentResource(self)

@@ -4,6 +4,9 @@
 //
 //
 
+#if canImport(Darwin)
+@preconcurrency import Darwin
+#endif
 import Foundation
 import RealModule
 import stb_image_resize

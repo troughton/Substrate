@@ -10,7 +10,7 @@
 import Metal
 import SubstrateUtilities
 
-final class MetalPipelineReflection : PipelineReflection {
+final class MetalPipelineReflection : PipelineReflection, @unchecked Sendable {
     
     struct BindingPathCacheKey : Hashable, CustomHashable {
         var argumentName: String

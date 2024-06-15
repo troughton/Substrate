@@ -8,7 +8,7 @@
 
 /// `StencilDescriptor` describes the tests and operations to perform on a render target's stencil attachment, if present.
 /// The stencil test is performed before the depth test.
-public struct StencilDescriptor : Hashable {
+public struct StencilDescriptor : Hashable, Sendable {
     
     /// The comparison function for the stencil test. The result of this comparison against the value currently in the stencil buffer
     /// determines whether the stencil test succeeds or fails.
@@ -51,7 +51,7 @@ public struct StencilDescriptor : Hashable {
 
 /// `DepthStencilDescriptor` describes the tests and operations to perform on a render target's depth and stencil attachments, if present.
 /// The stencil test is performed before the depth test.
-public struct DepthStencilDescriptor : Hashable {
+public struct DepthStencilDescriptor : Hashable, Sendable {
     
     /// The function used to test fragment depths against the values in the depth buffer. If the comparison function fails, the fragment shader may not
     /// be executed for the fragments which failed the test, and no writes will be performed to any attachments or read-write buffers for those pixels.
@@ -88,7 +88,7 @@ public struct DepthStencilDescriptor : Hashable {
     }
 }
 
-public class DepthStencilState {
+public class DepthStencilState: @unchecked Sendable {
     public let descriptor: DepthStencilDescriptor
     public let state: OpaquePointer
     

@@ -7,18 +7,18 @@
 
 import Foundation
 import SubstrateUtilities
+import Atomics
 
 @usableFromInline struct _HazardTrackingGroup: ResourceProtocol {
     // Idea is: you assign a hazard tracking group to a resource, and then all ResourceUsages are shared for resources within that group, meaning you only track the group and not the (potentially thousands) of individual resources.
     // Argument buffers will need to keep a list of their tracked subresources (namely, hazard tracking groups for resources with one assigned and individual resources for ones without).
     // That will work for the resource command generator/pass dependency tracking, but optimising ResourceBindingEncoder.updateResourceUsages(endingEncoding:) will be more difficult
     
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public let handle: ResourceHandle
     
     public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .hazardTrackingGroup)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        assert(handle.resourceType == .hazardTrackingGroup)
+        self.handle = handle
     }
     
     public init(resourceType: ResourceType) {
@@ -55,7 +55,7 @@ public struct HazardTrackingGroup<R: ResourceProtocol> {
         self.group = .init(resourceType: R.resourceType)
     }
     
-    init?<R: ResourceProtocol>(_ resource: R) {
+    init?<Resource: ResourceProtocol>(_ resource: Resource) {
         guard resource.type == .hazardTrackingGroup else { return nil }
         let group = _HazardTrackingGroup(handle: resource.handle)
         guard group.resourceType == R.resourceType else { return nil }

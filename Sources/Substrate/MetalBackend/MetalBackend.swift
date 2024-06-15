@@ -8,7 +8,7 @@
 #if canImport(Metal)
 
 import SubstrateUtilities
-import Metal
+@preconcurrency import Metal
 
 extension MTLResourceOptions {
     static var substrateTrackedHazards : MTLResourceOptions {
@@ -68,7 +68,7 @@ fileprivate func ??<T>(lhs: T?, rhs: () async -> T) async -> T {
     return await rhs()
 }
 
-public final class MetalBackend : SpecificRenderBackend {
+public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
     @TaskLocal static var activeContext: RenderGraphContextImpl<MetalBackend>? = nil
     
     static var activeContextTaskLocal: TaskLocal<RenderGraphContextImpl<MetalBackend>?> { $activeContext }

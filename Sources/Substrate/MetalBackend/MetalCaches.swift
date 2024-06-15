@@ -7,11 +7,11 @@
 
 #if canImport(Metal)
 
-import Metal
+@preconcurrency import Metal
 import SubstrateUtilities
 
 final actor MetalFunctionCache {
-    let library: MTLLibrary
+    nonisolated let library: MTLLibrary
     private var functionCache = [FunctionDescriptor : MTLFunction]()
     private var functionTasks = [FunctionDescriptor : Task<Void, Error>]()
     
@@ -198,7 +198,7 @@ final actor MetalComputePipelineCache {
         }
         
         var reflection: MTLAutoreleasedComputePipelineReflection? = nil
-        let state = try self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo], reflection: &reflection)
+        let state = try await self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo], reflection: &reflection)
         
         let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeState: state, computeReflection: reflection!)
         await self.setState(state, reflection: pipelineReflection, for: descriptor)
@@ -249,8 +249,8 @@ final actor MetalDepthStencilStateCache {
         var fragmentFunction : String
     }
     
-    let device: MTLDevice
-    let defaultDepthState : MTLDepthStencilState
+    nonisolated let device: MTLDevice
+    nonisolated let defaultDepthState : MTLDepthStencilState
     private var depthStates: [MetalDepthStencilState]
     
     init(device: MTLDevice) {
@@ -308,7 +308,7 @@ final class MetalArgumentEncoderCache {
     }
 }
 
-final class MetalStateCaches {
+final class MetalStateCaches: @unchecked Sendable {
     let device : MTLDevice
     
     var libraryURL : URL?

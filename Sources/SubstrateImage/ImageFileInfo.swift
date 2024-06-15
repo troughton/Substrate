@@ -8,7 +8,7 @@
 import Foundation
 
 
-public struct ImageFileFormat: Hashable, Codable {
+public struct ImageFileFormat: Hashable, Codable, Sendable {
     public var typeIdentifier: String
     
     public init(typeIdentifier: String) {
@@ -31,7 +31,7 @@ public struct ImageFileFormat: Hashable, Codable {
 }
 
 
-public struct ImageFileInfo: Hashable, Codable {
+public struct ImageFileInfo: Hashable, Codable, Sendable {
     public let format: ImageFileFormat?
     public let width : Int
     public let height : Int

@@ -30,7 +30,7 @@ import Atomics
 /// - SeeAlso: `ExternalRenderPass`
 /// - SeeAlso: `CPURenderPass`
 ///
-public protocol RenderPass : AnyObject {
+public protocol RenderPass : AnyObject, Sendable {
     /// The debug name for the pass.
     var name : String { get }
     
@@ -326,7 +326,7 @@ final class CallbackDrawRenderPass : DrawRenderPass {
     public let depthClearOperation: DepthClearOperation
     public let stencilClearOperation: StencilClearOperation
     public let resources: [ResourceUsage]
-    public let executeFunc : (RenderCommandEncoder) async -> Void
+    public let executeFunc : @Sendable (RenderCommandEncoder) async -> Void
     
     public init(name: String,
                 renderTargets: RenderTargetsDescriptor,
@@ -364,7 +364,7 @@ final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : Reflec
     public let depthClearOperation: DepthClearOperation
     public let stencilClearOperation: StencilClearOperation
     public let resources: [ResourceUsage]
-    public let executeFunc : (TypedRenderCommandEncoder<R>) async -> Void
+    public let executeFunc : @Sendable  (TypedRenderCommandEncoder<R>) async -> Void
     
     public init(name: String, renderTargets: RenderTargetsDescriptor,
                 colorClearOperations: [ColorClearOperation],
@@ -397,7 +397,7 @@ final class ReflectableCallbackDrawRenderPass<R : RenderPassReflection> : Reflec
 final class CallbackComputeRenderPass : ComputeRenderPass {
     public let name : String
     public let resources: [ResourceUsage]
-    public let executeFunc : (ComputeCommandEncoder) async -> Void
+    public let executeFunc : @Sendable  (ComputeCommandEncoder) async -> Void
     
     public init(name: String,
                 resources: [ResourceUsage],
@@ -416,7 +416,7 @@ final class CallbackComputeRenderPass : ComputeRenderPass {
 final class ReflectableCallbackComputeRenderPass<R : RenderPassReflection> : ReflectableComputeRenderPass {
     public let name : String
     public let resources: [ResourceUsage]
-    public let executeFunc : (TypedComputeCommandEncoder<R>) async -> Void
+    public let executeFunc : @Sendable (TypedComputeCommandEncoder<R>) async -> Void
     
     public init(name: String,
                 resources: [ResourceUsage],
@@ -455,7 +455,7 @@ final class CallbackCPURenderPass : CPURenderPass {
 final class CallbackBlitRenderPass : BlitRenderPass {
     public let name : String
     public let resources: [ResourceUsage]
-    public let executeFunc : (BlitCommandEncoder) async -> Void
+    public let executeFunc : @Sendable (BlitCommandEncoder) async -> Void
     
     public init(name: String,
                 resources: [ResourceUsage],
@@ -474,7 +474,7 @@ final class CallbackBlitRenderPass : BlitRenderPass {
 final class CallbackExternalRenderPass : ExternalRenderPass {
     public let name : String
     public let resources: [ResourceUsage]
-    public let executeFunc : (ExternalCommandEncoder) async -> Void
+    public let executeFunc : @Sendable (ExternalCommandEncoder) async -> Void
     
     public init(name: String,
                 resources: [ResourceUsage],
@@ -493,7 +493,7 @@ final class CallbackExternalRenderPass : ExternalRenderPass {
 final class CallbackAccelerationStructureRenderPass : AccelerationStructureRenderPass {
     public let name : String
     public let resources: [ResourceUsage]
-    public let executeFunc : (AccelerationStructureCommandEncoder) -> Void
+    public let executeFunc : @Sendable (AccelerationStructureCommandEncoder) -> Void
     
     public init(name: String,
                 resources: [ResourceUsage],
@@ -508,7 +508,7 @@ final class CallbackAccelerationStructureRenderPass : AccelerationStructureRende
     }
 }
 
-@usableFromInline enum RenderPassType {
+@usableFromInline enum RenderPassType: Sendable {
     case cpu
     case draw
     case compute
@@ -685,7 +685,7 @@ struct RenderPassRecord: Equatable, @unchecked Sendable {
     }
 }
 
-@usableFromInline enum DependencyType {
+@usableFromInline enum DependencyType: Sendable {
     /// No dependency
     case none
     /// If the dependency is active, it must be executed first
@@ -748,14 +748,14 @@ protocol _RenderGraphContext : Actor {
 }
 
 /// Each RenderGraph executes on its own GPU queue, although executions are synchronised by submission order.
-public final class RenderGraph {
+public final class RenderGraph: @unchecked Sendable {
     @TaskLocal public static var activeRenderGraph : RenderGraph? = nil
     
     private var renderPasses : [RenderPassRecord] = []
     private let renderPassLock = SpinLock()
     private var usedResources : Set<Resource> = []
     
-    public static private(set) var globalSubmissionIndex : ManagedAtomic<UInt64> = .init(0)
+    nonisolated(unsafe) public static let globalSubmissionIndex : ManagedAtomic<UInt64> = .init(0)
     
     private let frameTimingLock = SpinLock()
     private var previousFrameCompletionTime : UInt64 = 0

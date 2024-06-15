@@ -74,7 +74,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
         self.resourceRegistry?.prepareFrame()
     }
     
-    func registerWindowTexture(for texture: Texture, swapchain: Swapchain) async {
+    nonisolated func registerWindowTexture(for texture: Texture, swapchain: any Swapchain) async {
         guard let resourceRegistry = self.resourceRegistry else {
             print("Error: cannot associate a window texture with a no-transient-resources RenderGraph")
             return
@@ -164,7 +164,7 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                         if self.renderGraphQueue.lastCompletedCommand >= self.renderGraphQueue.lastSubmittedCommand {
                             self.accessSemaphore?.signal()
                             self.needsWaitOnAccessSemaphore = true
-                            await onCompletion(self.queueCommandBufferIndex..<self.queueCommandBufferIndex)
+                            onCompletion(self.queueCommandBufferIndex..<self.queueCommandBufferIndex)
                         } else {
                             self.enqueuedEmptyFrameCompletionHandlers.append((self.queueCommandBufferIndex, onCompletion))
                         }
@@ -180,7 +180,9 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                         await pass.execute()
                     }
                     
-                    await RenderGraph.signposter.withIntervalSignpost("Sort and Compact Resource Commands") {
+                    do {
+                        let state = RenderGraph.signposter.beginInterval("Sort and Compact Resource Commands")
+                        defer { RenderGraph.signposter.endInterval("Sort and Compact Resource Commands", state) }
                         self.commandGenerator.commands.sort() // We do this here since executePreFrameCommands may have added to the commandGenerator commands.
                         
                         var compactedResourceCommands = self.compactedResourceCommands // Re-use its storage
@@ -224,7 +226,9 @@ actor RenderGraphContextImpl<Backend: SpecificRenderBackend>: _RenderGraphContex
                         }
                         waitedEvents = pointwiseMax(waitEventValues, waitedEvents)
                         
-                        await RenderGraph.signposter.withIntervalSignpost("Encode to Command Buffer", "Encode commands for command encoder \(i)") {
+                        do {
+                            let state = RenderGraph.signposter.beginInterval("Encode to Command Buffer", id: .exclusive, "Encode commands for command buffer \(i)")
+                            defer { RenderGraph.signposter.endInterval("Encode to Command Buffer", state) }
                             await commandBuffers.last!.encodeCommands(encoderIndex: i)
                         }
                     }

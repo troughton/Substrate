@@ -25,12 +25,11 @@ struct ArgumentBufferArrayDescriptor {
 }
 
 public struct ArgumentBufferArray : ResourceProtocol, Collection {
-    @usableFromInline let _handle : UnsafeRawPointer
-    @inlinable public var handle : Handle { return UInt64(UInt(bitPattern: _handle)) }
+    public let handle: ResourceHandle
     
     public init(handle: Handle) {
-        assert(Resource(handle: handle).type == .argumentBuffer)
-        self._handle = UnsafeRawPointer(bitPattern: UInt(handle))!
+        assert(handle.resourceType == .argumentBufferArray)
+        self.handle = handle
     }
     
     public init(descriptor: ArgumentBufferDescriptor, arrayLength: Int) {

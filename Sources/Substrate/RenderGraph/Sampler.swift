@@ -90,7 +90,7 @@ public struct SamplerDescriptor : Hashable, Codable, Sendable {
     public var compareFunction: CompareFunction = .never
 }
 
-public struct SamplerState {
+public struct SamplerState: @unchecked Sendable {
     public let descriptor: SamplerDescriptor
     public let state: OpaquePointer
     

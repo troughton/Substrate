@@ -35,21 +35,21 @@ public enum TaggedHeap {
     public static let maxThreadPoolWidth = 128 // GCD pool width (64) rounded up to the next power of two.
     
     public typealias Tag = UInt64
-    public static var blockSize = 64 * 1024
+    public nonisolated(unsafe) static var blockSize = 64 * 1024
     
-    static var strategy: Strategy = .allocatePerBlock()
+    static nonisolated(unsafe) var strategy: Strategy = .allocatePerBlock()
     
-    static var blockCount : Int = 0
-    static var bitSetStorageCount : Int = 0
-    @usableFromInline static var heapMemory : UnsafeMutableRawPointer? = nil
-    static var spinLock = SpinLock()
-    static var filledBlocks : AtomicBitSet! = nil
+    static nonisolated(unsafe) var blockCount : Int = 0
+    static nonisolated(unsafe) var bitSetStorageCount : Int = 0
+    @usableFromInline static nonisolated(unsafe) var heapMemory : UnsafeMutableRawPointer? = nil
+    static nonisolated(unsafe) var spinLock = SpinLock()
+    static nonisolated(unsafe) var filledBlocks : AtomicBitSet! = nil
     
-    static var blocksByTag : [Tag : BitSet]! = nil
-    static var freeBitsets : [BitSet]! = nil
+    static nonisolated(unsafe) var blocksByTag : [Tag : BitSet]! = nil
+    static nonisolated(unsafe) var freeBitsets : [BitSet]! = nil
     
-    static var allocationsByTag : [Tag : [UnsafeMutableRawBufferPointer]] = [:]
-    static var freeBlocks : [Int : [UnsafeMutableRawPointer]] = [:]
+    static nonisolated(unsafe) var allocationsByTag : [Tag : [UnsafeMutableRawBufferPointer]] = [:]
+    static nonisolated(unsafe) var freeBlocks : [Int : [UnsafeMutableRawPointer]] = [:]
     
     #if os(macOS) || targetEnvironment(macCatalyst)
     public static let defaultHeapCapacity = 512 * 1024 * 1024 // 2 * 1024 * 1024 * 1024
@@ -236,7 +236,7 @@ public enum TaggedHeap {
 }
 
 /// A tag allocator which is shared between threads
-public struct LockingTagAllocator: Sendable {
+public struct LockingTagAllocator: @unchecked Sendable {
     
     @usableFromInline
     struct Header {
@@ -333,7 +333,7 @@ public struct LockingTagAllocator: Sendable {
 }
 
 /// A tag allocator that maintains a per-thread block.
-public struct TagAllocator: Sendable {
+public struct TagAllocator: @unchecked Sendable {
     @usableFromInline
     struct Header {
         @usableFromInline let tag : TaggedHeap.Tag
@@ -621,7 +621,7 @@ struct ExecutorAtomicLinearProbingMap {
     
     @inlinable
     public var bucketIndexForCurrentTask: Int {
-        guard let task = _getCurrentAsyncTask() else {
+        guard let task = SubstrateUtilities._getCurrentAsyncTask() else {
             preconditionFailure("Must be executed from a task thread.")
         }
         

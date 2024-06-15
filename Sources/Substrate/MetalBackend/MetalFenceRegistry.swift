@@ -50,8 +50,8 @@ struct MetalFenceHandle : Equatable {
 }
 
 
-final class MetalFenceRegistry {
-    public static var instance: MetalFenceRegistry! = nil
+final class MetalFenceRegistry: @unchecked Sendable {
+    public nonisolated(unsafe) static var instance: MetalFenceRegistry! = nil
     
     let lock = SpinLock()
     public let allocator : ResizingAllocator

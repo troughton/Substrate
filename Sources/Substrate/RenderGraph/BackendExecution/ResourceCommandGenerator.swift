@@ -8,12 +8,12 @@
 import SubstrateUtilities
 
 /// The value to wait for on the event associated with this RenderGraph context.
-struct ContextWaitEvent {
+struct ContextWaitEvent: Sendable {
     var waitValue : UInt64 = 0
     var afterStages : RenderStages = []
 }
 
-struct CompactedResourceCommand<T> : Comparable {
+struct CompactedResourceCommand<T: Sendable> : Comparable, Sendable {
     var command : T
     var index : Int
     var order : PerformOrder
@@ -134,7 +134,7 @@ enum PreFrameCommands {
     }
 }
 
-public struct BarrierScope: OptionSet {
+public struct BarrierScope: OptionSet, Sendable {
     public let rawValue: Int
     
     public init(rawValue: Int) {
@@ -146,7 +146,7 @@ public struct BarrierScope: OptionSet {
     public static let renderTargets: BarrierScope = BarrierScope(rawValue: 1 << 2)
 }
 
-enum FrameResourceCommands {
+enum FrameResourceCommands: Sendable {
     // These commands need to be executed during render pass execution and do not modify the ResourceRegistry.
     case useResource(Resource, usage: ResourceUsageType, stages: RenderStages, allowReordering: Bool) // Must happen before the FrameResourceCommand command index.
     case memoryBarrier(Resource, afterUsage: ResourceUsageType, afterStages: RenderStages, beforeCommand: Int, beforeUsage: ResourceUsageType, beforeStages: RenderStages, activeRange: ActiveResourceRange) // beforeCommand is the command that this memory barrier must have been executed before, while the FrameResourceCommand's command index is the index that this must happen after.
@@ -187,7 +187,7 @@ struct PreFrameResourceCommand : Comparable {
     }
 }
 
-struct FrameResourceCommand : Comparable {
+struct FrameResourceCommand : Comparable, Sendable {
     var command : FrameResourceCommands
     var index : Int
     
