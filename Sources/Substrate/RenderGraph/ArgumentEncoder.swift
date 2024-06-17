@@ -37,13 +37,14 @@ public struct OffsetView<Wrapped> {
     }
 }
 
+extension OffsetView: Sendable where Wrapped: Sendable {}
+
 /// `BufferBacked` is a property wrapper that materialises a `shared` `Buffer` from a provided value.
 @propertyWrapper
 public struct BufferBacked<T> {
     @usableFromInline var _wrappedValue: T?
     @usableFromInline var isDirty: Bool = false
     @usableFromInline var _buffer: OffsetView<Buffer>?
-    
     
     @inlinable
     public var wrappedValue : T? {
@@ -96,7 +97,6 @@ public struct BufferBacked<T> {
         }
     }
 }
-
 
 /// `BufferBacked` is a property wrapper that materialises a `shared` `ArgumentBuffer` from a provided value.
 @propertyWrapper
