@@ -168,11 +168,6 @@ public struct VisibleFunctionTable : ResourceProtocol {
     }
     
     @available(macOS 11.0, iOS 14.0, *)
-    public init(functionCount: Int, pipelineState: RenderPipelineState, stage: RenderStages) {
-        self.init(functionCount: functionCount, pipelineState: pipelineState, stage: stage)
-    }
-    
-    @available(macOS 11.0, iOS 14.0, *)
     public init(functionCount: Int, pipelineState: ComputePipelineState) {
         self.init(functionCount: functionCount, pipelineState: pipelineState, stage: .compute)
     }
