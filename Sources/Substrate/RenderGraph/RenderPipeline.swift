@@ -56,7 +56,7 @@ public struct FunctionDescriptor : Hashable, ExpressibleByStringLiteral, Sendabl
     }
 }
 
-public struct TypedRenderPipelineDescriptor<R : RenderPassReflection>: Sendable {
+public struct TypedRenderPipelineDescriptor<R : RenderPassReflection> {
     public var descriptor : RenderPipelineDescriptor
     
     public init() {
@@ -189,6 +189,8 @@ public struct TypedRenderPipelineDescriptor<R : RenderPassReflection>: Sendable 
         self.constantsChanged = false
     }
 }
+
+extension TypedRenderPipelineDescriptor: Sendable where R.FunctionConstants: Sendable {}
 
 public struct VertexRenderPipelineDescriptor: Hashable, Sendable {
     public var vertexDescriptor : VertexDescriptor? = nil
@@ -444,7 +446,7 @@ public class RenderPipelineState: PipelineState, @unchecked Sendable {
     }
 }
 
-public struct TypedComputePipelineDescriptor<R : RenderPassReflection>: Sendable {
+public struct TypedComputePipelineDescriptor<R : RenderPassReflection> {
     public var descriptor : ComputePipelineDescriptor
     
     public init() {
@@ -482,6 +484,8 @@ public struct TypedComputePipelineDescriptor<R : RenderPassReflection>: Sendable
         self.constantsChanged = false
     }
 }
+
+extension TypedComputePipelineDescriptor: Sendable where R.FunctionConstants: Sendable {}
 
 public struct ComputePipelineDescriptor : Hashable, Sendable {
     public var function = FunctionDescriptor()
