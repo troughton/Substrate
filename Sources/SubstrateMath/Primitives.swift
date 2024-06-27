@@ -541,16 +541,31 @@ public struct AxisAlignedBoundingBox<Scalar: SIMDScalar & BinaryFloatingPoint & 
                 self.maxZ > otherBox.maxZ
     }
 
+    
+    @available(*, deprecated, renamed: "formUnion(with:)")
     @inlinable
     public mutating func combine(with box: AxisAlignedBoundingBox) {
+        self.formUnion(with: box)
+    }
+    
+    @available(*, deprecated, renamed: "union(with:)")
+    @inlinable
+    public static func combine(_ a : AxisAlignedBoundingBox, _ b : AxisAlignedBoundingBox) -> AxisAlignedBoundingBox {
+        var result = a
+        result.formUnion(with: b)
+        return result
+    }
+
+    @inlinable
+    public mutating func formUnion(with box: AxisAlignedBoundingBox) {
         self.minPoint = pointwiseMin(self.minPoint, box.minPoint)
         self.maxPoint = pointwiseMax(self.maxPoint, box.maxPoint)
     }
     
     @inlinable
-    public static func combine(_ a : AxisAlignedBoundingBox, _ b : AxisAlignedBoundingBox) -> AxisAlignedBoundingBox {
-        var result = a
-        result.combine(with: b)
+    public func union(with box: AxisAlignedBoundingBox) -> AxisAlignedBoundingBox {
+        var result = self
+        result.formUnion(with: box)
         return result
     }
     
