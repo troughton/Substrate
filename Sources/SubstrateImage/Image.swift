@@ -10,6 +10,7 @@
 import Foundation
 import RealModule
 import stb_image_resize
+@_exported import SubstrateMath
 
 //@available(*, deprecated, renamed: "ImageColorSpace")
 public typealias TextureColorSpace = ImageColorSpace
@@ -37,85 +38,6 @@ func clamp<T: Comparable>(_ val: T, min minValue: T, max maxValue: T) -> T {
     return Swift.min(Swift.max(val, minValue), maxValue)
 }
 
-// Reference: https://docs.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-data-conversion
-@inlinable
-public func floatToSnorm<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ c: Float, type: I.Type = I.self) -> I {
-    if c != c { // Check for NaN – this check is faster than c.isNaN
-        return 0
-    }
-    let c = clamp(c, min: -1.0, max: 1.0)
-    
-    let scale: Float
-    if I.self == Int8.self {
-        scale = Float(Int8.max)
-    } else if I.self == Int16.self {
-        scale = Float(Int16.max)
-    } else {
-        scale = Float(I.max)
-    }
-    let rescaled = c * scale
-    //    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
-    let rounded = rescaled + (rescaled >= 0 ? 0.5 : -0.5) // We follow this by a floor through conversion to int, so we can round by adding 0.5
-    if I.self == Int8.self {
-        return Int8(rounded) as! I
-    } else if I.self == Int16.self {
-        return Int16(rounded) as! I
-    } else {
-        return I(rounded)
-    }
-}
-
-@inlinable
-public func floatToUnorm<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ c: Float, type: I.Type = I.self) -> I {
-    if c != c { // Check for NaN – this check is faster than c.isNaN
-        return 0
-    }
-    let c = Swift.min(1.0, Swift.max(c, 0.0))
-    let scale: Float
-    if I.self == UInt8.self {
-        scale = Float(UInt8.max)
-    } else if I.self == UInt16.self {
-        scale = Float(UInt16.max)
-    } else {
-        scale = Float(I.max)
-    }
-    let rescaled = c * scale
-    //    let rounded = rescaled.rounded(.toNearestOrAwayFromZero)
-    let rounded = rescaled + 0.5 // We follow this by a floor through conversion to int, so we can round by adding 0.5
-    if I.self == UInt8.self {
-        return UInt8(rounded) as! I
-    } else if I.self == UInt16.self {
-        return UInt16(rounded) as! I
-    } else {
-        return I(rounded)
-    }
-}
-
-@inlinable
-public func snormToFloat<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ c: I) -> Float {
-    if c == I.min {
-        return -1.0
-    }
-    if let c = c as? Int8 {
-        return Float(c) / Float(Int8.max)
-    } else if let c = c as? Int16 {
-        return Float(c) / Float(Int16.max)
-    } else {
-        return Float(c) / Float(I.max)
-    }
-}
-
-@inlinable
-public func unormToFloat<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ c: I) -> Float {
-    if let c = c as? UInt8 {
-        return Float(c) / Float(UInt8.max)
-    } else if let c = c as? UInt16 {
-        return Float(c) / Float(UInt16.max)
-    } else {
-        return Float(c) / Float(I.max)
-    }
-}
-
 public enum ImageLoadingError : Error {
     case invalidFile(URL, message: String? = nil)
     case invalidData(message: String? = nil)
@@ -138,19 +60,23 @@ public enum ImageColorSpace: Hashable, Sendable {
     case linearSRGB
     /// The IEC 61966-2-1:1999 sRGB color space using a user-specified gamma.
     case gammaSRGB(Float)
+    case cieRGB(colorSpace: CIEXYZ1931ColorSpace<Float>)
 
     @inlinable
-    public var asLinear: ImageColorSpace {
+    public var withLinearGamma: ImageColorSpace {
         switch self {
         case .undefined:
             return self
         case .sRGB, .gammaSRGB, .linearSRGB:
             return .linearSRGB
+        case .cieRGB(var colorSpace):
+            colorSpace.eotf = .linear
+            return .cieRGB(colorSpace: colorSpace)
         }
     }
     
     @inlinable
-    public func fromLinearSRGB(_ color: Float) -> Float {
+    public func fromLinearGamma(_ color: Float) -> Float {
         switch self {
         case .undefined:
             return color
@@ -159,12 +85,14 @@ public enum ImageColorSpace: Hashable, Sendable {
         case .linearSRGB:
             return color
         case .gammaSRGB(let gamma):
-            return pow(color, gamma)
+            return pow(color, 1.0 / gamma)
+        case .cieRGB(let cie):
+            return cie.eotf.linearToEncoded(color)
         }
     }
 
     @inlinable
-    public func toLinearSRGB(_ color: Float) -> Float {
+    public func toLinearGamma(_ color: Float) -> Float {
         switch self {
         case .undefined:
             return color
@@ -173,7 +101,39 @@ public enum ImageColorSpace: Hashable, Sendable {
         case .linearSRGB:
             return color
         case .gammaSRGB(let gamma):
-            return Float.pow(color, 1.0 / gamma)
+            return Float.pow(color, gamma)
+        case .cieRGB(let cie):
+            return cie.eotf.encodedToLinear(color)
+        }
+    }
+    
+    @inlinable
+    public var usesSRGBPrimaries: Bool {
+        switch self {
+        case .undefined:
+            return false
+        case .sRGB, .linearSRGB, .gammaSRGB:
+            return true
+        case .cieRGB(let cie):
+            return cie.primaries == .sRGB
+        }
+    }
+    
+    @inlinable
+    public var cieSpace: CIEXYZ1931ColorSpace<Float>? {
+        switch self {
+        case .undefined:
+            return nil
+        case .sRGB:
+            return .sRGB
+        case .linearSRGB:
+            return .linearSRGB
+        case .gammaSRGB(let gamma):
+            var space = CIEXYZ1931ColorSpace<Float>.sRGB
+            space.eotf = .power(gamma)
+            return space
+        case .cieRGB(let colorSpace):
+            return colorSpace
         }
     }
     
@@ -181,33 +141,75 @@ public enum ImageColorSpace: Hashable, Sendable {
     public static func convert(_ value: Float, from: ImageColorSpace, to: ImageColorSpace) -> Float {
         if from == to { return value }
         
-        let inLinearSRGB = from.toLinearSRGB(value)
-        return to.fromLinearSRGB(inLinearSRGB)
+        let inLinearSRGB = from.toLinearGamma(value)
+        return to.fromLinearGamma(inLinearSRGB)
+    }
+    
+    @inlinable
+    public static func convert(_ value: RGBColor<Float>, from: ImageColorSpace, to: ImageColorSpace) -> RGBColor<Float> {
+        if from == to { return value }
+        
+        guard let fromSpace = from.cieSpace, let toSpace = to.cieSpace else { return value }
+        return CIEXYZ1931ColorSpace.convert(value, from: fromSpace, to: toSpace)
+    }
+    
+    @inlinable
+    func flatteningCIE() -> ImageColorSpace {
+        if case .cieRGB(let colorSpace) = self, colorSpace.primaries == .sRGB, colorSpace.referenceWhite == .d65 {
+            switch colorSpace.eotf {
+            case .linear:
+                return .linearSRGB
+            case .sRGB, .rec709:
+                return .sRGB
+            case .power(let power):
+                return .gammaSRGB(power)
+            default:
+                break
+            }
+        }
+        return self
+    }
+    
+    @inlinable
+    public static func ==(lhs: ImageColorSpace, rhs: ImageColorSpace) -> Bool {
+        switch (lhs.flatteningCIE(), rhs.flatteningCIE()) {
+        case (.undefined, .undefined): return true
+        case (.sRGB, .sRGB): return true
+        case (.linearSRGB, .linearSRGB): return true
+        case (.gammaSRGB(let powerA), .gammaSRGB(let powerB)): return powerA == powerB
+        case (.cieRGB(let cieA), .cieRGB(let cieB)): return cieA == cieB
+        default: return false
+        }
     }
 }
 
 extension ImageColorSpace: Codable {
     public enum CodingKeys: CodingKey {
         case gamma
+        case cieRGB
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let gamma = try container.decode(Float.self, forKey: .gamma)
-        if !gamma.isFinite || gamma < 0 {
-            self = .undefined
-        } else if gamma == 0 {
-            self = .sRGB // sRGB is encoded as gamma of 0.0
-        } else if gamma == 1.0 {
-            self = .linearSRGB
+        if let gamma = try container.decodeIfPresent(Float.self, forKey: .gamma) {
+            if !gamma.isFinite || gamma < 0 {
+                self = .undefined
+            } else if gamma == 0 {
+                self = .sRGB // sRGB is encoded as gamma of 0.0
+            } else if gamma == 1.0 {
+                self = .linearSRGB
+            } else {
+                self = .gammaSRGB(gamma)
+            }
         } else {
-            self = .gammaSRGB(gamma)
+            let cieRGB = try container.decode(CIEXYZ1931ColorSpace<Float>.self, forKey: .cieRGB)
+            self = .cieRGB(colorSpace: cieRGB)
         }
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        switch self {
+        switch self.flatteningCIE() {
         case .undefined:
             try container.encode(-1.0 as Float, forKey: .gamma)
         case .sRGB:
@@ -216,6 +218,8 @@ extension ImageColorSpace: Codable {
             try container.encode(1.0 as Float, forKey: .gamma)
         case .gammaSRGB(let gamma):
             try container.encode(gamma, forKey: .gamma)
+        case .cieRGB(let colorSpace):
+            try container.encode(colorSpace, forKey: .cieRGB)
         }
     }
 }
@@ -846,7 +850,7 @@ public struct Image<ComponentType> : AnyImage {
             processingColorSpace = .sRGB
         default:
             stbColorSpace = STBIR_COLORSPACE_LINEAR
-            processingColorSpace = self.colorSpace.asLinear
+            processingColorSpace = self.colorSpace.withLinearGamma
         }
         
         var sourceImage: Image<T>
@@ -1338,39 +1342,8 @@ extension Image where ComponentType: BinaryInteger & FixedWidthInteger & Unsigne
         }
     }
     
-    public func converted(toColorSpace: ImageColorSpace) -> Self {
-        var result = self
-        result.convert(toColorSpace: toColorSpace)
-        return result
-    }
-    
     @_specialize(kind: full, where ComponentType == UInt8)
     @_specialize(kind: full, where ComponentType == UInt16)
-    @_specialize(kind: full, where ComponentType == UInt32)
-    public mutating func convert(toColorSpace: ImageColorSpace) {
-        if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
-            return
-        }
-        defer { self.colorSpace = toColorSpace }
-        
-        if T.self == UInt8.self {
-            self.ensureUniqueness()
-            if self.colorSpace == .sRGB, toColorSpace == .linearSRGB {
-                (self as! Image<UInt8>)._convertSRGBToLinear()
-                return
-            } else if self.colorSpace == .linearSRGB, toColorSpace == .sRGB {
-                (self as! Image<UInt8>)._convertLinearToSRGB()
-                return
-            }
-        }
-        
-        let sourceColorSpace = self.colorSpace
-        self.apply(channelRange: self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount) { floatToUnorm(ImageColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }
-    }
-    
-    @_specialize(kind: full, where ComponentType == UInt8)
-    @_specialize(kind: full, where ComponentType == UInt16)
-    @_specialize(kind: full, where ComponentType == UInt32)
     public mutating func convertToPremultipliedAlpha() {
         guard case .postmultiplied = self.alphaMode else { return }
         self.ensureUniqueness()
@@ -1430,6 +1403,75 @@ extension Image where ComponentType: BinaryInteger & FixedWidthInteger & Unsigne
                     let floatVal = unormToFloat(self[x, y, channel: c])
                     let linearVal = clamp(ImageColorSpace.convert(floatVal, from: sourceColorSpace, to: .linearSRGB) / alpha, min: 0.0, max: 1.0)
                     self.setUnchecked(x: x, y: y, channel: c, value: floatToUnorm(ImageColorSpace.convert(linearVal, from: .linearSRGB, to: sourceColorSpace), type: T.self))
+                }
+            }
+        }
+    }
+}
+
+extension Image where ComponentType: BinaryInteger & FixedWidthInteger & UnsignedInteger & SIMDScalar {
+    
+    @inlinable
+    public func converted(toColorSpace: ImageColorSpace) -> Self {
+        var result = self
+        result.convert(toColorSpace: toColorSpace)
+        return result
+    }
+    
+    @_specialize(kind: full, where ComponentType == UInt8)
+    @_specialize(kind: full, where ComponentType == UInt16)
+    public mutating func convert(toColorSpace: ImageColorSpace) {
+        if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
+            return
+        }
+        defer { self.colorSpace = toColorSpace }
+        
+        if toColorSpace == .undefined { return }
+        
+        if T.self == UInt8.self {
+            self.ensureUniqueness()
+            if self.colorSpace == .sRGB, toColorSpace == .linearSRGB {
+                (self as! Image<UInt8>)._convertSRGBToLinear()
+                return
+            } else if self.colorSpace == .linearSRGB, toColorSpace == .sRGB {
+                (self as! Image<UInt8>)._convertLinearToSRGB()
+                return
+            }
+        }
+        
+        let sourceColorSpace = self.colorSpace
+        let channelRange = self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount
+        
+        if channelRange.count < 3 || (sourceColorSpace.usesSRGBPrimaries && toColorSpace.usesSRGBPrimaries) {
+            // Gamma correction only.
+            self.apply(channelRange: channelRange) { floatToUnorm(ImageColorSpace.convert(unormToFloat($0), from: sourceColorSpace, to: toColorSpace), type: T.self) }
+        } else if let fromCIE = sourceColorSpace.cieSpace, let toCIE = toColorSpace.cieSpace {
+            let conversionContext = CIEXYZ1931ColorSpace.conversionContext(convertingFrom: fromCIE, to: toCIE)
+            let channelCount = self.channelCount
+            
+            if channelCount == 3 {
+                self.withUnsafeMutableBufferPointer { contents in
+                    for offset in stride(from: 0, to: contents.count, by: channelCount) {
+                        let source = SIMD3<ComponentType>(contents[offset + 0], contents[offset + 1], contents[offset + 2])
+                        let asFloat = unormToFloat(source)
+                        let converted = SIMD3<Float>(conversionContext.convert(RGBColor(asFloat)))
+                        let encoded = floatToUnorm(converted, type: ComponentType.self)
+                        contents[offset + 0] = encoded.x
+                        contents[offset + 1] = encoded.y
+                        contents[offset + 2] = encoded.z
+                    }
+                }
+            } else {
+                self.withUnsafeMutableBufferPointer { contents in
+                    contents.withMemoryRebound(to: SIMD4<ComponentType>.self) { contents in
+                        for i in contents.indices {
+                            let source = contents[i]
+                            let asFloat = unormToFloat(source)
+                            let converted = SIMD3<Float>(conversionContext.convert(RGBColor(asFloat.xyz)))
+                            let encoded = SIMD4<ComponentType>(floatToUnorm(converted, type: ComponentType.self), source.w)
+                            contents[i] = encoded
+                        }
+                    }
                 }
             }
         }
@@ -1976,10 +2018,43 @@ extension Image where ComponentType == Float {
         if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
             return
         }
+        defer { self.colorSpace = toColorSpace }
+        
+        if toColorSpace == .undefined { return }
         
         let sourceColorSpace = self.colorSpace
-        self.apply(channelRange: self.channelCount == 4 ? 0..<3 : 0..<self.channelCount) { ImageColorSpace.convert($0, from: sourceColorSpace, to: toColorSpace) }
-        self.colorSpace = toColorSpace
+        let channelRange = self.alphaMode != .none ? (0..<self.channelCount - 1) : 0..<self.channelCount
+        
+        if channelRange.count < 3 || (sourceColorSpace.usesSRGBPrimaries && toColorSpace.usesSRGBPrimaries) {
+            // Gamma correction only.
+            self.apply(channelRange: channelRange) { ImageColorSpace.convert($0, from: sourceColorSpace, to: toColorSpace) }
+        } else if let fromCIE = sourceColorSpace.cieSpace, let toCIE = toColorSpace.cieSpace {
+            let conversionContext = CIEXYZ1931ColorSpace.conversionContext(convertingFrom: fromCIE, to: toCIE)
+            let channelCount = self.channelCount
+            
+            if channelCount == 3 {
+                self.withUnsafeMutableBufferPointer { contents in
+                    for offset in stride(from: 0, to: contents.count, by: channelCount) {
+                        let source = SIMD3<ComponentType>(contents[offset + 0], contents[offset + 1], contents[offset + 2])
+                        let converted = SIMD3<Float>(conversionContext.convert(RGBColor(source)))
+                        contents[offset + 0] = converted.x
+                        contents[offset + 1] = converted.y
+                        contents[offset + 2] = converted.z
+                    }
+                }
+            } else {
+                self.withUnsafeMutableBufferPointer { contents in
+                    contents.withMemoryRebound(to: SIMD4<ComponentType>.self) { contents in
+                        for i in contents.indices {
+                            let source = contents[i]
+                            let converted = SIMD3<Float>(conversionContext.convert(RGBColor(source.xyz)))
+                            let encoded = SIMD4<Float>(converted, source.w)
+                            contents[i] = encoded
+                        }
+                    }
+                }
+            }
+        }
     }
     
     @available(*, deprecated, renamed: "convert(toColorSpace:)")

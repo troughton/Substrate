@@ -3,6 +3,7 @@ import stb_image_write
 import tinyexr
 import LodePNG
 import SubstrateImage
+import SubstrateMath
 
 #if canImport(zlib)
 import zlib
@@ -355,10 +356,27 @@ fileprivate extension LodePNGInfo {
             self.gama_gamma = 100_000 // Gamma exponent times 100000
         case .gammaSRGB(let gamma):
             self.gama_defined = 1
-            self.gama_gamma = UInt32(100_000.0 * gamma) // Gamma exponent times 100000
+            self.gama_gamma = UInt32(100_000.0 / gamma) // Gamma exponent times 100000
         case .sRGB:
             self.srgb_defined = 1
             self.srgb_intent = 1 // relative colorimetric
+        case .cieRGB(let colorSpace):
+            if colorSpace == .rec709 || colorSpace == .sRGB {
+                self.srgb_defined = 1
+                self.srgb_intent = 1 // relative colorimetric
+            } else {
+                if let gamma = colorSpace.eotf.representativeGamma {
+                    self.gama_defined = 1
+                    self.gama_gamma = UInt32(clamp(100_000.0 / gamma, min: 0.0, max: Float(UInt32.max)))
+                }
+                self.chrm_defined = 1
+                self.chrm_red_x = UInt32(clamp(100_000.0 * colorSpace.primaries.red.x, min: 0.0, max: Float(UInt32.max)))
+                self.chrm_red_y = UInt32(clamp(100_000.0 * colorSpace.primaries.red.y, min: 0.0, max: Float(UInt32.max)))
+                self.chrm_green_x = UInt32(clamp(100_000.0 * colorSpace.primaries.green.x, min: 0.0, max: Float(UInt32.max)))
+                self.chrm_green_y = UInt32(clamp(100_000.0 * colorSpace.primaries.green.y, min: 0.0, max: Float(UInt32.max)))
+                self.chrm_blue_x = UInt32(clamp(100_000.0 * colorSpace.primaries.blue.x, min: 0.0, max: Float(UInt32.max)))
+                self.chrm_blue_y = UInt32(clamp(100_000.0 * colorSpace.primaries.blue.y, min: 0.0, max: Float(UInt32.max)))
+            }
         }
     }
 }

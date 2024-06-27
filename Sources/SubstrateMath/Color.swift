@@ -380,10 +380,23 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
     case arriLogC(ArriLogCParameters)
     case arriLogC4
     case sonySLog3
+    case proPhoto
     case pq
     case hlg
     
     public static var rec2020: ColorTransferFunction { return .rec709 }
+    
+    @inlinable
+    public var representativeGamma: Scalar? {
+        switch self {
+        case .linear: return 1.0
+        case .power(let power): return power
+        case .sRGB: return 2.2
+        case .rec709: return 2.4
+        case .proPhoto: return 1.8
+        default: return nil
+        }
+    }
     
     /// This is the OETF (opto-electronic transfer function) that converts linear light into an encoded signal.
     @inlinable
@@ -448,6 +461,16 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
                 let scale: Scalar = (171.2102946929 - 95.0)/0.01125000
                 return (x * scale + 95.0) / 1023.0
             }
+        case .proPhoto:
+            if x < 0.0 {
+                return 0.0
+            } else if x < 1.0 / 512.0 {
+                return 16.0 * x
+            } else if x < 1.0 {
+                return Scalar.pow(x, 1.0 / 1.8)
+            } else {
+                return 1.0
+            }
         case .pq:
             let m1: Scalar = 1305.0 / 8192.0
             let m2: Scalar = 2523.0 / 32.0
@@ -502,7 +525,7 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             if x <= 0.04045 {
                 return x / 12.92
             } else {
-                return Scalar.pow((x + 0.055) / 1.055, 2.4)
+                return Scalar.pow((x + 0.055) / 1.055, 2.4) - 0.055
             }
         case .rec709:
             let alpha: Scalar = 1.09929682680944
@@ -555,6 +578,16 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             let denominator = c2 - c3 * Scalar.pow(inverse, 1.0 / m2)
             
             return 10_000.0 * Scalar.pow(numerator / denominator, 1.0 / m1)
+        case .proPhoto:
+            if x < 0.0 {
+                return 0.0
+            } else if x < 16.0 / 512.0 {
+                return x / 16.0
+            } else if x < 1.0 {
+                return Scalar.pow(x, 1.8)
+            } else {
+                return 1.0
+            }
         case .hlg:
             // NOTE: this ignores any display-specific settings and simply remaps using the inverse of the OETF.
             let a: Scalar = 0.17883277
@@ -590,6 +623,11 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         @inlinable
         public static var dci: ReferenceWhite {
             return ReferenceWhite(chromacity: SIMD2(0.314, 0.351))
+        }
+        
+        @inlinable
+        public static var d50: ReferenceWhite {
+            return ReferenceWhite(chromacity: SIMD2(0.345704, 0.358540))
         }
         
         @inlinable
@@ -648,6 +686,14 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         }
         
         @inlinable
+        public static var adobeRGB: Primaries {
+            return Primaries(
+                red:   SIMD2(0.64000,  0.33000),
+                green: SIMD2(0.21000,  0.71000),
+                blue:  SIMD2(0.15000,  0.06000))
+        }
+        
+        @inlinable
         public static var rec2020: Primaries {
             return Primaries(
                 red:   SIMD2(0.70800,  0.29200),
@@ -669,6 +715,14 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
                 red:   SIMD2(0.7347,  0.2653),
                 green: SIMD2(0.1424,  0.8576),
                 blue:  SIMD2(0.0991, -0.0308))
+        }
+        
+        @inlinable
+        public static var proPhoto: Primaries {
+            return Primaries(
+                red:   SIMD2(0.734699, 0.265301),
+                green: SIMD2(0.159597, 0.840403),
+                blue:  SIMD2(0.036598, 0.000105))
         }
         
         @inlinable
@@ -695,7 +749,7 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         
         @inlinable
         init(matrix: Matrix3x3<Scalar>? = nil, inputColorTransferFunction: ColorTransferFunction<Scalar>, outputColorTransferFunction: ColorTransferFunction<Scalar>) {
-            self.matrix = matrix
+            self.matrix = matrix != .identity ? matrix : nil
             self.inputColorTransferFunction = inputColorTransferFunction
             self.outputColorTransferFunction = outputColorTransferFunction
         }
@@ -741,90 +795,119 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
     public var referenceWhite: ReferenceWhite
     public var eotf: ColorTransferFunction<Scalar>
     
+    @inlinable
     public init(primaries: Primaries, eotf: ColorTransferFunction<Scalar>, referenceWhite: ReferenceWhite) {
         self.primaries = primaries
         self.eotf = eotf
         self.referenceWhite = referenceWhite
     }
     
+    @inlinable
     public static var rec709: CIEXYZ1931ColorSpace {
         return .init(primaries: .sRGB,
                      eotf: .rec709,
                      referenceWhite: .d65)
     }
     
+    @inlinable
     public static var sRGB: CIEXYZ1931ColorSpace {
         return .init(primaries: .sRGB,
                      eotf: .sRGB,
                      referenceWhite: .d65)
     }
     
+    @inlinable
     public static var linearSRGB: CIEXYZ1931ColorSpace {
         return .init(primaries: .sRGB,
                      eotf: .linear,
                      referenceWhite: .d65)
     }
     
+    @inlinable
     public static var dciP3: CIEXYZ1931ColorSpace {
         return .init(primaries: .p3,
                      eotf: .power(2.6),
                      referenceWhite: .dci)
     }
     
+    @inlinable
     public static var displayP3: CIEXYZ1931ColorSpace {
         return .init(primaries: .p3,
                      eotf: .sRGB,
                      referenceWhite: .d65)
     }
     
+    @inlinable
     public static var rec2020: CIEXYZ1931ColorSpace {
         return .init(primaries: .rec2020,
                      eotf: .rec2020,
                      referenceWhite: .d65)
     }
     
+    @inlinable
     public static var aces: CIEXYZ1931ColorSpace {
         return .init(primaries: .acesAP0,
                      eotf: .linear,
                      referenceWhite: .aces)
     }
     
+    @inlinable
     public static var acesCC: CIEXYZ1931ColorSpace {
         return .init(primaries: .acesAP1,
                      eotf: .acesCC,
                      referenceWhite: .aces)
     }
     
+    @inlinable
     public static var acesCCT: CIEXYZ1931ColorSpace {
         return .init(primaries: .acesAP1,
                      eotf: .acesCCT,
                      referenceWhite: .aces)
     }
     
+    @inlinable
     public static var acesCG: CIEXYZ1931ColorSpace {
         return .init(primaries: .acesAP1,
                      eotf: .linear,
                      referenceWhite: .aces)
     }
     
+    @inlinable
+    public static var adobeRGB: CIEXYZ1931ColorSpace {
+        return .init(primaries: .adobeRGB,
+                     eotf: .power(563.0 / 256.0),
+                     referenceWhite: .d65)
+    }
+    
+    @inlinable
     public static func arriLogC(el: ArriAlexaEl, usingSensorValues: Bool = false) -> CIEXYZ1931ColorSpace {
         return .init(primaries: .arriWideGamutRGB,
                      eotf: .arriLogC(usingSensorValues ? el.sensorSignalParameters : el.exposureValueParameters),
                      referenceWhite: .d65)
     }
     
+    @inlinable
     public static var arriLogC4: CIEXYZ1931ColorSpace {
         return .init(primaries: .arriWideGamut4,
                      eotf: .arriLogC4,
                      referenceWhite: .d65)
     }
     
+    @inlinable
+    public static var proPhoto: CIEXYZ1931ColorSpace {
+        return .init(primaries: .proPhoto,
+                     eotf: .proPhoto,
+                     referenceWhite: .d50)
+    }
+    
+    @inlinable
     public static var sonySGamut3: CIEXYZ1931ColorSpace {
         return .init(primaries: .sonySGamut3,
                      eotf: .sonySLog3,
                      referenceWhite: .d65)
     }
     
+    @inlinable
     public static var sonySGamut3Cine: CIEXYZ1931ColorSpace {
         return .init(primaries: .sonySGamut3Cine,
                      eotf: .sonySLog3,
@@ -832,6 +915,7 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
     }
     
     // Reference: http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
+    @inlinable
     public var rgbToXYZMatrix: Matrix3x3<Scalar> {
         let x = SIMD4(self.primaries.red.x, self.primaries.green.x, self.primaries.blue.x, self.referenceWhite.chromacity.x)
         let y = SIMD4(self.primaries.red.y, self.primaries.green.y, self.primaries.blue.y, self.referenceWhite.chromacity.y)
@@ -849,10 +933,12 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
                          S.z * whitePointTransformMatrix[2])
     }
     
+    @inlinable
     public var xyzToRGBMatrix: Matrix3x3<Scalar> {
         self.rgbToXYZMatrix.inverse
     }
     
+    @inlinable
     public static func chromaticAdaptationMatrix(from: XYZColor<Scalar>, to: XYZColor<Scalar>) -> Matrix3x3<Scalar> {
         // http://www.brucelindbloom.com/index.html?Eqn_ChromAdapt.html
         
@@ -869,16 +955,45 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         return MaInv * Matrix3x3(diagonal: coeffDest / coeffSource) * Ma
     }
     
+    @inlinable
     public static func chromaticAdaptationMatrix(from: ReferenceWhite, to: ReferenceWhite) -> Matrix3x3<Scalar> {
         return self.chromaticAdaptationMatrix(from: from.value, to: to.value)
     }
     
+    @inlinable
     public static func conversionContext(convertingFrom inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> ConversionContext {
         return .converting(from: inputColorSpace, to: outputColorSpace)
     }
     
+    @inlinable
     public static func convert(_ value: RGBColor<Scalar>, from inputColorSpace: CIEXYZ1931ColorSpace, to outputColorSpace: CIEXYZ1931ColorSpace) -> RGBColor<Scalar> {
         return ConversionContext.converting(from: inputColorSpace, to: outputColorSpace).convert(value)
+    }
+}
+
+extension CIEXYZ1931ColorSpace {
+    /// Decoding for macOS system profiles.
+    public init?(iccProfileName: String) {
+        switch iccProfileName {
+        case "ACES CG Linear (Academy Color Encoding System AP1)":
+            self = .acesCG
+        case "Display P3":
+            self = .displayP3
+        case "Generic Grey Gamma 2.2 Profile":
+            self = .init(primaries: .sRGB, eotf: .power(2.2), referenceWhite: .d65)
+        case "Rec. ITU-R BT.2020-1":
+            self = .rec2020
+        case "Rec. ITU-R BT.709-5":
+            self = .rec709
+        case "ROMM RGB: ISO 22028-2:2013":
+            self = .proPhoto
+        case "SMPTE RP 431-2-2007 DCI (P3)":
+            self = .dciP3
+        case "sRGB IEC61966-2.1":
+            self = .sRGB
+        default:
+            return nil
+        }
     }
 }
 
@@ -1689,3 +1804,14 @@ extension RGBAColor: Decodable where Scalar: Decodable {
         self.init(r: r, g: g, b: b, a: a)
     }
 }
+
+
+extension ArriLogCParameters: Codable {}
+extension CIEXYZ1931ColorSpace.Primaries: Encodable where Scalar: Encodable {}
+extension CIEXYZ1931ColorSpace.Primaries: Decodable where Scalar: Decodable {}
+extension CIEXYZ1931ColorSpace.ReferenceWhite: Encodable where Scalar: Encodable {}
+extension CIEXYZ1931ColorSpace.ReferenceWhite: Decodable where Scalar: Decodable {}
+extension ColorTransferFunction: Encodable where Scalar: Encodable {}
+extension ColorTransferFunction: Decodable where Scalar: Decodable {}
+extension CIEXYZ1931ColorSpace: Encodable where Scalar: Encodable {}
+extension CIEXYZ1931ColorSpace: Decodable where Scalar: Decodable {}

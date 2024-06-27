@@ -13,6 +13,7 @@ import WuffsAux
 import stb_image
 import tinyexr
 import LodePNG
+import SubstrateMath
 
 #if canImport(CoreGraphics)
 import CoreGraphics
@@ -258,11 +259,25 @@ extension ImageFileInfo {
             let colorSpace: ImageColorSpace
             if state.info_png.srgb_defined != 0 || (state.info_png.iccp_defined != 0 && strcmp(state.info_png.iccp_name, "sRGB IEC61966-2.1") == 0) {
                 colorSpace = .sRGB
+            } else if let profileName = state.info_png.iccp_name, let cieSpace = CIEXYZ1931ColorSpace<Float>(iccProfileName: String(cString: profileName)) {
+                colorSpace = .cieRGB(colorSpace: cieSpace)
+            } else if state.info_png.chrm_defined != 0 {
+                let red = SIMD2(Float(state.info_png.chrm_red_x) / 100_000.0, Float(state.info_png.chrm_red_y) / 100_000.0)
+                let green = SIMD2(Float(state.info_png.chrm_green_x) / 100_000.0, Float(state.info_png.chrm_green_y) / 100_000.0)
+                let blue = SIMD2(Float(state.info_png.chrm_blue_x) / 100_000.0, Float(state.info_png.chrm_blue_y) / 100_000.0)
+                let primaries = CIEXYZ1931ColorSpace<Float>.Primaries(red: red, green: green, blue: blue)
+                let transferFunction: ColorTransferFunction<Float>
+                if state.info_png.gama_defined != 0, state.info_png.gama_gamma != 100_000 {
+                    transferFunction = .power(100_000.0 / Float(state.info_png.gama_gamma))
+                } else {
+                    transferFunction = .linear
+                }
+                colorSpace = .cieRGB(colorSpace: .init(primaries: primaries, eotf: transferFunction, referenceWhite: .d65))
             } else if state.info_png.gama_defined != 0 {
                 if state.info_png.gama_gamma == 100_000 {
                     colorSpace = .linearSRGB
                 } else {
-                    colorSpace = .gammaSRGB(Float(state.info_png.gama_gamma) / 100_000.0)
+                    colorSpace = .gammaSRGB(100_000.0 / Float(state.info_png.gama_gamma))
                 }
             } else {
                 colorSpace = .undefined
@@ -389,9 +404,9 @@ extension ImageFileInfo {
             }
             if colorSpace == .undefined {
                 if let gamma = (properties[kCGImagePropertyPNGDictionary] as? NSDictionary)?[kCGImagePropertyPNGGamma] as? Double {
-                    colorSpace = .gammaSRGB(Float(1.0 / gamma))
+                    colorSpace = .gammaSRGB(Float(gamma))
                 } else if let gamma = (properties[kCGImagePropertyExifDictionary] as? NSDictionary)?[kCGImagePropertyExifGamma] as? Double {
-                    colorSpace = .gammaSRGB(Float(1.0 / gamma))
+                    colorSpace = .gammaSRGB(Float(gamma))
                 }
             }
             
