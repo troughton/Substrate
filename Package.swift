@@ -10,7 +10,7 @@ let vulkanDependencies: [Target.Dependency] = [.target(name: "Vulkan")]
 
 let package = Package(
     name: "Substrate",
-    platforms: [.macOS(.v11), .iOS(.v14), .tvOS(.v14)],
+    platforms: [.macOS(.v12), .iOS(.v14), .tvOS(.v14)],
     products: [
         .library(name: "SwiftFrameGraph", targets: ["Substrate", "SwiftFrameGraph"]),
         .library(name: "FrameGraphTextureIO", targets: ["SubstrateTextureIO", "FrameGraphTextureIO"]),
@@ -50,7 +50,8 @@ let package = Package(
         // Substrate
         .target(name: "SubstrateImage", dependencies: [
                     .product(name: "stb_image_resize", package: "Cstb"),
-                    .product(name: "RealModule", package: "swift-numerics")],
+                    .product(name: "RealModule", package: "swift-numerics"),
+                    "SubstrateMath"],
                 swiftSettings: [
                 ]),
         
