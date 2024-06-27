@@ -501,7 +501,7 @@ extension ArgumentBufferDescriptor {
             case .constantBuffer(let alignment):
                 result.dataType = .pointer
                 result.constantBlockAlignment = alignment
-            case .storageBuffer:
+            case .storageBuffer, .argumentBuffer:
                 result.dataType = .pointer
             case .texture(let textureType):
                 result.dataType = .texture

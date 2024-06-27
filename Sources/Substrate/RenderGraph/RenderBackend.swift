@@ -271,6 +271,10 @@ protocol _ArgumentBufferImpl {
     
     static func setTexture(_ texture: Texture, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
     
+#if canImport(Metal)
+    static func setArgumentBuffer(_ buffer: ArgumentBuffer, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
+#endif
+    
     @available(macOS 11.0, iOS 14.0, *)
     static func setAccelerationStructure(_ structure: AccelerationStructure, at index: Int, arrayIndex: Int, on argBuffer: ArgumentBuffer)
     

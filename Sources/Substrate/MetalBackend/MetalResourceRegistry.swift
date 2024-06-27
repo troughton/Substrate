@@ -965,6 +965,33 @@ final class MetalTransientResourceRegistry: BackendTransientResourceRegistry, @u
         return storage
     }
     
+    @discardableResult
+    public func allocateArgumentBufferView(argumentBuffer: ArgumentBuffer, buffer: Buffer, offset: Int) -> MTLBufferReference {
+        let storage = self.allocateBufferIfNeeded(buffer, forceGPUPrivate: false)
+        
+        let _ = storage._buffer.retain() // This will be balanced by a release when the argument buffer is disposed.
+        
+        argumentBuffer.backingResourcePointer = storage._buffer.toOpaque()
+        argumentBuffer[\.backingBufferOffsets] = storage.offset + offset
+        argumentBuffer[\.mappedContents] = buffer.storageMode == .private ? nil : storage.buffer.contents().advanced(by: storage.offset + offset)
+    
+        #if !targetEnvironment(simulator)
+        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, *) {
+            argumentBuffer[\.gpuAddresses] = storage.buffer.gpuAddress.advanced(by: storage.offset + offset)
+        } else {
+            argumentBuffer[\.encoders] = Unmanaged.passUnretained(self.persistentRegistry.stateCaches.argumentEncoderCache[argumentBuffer.descriptor])
+        }
+        #else
+        argumentBuffer[\.encoders] = Unmanaged.passUnretained(self.persistentRegistry.stateCaches.argumentEncoderCache[argumentBuffer.descriptor])
+        #endif
+        
+        argumentBuffer.usedResources.insert(storage._buffer.toOpaque())
+        
+        self.argumentBufferWaitEvents[argumentBuffer] = self.bufferWaitEvents[buffer]
+        
+        return storage
+    }
+    
     public func importExternalResource(_ resource: Resource, backingResource: Any) {
         if let texture = Texture(resource) {
             texture.backingResourcePointer = Unmanaged.passRetained(backingResource as! MTLTexture).toOpaque()

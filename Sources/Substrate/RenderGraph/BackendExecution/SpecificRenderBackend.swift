@@ -108,6 +108,9 @@ protocol BackendTransientResourceRegistry: Sendable {
     func allocateTextureIfNeeded(_ texture: Texture, forceGPUPrivate: Bool, isStoredThisFrame: Bool) async -> Backend.TextureReference
     func allocateWindowHandleTexture(_ texture: Texture) async throws -> Backend.TextureReference
     func allocateTextureView(_ texture: Texture) -> Backend.TextureReference
+#if canImport(Metal)
+    func allocateArgumentBufferView(argumentBuffer: ArgumentBuffer, buffer: Buffer, offset: Int) -> Backend.BufferReference
+#endif
     
     func setDisposalFences(on resource: Resource, to fences: [FenceDependency])
     func disposeTexture(_ texture: Texture, waitEvent: ContextWaitEvent)

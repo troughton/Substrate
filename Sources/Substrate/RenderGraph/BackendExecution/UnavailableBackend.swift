@@ -231,6 +231,10 @@ final class UnavailableBackend : SpecificRenderBackend {
             preconditionFailure()
         }
         
+        func allocateArgumentBufferView(argumentBuffer: ArgumentBuffer, buffer: Buffer, offset: Int) -> Void {
+            preconditionFailure()
+        }
+        
         typealias Backend = UnavailableBackend
     }
     

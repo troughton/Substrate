@@ -112,12 +112,15 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
         
         let bufferStorage = argumentBuffer.mtlBuffer!
 
-        for resource in argumentBuffer.usedResources where !self.usedResources.contains(resource) {
-            encoder.useResource(Unmanaged<MTLResource>.fromOpaque(resource).takeUnretainedValue(), usage: .read, stages: MTLRenderStages(stages))
-        }
-        
-        for heap in argumentBuffer.usedHeaps {
-            encoder.useHeap(Unmanaged<MTLHeap>.fromOpaque(heap).takeUnretainedValue(), stages: MTLRenderStages(stages))
+        argumentBuffer.encodedResourcesLock.withLock {
+            MetalArgumentBufferImpl.computeUsedResources(for: argumentBuffer)
+            for heap in argumentBuffer.usedHeaps {
+                encoder.useHeap(Unmanaged<MTLHeap>.fromOpaque(heap).takeUnretainedValue())
+            }
+            
+            for resource in argumentBuffer.usedResources where !self.usedResources.contains(resource) {
+                encoder.useResource(Unmanaged<MTLResource>.fromOpaque(resource).takeUnretainedValue(), usage: .read, stages: MTLRenderStages(stages))
+            }
         }
         
         let bindIndex = index + 1 // since buffer 0 is push constants

@@ -29,6 +29,9 @@ public struct ArgumentDescriptor: Hashable, Sendable {
         case inlineData(type: DataType)
         case constantBuffer(alignment: Int = 0)
         case storageBuffer
+#if canImport(Metal)
+        case argumentBuffer
+#endif
         case texture(type: TextureType)
         case sampler
         case accelerationStructure
@@ -66,6 +69,8 @@ extension ArgumentDescriptor.ArgumentResourceType: CustomStringConvertible {
             return "constantBuffer(alignment: \(alignment))"
         case .storageBuffer:
             return "storageBuffer"
+        case .argumentBuffer:
+            return "argumentBuffer"
         case .texture(let type):
             let typeString = String(describing: type)
             return "texture(type: .\(typeString))"
@@ -92,6 +97,13 @@ public struct ArgumentBufferDescriptor: Hashable, Sendable {
     public var storageMode: StorageMode
     
     @usableFromInline var _elementStride: Int
+    @usableFromInline var _alignment: Int
+    @usableFromInline var totalArgumentCount: Int
+    
+    @inlinable
+    public var bufferAlignment: Int {
+        return self._alignment
+    }
     
     @inlinable
     public var bufferLength: Int {
@@ -104,6 +116,8 @@ public struct ArgumentBufferDescriptor: Hashable, Sendable {
         self.storageMode = storageMode
         
         self._elementStride = 0
+        self._alignment = 16
+        self.totalArgumentCount = 0
         self.calculateBufferOffsets()
     }
     
@@ -124,6 +138,9 @@ public struct ArgumentBufferDescriptor: Hashable, Sendable {
             offset += self._arguments[i].encodedBufferStride * self._arguments[i].arrayLength
         }
         
+        self.totalArgumentCount = nextIndex
+        self._alignment = maxAlign
+        
         let elementStride = offset.roundedUpToMultiple(of: maxAlign)
         self._elementStride = elementStride
     }
@@ -135,6 +152,9 @@ public struct ArgumentBuffer : ResourceProtocol {
     public enum ArgumentResource {
         case buffer(Buffer, offset: Int)
         case texture(Texture)
+#if canImport(Metal)
+        case argumentBuffer(ArgumentBuffer)
+#endif
         case accelerationStructure(AccelerationStructure)
         case visibleFunctionTable(VisibleFunctionTable)
         case intersectionFunctionTable(IntersectionFunctionTable)
@@ -148,6 +168,10 @@ public struct ArgumentBuffer : ResourceProtocol {
                 return Resource(buffer)
             case .texture(let texture):
                 return Resource(texture)
+#if canImport(Metal)
+            case .argumentBuffer(let argumentBuffer):
+                return Resource(argumentBuffer)
+#endif
             case .accelerationStructure(let structure):
                 return Resource(structure)
             case .visibleFunctionTable(let table):
@@ -212,24 +236,27 @@ public struct ArgumentBuffer : ResourceProtocol {
                 }
             }
         }
-        
-        // Transient resources:
-        // - CPU visible
-        //  - Buffers and argument buffers only
-        //  - Suballocated from an arena allocator
-        //  - Available as soon as there's a GPU frame free (so necessitates 'await')
-        //
-        // - GPU private
-        //  - Heap allocated, aliased
-        //  - Allocated on render graph execution.
-        //
-        // What changes:
-        // - Argument buffers can't be encoded until all resources to be encoded are available (so in a CPU render pass for transient resources);
-        //   that can either be managed by the API or forced onto the user.
-        // - No more transient CPU-visible textures (but that was just allocating and disposing a persistent texture anyway).
-        // - Lazy materialise only applies to GPU-private resources
-        
     }
+        
+#if canImport(Metal)
+        public init(descriptor: ArgumentBufferDescriptor, buffer: Buffer, offset: Int, renderGraph: RenderGraph? = nil) {
+            let flags : ResourceFlags = .resourceView
+            
+            guard let renderGraph = renderGraph ?? RenderGraph.activeRenderGraph else {
+                fatalError("The RenderGraph must be specified for transient resources created outside of a render pass' execute() method.")
+            }
+            precondition(renderGraph.transientRegistryIndex >= 0, "Transient resources are not supported on the RenderGraph \(renderGraph)")
+            
+            self = TransientArgumentBufferRegistry.instances[renderGraph.transientRegistryIndex].allocate(descriptor: descriptor, flags: flags)
+            
+            if buffer.backingResourcePointer != nil {
+                renderGraph.context.transientRegistry!.accessLock.withLock {
+                    _ = renderGraph.context.transientRegistry!.allocateArgumentBufferView(argumentBuffer: self, buffer: buffer, offset: offset)
+                }
+            }
+            self.baseResource = Resource(buffer)
+        }
+#endif
     
     public init<A : ArgumentBufferEncodable>(encoding arguments: A, renderGraph: RenderGraph? = nil, flags: ResourceFlags = []) async {
         self.init(descriptor: A.argumentBufferDescriptor, renderGraph: renderGraph, flags: flags)
@@ -253,8 +280,22 @@ public struct ArgumentBuffer : ResourceProtocol {
     
 #if canImport(Metal)
     // For Metal: residency tracking.
+    var encodedResourcesLock: SpinLock {
+        get {
+            return SpinLock(initializedLockAt: self.pointer(for: \.encodedResourcesLocks))
+        }
+    }
     
-    public var usedResources: HashSet<UnsafeMutableRawPointer> {
+    var encodedResources: [Resource?] {
+        _read {
+            yield self.pointer(for: \.encodedResources).pointee
+        }
+        nonmutating _modify {
+            yield &self.pointer(for: \.encodedResources).pointee
+        }
+    }
+    
+    var usedResources: HashSet<UnsafeMutableRawPointer> {
         _read {
             yield self.pointer(for: \.usedResources).pointee
         }
@@ -263,7 +304,7 @@ public struct ArgumentBuffer : ResourceProtocol {
         }
     }
     
-    public var usedHeaps: HashSet<UnsafeMutableRawPointer> {
+    var usedHeaps: HashSet<UnsafeMutableRawPointer> {
         _read {
             yield self.pointer(for: \.usedHeaps).pointee
         }
@@ -276,6 +317,14 @@ public struct ArgumentBuffer : ResourceProtocol {
      
     public var storageMode: StorageMode {
         return self.descriptor.storageMode
+    }
+    
+    public var baseResource: Resource? {
+        get {
+            return self.pointer(for: \.baseResources)?.pointee
+        } set {
+            self.pointer(for: \.baseResources)?.pointee = newValue
+        }
     }
     
     private func updateAccessWaitIndices<R: ResourceProtocolImpl>(resource: R, at index: Int) {
@@ -312,6 +361,18 @@ public struct ArgumentBuffer : ResourceProtocol {
         self.updateAccessWaitIndices(resource: texture, at: index)
         RenderBackend._backend.argumentBufferImpl.setTexture(texture, at: index, arrayIndex: arrayIndex, on: self)
     }
+    
+#if canImport(Metal)
+    @available(macOS 11.0, iOS 14.0, *)
+    public func setArgumentBuffer(_ buffer: ArgumentBuffer, at index: Int, arrayIndex: Int = 0) {
+        self.checkHasCPUAccess(accessType: .write)
+        
+        assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        
+        self.updateAccessWaitIndices(resource: buffer, at: index)
+        RenderBackend._backend.argumentBufferImpl.setArgumentBuffer(buffer, at: index, arrayIndex: arrayIndex, on: self)
+    }
+#endif
     
     @available(macOS 11.0, iOS 14.0, *)
     public func setAccelerationStructure(_ structure: AccelerationStructure, at index: Int, arrayIndex: Int = 0) {
@@ -422,25 +483,30 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
 @usableFromInline struct ArgumentBufferProperties: ResourceProperties {
     @usableFromInline struct TransientArgumentBufferProperties: ResourceProperties {
         let backingBufferOffsets: UnsafeMutablePointer<Int>
+        let baseResources: UnsafeMutablePointer<Resource?>
         
         @usableFromInline
         init(capacity: Int) {
             self.backingBufferOffsets = UnsafeMutablePointer.allocate(capacity: capacity)
+            self.baseResources = UnsafeMutablePointer.allocate(capacity: capacity)
         }
         
         @usableFromInline
         func deallocate() {
             self.backingBufferOffsets.deallocate()
+            self.baseResources.deallocate()
         }
         
         @usableFromInline
         func initialize(index: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
             self.backingBufferOffsets.advanced(by: index).initialize(to: 0)
+            self.baseResources.advanced(by: index).initialize(to: nil)
         }
         
         @usableFromInline
         func deinitialize(from index: Int, count: Int) {
             self.backingBufferOffsets.advanced(by: index).deinitialize(count: count)
+            self.baseResources.advanced(by: index).deinitialize(count: count)
         }
     }
     
@@ -496,6 +562,8 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     
     #if canImport(Metal)
     let encoders : UnsafeMutablePointer<Unmanaged<MTLArgumentEncoder>?> // Some opaque backend type that can construct the argument buffer
+    let encodedResources: UnsafeMutablePointer<[Resource?]>
+    let encodedResourcesLocks: UnsafeMutablePointer<SpinLock.Storage>
     let usedResources: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     let usedHeaps: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
     #endif
@@ -509,6 +577,8 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
 
 #if canImport(Metal)
         self.encoders = .allocate(capacity: capacity)
+        self.encodedResourcesLocks = .allocate(capacity: capacity)
+        self.encodedResources = .allocate(capacity: capacity)
         self.usedResources = .allocate(capacity: capacity)
         self.usedHeaps = .allocate(capacity: capacity)
 #endif
@@ -521,6 +591,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         
 #if canImport(Metal)
         self.encoders.deallocate()
+        self.encodedResources.deallocate()
         self.usedResources.deallocate()
         self.usedHeaps.deallocate()
 #endif
@@ -533,6 +604,8 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         
 #if canImport(Metal)
         self.encoders.advanced(by: indexInChunk).initialize(to: nil)
+        let _ = SpinLock(at: self.encodedResourcesLocks.advanced(by: indexInChunk))
+        self.encodedResources.advanced(by: indexInChunk).initialize(to: .init(repeating: nil, count: descriptor.totalArgumentCount))
         self.usedResources.advanced(by: indexInChunk).initialize(to: .init()) // TODO: pass in the appropriate allocator.
         self.usedHeaps.advanced(by: indexInChunk).initialize(to: .init())
 #endif
@@ -549,6 +622,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
             self.usedResources[index + i].deinit()
             self.usedHeaps[index + i].deinit()
         }
+        self.encodedResources.advanced(by: index).deinitialize(count: count)
         self.usedResources.advanced(by: index).deinitialize(count: count)
         self.usedHeaps.advanced(by: index).deinitialize(count: count)
 #endif

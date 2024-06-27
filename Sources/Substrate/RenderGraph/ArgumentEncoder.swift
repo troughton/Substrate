@@ -64,6 +64,10 @@ public struct BufferBacked<T> {
             }
             return self._buffer
         }
+        set {
+            self._buffer = newValue
+            self.isDirty = false
+        }
     }
     
     @inlinable

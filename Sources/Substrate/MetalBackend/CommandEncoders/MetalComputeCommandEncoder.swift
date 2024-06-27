@@ -42,12 +42,15 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoderImpl {
     func setArgumentBuffer(_ argumentBuffer: ArgumentBuffer, at index: Int, stages: RenderStages) {
         let bufferStorage = argumentBuffer.mtlBuffer!
         
-        for resource in argumentBuffer.usedResources where !self.usedResources.contains(resource) {
-            encoder.useResource(Unmanaged<MTLResource>.fromOpaque(resource).takeUnretainedValue(), usage: .read)
-        }
-        
-        for heap in argumentBuffer.usedHeaps {
-            encoder.useHeap(Unmanaged<MTLHeap>.fromOpaque(heap).takeUnretainedValue())
+        argumentBuffer.encodedResourcesLock.withLock {
+            MetalArgumentBufferImpl.computeUsedResources(for: argumentBuffer)
+            for heap in argumentBuffer.usedHeaps {
+                encoder.useHeap(Unmanaged<MTLHeap>.fromOpaque(heap).takeUnretainedValue())
+            }
+            
+            for resource in argumentBuffer.usedResources where !self.usedResources.contains(resource) {
+                encoder.useResource(Unmanaged<MTLResource>.fromOpaque(resource).takeUnretainedValue(), usage: .read)
+            }
         }
         
         let bindIndex = index + 1 // since buffer 0 is push constants
