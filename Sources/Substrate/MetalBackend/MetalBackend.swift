@@ -604,6 +604,7 @@ public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
         var barrierLastIndex: Int = .max
         
         var encoderResidentResources = Set<MetalResidentResource>()
+        var encoderResidentHeaps = Set<MetalResidentHeap>()
         
         var encoderUseResourceCommandIndex: Int = .max
         var encoderUseResources = [UseResourceKey: [Unmanaged<MTLResource>]]()
@@ -616,7 +617,7 @@ public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
             #endif
             if barrierResources.count <= 8, !isRTBarrier {
                 let memory = allocator.allocate(capacity: barrierResources.count) as UnsafeMutablePointer<Unmanaged<MTLResource>>
-                memory.assign(from: barrierResources, count: barrierResources.count)
+                memory.update(from: barrierResources, count: barrierResources.count)
                 let bufferPointer = UnsafeMutableBufferPointer<MTLResource>(start: UnsafeMutableRawPointer(memory).assumingMemoryBound(to: MTLResource.self), count: barrierResources.count)
                 
                 compactedResourceCommands.append(.init(command: .resourceMemoryBarrier(resources: bufferPointer, afterStages: barrierAfterStages.last, beforeStages: barrierBeforeStages.first), index: barrierLastIndex, order: .before))
@@ -649,6 +650,11 @@ public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
             }
             
             while !currentEncoder.passRange.contains(command.index) {
+                if !encoderResidentHeaps.isEmpty {
+                    compactedResourceCommands.append(.init(command: .useHeaps(encoderResidentHeaps), index: currentEncoder.passRange.lowerBound, order: .before))
+                    encoderResidentHeaps.removeAll()
+                }
+                
                 currentEncoderIndex += 1
                 currentEncoder = commandInfo.commandEncoders[currentEncoderIndex]
                 
@@ -663,6 +669,11 @@ public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
             // memoryBarriers should be as late as possible.
             switch command.command {
             case .useResource(let resource, let usage, let stages, let allowReordering):
+                if resource.type == .heap, let backingResource = resource.backingResourcePointer {
+                    let key = MetalResidentHeap(resource: .fromOpaque(backingResource), stages: MTLRenderStages(stages))
+                    encoderResidentHeaps.insert(key)
+                    continue
+                }
                 
                 var computedUsageType: MTLResourceUsage = []
                 if usage.contains(.inputAttachment), !self.isAppleSiliconGPU {
@@ -769,6 +780,11 @@ public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
             addBarrier(&compactedResourceCommands)
         }
         useResources(&compactedResourceCommands)
+        
+        if !encoderResidentHeaps.isEmpty {
+            compactedResourceCommands.append(.init(command: .useHeaps(encoderResidentHeaps), index: currentEncoder.passRange.lowerBound, order: .before))
+            encoderResidentHeaps.removeAll()
+        }
         
         compactedResourceCommands.sort()
     }

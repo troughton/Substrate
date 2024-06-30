@@ -13,13 +13,15 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoderImpl {
     
     let encoder: MTLComputeCommandEncoder
     let usedResources: Set<UnsafeMutableRawPointer>
+    let usedHeaps: Set<UnsafeMutableRawPointer>
     let isAppleSiliconGPU: Bool
     
     private var baseBufferOffsets = [Int](repeating: 0, count: 31) // 31 vertex, 31 fragment, since that's the maximum number of entries in a buffer argument table (https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
     
-    init(encoder: MTLComputeCommandEncoder, usedResources: Set<UnsafeMutableRawPointer>, isAppleSiliconGPU: Bool) {
+    init(encoder: MTLComputeCommandEncoder, usedResources: Set<UnsafeMutableRawPointer>, usedHeaps: Set<UnsafeMutableRawPointer>, isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.usedResources = usedResources
+        self.usedHeaps = usedHeaps
         self.isAppleSiliconGPU = isAppleSiliconGPU
     }
     
@@ -44,7 +46,7 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoderImpl {
         
         argumentBuffer.encodedResourcesLock.withLock {
             MetalArgumentBufferImpl.computeUsedResources(for: argumentBuffer)
-            for heap in argumentBuffer.usedHeaps {
+            for heap in argumentBuffer.usedHeaps where !self.usedHeaps.contains(heap) {
                 encoder.useHeap(Unmanaged<MTLHeap>.fromOpaque(heap).takeUnretainedValue())
             }
             
@@ -165,6 +167,7 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoderImpl {
 extension MTLComputeCommandEncoder {
     func executeResourceCommands(resourceCommandIndex: inout Int, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>],
                                  usedResources: inout Set<UnsafeMutableRawPointer>, // Unmanaged<MTLResource>
+                                 usedHeaps: inout Set<UnsafeMutableRawPointer>, // Unmanaged<MTLResource>
                                  passIndex: Int, order: PerformOrder, isAppleSiliconGPU: Bool) {
         while resourceCommandIndex < resourceCommands.count {
             let command = resourceCommands[resourceCommandIndex]
@@ -191,6 +194,12 @@ extension MTLComputeCommandEncoder {
                 
                 for i in resources.indices {
                     usedResources.insert(Unmanaged<MTLResource>.passUnretained(resources[i]).toOpaque())
+                }
+                
+            case .useHeaps(let heaps):
+                for heap in heaps {
+                    self.useHeap(heap.resource.takeUnretainedValue())
+                    usedHeaps.insert(heap.resource.toOpaque())
                 }
             }
             

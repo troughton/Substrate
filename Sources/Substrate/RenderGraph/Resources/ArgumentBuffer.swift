@@ -367,7 +367,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     public func setArgumentBuffer(_ buffer: ArgumentBuffer, at index: Int, arrayIndex: Int = 0) {
         self.checkHasCPUAccess(accessType: .write)
         
-        assert(!self.flags.contains(.persistent) || buffer.flags.contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
+        assert(!self.flags.contains(.persistent) || (buffer.baseResource?.flags ?? buffer.flags).contains(.persistent), "A persistent argument buffer can only contain persistent resources.")
         
         self.updateAccessWaitIndices(resource: buffer, at: index)
         RenderBackend._backend.argumentBufferImpl.setArgumentBuffer(buffer, at: index, arrayIndex: arrayIndex, on: self)

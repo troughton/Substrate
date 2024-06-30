@@ -125,7 +125,7 @@ extension Heap: ResourceProtocolImpl {
     
     @usableFromInline typealias Descriptor = HeapDescriptor
     
-    @usableFromInline static var tracksUsages: Bool { false }
+    @usableFromInline static var tracksUsages: Bool { true }
 }
 
 @usableFromInline

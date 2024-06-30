@@ -99,7 +99,7 @@ extension ArgumentBufferArray: ResourceProtocolImpl {
     
     @usableFromInline typealias Descriptor = ArgumentBufferArrayDescriptor
     
-    @usableFromInline static var tracksUsages: Bool { false }
+    @usableFromInline static var tracksUsages: Bool { true }
 }
 
 // Unlike the other transient registries, the transient argument buffer registry is chunk-based.

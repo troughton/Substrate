@@ -102,7 +102,7 @@ extension MTLBlitCommandEncoder {
             }
             
             switch command.command {
-            case .resourceMemoryBarrier, .scopedMemoryBarrier, .useResources:
+            case .resourceMemoryBarrier, .scopedMemoryBarrier, .useResources, .useHeaps:
                 break
                 
             case .updateFence(let fence, _):

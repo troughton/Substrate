@@ -67,6 +67,7 @@ final class MetalCommandBuffer: BackendCommandBuffer, @unchecked Sendable {
     func encodeCommands(encoderIndex: Int) async {
         let encoderInfo = self.commandInfo.commandEncoders[encoderIndex]
         var encoderUsedResources = Set<UnsafeMutableRawPointer>()
+        var encoderUsedHeaps = Set<UnsafeMutableRawPointer>()
         
         var resourceCommandIndex = self.compactedResourceCommands.binarySearch(predicate: { $0.index < encoderInfo.passRange.lowerBound })
         
@@ -88,14 +89,14 @@ final class MetalCommandBuffer: BackendCommandBuffer, @unchecked Sendable {
         #endif
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, usedHeaps: &encoderUsedHeaps, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                let encoderImpl = MetalRenderCommandEncoder(passRecord: passRecord, encoder: renderEncoder, usedResources: encoderUsedResources, defaultDepthStencilState: self.backend.stateCaches.depthStencilCache.defaultDepthState, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                let encoderImpl = MetalRenderCommandEncoder(passRecord: passRecord, encoder: renderEncoder, usedResources: encoderUsedResources, usedHeaps: encoderUsedHeaps, defaultDepthStencilState: self.backend.stateCaches.depthStencilCache.defaultDepthState, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 let encoder = RenderCommandEncoder(renderPass: (passRecord.pass as! DrawRenderPass), passRecord: passRecord, impl: encoderImpl, renderTargetsDescriptor: renderTargetsDescriptor.descriptor)
                 await (passRecord.pass as! DrawRenderPass).execute(renderCommandEncoder: encoder)
                 encoder.endEncoding()
                 
-                renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                renderEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, usedHeaps: &encoderUsedHeaps, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
             }
             renderEncoder.endEncoding()
@@ -109,14 +110,14 @@ final class MetalCommandBuffer: BackendCommandBuffer, @unchecked Sendable {
         #endif
             
             for passRecord in self.commandInfo.passes[encoderInfo.passRange] {
-                computeEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                computeEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, usedHeaps: &encoderUsedHeaps, passIndex: passRecord.passIndex, order: .before, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 
-                let encoderImpl = MetalComputeCommandEncoder(encoder: computeEncoder, usedResources: encoderUsedResources, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                let encoderImpl = MetalComputeCommandEncoder(encoder: computeEncoder, usedResources: encoderUsedResources, usedHeaps: encoderUsedHeaps, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
                 let encoder = ComputeCommandEncoder(renderPass: (passRecord.pass as! ComputeRenderPass), passRecord: passRecord, impl: encoderImpl)
                 await (passRecord.pass as! ComputeRenderPass).execute(computeCommandEncoder: encoder)
                 encoder.endEncoding()
                 
-                computeEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
+                computeEncoder.executeResourceCommands(resourceCommandIndex: &resourceCommandIndex, resourceCommands: self.compactedResourceCommands, usedResources: &encoderUsedResources, usedHeaps: &encoderUsedHeaps, passIndex: passRecord.passIndex, order: .after, isAppleSiliconGPU: self.backend.isAppleSiliconGPU)
             }
             computeEncoder.endEncoding()
             

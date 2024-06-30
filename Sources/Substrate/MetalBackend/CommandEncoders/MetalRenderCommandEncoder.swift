@@ -12,6 +12,7 @@ import Metal
 final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     let encoder: MTLRenderCommandEncoder
     let usedResources: Set<UnsafeMutableRawPointer>
+    let usedHeaps: Set<UnsafeMutableRawPointer>
     let defaultDepthStencilState: MTLDepthStencilState
     let isAppleSiliconGPU: Bool
     
@@ -22,10 +23,12 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
     init(passRecord: RenderPassRecord, 
          encoder: MTLRenderCommandEncoder,
          usedResources: Set<UnsafeMutableRawPointer>,
+         usedHeaps: Set<UnsafeMutableRawPointer>,
          defaultDepthStencilState: MTLDepthStencilState,
          isAppleSiliconGPU: Bool) {
         self.encoder = encoder
         self.usedResources = usedResources
+        self.usedHeaps = usedHeaps
         self.defaultDepthStencilState = defaultDepthStencilState
         self.isAppleSiliconGPU = isAppleSiliconGPU
         
@@ -114,7 +117,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
 
         argumentBuffer.encodedResourcesLock.withLock {
             MetalArgumentBufferImpl.computeUsedResources(for: argumentBuffer)
-            for heap in argumentBuffer.usedHeaps {
+            for heap in argumentBuffer.usedHeaps where !self.usedHeaps.contains(heap) {
                 encoder.useHeap(Unmanaged<MTLHeap>.fromOpaque(heap).takeUnretainedValue())
             }
             
@@ -409,6 +412,7 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
 extension MTLRenderCommandEncoder {
     func executeResourceCommands(resourceCommandIndex: inout Int, resourceCommands: [CompactedResourceCommand<MetalCompactedResourceCommandType>],
                                  usedResources: inout Set<UnsafeMutableRawPointer>, // Unmanaged<MTLResource>
+                                 usedHeaps: inout Set<UnsafeMutableRawPointer>, // Unmanaged<MTLHeap>
                                  passIndex: Int, order: PerformOrder, isAppleSiliconGPU: Bool) {
         while resourceCommandIndex < resourceCommands.count {
             let command = resourceCommands[resourceCommandIndex]
@@ -441,6 +445,12 @@ extension MTLRenderCommandEncoder {
                 
             case .waitForFence(let fence, let beforeStages):
                 self.waitForFence(fence.fence, before: beforeStages)
+                
+            case .useHeaps(let heaps):
+                for heap in heaps {
+                    self.useHeap(heap.resource.takeUnretainedValue(), stages: heap.stages)
+                    usedHeaps.insert(heap.resource.toOpaque())
+                }
                 
             case .useResources(let resources, let usage, let stages):
                 if #available(iOS 13.0, macOS 10.15, *) {

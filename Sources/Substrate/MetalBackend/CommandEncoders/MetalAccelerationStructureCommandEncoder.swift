@@ -82,6 +82,11 @@ extension MTLAccelerationStructureCommandEncoder {
             case .useResources(let resources, let usage, _):
                 self.__use(resources.baseAddress!, count: resources.count, usage: usage)
                 
+            case .useHeaps(let heaps):
+                for heap in heaps {
+                    self.useHeap(heap.resource.takeUnretainedValue())
+                }
+                
             case .updateFence(let fence, _):
                 self.updateFence(fence.fence)
                 

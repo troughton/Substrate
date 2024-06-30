@@ -14,6 +14,7 @@ import Atomics
 enum MetalCompactedResourceCommandType: @unchecked Sendable {
     // These commands need to be executed during render pass execution and do not modify the MetalResourceRegistry.
     case useResources(UnsafeMutableBufferPointer<MTLResource>, usage: MTLResourceUsage, stages: MTLRenderStages)
+    case useHeaps(Set<MetalResidentHeap>)
     case resourceMemoryBarrier(resources: UnsafeMutableBufferPointer<MTLResource>, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
     case scopedMemoryBarrier(scope: MTLBarrierScope, afterStages: MTLRenderStages, beforeStages: MTLRenderStages)
     case updateFence(MetalFenceHandle, afterStages: MTLRenderStages)
@@ -47,6 +48,19 @@ struct MetalResidentResource: Hashable, Equatable {
     
     static func ==(lhs: MetalResidentResource, rhs: MetalResidentResource) -> Bool {
         return lhs.resource.toOpaque() == rhs.resource.toOpaque() && lhs.stages == rhs.stages && lhs.usage == rhs.usage
+    }
+}
+struct MetalResidentHeap: Hashable, Equatable {
+    var resource: Unmanaged<MTLHeap>
+    var stages: MTLRenderStages
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(resource.toOpaque())
+        hasher.combine(stages.rawValue)
+    }
+    
+    static func ==(lhs: MetalResidentHeap, rhs: MetalResidentHeap) -> Bool {
+        return lhs.resource.toOpaque() == rhs.resource.toOpaque() && lhs.stages == rhs.stages
     }
 }
 
