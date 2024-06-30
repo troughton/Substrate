@@ -689,6 +689,8 @@ public struct Resource : ResourceProtocol, Hashable {
             return perform(Texture(handle: self.handle))
         case .argumentBuffer:
             return perform(ArgumentBuffer(handle: self.handle))
+        case .argumentBufferArray:
+            return perform(ArgumentBufferArray(handle: self.handle))
         case .heap:
             return perform(Heap(handle: self.handle))
         case .accelerationStructure:

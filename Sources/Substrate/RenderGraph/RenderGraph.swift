@@ -1575,6 +1575,7 @@ public final class RenderGraph: @unchecked Sendable {
         PersistentTextureRegistry.instance.clear(afterRenderGraph: self)
         PersistentBufferRegistry.instance.clear(afterRenderGraph: self)
         PersistentArgumentBufferRegistry.instance.clear(afterRenderGraph: self)
+        PersistentArgumentBufferArrayRegistry.instance.clear(afterRenderGraph: self)
         HeapRegistry.instance.clear(afterRenderGraph: self)
         HazardTrackingGroupRegistry.instance.clear(afterRenderGraph: self)
         
