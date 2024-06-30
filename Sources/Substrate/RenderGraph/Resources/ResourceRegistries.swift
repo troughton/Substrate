@@ -528,7 +528,7 @@ final class TransientRegistryManager {
             for chunkIndex in 0..<chunkCount {
                 let baseItem = chunkIndex * Resource.itemsPerChunk
                 let chunkItemCount = min(self.nextFreeIndex - baseItem, Resource.itemsPerChunk)
-                self.sharedPropertyChunks[chunkIndex].usages?.assign(repeating: ChunkArray(), count: chunkItemCount)
+                self.sharedPropertyChunks[chunkIndex].usages?.update(repeating: ChunkArray(), count: chunkItemCount)
                 
                 if let activeRenderGraphs = self.persistentChunks?[chunkIndex].activeRenderGraphsOptional {
                     for i in 0..<chunkItemCount {
