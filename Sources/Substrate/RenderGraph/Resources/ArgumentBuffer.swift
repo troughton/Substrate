@@ -322,7 +322,7 @@ public struct ArgumentBuffer : ResourceProtocol {
     public var baseResource: Resource? {
         get {
             return self.pointer(for: \.baseResources)?.pointee
-        } set {
+        } nonmutating set {
             self.pointer(for: \.baseResources)?.pointee = newValue
         }
     }
@@ -577,8 +577,8 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
 
 #if canImport(Metal)
         self.encoders = .allocate(capacity: capacity)
-        self.encodedResourcesLocks = .allocate(capacity: capacity)
         self.encodedResources = .allocate(capacity: capacity)
+        self.encodedResourcesLocks = .allocate(capacity: capacity)
         self.usedResources = .allocate(capacity: capacity)
         self.usedHeaps = .allocate(capacity: capacity)
 #endif
@@ -592,6 +592,7 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
 #if canImport(Metal)
         self.encoders.deallocate()
         self.encodedResources.deallocate()
+        self.encodedResourcesLocks.deallocate()
         self.usedResources.deallocate()
         self.usedHeaps.deallocate()
 #endif

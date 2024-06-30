@@ -60,6 +60,25 @@ final class MetalComputeCommandEncoder: ComputeCommandEncoderImpl {
         self.baseBufferOffsets[bindIndex] = bufferStorage.offset
     }
     
+    func setArgumentBufferArray(_ argumentBuffer: ArgumentBufferArray, at index: Int, stages: RenderStages) {
+        let bufferStorage = argumentBuffer[0].mtlBuffer!
+        
+        argumentBuffer.encodedResourcesLock.withLock {
+            MetalArgumentBufferImpl.computeUsedResources(for: argumentBuffer)
+            for heap in argumentBuffer.usedHeaps where !self.usedHeaps.contains(heap) {
+                encoder.useHeap(Unmanaged<MTLHeap>.fromOpaque(heap).takeUnretainedValue())
+            }
+            
+            for resource in argumentBuffer.usedResources where !self.usedResources.contains(resource) {
+                encoder.useResource(Unmanaged<MTLResource>.fromOpaque(resource).takeUnretainedValue(), usage: .read)
+            }
+        }
+        
+        let bindIndex = index + 1 // since buffer 0 is push constants
+        encoder.setBuffer(bufferStorage.wrappedValue, offset: bufferStorage.offset, index: bindIndex)
+        self.baseBufferOffsets[bindIndex] = bufferStorage.offset
+    }
+    
     func setBytes(_ bytes: UnsafeRawPointer, length: Int, at path: ResourceBindingPath) {
         let index = path.index
         encoder.setBytes(bytes, length: length, index: index)

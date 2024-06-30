@@ -40,6 +40,10 @@ public struct ArgumentBufferArray : ResourceProtocol, Collection {
         let didAllocate = RenderBackend.materialisePersistentResource(self)
         assert(didAllocate, "Allocation failed for persistent buffer \(self)")
         if !didAllocate { self.dispose() }
+        
+        for i in 0..<self.arrayLength {
+            self[i].baseResource = Resource(self)
+        }
     }
     
     public internal(set) var descriptor : ArgumentBufferDescriptor {
@@ -84,6 +88,34 @@ public struct ArgumentBufferArray : ResourceProtocol, Collection {
     public static var resourceType: ResourceType {
         return .argumentBufferArray
     }
+    
+#if canImport(Metal)
+    // For Metal: residency tracking.
+    var encodedResourcesLock: SpinLock {
+        get {
+            return SpinLock(initializedLockAt: self.pointer(for: \.encodedResourcesLocks)!)
+        }
+    }
+    
+    var usedResources: HashSet<UnsafeMutableRawPointer> {
+        _read {
+            yield self.pointer(for: \.usedResources)!.pointee
+        }
+        nonmutating _modify {
+            yield &self.pointer(for: \.usedResources)!.pointee
+        }
+    }
+    
+    var usedHeaps: HashSet<UnsafeMutableRawPointer> {
+        _read {
+            yield self.pointer(for: \.usedHeaps)!.pointee
+        }
+        nonmutating _modify {
+            yield &self.pointer(for: \.usedHeaps)!.pointee
+        }
+    }
+    
+#endif
 }
 
 extension ArgumentBufferArray: ResourceProtocolImpl {
@@ -123,16 +155,34 @@ struct ArgumentBufferArrayProperties: PersistentResourceProperties {
     /// The RenderGraphs that are currently using this resource.
     let activeRenderGraphs : UnsafeMutablePointer<UInt8.AtomicRepresentation>
     
+#if canImport(Metal)
+    let encodedResourcesLocks: UnsafeMutablePointer<SpinLock.Storage>
+    let usedResources: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
+    let usedHeaps: UnsafeMutablePointer<HashSet<UnsafeMutableRawPointer>>
+#endif
+    
     @usableFromInline init(capacity: Int) {
         self.descriptors = .allocate(capacity: capacity)
         self.argumentBuffers = .allocate(capacity: capacity)
         self.activeRenderGraphs = .allocate(capacity: capacity)
+        
+#if canImport(Metal)
+        self.encodedResourcesLocks = .allocate(capacity: capacity)
+        self.usedResources = .allocate(capacity: capacity)
+        self.usedHeaps = .allocate(capacity: capacity)
+#endif
     }
     
     @usableFromInline func deallocate() {
         self.descriptors.deallocate()
         self.argumentBuffers.deallocate()
         self.activeRenderGraphs.deallocate()
+        
+#if canImport(Metal)
+        self.encodedResourcesLocks.deallocate()
+        self.usedResources.deallocate()
+        self.usedHeaps.deallocate()
+#endif
     }
     
     @usableFromInline func initialize(index: Int, descriptor: ArgumentBufferArrayDescriptor, heap: Heap?, flags: ResourceFlags) {
@@ -145,6 +195,12 @@ struct ArgumentBufferArrayProperties: PersistentResourceProperties {
         }
         
         self.activeRenderGraphs.advanced(by: index).initialize(to: UInt8.AtomicRepresentation(0))
+        
+#if canImport(Metal)
+        let _ = SpinLock(at: self.encodedResourcesLocks.advanced(by: index))
+        self.usedResources.advanced(by: index).initialize(to: .init()) // TODO: pass in the appropriate allocator.
+        self.usedHeaps.advanced(by: index).initialize(to: .init())
+#endif
     }
     
     @usableFromInline func deinitialize(from index: Int, count: Int) {
@@ -157,6 +213,15 @@ struct ArgumentBufferArrayProperties: PersistentResourceProperties {
         self.descriptors.advanced(by: index).deinitialize(count: count)
         self.argumentBuffers.advanced(by: index).deinitialize(count: count)
         self.activeRenderGraphs.advanced(by: index).deinitialize(count: count)
+        
+#if canImport(Metal)
+        for i in 0..<count {
+            self.usedResources[index + i].deinit()
+            self.usedHeaps[index + i].deinit()
+        }
+        self.usedResources.advanced(by: index).deinitialize(count: count)
+        self.usedHeaps.advanced(by: index).deinitialize(count: count)
+#endif
     }
     
     @usableFromInline var readWaitIndicesOptional: UnsafeMutablePointer<QueueCommandIndex.AtomicRepresentation>? { nil }

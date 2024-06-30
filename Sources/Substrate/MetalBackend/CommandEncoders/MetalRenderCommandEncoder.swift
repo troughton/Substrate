@@ -130,6 +130,26 @@ final class MetalRenderCommandEncoder: RenderCommandEncoderImpl {
         self.setBuffer(bufferStorage, offset: 0, at: bindIndex, stages: MTLRenderStages(stages))
     }
     
+    func setArgumentBufferArray(_ argumentBuffer: ArgumentBufferArray, at index: Int, stages: RenderStages) {
+        if stages.isEmpty { return }
+        
+        let bufferStorage = argumentBuffer[0].mtlBuffer!
+        
+        argumentBuffer.encodedResourcesLock.withLock {
+            MetalArgumentBufferImpl.computeUsedResources(for: argumentBuffer)
+            for heap in argumentBuffer.usedHeaps where !self.usedHeaps.contains(heap) {
+                encoder.useHeap(Unmanaged<MTLHeap>.fromOpaque(heap).takeUnretainedValue())
+            }
+            
+            for resource in argumentBuffer.usedResources where !self.usedResources.contains(resource) {
+                encoder.useResource(Unmanaged<MTLResource>.fromOpaque(resource).takeUnretainedValue(), usage: .read)
+            }
+        }
+        
+        let bindIndex = index + 1 // since buffer 0 is push constants
+        self.setBuffer(bufferStorage, offset: 0, at: bindIndex, stages: MTLRenderStages(stages))
+    }
+    
     func setBuffer(_ mtlBufferRef: OffsetView<MTLBuffer>, offset: Int, at index: Int, stages: MTLRenderStages) {
         if stages.contains(.vertex) {
             encoder.setVertexBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: index)

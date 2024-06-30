@@ -204,6 +204,26 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
             }
         }
     }
+    
+    static func computeUsedResources(for argBufferArray: ArgumentBufferArray) {
+        assert(argBufferArray.encodedResourcesLock.isLocked)
+        guard argBufferArray.usedResources.isEmpty, argBufferArray.usedHeaps.isEmpty else { return }
+        
+        for i in 0..<argBufferArray.arrayLength {
+            let nestedArgBuffer = argBufferArray[i]
+            nestedArgBuffer.encodedResourcesLock.withLock {
+                self.computeUsedResources(for: nestedArgBuffer)
+                
+                for usedResource in nestedArgBuffer.usedResources {
+                    argBufferArray.usedResources.insert(usedResource)
+                }
+                
+                for usedResource in nestedArgBuffer.usedHeaps {
+                    argBufferArray.usedHeaps.insert(usedResource)
+                }
+            }
+        }
+    }
 }
 
 #endif // canImport(Metal)
