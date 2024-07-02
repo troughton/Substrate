@@ -314,6 +314,33 @@ public struct ArgumentBuffer : ResourceProtocol {
     }
     
 #endif
+    
+    func _reset(includingEncodedResources: Bool, includingParent: Bool) {
+        // TODO: should we zero out the buffer?
+#if canImport(Metal)
+        self.encodedResourcesLock.withLock {
+            if includingEncodedResources {
+                for i in self.encodedResources.indices {
+                    self.encodedResources[i] = nil
+                }
+            }
+            
+            self.usedResources.removeAll()
+            self.usedHeaps.removeAll()
+        }
+        
+        if includingParent, let array = self.baseResource.flatMap({ ArgumentBufferArray($0) }) {
+            array.encodedResourcesLock.withLock {
+                array.usedResources.removeAll()
+                array.usedHeaps.removeAll()
+            }
+        }
+#endif
+    }
+    
+    public func reset() {
+        self._reset(includingEncodedResources: true, includingParent: true)
+    }
      
     public var storageMode: StorageMode {
         return self.descriptor.storageMode
@@ -321,9 +348,9 @@ public struct ArgumentBuffer : ResourceProtocol {
     
     public var baseResource: Resource? {
         get {
-            return self.pointer(for: \.baseResources)?.pointee
+            return self.pointer(for: \.baseResources).pointee
         } nonmutating set {
-            self.pointer(for: \.baseResources)?.pointee = newValue
+            self.pointer(for: \.baseResources).pointee = newValue
         }
     }
     
@@ -445,7 +472,7 @@ public struct ArgumentBuffer : ResourceProtocol {
 
 extension ArgumentBuffer: ResourceProtocolImpl {
     @usableFromInline typealias SharedProperties = ArgumentBufferProperties
-    @usableFromInline typealias TransientProperties = ArgumentBufferProperties.TransientArgumentBufferProperties
+    @usableFromInline typealias TransientProperties = EmptyProperties<ArgumentBufferDescriptor>
     @usableFromInline typealias PersistentProperties = ArgumentBufferProperties.PersistentArgumentBufferProperties
     
     @usableFromInline static func transientRegistry(index: Int) -> TransientArgumentBufferRegistry? {
@@ -481,35 +508,6 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
 }
 
 @usableFromInline struct ArgumentBufferProperties: ResourceProperties {
-    @usableFromInline struct TransientArgumentBufferProperties: ResourceProperties {
-        let backingBufferOffsets: UnsafeMutablePointer<Int>
-        let baseResources: UnsafeMutablePointer<Resource?>
-        
-        @usableFromInline
-        init(capacity: Int) {
-            self.backingBufferOffsets = UnsafeMutablePointer.allocate(capacity: capacity)
-            self.baseResources = UnsafeMutablePointer.allocate(capacity: capacity)
-        }
-        
-        @usableFromInline
-        func deallocate() {
-            self.backingBufferOffsets.deallocate()
-            self.baseResources.deallocate()
-        }
-        
-        @usableFromInline
-        func initialize(index: Int, descriptor: ArgumentBufferDescriptor, heap: Heap?, flags: ResourceFlags) {
-            self.backingBufferOffsets.advanced(by: index).initialize(to: 0)
-            self.baseResources.advanced(by: index).initialize(to: nil)
-        }
-        
-        @usableFromInline
-        func deinitialize(from index: Int, count: Int) {
-            self.backingBufferOffsets.advanced(by: index).deinitialize(count: count)
-            self.baseResources.advanced(by: index).deinitialize(count: count)
-        }
-    }
-    
     @usableFromInline struct PersistentArgumentBufferProperties: PersistentResourceProperties {
         let heaps : UnsafeMutablePointer<Heap?>
         /// The index that must be completed on the GPU for each queue before the CPU can read from this resource's memory.
@@ -559,6 +557,8 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     let stateFlags: UnsafeMutablePointer<ResourceStateFlags>
     let contentAccessWaitIndices: UnsafeMutablePointer<QueueCommandIndices>
     @usableFromInline let mappedContents : UnsafeMutablePointer<UnsafeMutableRawPointer?>
+    let backingBufferOffsets: UnsafeMutablePointer<Int>
+    let baseResources: UnsafeMutablePointer<Resource?>
     
     #if canImport(Metal)
     let encoders : UnsafeMutablePointer<Unmanaged<MTLArgumentEncoder>?> // Some opaque backend type that can construct the argument buffer
@@ -573,7 +573,10 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
     @usableFromInline init(capacity: Int) {
         self.stateFlags = .allocate(capacity: capacity)
         self.contentAccessWaitIndices = .allocate(capacity: capacity)
-        self.mappedContents = UnsafeMutablePointer.allocate(capacity: capacity)
+        self.mappedContents = .allocate(capacity: capacity)
+        
+        self.backingBufferOffsets = .allocate(capacity: capacity)
+        self.baseResources = .allocate(capacity: capacity)
 
 #if canImport(Metal)
         self.encoders = .allocate(capacity: capacity)
@@ -589,6 +592,9 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.contentAccessWaitIndices.deallocate()
         self.mappedContents.deallocate()
         
+        self.backingBufferOffsets.deallocate()
+        self.baseResources.deallocate()
+        
 #if canImport(Metal)
         self.encoders.deallocate()
         self.encodedResources.deallocate()
@@ -603,6 +609,9 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.contentAccessWaitIndices.advanced(by: indexInChunk).initialize(to: .zero)
         self.mappedContents.advanced(by: indexInChunk).initialize(to: nil)
         
+        self.backingBufferOffsets.advanced(by: indexInChunk).initialize(to: 0)
+        self.baseResources.advanced(by: indexInChunk).initialize(to: nil)
+        
 #if canImport(Metal)
         self.encoders.advanced(by: indexInChunk).initialize(to: nil)
         let _ = SpinLock(at: self.encodedResourcesLocks.advanced(by: indexInChunk))
@@ -616,6 +625,9 @@ final class PersistentArgumentBufferRegistry: PersistentRegistry<ArgumentBuffer>
         self.stateFlags.advanced(by: index).deinitialize(count: count)
         self.contentAccessWaitIndices.advanced(by: index).deinitialize(count: count)
         self.mappedContents.advanced(by: index).deinitialize(count: count)
+        
+        self.backingBufferOffsets.advanced(by: index).deinitialize(count: count)
+        self.baseResources.advanced(by: index).deinitialize(count: count)
         
 #if canImport(Metal)
         self.encoders.advanced(by: index).deinitialize(count: count)

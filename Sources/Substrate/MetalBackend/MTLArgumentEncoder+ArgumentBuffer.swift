@@ -172,10 +172,7 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
     }
     
     static func invalidateUsedResources(for argBuffer: ArgumentBuffer) {
-        argBuffer.encodedResourcesLock.withLock {
-            argBuffer.usedResources.removeAll()
-            argBuffer.usedHeaps.removeAll()
-        }
+        argBuffer._reset(includingEncodedResources: false, includingParent: true)
     }
     
     static func computeUsedResources(for argBuffer: ArgumentBuffer) {
@@ -202,6 +199,12 @@ enum MetalArgumentBufferImpl: _ArgumentBufferImpl {
             } else {
                 argBuffer.usedResources.insert(backingResourcePtr)
             }
+        }
+        
+        if let heap = argBuffer.heap, let mtlHeap = heap.backingResourcePointer {
+            argBuffer.usedHeaps.insert(mtlHeap)
+        } else if let backingResource = argBuffer.backingResourcePointer {
+            argBuffer.usedResources.insert(backingResource)
         }
     }
     

@@ -145,6 +145,8 @@ public struct HashSet<K : Hashable> {
     
     @inlinable
     public mutating func removeAll() {
+        guard self.filledCount > 0 else { return }
+        
         for bucket in 0..<self.bucketCount {
             if self.states[bucket] == .filled {
                 self.states[bucket] = .inactive
@@ -158,6 +160,8 @@ public struct HashSet<K : Hashable> {
     
     @inlinable
     public mutating func removeAll(iterating iterator: (K) -> Void) {
+        guard self.filledCount > 0 else { return }
+        
         for bucket in 0..<self.bucketCount {
             if self.states[bucket] == .filled {
                 iterator(self.keys[bucket])

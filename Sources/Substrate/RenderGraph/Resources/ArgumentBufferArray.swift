@@ -64,6 +64,19 @@ public struct ArgumentBufferArray : ResourceProtocol, Collection {
         }
     }
     
+    public func reset() {
+        for element in self {
+            element._reset(includingEncodedResources: true, includingParent: false)
+        }
+        
+#if canImport(Metal)
+        self.encodedResourcesLock.withLock {
+            self.usedResources.removeAll()
+            self.usedHeaps.removeAll()
+        }
+#endif
+    }
+    
     public var startIndex: Int {
         return 0
     }
