@@ -104,6 +104,7 @@ public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
         self.device = device ?? MTLCreateSystemDefaultDevice()!
         self.stateCaches = MetalStateCaches(device: self.device, libraryPath: libraryPath)
         self.resourceRegistry = MetalPersistentResourceRegistry(device: self.device, stateCaches: self.stateCaches)
+        self.stateCaches.resourceRegistry = self.resourceRegistry
         self.enableValidation = enableValidation
         self.enableShaderHotReloading = enableShaderHotReloading
     }
@@ -457,12 +458,18 @@ public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
         let pipelineState = Unmanaged<AnyObject>.fromOpaque(UnsafeRawPointer(table.pipelineState.state)).takeUnretainedValue()
         let mtlTable = table.mtlIntersectionFunctionTable!
         
-        for (i, buffer) in table.descriptor.buffers.enumerated() {
+        for (i, buffer) in table.buffers.enumerated() {
             guard let buffer = buffer else { continue }
             switch buffer {
             case .buffer(let buffer, let offset):
                 guard let mtlBufferRef = buffer.mtlBuffer else { continue }
                 mtlTable.setBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset + offset, index: i)
+            case .argumentBuffer(let argumentBuffer):
+                guard let mtlBufferRef = argumentBuffer.mtlBuffer else { continue }
+                mtlTable.setBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset, index: i)
+            case .argumentBufferArray(let argumentBufferArray):
+                guard let mtlBufferRef = argumentBufferArray[0].mtlBuffer else { continue }
+                mtlTable.setBuffer(mtlBufferRef.buffer, offset: mtlBufferRef.offset, index: i)
             case .functionTable(let functionTable):
                 guard let mtlFunctionTable = functionTable.mtlVisibleFunctionTable else { continue }
                 mtlTable.setVisibleFunctionTable(mtlFunctionTable, bufferIndex: i)
@@ -473,22 +480,18 @@ public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
             guard #available(macOS 12.0, iOS 15.0, *) else {
                 preconditionFailure()
             }
-            for (i, function) in table.descriptor.functions.enumerated() {
+            for (i, function) in table.functions.enumerated() {
                 guard let function = function else { continue }
                 
                 switch function {
-                case .defaultOpaqueFunction(let inputAttributes):
-                    var intersectionFunctionSignature = MTLIntersectionFunctionSignature()
-                    if inputAttributes.contains(.instancing) {
-                        intersectionFunctionSignature.formUnion(.instancing)
+                case .defaultOpaqueFunction(let type, let inputAttributes):
+                    let intersectionFunctionSignature = MTLIntersectionFunctionSignature(inputAttributes)
+                    switch type {
+                    case .triangle:
+                        mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
+                    case .curve:
+                        mtlTable.setOpaqueCurveIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                     }
-                    if inputAttributes.contains(.triangleData) {
-                        intersectionFunctionSignature.formUnion(.triangleData)
-                    }
-                    if inputAttributes.contains(.worldSpaceData) {
-                        intersectionFunctionSignature.formUnion(.worldSpaceData)
-                    }
-                    mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                 case .function(let functionDescriptor):
                     guard let mtlFunction = try? await stateCaches.functionCache.function(for: functionDescriptor) else { continue }
                     mtlTable.setFunction(renderPipeline.functionHandle(function: mtlFunction, stage: MTLRenderStages(table.descriptor.renderStage)), index: i)
@@ -496,22 +499,18 @@ public final class MetalBackend : SpecificRenderBackend, @unchecked Sendable {
             }
         } else {
             let computePipeline = pipelineState as! MTLComputePipelineState
-            for (i, function) in table.descriptor.functions.enumerated() {
+            for (i, function) in table.functions.enumerated() {
                 guard let function = function else { continue }
                 
                 switch function {
-                case .defaultOpaqueFunction(let inputAttributes):
-                    var intersectionFunctionSignature = MTLIntersectionFunctionSignature()
-                    if inputAttributes.contains(.instancing) {
-                        intersectionFunctionSignature.formUnion(.instancing)
+                case .defaultOpaqueFunction(let type, let inputAttributes):
+                    let intersectionFunctionSignature = MTLIntersectionFunctionSignature(inputAttributes)
+                    switch type {
+                    case .triangle:
+                        mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
+                    case .curve:
+                        mtlTable.setOpaqueCurveIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                     }
-                    if inputAttributes.contains(.triangleData) {
-                        intersectionFunctionSignature.formUnion(.triangleData)
-                    }
-                    if inputAttributes.contains(.worldSpaceData) {
-                        intersectionFunctionSignature.formUnion(.worldSpaceData)
-                    }
-                    mtlTable.setOpaqueTriangleIntersectionFunction(signature: intersectionFunctionSignature, index: i)
                 case .function(let functionDescriptor):
                     guard let mtlFunction = try? await stateCaches.functionCache.function(for: functionDescriptor) else { continue }
                     mtlTable.setFunction(computePipeline.functionHandle(function: mtlFunction), index: i)

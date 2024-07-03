@@ -308,7 +308,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
             mtlTable = computePipeline.makeVisibleFunctionTable(descriptor: mtlDescriptor)
         }
         guard let mtlTable = mtlTable else {
-            print("MetalPesristentResourceRegistry: Failed to allocate visible function table \(table)")
+            print("MetalPersistentResourceRegistry: Failed to allocate visible function table \(table)")
             return nil
         }
         
@@ -326,7 +326,7 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         guard #available(macOS 11.0, iOS 14.0, *) else { return nil }
         
         let mtlDescriptor = MTLIntersectionFunctionTableDescriptor()
-        mtlDescriptor.functionCount = table.descriptor.functions.count
+        mtlDescriptor.functionCount = table.descriptor.functionCount
         
         let mtlTable: MTLIntersectionFunctionTable?
         let pipeline = Unmanaged<AnyObject>.fromOpaque(UnsafeRawPointer(table.pipelineState.state)).takeUnretainedValue()
@@ -463,6 +463,9 @@ final actor MetalPersistentResourceRegistry: BackendPersistentResourceRegistry {
         // No-op for Metal
     }
 
+    nonisolated func dispose(mtlResourcePointer: UnsafeMutableRawPointer) {
+        CommandEndActionManager.enqueue(action: .release(Unmanaged.fromOpaque(mtlResourcePointer)))
+    }
 
     nonisolated func dispose(resource: Resource) {
         switch resource.type {

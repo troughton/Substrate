@@ -407,7 +407,7 @@ public struct RenderPipelineDescriptor: Hashable, Sendable {
 }
 
 public class PipelineState: Hashable, @unchecked Sendable {
-    let state: OpaquePointer
+    var state: OpaquePointer
     
     init(state: OpaquePointer) {
         self.state = state

@@ -506,6 +506,24 @@ final class TransientRegistryManager {
         self.freeIndices.append(index)
     }
     
+    public var allResources: some Sequence<Resource> {
+        return self.lock.withLock {
+            let freeIndices = Set(self.freeIndices)
+            
+            return (0..<self.nextFreeIndex).lazy.compactMap { index -> Resource? in
+                guard !freeIndices.contains(index) else { return nil }
+                
+                let (chunkIndex, indexInChunk) = index.quotientAndRemainder(dividingBy: Resource.itemsPerChunk)
+                let generation = self.generationChunks[chunkIndex][indexInChunk]
+                let handle = UInt64(truncatingIfNeeded: index) |
+                (UInt64(generation) << Resource.generationBitsRange.lowerBound) |
+                (UInt64(ResourceFlags.persistent.rawValue) << Resource.flagBitsRange.lowerBound) |
+                (UInt64(Resource.resourceType.rawValue) << Resource.typeBitsRange.lowerBound)
+                return Resource(handle: ResourceHandle(bitPattern: handle))
+            }
+        }
+    }
+    
     func processEnqueuedDisposals() {
         var i = 0
         while i < self.enqueuedDisposals.count {

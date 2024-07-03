@@ -50,7 +50,11 @@ final actor MetalFunctionCache {
 }
 
 final class MetalRenderPipelineState: RenderPipelineState {
-    let mtlState: MTLRenderPipelineState
+    var mtlState: MTLRenderPipelineState {
+        didSet {
+            self.state = OpaquePointer(Unmanaged.passUnretained(mtlState).toOpaque())
+        }
+    }
     
     init(descriptor: RenderPipelineDescriptor, state: MTLRenderPipelineState, argumentBufferDescriptors: [ ResourceBindingPath: ArgumentBufferDescriptor]) {
         self.mtlState = state
@@ -59,7 +63,11 @@ final class MetalRenderPipelineState: RenderPipelineState {
 }
 
 final class MetalComputePipelineState: ComputePipelineState {
-    let mtlState: MTLComputePipelineState
+    var mtlState: MTLComputePipelineState {
+        didSet {
+            self.state = OpaquePointer(Unmanaged.passUnretained(mtlState).toOpaque())
+        }
+    }
     
     init(descriptor: ComputePipelineDescriptor, state: MTLComputePipelineState, argumentBufferDescriptors: [ ResourceBindingPath: ArgumentBufferDescriptor]) {
         self.mtlState = state
@@ -78,28 +86,44 @@ final class MetalDepthStencilState: DepthStencilState {
 
 final actor MetalRenderPipelineCache {
     let device: MTLDevice
-    let functionCache: MetalFunctionCache
+    var functionCache: MetalFunctionCache
     private var renderStates = [RenderPipelineDescriptor : MetalRenderPipelineState]()
     private var renderReflection = [RenderPipelineDescriptor: MetalPipelineReflection]()
-    private var renderStateTasks = [RenderPipelineDescriptor : Task<Void, Error>]()
+    private var renderStateTasks = [RenderPipelineDescriptor: Task<Void, Error>]()
     
     init(device: MTLDevice, functionCache: MetalFunctionCache) {
         self.device = device
         self.functionCache = functionCache
     }
     
+    func reloadShaderLibrary(functionCache: MetalFunctionCache) async {
+        self.functionCache = functionCache
+        
+        let descriptors = Array(self.renderStates.keys)
+        
+        self.renderReflection.removeAll(keepingCapacity: true)
+        for task in self.renderStateTasks.values {
+            let _ = try? await task.value
+        }
+        self.renderStateTasks.removeAll(keepingCapacity: true)
+        
+        for descriptor in descriptors {
+            let _ = self.renderStateTask(descriptor: descriptor)
+        }
+    }
+    
     private func setState(_ state: MTLRenderPipelineState, reflection: MetalPipelineReflection, for descriptor: RenderPipelineDescriptor) {
-        self.renderStates[descriptor] = MetalRenderPipelineState(descriptor: descriptor, state: state, argumentBufferDescriptors: reflection.argumentBufferDescriptors)
+        if let existingState = self.renderStates[descriptor] {
+            existingState.mtlState = state
+        } else {
+            self.renderStates[descriptor] = MetalRenderPipelineState(descriptor: descriptor, state: state, argumentBufferDescriptors: reflection.argumentBufferDescriptors)
+        }
         if self.renderReflection[descriptor] == nil {
             self.renderReflection[descriptor] = reflection
         }
     }
     
-    public func state(descriptor: RenderPipelineDescriptor) async throws -> RenderPipelineState {
-        if let state = self.renderStates[descriptor] {
-            return state
-        }
-        
+    private func renderStateTask(descriptor: RenderPipelineDescriptor) -> Task<Void, Error> {
         let renderStateTask: Task<Void, Error>
         if let task = self.renderStateTasks[descriptor] {
             renderStateTask = task
@@ -127,7 +151,15 @@ final actor MetalRenderPipelineCache {
             
             self.renderStateTasks[descriptor] = renderStateTask
         }
+        return renderStateTask
+    }
+    
+    public func state(descriptor: RenderPipelineDescriptor) async throws -> RenderPipelineState {
+        if let state = self.renderStates[descriptor] {
+            return state
+        }
         
+        let renderStateTask = self.renderStateTask(descriptor: descriptor)
         do {
             _ = try await renderStateTask.value
             return self.renderStates[descriptor]!
@@ -154,7 +186,7 @@ final actor MetalRenderPipelineCache {
 
 final actor MetalComputePipelineCache {
     let device: MTLDevice
-    let functionCache: MetalFunctionCache
+    var functionCache: MetalFunctionCache
     private var computeStates = [ComputePipelineDescriptor: MetalComputePipelineState]()
     private var computeReflection = [ComputePipelineDescriptor: MetalPipelineReflection]()
     private var computeStateTasks = [ComputePipelineDescriptor : Task<Void, Error>]()
@@ -162,6 +194,22 @@ final actor MetalComputePipelineCache {
     init(device: MTLDevice, functionCache: MetalFunctionCache) {
         self.device = device
         self.functionCache = functionCache
+    }
+    
+    func reloadShaderLibrary(functionCache: MetalFunctionCache) async {
+        self.functionCache = functionCache
+        
+        let descriptors = Array(self.computeStates.keys)
+        
+        self.computeReflection.removeAll(keepingCapacity: true)
+        for task in self.computeStateTasks.values {
+            let _ = try? await task.value
+        }
+        self.computeStateTasks.removeAll(keepingCapacity: true)
+        
+        for descriptor in descriptors {
+            let _ = self.computeStateTask(descriptor: descriptor)
+        }
     }
     
     private func reflectionDescriptor(_ descriptor: ComputePipelineDescriptor) -> ComputePipelineDescriptor {
@@ -204,11 +252,7 @@ final actor MetalComputePipelineCache {
         await self.setState(state, reflection: pipelineReflection, for: descriptor)
     }
     
-    public func state(descriptor: ComputePipelineDescriptor) async throws -> MetalComputePipelineState {
-        if let state = self.computeStates[descriptor] {
-            return state
-        }
-        
+    func computeStateTask(descriptor: ComputePipelineDescriptor) -> Task<Void, Error> {
         let computeStateTask: Task<Void, Error>
         if let task = self.computeStateTasks[descriptor] {
             computeStateTask = task
@@ -218,7 +262,15 @@ final actor MetalComputePipelineCache {
             }
             self.computeStateTasks[descriptor] = computeStateTask
         }
+        return computeStateTask
+    }
+    
+    public func state(descriptor: ComputePipelineDescriptor) async throws -> MetalComputePipelineState {
+        if let state = self.computeStates[descriptor] {
+            return state
+        }
         
+        let computeStateTask = self.computeStateTask(descriptor: descriptor)
         do {
             _ = try await computeStateTask.value
             return self.computeStates[descriptor]!
@@ -310,13 +362,14 @@ final class MetalArgumentEncoderCache {
 
 final class MetalStateCaches: @unchecked Sendable {
     let device : MTLDevice
+    unowned var resourceRegistry: MetalPersistentResourceRegistry!
     
     var libraryURL : URL?
     var loadedLibraryModificationDate : Date = .distantPast
     
     var functionCache: MetalFunctionCache
-    var renderPipelineCache: MetalRenderPipelineCache
-    var computePipelineCache: MetalComputePipelineCache
+    let renderPipelineCache: MetalRenderPipelineCache
+    let computePipelineCache: MetalComputePipelineCache
     let depthStencilCache: MetalDepthStencilStateCache
     let argumentEncoderCache: MetalArgumentEncoderCache
     
@@ -392,11 +445,26 @@ final class MetalStateCaches: @unchecked Sendable {
             
             
             self.functionCache = MetalFunctionCache(library: library)
-            self.renderPipelineCache = .init(device: self.device, functionCache: functionCache)
-            self.computePipelineCache = .init(device: self.device, functionCache: functionCache)
+            await self.renderPipelineCache.reloadShaderLibrary(functionCache: self.functionCache)
+            await self.computePipelineCache.reloadShaderLibrary(functionCache: self.functionCache)
             
             VisibleFunctionTableRegistry.instance.markAllAsUninitialised()
             IntersectionFunctionTableRegistry.instance.markAllAsUninitialised()
+            
+            // Recreate all visible function tables/intersection function tables.
+            for table in VisibleFunctionTableRegistry.instance.allResources {
+                if let backingResourcePointer = table.backingResourcePointer {
+                    self.resourceRegistry.dispose(mtlResourcePointer: backingResourcePointer)
+                }
+                let _ = self.resourceRegistry.allocateVisibleFunctionTable(table)
+            }
+            
+            for table in IntersectionFunctionTableRegistry.instance.allResources {
+                if let backingResourcePointer = table.backingResourcePointer {
+                    self.resourceRegistry.dispose(mtlResourcePointer: backingResourcePointer)
+                }
+                let _ = self.resourceRegistry.allocateIntersectionFunctionTable(table)
+            }
             
             self.loadedLibraryModificationDate = currentModificationDate
         }

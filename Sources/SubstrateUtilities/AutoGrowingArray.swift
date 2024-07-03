@@ -76,3 +76,7 @@ public struct AutoGrowingArray<Element>: Collection, ExpressibleByArrayLiteral {
         }
     }
 }
+
+extension AutoGrowingArray: Equatable where Element: Equatable {}
+extension AutoGrowingArray: Hashable where Element: Hashable {}
+extension AutoGrowingArray: Sendable where Element: Sendable {}

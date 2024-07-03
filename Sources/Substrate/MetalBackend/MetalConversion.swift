@@ -673,6 +673,15 @@ extension MTLIndexType {
     }
 }
 
+extension MTLIntersectionFunctionSignature {
+    public init(_ attributes: IntersectionFunctionInputAttributes) {
+        self.init()
+        if attributes.contains(.instancing) { self.formUnion(.instancing) }
+        if attributes.contains(.triangleData) { self.formUnion(.triangleData) }
+        if attributes.contains(.worldSpaceData) { self.formUnion(.worldSpaceData) }
+    }
+}
+
 extension MTLOrigin {
     public init(_ origin: Origin) {
         self.init(x: origin.x, y: origin.y, z: origin.z)
