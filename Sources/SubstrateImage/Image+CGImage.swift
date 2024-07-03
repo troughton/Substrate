@@ -51,7 +51,12 @@ extension Image {
                     gamma = CGFloat(power)
                 case .hlg:
                     if cieSpace.primaries == .sRGB {
-                        return CGColorSpace(name: CGColorSpace.itur_709_HLG)!
+                        if #available(macOS 13.0, *) {
+                            // itur_709_HLG has incorrect availability information.
+                            return CGColorSpace(name: CGColorSpace.itur_709_HLG)!
+                        } else {
+                            break
+                        }
                     } else if cieSpace.primaries == .p3 {
                         return CGColorSpace(name: CGColorSpace.displayP3_HLG)!
                     } else {
@@ -108,6 +113,8 @@ extension Image where ComponentType: SIMDScalar {
         
         let cgColorSpace = cgImage.colorSpace
         let colorSpace: ImageColorSpace
+        
+        let itur709HLG: CFString = "kCGColorSpaceITUR_709_HLG" as CFString // CGColorSpace.itur_709_HLG has incorrect availability on macOS 12 which leads to missing symbols at runtime.
         switch cgColorSpace?.name {
         case CGColorSpace.linearSRGB, CGColorSpace.linearGray, CGColorSpace.extendedLinearSRGB:
             colorSpace = .linearSRGB
@@ -131,7 +138,7 @@ extension Image where ComponentType: SIMDScalar {
             colorSpace = .cieRGB(colorSpace: cieSpace)
         case CGColorSpace.itur_709:
             colorSpace = .cieRGB(colorSpace: .rec709)
-        case CGColorSpace.itur_709_HLG:
+        case itur709HLG:
             var cieSpace = CIEXYZ1931ColorSpace<Float>.rec709
             cieSpace.eotf = .hlg
             colorSpace = .cieRGB(colorSpace: cieSpace)
