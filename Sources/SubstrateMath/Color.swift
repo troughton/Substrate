@@ -525,7 +525,7 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             if x <= 0.04045 {
                 return x / 12.92
             } else {
-                return Scalar.pow((x + 0.055) / 1.055, 2.4) - 0.055
+                return Scalar.pow((x + 0.055) / 1.055, 2.4)
             }
         case .rec709:
             let alpha: Scalar = 1.09929682680944
