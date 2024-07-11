@@ -422,11 +422,11 @@ public class PipelineState: Hashable, @unchecked Sendable {
     }
     
     public static func ==(lhs: PipelineState, rhs: PipelineState) -> Bool {
-        return lhs.state == rhs.state
+        return lhs === rhs
     }
     
     public func hash(into hasher: inout Hasher) {
-        hasher.combine(self.state)
+        hasher.combine(ObjectIdentifier(self))
     }
 }
 

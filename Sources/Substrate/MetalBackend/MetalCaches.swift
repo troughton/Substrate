@@ -99,22 +99,32 @@ final actor MetalRenderPipelineCache {
     func reloadShaderLibrary(functionCache: MetalFunctionCache) async {
         self.functionCache = functionCache
         
-        let descriptors = Array(self.renderStates.keys)
+        let descriptors = Array(self.renderStates)
         
+        self.renderStates.removeAll(keepingCapacity: true)
         self.renderReflection.removeAll(keepingCapacity: true)
+        
         for task in self.renderStateTasks.values {
-            let _ = try? await task.value
+            task.cancel()
         }
         self.renderStateTasks.removeAll(keepingCapacity: true)
         
-        for descriptor in descriptors {
-            let _ = self.renderStateTask(descriptor: descriptor)
+        for (descriptor, object) in descriptors {
+            // Reuse the existing MetalRenderPipelineState in case there are any existing cached/references to it, and just change out the Metal state it points to.
+            let _ = self.renderStateTask(descriptor: descriptor, stateObject: object)
+        }
+        
+        for task in self.renderStateTasks.values {
+            try? await task.value
         }
     }
     
-    private func setState(_ state: MTLRenderPipelineState, reflection: MetalPipelineReflection, for descriptor: RenderPipelineDescriptor) {
-        if let existingState = self.renderStates[descriptor] {
+    private func setState(_ state: MTLRenderPipelineState, reflection: MetalPipelineReflection, for descriptor: RenderPipelineDescriptor, stateObject: MetalRenderPipelineState?) {
+        guard !Task.isCancelled else { return }
+        
+        if let existingState = stateObject {
             existingState.mtlState = state
+            self.renderStates[descriptor] = existingState
         } else {
             self.renderStates[descriptor] = MetalRenderPipelineState(descriptor: descriptor, state: state, argumentBufferDescriptors: reflection.argumentBufferDescriptors)
         }
@@ -123,7 +133,7 @@ final actor MetalRenderPipelineCache {
         }
     }
     
-    private func renderStateTask(descriptor: RenderPipelineDescriptor) -> Task<Void, Error> {
+    private func renderStateTask(descriptor: RenderPipelineDescriptor, stateObject: MetalRenderPipelineState? = nil) -> Task<Void, Error> {
         let renderStateTask: Task<Void, Error>
         if let task = self.renderStateTasks[descriptor] {
             renderStateTask = task
@@ -136,7 +146,7 @@ final actor MetalRenderPipelineCache {
                     
                     // TODO: can we retrieve the thread execution width for render pipelines?
                     let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, vertexFunction: mtlDescriptor.vertexFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
-                    await self.setState(state, reflection: pipelineReflection, for: descriptor)
+                    await self.setState(state, reflection: pipelineReflection, for: descriptor, stateObject: stateObject)
                 case .mesh(let meshPipelineDescriptor):
                     if #available(macOS 13.0, iOS 16.0, *) {
                         let mtlDescriptor = try await MTLMeshRenderPipelineDescriptor(descriptor, meshPipelineDescriptor: meshPipelineDescriptor, functionCache: self.functionCache)
@@ -144,7 +154,7 @@ final actor MetalRenderPipelineCache {
                         
                         // TODO: can we retrieve the thread execution width for render pipelines?
                         let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: 4, objectFunction: mtlDescriptor.objectFunction!, meshFunction: mtlDescriptor.meshFunction!, fragmentFunction: mtlDescriptor.fragmentFunction, renderState: state, renderReflection: reflection!)
-                        await self.setState(state, reflection: pipelineReflection, for: descriptor)
+                        await self.setState(state, reflection: pipelineReflection, for: descriptor, stateObject: stateObject)
                     }
                 }
             }
@@ -199,16 +209,23 @@ final actor MetalComputePipelineCache {
     func reloadShaderLibrary(functionCache: MetalFunctionCache) async {
         self.functionCache = functionCache
         
-        let descriptors = Array(self.computeStates.keys)
+        let descriptors = Array(self.computeStates)
         
+        self.computeStates.removeAll(keepingCapacity: true)
         self.computeReflection.removeAll(keepingCapacity: true)
+        
         for task in self.computeStateTasks.values {
-            let _ = try? await task.value
+            task.cancel()
         }
         self.computeStateTasks.removeAll(keepingCapacity: true)
         
-        for descriptor in descriptors {
-            let _ = self.computeStateTask(descriptor: descriptor)
+        for (descriptor, object) in descriptors {
+            // Reuse the existing MetalComputePipelineState in case there are any existing cached/references to it, and just change out the Metal state it points to.
+            let _ = self.computeStateTask(descriptor: descriptor, stateObject: object)
+        }
+        
+        for task in self.computeStateTasks.values {
+            try? await task.value
         }
     }
     
@@ -218,8 +235,15 @@ final actor MetalComputePipelineCache {
         return reflectionDescriptor
     }
     
-    private func setState(_ state: MTLComputePipelineState, reflection: MetalPipelineReflection, for descriptor: ComputePipelineDescriptor) {
-        self.computeStates[descriptor] = MetalComputePipelineState(descriptor: descriptor, state: state, argumentBufferDescriptors: reflection.argumentBufferDescriptors)
+    private func setState(_ state: MTLComputePipelineState, reflection: MetalPipelineReflection, for descriptor: ComputePipelineDescriptor, stateObject: MetalComputePipelineState?) {
+        guard !Task.isCancelled else { return }
+        
+        if let existingState = stateObject {
+            existingState.mtlState = state
+            self.computeStates[descriptor] = existingState
+        } else {
+            self.computeStates[descriptor] = MetalComputePipelineState(descriptor: descriptor, state: state, argumentBufferDescriptors: reflection.argumentBufferDescriptors)
+        }
         
         let reflectionDescriptor = self.reflectionDescriptor(descriptor)
         if self.computeReflection[reflectionDescriptor] == nil {
@@ -227,7 +251,7 @@ final actor MetalComputePipelineCache {
         }
     }
     
-    nonisolated func createComputeState(descriptor: ComputePipelineDescriptor) async throws {
+    nonisolated func createComputeState(descriptor: ComputePipelineDescriptor, stateObject: MetalComputePipelineState?) async throws {
         let function = try await self.functionCache.function(for: descriptor.function)
         
         let mtlDescriptor = MTLComputePipelineDescriptor()
@@ -249,16 +273,16 @@ final actor MetalComputePipelineCache {
         let state = try await self.device.makeComputePipelineState(descriptor: mtlDescriptor, options: [.bufferTypeInfo], reflection: &reflection)
         
         let pipelineReflection = MetalPipelineReflection(threadExecutionWidth: state.threadExecutionWidth, function: mtlDescriptor.computeFunction!, computeState: state, computeReflection: reflection!)
-        await self.setState(state, reflection: pipelineReflection, for: descriptor)
+        await self.setState(state, reflection: pipelineReflection, for: descriptor, stateObject: stateObject)
     }
     
-    func computeStateTask(descriptor: ComputePipelineDescriptor) -> Task<Void, Error> {
+    func computeStateTask(descriptor: ComputePipelineDescriptor, stateObject: MetalComputePipelineState? = nil) -> Task<Void, Error> {
         let computeStateTask: Task<Void, Error>
         if let task = self.computeStateTasks[descriptor] {
             computeStateTask = task
         } else {
             computeStateTask = Task.detached {
-                try await self.createComputeState(descriptor: descriptor)
+                try await self.createComputeState(descriptor: descriptor, stateObject: stateObject)
             }
             self.computeStateTasks[descriptor] = computeStateTask
         }
