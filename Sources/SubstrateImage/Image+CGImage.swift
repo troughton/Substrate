@@ -53,7 +53,9 @@ extension Image {
                     if cieSpace.primaries == .sRGB {
                         if #available(macOS 13.0, *) {
                             // itur_709_HLG has incorrect availability information.
-                            return CGColorSpace(name: CGColorSpace.itur_709_HLG)!
+                            
+                            let itur709HLG: CFString = "kCGColorSpaceITUR_709_HLG" as CFString // CGColorSpace.itur_709_HLG has incorrect availability on macOS 12 which leads to missing symbols at runtime.
+                            return CGColorSpace(name: itur709HLG)!
                         } else {
                             break
                         }
