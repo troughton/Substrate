@@ -11,81 +11,94 @@ import CoreGraphics
 import SubstrateMath
 
 extension Image {
+    
+    private func cgColorSpace(cieSpace: CIEXYZ1931ColorSpace<Float>, isGrayscale: Bool) -> CGColorSpace {
+        // TODO: handle more custom colour spaces
+        switch cieSpace {
+        case .acesCG:
+            return CGColorSpace(name: CGColorSpace.acescgLinear)!
+        case .dciP3:
+            return CGColorSpace(name: CGColorSpace.dcip3)!
+        case .displayP3:
+            return CGColorSpace(name: CGColorSpace.displayP3)!
+        case .linearSRGB:
+            return CGColorSpace(name: isGrayscale ? CGColorSpace.linearGray : CGColorSpace.linearSRGB)!
+        case .rec2020:
+            if #available(macOS 12.0, iOS 15.1, *) {
+                return CGColorSpace(name: CGColorSpace.itur_2020_sRGBGamma)!
+            } else {
+                break
+            }
+        case .rec709:
+            return CGColorSpace(name: CGColorSpace.itur_709)!
+        case .sRGB:
+            return CGColorSpace(name: CGColorSpace.sRGB)!
+        default:
+            break
+        }
+        
+        var gamma = CGFloat(cieSpace.eotf.representativeGamma ?? 1.0)
+        switch cieSpace.eotf {
+        case .linear:
+            gamma = 1.0
+        case .power(let power):
+            gamma = CGFloat(power)
+        case .hlg:
+            if cieSpace.primaries == .sRGB {
+                if #available(macOS 13.0, *) {
+                    // itur_709_HLG has incorrect availability information.
+                    
+                    let itur709HLG: CFString = "kCGColorSpaceITUR_709_HLG" as CFString // CGColorSpace.itur_709_HLG has incorrect availability on macOS 12 which leads to missing symbols at runtime.
+                    return CGColorSpace(name: itur709HLG)!
+                } else {
+                    break
+                }
+            } else if cieSpace.primaries == .p3 {
+                return CGColorSpace(name: CGColorSpace.displayP3_HLG)!
+            } else {
+                return CGColorSpace(name: CGColorSpace.itur_2100_HLG)!
+            }
+        case .pq:
+            if cieSpace.primaries == .sRGB {
+                if #available(iOS 15.1, *) {
+                    return CGColorSpace(name: CGColorSpace.itur_709_PQ)!
+                } else {
+                    break
+                }
+            } else if cieSpace.primaries == .p3 {
+                return CGColorSpace(name: CGColorSpace.displayP3_PQ)!
+            } else {
+                return CGColorSpace(name: CGColorSpace.itur_2100_PQ)!
+            }
+        default:
+            break
+        }
+        let whitePoint = cieSpace.referenceWhite.value
+        var whitePointCG: [CGFloat] = [CGFloat(whitePoint.X), CGFloat(whitePoint.Y), CGFloat(whitePoint.Z)]
+        var gammaCG: [CGFloat] = [gamma, gamma, gamma]
+        let xyzToRGB = Matrix3x3<Double>(cieSpace.xyzToRGBMatrix)
+        return withUnsafeBytes(of: xyzToRGB) { xyzToRGB -> CGColorSpace in
+            let xyzToRGB = xyzToRGB.bindMemory(to: CGFloat.self)
+            return CGColorSpace(calibratedRGBWhitePoint: &whitePointCG, blackPoint: nil, gamma: &gammaCG, matrix: xyzToRGB.baseAddress)!
+        }
+    }
+    
     public var cgColorSpace: CGColorSpace {
         let isGrayscale = self.channelCount < 3
         
-        let colorSpace: CGColorSpace
         switch self.colorSpace {
         case .undefined:
-            colorSpace = isGrayscale ? CGColorSpaceCreateDeviceGray() : CGColorSpaceCreateDeviceRGB()
+            return isGrayscale ? CGColorSpaceCreateDeviceGray() : CGColorSpaceCreateDeviceRGB()
         case .gammaSRGB(let gamma):
             var whitePoint: [CGFloat] = [0.3127, 0.3290, 1.0]
-            colorSpace = CGColorSpace(calibratedGrayWhitePoint: &whitePoint, blackPoint: nil, gamma: CGFloat(gamma)) ?? CGColorSpace(name: CGColorSpace.linearSRGB)!
+            return CGColorSpace(calibratedGrayWhitePoint: &whitePoint, blackPoint: nil, gamma: CGFloat(gamma)) ?? CGColorSpace(name: CGColorSpace.linearSRGB)!
         case .linearSRGB:
-            colorSpace = CGColorSpace(name: isGrayscale ? CGColorSpace.linearGray : CGColorSpace.linearSRGB)!
+            return CGColorSpace(name: isGrayscale ? CGColorSpace.linearGray : CGColorSpace.linearSRGB)!
         case .sRGB:
-            colorSpace = CGColorSpace(name: isGrayscale ? CGColorSpace.genericGrayGamma2_2 : CGColorSpace.sRGB)!
+            return CGColorSpace(name: isGrayscale ? CGColorSpace.genericGrayGamma2_2 : CGColorSpace.sRGB)!
         case .cieRGB(let cieSpace):
-            // TODO: handle more custom colour spaces
-            switch cieSpace {
-            case .acesCG:
-                return CGColorSpace(name: CGColorSpace.acescgLinear)!
-            case .dciP3:
-                colorSpace = CGColorSpace(name: CGColorSpace.dcip3)!
-            case .displayP3:
-                colorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
-            case .linearSRGB:
-                colorSpace = CGColorSpace(name: isGrayscale ? CGColorSpace.linearGray : CGColorSpace.linearSRGB)!
-            case .rec2020:
-                colorSpace = CGColorSpace(name: CGColorSpace.itur_2020_sRGBGamma)!
-            case .rec709:
-                colorSpace = CGColorSpace(name: CGColorSpace.itur_709)!
-            case .sRGB:
-                colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-            default:
-                var gamma: CGFloat = 1.0
-                switch cieSpace.eotf {
-                case .linear:
-                    gamma = 1.0
-                case .power(let power):
-                    gamma = CGFloat(power)
-                case .hlg:
-                    if cieSpace.primaries == .sRGB {
-                        if #available(macOS 13.0, *) {
-                            // itur_709_HLG has incorrect availability information.
-                            
-                            let itur709HLG: CFString = "kCGColorSpaceITUR_709_HLG" as CFString // CGColorSpace.itur_709_HLG has incorrect availability on macOS 12 which leads to missing symbols at runtime.
-                            return CGColorSpace(name: itur709HLG)!
-                        } else {
-                            break
-                        }
-                    } else if cieSpace.primaries == .p3 {
-                        return CGColorSpace(name: CGColorSpace.displayP3_HLG)!
-                    } else {
-                        return CGColorSpace(name: CGColorSpace.itur_2100_HLG)!
-                    }
-                case .pq:
-                    if cieSpace.primaries == .sRGB {
-                        return CGColorSpace(name: CGColorSpace.itur_709_PQ)!
-                    } else if cieSpace.primaries == .p3 {
-                        return CGColorSpace(name: CGColorSpace.displayP3_PQ)!
-                    } else {
-                        return CGColorSpace(name: CGColorSpace.itur_2100_PQ)!
-                    }
-                default:
-                    break
-                }
-                let whitePoint = cieSpace.referenceWhite.value
-                var whitePointCG: [CGFloat] = [CGFloat(whitePoint.X), CGFloat(whitePoint.Y), CGFloat(whitePoint.Z)]
-                var gammaCG: [CGFloat] = [gamma, gamma, gamma]
-                let xyzToRGB = Matrix3x3<Double>(cieSpace.xyzToRGBMatrix)
-                colorSpace =  withUnsafeBytes(of: xyzToRGB) { xyzToRGB -> CGColorSpace in
-                    let xyzToRGB = xyzToRGB.bindMemory(to: CGFloat.self)
-                    return CGColorSpace(calibratedRGBWhitePoint: &whitePointCG, blackPoint: nil, gamma: &gammaCG, matrix: xyzToRGB.baseAddress)!
-                }
-            }
+            return self.cgColorSpace(cieSpace: cieSpace, isGrayscale: isGrayscale)
         }
-        return colorSpace
     }
     
     public var cgBitmapInfo: CGBitmapInfo {
@@ -117,6 +130,9 @@ extension Image where ComponentType: SIMDScalar {
         let colorSpace: ImageColorSpace
         
         let itur709HLG: CFString = "kCGColorSpaceITUR_709_HLG" as CFString // CGColorSpace.itur_709_HLG has incorrect availability on macOS 12 which leads to missing symbols at runtime.
+        let itur_2020_sRGBGamma: CFString = "kCGColorSpaceITUR_2020_sRGBGamma" as CFString // iOS 15.1 availability
+        let linearITUR_2020: CFString = "kCGColorSpaceLinearITUR_2020" as CFString // iOS 15.0 availability
+        let itur_709_PQ: CFString = "kCGColorSpaceITUR_709_PQ" as CFString // iOS 15.1 availability
         switch cgColorSpace?.name {
         case CGColorSpace.linearSRGB, CGColorSpace.linearGray, CGColorSpace.extendedLinearSRGB:
             colorSpace = .linearSRGB
@@ -128,9 +144,9 @@ extension Image where ComponentType: SIMDScalar {
             colorSpace = .cieRGB(colorSpace: .dciP3)
         case CGColorSpace.displayP3:
             colorSpace = .cieRGB(colorSpace: .displayP3)
-        case CGColorSpace.itur_2020_sRGBGamma:
+        case itur_2020_sRGBGamma:
             colorSpace = .cieRGB(colorSpace: .rec2020)
-        case CGColorSpace.linearITUR_2020:
+        case linearITUR_2020:
             var cieSpace = CIEXYZ1931ColorSpace<Float>.rec2020
             cieSpace.eotf = .linear
             colorSpace = .cieRGB(colorSpace: cieSpace)
@@ -152,7 +168,7 @@ extension Image where ComponentType: SIMDScalar {
             var cieSpace = CIEXYZ1931ColorSpace<Float>.rec2020
             cieSpace.eotf = .hlg
             colorSpace = .cieRGB(colorSpace: cieSpace)
-        case CGColorSpace.itur_709_PQ:
+        case itur_709_PQ:
             var cieSpace = CIEXYZ1931ColorSpace<Float>.rec709
             cieSpace.eotf = .pq
             colorSpace = .cieRGB(colorSpace: cieSpace)
