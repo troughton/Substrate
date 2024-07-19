@@ -39,20 +39,34 @@ public enum InputActionState : InputSourceState {
     }
 }
 
-public protocol InputLayer : AnyObject {
-    func processInput(rawInput: inout InputState<RawInputState>, frame: UInt64)
-}
-
 public protocol InputActionType : Hashable, Codable {
     
 }
 
+open class InputLayer {
+    public private(set) var transitionState = InputState<InputSourceTransitionState>()
+    
+    public init() {
+        
+    }
+    
+    open func processInput(rawInput: inout InputState<RawInputState>, frame: UInt64) {
+        self.transitionState.update(rawState: rawInput, frame: frame)
+    }
+    
+    public subscript(deviceType: DeviceType) -> DeviceInputState<InputSourceTransitionState> {
+        return self.transitionState[deviceType]
+    }
+    
+    public subscript(inputSource: InputSource) -> InputSourceTransitionState {
+        return self.transitionState[inputSource]
+    }
+}
 
 public final class ConfigurableInputLayer<ActionType : InputActionType> : InputLayer {
     public let modifiers : [InputModifier]
     public let mappings : [InputLayerMapping<ActionType>]
     
-    var transitionState = InputState<InputSourceTransitionState>()
     private var actionState = [ActionType : InputActionState]()
     
     public init(modifiers: [InputModifier], mappings: [InputLayerMapping<ActionType>]) {
@@ -60,20 +74,12 @@ public final class ConfigurableInputLayer<ActionType : InputActionType> : InputL
         self.mappings = mappings
     }
     
-    public subscript(transitionState deviceType: DeviceType) -> DeviceInputState<InputSourceTransitionState> {
-        return self.transitionState[deviceType]
-    }
-    
-    public subscript(transitionState inputSource: InputSource) -> InputSourceTransitionState {
-        return self.transitionState[inputSource]
-    }
-    
     public subscript(actionType: ActionType) -> InputActionState {
         return self.actionState[actionType, default: .inactive]
     }
     
-    public func processInput(rawInput: inout InputState<RawInputState>, frame: UInt64) {
-        self.transitionState.update(rawState: rawInput, frame: frame)
+    public override func processInput(rawInput: inout InputState<RawInputState>, frame: UInt64) {
+        super.processInput(rawInput: &rawInput, frame: frame)
         self.actionState.removeAll(keepingCapacity: true)
 
         var activeModifiers = [InputModifier]()

@@ -8,18 +8,8 @@
 import ImGui
 
 public final class ImGuiInputLayer : InputLayer {
-    var transitionState = InputState<InputSourceTransitionState>()
-    
-    init() {
-        
-    }
-    
-    public subscript(inputSource: InputSource) -> InputSourceTransitionState {
-        return self.transitionState[inputSource.devices.first!][inputSource]
-    }
-    
-    public func processInput(rawInput: inout InputState<RawInputState>, frame: UInt64) {
-        self.transitionState.update(rawState: rawInput, frame: frame)
+    public override func processInput(rawInput: inout InputState<RawInputState>, frame: UInt64) {
+        super.processInput(rawInput: &rawInput, frame: frame)
         
         if ImGui.io.pointee.WantCaptureMouse {
             rawInput[.mouse] = DeviceInputState<RawInputState>(type: .mouse)

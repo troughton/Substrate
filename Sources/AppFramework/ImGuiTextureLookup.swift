@@ -65,10 +65,10 @@ extension ImGui {
     }
     
     public static func image(_ texture: Texture, size: Vector2f, uv0: Vector2f = Vector2f(repeating: 0), uv1: Vector2f = Vector2f(repeating: 1), tintColor: Vector4f = Vector4f(repeating: 1), borderColor: Vector4f = Vector4f(repeating: 0))  {
-        self.image(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(exactly: texture.handle)!)!, size: size, uv0: uv0, uv1: uv1, tintColor: tintColor, borderColor: borderColor)
+        self.image(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(exactly: texture.handle.bitPattern)!)!, size: size, uv0: uv0, uv1: uv1, tintColor: tintColor, borderColor: borderColor)
     }
     
     public static func imageButton(_ texture: Texture, size: Vector2f, uv0: Vector2f = Vector2f(repeating: 0), uv1: Vector2f = Vector2f(repeating: 1), framePadding: Int, backgroundColor: Vector4f, tintColor: Vector4f) -> Bool {
-        return self.imageButton(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(exactly: texture.handle)!)!, size: size, uv0: uv0, uv1: uv1, framePadding: framePadding, backgroundColor: backgroundColor, tintColor: tintColor)
+        return self.imageButton(userTextureId: UnsafeMutableRawPointer(bitPattern: UInt(exactly: texture.handle.bitPattern)!)!, size: size, uv0: uv0, uv1: uv1, framePadding: framePadding, backgroundColor: backgroundColor, tintColor: tintColor)
     }
 }

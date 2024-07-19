@@ -34,9 +34,19 @@ import MetalKit
 @MainActor
 public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDelegate  {
     private var application : CocoaApplication! = nil
+    
+    let applicationUpdateStream: AsyncStream<Void>
+    let applicationUpdateStreamContinuation: AsyncStream<Void>.Continuation
+    
     var previousTask: Task<Void, Never>?
     
     public init(appDelegate: ApplicationDelegate?, windowDelegates: @autoclosure () async -> [WindowDelegate], windowRenderGraph: RenderGraph) async {
+        var theContinuation: AsyncStream<Void>.Continuation! = nil
+        self.applicationUpdateStream = AsyncStream(bufferingPolicy: .bufferingNewest(1), { (continuation: AsyncStream<Void>.Continuation) in
+            theContinuation = continuation
+        })
+        self.applicationUpdateStreamContinuation = theContinuation
+        
         super.init()
         
         self.application = await CocoaApplication(delegate: appDelegate, updateables: await windowDelegates(), updateScheduler: self, windowRenderGraph: windowRenderGraph)
@@ -48,6 +58,12 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
     
         view.enableSetNeedsDisplay = false
         view.isPaused = false
+        
+        Task.detached { [application = self.application!] in
+            for await _ in self.applicationUpdateStream {
+                await application.update()
+            }
+        }
     }
     
     public func draw(in view: MTKView) {
@@ -60,11 +76,7 @@ public final class MetalUpdateScheduler : NSObject, UpdateScheduler, MTKViewDele
             (window as! MTKWindow).mtkView.draw()
         }
         
-        let previousTask = self.previousTask
-        self.previousTask = Task.detached {
-            await previousTask?.value
-            await self.application.update()
-        }
+        self.applicationUpdateStreamContinuation.yield()
     }
 
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {

@@ -19,11 +19,22 @@ public struct InputModifier {
     public var device : DeviceType
     public var input : InputSource
     public var modifies : DeviceType
+    
+    public init(device: DeviceType, input: InputSource, modifies: DeviceType) {
+        self.device = device
+        self.input = input
+        self.modifies = modifies
+    }
 }
 
 public struct InputRange {
     public var start : Float
     public var end : Float
+    
+    public init(start: Float, end: Float) {
+        self.start = start
+        self.end = end
+    }
 }
 
 public struct InputLayerMapping<ActionType: InputActionType> {
@@ -31,6 +42,12 @@ public struct InputLayerMapping<ActionType: InputActionType> {
         public var device : DeviceType
         public var input : InputSource
         public var range : InputRange?
+        
+        public init(device: DeviceType, input: InputSource, range: InputRange? = nil) {
+            self.device = device
+            self.input = input
+            self.range = range
+        }
     }
     
     /// The action that is activated when the conditions for this mapping are met.

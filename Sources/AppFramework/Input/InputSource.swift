@@ -297,7 +297,7 @@ public struct InputState<T : InputSourceState> {
 
 
 extension InputState where T == InputSourceTransitionState {
-    mutating func update(rawState: InputState<RawInputState>, frame: UInt64) {
+    public mutating func update(rawState: InputState<RawInputState>, frame: UInt64) {
         for (deviceType, device) in rawState.devices {
             for (sourceType, state) in device.mappings {
                 if state.isContinuous {

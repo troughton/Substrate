@@ -60,7 +60,7 @@ extension ImGui {
         let fontTexture = Texture(descriptor: textureDescriptor, flags: .persistent)
         _ = await GPUResourceUploader.replaceTextureRegion(Region(x: 0, y: 0, width: width, height: height), mipmapLevel: 0, in: fontTexture, withBytes: pixels!, bytesPerRow: width * bytesPerPixel)
         
-        ImGui.io.pointee.Fonts.pointee.setTexID(UnsafeMutableRawPointer(bitPattern: UInt(exactly: fontTexture.handle)!)!)
+        ImGui.io.pointee.Fonts.pointee.setTexID(UnsafeMutableRawPointer(bitPattern: UInt(exactly: fontTexture.handle.bitPattern)!)!)
         
         #if os(macOS)
         ImGui.io.pointee.ConfigMacOSXBehaviors = true
