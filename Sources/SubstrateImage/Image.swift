@@ -1540,6 +1540,11 @@ extension Double: _ImageNormalizedComponent {
     }
 }
 
+public enum ImageSamplingFilter {
+    case bilinear
+    case bicubic
+}
+
 extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     @inlinable
     public subscript(floatVectorAt x: Int, _ y: Int) -> SIMD4<ComponentType._ImageUnnormalizedType> {
@@ -1636,12 +1641,14 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
         return (floorCoord, ceilCoord)
     }
     
-    @inlinable
-    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, channel: Int, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
-        let unwrappedFloorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
-        let unwrappedCeilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
-        let lerpX = ComponentType._ImageUnnormalizedType(pixelCoordinate.x - pixelCoordinate.x.rounded(.down))
-        let lerpY = ComponentType._ImageUnnormalizedType(pixelCoordinate.y - pixelCoordinate.y.rounded(.down))
+    @_specialize(kind: partial, where T == Float)
+    @inlinable @inline(__always)
+    func sampleBilinear<T: BinaryFloatingPoint, Result>(pixelCoordinate: SIMD2<T>, horizontalWrapMode: ImageEdgeWrapMode, verticalWrapMode: ImageEdgeWrapMode, readPixel: (_ x: Int, _ y: Int, _ horizontalWrapMode: ImageEdgeWrapMode, _ verticalWrapMode: ImageEdgeWrapMode) -> Result, multiply: (Result, ComponentType._ImageUnnormalizedType) -> Result, add: (Result, Result) -> Result) -> Result {
+        let unwrappedFloorCoordT = pixelCoordinate.rounded(.down)
+        let unwrappedFloorCoord = SIMD2<Int>(Int(unwrappedFloorCoordT.x), Int(unwrappedFloorCoordT.y)) // manually converting each element produces better assembly.
+        let unwrappedCeilCoord = unwrappedFloorCoord &+ .one
+        let lerpX = ComponentType._ImageUnnormalizedType(pixelCoordinate.x - unwrappedFloorCoordT.x)
+        let lerpY = ComponentType._ImageUnnormalizedType(pixelCoordinate.y - unwrappedFloorCoordT.y)
         
         let size = SIMD2(self.width, self.height)
         
@@ -1653,83 +1660,121 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
             ceilCoord.y = vCeilCoord.y
         }
         
-        func readPixel(_ coord: SIMD2<Int>) -> ComponentType._ImageUnnormalizedType {
-            if horizontalWrapMode == .zero, coord.x < 0 || coord.x >= size.x { return .zero }
-            if verticalWrapMode == .zero, coord.y < 0 || coord.y >= size.y { return .zero }
-            return self[coord.x, coord.y, channel: channel]._imageNormalizedComponentToFloat()
+        let a = readPixel(floorCoord.x, floorCoord.y, horizontalWrapMode, verticalWrapMode)
+        let b = readPixel(ceilCoord.x, floorCoord.y, horizontalWrapMode, verticalWrapMode)
+        let c = readPixel(floorCoord.x, ceilCoord.y, horizontalWrapMode, verticalWrapMode)
+        let d = readPixel(ceilCoord.x, ceilCoord.y, horizontalWrapMode, verticalWrapMode)
+        
+        let top = add(multiply(a, 1.0 - lerpX), multiply(b, lerpX))
+        let bottom = add(multiply(c, 1.0 - lerpX), multiply(d, lerpX))
+        return add(multiply(top, 1.0 - lerpY), multiply(bottom, lerpY))
+    }
+    
+    // Source: https://pastebin.com/raw/YLLSBRFq, from comments of http://vec3.ca/bicubic-filtering-in-fewer-taps/
+    @_specialize(kind: partial, where T == Float)
+    @inlinable @inline(__always)
+    func sampleBicubic<T: BinaryFloatingPoint, Result>(pixelCoordinate: SIMD2<T>, horizontalWrapMode: ImageEdgeWrapMode, verticalWrapMode: ImageEdgeWrapMode, readPixel: (_ x: Int, _ y: Int, _ horizontalWrapMode: ImageEdgeWrapMode, _ verticalWrapMode: ImageEdgeWrapMode) -> Result, multiply: (Result, ComponentType._ImageUnnormalizedType) -> Result, add: (Result, Result) -> Result) -> Result {
+
+        let texelCenter = pixelCoordinate.rounded(.down) + SIMD2(repeating: 0.5)
+        let fracOffset    = pixelCoordinate - texelCenter
+        let fracOffset_x2 = fracOffset * fracOffset
+        let fracOffset_x3 = fracOffset * fracOffset_x2
+        
+        //--------------------------------------------------------------------------------------
+        // Calculate the filter weights (B-Spline Weighting Function)
+        
+        let weight0 = fracOffset_x2 - 0.5 * (fracOffset_x3 + fracOffset)
+        let weight1 = 1.5 * fracOffset_x3 - 2.5 * fracOffset_x2 + SIMD2.one
+        let weight3 = 0.5 * (fracOffset_x3 - fracOffset_x2)
+        let weight2 = 1.0 - weight0 - weight1 - weight3
+        
+        //--------------------------------------------------------------------------------------
+        // Calculate the texture coordinates
+        
+        let scalingFactor0 = weight0 + weight1
+        let scalingFactor1 = weight2 + weight3
+        
+        let f0 = (weight1 / scalingFactor0).replacing(with: .zero, where: scalingFactor0 .== .zero)
+        let f1 = (weight3 / scalingFactor1).replacing(with: .zero, where: scalingFactor1 .== .zero)
+        
+        let texCoord0 = texelCenter - SIMD2.one + f0
+        let texCoord1 = texelCenter + SIMD2.one + f1
+        
+        //--------------------------------------------------------------------------------------
+        // Sample the texture
+        
+        let xy = self.sampleBilinear(pixelCoordinate: texCoord0, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode, readPixel: readPixel, multiply: multiply, add: add)
+        let Xy = self.sampleBilinear(pixelCoordinate: SIMD2(texCoord1.x, texCoord0.y), horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode, readPixel: readPixel, multiply: multiply, add: add)
+        let xY = self.sampleBilinear(pixelCoordinate: SIMD2(texCoord0.x, texCoord1.y), horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode, readPixel: readPixel, multiply: multiply, add: add)
+        let XY = self.sampleBilinear(pixelCoordinate: SIMD2(texCoord1.x, texCoord1.y), horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode, readPixel: readPixel, multiply: multiply, add: add)
+        
+        return add(
+            add(multiply(xy, ComponentType._ImageUnnormalizedType(scalingFactor0.x * scalingFactor0.y)),
+                multiply(Xy, ComponentType._ImageUnnormalizedType(scalingFactor1.x * scalingFactor0.y))),
+            add(multiply(xY, ComponentType._ImageUnnormalizedType(scalingFactor0.x * scalingFactor1.y)),
+                multiply(XY, ComponentType._ImageUnnormalizedType(scalingFactor1.x * scalingFactor1.y)))
+        )
+    }
+    
+    @_specialize(kind: partial, where T == Float)
+    @inlinable @inline(__always)
+    func sample<T: BinaryFloatingPoint, Result>(pixelCoordinate: SIMD2<T>, filter: ImageSamplingFilter,  horizontalWrapMode: ImageEdgeWrapMode, verticalWrapMode: ImageEdgeWrapMode, readPixel: (_ x: Int, _ y: Int, _ horizontalWrapMode: ImageEdgeWrapMode, _ verticalWrapMode: ImageEdgeWrapMode) -> Result, multiply: (Result, ComponentType._ImageUnnormalizedType) -> Result, add: (Result, Result) -> Result) -> Result {
+        switch filter {
+        case .bilinear:
+            return self.sampleBilinear(pixelCoordinate: pixelCoordinate, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode, readPixel: readPixel, multiply: multiply, add: add)
+        case .bicubic:
+            return self.sampleBicubic(pixelCoordinate: pixelCoordinate, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode, readPixel: readPixel, multiply: multiply, add: add)
         }
-        
-        let a = readPixel(floorCoord)
-        let b = readPixel(SIMD2(ceilCoord.x, floorCoord.y))
-        let c = readPixel(SIMD2(floorCoord.x, ceilCoord.y))
-        let d = readPixel(ceilCoord)
-        
-        let top = (1.0 - lerpX) * a + lerpX * b
-        let bottom = (1.0 - lerpX) * c + lerpX * d
-        return (1.0 - lerpY) * top + lerpY * bottom
+    }
+    
+    @_specialize(kind: partial, where T == Float)
+    @inlinable
+    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, channel: Int, filter: ImageSamplingFilter = .bilinear, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        return self.sample(pixelCoordinate: pixelCoordinate, filter: filter, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode, readPixel: { x, y, horizontalWrapMode, verticalWrapMode in
+            if horizontalWrapMode == .zero, x < 0 || x >= self.width { return .zero }
+            if verticalWrapMode == .zero, y < 0 || y >= self.height { return .zero }
+            return self[x, y, channel: channel]._imageNormalizedComponentToFloat()
+        }, multiply: *, add: +)
+    }
+    
+    @_specialize(kind: partial, where T == Float)
+    @inlinable
+    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, filter: ImageSamplingFilter = .bilinear, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
+        return self.sample(pixelCoordinate: pixelCoordinate, filter: filter, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode, readPixel: { x, y, horizontalWrapMode, verticalWrapMode in
+            if horizontalWrapMode == .zero, x < 0 || x >= self.width { return .zero }
+            if verticalWrapMode == .zero, y < 0 || y >= self.height { return .zero }
+            return self[floatVectorAt: x, y]
+        }, multiply: *, add: +)
     }
     
     @inlinable
-    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
-        let unwrappedFloorCoord = SIMD2<Int>(pixelCoordinate.rounded(.down))
-        let unwrappedCeilCoord = SIMD2<Int>(pixelCoordinate.rounded(.up))
-        let lerpX = ComponentType._ImageUnnormalizedType(pixelCoordinate.x - pixelCoordinate.x.rounded(.down))
-        let lerpY = ComponentType._ImageUnnormalizedType(pixelCoordinate.y - pixelCoordinate.y.rounded(.down))
-        
-        let size = SIMD2(self.width, self.height)
-        
-        var (floorCoord, ceilCoord) = applyWrapMode(horizontalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
-        
-        if horizontalWrapMode != verticalWrapMode {
-            let (vFloorCoord, vCeilCoord) = applyWrapMode(verticalWrapMode, floorCoord: unwrappedFloorCoord, ceilCoord: unwrappedCeilCoord, size: size)
-            floorCoord.y = vFloorCoord.y
-            ceilCoord.y = vCeilCoord.y
-        }
-        
-        func readPixel(_ coord: SIMD2<Int>) -> SIMD4<ComponentType._ImageUnnormalizedType> {
-            if horizontalWrapMode == .zero, coord.x < 0 || coord.x >= size.x { return .zero }
-            if verticalWrapMode == .zero, coord.y < 0 || coord.y >= size.y { return .zero }
-            return self[floatVectorAt: coord.x, coord.y]
-        }
-        
-        let a = readPixel(floorCoord)
-        let b = readPixel(SIMD2(ceilCoord.x, floorCoord.y))
-        let c = readPixel(SIMD2(floorCoord.x, ceilCoord.y))
-        let d = readPixel(ceilCoord)
-        
-        let top = (1.0 - lerpX) * a + lerpX * b
-        let bottom = (1.0 - lerpX) * c + lerpX * d
-        return (1.0 - lerpY) * top + lerpY * bottom
+    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, channel: Int, filter: ImageSamplingFilter = .bilinear, wrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        return self.sample(pixelCoordinate: pixelCoordinate, channel: channel, filter: filter, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
     }
     
     @inlinable
-    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, channel: Int, wrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
-        return self.sample(pixelCoordinate: pixelCoordinate, channel: channel, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
+    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, filter: ImageSamplingFilter = .bilinear, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
+        return self.sample(pixelCoordinate: pixelCoordinate, filter: filter, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
     }
     
     @inlinable
-    public func sample<T: BinaryFloatingPoint>(pixelCoordinate: SIMD2<T>, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
-        return self.sample(pixelCoordinate: pixelCoordinate, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
+    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, channel: Int, filter: ImageSamplingFilter = .bilinear, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), channel: channel, filter: filter, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode)
     }
     
     @inlinable
-    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, channel: Int, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
-        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), channel: channel, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode)
+    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, channel: Int, filter: ImageSamplingFilter = .bilinear, wrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
+        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), channel: channel, filter: filter, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
     }
     
     @inlinable
-    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, channel: Int, wrapMode: ImageEdgeWrapMode = .wrap) -> ComponentType._ImageUnnormalizedType {
-        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), channel: channel, horizontalWrapMode: wrapMode, verticalWrapMode: wrapMode)
+    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, filter: ImageSamplingFilter = .bilinear, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
+        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), filter: filter, horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode)
     }
     
     @inlinable
-    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, horizontalWrapMode: ImageEdgeWrapMode = .wrap, verticalWrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
-        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), horizontalWrapMode: horizontalWrapMode, verticalWrapMode: verticalWrapMode)
-    }
-    
-    @inlinable
-    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
-        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), wrapMode: wrapMode)
+    public func sample<T: BinaryFloatingPoint>(coordinate: SIMD2<T>, filter: ImageSamplingFilter = .bilinear, wrapMode: ImageEdgeWrapMode = .wrap) -> SIMD4<ComponentType._ImageUnnormalizedType> {
+        return self.sample(pixelCoordinate: coordinate * SIMD2(T(self.width), T(self.height)), filter: filter, wrapMode: wrapMode)
     }
     
     @inlinable
