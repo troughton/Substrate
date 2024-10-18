@@ -282,10 +282,13 @@ final class MetalDriver {
         return try Process.run(self.url, arguments: arguments, terminationHandler: nil)
     }
     
-    func generateLibrary(airFiles: [URL], outputLibrary: URL) throws -> Process {
+    func generateLibrary(airFiles: [URL], outputLibrary: URL, withDebugInformation debug: Bool) throws -> Process {
         var arguments = ["-sdk", target.metalSDK!, "metal",
                          "-o", outputLibrary.path,
                          "-target", self.targetString]
+        if debug {
+            arguments.append(contentsOf: ["-gline-tables-only", "-frecord-sources"])
+        }
         arguments.append(contentsOf: airFiles.lazy.map { $0.path })
         return try Process.run(self.url, arguments: arguments, terminationHandler: nil)
     }

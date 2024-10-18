@@ -18,6 +18,15 @@ enum Target: Hashable {
         case iOSSimulator
         case tvOSSimulator
         case visionOSSimulator
+        
+        var isSimulator: Bool {
+            switch self {
+            case .iOSSimulator, .tvOSSimulator, .visionOSSimulator:
+                return true
+            default:
+                return false
+            }
+        }
     }
     
     case metal(platform: MetalPlatform, deploymentTarget: String)
@@ -340,7 +349,7 @@ final class MetalCompiler : TargetCompiler {
                 
                 let metalLibraryPath = outputDirectory.appendingPathComponent("Library-\(target.metalPlatform!.rawValue).metallib")
                 print("\(self.target): Linking Metal library at \(metalLibraryPath.path)")
-                try self.driver.generateLibrary(airFiles: sourceFiles.map { $1 }, outputLibrary: metalLibraryPath).waitUntilExit()
+                try self.driver.generateLibrary(airFiles: sourceFiles.map { $1 }, outputLibrary: metalLibraryPath, withDebugInformation: debug).waitUntilExit()
             }
             catch {
                 throw CompilerError.libraryGenerationFailed(error)
