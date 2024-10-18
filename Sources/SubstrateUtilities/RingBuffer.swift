@@ -44,9 +44,9 @@ public final class RingBuffer<Element> : RandomAccessCollection, RangeReplaceabl
         if newElements.withContiguousStorageIfAvailable({ newElements -> Bool in
             let bufferEndCount = (subrange.lowerBound..<self.capacity).count
             let bufferStartCount = subrange.count - bufferEndCount
-            self.buffer.advanced(by: subrange.lowerBound).assign(from: newElements.baseAddress!, count: bufferEndCount)
+            self.buffer.advanced(by: subrange.lowerBound).update(from: newElements.baseAddress!, count: bufferEndCount)
             if bufferStartCount > 0 {
-                self.buffer.assign(from: newElements.baseAddress!.advanced(by: bufferEndCount), count: bufferStartCount)
+                self.buffer.update(from: newElements.baseAddress!.advanced(by: bufferEndCount), count: bufferStartCount)
             }
             return true
         }) == nil {

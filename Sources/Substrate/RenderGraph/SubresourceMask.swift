@@ -210,7 +210,7 @@ public struct SubresourceMask: Sendable {
     
     public mutating func clear(subresourceCount: Int, allocator: AllocatorType) {
         self.withUnsafeMutablePointerToStorage(subresourceCount: subresourceCount, allocator: allocator) { storage in
-            storage.assign(repeating: 0)
+            storage.update(repeating: 0)
         }
     }
     

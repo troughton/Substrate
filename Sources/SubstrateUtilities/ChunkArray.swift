@@ -148,7 +148,7 @@ public struct ChunkArray<Element>: Collection {
         
         let elementPointer = self[pointerTo: index]
         let element = elementPointer.move()
-        elementPointer.moveAssign(from: self.pointerToLast, count: 1)
+        elementPointer.moveUpdate(from: self.pointerToLast, count: 1)
         
         let (_, indexInChunk) = self.count.quotientAndRemainder(dividingBy: ChunkArray.elementsPerChunk)
         if indexInChunk == 0 {

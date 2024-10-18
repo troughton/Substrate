@@ -136,7 +136,7 @@ public struct BitSet {
     
     @inlinable
     public func clear() {
-        self.storage.assign(repeating: 0, count: self.storageCount)
+        self.storage.update(repeating: 0, count: self.storageCount)
     }
     
     @inlinable

@@ -109,7 +109,7 @@ struct VulkanRenderPipelineDescriptor : Hashable {
             let entryPoint = module.entryPointForFunction(named: name)
             let cEntryPoint = entryPoint.withCString { (cString) -> FixedSizeBuffer<CChar> in
                 let buffer = FixedSizeBuffer(capacity: name.utf8.count + 1, defaultValue: 0 as CChar)
-                buffer.buffer.assign(from: cString, count: name.utf8.count)
+                buffer.buffer.update(from: cString, count: name.utf8.count)
                 return buffer
             }
             

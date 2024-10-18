@@ -31,7 +31,7 @@ public struct AnyCodableImage: Codable {
         image.withUnsafeMutableBufferPointer { destination in
             data.withUnsafeBytes { source in
                 let source = source.bindMemory(to: T.self)
-                destination.baseAddress?.assign(from: source.baseAddress!, count: source.count)
+                destination.baseAddress?.update(from: source.baseAddress!, count: source.count)
             }
         }
         
