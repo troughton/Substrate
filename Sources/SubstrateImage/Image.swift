@@ -1644,6 +1644,7 @@ extension Image where ComponentType: _ImageNormalizedComponent & SIMDScalar {
     @_specialize(kind: partial, where T == Float)
     @inlinable @inline(__always)
     func sampleBilinear<T: BinaryFloatingPoint, Result>(pixelCoordinate: SIMD2<T>, horizontalWrapMode: ImageEdgeWrapMode, verticalWrapMode: ImageEdgeWrapMode, readPixel: (_ x: Int, _ y: Int, _ horizontalWrapMode: ImageEdgeWrapMode, _ verticalWrapMode: ImageEdgeWrapMode) -> Result, multiply: (Result, ComponentType._ImageUnnormalizedType) -> Result, add: (Result, Result) -> Result) -> Result {
+        let pixelCoordinate = pixelCoordinate - SIMD2(repeating: T(0.5)) // remove half-texel offset.
         let unwrappedFloorCoordT = pixelCoordinate.rounded(.down)
         let unwrappedFloorCoord = SIMD2<Int>(Int(unwrappedFloorCoordT.x), Int(unwrappedFloorCoordT.y)) // manually converting each element produces better assembly.
         let unwrappedCeilCoord = unwrappedFloorCoord &+ .one
