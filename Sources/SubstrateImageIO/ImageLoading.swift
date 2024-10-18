@@ -524,7 +524,7 @@ extension Image where ComponentType: BinaryInteger {
         let channelCount = loadingDelegate.channelCount(for: fileInfo)
         
         // Use Wuffs for PNG decoding.
-        guard let file = fopen(url.path, "rb") else {
+        guard let file = url.withUnsafeFileSystemRepresentation({ fopen($0, "rb") }) else {
             throw ImageLoadingError.invalidFile(url)
         }
         defer { fclose(file) }
@@ -706,7 +706,7 @@ extension Image where ComponentType == UInt8 {
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
-        guard let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
+        guard let data = url.withUnsafeFileSystemRepresentation({ stbi_load($0, &width, &height, &componentsPerPixel, Int32(channels)) }) else {
             throw ImageLoadingError.invalidFile(url, message: stbi_failure_reason().flatMap { String(cString: $0) })
         }
         
@@ -802,7 +802,7 @@ extension Image where ComponentType == Int8 {
         var width : Int32 = 0
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
-        guard let data = stbi_load(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
+        guard let data = url.withUnsafeFileSystemRepresentation({ stbi_load($0, &width, &height, &componentsPerPixel, Int32(channels)) }) else {
             throw ImageLoadingError.invalidFile(url, message: stbi_failure_reason().flatMap { String(cString: $0) })
         }
         
@@ -898,7 +898,7 @@ extension Image where ComponentType == UInt16 {
         var height : Int32 = 0
         var componentsPerPixel : Int32 = 0
         
-        guard let data = stbi_load_16(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
+        guard let data = url.withUnsafeFileSystemRepresentation({ stbi_load_16($0, &width, &height, &componentsPerPixel, Int32(channels)) }) else {
             throw ImageLoadingError.invalidFile(url, message: stbi_failure_reason().flatMap { String(cString: $0) })
         }
         
@@ -1006,7 +1006,7 @@ extension Image where ComponentType == Float {
             setupStbImageAllocatorContext(delegateWrapper)
             defer { tearDownStbImageAllocatorContext(overrides: delegateWrapper.overrides) }
             
-            guard let data = stbi_loadf(url.path, &width, &height, &componentsPerPixel, Int32(channels)) else {
+            guard let data = url.withUnsafeFileSystemRepresentation({ stbi_loadf($0, &width, &height, &componentsPerPixel, Int32(channels)) }) else {
                 throw ImageLoadingError.invalidData(message: stbi_failure_reason().flatMap { String(cString: $0) })
             }
             self.init(width: Int(width),

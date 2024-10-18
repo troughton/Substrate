@@ -436,21 +436,33 @@ extension Image {
 
 extension Image where ComponentType == UInt8 {
     public func writeBMP(to url: URL) throws {
-        let result = self.withUnsafeBufferPointer { stbi_write_bmp(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), $0.baseAddress) }
+        let result = self.withUnsafeBufferPointer { buffer in
+            url.withUnsafeFileSystemRepresentation {
+                stbi_write_bmp($0, Int32(self.width), Int32(self.height), Int32(self.channelCount), buffer.baseAddress)
+            }
+        }
         if result == 0 {
             throw TextureSaveError.errorWritingFile("(no error message)")
         }
     }
     
     public func writeJPEG(to url: URL, quality: Double = 0.9) throws {
-        let result = self.withUnsafeBufferPointer { stbi_write_jpg(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), $0.baseAddress, /* quality = */ Int32((Swift.min(Swift.max(0.0, quality), 1.0) * 100.0).rounded())) }
+        let result = self.withUnsafeBufferPointer { buffer in
+            url.withUnsafeFileSystemRepresentation {
+                stbi_write_jpg($0, Int32(self.width), Int32(self.height), Int32(self.channelCount), buffer.baseAddress, /* quality = */ Int32((Swift.min(Swift.max(0.0, quality), 1.0) * 100.0).rounded()))
+            }
+        }
         if result == 0 {
             throw TextureSaveError.errorWritingFile("(no error message)")
         }
     }
     
     public func writeTGA(to url: URL) throws {
-        let result = self.withUnsafeBufferPointer { stbi_write_tga(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), $0.baseAddress) }
+        let result = self.withUnsafeBufferPointer { buffer in
+            url.withUnsafeFileSystemRepresentation {
+                stbi_write_tga($0, Int32(self.width), Int32(self.height), Int32(self.channelCount), buffer.baseAddress)
+            }
+        }
         if result == 0 {
             throw TextureSaveError.errorWritingFile("(no error message)")
         }
@@ -551,7 +563,11 @@ public enum EXRCompressionType {
 extension Image where ComponentType == Float {
     
     public func writeHDR(to url: URL) throws {
-        let result = self.withUnsafeBufferPointer { stbi_write_hdr(url.path, Int32(self.width), Int32(self.height), Int32(self.channelCount), $0.baseAddress) }
+        let result = self.withUnsafeBufferPointer { buffer in
+            url.withUnsafeFileSystemRepresentation {
+                stbi_write_hdr($0, Int32(self.width), Int32(self.height), Int32(self.channelCount), buffer.baseAddress)
+            }
+        }
         if result == 0 {
             throw TextureSaveError.errorWritingFile("(no error message)")
         }
@@ -664,7 +680,7 @@ extension Image where ComponentType == Float {
             header.pointee.compression_type = compressionType.tinyEXRType
             
             var error : UnsafePointer<Int8>? = nil
-            let result = SaveEXRImageToFile(image, header, url.path, &error)
+            let result = url.withUnsafeFileSystemRepresentation { SaveEXRImageToFile(image, header, $0, &error) }
             
             if result != TINYEXR_SUCCESS || error != nil {
                 throw TextureSaveError.errorWritingFile(error.map { String(cString: $0) } ?? "(no error message)")
