@@ -8,42 +8,51 @@
 
 import Foundation
 
+@globalActor
 public actor RenderBlackboard {
-    static let blackboard = RenderBlackboard()
-    private var mappings = [ObjectIdentifier : any Sendable]()
+    public static let shared = RenderBlackboard()
+    
+    @RenderBlackboard static var mappings = [ObjectIdentifier : any Sendable]()
     
     public init() {
         
     }
     
-    public func add<T: Sendable>(_ obj: T) {
+    @RenderBlackboard
+    public static func add<T: Sendable>(_ obj: T) {
         self.mappings[ObjectIdentifier(T.self)] = obj
     }
     
-    public func remove<T: Sendable>(_ obj: T) {
+    @RenderBlackboard
+    public static func remove<T: Sendable>(_ obj: T) {
         self.mappings[ObjectIdentifier(T.self)] = nil
     }
     
-    public func remove<T: Sendable>(type: T.Type) {
+    @RenderBlackboard
+    public static func remove<T: Sendable>(type: T.Type) {
         self.mappings[ObjectIdentifier(type)] = nil
     }
     
-    public func get<T: Sendable>(_ type: T.Type) -> T {
+    @RenderBlackboard
+    public static func get<T: Sendable>(_ type: T.Type) -> T {
         guard let item = self.mappings[ObjectIdentifier(type)] else {
             fatalError("No item in blackboard of type \(type).")
         }
         return item as! T
     }
     
-    public func tryGet<T: Sendable>(_ type: T.Type) -> T? {
+    @RenderBlackboard
+    public static func tryGet<T: Sendable>(_ type: T.Type) -> T? {
         return self.mappings[ObjectIdentifier(type)] as! T?
     }
     
-    public func has<T: Sendable>(_ type: T.Type) -> Bool {
+    @RenderBlackboard
+    public static func has<T: Sendable>(_ type: T.Type) -> Bool {
         return self.mappings[ObjectIdentifier(type)] != nil
     }
     
-    public func clear() {
+    @RenderBlackboard
+    public static func clear() {
         self.mappings.removeAll(keepingCapacity: true)
     }
 }
