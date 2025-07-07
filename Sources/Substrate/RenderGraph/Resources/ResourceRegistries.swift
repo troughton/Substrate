@@ -7,7 +7,6 @@
 
 import SubstrateUtilities
 import Dispatch
-import Foundation
 import Atomics
 
 // Registries in this file fall into two main types.

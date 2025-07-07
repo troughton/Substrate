@@ -1,4 +1,4 @@
-// swift-tools-version:5.7.1
+// swift-tools-version:5.8
 
 import PackageDescription
 
@@ -77,6 +77,7 @@ let package = Package(
 //                    .define("SUBSTRATE_DISABLE_AUTOMATIC_LABELS"),
 //                    .define("SUBSTRATE_USE_PLATFORM_HAZARD_TRACKING"),
 //                    .unsafeFlags(["-enforce-exclusivity=unchecked"])
+                    .enableUpcomingFeature("MemberImportVisibility")
                 ]),
         .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"],
                 swiftSettings: [

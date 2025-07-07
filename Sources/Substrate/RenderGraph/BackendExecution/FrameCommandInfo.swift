@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Atomics
 
 struct CommandEncoderInfo: Sendable {
     var type: RenderPassType

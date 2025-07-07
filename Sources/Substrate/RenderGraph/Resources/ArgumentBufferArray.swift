@@ -5,7 +5,6 @@
 //  Created by Thomas Roughton on 22/02/18.
 //
 
-import Foundation
 import SubstrateUtilities
 import Atomics
 

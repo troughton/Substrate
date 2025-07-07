@@ -8,7 +8,6 @@
 import SubstrateUtilities
 import Atomics
 import Dispatch
-import Foundation
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
 import Darwin
 #elseif os(Linux)
@@ -24,8 +23,8 @@ public final class QueueRegistry: @unchecked Sendable {
     
     public static let bufferedSubmissionCount = 32
     
-    public let lastSubmittedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
-    public let lastCompletedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
+    @usableFromInline let lastSubmittedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
+    @usableFromInline let lastCompletedCommands : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     let commandSubmissionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     let commandCompletionTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>
     let commandGPUStartTimes : UnsafeMutablePointer<UInt64.AtomicRepresentation>

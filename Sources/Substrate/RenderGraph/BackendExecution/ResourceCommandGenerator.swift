@@ -6,6 +6,7 @@
 //
 
 import SubstrateUtilities
+import Atomics
 
 /// The value to wait for on the event associated with this RenderGraph context.
 struct ContextWaitEvent: Sendable {
