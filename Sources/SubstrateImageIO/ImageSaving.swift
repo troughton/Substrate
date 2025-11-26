@@ -361,7 +361,7 @@ fileprivate extension LodePNGInfo {
             self.srgb_defined = 1
             self.srgb_intent = 1 // relative colorimetric
         case .cieRGB(let colorSpace):
-            if colorSpace == .rec709 || colorSpace == .sRGB {
+            if colorSpace == .rec709(eotf: .sRGB) || colorSpace == .sRGB {
                 self.srgb_defined = 1
                 self.srgb_intent = 1 // relative colorimetric
             } else {

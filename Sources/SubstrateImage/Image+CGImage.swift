@@ -23,17 +23,22 @@ extension Image {
             return CGColorSpace(name: CGColorSpace.displayP3)!
         case .linearSRGB:
             return CGColorSpace(name: isGrayscale ? CGColorSpace.linearGray : CGColorSpace.linearSRGB)!
-        case .rec2020:
-            if #available(macOS 12.0, iOS 15.1, *) {
-                return CGColorSpace(name: CGColorSpace.itur_2020_sRGBGamma)!
-            } else {
-                break
-            }
-        case .rec709:
-            return CGColorSpace(name: CGColorSpace.itur_709)!
         case .sRGB:
             return CGColorSpace(name: CGColorSpace.sRGB)!
         default:
+            if cieSpace.primaries == .rec709, cieSpace.referenceWhite == .d65, cieSpace.eotf == .rec709 || cieSpace.eotf == .power(2.4) {
+                return CGColorSpace(name: CGColorSpace.itur_709)!
+            } else if cieSpace.primaries == .rec2020, cieSpace.referenceWhite == .d65 {
+                if cieSpace.eotf == .rec709 || cieSpace.eotf == .power(2.4) {
+                    return CGColorSpace(name: CGColorSpace.itur_2020)!
+                } else if cieSpace.eotf == .sRGB {
+                    if #available(macOS 12.0, iOS 15.1, *) {
+                        return CGColorSpace(name: CGColorSpace.itur_2020_sRGBGamma)!
+                    } else {
+                        break
+                    }
+                }
+            }
             break
         }
         
@@ -145,41 +150,29 @@ extension Image where ComponentType: SIMDScalar {
         case CGColorSpace.displayP3:
             colorSpace = .cieRGB(colorSpace: .displayP3)
         case itur_2020_sRGBGamma:
-            colorSpace = .cieRGB(colorSpace: .rec2020)
+            colorSpace = .cieRGB(colorSpace: .rec2020(eotf: .sRGB))
         case linearITUR_2020:
-            var cieSpace = CIEXYZ1931ColorSpace<Float>.rec2020
-            cieSpace.eotf = .linear
-            colorSpace = .cieRGB(colorSpace: cieSpace)
+            colorSpace = .cieRGB(colorSpace: .rec2020(eotf: .linear))
         case CGColorSpace.itur_2020, CGColorSpace.extendedITUR_2020:
-            var cieSpace = CIEXYZ1931ColorSpace<Float>.rec2020
-            cieSpace.eotf = .power(2.4)
-            colorSpace = .cieRGB(colorSpace: cieSpace)
+            colorSpace = .cieRGB(colorSpace: .rec2020(eotf: .power(2.4)))
         case CGColorSpace.itur_709:
-            colorSpace = .cieRGB(colorSpace: .rec709)
+            colorSpace = .cieRGB(colorSpace: .rec709(eotf: .rec709))
         case itur709HLG:
-            var cieSpace = CIEXYZ1931ColorSpace<Float>.rec709
-            cieSpace.eotf = .hlg
-            colorSpace = .cieRGB(colorSpace: cieSpace)
+            colorSpace = .cieRGB(colorSpace: .rec709(eotf: .hlg))
         case CGColorSpace.displayP3_HLG:
             var cieSpace = CIEXYZ1931ColorSpace<Float>.displayP3
             cieSpace.eotf = .hlg
             colorSpace = .cieRGB(colorSpace: cieSpace)
         case CGColorSpace.itur_2100_HLG:
-            var cieSpace = CIEXYZ1931ColorSpace<Float>.rec2020
-            cieSpace.eotf = .hlg
-            colorSpace = .cieRGB(colorSpace: cieSpace)
+            colorSpace = .cieRGB(colorSpace: .rec2020(eotf: .hlg))
         case itur_709_PQ:
-            var cieSpace = CIEXYZ1931ColorSpace<Float>.rec709
-            cieSpace.eotf = .pq
-            colorSpace = .cieRGB(colorSpace: cieSpace)
+            colorSpace = .cieRGB(colorSpace: .rec709(eotf: .pq))
         case CGColorSpace.displayP3_PQ:
             var cieSpace = CIEXYZ1931ColorSpace<Float>.displayP3
             cieSpace.eotf = .pq
             colorSpace = .cieRGB(colorSpace: cieSpace)
         case CGColorSpace.itur_2100_PQ:
-            var cieSpace = CIEXYZ1931ColorSpace<Float>.rec2020
-            cieSpace.eotf = .pq
-            colorSpace = .cieRGB(colorSpace: cieSpace)
+            colorSpace = .cieRGB(colorSpace: .rec2020(eotf: .pq))
         default:
             if ComponentType.self == UInt8.self, let sRGB = cgImage.copy(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!) {
                 cgImage = sRGB

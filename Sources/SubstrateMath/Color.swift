@@ -384,8 +384,6 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
     case pq
     case hlg
     
-    public static var rec2020: ColorTransferFunction { return .rec709 }
-    
     @inlinable
     public var representativeGamma: Scalar? {
         switch self {
@@ -573,9 +571,9 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             let c2: Scalar = 2413.0 / 128.0
             let c3: Scalar = 2392.0 / 128.0
             
-            let inverse = self.linearToEncoded(x)
-            let numerator = max(Scalar.pow(inverse, 1.0 / m2) - c1, 0.0)
-            let denominator = c2 - c3 * Scalar.pow(inverse, 1.0 / m2)
+            let xGamma = Scalar.pow(x, 1.0 / m2)
+            let numerator = max(xGamma - c1, 0.0)
+            let denominator = c2 - c3 * xGamma
             
             return 10_000.0 * Scalar.pow(numerator / denominator, 1.0 / m1)
         case .proPhoto:
@@ -600,7 +598,7 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
                 // x = a * Scalar.log(12.0 * E - b) + c
                 // (x - c) / a = log(12.0 * E - b)
                 // exp((x - c) / a) + b = 12.0 * E
-                return Scalar.exp((x - c) / a + b) / 12.0
+                return (Scalar.exp((x - c) / a) + b) / 12.0
             }
         }
     }
@@ -654,6 +652,14 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         
         @inlinable
         public static var sRGB: Primaries {
+            return Primaries(
+                red:   SIMD2(0.64000,  0.33000),
+                green: SIMD2(0.30000,  0.60000),
+                blue:  SIMD2(0.15000,  0.06000))
+        }
+        
+        @inlinable
+        public static var rec709: Primaries {
             return Primaries(
                 red:   SIMD2(0.64000,  0.33000),
                 green: SIMD2(0.30000,  0.60000),
@@ -802,10 +808,11 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         self.referenceWhite = referenceWhite
     }
     
+    // BT.1886 defines a gamma 2.4 EOTF. Rec.709 has its own OETF but that's only used for encoding directly to Rec.709 from a camera sensor.
     @inlinable
-    public static var rec709: CIEXYZ1931ColorSpace {
+    public static func rec709(eotf: ColorTransferFunction<Scalar> = .power(2.4)) -> CIEXYZ1931ColorSpace {
         return .init(primaries: .sRGB,
-                     eotf: .rec709,
+                     eotf: eotf,
                      referenceWhite: .d65)
     }
     
@@ -837,10 +844,11 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
                      referenceWhite: .d65)
     }
     
+    // BT.1886 defines a gamma 2.4 EOTF.
     @inlinable
-    public static var rec2020: CIEXYZ1931ColorSpace {
+    public static func rec2020(eotf: ColorTransferFunction<Scalar> = .power(2.4)) -> CIEXYZ1931ColorSpace {
         return .init(primaries: .rec2020,
-                     eotf: .rec2020,
+                     eotf: eotf,
                      referenceWhite: .d65)
     }
     
@@ -880,7 +888,7 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
     }
     
     @inlinable
-    public static func arriLogC(el: ArriAlexaEl, usingSensorValues: Bool = false) -> CIEXYZ1931ColorSpace {
+    public static func arriLogC(el: ArriAlexaEl = .el800, usingSensorValues: Bool = false) -> CIEXYZ1931ColorSpace {
         return .init(primaries: .arriWideGamutRGB,
                      eotf: .arriLogC(usingSensorValues ? el.sensorSignalParameters : el.exposureValueParameters),
                      referenceWhite: .d65)
@@ -982,9 +990,9 @@ extension CIEXYZ1931ColorSpace {
         case "Generic Grey Gamma 2.2 Profile":
             self = .init(primaries: .sRGB, eotf: .power(2.2), referenceWhite: .d65)
         case "Rec. ITU-R BT.2020-1":
-            self = .rec2020
+            self = .rec2020(eotf: .rec709)
         case "Rec. ITU-R BT.709-5":
-            self = .rec709
+            self = .rec709(eotf: .rec709)
         case "ROMM RGB: ISO 22028-2:2013":
             self = .proPhoto
         case "SMPTE RP 431-2-2007 DCI (P3)":
