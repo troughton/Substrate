@@ -8,6 +8,9 @@
 
 import Foundation
 import Atomics
+#if os(Windows)
+import WinSDK
+#endif
 
 extension UnsafeMutableRawBufferPointer {
     fileprivate func contains(_ pointer: UnsafeRawPointer) -> Bool {
@@ -630,8 +633,12 @@ struct ExecutorAtomicLinearProbingMap {
     
     @inlinable
     public var bucketIndexForCurrentThread: Int {
-        let threadID = pthread_self()
-        return self.bucketIndex(for: UnsafeRawPointer(threadID))
+#if os(Windows)
+        let threadID = UnsafeRawPointer(bitPattern: Int(GetCurrentThreadId()))!
+#else
+        let threadID = UnsafeRawPointer(pthread_self())
+#endif
+        return self.bucketIndex(for: threadID)
     }
 }
 

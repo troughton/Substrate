@@ -82,6 +82,7 @@ let package = Package(
         .target(name: "SubstrateUtilities", dependencies: [.product(name: "Atomics", package: "swift-atomics")], exclude: ["CMakeLists.txt"],
                 swiftSettings: [
                     .define("SUBSTRATE_DISABLE_AUTOMATIC_LABELS"),
+                    .enableUpcomingFeature("MemberImportVisibility"),
                 ]),
         .testTarget(name: "SubstrateUtilitiesTests", dependencies: ["SubstrateUtilities"]),
         
