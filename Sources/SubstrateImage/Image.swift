@@ -75,35 +75,37 @@ public enum ImageColorSpace: Hashable, Sendable {
         }
     }
     
+    @_specialize(kind: full, where Scalar == Float)
     @inlinable
-    public func fromLinearGamma(_ color: Float) -> Float {
+    public func fromLinearGamma<Scalar: BinaryFloatingPoint & Real>(_ color: Scalar) -> Scalar {
         switch self {
         case .undefined:
             return color
         case .sRGB:
-            return color <= 0.0031308 ? (12.92 * color) : (1.055 * pow(color, 1.0 / 2.4) - 0.055)
+            return color <= 0.0031308 ? (12.92 * color) : (1.055 * Scalar.pow(color, 1.0 / 2.4) - 0.055)
         case .linearSRGB:
             return color
         case .gammaSRGB(let gamma):
-            return pow(color, 1.0 / gamma)
+            return Scalar.pow(color, 1.0 / Scalar(gamma))
         case .cieRGB(let cie):
-            return cie.eotf.linearToEncoded(color)
+            return Scalar(cie.eotf.linearToEncoded(Float(color)))
         }
     }
-
+    
+    @_specialize(kind: full, where Scalar == Float)
     @inlinable
-    public func toLinearGamma(_ color: Float) -> Float {
+    public func toLinearGamma<Scalar: BinaryFloatingPoint & Real>(_ color: Scalar) -> Scalar {
         switch self {
         case .undefined:
             return color
         case .sRGB:
-            return color <= 0.04045 ? (color / 12.92) : Float.pow((color + 0.055) / 1.055, 2.4)
+            return color <= 0.04045 ? (color / 12.92) : Scalar.pow((color + 0.055) / 1.055, 2.4)
         case .linearSRGB:
             return color
         case .gammaSRGB(let gamma):
-            return Float.pow(color, gamma)
+            return Scalar.pow(color, gamma)
         case .cieRGB(let cie):
-            return cie.eotf.encodedToLinear(color)
+            return Scalar(cie.eotf.encodedToLinear(Float(color)))
         }
     }
     
@@ -137,8 +139,9 @@ public enum ImageColorSpace: Hashable, Sendable {
         }
     }
     
+    @_specialize(kind: full, where Scalar == Float)
     @inlinable
-    public static func convert(_ value: Float, from: ImageColorSpace, to: ImageColorSpace) -> Float {
+    public static func convert<Scalar: BinaryFloatingPoint & Real>(_ value: Scalar, from: ImageColorSpace, to: ImageColorSpace) -> Scalar {
         if from == to { return value }
         
         let inLinearSRGB = from.toLinearGamma(value)
@@ -2012,8 +2015,9 @@ extension Image {
 }
 
 extension Image where ComponentType: BinaryInteger & FixedWidthInteger & SignedInteger {
+    @_specialize(kind: partial, where FloatType == Float)
     @inlinable
-    public init(_ data: Image<Float>) {
+    public init<FloatType>(_ data: Image<FloatType>) where FloatType: BinaryFloatingPoint {
         self.init(width: data.width, height: data.height, channelCount: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
         
         self.withUnsafeMutableBufferPointer { dest in
@@ -2026,8 +2030,8 @@ extension Image where ComponentType: BinaryInteger & FixedWidthInteger & SignedI
     }
 }
 
-extension Image where ComponentType == Float {
-    
+extension Image where ComponentType: BinaryFloatingPoint {
+    @_specialize(kind: partial, where ComponentType == Float)
     @inlinable
     public init<I: BinaryInteger & FixedWidthInteger & SignedInteger>(_ data: Image<I>) {
         self.init(width: data.width, height: data.height, channelCount: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
@@ -2035,12 +2039,17 @@ extension Image where ComponentType == Float {
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
                 for (i, sourceVal) in source.enumerated() {
-                    dest[i] = snormToFloat(sourceVal) // FIXME: componentsPerRow/row stride
+                    if sourceVal == I.min {
+                        dest[i] = -1.0
+                    } else {
+                        dest[i] = ComponentType(sourceVal) / ComponentType(I.max)
+                    }
                 }
             }
         }
     }
     
+    @_specialize(kind: partial, where ComponentType == Float)
     @inlinable
     public init<I: BinaryInteger & FixedWidthInteger & UnsignedInteger>(_ data: Image<I>) {
         self.init(width: data.width, height: data.height, channelCount: data.channelCount, colorSpace: data.colorSpace, alphaMode: data.alphaMode)
@@ -2048,11 +2057,14 @@ extension Image where ComponentType == Float {
         self.withUnsafeMutableBufferPointer { dest in
             data.withUnsafeBufferPointer { source in
                 for (i, sourceVal) in source.enumerated() {
-                    dest[i] = unormToFloat(sourceVal) // FIXME: componentsPerRow/row stride
+                    dest[i] = ComponentType(sourceVal) / ComponentType(I.max)
                 }
             }
         }
     }
+}
+
+extension Image where ComponentType: BinaryFloatingPoint & Real & SIMDScalar {
     
     public func converted(toColorSpace: ImageColorSpace) -> Self {
         var result = self
@@ -2060,6 +2072,7 @@ extension Image where ComponentType == Float {
         return result
     }
     
+    @_specialize(kind: full, where ComponentType == Float)
     public mutating func convert(toColorSpace: ImageColorSpace) {
         if toColorSpace == self.colorSpace || self.colorSpace == .undefined {
             return
@@ -2082,10 +2095,10 @@ extension Image where ComponentType == Float {
                 self.withUnsafeMutableBufferPointer { contents in
                     for offset in stride(from: 0, to: contents.count, by: channelCount) {
                         let source = SIMD3<ComponentType>(contents[offset + 0], contents[offset + 1], contents[offset + 2])
-                        let converted = SIMD3<Float>(conversionContext.convert(RGBColor(source)))
-                        contents[offset + 0] = converted.x
-                        contents[offset + 1] = converted.y
-                        contents[offset + 2] = converted.z
+                        let converted = SIMD3<Float>(conversionContext.convert(RGBColor(SIMD3<Float>(source))))
+                        contents[offset + 0] = ComponentType(converted.x)
+                        contents[offset + 1] = ComponentType(converted.y)
+                        contents[offset + 2] = ComponentType(converted.z)
                     }
                 }
             } else {
@@ -2093,8 +2106,8 @@ extension Image where ComponentType == Float {
                     contents.withMemoryRebound(to: SIMD4<ComponentType>.self) { contents in
                         for i in contents.indices {
                             let source = contents[i]
-                            let converted = SIMD3<Float>(conversionContext.convert(RGBColor(source.xyz)))
-                            let encoded = SIMD4<Float>(converted, source.w)
+                            let converted = SIMD3<Float>(conversionContext.convert(RGBColor(SIMD3<Float>(source.xyz))))
+                            let encoded = SIMD4(SIMD3<ComponentType>(converted), source.w)
                             contents[i] = encoded
                         }
                     }
