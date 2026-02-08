@@ -103,7 +103,7 @@ public enum ImageColorSpace: Hashable, Sendable {
         case .linearSRGB:
             return color
         case .gammaSRGB(let gamma):
-            return Scalar.pow(color, gamma)
+            return Scalar.pow(color, Scalar(gamma))
         case .cieRGB(let cie):
             return Scalar(cie.eotf.encodedToLinear(Float(color)))
         }
