@@ -1474,8 +1474,8 @@ public final class RenderGraph: @unchecked Sendable {
     /// - Parameter onSubmission: an optional closure to execute once the render graph has been submitted to the GPU.
     /// - Parameter onGPUCompletion: an optional closure to execute once the render graph has completed executing on the GPU.
     @discardableResult
-    @_unsafeInheritExecutor // Don't force the RenderGraph to be executed on a global executor; submission should stay on the caller's executor. This means that execute() is effectively a synchronous method from an async context, which is what we want.
-    public func execute(waitingFor gpuQueueWaitIndices: QueueCommandIndices = .zero) async -> RenderGraphExecutionWaitToken {
+    // Don't force the RenderGraph to be executed on a global executor; submission should stay on the caller's executor. This means that execute() is effectively a synchronous method from an async context, which is what we want.
+    public nonisolated(nonsending) func execute(waitingFor gpuQueueWaitIndices: QueueCommandIndices = .zero) async -> RenderGraphExecutionWaitToken {
         precondition(Self.activeRenderGraph == nil, "Cannot call RenderGraph.execute() from within a render pass.")
         
         let signpostState = Self.signposter.beginInterval("Execute RenderGraph", id: self.signpostID)
@@ -1508,7 +1508,7 @@ public final class RenderGraph: @unchecked Sendable {
         guard !renderPasses.isEmpty else {
             let lastSubmittedCommand = self.queue.lastSubmittedCommand
             self.didCompleteRender(queueCommandRange: lastSubmittedCommand..<lastSubmittedCommand)
-            Task.detached {
+            Task.detached { // TODO(troughton): should be Task.immediate once macOS 26 is okay as min-spec.
                 for item in completionNotifyQueue {
                     await item()
                 }

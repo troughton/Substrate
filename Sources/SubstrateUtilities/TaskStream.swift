@@ -8,80 +8,117 @@
 import Foundation
 
 public final class TaskStream: @unchecked Sendable {
-    @usableFromInline final class TaskHolder<R>: Sendable {
-        @usableFromInline let task: @Sendable () async throws -> R
+    // Based on https://forums.swift.org/t/task-gates-for-the-standard-library/85052
+    @usableFromInline actor PendingTaskQueue { // Ring buffer
+        @usableFromInline
+        typealias Element = UnsafeContinuation<Void, Never>
         
-        @inlinable
-        init(task: @escaping @Sendable () async throws -> R) {
-            self.task = task
-        }
-    }
-    
-    let taskHandle: Task<Void, Never>
-    @usableFromInline let taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
-    
-    public convenience init(priority: TaskPriority = .medium) {
-        self.init(creatingTask: { stream in
-            Task.detached(priority: priority, operation: {
-                for await task in stream {
-                    await task()
-                }
-            })
-        })
-    }
-    
-    public init(creatingTask: (AsyncStream<@Sendable () async -> Void>) -> Task<Void, Never>) {
-        var taskStreamContinuation: AsyncStream<@Sendable () async -> Void>.Continuation? = nil
-        let taskStream = AsyncStream<@Sendable () async -> Void> { continuation in
-            taskStreamContinuation = continuation
-        }
-        self.taskStreamContinuation = taskStreamContinuation!
+        var pendingContinuations: UnsafeMutablePointer<Element>?
+        var capacity: Int
+        var lowerBound: Int
+        var count: Int
         
-        self.taskHandle = creatingTask(taskStream)
-    }
-    
-    deinit {
-        self.taskHandle.cancel()
-    }
-    
-    @inlinable @inline(__always)
-    @_unsafeInheritExecutor
-    public func enqueueAndWait<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async -> T) async -> T {
-        let taskStreamContinuation = self.taskStreamContinuation
-        return await withoutActuallyEscaping(perform) { perform in
-            let task = TaskHolder<T>(task: perform)
-            let result: T = await withUnsafeContinuation { continuation in
-                taskStreamContinuation.yield { [unowned task, continuation] in
-                    let result = try! await task.task()
-                    continuation.resume(returning: result)
-                }
-            }
-            withExtendedLifetime(task) {}
-            return result
+        @usableFromInline var hasActiveTask = false
+        
+        init() {
+            self.pendingContinuations = nil
+            self.capacity = 0
+            self.lowerBound = 0
+            self.count = 0
         }
-    }
-    
-    @inlinable @inline(__always)
-    @_unsafeInheritExecutor
-    public func enqueueAndWait<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async throws -> T) async throws -> T {
-        let taskStreamContinuation = self.taskStreamContinuation
-        return try await withoutActuallyEscaping(perform) { perform in
-            let task = TaskHolder<T>(task: perform)
-            let result: T = try await withUnsafeThrowingContinuation { continuation in
-                taskStreamContinuation.yield { [unowned task, continuation] in
-                    do {
-                        continuation.resume(returning: try await task.task())
-                    } catch {
-                        continuation.resume(throwing: error)
+        
+        func reserveCapacity(_ capacity: Int) {
+            if self.capacity < capacity {
+                let newCapacity = max((self.capacity * 3) / 2, capacity)
+                let newBuffer = UnsafeMutablePointer<Element>.allocate(capacity: newCapacity)
+                
+                if let oldBuffer = self.pendingContinuations {
+                    let tailCount = min(self.capacity - self.lowerBound, self.count)
+                    newBuffer.moveInitialize(from: oldBuffer.advanced(by: self.lowerBound), count: tailCount)
+                    if tailCount < self.count {
+                        newBuffer.advanced(by: tailCount).moveInitialize(from: oldBuffer, count: self.count - tailCount)
                     }
                 }
+                
+                self.pendingContinuations = newBuffer
+                self.lowerBound = 0
+                self.capacity = newCapacity
             }
-            withExtendedLifetime(task) {}
-            return result
+        }
+        
+        @usableFromInline
+        func append(_ element: consuming Element) {
+            self.reserveCapacity(self.count + 1)
+            self.pendingContinuations?.advanced(by: (self.lowerBound + self.count) % self.capacity).initialize(to: element)
+            self.count += 1
+        }
+        
+        @usableFromInline
+        func popFirst() -> Element? {
+            if self.count == 0 {
+                return nil
+            }
+            
+            let element = self.pendingContinuations?.advanced(by: self.lowerBound).move()
+            self.lowerBound = (self.lowerBound + 1) % self.capacity
+            self.count -= 1
+            return element
+        }
+        
+        @inlinable
+        public func acquire() async {
+            if !self.hasActiveTask {
+                self.hasActiveTask = true
+            } else {
+                await withUnsafeContinuation { continuation in
+                    self.append(continuation)
+                }
+            }
+        }
+        
+        @inlinable
+        public func release() {
+            if let continuation = self.popFirst() {
+                continuation.resume()
+            } else {
+                self.hasActiveTask = false
+            }
         }
     }
     
-    public func enqueue(@_inheritActorContext @_implicitSelfCapture _ perform: @escaping @Sendable () async -> Void) {
-        self.taskStreamContinuation.yield(perform)
+    @usableFromInline let pendingTaskQueue = PendingTaskQueue()
+    
+    @available(*, deprecated, renamed: "init()", message: "TaskStream no longer takes a priority")
+    public init(priority: TaskPriority) {}
+    
+    public init() {}
+    
+    @inlinable @inline(__always)
+    public nonisolated(nonsending) func enqueueAndWait<T>(@_implicitSelfCapture _ perform: nonisolated(nonsending) () async -> T) async -> T {
+        await self.pendingTaskQueue.acquire()
+        let result = await perform()
+        await self.pendingTaskQueue.release()
+        return result
+    }
+    
+    @inlinable @inline(__always)
+    public nonisolated(nonsending) func enqueueAndWait<T>(@_implicitSelfCapture _ perform: nonisolated(nonsending) () async throws -> T) async throws -> T {
+        await self.pendingTaskQueue.acquire()
+        do {
+            let result = try await perform()
+            await self.pendingTaskQueue.release()
+            return result
+        } catch {
+            await self.pendingTaskQueue.release()
+            throw error
+        }
+    }
+    
+    public func enqueue(_ perform: @escaping @Sendable () async -> Void) {
+        Task.detached {
+            await self.pendingTaskQueue.acquire()
+            await perform()
+            await self.pendingTaskQueue.release()
+        }
     }
 }

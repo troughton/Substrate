@@ -39,10 +39,9 @@ public final class AsyncSemaphore: ManagedBuffer<_AsyncSemaphoreHeader, UInt32.A
         }
     }
     
-    @_unsafeInheritExecutor
-    @inlinable @inline(__always)
-    public func wait() async {
-        await withUnsafeContinuation { continuation in
+    @inlinable
+    public func wait(isolation: (any Actor)? = #isolation) async {
+        await withUnsafeContinuation(isolation: isolation) { continuation in
             self.withLock {
                 self.withUnsafeMutablePointerToHeader { header in
                     if header.pointee.availableCapacity > 0 {

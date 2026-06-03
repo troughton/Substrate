@@ -79,9 +79,8 @@ public struct SpinLock: @unchecked Sendable {
         return true
     }
     
-    @_unsafeInheritExecutor
     @inlinable
-    public func lock() async {
+    public nonisolated(nonsending) func lock() async {
         while UInt32.AtomicRepresentation.atomicLoad(at: self.value, ordering: .relaxed) == SpinLockState.taken.rawValue ||
                 UInt32.AtomicRepresentation.atomicExchange(SpinLockState.taken.rawValue, at: self.value, ordering: .acquiring) == SpinLockState.taken.rawValue {
             await Task.yield()
@@ -125,8 +124,8 @@ public final class AsyncSpinLock: @unchecked Sendable {
         self.lock.deinit()
     }
     
-    @inlinable @_unsafeInheritExecutor
-    public func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async -> T) async -> T {
+    @inlinable
+    public nonisolated(nonsending) func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async -> T) async -> T {
         await self.lock.lock()
         while let currentTask = self.currentTask {
             self.lock.unlock()
@@ -147,8 +146,8 @@ public final class AsyncSpinLock: @unchecked Sendable {
         }
     }
     
-    @inlinable @_unsafeInheritExecutor
-    public func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async throws -> T) async throws -> T {
+    @inlinable
+    public nonisolated(nonsending) func withLock<T>(@_inheritActorContext @_implicitSelfCapture _ perform: @Sendable () async throws -> T) async throws -> T {
         await self.lock.lock()
         while let currentTask = self.currentTask {
             self.lock.unlock()
@@ -156,7 +155,7 @@ public final class AsyncSpinLock: @unchecked Sendable {
             await self.lock.lock()
         }
         return try await withoutActuallyEscaping(perform) { perform in
-            let newTask = Task {
+            let newTask = Task { // TODO(troughton): should be Task.immediate once macOS 26 is okay as min-spec.
                 let result = try await perform()
                 await self.lock.lock()
                 self.currentTask = nil
