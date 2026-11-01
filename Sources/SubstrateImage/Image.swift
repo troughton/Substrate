@@ -922,7 +922,6 @@ public struct Image<ComponentType> : AnyImage {
         var result = Image<ComponentType>(width: self.height, height: self.width, channelCount: self.channelCount, colorSpace: self.colorSpace, alphaModeAllowInferred: self.alphaMode, zeroStorage: false)
         
         let pixelStride = self.channelCount
-        let rowStride = self.componentsPerRow
         let width = result.width
         let height = result.height
         result.withUnsafeMutableBufferPointer { result in
@@ -930,9 +929,9 @@ public struct Image<ComponentType> : AnyImage {
             self.withUnsafeBufferPointer { source in
                 let source = source.baseAddress.unsafelyUnwrapped
                 for y in 0..<height {
-                    let destinationRow = result.advanced(by: y * rowStride)
+                    let destinationRow = result.advanced(by: y * width * pixelStride)
                     for x in 0..<width {
-                        destinationRow.advanced(by: x * pixelStride).initialize(from: source.advanced(by: (x * rowStride + y) * pixelStride), count: pixelStride)
+                        destinationRow.advanced(by: x * pixelStride).initialize(from: source.advanced(by: (x * height + y) * pixelStride), count: pixelStride)
                     }
                 }
             }
