@@ -375,6 +375,7 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
     case power(Scalar)
     case acesCC
     case acesCCT
+    case appleLog
     case sRGB
     case rec709
     case arriLogC(ArriLogCParameters)
@@ -404,6 +405,21 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             return x
         case .power(let power):
             return Scalar.pow(x, 1.0 / power)
+        case .appleLog:
+            // https://antlerpost.com/colour-spaces/AppleLog.html
+            let R0 = -0.05641088 as Scalar
+            let Rt = 0.01 as Scalar
+            let c = 47.28711236 as Scalar
+            let beta = 0.00964052 as Scalar
+            let gamma = 0.08550479 as Scalar
+            let delta = 0.69336945 as Scalar
+            if x <= R0 {
+                return 0.0
+            } else if x < Rt {
+                return c * (x - R0) * (x - R0)
+            } else {
+                return gamma * Scalar.log2(x + beta) + delta
+            }
         case .acesCC:
             if x <= 0 {
                 return (-16.0 + 9.72) / 17.52
@@ -503,6 +519,22 @@ public enum ColorTransferFunction<Scalar: BinaryFloatingPoint & Real> {
             return x
         case .power(let power):
             return Scalar.pow(x, power)
+        case .appleLog:
+            // https://antlerpost.com/colour-spaces/AppleLog.html
+            let R0 = -0.05641088 as Scalar
+            let Rt = 0.01 as Scalar
+            let c = 47.28711236 as Scalar
+            let beta = 0.00964052 as Scalar
+            let gamma = 0.08550479 as Scalar
+            let delta = 0.69336945 as Scalar
+            let Pt = c * (Rt - R0) * (Rt - R0)
+            if x < 0 {
+                return R0
+            } else if x < Pt {
+                return Scalar.sqrt(x / c) + R0
+            } else {
+                return Scalar.exp2((x - delta) / gamma) - beta
+            }
         case .acesCC:
             if x <= -0.301369863014 {
                 return 2.0 * (Scalar.exp2(x * 17.52 - 9.72) - Scalar.exp2(-16.0))
@@ -885,6 +917,11 @@ public struct CIEXYZ1931ColorSpace<Scalar: BinaryFloatingPoint & Real & SIMDScal
         return .init(primaries: .adobeRGB,
                      eotf: .power(563.0 / 256.0),
                      referenceWhite: .d65)
+    }
+    
+    @inlinable
+    public static var appleLog: CIEXYZ1931ColorSpace {
+        return .init(primaries: .rec2020, eotf: .appleLog, referenceWhite: .d65)
     }
     
     @inlinable
